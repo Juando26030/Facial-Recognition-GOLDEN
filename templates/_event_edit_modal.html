@@ -1,108 +1,115 @@
-<!-- "Editar evento" COMPARTIDO (reunión 2026-09-21, ítem 6a): la misma vista se abre desde Calendario,
-     Eventos y la ficha de Clientes/Cuentas — antes vivía copiada solo dentro de calendario.html.
-     Incluye el informe final (PDF → bombillo verde + correo a la comercial, ítem 6b).
-     Uso: incluir con la sintaxis de include de Jinja, y llamar openEventEditModal(evento, onSaved).
-     También define reportBulbHtml(evento) para el bombillo de las listas (ítem 6c). Requiere
-     staff_role (contexto) y toast.js/clockpicker.js cargados en la página que la incluye. -->
-<style>
-  .ee-overlay { position:fixed; inset:0; background:rgba(10,14,46,0.5); display:none; align-items:center; justify-content:center; z-index:9000; padding:1rem; }
-  .ee-box { background:white; border-radius:18px; padding:2rem; max-width:640px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 24px 70px rgba(0,0,0,0.3); }
-  .ee-box h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); margin-bottom:1.2rem; }
-  .ee-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.9rem; }
-  .ee-group { flex:1; min-width:180px; }
-  .ee-group label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
-  .ee-group input, .ee-group select { width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; box-sizing:border-box; }
-  .ee-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; display:inline-block; }
-  .ee-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
-  .ee-report { border:1px solid #eee; border-radius:12px; padding:0.9rem 1rem; margin:0.4rem 0 1rem; background:#fafafa; }
-  /* Bombillo del informe final (ítem 6c): naranja = pendiente, verde = subido (clic descarga el PDF). */
-  .report-bulb { display:inline-block; width:13px; height:13px; border-radius:50%; vertical-align:middle; flex:0 0 auto; }
-  .report-bulb.on { background:#28a745; box-shadow:0 0 7px #28a745; cursor:pointer; }
-  .report-bulb.off { background:#f39c12; box-shadow:0 0 7px #f39c12; }
-</style>
+{# "Editar evento" COMPARTIDO (reunión 2026-09-21, ítem 6a; rediseño Fase 1.5, Ola 3): la misma ventana se abre desde Calendario, Eventos y la ficha de Clientes/Cuentas.
+   Incluye el informe final (PDF o Excel → insignia «Informe enviado» + correo a la comercial, ítem 6b).
+   Uso: incluirla con la sintaxis de include de Jinja y llamar openEventEditModal(evento, onSaved). También define reportBulbHtml(evento[, compacto]) para las listas (ítem 6c).
+   Requiere staff_role (contexto) y toast.js / clockpicker.js cargados en la página que la incluye. Usa .gw-modal (hoja de pantalla completa en celular), grupos plegables y UN solo «Guardar cambios»
+   dentro de la ventana, con el aviso «Hay cambios sin guardar» (también al cerrar) y Ctrl/Cmd+S. Solo tokens --gw-* (static/css/gw-eventos.css). /clientes todavía no usa gw-page: la ventana no depende de eso. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
 
-<div class="ee-overlay" id="eventModalOverlay">
-  <div class="ee-box">
-    <h3>Editar evento</h3>
-    <form id="eventEditForm">
-      <input type="hidden" name="event_id">
-      <div class="ee-row">
-        <div class="ee-group" style="min-width:100%;"><label>Nombre del evento</label><input type="text" name="name" required></div>
+<div class="gw-modal-backdrop" id="eventModalOverlay">
+  <div class="gw-modal ee-modal" role="dialog" aria-modal="true" aria-labelledby="eeTitle">
+    <form id="eventEditForm" class="ee-modal__form">
+      <div class="gw-modal__head">
+        <h2 class="gw-modal__title" id="eeTitle">Editar evento</h2>
+        <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" id="eventModalClose" aria-label="Cerrar la ventana">{{ ic('close') }}</button>
       </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Fecha inicio</label><input type="date" name="start_date" required></div>
-        <div class="ee-group"><label>Fecha fin</label><input type="date" name="end_date" required></div>
-        <div class="ee-group"><label>Fecha montaje</label><input type="date" name="setup_date" required></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Hora inicio evento</label><input type="text" class="clock-time" name="event_time_start" required></div>
-        <div class="ee-group"><label>Hora fin evento</label><input type="text" class="clock-time" name="event_time_end" required></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Hora inicio montaje</label><input type="text" class="clock-time" name="setup_time_start" required></div>
-        <div class="ee-group"><label>Hora fin montaje</label><input type="text" class="clock-time" name="setup_time_end" required></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>País</label><input type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
-        <div class="ee-group"><label>Ciudad</label><input type="text" name="city" list="modalCityList" autocomplete="off"></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Lugar</label><input type="text" name="location"></div>
-        <div class="ee-group"><label>Dirección</label><input type="text" name="address"></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Coordinador asignado</label><input type="text" name="coordinator_label" list="modalCoordinatorList" autocomplete="off"></div>
-        {% if staff_role in ("comercial", "admin", "super_admin") %}
-        <div class="ee-group"><label>Comercial asignada</label><input type="text" name="commercial_label" list="modalCommercialList" autocomplete="off"></div>
-        {% endif %}
-      </div>
-      <div class="ee-row">
-        <!-- Superevento (ítem 19): agrupa eventos independientes del mismo cliente; solo cruza el aviso de asistencia entre hermanos. -->
-        <div class="ee-group"><label>Superevento (agrupa eventos hermanos del mismo cliente)</label>
-          <div style="display:flex; gap:6px;">
-            <select name="super_event_id" id="eeSuperEvent"><option value="">— Ninguno —</option></select>
-            <button type="button" class="ee-btn" id="eeNewSuper" title="Crear superevento">+ Nuevo</button>
+      <div class="gw-modal__body">
+        <input type="hidden" name="event_id">
+
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary">Datos del evento</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-field"><label class="gw-label" for="eeName">Nombre del evento</label><input class="gw-input" type="text" id="eeName" name="name" required></div>
+            <div class="gw-fields-row gw-fields-row--2">
+              <div class="gw-field"><label class="gw-label" for="modalStatusSelect">Estado del evento</label>
+                <select class="gw-select" name="status" id="modalStatusSelect">
+                  <option value="creado">Creado</option>
+                  <option value="en_proceso">En Proceso</option>
+                  <option value="finalizado">Finalizado</option>
+                </select>
+              </div>
+              <div class="gw-field"><label class="gw-label" for="eeNotes">Observaciones</label><input class="gw-input" type="text" id="eeNotes" name="notes"></div>
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group" style="max-width:110px;">
-          <label>Color de pañoleta</label>
-          <input type="color" name="bandana_color" style="height:40px; padding:2px; cursor:pointer;">
-        </div>
-        <div class="ee-group"><label>Nombre del color</label><input type="text" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
-      </div>
-      <div class="ee-row">
-        <div class="ee-group"><label>Estado del evento</label>
-          <select name="status" id="modalStatusSelect">
-            <option value="creado">Creado</option>
-            <option value="en_proceso">En Proceso</option>
-            <option value="finalizado">Finalizado</option>
-          </select>
-        </div>
-        <div class="ee-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+        </details>
+
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary">Fechas y horarios</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-fields-row gw-fields-row--3">
+              <div class="gw-field"><label class="gw-label" for="eeStart">Fecha inicio</label><input class="gw-input" type="date" id="eeStart" name="start_date" required></div>
+              <div class="gw-field"><label class="gw-label" for="eeEnd">Fecha fin</label><input class="gw-input" type="date" id="eeEnd" name="end_date" required></div>
+              <div class="gw-field"><label class="gw-label" for="eeSetup">Fecha montaje</label><input class="gw-input" type="date" id="eeSetup" name="setup_date" required></div>
+            </div>
+            <div class="gw-fields-row gw-fields-row--2">
+              <div class="gw-field"><label class="gw-label" for="eeTimeStart">Hora inicio evento</label><input class="gw-input clock-time" type="text" id="eeTimeStart" name="event_time_start" required></div>
+              <div class="gw-field"><label class="gw-label" for="eeTimeEnd">Hora fin evento</label><input class="gw-input clock-time" type="text" id="eeTimeEnd" name="event_time_end" required></div>
+              <div class="gw-field"><label class="gw-label" for="eeSetupStart">Hora inicio montaje</label><input class="gw-input clock-time" type="text" id="eeSetupStart" name="setup_time_start" required></div>
+              <div class="gw-field"><label class="gw-label" for="eeSetupEnd">Hora fin montaje</label><input class="gw-input clock-time" type="text" id="eeSetupEnd" name="setup_time_end" required></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary">Lugar y responsables</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-fields-row gw-fields-row--2">
+              <div class="gw-field"><label class="gw-label" for="modalCountryField">País</label><input class="gw-input" type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
+              <div class="gw-field"><label class="gw-label" for="eeCity">Ciudad</label><input class="gw-input" type="text" id="eeCity" name="city" list="modalCityList" autocomplete="off"></div>
+              <div class="gw-field"><label class="gw-label" for="eeLocation">Lugar</label><input class="gw-input" type="text" id="eeLocation" name="location"></div>
+              <div class="gw-field"><label class="gw-label" for="eeAddress">Dirección</label><input class="gw-input" type="text" id="eeAddress" name="address"></div>
+            </div>
+            <div class="gw-fields-row gw-fields-row--2">
+              <div class="gw-field"><label class="gw-label" for="eeCoordinator">Coordinador asignado</label><input class="gw-input" type="text" id="eeCoordinator" name="coordinator_label" list="modalCoordinatorList" autocomplete="off"></div>
+              {% if staff_role in ("comercial", "admin", "super_admin") %}
+              <div class="gw-field"><label class="gw-label" for="eeCommercial">Comercial asignada</label><input class="gw-input" type="text" id="eeCommercial" name="commercial_label" list="modalCommercialList" autocomplete="off"></div>
+              {% endif %}
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary">Superevento y pañoleta</summary>
+          <div class="gw-form-group__body">
+            {# Superevento (ítem 19): agrupa eventos independientes del mismo cliente; solo cruza el aviso de asistencia entre hermanos. #}
+            <div class="gw-field"><label class="gw-label" for="eeSuperEvent">Superevento (agrupa eventos hermanos del mismo cliente)</label>
+              <div class="ee-super">
+                <select class="gw-select" name="super_event_id" id="eeSuperEvent"><option value="">— Ninguno —</option></select>
+                <button type="button" class="gw-btn gw-btn--secondary" id="eeNewSuper">{{ ic('plus', 'gw-icon--sm') }} Nuevo</button>
+              </div>
+            </div>
+            <div class="gw-fields-row gw-fields-row--2">
+              <div class="gw-field"><label class="gw-label" for="eeColor">Color de pañoleta</label><input class="gw-input" type="color" id="eeColor" name="bandana_color"></div>
+              <div class="gw-field"><label class="gw-label" for="eeColorName">Nombre del color</label><input class="gw-input" type="text" id="eeColorName" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
+            </div>
+          </div>
+        </details>
+
+        {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary">Informe final</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head">
+              <span id="eeReportBulb"></span>
+              <span class="gw-hint" id="eeReportInfo"></span>
+              <a id="eeReportDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar informe</a>
+            </div>
+            <div class="ee-report__row">
+              <label class="gw-sr-only" for="eeReportFile">Archivo del informe (PDF o Excel)</label>
+              <input type="file" id="eeReportFile" accept=".pdf,.xlsx,.xls,application/pdf">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeReportUpload">{{ ic('upload', 'gw-icon--sm') }} Subir informe y avisar a la comercial</button>
+            </div>
+            <p class="gw-hint">Sube el informe ya corregido y autorizado, en PDF o Excel. Se marca como enviado y se le manda por correo a la comercial del evento. Es una acción aparte: no depende de «Guardar cambios».</p>
+          </div>
+        </details>
       </div>
 
-      <!-- Informe final (ítem 6b): se sube aparte de "Guardar cambios", con su propia confirmación. -->
-      <div class="ee-report">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:0.5rem;">
-          <strong style="font-size:0.85rem;">Informe final</strong>
-          <span id="eeReportBulb"></span>
-          <span id="eeReportInfo" style="font-size:0.78rem; color:#777;"></span>
-          <a id="eeReportDownload" class="ee-btn" href="#" target="_blank" rel="noopener" style="display:none; text-decoration:none; margin-left:auto;">⬇️ Descargar informe</a>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <input type="file" id="eeReportFile" accept=".pdf,.xlsx,.xls,application/pdf" style="max-width:260px; font-size:0.8rem;">
-          <button type="button" class="ee-btn primary" id="eeReportUpload">Subir informe y avisar a la comercial</button>
-        </div>
-        <p style="font-size:0.72rem; color:#666; margin:0.4rem 0 0;">Sube el informe ya corregido y autorizado, en PDF o Excel. Se marca como enviado (verde) y se le manda por correo a la comercial del evento.</p>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0.5rem;">
-        <a href="#" id="eventModalEnter" class="ee-btn primary">🚪 Ingresar al evento</a>
-        <div style="display:flex; gap:10px;">
-          <button type="button" class="ee-btn" id="eventModalCancel">Cancelar</button>
-          <button type="submit" class="ee-btn primary">Guardar cambios</button>
+      <div class="gw-modal__foot">
+        <a href="#" id="eventModalEnter" class="gw-btn gw-btn--secondary">{{ ic('home', 'gw-icon--sm') }} Ingresar al evento</a>
+        <span class="ee-modal__status" id="eeStatus" role="status" aria-live="polite"></span>
+        <div class="ee-modal__actions">
+          <button type="button" class="gw-btn gw-btn--secondary" id="eventModalCancel">Cancelar</button>
+          <button type="submit" class="gw-btn gw-btn--primary" id="eeSave">Guardar cambios</button>
         </div>
       </div>
     </form>
@@ -113,18 +120,56 @@
 <datalist id="modalCoordinatorList"></datalist>
 <datalist id="modalCommercialList"></datalist>
 
+<script src="{{ url_for('static', path='js/gw-busy.js') }}"></script>
 <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script>
 (function () {
-  const ROLE = "{{ staff_role }}";
+  const ROLE = {{ staff_role|tojson }};
+  const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
+  const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve().then(work));
+  const DEFAULT_BANDANA = '#' + 'D4AF37';        // dato histórico (dorado Golden) para eventos sin pañoleta; no es un estilo de la pantalla
   const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
   document.getElementById("modalCountryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
 
   const overlay = document.getElementById('eventModalOverlay');
+  const dialog = overlay.querySelector('.gw-modal');
   const form = document.getElementById('eventEditForm');
+  const statusEl = document.getElementById('eeStatus');
+  const saveBtn = document.getElementById('eeSave');
   if (window.ColorLibrary) ColorLibrary.attach(form.bandana_color, form.bandana_color_name);
-  document.getElementById('eventModalCancel').addEventListener('click', () => { overlay.style.display = 'none'; });
   document.querySelectorAll('.clock-time').forEach((input) => attachClockPicker(input));
+
+  /* ---------- abrir / cerrar (sin cerrar al hacer clic afuera: es un formulario de datos) ---------- */
+  let dirty = false, opener = null;
+  function setStatus(state, text) { statusEl.dataset.state = state; statusEl.textContent = text || ''; }
+  function markDirty() { if (dirty) return; dirty = true; setStatus('dirty', 'Hay cambios sin guardar'); }
+  function markClean() { dirty = false; setStatus('idle', ''); }
+  form.addEventListener('input', markDirty);
+  form.addEventListener('change', markDirty);
+
+  function isOpen() { return overlay.dataset.open === 'true'; }
+  function closeModal() { overlay.removeAttribute('data-open'); markClean(); if (opener && document.contains(opener)) { try { opener.focus(); } catch (e) { /* sin foco */ } } opener = null; }
+  async function requestClose() {
+    if (dirty && !(await showConfirm('Hay cambios sin guardar. Si cierras ahora se pierden.', { variant: 'warning', confirmLabel: 'Sí, cerrar sin guardar' }))) return;
+    closeModal();
+  }
+  document.getElementById('eventModalCancel').addEventListener('click', requestClose);
+  document.getElementById('eventModalClose').addEventListener('click', requestClose);
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen() || document.querySelector('.gw-modal-backdrop--top')) return;          // un confirmar/preguntar encima maneja su propio teclado
+    if (e.key === 'Escape') { e.preventDefault(); requestClose(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (!saveBtn.hasAttribute('aria-busy')) form.requestSubmit(); return; }
+    if (e.key !== 'Tab') return;                                                         // el foco gira dentro de la ventana
+    const f = Array.from(dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary')).filter((x) => x.offsetWidth || x.offsetHeight);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (!dialog.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  window.addEventListener('beforeunload', (e) => { if (isOpen() && dirty) { e.preventDefault(); e.returnValue = ''; } });
 
   document.getElementById('modalCountryField').addEventListener('change', async (e) => {
     const country = e.target.value.trim();
@@ -132,7 +177,7 @@
     if (!country) { cityDatalist.innerHTML = ''; return; }
     const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
     const cities = res.ok ? await res.json() : [];
-    cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join('');
+    cityDatalist.innerHTML = cities.map(c => `<option value="${esc(c)}">`).join('');
   });
 
   let coordinatorsByLabel = {}, coordinatorsById = {};
@@ -143,7 +188,7 @@
     document.getElementById('modalCoordinatorList').innerHTML = coords.map(c => {
       const label = `${c.full_name || c.username} (${c.username})`;
       coordinatorsByLabel[label] = c.id; coordinatorsById[c.id] = label;
-      return `<option value="${label}">`;
+      return `<option value="${esc(label)}">`;
     }).join('');
     if (['comercial', 'admin', 'super_admin'].includes(ROLE)) {
       const res2 = await fetch('/api/staff/commercials');
@@ -151,19 +196,26 @@
       document.getElementById('modalCommercialList').innerHTML = commercials.map(c => {
         const label = `${c.full_name || c.username} (${c.username})`;
         commercialsByLabel[label] = c.id; commercialsById[c.id] = label;
-        return `<option value="${label}">`;
+        return `<option value="${esc(label)}">`;
       }).join('');
     }
   })();
 
   let current = null, savedCallback = null;
 
-  /* Bombillo del informe final (ítem 6c) para usar en cualquier lista de eventos: verde con enlace
-     al PDF si ya se subió, naranja si falta. */
-  window.reportBulbHtml = function (ev) {
-    return ev.report_uploaded
-      ? `<a class="report-bulb on" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Informe final enviado — clic para descargarlo" onclick="event.stopPropagation()"></a>`
-      : `<span class="report-bulb off" title="Informe final pendiente de subir"></span>`;
+  /* Informe final (ítem 6c) para cualquier lista de eventos. Con `compact` (calendario) es un punto: lleno con marca = enviado, vacío = pendiente; sin compact es una insignia con texto.
+     Enviado enlaza al archivo (se abre aparte). Nunca depende solo del color: lleva texto o nombre accesible. */
+  window.reportBulbHtml = function (ev, compact) {
+    const on = !!ev.report_uploaded;
+    const label = on ? 'Informe final enviado' : 'Informe final pendiente de subir';
+    if (compact) {
+      return on
+        ? `<a class="gw-bulb gw-bulb--dot gw-bulb--on" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="${label}: clic para descargarlo"><span class="gw-sr-only">${label}</span>${icon('check')}</a>`
+        : `<span class="gw-bulb gw-bulb--dot" title="${label}" role="img" aria-label="${label}"></span>`;
+    }
+    return on
+      ? `<a class="gw-badge gw-badge--ok gw-bulb" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Clic para descargar el informe">${icon('check')}Informe enviado</a>`
+      : `<span class="gw-badge gw-badge--warn gw-bulb">${icon('info')}Informe pendiente</span>`;
   };
 
   function paintReport(ev) {
@@ -172,7 +224,7 @@
       ? `Enviado${ev.report_uploaded_at ? ' el ' + new Date(ev.report_uploaded_at + 'Z').toLocaleString() : ''} (subir otro lo reemplaza)`
       : 'Pendiente de subir';
     const dl = document.getElementById('eeReportDownload');
-    dl.style.display = ev.report_uploaded ? 'inline-block' : 'none';
+    dl.hidden = !ev.report_uploaded;
     dl.href = `/api/events/${ev.id}/final-report`;
   }
 
@@ -180,20 +232,25 @@
   async function loadSuperEvents(selectedId) {
     const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(current.tenant_id)}`);
     const list = res.ok ? await res.json() : [];
-    superSelect.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${s.name} (${s.events} eventos)</option>`).join('');
+    superSelect.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${esc(s.name)} (${s.events} eventos)</option>`).join('');
     superSelect.value = selectedId ? String(selectedId) : '';
   }
-  document.getElementById('eeNewSuper').addEventListener('click', async () => {
+  document.getElementById('eeNewSuper').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
     const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
     if (!name) return;
-    const res = await fetch('/api/super-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenant_id: current.tenant_id, name }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { showToast(data.detail || 'No se pudo crear el superevento', 'error'); return; }
-    await loadSuperEvents(data.id);
-    showToast('Superevento creado — guarda los cambios para asignarlo a este evento', 'success');
+    await busy(btn, async () => {
+      const res = await fetch('/api/super-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenant_id: current.tenant_id, name }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(data.detail || 'No se pudo crear el superevento', 'error'); return; }
+      await loadSuperEvents(data.id);
+      markDirty();
+      showToast('Superevento creado — guarda los cambios para asignarlo a este evento', 'success');
+    });
   });
 
   window.openEventEditModal = async function (ev, onSaved) {
+    opener = document.activeElement;
     await staffOptionsReady;
     current = ev; savedCallback = onSaved || null;
     await loadSuperEvents(ev.super_event_id);
@@ -215,32 +272,34 @@
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
     form.status.value = ev.status || 'creado';
     form.status.dataset.initial = form.status.value;          // para pedir confirmación solo si pasa a «Finalizado»
-    form.bandana_color.value = ev.bandana_color || '#D4AF37';
+    form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
     document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
-    overlay.style.display = 'flex';
+    markClean();
+    overlay.setAttribute('data-open', 'true');
+    form.name.focus();
   };
 
-  document.getElementById('eeReportUpload').addEventListener('click', async () => {
+  document.getElementById('eeReportUpload').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
     const file = document.getElementById('eeReportFile').files[0];
     if (!file) { showToast('Elige primero el archivo del informe (PDF o Excel)', 'error'); return; }
-    const who = current.commercial_name ? ` a ${current.commercial_name}` : ' a la comercial del evento';
+    const who = current.commercial_name ? ` a ${esc(current.commercial_name)}` : ' a la comercial del evento';
     const ok = await showConfirm(`Se marcará el informe como enviado y se enviará por correo${who}, con el archivo adjunto. ¿Continuar?`, { variant: 'warning', confirmLabel: 'Sí, subir y enviar' });
     if (!ok) return;
-    const btn = document.getElementById('eeReportUpload');
-    setButtonLoading(btn, true, 'Subiendo...');
-    const fd = new FormData(); fd.append('file', file);
-    const res = await fetch(`/api/events/${current.id}/final-report`, { method: 'POST', body: fd });
-    setButtonLoading(btn, false);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { showToast(data.detail || 'No se pudo subir el informe', 'error'); return; }
-    current.report_uploaded = true; current.report_uploaded_at = new Date().toISOString().replace('Z', '');
-    paintReport(current);
-    showToast(data.email && data.email.sent ? 'Informe subido y correo enviado' : `Informe subido. ${data.email ? data.email.detail : ''}`, 'success');
-    if (savedCallback) savedCallback();
+    await busy(btn, async () => {
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch(`/api/events/${current.id}/final-report`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(data.detail || 'No se pudo subir el informe', 'error'); return; }
+      current.report_uploaded = true; current.report_uploaded_at = new Date().toISOString().replace('Z', '');
+      paintReport(current);
+      showToast(data.email && data.email.sent ? 'Informe subido y correo enviado' : `Informe subido. ${data.email ? data.email.detail : ''}`, 'success');
+      if (savedCallback) savedCallback();
+    });
   });
 
   form.addEventListener('submit', async (e) => {
@@ -268,20 +327,28 @@
 
     const statusSel = document.getElementById('modalStatusSelect');
     if (payload.status === 'finalizado' && statusSel && statusSel.dataset.initial !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
-    const btn = form.querySelector('button[type="submit"]');
-    setButtonLoading(btn, true, 'Guardando...');
-    const res = await fetch(`/api/events/${eventId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    setStatus('idle', 'Guardando…');
+    await busy(saveBtn, async () => {
+      let res;
+      try {
+        res = await fetch(`/api/events/${eventId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      } catch (err) {
+        setStatus('error', 'No se pudo guardar: sin conexión. Tus cambios siguen aquí; intenta de nuevo.');
+        showToast('Error de red al guardar', 'error');
+        return;
+      }
+      if (res.ok) {
+        showToast('Evento actualizado', 'success');
+        markClean();
+        closeModal();
+        if (savedCallback) savedCallback();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        const msg = typeof err.detail === 'string' ? err.detail : 'No se pudo actualizar';
+        setStatus('error', msg);
+        showToast(msg, 'error');
+      }
     });
-    setButtonLoading(btn, false);
-    if (res.ok) {
-      showToast('Evento actualizado', 'success');
-      overlay.style.display = 'none';
-      if (savedCallback) savedCallback();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(err.detail || 'No se pudo actualizar', 'error');
-    }
   });
 })();
 </script>

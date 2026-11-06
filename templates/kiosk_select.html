@@ -5,42 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <style>
-        .mode-grid { display:flex; gap:1.5rem; flex-wrap:wrap; justify-content:center; margin-top:2rem; }
-        .mode-card {
-            background:white; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); padding:2.5rem 2rem;
-            width:260px; text-align:center; text-decoration:none; color:inherit; transition:0.25s;
-            border: 2px solid transparent;
-        }
-        .mode-card.enabled:hover { transform:translateY(-4px); box-shadow:0 16px 50px rgba(212,175,55,0.25); border-color: var(--golden-primary); }
-        .mode-card.disabled { opacity:0.5; cursor:not-allowed; }
-        .mode-icon { font-size:3rem; margin-bottom:1rem; }
-        .mode-title { font-family: var(--font-heading-secondary); font-weight:700; color: var(--golden-dark); font-size:1.1rem; margin-bottom:0.4rem; }
-        .mode-sub { font-size:0.8rem; color:#666; }
-        .status-pill { display:inline-block; font-size:0.75rem; font-weight:700; padding: 4px 14px; border-radius: 14px; text-transform:uppercase; margin-top:0.6rem; }
-        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
-        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
-        .status-finalizado { background: #eee; color:#777; }
-        .event-code-line { margin:0.9rem auto 0; display:inline-flex; gap:0.5rem; align-items:baseline; padding:6px 16px; border:2px solid var(--golden-dark); border-radius:12px; background:#fff; font-size:0.95rem; color:var(--golden-dark); }      /* el código del evento, bien visible (orden 21-oct-2026) */
-        .event-code-line strong { font-size:1.15rem; letter-spacing:1px; }
-        .status-note { font-size:0.8rem; color:#a66; margin-top:1.5rem; max-width:420px; margin-left:auto; margin-right:auto; }
-    </style>
 </head>
-<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+<body class="gw-page gw-shell{% if staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -54,127 +35,85 @@
   </div>
 </div>
 
-<main class="golden-main">
-  <div class="golden-container" style="padding: 4rem 2rem; text-align:center;">
-    <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
-    <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Qué vas a hacer hoy?</h2>
-    <p style="color:#666; margin-top:0.5rem;">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
-    <div>
-      <span class="status-pill status-{{ event.status }}">
-        {{ {"creado": "Creado", "en_proceso": "En Proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}
-      </span>
-    </div>
-    <div><p class="event-code-line" id="eventCodeLine">Código del evento: <strong>{{ event.event_code }}</strong></p></div>
+{% macro tile(href, icon, name, help, external=false) %}
+<a href="{{ href }}" class="gw-tile"{% if external %} target="_blank" rel="noopener"{% endif %}>
+  <span class="gw-tile__icon"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ icon }}"/></svg></span>
+  <span class="gw-tile__name">{{ name }}</span>
+  <span class="gw-tile__help">{{ help }}</span>
+</a>
+{% endmacro %}
 
-    <div class="mode-grid">
-      <a href="/kiosk/{{ event.id }}/registro" class="mode-card enabled">
-        <div class="mode-icon">{{ "📸" if event.facial_enabled else "🪪" }}</div>
-        <div class="mode-title">Registro</div>
-        <div class="mode-sub">
-          {% if event.facial_enabled %}
-          Escáner facial, cédula y directorio en vivo
-          {% else %}
-          Cédula (lector o manual) y directorio en vivo
-          {% endif %}
-        </div>
-      </a>
-      {% if event.areas_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/areas" class="mode-card enabled">
-        <div class="mode-icon">🚪</div>
-        <div class="mode-title">Control de Áreas</div>
-        <div class="mode-sub">Entradas y salidas por zona (cédula, QR o facial)</div>
-      </a>
-      {% endif %}
-      {% if event.inventory_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/inventario" class="mode-card enabled">
-        <div class="mode-icon">📦</div>
-        <div class="mode-title">Control de Inventario</div>
-        <div class="mode-sub">Entrega de insumos y combos, con el disponible al día</div>
-      </a>
-      {% endif %}
-      {% if staff_role != "digitador" %}
-      {# Sprint 2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' no debe ver Adjuntar Base
-         de Datos, Escarapelas ni Parámetros del Evento — literal que no aparezcan, no solo que
-         estén bloqueadas al entrar. Usuarios del Evento y Estadísticas SÍ quedan visibles para
-         comercial (Usuarios del Evento queda accesible pero solo para crear cuentas cliente, el
-         propio formulario ya oculta la opción Digitador para ese rol desde la Fase 0). #}
-      {% if staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
-        <div class="mode-icon">📎</div>
-        <div class="mode-title">Adjuntar Base de Datos</div>
-        <div class="mode-sub">Carga masiva desde Excel/CSV</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/escarapela" class="mode-card enabled">
-        <div class="mode-icon">🎫</div>
-        <div class="mode-title">Escarapelas</div>
-        <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
-      </a>
-      {% endif %}
-      {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
-      <a href="/kiosk/{{ event.id }}/formularios" class="mode-card enabled">
-        <div class="mode-icon">📝</div>
-        <div class="mode-title">Formularios Web</div>
-        <div class="mode-sub">Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/ruleta" class="mode-card enabled">
-        <div class="mode-icon">🎡</div>
-        <div class="mode-title">Ruleta</div>
-        <div class="mode-sub">Sorteos entre los asistentes: elige cómo se escoge al ganador y cómo se ve en pantalla</div>
-      </a>
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
-        <div class="mode-icon">📊</div>
-        <div class="mode-title">Estadísticas</div>
-        <div class="mode-sub">Exporta el reporte y consulta gráficos del evento</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/usuarios" class="mode-card enabled">
-        <div class="mode-icon">👥</div>
-        <div class="mode-title">Usuarios del Evento</div>
-        <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
-      </a>
-      {% if event.certificates_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/certificado" class="mode-card enabled">
-        <div class="mode-icon">🎓</div>
-        <div class="mode-title">Diseñar Certificado</div>
-        <div class="mode-sub">Plantilla del certificado (PDF) para quienes tengan Certificado = Sí</div>
-      </a>
-      {% if event.status == "finalizado" %}
-      <a href="/kiosk/{{ event.id }}/certificados" class="mode-card enabled">
-        <div class="mode-icon">📜</div>
-        <div class="mode-title">Certificados</div>
-        <div class="mode-sub">Genera el ZIP con los certificados en PDF</div>
-      </a>
-      {% endif %}
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/documentos" class="mode-card enabled">
-        <div class="mode-icon">📁</div>
-        <div class="mode-title">Documentos del Evento</div>
-        <div class="mode-sub">Adjunta archivos del evento y descárgalos todos juntos en un ZIP</div>
-      </a>
-      {% if event.report_pdf_path %}
-      <a href="/api/events/{{ event.id }}/final-report" class="mode-card enabled" target="_blank" rel="noopener">
-        <div class="mode-icon">⬇️</div>
-        <div class="mode-title">Descargar informe</div>
-        <div class="mode-sub">El informe final que se adjuntó al evento (el mismo que se envió a la comercial)</div>
-      </a>
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/legalizaciones" class="mode-card enabled">
-        <div class="mode-icon">🧾</div>
-        <div class="mode-title">Legalizaciones</div>
-        <div class="mode-sub">Gastos del evento con evidencia, y reporte con el total</div>
-      </a>
-      {% if staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/parametros" class="mode-card enabled">
-        <div class="mode-icon">⚙️</div>
-        <div class="mode-title">Parámetros del Evento</div>
-        <div class="mode-sub">Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola</div>
-      </a>
-      {% endif %}
-      {% endif %}
+<main class="golden-main">
+  <div class="gw-container gw-stack-lg">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ event.name }}</p>
+        <h1 class="gw-page-head__title">¿Qué vas a hacer hoy?</h1>
+        <p class="gw-page-head__sub">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <span class="gw-badge {{ {'creado': 'gw-badge--info', 'en_proceso': 'gw-badge--ok', 'finalizado': ''}.get(event.status, '') }}">
+          {{ {"creado": "Creado", "en_proceso": "En proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}
+        </span>
+      </div>
     </div>
+    <p class="gw-hint" id="eventCodeLine">Código del evento: <strong>{{ event.event_code }}</strong></p>
 
     {% if event.status != "en_proceso" %}
-    <p class="status-note">⚠️ El evento no está "En Proceso" — puedes entrar a ver el directorio y gestionar usuarios, pero el escáner y el registro no van a funcionar hasta que un coordinador lo active.</p>
+    <div class="gw-alert gw-alert--warn" role="status">
+      <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
+      <div>El evento no está «En proceso»: puedes entrar a ver el directorio y gestionar usuarios, pero el escáner y el registro no funcionan hasta que un coordinador lo active.</div>
+    </div>
+    {% endif %}
+
+    {# Lo de todos los días, arriba y grande. Las demás herramientas van en «Más herramientas». Los permisos son los mismos de siempre:
+       'comercial' no ve Adjuntar base, Escarapelas, Parámetros, Áreas, Inventario ni Certificados; 'digitador' solo ve Registro, Áreas, Inventario, Estadísticas y Usuarios. #}
+    <section class="gw-tile-group" aria-labelledby="gwTitMain">
+      <h2 class="gw-tile-group__title" id="gwTitMain">Lo de todos los días</h2>
+      <div class="gw-tiles">
+        {{ tile("/kiosk/%s/registro" % event.id, "face" if event.facial_enabled else "badge", "Registro",
+                "Escáner facial, cédula y directorio en vivo" if event.facial_enabled else "Cédula (lector o manual) y directorio en vivo") }}
+        {% if event.areas_enabled and staff_role != "comercial" %}
+        {{ tile("/kiosk/%s/areas" % event.id, "lock", "Control de áreas", "Entradas y salidas por zona (cédula, QR o facial)") }}
+        {% endif %}
+        {% if event.inventory_enabled and staff_role != "comercial" %}
+        {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
+        {% endif %}
+        {{ tile("/kiosk/%s/estadisticas" % event.id, "chart", "Estadísticas", "Exporta el reporte y consulta gráficos del evento") }}
+      </div>
+    </section>
+
+    {% if staff_role != "digitador" %}
+    <details class="gw-group" id="gwMoreTools">
+      <summary class="gw-group__sum">Más herramientas</summary>
+      <div class="gw-group__body">
+        <div class="gw-tiles">
+          {% if staff_role != "comercial" %}
+          {{ tile("/kiosk/%s/roster" % event.id, "upload", "Adjuntar base de datos", "Carga masiva desde Excel/CSV") }}
+          {{ tile("/kiosk/%s/escarapela" % event.id, "badge", "Escarapelas", "Diseña la escarapela de este evento e imprímela al registrar") }}
+          {% endif %}
+          {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+          {{ tile("/kiosk/%s/formularios" % event.id, "form", "Formularios web", "Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento") }}
+          {{ tile("/kiosk/%s/ruleta" % event.id, "roulette", "Ruleta", "Sorteos entre los asistentes: elige cómo se escoge al ganador y cómo se ve en pantalla") }}
+          {% endif %}
+          {{ tile("/kiosk/%s/usuarios" % event.id, "users", "Usuarios del evento", "Cuentas temporales de digitador/cliente para este evento") }}
+          {% if event.certificates_enabled and staff_role != "comercial" %}
+          {{ tile("/kiosk/%s/certificado" % event.id, "badge", "Diseñar certificado", "Plantilla del certificado (PDF) para quienes tengan Certificado = Sí") }}
+          {% if event.status == "finalizado" %}
+          {{ tile("/kiosk/%s/certificados" % event.id, "download", "Certificados", "Genera el ZIP con los certificados en PDF") }}
+          {% endif %}
+          {% endif %}
+          {{ tile("/kiosk/%s/documentos" % event.id, "inbox", "Documentos del evento", "Adjunta archivos del evento y descárgalos todos juntos en un ZIP") }}
+          {% if event.report_pdf_path %}
+          {{ tile("/api/events/%s/final-report" % event.id, "download", "Descargar informe", "El informe final que se adjuntó al evento (el mismo que se envió a la comercial)", true) }}
+          {% endif %}
+          {{ tile("/kiosk/%s/legalizaciones" % event.id, "form", "Legalizaciones", "Gastos del evento con evidencia, y reporte con el total") }}
+          {% if staff_role != "comercial" %}
+          {{ tile("/kiosk/%s/parametros" % event.id, "settings", "Parámetros del evento", "Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola") }}
+          {% endif %}
+        </div>
+      </div>
+    </details>
     {% endif %}
   </div>
 </main>

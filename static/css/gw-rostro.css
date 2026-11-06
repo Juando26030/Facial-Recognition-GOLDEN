@@ -1,0 +1,20 @@
+/* Entrar con mi rostro (/kiosk/{id}/rostro): pantalla de la puerta, legible a distancia. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); cuelga de .gw-rostro. */
+.gw-rostro { min-height: 100vh; min-height: 100dvh; border-top: 10px solid var(--gw-gold-1); }
+.gw-rostro__door { min-height: calc(100vh - 10px); min-height: calc(100dvh - 10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gw-sp-5); padding: var(--gw-sp-5) var(--gw-sp-4); text-align: center; }
+.gw-rostro__title { font-size: clamp(var(--gw-fs-xl), 4vw, var(--gw-fs-3xl)); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); overflow-wrap: anywhere; }
+.gw-rostro__panel { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-4); width: 100%; max-width: 32rem; }
+.gw-rostro__panel[hidden], .gw-rostro [hidden] { display: none !important; }
+.gw-rostro__hint { font-size: var(--gw-fs-lg); color: var(--gw-text-muted); }
+.gw-rostro__main { width: 100%; min-height: 4.5rem; padding: var(--gw-sp-4) var(--gw-sp-6); font-size: clamp(var(--gw-fs-xl), 4vw, var(--gw-fs-2xl)); border-radius: var(--gw-radius-pill); box-shadow: var(--gw-shadow-md); }
+.gw-rostro__main .gw-icon { width: 2rem; height: 2rem; }
+.gw-rostro__doc { width: 100%; min-height: 3.5rem; font-size: var(--gw-fs-lg); border-radius: var(--gw-radius-pill); }
+.gw-rostro__cam { position: relative; width: min(92vw, 32.5rem); aspect-ratio: 3 / 4; border-radius: var(--gw-radius-lg); overflow: hidden; background: var(--gw-navy-deep); border: 4px solid var(--gw-navy); box-shadow: var(--gw-shadow-lg); }
+.gw-rostro__cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.gw-rostro__oval { position: absolute; left: 50%; top: 46%; width: 62%; height: 70%; transform: translate(-50%, -50%); border: 4px dashed var(--gw-gold-1); border-radius: 50%; box-shadow: 0 0 0 999px var(--gw-overlay); pointer-events: none; }
+.gw-rostro__count { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 6rem; font-weight: var(--gw-fw-bold); color: var(--gw-nav-text); text-shadow: 0 2px 12px var(--gw-navy-deep); }
+.gw-rostro__msg { display: flex; align-items: center; justify-content: center; gap: var(--gw-sp-3); max-width: 40rem; padding: var(--gw-sp-4) var(--gw-sp-5); border: 2px solid var(--gw-info-line); border-radius: var(--gw-radius-md); background: var(--gw-info-bg); color: var(--gw-info-text); font-size: clamp(var(--gw-fs-lg), 3vw, var(--gw-fs-xl)); font-weight: var(--gw-fw-bold); }
+.gw-rostro__msg--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-rostro__msg--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); border-color: var(--gw-warn-line); }
+.gw-rostro__msg--busy::before { content: ""; flex: none; width: 1.25em; height: 1.25em; border-radius: 50%; border: 3px solid currentColor; border-right-color: transparent; animation: gw-spin 0.9s linear infinite; }
+.gw-rostro__counter { position: fixed; bottom: var(--gw-sp-2); right: var(--gw-sp-3); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+@media (max-width: 480px) { .gw-rostro__count { font-size: 4.5rem; } .gw-rostro__main { padding: var(--gw-sp-3) var(--gw-sp-4); } }

@@ -1,3 +1,10 @@
+{# Calendario (Fase 1.5, Ola 3): mismo marco que Eventos (encabezado, guía de 3 pasos, filtros). El contenido del calendario no cambia de lógica (el rediseño de fondo es de la Fase 2).
+   En celular el mes pasa a lista de días con algo. Las dos ventanas son .gw-modal: «Editar evento» (_event_edit_modal.html) y «Nuevo recordatorio». Solo tokens --gw-* (static/css/gw-eventos.css). #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% set has_filters = staff_role in ("comercial", "admin", "super_admin") %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,57 +12,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calendario | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
-    <style>
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
-        .cal-toolbar { display:flex; flex-wrap:wrap; gap:0.8rem; align-items:center; justify-content:space-between; margin-bottom:1.2rem; }
-        .cal-nav { display:flex; align-items:center; gap:0.6rem; }
-        .cal-nav h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); min-width:200px; text-align:center; text-transform:capitalize; }
-        .cal-view-toggle { display:flex; gap:0.4rem; }
-        .cal-view-toggle button.active { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
-        .cal-filters { display:flex; flex-wrap:wrap; gap:0.6rem; margin-bottom:1.2rem; }
-        .cal-filters select { padding:0 1rem; border-radius:30px; border:1px solid #ddd; font-size:0.85rem; height:36px; }
-        .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
-        .cal-daylabel { text-align:center; font-weight:700; color:var(--golden-dark); font-size:0.78rem; padding:6px 0; text-transform:uppercase; }
-        .cal-cell { background:white; border-radius:10px; padding:6px; min-height:112px; display:flex; flex-direction:column; gap:3px; border:1px solid #eee; overflow:hidden; }
-        .cal-cell.week-cell, .cal-cell.day-cell { min-height:320px; }
-        .cal-cell.other-month { opacity:0.42; }
-        .cal-cell.is-today { border-color: var(--golden-primary); box-shadow: 0 0 0 2px rgba(212,175,55,0.3); }
-        .cal-daynum { font-size:0.78rem; font-weight:700; color:#777; display:flex; justify-content:space-between; align-items:center; }
-        .cal-cell-body { display:flex; flex-direction:column; gap:3px; overflow-y:auto; flex:1; }
-        .cal-event-chip { font-size:0.7rem; padding:3px 6px; border-radius:8px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-left:3px solid transparent; }
-        /* El color de cada chip ya no depende del estado — viene del "color de pañoleta" del
-           evento, aplicado inline vía eventChipStyle() más abajo (2026-09-17, pedido explícito). */
-        .cal-note-chip { font-size:0.66rem; padding:3px 6px; border-radius:8px; background:#fff8e1; color:#7a5b00; display:flex; justify-content:space-between; align-items:flex-start; gap:4px; }
-        .cal-note-chip .cal-note-del { cursor:pointer; color:#c98; font-weight:700; flex-shrink:0; }
-        .cal-add-note-btn { font-size:0.66rem; color:#bbb; background:none; border:none; cursor:pointer; text-align:left; padding:2px 0; }
-        .cal-add-note-btn:hover { color: var(--golden-primary); }
-        .cal-day-title { font-family: var(--font-heading-secondary); color: var(--golden-dark); text-transform:capitalize; margin-bottom:0.8rem; }
-        .modal-overlay { position:fixed; inset:0; background:rgba(10,14,46,0.5); display:flex; align-items:center; justify-content:center; z-index:9000; padding:1rem; }
-        .modal-box { background:white; border-radius:18px; padding:2rem; max-width:640px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 24px 70px rgba(0,0,0,0.3); }
-        .modal-box h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); margin-bottom:1.2rem; }
-        .modal-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.9rem; }
-        .modal-group { flex:1; min-width:180px; }
-        .modal-group label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
-        .modal-group input, .modal-group textarea { width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; }
-    </style>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" class="small-btn">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -63,78 +38,95 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1400px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
-      <span>PANEL</span>
-      <h2>Calendario</h2>
+  <div class="gw-container cal-shell gw-stack-lg" data-gw-tour="calendario" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Panel</p>
+        <h1 class="gw-page-head__title">Calendario</h1>
+        <p class="gw-page-head__sub">Los eventos y recordatorios del equipo, por mes, semana o día.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary" id="addNoteTodayBtn" data-gw-tour-step="3" data-gw-tour-title="3. Crea un recordatorio" data-gw-tour-text="Agrega una nota para una fecha. Puedes elegir a quién le llega o dejarla para todo el equipo.">{{ ic('plus', 'gw-icon--sm') }} Agregar recordatorio</button>
+        <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-gw-tour-restart="calendario">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
     </div>
 
-    <div class="cal-toolbar">
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira el mes</span>
+        {% call ayuda('ay_cal1', 'Mira el mes') %}Usa las flechas para cambiar de periodo y «Hoy» para volver. Mes, Semana y Día cambian cuánto ves. Toca un evento para abrirlo y editarlo.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Filtra</span>
+        {% call ayuda('ay_cal2', 'Filtra') %}{% if staff_role == "comercial" %}«Mis eventos» muestra solo los tuyos.{% elif has_filters %}Filtra por comercial o por coordinador.{% else %}Verás todos los eventos que te corresponden.{% endif %} El punto junto al nombre indica si el informe final ya se envió.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Crea un recordatorio</span>
+        {% call ayuda('ay_cal3', 'Crea un recordatorio') %}Cada recordatorio tiene fecha y mensaje. Si no eliges destinatarios, lo ve todo el equipo con acceso al Calendario.{% endcall %}</li>
+    </ol>
+
+    <div class="cal-toolbar" data-gw-tour-step="1" data-gw-tour-title="1. Mira el mes" data-gw-tour-text="Cambia de periodo con las flechas, vuelve con «Hoy» y elige Mes, Semana o Día. Toca un evento para editarlo.">
       <div class="cal-nav">
-        <button type="button" class="small-btn" id="prevBtn">←</button>
-        <h3 id="rangeLabel"></h3>
-        <button type="button" class="small-btn" id="nextBtn">→</button>
-        <button type="button" class="small-btn" id="todayBtn">Hoy</button>
+        <button type="button" class="gw-btn gw-btn--secondary cal-prev" id="prevBtn" aria-label="Periodo anterior">{{ ic('chevron') }}</button>
+        <h2 class="cal-nav__label" id="rangeLabel" aria-live="polite"></h2>
+        <button type="button" class="gw-btn gw-btn--secondary cal-next" id="nextBtn" aria-label="Periodo siguiente">{{ ic('chevron') }}</button>
+        <button type="button" class="gw-btn gw-btn--secondary" id="todayBtn">Hoy</button>
       </div>
-      <div class="cal-view-toggle">
-        <button type="button" class="small-btn" data-view="month">Mes</button>
-        <button type="button" class="small-btn" data-view="week">Semana</button>
-        <button type="button" class="small-btn" data-view="day">Día</button>
+      <div class="cal-views" role="group" aria-label="Vista del calendario">
+        <button type="button" class="gw-btn gw-btn--secondary" data-view="month" aria-pressed="true">Mes</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-view="week" aria-pressed="false">Semana</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-view="day" aria-pressed="false">Día</button>
       </div>
     </div>
 
-    <div class="cal-filters">
+    {% if has_filters %}
+    <div class="cal-filters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Muestra solo los eventos de una persona del equipo.">
       {% if staff_role == "comercial" %}
-      <select id="mineFilter">
-        <option value="mine">Mis eventos</option>
-        <option value="all">Todos</option>
-      </select>
-      {% elif staff_role in ("admin", "super_admin") %}
-      <select id="commercialFilter"><option value="">Todas las comerciales</option></select>
-      <select id="coordinatorFilter"><option value="">Todos los coordinadores</option></select>
+      <div class="gw-field"><label class="gw-label" for="mineFilter">Mostrar</label>
+        <select id="mineFilter" class="gw-select">
+          <option value="mine">Mis eventos</option>
+          <option value="all">Todos</option>
+        </select></div>
+      {% else %}
+      <div class="gw-field"><label class="gw-label" for="commercialFilter">Comercial</label>
+        <select id="commercialFilter" class="gw-select"><option value="">Todas las comerciales</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="coordinatorFilter">Coordinador</label>
+        <select id="coordinatorFilter" class="gw-select"><option value="">Todos los coordinadores</option></select></div>
       {% endif %}
-      <button type="button" class="small-btn" id="addNoteTodayBtn">📝 Agregar recordatorio</button>
     </div>
+    {% endif %}
 
-    <div id="calBody"></div>
+    <div id="calBody" aria-busy="false"></div>
   </div>
 </main>
 
 {% include "_event_edit_modal.html" %}
 
-<div class="modal-overlay" id="noteModalOverlay" style="display:none;">
-  <div class="modal-box" style="max-width:440px;">
-    <h3>Nuevo recordatorio</h3>
-    <div class="modal-row">
-      <div class="modal-group" style="min-width:100%;">
-        <label>Fecha</label>
-        <input type="date" id="noteDateField">
+<div class="gw-modal-backdrop" id="noteModalOverlay">
+  <div class="gw-modal note-modal" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+    <div class="gw-modal__head">
+      <h2 class="gw-modal__title" id="noteTitle">Nuevo recordatorio</h2>
+      <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" id="noteModalClose" aria-label="Cerrar la ventana">{{ ic('close') }}</button>
+    </div>
+    <div class="gw-modal__body">
+      <div class="gw-field"><label class="gw-label" for="noteDateField">Fecha</label><input class="gw-input" type="date" id="noteDateField"></div>
+      <div class="gw-field"><label class="gw-label" for="noteTextField">Mensaje</label>
+        <textarea class="gw-textarea" id="noteTextField" rows="3" placeholder="Ej. Llamar al cliente para confirmar transporte"></textarea></div>
+      <div class="gw-field note-combo">
+        <label class="gw-label" for="noteTargetSearch">Destinatarios (opcional)</label>
+        <input class="gw-input" type="text" id="noteTargetSearch" placeholder="Buscar usuario por nombre…" autocomplete="off" aria-controls="noteTargetDropdown" aria-expanded="false">
+        <div class="note-combo__list" id="noteTargetDropdown" role="group" aria-label="Usuarios sugeridos" hidden></div>
+        <p class="gw-hint">Si no eliges a nadie, lo ve todo el equipo con acceso al Calendario.</p>
+        <div class="note-chips" id="noteTargetChips" aria-label="Destinatarios elegidos"></div>
       </div>
     </div>
-    <div class="modal-row">
-      <div class="modal-group" style="min-width:100%;">
-        <label>Mensaje</label>
-        <textarea id="noteTextField" rows="3" placeholder="Ej. Llamar al cliente para confirmar transporte" style="width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; font-family:inherit; resize:vertical;"></textarea>
-      </div>
-    </div>
-    <div class="modal-row">
-      <div class="modal-group" style="min-width:100%; position:relative;">
-        <label>Destinatarios (opcional — vacío = todo el equipo con acceso al Calendario)</label>
-        <input type="text" id="noteTargetSearch" placeholder="Buscar usuario por nombre..." autocomplete="off">
-        <div id="noteTargetDropdown" style="display:none; position:absolute; left:0; right:0; z-index:20; background:white; border:1px solid #ddd; border-radius:8px; max-height:180px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,0.12);"></div>
-        <div id="noteTargetChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:0.6rem;"></div>
-      </div>
-    </div>
-    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:0.5rem;">
-      <button type="button" class="small-btn" id="noteModalCancel">Cancelar</button>
-      <button type="button" class="small-btn primary" id="noteModalSave">Guardar recordatorio</button>
+    <div class="gw-modal__foot">
+      <button type="button" class="gw-btn gw-btn--secondary" id="noteModalCancel">Cancelar</button>
+      <button type="button" class="gw-btn gw-btn--primary" id="noteModalSave">Guardar recordatorio</button>
     </div>
   </div>
 </div>
 
 <script>
-const STAFF_ROLE = "{{ staff_role }}";
+const STAFF_ROLE = {{ staff_role|tojson }};
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
+const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
+const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
 
 const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const DAY_LABELS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -161,11 +153,11 @@ const mineFilter = document.getElementById('mineFilter');
 const commercialFilter = document.getElementById('commercialFilter');
 const coordinatorFilter = document.getElementById('coordinatorFilter');
 
-document.querySelectorAll('.cal-view-toggle button').forEach(btn => {
+document.querySelectorAll('.cal-views [data-view]').forEach(btn => {
   btn.addEventListener('click', () => { currentView = btn.dataset.view; updateViewButtons(); loadAndRender(); });
 });
 function updateViewButtons() {
-  document.querySelectorAll('.cal-view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+  document.querySelectorAll('.cal-views [data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === currentView ? 'true' : 'false'));
 }
 updateViewButtons();
 
@@ -184,18 +176,20 @@ if (commercialFilter) commercialFilter.addEventListener('change', loadAndRender)
 if (coordinatorFilter) coordinatorFilter.addEventListener('change', loadAndRender);
 
 async function loadAdminFilterOptions() {
-  if (commercialFilter) {
-    const res = await fetch('/api/staff/commercials');
-    const list = res.ok ? await res.json() : [];
-    commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
-      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
-  }
-  if (coordinatorFilter) {
-    const res = await fetch('/api/staff/coordinators');
-    const list = res.ok ? await res.json() : [];
-    coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
-      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
-  }
+  try {
+    if (commercialFilter) {
+      const res = await fetch('/api/staff/commercials');
+      const list = res.ok ? await res.json() : [];
+      commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
+        list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
+    }
+    if (coordinatorFilter) {
+      const res = await fetch('/api/staff/coordinators');
+      const list = res.ok ? await res.json() : [];
+      coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
+        list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
+    }
+  } catch (err) { /* los filtros extra son opcionales: el calendario funciona sin ellos */ }
 }
 loadAdminFilterOptions();
 
@@ -218,13 +212,22 @@ async function loadAndRender() {
   if (commercialFilter && commercialFilter.value) params.set('commercial_staff_id', commercialFilter.value);
   if (coordinatorFilter && coordinatorFilter.value) params.set('coordinator_staff_id', coordinatorFilter.value);
 
-  const [evRes, noteRes] = await Promise.all([
-    fetch(`/api/events/calendar?${params.toString()}`),
-    fetch(`/api/calendar/notes?start=${toISO(start)}&end=${toISO(end)}`),
-  ]);
-  eventsCache = evRes.ok ? await evRes.json() : [];
-  notesCache = noteRes.ok ? await noteRes.json() : [];
-  render();
+  calBody.setAttribute('aria-busy', 'true');
+  if (!calBody.firstElementChild) calBody.innerHTML = '<div class="gw-skeleton" role="status" aria-label="Cargando el calendario"></div><div class="gw-skeleton"></div>';
+  try {
+    const [evRes, noteRes] = await Promise.all([
+      fetch(`/api/events/calendar?${params.toString()}`),
+      fetch(`/api/calendar/notes?start=${toISO(start)}&end=${toISO(end)}`),
+    ]);
+    if (!evRes.ok && !noteRes.ok) throw new Error('http');
+    eventsCache = evRes.ok ? await evRes.json() : [];
+    notesCache = noteRes.ok ? await noteRes.json() : [];
+    render();
+  } catch (err) {
+    calBody.innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar el calendario</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry-cal>Reintentar</button></div>';
+  } finally {
+    calBody.setAttribute('aria-busy', 'false');
+  }
 }
 
 function eventsForDay(iso) {
@@ -236,25 +239,49 @@ function notesForDay(iso) {
 
 // Color del chip = "color de pañoleta" del evento, no el estado (2026-09-17, pedido explícito:
 // "en el calendario en vez de que el evento salga por colores dependiendo del estado, salga por
-// el color que está de pañoleta"). Eventos viejos sin pañoleta elegida caen a un gris neutro en
-// vez de romper — texto con contraste automático (goldenContrastColor, ver theme.js) para que se
-// lea bien sea cual sea el color elegido.
-function eventChipStyle(e) {
-  const bg = e.bandana_color || '#999999';
-  const text = window.goldenContrastColor ? window.goldenContrastColor(bg) : '#000000';
-  return `background:${bg}; color:${text}; border-left-color:${text};`;
+// el color que está de pañoleta"). El color es un DATO del evento: va en data-bandana y se aplica por DOM
+// después de pintar (no hay estilos en línea en la plantilla). Eventos viejos sin pañoleta elegida quedan con el
+// borde neutro del sistema. Texto con contraste automático (goldenContrastColor, ver theme.js).
+function applyChipColors(root) {
+  root.querySelectorAll('[data-bandana]').forEach((el) => {
+    const bg = el.dataset.bandana;
+    const text = window.goldenContrastColor ? window.goldenContrastColor(bg) : null;
+    el.style.backgroundColor = bg;
+    if (text) { el.style.color = text; el.style.borderLeftColor = text; }
+  });
+}
+
+function eventChip(e, big) {
+  const colorAttr = e.bandana_color ? ` data-bandana="${esc(e.bandana_color)}"` : '';
+  const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
+  const body = big
+    ? `<span class="cal-chip__line"><strong>${esc(e.name)}</strong></span>
+       <span class="cal-chip__line">${esc(e.tenant_name || '')} · ${esc(e.location || '')} · ${esc(e.event_time_start || '')}–${esc(e.event_time_end || '')}</span>
+       <span class="cal-chip__line">Comercial: ${esc(e.commercial_name) || '—'} · Coordinador: ${esc(e.coordinator_name) || '—'}${e.bandana_color_name ? ' · Pañoleta: ' + esc(e.bandana_color_name) : ''}</span>`
+    : esc(e.name);
+  return `<div class="cal-chip${big ? ' cal-chip--big' : ''}"${colorAttr}>
+      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-label="Editar evento ${esc(e.name)}">${body}</button>
+      ${reportBulbHtml(e, true)}
+    </div>`;
+}
+
+function noteChip(n, withAuthor) {
+  const canDelete = n.created_by_id === STAFF_ID || ['admin', 'super_admin'].includes(STAFF_ROLE);
+  return `<div class="cal-note" data-note-id="${n.id}">
+      <span class="cal-note__text">${icon('info', 'gw-icon--sm')}<span>${esc(n.text)}${withAuthor ? ` <em>— ${esc(n.created_by_name || '')}</em>` : ''}</span></span>
+      ${canDelete ? `<button type="button" class="cal-note__del" data-note-del="${n.id}" aria-label="Eliminar el recordatorio: ${esc(n.text)}">${icon('close', 'gw-icon--sm')}</button>` : ''}
+    </div>`;
 }
 
 function dayCellContent(d, iso, extraClass) {
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
-  const evChips = evs.map(e => `<div class="cal-event-chip" data-event-id="${e.id}" title="${esc(e.name)}${e.bandana_color_name ? ' — ' + esc(e.bandana_color_name) : ''}" style="${eventChipStyle(e)}">${reportBulbHtml(e)} ${esc(e.name)}</div>`).join('');
-  const noteChips = notes.map(n => `<div class="cal-note-chip" data-note-id="${n.id}"><span>📝 ${esc(n.text)}</span>${(n.created_by_id === STAFF_ID || ['admin','super_admin'].includes(STAFF_ROLE)) ? '<span class="cal-note-del" data-note-del="' + n.id + '">✕</span>' : ''}</span></div>`).join('');
+  const empty = !evs.length && !notes.length ? ' cal-cell--empty' : '';
   return `
-    <div class="cal-cell ${extraClass}" data-date="${iso}">
-      <div class="cal-daynum">${d.getDate()}</div>
-      <div class="cal-cell-body">${evChips}${noteChips}</div>
-      <button type="button" class="cal-add-note-btn" data-add-note="${iso}">+ recordatorio</button>
+    <div class="cal-cell ${extraClass}${empty}" data-date="${iso}">
+      <div class="cal-daynum"><span class="cal-dow">${DAY_LABELS[(d.getDay() + 6) % 7]}</span> ${d.getDate()}</div>
+      <div class="cal-cell__body">${evs.map(e => eventChip(e, false)).join('')}${notes.map(n => noteChip(n, false)).join('')}</div>
+      <button type="button" class="cal-add" data-add-note="${iso}">+ recordatorio</button>
     </div>
   `;
 }
@@ -263,7 +290,7 @@ function render() {
   if (currentView === 'month') renderMonth();
   else if (currentView === 'week') renderWeek();
   else renderDay();
-  wireCellEvents();
+  applyChipColors(calBody);
 }
 
 function renderMonth() {
@@ -276,12 +303,13 @@ function renderMonth() {
     const d = addDays(gridStart, i);
     const iso = toISO(d);
     let cls = '';
-    if (d.getMonth() !== refDate.getMonth()) cls += ' other-month';
-    if (isSameDay(d, today)) cls += ' is-today';
+    if (d.getMonth() !== refDate.getMonth()) cls += ' cal-cell--other';
+    if (isSameDay(d, today)) cls += ' cal-cell--today';
     html += dayCellContent(d, iso, cls);
   }
   html += '</div>';
   calBody.innerHTML = html;
+  if (!eventsCache.length && !notesCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay eventos ni recordatorios en este mes. Usa «Agregar recordatorio» o crea un evento desde Clientes - Cuentas.</p>');
 }
 
 function renderWeek() {
@@ -294,8 +322,8 @@ function renderWeek() {
   for (let i = 0; i < 7; i++) {
     const d = addDays(s, i);
     const iso = toISO(d);
-    let cls = 'week-cell';
-    if (isSameDay(d, today)) cls += ' is-today';
+    let cls = 'cal-cell--long cal-cell--week';
+    if (isSameDay(d, today)) cls += ' cal-cell--today';
     html += dayCellContent(d, iso, cls);
   }
   html += '</div>';
@@ -307,50 +335,35 @@ function renderDay() {
   rangeLabel.textContent = `${refDate.getDate()} de ${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
-  let html = `<div class="cal-day-title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</div>`;
-  html += '<div style="display:flex; flex-direction:column; gap:0.6rem; max-width:700px;">';
+  let html = `<div class="cal-day"><h3 class="cal-day__title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</h3>`;
   if (!evs.length && !notes.length) {
-    html += '<p style="color:#666;">Sin eventos ni recordatorios este día.</p>';
+    html += `<div class="gw-empty" role="status">${icon('calendar', 'gw-icon--lg')}<p><strong>Sin eventos ni recordatorios este día.</strong></p><p>Puedes agregar un recordatorio para esta fecha.</p></div>`;
   }
-  evs.forEach(e => {
-    html += `
-      <div class="cal-event-chip" data-event-id="${e.id}" style="padding:0.8rem 1rem; white-space:normal; cursor:pointer; ${eventChipStyle(e)}">
-        ${reportBulbHtml(e)} <strong>${esc(e.name)}</strong><br>
-        <span style="font-size:0.8rem;">${esc(e.tenant_name || '')} · ${esc(e.location || '')} · ${esc(e.event_time_start || '')}–${esc(e.event_time_end || '')}</span><br>
-        <span style="font-size:0.75rem;">Comercial: ${esc(e.commercial_name) || '—'} · Coordinador: ${esc(e.coordinator_name) || '—'}${e.bandana_color_name ? ' · Pañoleta: ' + esc(e.bandana_color_name) : ''}</span>
-      </div>`;
-  });
-  notes.forEach(n => {
-    const canDelete = n.created_by_id === STAFF_ID || ['admin', 'super_admin'].includes(STAFF_ROLE);
-    html += `
-      <div class="cal-note-chip" data-note-id="${n.id}" style="padding:0.7rem 1rem;">
-        <span>📝 ${esc(n.text)} <span style="opacity:0.7;">— ${esc(n.created_by_name || '')}</span></span>
-        ${canDelete ? `<span class="cal-note-del" data-note-del="${n.id}">✕</span>` : ''}
-      </div>`;
-  });
-  html += `<button type="button" class="small-btn" data-add-note="${iso}" style="width:auto; align-self:flex-start;">+ Agregar recordatorio</button>`;
+  html += evs.map(e => eventChip(e, true)).join('');
+  html += notes.map(n => noteChip(n, true)).join('');
+  html += `<div><button type="button" class="gw-btn gw-btn--secondary" data-add-note="${iso}">${icon('plus', 'gw-icon--sm')} Agregar recordatorio</button></div>`;
   html += '</div>';
   calBody.innerHTML = html;
 }
 
-function wireCellEvents() {
-  calBody.querySelectorAll('[data-event-id]').forEach(el => {
-    el.addEventListener('click', () => openEventModal(el.dataset.eventId));
-  });
-  calBody.querySelectorAll('[data-add-note]').forEach(el => {
-    el.addEventListener('click', (ev) => { ev.stopPropagation(); openNoteModal(el.dataset.addNote); });
-  });
-  calBody.querySelectorAll('[data-note-del]').forEach(el => {
-    el.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const ok = await showConfirm('¿Eliminar este recordatorio?');
-      if (!ok) return;
-      const res = await fetch(`/api/calendar/notes/${el.dataset.noteDel}`, { method: 'DELETE' });
+// Un solo oyente para todo el calendario (el HTML se vuelve a generar en cada cambio).
+calBody.addEventListener('click', async (ev) => {
+  if (ev.target.closest('[data-retry-cal]')) { loadAndRender(); return; }
+  const evBtn = ev.target.closest('[data-event-id]');
+  if (evBtn) { openEventModal(evBtn.dataset.eventId); return; }
+  const addBtn = ev.target.closest('[data-add-note]');
+  if (addBtn) { openNoteModal(addBtn.dataset.addNote, addBtn); return; }
+  const delBtn = ev.target.closest('[data-note-del]');
+  if (delBtn) {
+    const ok = await showConfirm('¿Eliminar este recordatorio? Dejará de verse para todo el equipo.', { variant: 'warning', confirmLabel: 'Sí, eliminar' });
+    if (!ok) return;
+    await GW.busy(delBtn, async () => {
+      const res = await fetch(`/api/calendar/notes/${delBtn.dataset.noteDel}`, { method: 'DELETE' });
       if (res.ok) { showToast('Recordatorio eliminado', 'success'); loadAndRender(); }
-      else { const err = await res.json(); showToast(err.detail || 'No se pudo eliminar', 'error'); }
+      else { const err = await res.json().catch(() => ({})); showToast(err.detail || 'No se pudo eliminar', 'error'); }
     });
-  });
-}
+  }
+});
 
 // Modal de recordatorio con destinatarios (2026-09-17, pedido explícito: "puede elegir a quién
 // afectan esas notificaciones... buscar usuarios... lista desplegable pero también escribiendo...
@@ -359,41 +372,80 @@ let notifiableStaffCache = [];
 let selectedNoteTargets = new Map(); // id -> label
 
 async function loadNotifiableStaff() {
-  const res = await fetch('/api/calendar/notifiable-staff');
-  notifiableStaffCache = res.ok ? await res.json() : [];
+  try {
+    const res = await fetch('/api/calendar/notifiable-staff');
+    notifiableStaffCache = res.ok ? await res.json() : [];
+  } catch (err) { notifiableStaffCache = []; }
 }
 loadNotifiableStaff();
 
 const noteModalOverlay = document.getElementById('noteModalOverlay');
+const noteDialog = noteModalOverlay.querySelector('.gw-modal');
 const noteDateField = document.getElementById('noteDateField');
 const noteTextField = document.getElementById('noteTextField');
 const noteTargetSearch = document.getElementById('noteTargetSearch');
 const noteTargetDropdown = document.getElementById('noteTargetDropdown');
 const noteTargetChips = document.getElementById('noteTargetChips');
+let noteOpener = null;
 
-function openNoteModal(iso) {
+function noteIsOpen() { return noteModalOverlay.dataset.open === 'true'; }
+function setDropdown(open) { noteTargetDropdown.hidden = !open; noteTargetSearch.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+function openNoteModal(iso, opener) {
+  noteOpener = opener || document.activeElement;
   noteDateField.value = iso;
   noteTextField.value = '';
   noteTargetSearch.value = '';
   selectedNoteTargets = new Map();
   renderNoteTargetChips();
-  noteTargetDropdown.style.display = 'none';
-  noteModalOverlay.style.display = 'flex';
+  setDropdown(false);
+  noteModalOverlay.setAttribute('data-open', 'true');
   noteTextField.focus();
 }
-document.getElementById('addNoteTodayBtn').addEventListener('click', () => openNoteModal(toISO(todayDate())));
-document.getElementById('noteModalCancel').addEventListener('click', () => { noteModalOverlay.style.display = 'none'; });
+function closeNoteModal() {
+  noteModalOverlay.removeAttribute('data-open');
+  if (noteOpener && document.contains(noteOpener)) { try { noteOpener.focus(); } catch (e) { /* sin foco */ } }
+  noteOpener = null;
+}
+async function requestCloseNote() {
+  if (noteTextField.value.trim() && !(await showConfirm('Hay un mensaje sin guardar. Si cierras ahora se pierde.', { variant: 'warning', confirmLabel: 'Sí, cerrar sin guardar' }))) return;
+  closeNoteModal();
+}
+document.getElementById('addNoteTodayBtn').addEventListener('click', (e) => openNoteModal(toISO(todayDate()), e.currentTarget));
+document.getElementById('noteModalCancel').addEventListener('click', requestCloseNote);
+document.getElementById('noteModalClose').addEventListener('click', requestCloseNote);
+document.addEventListener('keydown', (e) => {
+  if (!noteIsOpen() || document.querySelector('.gw-modal-backdrop--top')) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (!noteTargetDropdown.hidden) { setDropdown(false); noteTargetSearch.focus(); return; }
+    requestCloseNote(); return;
+  }
+  if (e.key === 'ArrowDown' && e.target === noteTargetSearch && !noteTargetDropdown.hidden) { e.preventDefault(); const first = noteTargetDropdown.querySelector('button'); if (first) first.focus(); return; }
+  if (e.key === 'ArrowDown' && e.target.closest && e.target.closest('#noteTargetDropdown')) { e.preventDefault(); const nx = e.target.nextElementSibling; if (nx) nx.focus(); return; }
+  if (e.key === 'ArrowUp' && e.target.closest && e.target.closest('#noteTargetDropdown')) { e.preventDefault(); const pv = e.target.previousElementSibling; (pv || noteTargetSearch).focus(); return; }
+  if (e.key !== 'Tab') return;
+  const f = Array.from(noteDialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])')).filter((x) => x.offsetWidth || x.offsetHeight);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (!noteDialog.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 function renderNoteTargetChips() {
   noteTargetChips.innerHTML = Array.from(selectedNoteTargets.entries()).map(([id, label]) => `
-    <span style="background:#eef; border-radius:14px; padding:3px 10px; font-size:0.78rem; display:inline-flex; align-items:center; gap:6px;">
-      ${esc(label)} <span data-remove-target="${id}" style="cursor:pointer; font-weight:700;">✕</span>
+    <span class="gw-chip">${esc(label)}
+      <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-remove-target="${id}" aria-label="Quitar a ${esc(label)}">${icon('close', 'gw-icon--sm')}</button>
     </span>
   `).join('');
-  noteTargetChips.querySelectorAll('[data-remove-target]').forEach(el => {
-    el.addEventListener('click', () => { selectedNoteTargets.delete(Number(el.dataset.removeTarget)); renderNoteTargetChips(); });
-  });
 }
+noteTargetChips.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-remove-target]');
+  if (!btn) return;
+  selectedNoteTargets.delete(Number(btn.dataset.removeTarget));
+  renderNoteTargetChips();
+  noteTargetSearch.focus();
+});
 
 noteTargetSearch.addEventListener('input', () => {
   const q = stripAccents(noteTargetSearch.value.trim()).toLowerCase();
@@ -401,13 +453,13 @@ noteTargetSearch.addEventListener('input', () => {
   const matches = q
     ? candidates.filter(p => stripAccents(`${p.full_name || ''} ${p.username}`).toLowerCase().includes(q))
     : candidates;
-  if (!matches.length) { noteTargetDropdown.style.display = 'none'; return; }
+  if (!matches.length) { setDropdown(false); return; }
   noteTargetDropdown.innerHTML = matches.slice(0, 20).map(p => `
-    <div data-pick-target="${p.id}" data-label="${esc(p.full_name || p.username)}" style="padding:0.5rem 0.8rem; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:0.85rem;">
-      ${esc(p.full_name || p.username)} <span style="color:#aaa;">(${esc(p.username)})</span>
-    </div>
+    <button type="button" class="note-combo__item" data-pick-target="${p.id}" data-label="${esc(p.full_name || p.username)}">
+      ${esc(p.full_name || p.username)} <span class="gw-muted">(${esc(p.username)})</span>
+    </button>
   `).join('');
-  noteTargetDropdown.style.display = 'block';
+  setDropdown(true);
 });
 noteTargetDropdown.addEventListener('click', (e) => {
   const row = e.target.closest('[data-pick-target]');
@@ -415,29 +467,32 @@ noteTargetDropdown.addEventListener('click', (e) => {
   selectedNoteTargets.set(Number(row.dataset.pickTarget), row.dataset.label);
   renderNoteTargetChips();
   noteTargetSearch.value = '';
-  noteTargetDropdown.style.display = 'none';
+  setDropdown(false);
+  noteTargetSearch.focus();
 });
 function stripAccents(text) { return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 
-document.getElementById('noteModalSave').addEventListener('click', async () => {
+document.getElementById('noteModalSave').addEventListener('click', async (e) => {
   const iso = noteDateField.value;
   const text = noteTextField.value.trim();
   if (!iso || !text) { showToast('Falta la fecha o el mensaje', 'error'); return; }
-  const btn = document.getElementById('noteModalSave');
-  setButtonLoading(btn, true, 'Guardando...');
-  const res = await fetch('/api/calendar/notes', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: iso, text, target_staff_ids: Array.from(selectedNoteTargets.keys()) }),
+  await GW.busy(e.currentTarget, async () => {
+    let res;
+    try {
+      res = await fetch('/api/calendar/notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: iso, text, target_staff_ids: Array.from(selectedNoteTargets.keys()) }),
+      });
+    } catch (err) { showToast('Error de red: el recordatorio no se guardó', 'error'); return; }
+    if (res.ok) {
+      showToast('Recordatorio agregado', 'success');
+      closeNoteModal();
+      loadAndRender();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || 'No se pudo agregar', 'error');
+    }
   });
-  setButtonLoading(btn, false);
-  if (res.ok) {
-    showToast('Recordatorio agregado', 'success');
-    noteModalOverlay.style.display = 'none';
-    loadAndRender();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    showToast(err.detail || 'No se pudo agregar', 'error');
-  }
 });
 
 /* --- Editar evento: modal compartido (_event_edit_modal.html) --- */

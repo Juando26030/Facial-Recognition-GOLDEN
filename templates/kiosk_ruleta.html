@@ -1,3 +1,9 @@
+{# Ruleta del evento · configuración del sorteo (Fase 1.5, rediseño visual). Pestañas por tema, UN solo «Guardar cambios» (barra de abajo, Ctrl/Cmd+S), guía de 3 pasos, «?» y recorrido.
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). La lógica, las rutas y los permisos son los de siempre; la pantalla del proyector (/r/{token}) no se toca. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,96 +11,180 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruleta | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-ruleta.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <style>
-        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
-        .tabs-r { display:flex; gap:8px; margin-bottom:1.2rem; flex-wrap:wrap; }
-        .tabs-r a { padding:8px 20px; border-radius:20px; border:1px solid #ddd; background:white; text-decoration:none; color:inherit; font-size:0.85rem; font-weight:600; }
-        .tabs-r a.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
-        .modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:0.7rem; }
-        .mode { border:2px solid #e5e5e5; border-radius:14px; padding:0.8rem 1rem; cursor:pointer; background:#fff; }
-        .mode.sel { border-color:var(--golden-primary); background:#fffbee; }
-        .mode b { display:block; font-size:0.9rem; } .mode span { font-size:0.76rem; color:#777; }
-        .row { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:flex-end; margin-top:0.8rem; }
-        .row label { display:block; font-size:0.75rem; color:#777; margin-bottom:3px; }
-        .row input, .row select { padding:0.55rem 0.7rem; border:1px solid #ddd; border-radius:10px; font-size:0.88rem; }
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
-        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
-        .list { max-height:230px; overflow:auto; border:1px solid #eee; border-radius:12px; }
-        .list div { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid #f3f3f3; font-size:0.83rem; }
-        .picked div { background:#fffbee; }
-        .hint { font-size:0.78rem; color:#666; margin:0.4rem 0; }
-        .big-run { width:100%; padding:1rem; border:none; border-radius:16px; font-size:1.15rem; font-weight:800; cursor:pointer; background:var(--golden-primary); color:var(--golden-dark); }
-        .big-run:disabled { opacity:.5; cursor:default; }
-        table.hist { width:100%; border-collapse:collapse; font-size:0.82rem; } table.hist th, table.hist td { text-align:left; padding:7px 8px; border-bottom:1px solid #f0f0f0; }
-        .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.7rem; background:#eee; } .badge.rand { background:#d1e7dd; color:#0a3622; }
-    </style>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
 </head>
-<body class="has-sidebar">
-{% include "_kiosk_top.html" %}
-<script>window.EVENT_ID = {{ event.id }};</script>
+<body class="gw-page gw-shell gw-ruleta has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.EVENT_ID = {{ event.id }}; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
+
 <main class="golden-main">
-  <section class="golden-section"><div class="golden-container">
-    <div class="golden-section-title"><span>{{ company_name|upper }}</span><h2><span class="gradient-text">Ruleta</span> del Evento</h2></div>
-    <div class="app-container">
-      <div class="tabs-r"><a class="active" href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a><a href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia (visual)</a></div>
-
-      <div class="card" id="displayCard"></div>
-
-      <div class="card">
-        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">¿Cómo se elige al ganador? <span style="font-weight:400; font-size:0.8rem; color:#666;">(candidatos: la base ya cargada del evento — <b id="totalCandidates">…</b> personas)</span></h4>
-        <div class="modes" id="modes"></div>
-
-        <div id="pickerBox" style="display:none;">
-          <div class="row"><div style="flex:1 1 320px;"><label id="pickerLabel">Elige a los ganadores</label><input type="text" id="pickerSearch" placeholder="Busca por nombre, apellido o cédula…" style="width:100%; box-sizing:border-box;"></div></div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:0.6rem;">
-            <div><div class="hint">Candidatos (clic para agregar)</div><div class="list" id="candList"></div></div>
-            <div><div class="hint" id="pickedHint">Elegidos</div><div class="list picked" id="pickedList"></div></div>
-          </div>
-        </div>
-
-        <div id="filterBox" style="display:none;">
-          <div class="hint" style="margin-top:1rem;"><b>Filtro:</b> todas las condiciones deben cumplirse. <span id="filterHint"></span></div>
-          <div id="conds"></div>
-          <div class="row"><button type="button" class="small-btn" id="addCond">+ Agregar condición</button><button type="button" class="small-btn" id="testFilter">Ver cuántas personas cumplen</button><span id="filterCount" class="hint"></span></div>
-        </div>
-
-        <div class="row" id="numbersRow">
-          <div id="countBox" style="display:none;"><label>¿Cuántos ganadores sortear?</label><input type="number" id="count" min="1" max="500" value="1" style="width:110px;"></div>
-          <div id="batchBox" style="display:none;"><label>Personas por ejecución</label><input type="number" id="batch" min="1" max="500" value="1" style="width:110px;"></div>
-          <div id="excludeBox" style="display:none;"><label style="display:flex; gap:6px; align-items:center; margin-top:18px;"><input type="checkbox" id="exclude" checked> No repetir a quienes ya ganaron antes en este evento</label></div>
-        </div>
-        <div id="roundBox" class="row" style="display:none;"><span class="hint" id="roundText"></span><button type="button" class="small-btn" id="resetRound">Reiniciar ronda</button></div>
-        <div class="row"><button type="button" class="small-btn primary" id="saveBtn">Guardar configuración</button><span class="hint" id="saveState"></span></div>
+  <div class="gw-container gw-ruleta__wrap" data-gw-tour="ruleta" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name }}</p>
+        <h1 class="gw-page-head__title">Ruleta del evento</h1>
+        <p class="gw-page-head__sub">Define cómo se elige al ganador y autoriza cada giro. La gente solo ve la pantalla del proyector.</p>
       </div>
-
-      <div class="card">
-        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Autorizar el giro</h4>
-        <div class="row" style="margin-top:0;"><div style="flex:1 1 300px;"><label>Nombre del sorteo (opcional — queda en el registro, ej. «Sorteo iPhone»)</label><input type="text" id="label" maxlength="120" style="width:100%; box-sizing:border-box;"></div></div>
-        <p class="hint" id="runHint"></p>
-        <button type="button" class="big-run" id="runBtn">🔓 Autorizar giro</button>
-        <div id="authBox" style="margin-top:0.8rem; display:none; background:#fff8e1; border:1px solid #ffe69c; border-radius:14px; padding:0.9rem 1.1rem;"></div>
-        <div id="resultBox" style="margin-top:1rem;"></div>
-      </div>
-
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-          <h4 style="margin:0; color:var(--golden-dark);">Registro de sorteos</h4>
-          <a class="small-btn" href="/api/events/{{ event.id }}/roulette/report">⬇️ Descargar reporte (Excel)</a>
-        </div>
-        <div style="overflow-x:auto; margin-top:0.6rem;"><table class="hist"><thead><tr><th>Fecha y hora</th><th>Sorteo</th><th>Modo</th><th>Ganadores</th><th>Ejecutó</th></tr></thead><tbody id="histBody"></tbody></table></div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="ruleta">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
-  </div></section>
+
+    <nav class="gw-ruleta-nav" aria-label="Pantallas de la ruleta" data-gw-tour-step="2" data-gw-tour-title="2. Ajusta la apariencia" data-gw-tour-text="Aquí cambias cómo se ve la pantalla del sorteo: colores, título, logo y tipo de ruleta.">
+      <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/ruleta" aria-current="page">1. Comportamiento y sorteo</a>
+      <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia</a>
+    </nav>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Define a quién incluye</span>
+        {% call ayuda('ay_paso1', 'Define a quién incluye') %}Elige cómo se escoge al ganador: tú lo dejas elegido de antemano, o el sistema lo sortea al azar entre todos o entre quienes cumplan un filtro. Los candidatos salen de la base ya cargada del evento.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ajusta la apariencia</span>
+        {% call ayuda('ay_paso2', 'Ajusta la apariencia') %}La apariencia (colores, título, logo, tipo de ruleta) se cambia en la pantalla «2. Apariencia». Es independiente de cómo se elige al ganador.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Autoriza y gira</span>
+        {% call ayuda('ay_paso3', 'Autoriza y gira') %}Aquí solo AUTORIZAS el giro. El botón «¡GIRAR!» se activa en la pantalla del proyector y quien la maneja lo pulsa cuando quiera. Para autorizar, primero guarda los cambios pendientes.{% endcall %}</li>
+    </ol>
+
+    <div class="gw-state gw-state--error" id="initError" role="alert" hidden>
+      <p class="gw-state__title">No se pudo cargar la ruleta</p>
+      <p class="gw-state__text" id="initErrorText">Revisa la conexión e inténtalo de nuevo.</p>
+      <button type="button" class="gw-btn gw-btn--secondary" id="initRetry">Reintentar</button>
+    </div>
+
+    <div class="gw-tabs" id="paramsRoot" data-tabs-key="ruleta">
+      <div class="gw-tablist" role="tablist" aria-label="Secciones de la ruleta" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Define a quién incluye" data-gw-tour-text="En «Cómo se elige» decides el modo del sorteo y a quién incluye. Lo que cambies queda pendiente hasta guardar.">
+        <button type="button" class="gw-tab" role="tab" id="tab_modo" data-tab="modo" aria-controls="grp_modo" aria-selected="true">{{ ic('roulette', 'gw-tab__icon') }}<span class="gw-tab__name">Cómo se elige</span><span class="gw-tab__sum" id="sumMode">Cargando…</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_girar" data-tab="girar" aria-controls="grp_girar" aria-selected="false" tabindex="-1" data-gw-tour-step="3" data-gw-tour-title="3. Autoriza y gira" data-gw-tour-text="Autoriza el giro desde aquí; el botón «¡GIRAR!» se activa en la pantalla del proyector.">{{ ic('eye', 'gw-tab__icon') }}<span class="gw-tab__name">Autorizar y proyector</span><span class="gw-tab__sum" id="sumAuth">Enlace de la pantalla y autorización</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_sorteos" data-tab="sorteos" aria-controls="grp_sorteos" aria-selected="false" tabindex="-1">{{ ic('chart', 'gw-tab__icon') }}<span class="gw-tab__name">Sorteos</span><span class="gw-tab__sum" id="sumHist">Registro de lo ya sorteado</span></button>
+      </div>
+
+      <div class="gw-tabpanels">
+        {# ===================================================================== CÓMO SE ELIGE #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_modo" data-group="modo" aria-labelledby="tab_modo">
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Cómo se elige al ganador</h2><p class="gw-tabpanel__lead">Candidatos: la base ya cargada del evento, <strong id="totalCandidates">…</strong> personas.</p></div>
+
+          <div class="gw-group__item" data-psave="behavior">
+            <div class="gw-item-head"><h4 id="modesTitle">Modo del sorteo</h4>{% call ayuda('ay_modos', 'Modo del sorteo') %}Los modos 1 a 3 revelan a quien dejaste elegido. El 4 recorre a todos los asistentes sin repetir. Con filtro, «Filtro + elijo yo» solo acota la lista y «Filtro + sorteo real» elige al azar entre quienes cumplen: nadie puede predecir el resultado.{% endcall %}</div>
+            <div class="gw-ruleta-modes" id="modes" role="radiogroup" aria-labelledby="modesTitle"></div>
+
+            <div id="pickerBox" hidden>
+              <div class="gw-field">
+                <label class="gw-label" for="pickerSearch" id="pickerLabel">Elige a los ganadores</label>
+                <input type="text" class="gw-input" id="pickerSearch" data-pnodirty placeholder="Busca por nombre, apellido o cédula…" autocomplete="off">
+              </div>
+              <div class="gw-ruleta-pick">
+                <div><p class="gw-hint">Candidatos (toca para agregar)</p><div class="gw-ruleta-list" id="candList" aria-label="Candidatos"></div></div>
+                <div><p class="gw-hint" id="pickedHint">Elegidos</p><div class="gw-ruleta-list gw-ruleta-list--picked" id="pickedList" aria-label="Elegidos"></div></div>
+              </div>
+            </div>
+
+            <div id="filterBox" hidden>
+              <p class="gw-hint"><strong>Filtro:</strong> todas las condiciones deben cumplirse. <span id="filterHint"></span></p>
+              <div id="conds"></div>
+              <div class="gw-actions">
+                <button type="button" class="gw-btn gw-btn--secondary" id="addCond">{{ ic('plus', 'gw-icon--sm') }} Agregar condición</button>
+                <button type="button" class="gw-btn gw-btn--secondary" id="testFilter">Ver cuántas personas cumplen</button>
+                <span id="filterCount" class="gw-msg" role="status"></span>
+              </div>
+            </div>
+
+            <div class="gw-form-grid" id="numbersRow">
+              <div class="gw-field" id="countBox" hidden><label class="gw-label" for="count">¿Cuántos ganadores sortear?</label><input type="number" class="gw-input gw-input--short" id="count" min="1" max="500" value="1"></div>
+              <div class="gw-field" id="batchBox" hidden><label class="gw-label" for="batch">Personas por ejecución</label><input type="number" class="gw-input gw-input--short" id="batch" min="1" max="500" value="1"></div>
+              <div id="excludeBox" hidden><label class="gw-check"><input type="checkbox" id="exclude" checked> No repetir a quienes ya ganaron antes en este evento</label></div>
+            </div>
+
+            <div id="roundBox" class="gw-actions" hidden>
+              <span class="gw-msg" id="roundText" role="status"></span>
+              <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="resetRound">Reiniciar ronda</button>
+            </div>
+          </div>
+        </section>
+
+        {# ===================================================================== AUTORIZAR Y PROYECTOR #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_girar" data-group="girar" aria-labelledby="tab_girar" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Autorizar y proyector</h2><p class="gw-tabpanel__lead">Tú autorizas desde aquí; el giro se dispara en la pantalla que ve la gente.</p></div>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Pantalla de visualización (para el proyector)</h4>{% call ayuda('ay_proyector', 'Pantalla del proyector') %}Abre este enlace en la pantalla que verá la gente (no pide iniciar sesión). Allá se activa el botón «¡GIRAR!» cuando tú autorizas y, al pulsarlo, gira la ruleta y se revela el ganador. Si cambias el enlace, el anterior deja de funcionar.{% endcall %}</div>
+            <div id="displayCard"><span class="gw-skeleton" role="status" aria-label="Cargando el enlace"></span></div>
+          </div>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Autorizar el giro</h4>{% call ayuda('ay_autorizar', 'Autorizar el giro') %}Autorizar no gira la ruleta: solo deja listo el botón «¡GIRAR!» en la pantalla del proyector. Con cambios sin guardar el botón queda bloqueado: guarda primero.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="label">Nombre del sorteo (opcional)</label>
+              <input type="text" class="gw-input" id="label" maxlength="120" data-pnodirty placeholder="Ej.: Sorteo iPhone">
+              <p class="gw-hint">Queda en el registro de sorteos.</p>
+            </div>
+            <p class="gw-hint" id="runHint"></p>
+            <button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-ruleta-run" id="runBtn" disabled>{{ ic('lock') }}<span id="runBtnText">Autorizar giro</span></button>
+            <p class="gw-msg gw-msg--err" id="dirtyNote" role="status" hidden>Hay cambios sin guardar: guárdalos para poder autorizar.</p>
+            <div id="authBox" class="gw-alert gw-alert--warn" role="status" hidden></div>
+            <div id="resultBox" role="status"></div>
+          </div>
+        </section>
+
+        {# ===================================================================== SORTEOS #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_sorteos" data-group="sorteos" aria-labelledby="tab_sorteos" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Registro de sorteos</h2><p class="gw-tabpanel__lead">Cada sorteo ejecutado queda aquí con quién lo autorizó.</p></div>
+          <div class="gw-group__item">
+            <div class="gw-actions">
+              <a class="gw-btn gw-btn--secondary" href="/api/events/{{ event.id }}/roulette/report">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a>
+            </div>
+            <div id="histLoading"><span class="gw-skeleton" role="status" aria-label="Cargando los sorteos"></span></div>
+            <div class="gw-empty" id="histEmpty" hidden>
+              {{ ic('roulette', 'gw-icon--lg') }}
+              <p>Todavía no se ha ejecutado ningún sorteo.</p>
+              <p class="gw-hint">Autoriza un giro en la pestaña «Autorizar y proyector» y gíralo en la pantalla del proyector.</p>
+            </div>
+            <div class="gw-table-wrap gw-ruleta-hist" id="histWrap" hidden>
+              <table class="gw-table gw-table-cards">
+                <caption class="gw-sr-only">Sorteos ejecutados</caption>
+                <thead><tr><th scope="col">Fecha y hora</th><th scope="col">Sorteo</th><th scope="col">Modo</th><th scope="col">Ganadores</th><th scope="col">Ejecutó</th></tr></thead>
+                <tbody id="histBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
 </main>
+
+{% include "_gw_savebar.html" %}
 
 <script>
 const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ico = (n, c) => `<svg class="gw-icon ${c || ''}" aria-hidden="true"><use href="${window.GW_ICONS}#i-${n}"/></svg>`;
 const MODES = {
   single_fixed: ['1 · Un ganador', 'Tú eliges de antemano quién gana.'],
   ordered: ['2 · Varios, en orden fijo', 'Eliges a los ganadores en el orden exacto en que deben salir (1º, 2º, 3º…).'],
@@ -108,62 +198,84 @@ let state = { mode: 'single_fixed', winners: [], count: 1, batch_size: 1, filter
 let fields = [], people = [], nameOf = {}, dirty = false;
 
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
-function markDirty(v) { dirty = v; $('saveState').textContent = v ? 'Hay cambios sin guardar' : ''; $('runBtn').disabled = v; }
+// El guardado es el ÚNICO de la pantalla (barra de abajo): este bloque se registra con su save() y los cambios lo dejan pendiente.
+function markDirty(v) { dirty = v; if (v) window.GWParams.markDirty('behavior'); else window.GWParams.markClean('behavior'); syncRun(); }
+function syncRun() { $('dirtyNote').hidden = !dirty; if (dirty) $('runBtn').disabled = true; }
+window.GWParams.register({ key: 'behavior', label: 'Cómo se elige', order: 1, save: async () => {
+  await j(`${api}/behavior`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
+  dirty = false; syncRun(); loadRound(); watchAuth();
+} });
 
 function renderModes() {
-  $('modes').innerHTML = Object.entries(MODES).map(([k, [t, d]]) => `<div class="mode ${state.mode === k ? 'sel' : ''}" data-mode="${k}"><b>${t}</b><span>${d}</span></div>`).join('');
-  $('modes').querySelectorAll('.mode').forEach((el) => el.addEventListener('click', async () => { state.mode = el.dataset.mode; if (state.mode === 'single_fixed') state.winners = state.winners.slice(0, 1); markDirty(true); await refreshPeople(); render(); }));
+  $('modes').innerHTML = Object.entries(MODES).map(([k, [t, d]]) => `<button type="button" class="gw-ruleta-mode" role="radio" aria-checked="${state.mode === k}" data-mode="${k}"><span class="gw-ruleta-mode__name">${ico('check', 'gw-icon--sm')}${t}</span><span class="gw-ruleta-mode__text">${d}</span></button>`).join('');
+  $('sumMode').textContent = (MODES[state.mode] || [''])[0].replace(/^\S+ · /, '');
 }
+$('modes').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-mode]'); if (!el || el.dataset.mode === state.mode) return;
+  state.mode = el.dataset.mode; if (state.mode === 'single_fixed') state.winners = state.winners.slice(0, 1);
+  markDirty(true); await refreshPeople(); render();
+  const again = $('modes').querySelector(`[data-mode="${state.mode}"]`); if (again) again.focus();
+});
 function render() {
   const m = state.mode;
   renderModes();
-  $('pickerBox').style.display = NEEDS_PICKER.includes(m) ? 'block' : 'none';
-  $('filterBox').style.display = (m === 'filter_manual' || m === 'filter_random') ? 'block' : 'none';
-  $('countBox').style.display = m === 'filter_random' ? 'block' : 'none';
-  $('batchBox').style.display = m === 'all' ? 'block' : 'none';
-  $('excludeBox').style.display = m === 'filter_random' ? 'block' : 'none';
-  $('roundBox').style.display = m === 'all' ? 'flex' : 'none';
+  $('pickerBox').hidden = !NEEDS_PICKER.includes(m);
+  $('filterBox').hidden = !(m === 'filter_manual' || m === 'filter_random');
+  $('countBox').hidden = m !== 'filter_random';
+  $('batchBox').hidden = m !== 'all';
+  $('excludeBox').hidden = m !== 'filter_random';
+  $('roundBox').hidden = m !== 'all';
   $('count').value = state.count; $('batch').value = state.batch_size; $('exclude').checked = state.exclude_previous_winners;
   $('pickerLabel').textContent = { single_fixed: 'Elige al ganador', ordered: 'Elige a los ganadores, en el orden en que deben salir', shuffled: 'Elige a los ganadores (el orden lo mezcla el sistema)', filter_manual: 'Elige al ganador entre quienes cumplen el filtro' }[m] || '';
-  $('pickedHint').textContent = m === 'ordered' ? 'Elegidos, en orden (usa ↑ ↓)' : 'Elegidos';
+  $('pickedHint').textContent = m === 'ordered' ? 'Elegidos, en orden (usa las flechas)' : 'Elegidos';
   $('filterHint').textContent = m === 'filter_random' ? 'El sistema sorteará entre quienes cumplan TODAS las condiciones.' : 'Solo se listarán como candidatos quienes cumplan TODAS las condiciones.';
   renderCands(); renderPicked(); renderConds();
-  $('runBtn').textContent = m === 'filter_random' ? '🔓 Autorizar sorteo entre los que cumplen el filtro' : m === 'all' ? '🔓 Autorizar: sacar al siguiente' : '🔓 Autorizar giro';
+  $('runBtnText').textContent = m === 'filter_random' ? 'Autorizar sorteo entre los que cumplen el filtro' : m === 'all' ? 'Autorizar: sacar al siguiente' : 'Autorizar giro';
   $('runHint').textContent = (m === 'filter_random' || m === 'all' ? 'El resultado lo decide el sistema al azar en el momento de girar: nadie lo conoce antes. ' : 'La ruleta revelará al ganador que dejaste elegido. ') + 'Aquí solo AUTORIZAS: el giro se dispara con el botón «Girar» de la pantalla de visualización (la que ve la gente).';
 }
 function renderCands() {
   const q = $('pickerSearch').value.trim().toLowerCase();
   const list = people.filter((p) => !state.winners.includes(p.id) && (!q || (p.name + ' ' + p.id).toLowerCase().includes(q))).slice(0, 80);
-  $('candList').innerHTML = list.map((p) => `<div data-id="${esc(p.id)}" style="cursor:pointer;"><span>${esc(p.name)} <small style="color:#666;">· ${esc(p.id)}${p.entity ? ' · ' + esc(p.entity) : ''}</small></span><b>＋</b></div>`).join('') || '<div style="color:#666;">Sin candidatos</div>';
-  $('candList').querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => {
-    if (state.mode === 'single_fixed') state.winners = [el.dataset.id]; else state.winners.push(el.dataset.id);
-    markDirty(true); renderCands(); renderPicked();
-  }));
+  $('candList').innerHTML = list.map((p) => `<button type="button" class="gw-ruleta-item" data-id="${esc(p.id)}" aria-label="Agregar a ${esc(p.name)}"><span class="gw-ruleta-item__who">${esc(p.name)} <small>· ${esc(p.id)}${p.entity ? ' · ' + esc(p.entity) : ''}</small></span>${ico('plus', 'gw-icon--sm')}</button>`).join('') || '<div class="gw-ruleta-item gw-ruleta-item--empty">Sin candidatos</div>';
 }
+$('candList').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-id]'); if (!el) return;
+  if (state.mode === 'single_fixed') state.winners = [el.dataset.id]; else state.winners.push(el.dataset.id);
+  markDirty(true); renderCands(); renderPicked();
+});
 function renderPicked() {
-  $('pickedList').innerHTML = state.winners.map((id, i) => `<div><span>${state.mode === 'ordered' ? (i + 1) + '. ' : ''}${esc(nameOf[id] || id)} <small style="color:#666;">· ${esc(id)}</small></span>
-    <span>${state.mode === 'ordered' ? `<button class="small-btn" data-up="${i}">↑</button> <button class="small-btn" data-down="${i}">↓</button> ` : ''}<button class="small-btn" data-rm="${i}">✕</button></span></div>`).join('') || '<div style="color:#666;">Nadie elegido todavía</div>';
-  const move = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= state.winners.length) return; [state.winners[i], state.winners[j2]] = [state.winners[j2], state.winners[i]]; markDirty(true); renderPicked(); };
-  $('pickedList').querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.up, -1)));
-  $('pickedList').querySelectorAll('[data-down]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.down, 1)));
-  $('pickedList').querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { state.winners.splice(+b.dataset.rm, 1); markDirty(true); renderCands(); renderPicked(); }));
+  $('pickedList').innerHTML = state.winners.map((id, i) => `<div class="gw-ruleta-item"><span class="gw-ruleta-item__who">${state.mode === 'ordered' ? (i + 1) + '. ' : ''}${esc(nameOf[id] || id)} <small>· ${esc(id)}</small></span>
+    <span class="gw-ruleta-item__tools">${state.mode === 'ordered' ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-up="${i}" aria-label="Subir a ${esc(nameOf[id] || id)}" title="Subir">${ico('chevron', 'gw-ruleta-rot-up')}</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-down="${i}" aria-label="Bajar a ${esc(nameOf[id] || id)}" title="Bajar">${ico('chevron', 'gw-ruleta-rot-down')}</button>` : ''}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-rm="${i}" aria-label="Quitar a ${esc(nameOf[id] || id)}" title="Quitar">${ico('close')}</button></span></div>`).join('') || '<div class="gw-ruleta-item gw-ruleta-item--empty">Nadie elegido todavía</div>';
 }
+$('pickedList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-up],[data-down],[data-rm]'); if (!b) return;
+  const move = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= state.winners.length) return; [state.winners[i], state.winners[j2]] = [state.winners[j2], state.winners[i]]; markDirty(true); renderPicked(); };
+  if (b.dataset.up !== undefined) move(+b.dataset.up, -1);
+  else if (b.dataset.down !== undefined) move(+b.dataset.down, 1);
+  else { state.winners.splice(+b.dataset.rm, 1); markDirty(true); renderCands(); renderPicked(); }
+});
 function renderConds() {
   $('conds').innerHTML = state.filter.conditions.map((c, i) => {
     const f = fields.find((x) => x.key === c.field) || fields[0];
     const opts = fields.map((x) => `<option value="${esc(x.key)}" ${x.key === c.field ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
     let valueInput;
-    if (f.type === 'choice') valueInput = `<select data-v="${i}">${f.choices.map(([v, l]) => `<option value="${esc(v)}" ${c.value === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-    else if (f.type === 'datetime') valueInput = `<input type="datetime-local" data-v="${i}" value="${esc(c.value || '')}">`;
-    else valueInput = `<select data-op="${i}" style="margin-right:4px;"><option value="equals" ${c.op !== 'contains' ? 'selected' : ''}>es igual a</option><option value="contains" ${c.op === 'contains' ? 'selected' : ''}>contiene</option></select><input type="text" data-v="${i}" value="${esc(c.value || '')}">`;
-    return `<div class="row"><div><label>Campo</label><select data-f="${i}">${opts}</select></div><div><label>Valor</label>${valueInput}</div><button class="small-btn" data-del="${i}">Quitar</button></div>`;
+    if (f.type === 'choice') valueInput = `<select class="gw-select" id="cv${i}" data-v="${i}">${f.choices.map(([v, l]) => `<option value="${esc(v)}" ${c.value === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    else if (f.type === 'datetime') valueInput = `<input type="datetime-local" class="gw-input" id="cv${i}" data-v="${i}" value="${esc(c.value || '')}">`;
+    else valueInput = `<select class="gw-select" data-op="${i}" aria-label="Condición ${i + 1}: comparación"><option value="equals" ${c.op !== 'contains' ? 'selected' : ''}>es igual a</option><option value="contains" ${c.op === 'contains' ? 'selected' : ''}>contiene</option></select><input type="text" class="gw-input" id="cv${i}" data-v="${i}" value="${esc(c.value || '')}">`;
+    return `<div class="gw-ruleta-cond"><div class="gw-field"><label class="gw-label" for="cf${i}">Campo</label><select class="gw-select" id="cf${i}" data-f="${i}">${opts}</select></div><div class="gw-field"><label class="gw-label" for="cv${i}">Valor</label><div class="gw-ruleta-cond__value">${valueInput}</div></div><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${i}">Quitar</button></div>`;
   }).join('');
-  const ch = () => { markDirty(true); };
-  $('conds').querySelectorAll('[data-f]').forEach((el) => el.addEventListener('change', () => { const c = state.filter.conditions[+el.dataset.f]; c.field = el.value; c.op = 'equals'; const f = fields.find((x) => x.key === c.field); c.value = f.type === 'choice' ? f.choices[0][0] : ''; ch(); renderConds(); }));
-  $('conds').querySelectorAll('[data-v]').forEach((el) => el.addEventListener('input', () => { state.filter.conditions[+el.dataset.v].value = el.value; ch(); }));
-  $('conds').querySelectorAll('[data-op]').forEach((el) => el.addEventListener('change', () => { state.filter.conditions[+el.dataset.op].op = el.value; ch(); }));
-  $('conds').querySelectorAll('[data-del]').forEach((el) => el.addEventListener('click', async () => { state.filter.conditions.splice(+el.dataset.del, 1); ch(); await refreshPeople(); renderConds(); renderCands(); }));
 }
+$('conds').addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.dataset.f !== undefined) { const c = state.filter.conditions[+el.dataset.f]; c.field = el.value; c.op = 'equals'; const f = fields.find((x) => x.key === c.field); c.value = f.type === 'choice' ? f.choices[0][0] : ''; markDirty(true); renderConds(); }
+  else if (el.dataset.op !== undefined) { state.filter.conditions[+el.dataset.op].op = el.value; markDirty(true); }
+  else if (el.dataset.v !== undefined) { state.filter.conditions[+el.dataset.v].value = el.value; markDirty(true); }
+});
+$('conds').addEventListener('input', (e) => { const el = e.target; if (el.dataset.v !== undefined) { state.filter.conditions[+el.dataset.v].value = el.value; markDirty(true); } });
+$('conds').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-del]'); if (!el) return;
+  state.filter.conditions.splice(+el.dataset.del, 1); markDirty(true); await refreshPeople(); renderConds(); renderCands();
+});
 async function refreshPeople() {
   const useFilter = state.mode === 'filter_manual' && state.filter.conditions.length;
   const q = useFilter ? '?filter=' + encodeURIComponent(JSON.stringify(state.filter)) : '';
@@ -173,33 +285,36 @@ async function refreshPeople() {
 }
 
 $('addCond').addEventListener('click', () => { const f = fields[0]; state.filter.conditions.push({ field: f.key, op: 'equals', value: f.type === 'choice' ? f.choices[0][0] : '' }); markDirty(true); renderConds(); });
-$('testFilter').addEventListener('click', async () => {
+$('testFilter').addEventListener('click', (e) => GW.busy(e.currentTarget, async () => {
   try { const d = await j(`${api}/candidates?filter=${encodeURIComponent(JSON.stringify(state.filter))}`); $('filterCount').textContent = `${d.total} persona(s) cumplen el filtro`; people = state.mode === 'filter_manual' ? d.people : people; renderCands(); }
-  catch (e) { showToast(e.message, 'error'); }
-});
+  catch (err) { showToast(err.message, 'error'); }
+}));
 $('pickerSearch').addEventListener('input', renderCands);
 $('count').addEventListener('input', () => { state.count = +$('count').value || 1; markDirty(true); });
 $('batch').addEventListener('input', () => { state.batch_size = +$('batch').value || 1; markDirty(true); });
 $('exclude').addEventListener('change', () => { state.exclude_previous_winners = $('exclude').checked; markDirty(true); });
 
-$('saveBtn').addEventListener('click', async () => {
-  try {
-    await j(`${api}/behavior`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
-    markDirty(false); showToast('Configuración guardada', 'success'); loadRound();
-  } catch (e) { showToast(e.message, 'error'); }
+$('resetRound').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (!(await showConfirm('Se reinicia la ronda: todos los asistentes vuelven a poder salir sorteados. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, reiniciar' }))) return;
+  try { await GW.busy(btn, () => j(`${api}/reset-round`, { method: 'POST' })); showToast('Ronda reiniciada', 'success'); loadRound(); }
+  catch (err) { showToast(err.message, 'error'); }
 });
-$('resetRound').addEventListener('click', async () => { await j(`${api}/reset-round`, { method: 'POST' }); showToast('Ronda reiniciada', 'success'); loadRound(); });
-async function loadRound() { if (state.mode !== 'all') return; const r = await j(`${api}/round`); $('roundText').textContent = `Ronda actual: han salido ${r.drawn} de ${r.total} personas.`; }
+async function loadRound() { if (state.mode !== 'all') return; try { const r = await j(`${api}/round`); $('roundText').textContent = `Ronda actual: han salido ${r.drawn} de ${r.total} personas.`; } catch (e) { $('roundText').textContent = ''; } }
 
 let authTimer = null, lastDrawCount = null;
 function paintAuth(a) {
   const box = $('authBox');
   $('runBtn').disabled = dirty || a.authorized;
-  if (!a.authorized) { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  box.innerHTML = `<b>🔓 Giro autorizado${a.label ? ' — «' + esc(a.label) + '»' : ''}.</b> El botón <b>«¡GIRAR!»</b> ya está activo en la pantalla de visualización: quien la maneja lo pulsa cuando quiera. <button type="button" class="small-btn" id="cancelAuth" style="margin-left:8px;">Cancelar autorización</button>`;
-  $('cancelAuth').addEventListener('click', async () => { await j(`${api}/authorize`, { method: 'DELETE' }); watchAuth(); });
+  if (!a.authorized) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `${ico('check')}<div class="gw-alert__body"><p><strong>Giro autorizado${a.label ? ' — «' + esc(a.label) + '»' : ''}.</strong> El botón «¡GIRAR!» ya está activo en la pantalla de visualización: quien la maneja lo pulsa cuando quiera.</p><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="cancelAuth">Cancelar autorización</button></div></div>`;
 }
+$('authBox').addEventListener('click', async (e) => {
+  const btn = e.target.closest('#cancelAuth'); if (!btn) return;
+  try { await GW.busy(btn, () => j(`${api}/authorize`, { method: 'DELETE' })); watchAuth(); }
+  catch (err) { showToast(err.message, 'error'); }
+});
 async function watchAuth() {
   clearTimeout(authTimer);
   try {
@@ -213,48 +328,80 @@ async function showLatest() {
   const draws = await j(`${api}/draws`);
   if (lastDrawCount !== null && draws.length > lastDrawCount) {
     const d = draws[0];
-    $('resultBox').innerHTML = `<div style="background:#d1e7dd; border-radius:14px; padding:1rem 1.2rem;"><b>${d.is_random ? '🎲 Sorteo real' : '✅ Ganador(es) elegido(s)'}</b> — ya se giró en la pantalla de visualización.<ol style="margin:0.5rem 0 0; padding-left:1.2rem;">${d.winners.map((w) => `<li><b>${esc(w.name)}</b> <small>· ${esc(w.id)}${w.entity ? ' · ' + esc(w.entity) : ''}</small></li>`).join('')}</ol></div>`;
+    $('resultBox').innerHTML = `<div class="gw-alert gw-alert--ok">${ico('check')}<div class="gw-alert__body"><p><strong>${d.is_random ? 'Sorteo real' : 'Ganador(es) elegido(s)'}</strong> — ya se giró en la pantalla de visualización.</p><ol class="gw-ruleta-winners">${d.winners.map((w) => `<li><strong>${esc(w.name)}</strong> <small>· ${esc(w.id)}${w.entity ? ' · ' + esc(w.entity) : ''}</small></li>`).join('')}</ol></div></div>`;
   }
   lastDrawCount = draws.length;
 }
-$('runBtn').addEventListener('click', async () => {
-  const btn = $('runBtn'); btn.disabled = true;
-  try {
-    lastDrawCount = (await j(`${api}/draws`)).length;
-    await j(`${api}/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('label').value }) });
-    $('resultBox').innerHTML = '';
-    showToast('Giro autorizado: ya se puede girar desde la pantalla de visualización', 'success');
-    watchAuth();
-  } catch (e) { showToast(e.message, 'error'); btn.disabled = dirty; }
+$('runBtn').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  return GW.busy(btn, async () => {
+    try {
+      lastDrawCount = (await j(`${api}/draws`)).length;
+      await j(`${api}/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('label').value }) });
+      $('resultBox').innerHTML = '';
+      showToast('Giro autorizado: ya se puede girar desde la pantalla de visualización', 'success');
+      watchAuth();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
 });
 
 async function loadHistory() {
-  const draws = await j(`${api}/draws`);
-  $('histBody').innerHTML = draws.map((d) => `<tr><td>${esc(d.created_at.replace('T', ' '))}</td><td>${esc(d.label || '—')}</td><td>${esc((MODES[d.mode] || [d.mode])[0])} ${d.is_random ? '<span class="badge rand">aleatorio real</span>' : ''}</td><td>${d.winners.map((w) => esc(w.name)).join(', ')}</td><td>${esc(d.created_by)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:#666;">Todavía no se ha ejecutado ningún sorteo.</td></tr>';
+  $('histLoading').hidden = false;
+  try {
+    const draws = await j(`${api}/draws`);
+    $('histBody').innerHTML = draws.map((d) => `<tr><td data-label="Fecha y hora">${esc(d.created_at.replace('T', ' '))}</td><td data-label="Sorteo">${esc(d.label || '—')}</td><td data-label="Modo">${esc((MODES[d.mode] || [d.mode])[0])} ${d.is_random ? '<span class="gw-badge gw-badge--ok">aleatorio real</span>' : ''}</td><td data-label="Ganadores">${d.winners.map((w) => esc(w.name)).join(', ')}</td><td data-label="Ejecutó">${esc(d.created_by)}</td></tr>`).join('');
+    $('histWrap').hidden = !draws.length; $('histEmpty').hidden = !!draws.length;
+    $('sumHist').textContent = draws.length ? `${draws.length} sorteo${draws.length === 1 ? '' : 's'} ejecutado${draws.length === 1 ? '' : 's'}` : 'Aún no hay sorteos';
+  } catch (e) {
+    $('histWrap').hidden = true; $('histEmpty').hidden = true;
+    showToast('No se pudo cargar el registro de sorteos: ' + e.message, 'error');
+  }
+  $('histLoading').hidden = true;
 }
 
 async function loadDisplayLink() {
-  const { url } = await j(`${api}/display-link`);
   const box = $('displayCard');
-  const head = `<h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Pantalla de visualización (para el proyector)</h4><p class="hint" style="margin-top:0;">Abre este enlace en la pantalla que verá la gente (sin iniciar sesión). Tú autorizas el giro desde aquí; allá se activa el botón «¡GIRAR!» y, al pulsarlo, gira la ruleta y se revela el ganador.</p>`;
-  if (!url) { box.innerHTML = head + `<button type="button" class="small-btn primary" id="genLink">🔗 Generar enlace de la pantalla</button>`; $('genLink').addEventListener('click', async () => { await j(`${api}/display-link`, { method: 'POST' }); loadDisplayLink(); }); return; }
-  box.innerHTML = head + `<div class="row" style="margin-top:0;"><input type="text" readonly value="${esc(url)}" id="linkInput" style="flex:1 1 300px;"><button type="button" class="small-btn primary" id="copyLink">Copiar</button><a class="small-btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir pantalla</a><button type="button" class="small-btn" id="regenLink">Cambiar enlace</button></div>`;
-  $('copyLink').addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); } catch (e) { $('linkInput').select(); document.execCommand('copy'); } showToast('Enlace copiado', 'success'); });
-  $('regenLink').addEventListener('click', async () => { if (!(await showConfirm('Se creará un enlace nuevo y el anterior dejará de funcionar. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, cambiar' }))) return; await j(`${api}/display-link?regenerate=true`, { method: 'POST' }); loadDisplayLink(); });
+  let url = '';
+  try { url = (await j(`${api}/display-link`)).url; }
+  catch (e) { box.innerHTML = `<p class="gw-msg gw-msg--err" role="alert">No se pudo cargar el enlace: ${esc(e.message)}</p><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="retryLink">Reintentar</button></div>`; return; }
+  if (!url) { box.innerHTML = `<p class="gw-hint">Todavía no hay enlace para el proyector.</p><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary" data-act="genLink">${ico('link', 'gw-icon--sm')} Generar enlace de la pantalla</button></div>`; return; }
+  box.innerHTML = `<div class="gw-ruleta-link"><label class="gw-sr-only" for="linkInput">Enlace de la pantalla del proyector</label><input type="text" class="gw-input" readonly value="${esc(url)}" id="linkInput"><button type="button" class="gw-btn gw-btn--secondary" data-act="copyLink" data-url="${esc(url)}">Copiar</button><a class="gw-btn gw-btn--secondary" href="${esc(url)}" target="_blank" rel="noopener">Abrir pantalla</a><button type="button" class="gw-btn gw-btn--danger-outline" data-act="regenLink">Cambiar enlace</button></div>`;
 }
+$('displayCard').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act;
+  try {
+    if (act === 'retryLink') await loadDisplayLink();
+    else if (act === 'genLink') { await GW.busy(b, () => j(`${api}/display-link`, { method: 'POST' })); await loadDisplayLink(); }
+    else if (act === 'copyLink') { const url = b.dataset.url; try { await navigator.clipboard.writeText(url); } catch (err) { $('linkInput').select(); document.execCommand('copy'); } showToast('Enlace copiado', 'success'); }
+    else if (act === 'regenLink') {
+      if (!(await showConfirm('Se creará un enlace nuevo y el anterior dejará de funcionar. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, cambiar' }))) return;
+      await GW.busy(b, () => j(`${api}/display-link?regenerate=true`, { method: 'POST' })); await loadDisplayLink();
+    }
+  } catch (err) { showToast(err.message, 'error'); }
+});
 
-(async function init() {
-  const cfg = await j(api);
-  state = { ...state, ...cfg.behavior };
-  state.filter = cfg.behavior.filter || { conditions: [] };
-  $('totalCandidates').textContent = cfg.candidates_total;
-  fields = await j(`${api}/fields`);
-  await refreshPeople();
-  // nombres de los ganadores ya elegidos (aunque no estén en la lista visible)
-  try { const all = await j(`${api}/candidates`); all.people.forEach((p) => { nameOf[p.id] = p.name; }); } catch (e) {}
-  render(); markDirty(false); loadDisplayLink(); loadHistory(); loadRound();
-  lastDrawCount = (await j(`${api}/draws`)).length; watchAuth();
-})();
+async function init() {
+  $('initError').hidden = true;
+  try {
+    const cfg = await j(api);
+    state = { ...state, ...cfg.behavior };
+    state.filter = cfg.behavior.filter || { conditions: [] };
+    $('totalCandidates').textContent = cfg.candidates_total;
+    fields = await j(`${api}/fields`);
+    await refreshPeople();
+    // nombres de los ganadores ya elegidos (aunque no estén en la lista visible)
+    try { const all = await j(`${api}/candidates`); all.people.forEach((p) => { nameOf[p.id] = p.name; }); } catch (e) {}
+    render(); markDirty(false); loadDisplayLink(); loadHistory(); loadRound();
+    lastDrawCount = (await j(`${api}/draws`)).length; watchAuth();
+  } catch (e) {
+    $('initErrorText').textContent = 'No se pudo cargar la configuración (' + e.message + '). Revisa la conexión e inténtalo de nuevo.';
+    $('initError').hidden = false;
+    $('sumMode').textContent = 'No se pudo cargar';
+  }
+}
+$('initRetry').addEventListener('click', (e) => GW.busy(e.currentTarget, init));
+init();
 </script>
 </body>
 </html>

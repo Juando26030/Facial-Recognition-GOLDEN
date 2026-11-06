@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/registro.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-captura.css') }}">
     <script src="{{ url_for('static', path='js/boot-trace.js') }}"></script>
     {% if staff_role not in ['admin', 'super_admin'] %}<script>window.GW_SESSION_PING = true;</script>{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
@@ -289,41 +290,41 @@
                          sus `name`/`id` de siempre — otros scripts (lector de cédula, OCR) los buscan. -->
                     <div id="dynamicFieldsContainer">
                         {% for cfg in field_configs %}
-                        <div class="badge-input-group" data-field-key="{{ cfg.key }}">
+                        <div class="gw-field badge-input-group" data-field-key="{{ cfg.key }}">
                             {% set fid = "manualIdField" if (cfg.locked and cfg.key == "id") else ("regBirth" if cfg.field_type == "date" else "regF_" ~ cfg.key) %}
-                            <label{% if cfg.field_type not in ("categories", "certificate", "digital_contact", "consent", "signature", "email") %} for="{{ fid }}"{% endif %}>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key != "last_name" and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
+                            <label class="gw-label"{% if cfg.field_type not in ("categories", "certificate", "digital_contact", "consent", "signature", "email") %} for="{{ fid }}"{% endif %}>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key != "last_name" and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
                             {% if cfg.field_type in ("categories", "certificate", "digital_contact") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "date" %}
-                            <input type="date" name="{{ cfg.key }}" id="regBirth" class="gw-registro__date">
+                            <input type="date" name="{{ cfg.key }}" id="regBirth" class="gw-input gw-registro__date">
                             <p class="gw-hint">Con ella se sabe si es menor de 18 años: un menor no pasa por el reconocimiento facial (solo cédula o QR).{% if event.facial_enabled %} Obligatoria si se sube foto.{% endif %}</p>
                             {% elif cfg.locked %}
-                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" %} required{% endif %}>
+                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" %} required{% endif %}>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
-                            <textarea name="{{ cfg.key }}" id="{{ fid }}" rows="3" {% if cfg.required %}required{% endif %}></textarea>
+                            <textarea name="{{ cfg.key }}" id="{{ fid }}" class="gw-textarea" rows="3" {% if cfg.required %}required{% endif %}></textarea>
                             {% elif cfg.field_type == "select" %}
-                            <select name="{{ cfg.key }}" id="{{ fid }}" {% if cfg.required %}required{% endif %}>
+                            <select name="{{ cfg.key }}" id="{{ fid }}" class="gw-select" {% if cfg.required %}required{% endif %}>
                                 <option value="">Selecciona…</option>
                                 {% for opt in cfg.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
                             </select>
                             {% elif cfg.field_type == "boolean" %}
-                            <select name="{{ cfg.key }}" id="{{ fid }}" {% if cfg.required %}required{% endif %}>
+                            <select name="{{ cfg.key }}" id="{{ fid }}" class="gw-select" {% if cfg.required %}required{% endif %}>
                                 <option value="">— Sin elegir —</option>
                                 <option value="true">Sí</option>
                                 <option value="false">No</option>
                             </select>
                             {% else %}
-                            <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" id="{{ fid }}" {% if cfg.required %}required{% endif %}>
+                            <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.required %}required{% endif %}>
                             {% endif %}
                         </div>
                         {% endfor %}
                     </div>
                     {% if person_form_json != "null" %}<script>(function () { var c = document.getElementById('dynamicFieldsContainer'); if (c && window.PersonForm && window.PERSON_FORM) { window.PersonForm.current = window.PERSON_FORM; window.regPersonForm = window.PersonForm.mount(c, window.PERSON_FORM); } })();</script>{% endif %}
                     {% if event.facial_enabled %}
-                    <div class="badge-input-group">
-                        <label for="regPhotoInput">Fotografía oficial <span class="gw-hint">(opcional: solo si la persona lo autoriza)</span></label>
+                    <div class="gw-field badge-input-group">
+                        <label class="gw-label" for="regPhotoInput">Fotografía oficial <span class="gw-hint">(opcional: solo si la persona lo autoriza)</span></label>
                         <div class="gw-rowact">
                             <input type="file" name="file" id="regPhotoInput" class="gw-registro__grow" accept="image/*" aria-label="Fotografía de la persona (opcional, solo con su autorización)">
                             <button type="button" id="regPhotoCameraBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg>Usar cámara</button>
@@ -595,13 +596,15 @@
        Dos formas de conseguir la foto (Sprint 2.2 Fase C): adjuntar un archivo, o tomarla con la
        cámara del computador ahí mismo (CameraCapture, static/js/camera-capture.js) — ambas
        terminan en el mismo processMrzPhoto(blob). */
+    /* Rueda en el botón mientras se lee la foto (GW.busy, gw-busy.js); sin el ayudante solo corre la acción. */
+    const busyWork = (btn, work) => (window.GW && window.GW.busy && btn ? window.GW.busy(btn, work) : Promise.resolve().then(work));
     const scanMrzBtn = document.getElementById('scanMrzBtn');
     const scanMrzCameraBtn = document.getElementById('scanMrzCameraBtn');
     const scanMrzInput = document.getElementById('scanMrzInput');
 
     async function processMrzPhoto(blob) {
-        setButtonLoading(scanMrzBtn, true, 'Leyendo…');
         scanMrzCameraBtn.disabled = true;
+        await busyWork(scanMrzBtn, async () => {
         try {
             const formData = new FormData();
             formData.append('file', blob, 'cedula.jpg');
@@ -615,7 +618,7 @@
         } catch (e) {
             showToast('Error de red', 'error');
         }
-        setButtonLoading(scanMrzBtn, false);
+        });
         scanMrzCameraBtn.disabled = false;
     }
 
@@ -687,8 +690,8 @@
     }
 
     async function processRegScanMrzPhoto(blob) {
-        setButtonLoading(regScanMrzBtn, true, 'Leyendo…');
         regScanMrzCameraBtn.disabled = true;
+        await busyWork(regScanMrzBtn, async () => {
         try {
             const formData = new FormData();
             formData.append('file', blob, 'cedula.jpg');
@@ -702,7 +705,7 @@
         } catch (e) {
             showToast('Error de red', 'error');
         }
-        setButtonLoading(regScanMrzBtn, false);
+        });
         regScanMrzCameraBtn.disabled = false;
     }
 

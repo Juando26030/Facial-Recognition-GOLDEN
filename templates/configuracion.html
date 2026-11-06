@@ -1,3 +1,10 @@
+{# Configuración (Fase 1.5, Ola 3): pestañas por tema (Apariencia · Sesiones · Staff y permisos) y UNA barra de guardado (botón y Ctrl/⌘+S) para todo lo editable.
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). La apariencia sigue siendo una preferencia LOCAL del navegador (static/js/theme.js); el JS de la pantalla es static/js/gw-configuracion.js. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,31 +12,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configuración | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
-    <style>
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .theme-row { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
-        .theme-row label { font-weight:700; color:var(--golden-dark); min-width:160px; }
-        .theme-swatch { width:52px; height:40px; border:1px solid #ccc; border-radius:8px; cursor:pointer; padding:0; }
-        .theme-select { flex:1; min-width:260px; padding:0.6rem 0.8rem; border:1px solid #ccc; border-radius:8px; font-size:0.9rem; }
-    </style>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
 </head>
-<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+<body class="gw-page gw-shell{% if staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" class="small-btn">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -37,146 +40,93 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1100px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
-      <span>PANEL</span>
-      <h2>Configuración</h2>
-    </div>
-
-    <div class="tabs" style="margin-bottom:1.5rem;">
-      <div class="tab active" data-tab="apariencia">Apariencia</div>
-      {% if staff_role in ["admin", "super_admin"] %}
-      <div class="tab" data-tab="staff">Staff y Permisos</div>
-      {% endif %}
-    </div>
-    <p style="margin:-0.5rem 0 1rem;"><a href="/cambiar-contrasena" style="color:var(--golden-primary); font-weight:600; font-size:0.9rem;">🔑 Cambiar mi contraseña</a></p>
-
-    <div id="apariencia" class="section active">
-      <div style="background:white; padding:2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); max-width:700px;">
-        <p style="color:#666; font-size:0.85rem; margin-bottom:1.5rem;">
-          Esta preferencia es <strong>solo de este computador/navegador</strong> — no se guarda en la base de datos ni se sincroniza con otras sesiones.
-        </p>
-        <div class="theme-row">
-          <label for="themeColor">Color de acento y menú lateral</label>
-          <input type="color" id="themeColor" class="theme-swatch" value="#D4AF37">
-        </div>
-        <div class="theme-row">
-          <label for="themeFonts">Tipografía</label>
-          <div id="themeFonts" class="theme-select" style="padding:0; border:none;"></div>
-        </div>
-        <div style="display:flex; gap:10px; margin-top:1rem;">
-          <button type="button" id="applyThemeBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 1.8rem;">Aplicar y guardar</button>
-          <button type="button" id="resetThemeBtn" class="small-btn" style="padding:0.7rem 1.4rem;">Restablecer</button>
-        </div>
+  <div class="gw-container gw-config__wrap" data-gw-tour="configuracion" data-gw-tour-auto data-icons="{{ url_for('static', path='img/icons.svg') }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Panel</p>
+        <h1 class="gw-page-head__title">Configuración</h1>
+        <p class="gw-page-head__sub">Ajusta cómo se ve el sistema en este computador{% if is_admin_plus %} y las reglas de sesión y cuentas del personal{% endif %}.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <a href="/cambiar-contrasena" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('lock', 'gw-icon--sm') }} Cambiar mi contraseña</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="configuracion">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
 
-    {% if staff_role in ["admin", "super_admin"] %}
-    <div id="staff" class="section" style="max-width:100%;">
-      <div id="singleSessionCard" style="background:white; padding:1.2rem 1.6rem; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1rem; max-width:760px;">
-        <label style="display:flex; gap:10px; align-items:center; font-weight:700;"><input type="checkbox" id="singleSessionChk" style="width:22px; height:22px;"> Sesión única para digitadores y demás roles operativos</label>
-        <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Al iniciar sesión se cierra la anterior de esa cuenta (el otro dispositivo ve «Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo»). <b>Admin y super_admin</b> pueden tener varias sesiones sin límite, y una cuenta marcada como <b>Puesto de impresión</b> rechaza un segundo inicio de sesión mientras esté en uso. Si algo falla en un evento, apágalo: vuelve al comportamiento anterior sin desplegar nada.</p>
-        <p id="singleSessionNote" style="color:#a12631; font-size:0.85rem; margin:0.4rem 0 0;" hidden>Está forzado por la variable de entorno SINGLE_SESSION: este interruptor no cambia nada mientras exista.</p>
-      </div>
-      <iframe src="/admin/staff?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Staff y Permisos"></iframe>
-    </div>
-    {% endif %}
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la pestaña</span>
+        {% call ayuda('ay_cfg1', 'Elige la pestaña') %}Cada pestaña agrupa un tema. Debajo del nombre ves en una línea de qué trata.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Cambia lo que necesites</span>
+        {% call ayuda('ay_cfg2', 'Cambia lo que necesites') %}Lo que cambies queda pendiente: la pestaña muestra «Sin guardar». «Restablecer» y las acciones de la pestaña de personal actúan al instante.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Guarda los cambios</span>
+        {% call ayuda('ay_cfg3', 'Guarda los cambios') %}El botón «Guardar cambios» de abajo (o Ctrl/⌘ + S) guarda todo lo pendiente de todas las pestañas.{% endcall %}</li>
+    </ol>
 
+    <div class="gw-tabs" id="paramsRoot" data-tabs-key="configuracion">
+      <div class="gw-tablist" role="tablist" aria-label="Secciones de configuración" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la pestaña" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves de qué trata.">
+        <button type="button" class="gw-tab" role="tab" id="tab_apariencia" data-tab="apariencia" aria-controls="apariencia" aria-selected="true">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Apariencia</span><span class="gw-tab__sum">Color y tipografía de este computador</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        {% if is_admin_plus %}
+        <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
+        {% endif %}
+      </div>
+
+      <div class="gw-tabpanels" data-gw-tour-step="2" data-gw-tour-title="2. Cambia lo que necesites" data-gw-tour-text="Lo que cambies queda pendiente y la pestaña dice «Sin guardar».">
+        <section class="gw-tabpanel" role="tabpanel" id="apariencia" aria-labelledby="tab_apariencia">
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Apariencia</h2><p class="gw-tabpanel__lead">Esta preferencia es <strong>solo de este computador/navegador</strong>: no se guarda en la base de datos ni se sincroniza con otras sesiones.</p></div>
+          <div class="gw-group__item" data-psave="apariencia">
+            <div class="gw-item-head"><h4>Color de acento y menú lateral</h4>{% call ayuda('ay_color', 'Color de acento') %}Pinta los botones principales y el menú lateral. El color del texto se ajusta solo para que se lea bien sobre el color elegido.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="themeColor">Color</label>
+              <input type="color" id="themeColor" class="gw-config__swatch">
+            </div>
+          </div>
+          <div class="gw-group__item" data-psave="apariencia">
+            <div class="gw-item-head"><h4>Tipografía</h4>{% call ayuda('ay_fuente', 'Tipografía') %}Elige la letra de todo el sistema en este computador. «Original» es la tipografía propia de Golden.{% endcall %}</div>
+            <div class="gw-field" data-pnodirty>
+              <span class="gw-label" id="themeFontsLabel">Tipografía del sistema</span>
+              <div id="themeFonts" aria-labelledby="themeFontsLabel"></div>
+            </div>
+          </div>
+          <div class="gw-actions">
+            <button type="button" id="resetThemeBtn" class="gw-btn gw-btn--secondary">{{ ic('undo', 'gw-icon--sm') }} Restablecer</button>
+          </div>
+        </section>
+
+        {% if is_admin_plus %}
+        <section class="gw-tabpanel" role="tabpanel" id="sesion" aria-labelledby="tab_sesion" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Sesiones</h2><p class="gw-tabpanel__lead">Cuántas sesiones puede tener abiertas una misma cuenta.</p></div>
+          <div class="gw-group__item" id="singleSessionCard" data-psave="sesion">
+            <div class="gw-item-head"><h4>Sesión única</h4>{% call ayuda('ay_sesion', 'Sesión única') %}Al iniciar sesión se cierra la anterior de esa cuenta. Admin y super_admin pueden tener varias sesiones sin límite, y una cuenta marcada como Puesto de impresión rechaza un segundo inicio de sesión mientras esté en uso.{% endcall %}</div>
+            <label class="gw-check gw-check--top"><input type="checkbox" id="singleSessionChk"><span class="gw-choice__text">Sesión única para digitadores y demás roles operativos</span></label>
+            <p class="gw-hint">Al iniciar sesión se cierra la anterior de esa cuenta (el otro dispositivo ve «Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo»). Si algo falla en un evento, apágalo: vuelve al comportamiento anterior sin desplegar nada.</p>
+            <div class="gw-alert gw-alert--warn" id="singleSessionNote" role="status" hidden>{{ ic('alert') }}<div class="gw-alert__body">Está forzado por la variable de entorno SINGLE_SESSION: este interruptor no cambia nada mientras exista.</div></div>
+          </div>
+        </section>
+
+        <section class="gw-tabpanel" role="tabpanel" id="staff" aria-labelledby="tab_staff" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Staff y permisos</h2><p class="gw-tabpanel__lead">Crea cuentas, cambia roles y activa o desactiva accesos. Lo que hagas aquí actúa al instante.</p></div>
+          <iframe class="gw-config__frame" src="/admin/staff?embed=1" title="Staff y Permisos" loading="lazy"></iframe>
+        </section>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </main>
 
+<div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" data-gw-tour-step="3" data-gw-tour-title="3. Guarda los cambios" data-gw-tour-text="Un solo botón guarda todo lo pendiente de todas las pestañas.">
+  <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+  <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+  <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+</div>
+
 <script>
-/* Interruptor «Sesión única» (26-oct-2026, solo admin): app/routers/print_stations.py → app/sessions.py */
-(function () {
-  const chk = document.getElementById('singleSessionChk');
-  if (!chk) return;
-  fetch('/api/settings/single-session', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((d) => {
-    if (!d) return;
-    chk.checked = !!d.enabled;
-    document.getElementById('singleSessionNote').hidden = !d.forced_by_env;
-  }).catch(() => {});
-  chk.addEventListener('change', async () => {
-    const res = await fetch('/api/settings/single-session', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
-    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la sesión única', 'error'); return; }
-    showToast(chk.checked ? 'Sesión única ACTIVADA.' : 'Sesión única apagada: cada cuenta puede tener varias sesiones, como antes.', 'success');
-  });
-})();
+/* Mismo selector (con buscador y vista previa de cada fuente) que el diseñador de escarapelas: static/js/font-picker.js, con la lista de static/js/fonts-propias.js. Lo usa static/js/gw-configuracion.js. */
+window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFonts'), {
+  value: '', original: { value: '', label: 'Original (Agrandir)', css: "'Agrandir', sans-serif" },
+  onChange: function () { if (window.GWParams) GWParams.markDirty('apariencia'); }
+});
 </script>
-<script>
-(function () {
-  const colorInput = document.getElementById('themeColor');
-  // El mismo selector (con buscador y vista previa de cada fuente) que el diseñador de escarapelas: static/js/font-picker.js, con la lista de static/js/fonts-propias.js.
-  const fontsSelect = GoldenFontPicker.mount(document.getElementById('themeFonts'), { value: '', original: { value: '', label: 'Original (Agrandir)', css: "'Agrandir', sans-serif" } });
-  Object.defineProperty(fontsSelect, 'value', { get: () => fontsSelect.get(), set: (v) => fontsSelect.set(v) });
-
-  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();          // las fuentes alojadas se cargan de una vez para que cada opción se vea en la suya
-
-  try {
-    const savedColor = localStorage.getItem('golden_theme_primary');
-    if (savedColor) colorInput.value = savedColor;
-    const savedFont = localStorage.getItem('golden_theme_font_family');
-    if (savedFont) fontsSelect.value = savedFont;
-  } catch (e) {}
-
-  document.getElementById('applyThemeBtn').addEventListener('click', () => {
-    try {
-      localStorage.setItem('golden_theme_primary', colorInput.value);
-      document.documentElement.style.setProperty('--golden-primary', colorInput.value);
-      // El mismo color también pinta el fondo del menú lateral (pedido explícito, ronda 2).
-      document.documentElement.style.setProperty('--golden-sidebar-bg', colorInput.value);
-      // Contraste automático (2026-09-17, pedido explícito): el texto de botones/menú se
-      // recalcula según qué tan clara/oscura sea la elegida, en vez de quedar fijo.
-      const contrast = window.goldenContrastColor ? window.goldenContrastColor(colorInput.value) : '#000000';
-      document.documentElement.style.setProperty('--golden-primary-contrast', contrast);
-      document.documentElement.style.setProperty('--golden-sidebar-contrast', contrast);
-
-      const family = fontsSelect.value;
-      if (family) {
-        localStorage.setItem('golden_theme_font_family', family);
-        if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
-        const value = `'${family}', sans-serif`;
-        document.documentElement.style.setProperty('--font-heading-primary', value);
-        document.documentElement.style.setProperty('--font-heading-secondary', value);
-        document.documentElement.style.setProperty('--font-body', value);
-      } else {
-        localStorage.removeItem('golden_theme_font_family');
-        document.documentElement.style.removeProperty('--font-heading-primary');
-        document.documentElement.style.removeProperty('--font-heading-secondary');
-        document.documentElement.style.removeProperty('--font-body');
-      }
-      showToast('Apariencia aplicada en este computador', 'success');
-    } catch (e) {
-      showToast('No se pudo guardar la preferencia (¿ventana privada?)', 'error');
-    }
-  });
-
-  document.getElementById('resetThemeBtn').addEventListener('click', () => {
-    try {
-      localStorage.removeItem('golden_theme_primary');
-      localStorage.removeItem('golden_theme_font_family');
-    } catch (e) {}
-    document.documentElement.style.removeProperty('--golden-primary');
-    document.documentElement.style.removeProperty('--golden-sidebar-bg');
-    document.documentElement.style.removeProperty('--golden-primary-contrast');
-    document.documentElement.style.removeProperty('--golden-sidebar-contrast');
-    document.documentElement.style.removeProperty('--font-heading-primary');
-    document.documentElement.style.removeProperty('--font-heading-secondary');
-    document.documentElement.style.removeProperty('--font-body');
-    colorInput.value = '#D4AF37';
-    fontsSelect.value = '';
-    showToast('Apariencia restablecida', 'success');
-  });
-
-  // Mismo patrón .tabs/.section que kiosk_registro.html
-  document.querySelectorAll('.tabs .tab').forEach((tabEl) => {
-    tabEl.addEventListener('click', () => {
-      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      tabEl.classList.add('active');
-      document.getElementById(tabEl.dataset.tab).classList.add('active');
-    });
-  });
-})();
-</script>
+<script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
 </body>
 </html>

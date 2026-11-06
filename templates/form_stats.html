@@ -6,6 +6,7 @@
     <title>Estadísticas del formulario | GoldenWeb 2.0</title>
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/form-stats.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-estadisticas.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous" defer></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     {% if not public_view %}<script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>{% endif %}
@@ -19,12 +20,12 @@
         <span class="fs-top__who">{{ staff_name }}</span>
         {% if back_url %}<a class="gw-btn gw-btn--secondary gw-btn--sm" href="{{ back_url }}">{{ back_label }}</a>{% endif %}
         {% include "_gw_theme_toggle.html" %}
-        {% if client_view and not public_view %}<form action="/logout" method="post" style="margin:0;"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>{% endif %}
+        {% if client_view and not public_view %}<form action="/logout" method="post" class="fs-top__logout"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>{% endif %}
     </div>
 </header>
 <main class="fs-main">
 {% if public_view %}<div class="gw-alert gw-alert--info" role="note"><strong>Vista de solo lectura.</strong> Este enlace vence el {{ public_view.until }}.</div>{% endif %}
-{% if not client_view and not public_view and form_id %}<div id="statsShare" class="gw-card" data-event-id="{{ event_id }}" data-scope="form" data-form-id="{{ form_id }}" style="margin-bottom:var(--gw-sp-5);"></div>
+{% if not client_view and not public_view and form_id %}<section id="statsShare" class="gw-card fs-share" data-event-id="{{ event_id }}" data-scope="form" data-form-id="{{ form_id }}" aria-label="Compartir estadísticas"></section>
 <script src="{{ url_for('static', path='js/stats-share.js') }}" defer></script>{% endif %}
 {% if blocked_message %}
     <div class="gw-state gw-state--error" role="alert">
@@ -35,18 +36,23 @@
     <div id="fs-root" data-api="{{ api_url }}"{% if not client_view %} data-staff="1"{% endif %}>
         <div class="fs-head">
             <div>
-                <p class="gw-eyebrow" style="margin:0;">{{ event_name }}</p>
+                <p class="gw-eyebrow fs-head__eyebrow">{{ event_name }}</p>
                 <h1 class="gw-title">{{ form_name }}</h1>
-                <p class="gw-hint" style="margin:0;" id="fs-updated" aria-live="polite">Cargando…</p>
+                <p class="gw-hint fs-head__updated" id="fs-updated" aria-live="polite">Cargando…</p>
             </div>
             <div class="fs-head__meta fs-actions">
                 <span class="gw-badge" id="fs-state" hidden></span>
                 {% if not client_view %}<label class="gw-check"><input type="checkbox" id="fs-tests"> Incluir pruebas</label>{% endif %}
-                <button type="button" class="gw-btn gw-btn--secondary" data-fs-refresh>Actualizar</button>
+                <button type="button" class="gw-btn gw-btn--secondary" data-fs-refresh aria-label="Actualizar las estadísticas">Actualizar</button>
             </div>
         </div>
-        <div id="fs-body" style="display:flex; flex-direction:column; gap:var(--gw-sp-6); margin-top:var(--gw-sp-5);">
-            <div class="gw-state"><div class="gw-spinner" role="status" aria-label="Cargando"></div></div>
+        <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+            <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira las cifras</span></li>
+            <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Revisa cupos y variables</span></li>
+            <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">{% if not client_view and not public_view %}Comparte el enlace{% else %}Actualiza cuando quieras{% endif %}</span></li>
+        </ol>
+        <div id="fs-body" class="fs-body">
+            <div class="gw-state"><div class="gw-spinner" role="status" aria-label="Cargando"></div><p class="gw-state__text">Cargando las estadísticas…</p></div>
         </div>
     </div>
 {% endif %}

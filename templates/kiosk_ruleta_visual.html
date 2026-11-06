@@ -1,3 +1,9 @@
+{# Ruleta del evento · apariencia (Fase 1.5, rediseño visual). Grupos plegables, vista previa a un lado (abajo en celular) y UN solo «Guardar cambios» (barra de abajo, Ctrl/Cmd+S).
+   Solo tokens --gw-* y clases .gw-*. La vista previa lleva .gw-no-theme: es lo que verá la gente, no cambia con el tema de quien configura. La pantalla del proyector (/r/{token}) no se toca. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,127 +11,219 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruleta — Apariencia | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-ruleta.css') }}">
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
-    <style>
-        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
-        .tabs-r { display:flex; gap:8px; margin-bottom:1.2rem; flex-wrap:wrap; }
-        .tabs-r a { padding:8px 20px; border-radius:20px; border:1px solid #ddd; background:white; text-decoration:none; color:inherit; font-size:0.85rem; font-weight:600; }
-        .tabs-r a.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
-        .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:0.9rem; align-items:end; }
-        .grid label { display:block; font-size:0.75rem; color:#777; margin-bottom:3px; }
-        .grid input[type=text], .grid input[type=number], .grid select { width:100%; box-sizing:border-box; padding:0.55rem 0.7rem; border:1px solid #ddd; border-radius:10px; font-size:0.88rem; }
-        .grid input[type=color] { width:100%; height:40px; padding:2px; border:1px solid #ddd; border-radius:10px; cursor:pointer; }
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
-        .palette { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-        .palette span { position:relative; } .palette input { width:46px; height:40px; padding:0; border:1px solid #ddd; border-radius:8px; cursor:pointer; }
-        .palette button { position:absolute; top:-8px; right:-8px; width:18px; height:18px; border-radius:50%; border:none; background:#dc3545; color:white; font-size:11px; cursor:pointer; line-height:1; }
-        #preview { border-radius:20px; padding:20px; text-align:center; min-height:520px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-        #preview canvas { width:min(440px, 100%); height:auto; }
-        .split { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:1.2rem; align-items:start; } @media (max-width: 1000px) { .split { grid-template-columns:1fr; } }
-    </style>
 </head>
-<body class="has-sidebar">
-{% include "_kiosk_top.html" %}
-<script>window.EVENT_ID = {{ event.id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<body class="gw-page gw-shell gw-ruleta has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.EVENT_ID = {{ event.id }}; window.TENANT_ID = "{{ event.tenant_id }}"; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
+
 <main class="golden-main">
-  <section class="golden-section"><div class="golden-container">
-    <div class="golden-section-title"><span>{{ company_name|upper }}</span><h2>Apariencia de la <span class="gradient-text">Ruleta</span></h2></div>
-    <div class="app-container">
-      <div class="tabs-r"><a href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a><a class="active" href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia (visual)</a></div>
-      <p style="font-size:0.85rem; color:#777;">Esto solo cambia cómo se VE la pantalla del sorteo; es independiente de cómo se elige al ganador.</p>
-      <div class="split">
-        <div class="card">
-          <div class="grid">
-            <div style="grid-column:1/-1;"><label>Tipo de ruleta</label><select id="wheel_style"><option value="circular">Circular (la clásica: hasta 24 nombres legibles)</option><option value="jackpot">Estilo casino (columna vertical de nombres: ideal para muchos, 200 o más)</option></select></div>
-            <div><label>Título en pantalla</label><input type="text" id="title" maxlength="80"></div>
-            <div><label>Fuente del título</label><select id="title_font"></select></div>
-            <div><label>Color del título</label><input type="color" id="title_color"></div>
-            <div><label>Fuente de los nombres</label><select id="font_family"></select></div>
-            <div><label>Color del texto</label><input type="color" id="text_color"></div>
-            <div><label>Color del fondo</label><input type="color" id="background_color"></div>
-            <div><label>Color del puntero y borde</label><input type="color" id="pointer_color"></div>
-            <div><label>Fondo de la tarjeta del ganador</label><input type="color" id="winner_bg"></div>
-            <div><label>Texto de la tarjeta del ganador</label><input type="color" id="winner_color"></div>
-            <div><label>Duración del giro (segundos)</label><input type="number" id="spin_seconds" min="2" max="20"></div>
-          </div>
-          <h4 style="margin:1.2rem 0 0.4rem; color:var(--golden-dark); font-size:0.9rem;">Colores de los segmentos de la ruleta</h4>
-          <div class="palette" id="palette"></div>
-          <button type="button" class="small-btn" id="addColor" style="margin-top:0.6rem;">+ Agregar color</button>
-          <h4 style="margin:1.2rem 0 0.4rem; color:var(--golden-dark); font-size:0.9rem;">Imágenes</h4>
-          <div class="grid">
-            <div><label>Imagen de fondo</label><input type="file" id="bgFile" accept="image/*"><button type="button" class="small-btn" id="bgClear" style="margin-top:4px;">Quitar imagen</button></div>
-            <div><label>Logo (arriba del título)</label><input type="file" id="logoFile" accept="image/*"><button type="button" class="small-btn" id="logoClear" style="margin-top:4px;">Quitar logo</button></div>
-          </div>
-          <div style="margin-top:1.2rem; display:flex; gap:8px; flex-wrap:wrap;"><button type="button" class="small-btn primary" id="saveBtn">Guardar apariencia</button><button type="button" class="small-btn" id="spinBtn">▶ Probar animación</button><button type="button" class="small-btn" id="spinManyBtn">▶ Probar con 200 nombres</button></div>
-        </div>
-        <div><div id="preview"><h1 id="pTitle" style="margin:0 0 8px; font-weight:400; font-size:2.4rem;"></h1><img id="pLogo" alt="" style="max-height:70px; margin-bottom:6px; display:none;"><div id="pStage" style="width:min(440px, 100%);"></div><div id="pResult" style="margin-top:12px; min-height:90px;"></div></div></div>
+  <div class="gw-container gw-ruleta__wrap" data-gw-tour="ruleta-visual" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name }}</p>
+        <h1 class="gw-page-head__title">Apariencia de la ruleta</h1>
+        <p class="gw-page-head__sub">Solo cambia cómo se VE la pantalla del sorteo; es independiente de cómo se elige al ganador.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="ruleta-visual">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
-  </div></section>
+
+    <nav class="gw-ruleta-nav" aria-label="Pantallas de la ruleta">
+      <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a>
+      <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/ruleta/visual" aria-current="page">2. Apariencia</a>
+    </nav>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige el tipo, el título y los colores</span>
+        {% call ayuda('ay_paso1', 'Elige el tipo, el título y los colores') %}La ruleta circular es la clásica y lee bien hasta unos 24 nombres. El estilo casino muestra una columna vertical de nombres y sirve para muchos, 200 o más.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Mira la vista previa y prueba</span>
+        {% call ayuda('ay_paso2', 'Mira la vista previa y prueba') %}La vista previa se actualiza al instante. «Probar animación» gira con nombres de ejemplo; no autoriza ningún sorteo ni guarda nada.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Guarda los cambios</span>
+        {% call ayuda('ay_paso3', 'Guarda los cambios') %}El botón «Guardar cambios» de abajo guarda toda la apariencia. La pantalla del proyector la toma sola, sin recargar.{% endcall %}</li>
+    </ol>
+
+    <div class="gw-state gw-state--error" id="initError" role="alert" hidden>
+      <p class="gw-state__title">No se pudo cargar la apariencia</p>
+      <p class="gw-state__text" id="initErrorText">Revisa la conexión e inténtalo de nuevo.</p>
+      <button type="button" class="gw-btn gw-btn--secondary" id="initRetry">Reintentar</button>
+    </div>
+
+    <div class="gw-ruleta-split" id="paramsRoot">
+      <div data-psave="style" data-gw-tour-step="1" data-gw-tour-title="1. Elige el tipo, el título y los colores" data-gw-tour-text="Cada grupo se abre y se cierra. Lo que cambies se ve enseguida en la vista previa.">
+        <details class="gw-group" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Tipo de ruleta y título</span><span class="gw-group__hint">Cómo se ve la ruleta y qué texto lleva arriba.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-form-grid">
+              <div class="gw-field"><label class="gw-label" for="wheel_style">Tipo de ruleta</label><select class="gw-select" id="wheel_style"><option value="circular">Circular (la clásica: hasta 24 nombres legibles)</option><option value="jackpot">Estilo casino (columna vertical de nombres: ideal para muchos, 200 o más)</option></select></div>
+              <div class="gw-field"><label class="gw-label" for="title">Título en pantalla</label><input type="text" class="gw-input" id="title" maxlength="80"></div>
+              <div class="gw-field"><label class="gw-label" for="title_font">Fuente del título</label><select class="gw-select" id="title_font"></select></div>
+              <div class="gw-field"><label class="gw-label" for="font_family">Fuente de los nombres</label><select class="gw-select" id="font_family"></select></div>
+              <div class="gw-field"><label class="gw-label" for="spin_seconds">Duración del giro (segundos)</label><input type="number" class="gw-input gw-input--short" id="spin_seconds" min="2" max="20"></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-group" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Colores</span><span class="gw-group__hint">Texto, fondo, puntero, tarjeta del ganador y segmentos.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-form-grid">
+              <div class="gw-field"><label class="gw-label" for="title_color">Color del título</label><input type="color" class="gw-ruleta-colors" id="title_color"></div>
+              <div class="gw-field"><label class="gw-label" for="text_color">Color del texto</label><input type="color" class="gw-ruleta-colors" id="text_color"></div>
+              <div class="gw-field"><label class="gw-label" for="background_color">Color del fondo</label><input type="color" class="gw-ruleta-colors" id="background_color"></div>
+              <div class="gw-field"><label class="gw-label" for="pointer_color">Color del puntero y borde</label><input type="color" class="gw-ruleta-colors" id="pointer_color"></div>
+              <div class="gw-field"><label class="gw-label" for="winner_bg">Fondo de la tarjeta del ganador</label><input type="color" class="gw-ruleta-colors" id="winner_bg"></div>
+              <div class="gw-field"><label class="gw-label" for="winner_color">Texto de la tarjeta del ganador</label><input type="color" class="gw-ruleta-colors" id="winner_color"></div>
+            </div>
+            <h3 class="gw-sub">Colores de los segmentos de la ruleta</h3>
+            <div class="gw-ruleta-palette" id="palette" role="group" aria-label="Colores de los segmentos"></div>
+            <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary" id="addColor">{{ ic('plus', 'gw-icon--sm') }} Agregar color</button></div>
+          </div>
+        </details>
+
+        <details class="gw-group">
+          <summary class="gw-group__sum"><span class="gw-group__title">Imágenes</span><span class="gw-group__hint">Imagen de fondo y logo (opcionales).</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-form-grid">
+              <div class="gw-field"><label class="gw-label" for="bgFile">Imagen de fondo</label><input type="file" class="gw-input" id="bgFile" accept="image/*"><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="bgClear">Quitar imagen</button></div></div>
+              <div class="gw-field"><label class="gw-label" for="logoFile">Logo (arriba del título)</label><input type="file" class="gw-input" id="logoFile" accept="image/*"><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="logoClear">Quitar logo</button></div></div>
+            </div>
+            <p class="gw-hint">Al elegir una imagen se ve en la vista previa; se conserva al guardar los cambios.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="gw-ruleta-split__preview" data-gw-tour-step="2" data-gw-tour-title="2. Mira la vista previa y prueba" data-gw-tour-text="Así se verá la pantalla del sorteo. Prueba la animación con nombres de ejemplo.">
+        <div class="gw-ruleta-preview gw-no-theme" id="preview">
+          <p class="gw-ruleta-preview__title" id="pTitle"></p>
+          <img class="gw-ruleta-preview__logo" id="pLogo" alt="" hidden>
+          <div class="gw-ruleta-preview__stage" id="pStage"></div>
+          <div class="gw-ruleta-preview__result" id="pResult" aria-live="polite"></div>
+        </div>
+        <div class="gw-ruleta-tools gw-ruleta-hist">
+          <button type="button" class="gw-btn gw-btn--secondary" id="spinBtn">Probar animación</button>
+          <button type="button" class="gw-btn gw-btn--secondary" id="spinManyBtn">Probar con 200 nombres</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
+
+{% include "_gw_savebar.html" %}
+
 <script>
 const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
 const $ = (id) => document.getElementById(id);
 const SAMPLE = ['Ana Pérez', 'Luis Gómez', 'Marta Ruiz', 'Juan Mora', 'Sofía Díaz', 'Pedro Cruz', 'Laura Vega', 'Diego Rey', 'Carla Sosa', 'Iván León', 'Elena Paz', 'Tomás Gil'];
+const NEW_COLOR = ['#', '8a8a8a'].join('');                 // gris neutro para un segmento nuevo (se cambia en el selector de color)
 let style = null, stage = null, busy = false;
 const MANY = Array.from({ length: 200 }, (_, i) => `Asistente ${String(i + 1).padStart(3, "0")}`);
 const staffAsset = (p) => `/api/badge-assets/${p}`;
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
+const pending = () => window.GWParams.markDirty('style');
+// UN solo guardado (barra de abajo): este bloque se registra con su save(); los campos dentro de [data-psave="style"] lo dejan pendiente solos.
+window.GWParams.register({ key: 'style', label: 'Apariencia', order: 1, save: async () => {
+  style = await j(`${api}/style`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(style) });
+  paintPreview();
+} });
 
 function paintPreview() {
   RouletteRender.applyBackground($('preview'), style, staffAsset);
   $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
-  $('pLogo').style.display = style.logo ? 'inline' : 'none'; if (style.logo) $('pLogo').src = staffAsset(style.logo);
-  $('pStage').style.width = style.wheel_style === 'jackpot' ? 'min(760px, 100%)' : 'min(440px, 100%)';
+  $('pLogo').hidden = !style.logo; if (style.logo) $('pLogo').src = staffAsset(style.logo);
+  $('pStage').classList.toggle('gw-ruleta-preview__stage--wide', style.wheel_style === 'jackpot');
   stage = RouletteRender.stage($('pStage'), style);
   stage.idle(SAMPLE);
 }
 function bindColor(id) { $(id).value = style[id]; $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }); }
 function renderPalette() {
-  $('palette').innerHTML = style.colors.map((c, i) => `<span><input type="color" value="${c}" data-i="${i}">${style.colors.length > 2 ? `<button type="button" data-rm="${i}">×</button>` : ''}</span>`).join('');
-  $('palette').querySelectorAll('input').forEach((el) => el.addEventListener('input', () => { style.colors[+el.dataset.i] = el.value; paintPreview(); }));
-  $('palette').querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { style.colors.splice(+b.dataset.rm, 1); renderPalette(); paintPreview(); }));
+  $('palette').innerHTML = style.colors.map((c, i) => `<span class="gw-ruleta-swatch"><input type="color" class="gw-ruleta-colors" value="${c}" data-i="${i}" aria-label="Color del segmento ${i + 1}">${style.colors.length > 2 ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-rm="${i}" aria-label="Quitar el color ${i + 1}" title="Quitar"><svg class="gw-icon" aria-hidden="true"><use href="${window.GW_ICONS}#i-close"/></svg></button>` : ''}</span>`).join('');
 }
+$('palette').addEventListener('input', (e) => { const el = e.target.closest('[data-i]'); if (!el) return; style.colors[+el.dataset.i] = el.value; paintPreview(); });
+$('palette').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; style.colors.splice(+b.dataset.rm, 1); renderPalette(); paintPreview(); pending(); });
 async function upload(input, key) {
   const f = input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
-  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style[key] = d.storage_path; paintPreview(); showToast('Imagen cargada — guarda la apariencia para conservarla', 'success'); }
+  input.disabled = true;
+  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style[key] = d.storage_path; paintPreview(); pending(); showToast('Imagen cargada — guarda los cambios para conservarla', 'success'); }
   catch (e) { showToast(e.message, 'error'); }
+  input.disabled = false;
+}
+async function spin(btn, names, winner, entity) {
+  if (busy) return; busy = true; $('pResult').innerHTML = '';
+  try {
+    await GW.busy(btn, async () => {
+      await stage.spin(names, winner, style.spin_seconds);
+      RouletteRender.reveal($('pResult'), { position: 1, name: winner, entity }, style);
+    });
+  } catch (e) { showToast(e.message, 'error'); }
+  busy = false;
 }
 
-(async function init() {
-  const cfg = await j(api);
-  style = cfg.style;
-  const fill = (id) => { $(id).innerHTML = GoldenFonts.choices.map((f) => `<option ${GoldenFonts.resolve(style[id]) === f ? 'selected' : ''}>${f}</option>`).join(''); $(id).addEventListener('change', () => { style[id] = $(id).value; paintPreview(); }); };   // solo las 6 tipografías alojadas; un diseño viejo muestra la equivalente
+async function init() {
+  $('initError').hidden = true;
+  try {
+    const cfg = await j(api);
+    style = cfg.style;
+  } catch (e) {
+    $('initErrorText').textContent = 'No se pudo cargar la apariencia (' + e.message + '). Revisa la conexión e inténtalo de nuevo.';
+    $('initError').hidden = false;
+    return;
+  }
+  const fill = (id) => { $(id).innerHTML = GoldenFonts.choices.map((f) => `<option ${GoldenFonts.resolve(style[id]) === f ? 'selected' : ''}>${f}</option>`).join(''); if (!$(id).dataset.bound) { $(id).dataset.bound = '1'; $(id).addEventListener('change', () => { style[id] = $(id).value; paintPreview(); }); } };   // solo las 6 tipografías alojadas; un diseño viejo muestra la equivalente
   fill('title_font'); fill('font_family');
-  $('title').value = style.title; $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
-  ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach(bindColor);
-  $('wheel_style').value = style.wheel_style || 'circular'; $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });
-  $('spin_seconds').value = style.spin_seconds; $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
+  $('title').value = style.title;
+  ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach((id) => { $(id).value = style[id]; });
+  $('wheel_style').value = style.wheel_style || 'circular';
+  $('spin_seconds').value = style.spin_seconds;
   renderPalette(); paintPreview();
-  $('addColor').addEventListener('click', () => { if (style.colors.length >= 12) return; style.colors.push('#888888'); renderPalette(); paintPreview(); });
-  $('bgFile').addEventListener('change', () => upload($('bgFile'), 'background_image')); $('logoFile').addEventListener('change', () => upload($('logoFile'), 'logo'));
-  $('bgClear').addEventListener('click', () => { style.background_image = ''; $('bgFile').value = ''; paintPreview(); });
-  $('logoClear').addEventListener('click', () => { style.logo = ''; $('logoFile').value = ''; paintPreview(); });
-  $('saveBtn').addEventListener('click', async () => { try { style = await j(`${api}/style`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(style) }); showToast('Apariencia guardada — la pantalla del sorteo la toma sola', 'success'); } catch (e) { showToast(e.message, 'error'); } });
-  $('spinBtn').addEventListener('click', async () => {
-    if (busy) return; busy = true; $('pResult').innerHTML = '';
-    await stage.spin(SAMPLE, 'Ana Pérez', style.spin_seconds);
-    RouletteRender.reveal($('pResult'), { position: 1, name: 'Ana Pérez', entity: 'Ejemplo S.A.S.' }, style); busy = false;
-  });
-  $('spinManyBtn').addEventListener('click', async () => {
-    if (busy) return; busy = true; $('pResult').innerHTML = '';
-    await stage.spin(MANY, 'Asistente 137', style.spin_seconds);
-    RouletteRender.reveal($('pResult'), { position: 1, name: 'Asistente 137', entity: '200 nombres de prueba' }, style); busy = false;
-  });
-})();
+  if (!init.bound) {
+    init.bound = true;
+    $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
+    ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach((id) => $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }));
+    $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });
+    $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
+    $('addColor').addEventListener('click', () => { if (style.colors.length >= 12) { showToast('Máximo 12 colores', 'info'); return; } style.colors.push(NEW_COLOR); renderPalette(); paintPreview(); pending(); });
+    $('bgFile').addEventListener('change', () => upload($('bgFile'), 'background_image')); $('logoFile').addEventListener('change', () => upload($('logoFile'), 'logo'));
+    $('bgClear').addEventListener('click', () => { style.background_image = ''; $('bgFile').value = ''; paintPreview(); pending(); });
+    $('logoClear').addEventListener('click', () => { style.logo = ''; $('logoFile').value = ''; paintPreview(); pending(); });
+    $('spinBtn').addEventListener('click', (e) => spin(e.currentTarget, SAMPLE, 'Ana Pérez', 'Ejemplo S.A.S.'));
+    $('spinManyBtn').addEventListener('click', (e) => spin(e.currentTarget, MANY, 'Asistente 137', '200 nombres de prueba'));
+  }
+}
+$('initRetry').addEventListener('click', (e) => GW.busy(e.currentTarget, init));
+init();
 </script>
 </body>
 </html>

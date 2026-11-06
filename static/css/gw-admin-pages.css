@@ -1,0 +1,23 @@
+/* Clientes, Configuración y Staff (Fase 1.5, Ola 3). Solo tokens --gw-*; lo común (tarjetas, pestañas, barra de guardado) sale de design-system.css. */
+.gw-adm-skeleton { height: 5rem; }
+.gw-cards--tenants { grid-template-columns: minmax(0, 1fr); }
+.gw-tenant__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); width: 100%; min-height: var(--gw-tap); padding: 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.gw-tenant__head:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; border-radius: var(--gw-radius-md); }
+.gw-tenant__code { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal); }
+.gw-tenant__toggle { display: inline-flex; align-items: center; gap: var(--gw-sp-2); color: var(--gw-text-muted); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
+.gw-tenant__toggle .gw-icon { transition: transform var(--gw-dur); transform: rotate(-90deg); }
+.gw-tenant__head[aria-expanded="true"] .gw-tenant__toggle .gw-icon { transform: rotate(90deg); }
+.gw-tenant__body { display: flex; flex-direction: column; gap: var(--gw-sp-3); padding-top: var(--gw-sp-3); border-top: 1px solid var(--gw-border); }
+.gw-tenant__body[hidden] { display: none; }
+.gw-event-list { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.gw-event-card { background: var(--gw-surface-2); box-shadow: none; }
+.gw-event-card .gw-select { min-height: var(--gw-tap); width: auto; }
+.gw-event-code { color: var(--gw-text-muted); font-weight: var(--gw-fw-normal); }
+.gw-card-row__actions .gw-select { flex: 1 1 auto; }
+/* Configuración */
+.gw-config__wrap { display: flex; flex-direction: column; gap: var(--gw-sp-5); padding-bottom: calc(var(--gw-sp-9, 6rem) + var(--gw-sp-4)); }
+.gw-config__swatch { width: 4rem; height: var(--gw-tap); padding: 0; border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); cursor: pointer; }
+.gw-config__frame { width: 100%; min-height: 80vh; border: 0; border-radius: var(--gw-radius-lg); background: transparent; }
+/* Staff */
+.gw-staff__who { overflow-wrap: anywhere; }
+.gw-staff__actions .gw-btn { flex: 0 1 auto; }

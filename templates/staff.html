@@ -1,3 +1,9 @@
+{# Usuarios del personal (Fase 1.5, Ola 3): cada cuenta es una tarjeta con su rol en insignia y sus acciones a la vista; crear cuenta en un grupo plegable; guía de 3 pasos.
+   También se muestra dentro de Configuración (?embed=1, sin menú ni cabecera). Solo tokens --gw-* y clases .gw-*. Lógica y permisos de siempre; el JS es static/js/gw-staff.js. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,24 +11,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>
-<body{% if not embed %} class="has-sidebar"{% endif %}>
+<body class="gw-page gw-shell{% if not embed %} has-sidebar{% endif %}">
 {% if not embed %}{% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_username }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_username }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -31,186 +39,69 @@
 {% endif %}
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:2rem;">
-      <span>GESTIÓN</span>
-      <h2>Usuarios de staff</h2>
+  <div class="gw-container gw-stack-lg" id="staffRoot" data-gw-tour="staff" data-gw-tour-auto data-staff-role="{{ staff_role }}" data-staff-username="{{ staff_username }}" data-icons="{{ url_for('static', path='img/icons.svg') }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Gestión</p>
+        <h1 class="gw-page-head__title">Usuarios de staff</h1>
+        <p class="gw-page-head__sub">Aquí solo se crean cuentas <strong>Coordinador</strong> y <strong>Comercial</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña «Usuarios del evento» en el kiosco de ese evento): quedan asociados a ese evento en el mismo paso.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="staff">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
     </div>
 
-    <p style="color:#666; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong> y <strong>Comercial</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Crea la cuenta</span>
+        {% call ayuda('ay_stf1', 'Crea la cuenta') %}Abre «Nueva cuenta», llena usuario, nombre, contraseña temporal y teléfono. La persona tendrá que elegir su propia contraseña al entrar.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Asigna el rol</span>
+        {% call ayuda('ay_stf2', 'Asigna el rol') %}El rol define qué puede hacer. Después, desde la tarjeta de la cuenta, un administrador puede cambiarlo o darle un segundo rol (coordinador + comercial).{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Revisa los accesos</span>
+        {% call ayuda('ay_stf3', 'Revisa los accesos') %}En la lista ves quién está activo. Desactivar corta el acceso sin borrar nada; «Borrar permanente» elimina la cuenta y no se puede deshacer.{% endcall %}</li>
+    </ol>
 
-    <div class="golden-badge-builder" style="margin-bottom: 2rem;">
-      <div class="badge-form-title">Nueva cuenta</div>
-      <form id="newStaffForm" data-gw-pwcheck data-gw-strict="1">
-        <div class="badge-input-row">
-          <div class="badge-input-group">
-            <label>Usuario</label>
-            <input type="text" name="username" required data-gw-username-input autocapitalize="none">
+    <details class="gw-group" id="newStaffGroup" data-gw-tour-step="1" data-gw-tour-title="1. Crea la cuenta" data-gw-tour-text="Abre «Nueva cuenta» y llena los datos. La contraseña es temporal: la persona elige la suya al entrar.">
+      <summary class="gw-group__sum">{{ ic('user-plus', 'gw-icon--sm') }} Nueva cuenta</summary>
+      <div class="gw-group__body">
+        <form id="newStaffForm" class="gw-stack" data-gw-pwcheck data-gw-strict="1">
+          <div class="gw-fields-row gw-fields-row--2">
+            <div class="gw-field"><label class="gw-label" for="staffUsername">Usuario</label><input class="gw-input" type="text" id="staffUsername" name="username" required data-gw-username-input autocapitalize="none"></div>
+            <div class="gw-field"><label class="gw-label" for="staffFullName">Nombre completo</label><input class="gw-input" type="text" id="staffFullName" name="full_name"></div>
           </div>
-          <div class="badge-input-group">
-            <label>Nombre completo</label>
-            <input type="text" name="full_name">
+          <div class="gw-fields-row gw-fields-row--2">
+            <div class="gw-field">
+              <label class="gw-label" for="staffPassword">Contraseña temporal</label>
+              <input class="gw-input" type="password" id="staffPassword" name="password" required autocomplete="new-password" data-gw-eye data-gw-new>
+              <div data-gw-rules></div>
+            </div>
+            <div class="gw-field" data-gw-tour-step="2" data-gw-tour-title="2. Asigna el rol" data-gw-tour-text="El rol define qué puede hacer la cuenta. Después se puede cambiar desde su tarjeta.">
+              <label class="gw-label" for="roleSelect">Rol</label>
+              <select class="gw-select" name="role" id="roleSelect" required>
+                <option value="coordinador">Coordinador</option>
+                <option value="comercial">Comercial</option>
+              </select>
+            </div>
           </div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group">
-            <label>Contraseña temporal</label>
-            <input type="password" name="password" required autocomplete="new-password" data-gw-eye data-gw-new>
-            <div data-gw-rules></div>
+          <div class="gw-fields-row gw-fields-row--2">
+            <div class="gw-field"><label class="gw-label" for="staffPhone">Teléfono</label><input class="gw-input" type="tel" id="staffPhone" name="phone" placeholder="Ej. +57 300 1234567" required aria-describedby="staffPhoneHint"><p class="gw-hint" id="staffPhoneHint">Obligatorio y único: no puede repetirse entre cuentas.</p></div>
+            <div class="gw-field"><label class="gw-label" for="staffEmail">Correo</label><input class="gw-input" type="email" id="staffEmail" name="email" placeholder="nombre@empresa.com" aria-describedby="staffEmailHint"><p class="gw-hint" id="staffEmailHint">Para notificaciones, por ejemplo el informe final del evento a la comercial.</p></div>
           </div>
-          <div class="badge-input-group">
-            <label>Rol</label>
-            <select name="role" id="roleSelect" required>
-              <option value="coordinador">Coordinador</option>
-              <option value="comercial">Comercial</option>
-            </select>
-          </div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group">
-            <label>Teléfono (obligatorio y único — no puede repetirse entre cuentas)</label>
-            <input type="text" name="phone" placeholder="Ej. +57 300 1234567" required>
-          </div>
-          <div class="badge-input-group">
-            <label>Correo (para notificaciones — ej. informe final del evento a la comercial)</label>
-            <input type="email" name="email" placeholder="nombre@empresa.com">
-          </div>
-        </div>
-        <button type="submit" data-gw-submit class="golden-btn golden-btn-primary">Crear cuenta</button>
-      </form>
-    </div>
+          <div class="gw-actions"><button type="submit" data-gw-submit class="gw-btn gw-btn--primary" id="newStaffSubmit">Crear cuenta</button></div>
+        </form>
+      </div>
+    </details>
 
-    <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-      <table class="golden-table">
-        <thead>
-          <tr><th>Usuario</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
-        </thead>
-        <tbody id="staffBody"></tbody>
-      </table>
-    </div>
+    <section aria-labelledby="staffListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Revisa los accesos" data-gw-tour-text="Cada cuenta es una tarjeta con su rol y su estado. Desde ahí cambias el rol, restableces la contraseña o desactivas el acceso.">
+      <h2 class="gw-sr-only" id="staffListTitle">Cuentas del personal</h2>
+      <div id="staffBody" class="gw-cards" aria-live="polite" aria-busy="true">
+        <div class="gw-skeleton gw-adm-skeleton" aria-hidden="true"></div>
+        <div class="gw-skeleton gw-adm-skeleton" aria-hidden="true"></div>
+        <span class="gw-sr-only">Cargando cuentas…</span>
+      </div>
+    </section>
   </div>
 </main>
 
-<script>
-const staffRole = "{{ staff_role }}";
-const staffUsername = "{{ staff_username }}";
-if (staffRole === "super_admin") {
-  document.getElementById("roleSelect").insertAdjacentHTML("beforeend", '<option value="admin">Admin</option>');
-}
-
-// Debe reflejar DELETABLE_ROLES_BY en app/routers/staff.py — solo para no mostrar un botón que
-// el backend va a rechazar; el permiso real siempre lo valida el servidor.
-const DELETABLE_ROLES = {
-  coordinador: ["digitador"],
-  admin: ["comercial", "coordinador", "digitador", "cliente"],
-  super_admin: ["admin", "comercial", "coordinador", "digitador", "cliente"],
-}[staffRole] || [];
-
-// Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17, pedido explícito): "hay
-// coordinadores que también pueden ser comerciales... lo hace el administrador". Solo admite este
-// único par, en cualquier orden — el botón de abajo solo aparece para filas coordinador/comercial.
-const DUAL_ROLE_PAIR = { coordinador: "comercial", comercial: "coordinador" };
-
-const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const jsArg = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
-
-async function loadStaff() {
-  const res = await fetch("/api/staff");
-  const list = await res.json();
-  document.getElementById("staffBody").innerHTML = list.map(s => {
-    const roleLabel = s.secondary_role ? `${s.role} + ${s.secondary_role}` : s.role;
-    const otherRole = DUAL_ROLE_PAIR[s.role];
-    const dualRoleBtn = (staffRole === "admin" || staffRole === "super_admin") && otherRole
-      ? (s.secondary_role
-          ? `<button class="btn-table-action" onclick="setSecondaryRole(${s.id}, null)">✕ Quitar "${otherRole}"</button>`
-          : `<button class="btn-table-action btn-save" onclick="setSecondaryRole(${s.id}, '${otherRole}')">+ También ${otherRole}</button>`)
-      : "";
-    return `
-    <tr>
-      <td>${esc(s.username)}</td>
-      <td>${esc(s.full_name || "-")}</td>
-      <td>${s.email ? esc(s.email) : '<span style="color:#c98;">sin correo</span>'} <button class="btn-table-action" onclick="editStaffEmail(${s.id}, ${jsArg(s.email || "")})" title="Editar correo">✎</button></td>
-      <td>${esc(roleLabel)}</td>
-      <td>${s.is_active ? "Activo" : "Inactivo"}</td>
-      <td>
-        ${s.role === "super_admin" || s.username === staffUsername ? '<span style="color:#aaa; font-size:0.8rem;">—</span>' : `
-          ${dualRoleBtn}
-          ${(staffRole === "admin" || staffRole === "super_admin") && ["coordinador", "comercial", "admin"].includes(s.role) ? `<button class="btn-table-action" onclick="changeRole(${s.id}, ${jsArg(s.username)}, ${jsArg(s.role)})">Cambiar rol</button>` : ""}
-          ${DELETABLE_ROLES.includes(s.role) ? `<button class="btn-table-action" onclick="resetPassword(${s.id}, ${jsArg(s.username)})">Restablecer contraseña</button>` : ""}
-          ${s.is_active
-            ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
-            : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
-          ${DELETABLE_ROLES.includes(s.role)
-            ? `<button class="btn-table-action" style="background:#6c1c1c;" onclick="deleteStaff(${s.id}, ${jsArg(s.username)})">Borrar permanente</button>`
-            : ""}
-        `}
-      </td>
-    </tr>
-  `;
-  }).join("");
-}
-
-async function editStaffEmail(id, current) {
-  const email = await showPrompt("Correo de esta cuenta (vacío para quitarlo):", { defaultValue: current, confirmLabel: "Guardar" });
-  if (email === null) return;
-  const res = await fetch(`/api/staff/${id}/email`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
-  });
-  if (res.ok) { showToast("Correo actualizado", "success"); loadStaff(); }
-  else { const err = await res.json().catch(() => ({})); showToast(err.detail || "No se pudo actualizar el correo", "error"); }
-}
-
-async function setSecondaryRole(id, secondaryRole) {
-  const res = await fetch(`/api/staff/${id}/secondary-role`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secondary_role: secondaryRole }),
-  });
-  if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${secondaryRole}` : "Rol secundario quitado", "success"); }
-  else { const err = await res.json(); showToast(err.detail || "No se pudo actualizar", "error"); }
-}
-
-async function changeRole(id, username, current) {
-  const options = staffRole === "super_admin" ? "coordinador, comercial o admin" : "coordinador o comercial";
-  const role = await showPrompt(`Nuevo rol para "${username}" (${options}):`, { defaultValue: current, confirmLabel: "Cambiar" });
-  if (role === null || role.trim() === current) return;
-  const res = await fetch(`/api/staff/${id}/role`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: role.trim().toLowerCase() }) });
-  const data = await res.json().catch(() => ({}));
-  if (res.ok) { loadStaff(); showToast("Rol actualizado", "success"); } else showToast(data.detail || "No se pudo cambiar el rol", "error");
-}
-
-async function resetPassword(id, username) {
-  const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 10 caracteres, con letras y números). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: "Restablecer" });
-  if (pwd === null) return;
-  const res = await fetch(`/api/staff/${id}/password`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ new_password: pwd, must_change: true }) });
-  const data = await res.json().catch(() => ({}));
-  if (res.ok) showToast(data.message || "Contraseña restablecida", "success"); else showToast(data.detail || "No se pudo restablecer", "error");
-}
-
-async function deleteStaff(id, username) {
-  if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`))) return;
-  const res = await fetch(`/api/staff/${id}`, {method: "DELETE"});
-  if (res.ok) { loadStaff(); showToast("Cuenta eliminada", "success"); }
-  else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
-}
-
-document.getElementById("newStaffForm").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const form = new FormData(ev.target);
-  const payload = Object.fromEntries(form.entries());
-  const res = await fetch("/api/staff", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
-  });
-  if (res.ok) { ev.target.reset(); loadStaff(); showToast("Cuenta creada", "success"); }
-  else { const err = await res.json(); showToast(typeof err.detail === "string" ? err.detail : "Revisa los datos: falta algún campo o no es válido", "error"); }
-});
-
-async function toggleStaff(id, activate) {
-  const res = await fetch(`/api/staff/${id}/${activate ? "activate" : "deactivate"}`, {method: "PATCH"});
-  loadStaff();
-  showToast(res.ok ? (activate ? "Cuenta reactivada" : "Cuenta desactivada") : "No se pudo actualizar", res.ok ? "success" : "error");
-}
-
-loadStaff();
-</script>
+<script src="{{ url_for('static', path='js/gw-staff.js') }}"></script>
 </body>
 </html>

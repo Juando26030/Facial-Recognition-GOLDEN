@@ -1,3 +1,9 @@
+{# Impresora USB (Fase 1.5, Ola 2): SOLO el marco (encabezado, pasos, tarjetas, estados y botones). No cambia ningún parámetro de impresión: el trabajo, el bitmap, las preferencias y la
+   etiqueta de prueba son los de siempre (static/js/ql-usb.js; docs/IMPRESION_PARAMETROS_INAMOVIBLES.md). Solo tokens --gw-* y clases .gw-*. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,65 +11,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Impresora USB | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {# NO se usa la cabeza común de la base (la del tema oscuro) a propósito: el tema oscuro nunca llega a lo que se imprime (tests/test_design_system.py: test_the_dark_theme_never_reaches_what_is_printed).
+       Se cargan las mismas piezas de la base SIN el script del tema oscuro: esta pantalla es siempre clara y no lleva interruptor de tema. #}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    <script src="{{ url_for('static', path='js/gw-busy.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/gw-ui.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-disenador.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <style>
-        .usb-wrap { max-width: 620px; margin: 1.5rem auto; padding: 0 1rem; }
-        .usb-card { background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.08); padding: 1.4rem 1.4rem 1.6rem; margin-bottom: 1rem; }
-        .usb-card h2 { margin: 0 0 .6rem; font-size: 1.1rem; }
-        .usb-row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
-        .usb-row label { font-size: .88rem; }
-        .usb-row input[type=number] { width: 5.5rem; }
-        .usb-status { font-size: .9rem; padding: .5rem .7rem; border-radius: 10px; background: #f3f3f3; margin-top: .6rem; white-space: pre-wrap; }
-        .usb-status.ok { background: rgba(40,167,69,.14); } .usb-status.bad { background: rgba(192,57,43,.12); }
-        #previewBox { background: #eee; padding: .6rem; border-radius: 10px; overflow: auto; max-height: 340px; text-align: center; }
-        #preview { max-width: 100%; background: #fff; box-shadow: 0 0 0 1px #ccc; image-rendering: pixelated; }
-        .usb-help { font-size: .82rem; color: #555; line-height: 1.45; }
-        .usb-help li { margin: .25rem 0; }
-    </style>
 </head>
-<body>
-<div class="usb-wrap">
-    <h1 style="font-size:1.35rem;">Impresora de escarapelas por USB</h1>
-    <p class="usb-help">Imprime directo en la Brother QL-800 desde este celular o tableta (Chrome), por cable USB, sin diálogo de impresión. <b>Prueba inicial:</b> conecte, pruebe la conexión y
-        imprima la etiqueta de prueba; si sale al revés o invertida, marque «Espejo» o «Invertir» y vuelva a probar (se recuerda en este dispositivo).</p>
-
-    <div class="usb-card">
-        <h2>1. Conexión</h2>
-        <div class="usb-row">
-            <button id="btnConnect" class="btn">Conectar impresora</button>
-            <button id="btnStatus" class="btn" disabled>Probar conexión (sin imprimir)</button>
+<body class="gw-page gw-usb">
+{% include "_env_badge.html" %}
+<a class="gw-skip" href="#usbMain">Ir al contenido</a>
+<header class="gw-usb__top">
+    <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/">{{ ic('home', 'gw-icon--sm') }} Inicio</a>
+</header>
+<main class="gw-container gw-container--narrow gw-stack" id="usbMain" data-gw-tour="impresion-usb" data-gw-tour-auto>
+    <div class="gw-page-head">
+        <div class="gw-page-head__text">
+            <h1 class="gw-page-head__title">Impresora de escarapelas por USB</h1>
+            <p class="gw-page-head__sub">Imprime directo en la Brother QL-800 desde este celular o tableta (Chrome), por cable USB, sin cuadro de impresión.</p>
         </div>
-        <div id="connStatus" class="usb-status">Sin conectar.</div>
-        <ul class="usb-help">
-            <li>Cable USB del celular a la impresora (con adaptador OTG si el celular lo pide) y la impresora <b>encendida</b>.</li>
-            <li>Si no aparece: apague el modo «Editor Lite» (mantenga el botón de la impresora hasta que se apague la luz verde) y cierre la app de Brother si está abierta.</li>
-            <li>Chrome pide permiso una sola vez por dispositivo (en el primer toque de «Conectar» o de «Imprimir»); después reconoce la impresora solo en cuanto se enchufa.</li>
-            <li><b>iPad / iPhone:</b> Apple no permite USB desde el navegador. Imprima desde ahí a través de un celular Android que tenga la impresora conectada (cola de impresión; ver docs/16, B8).</li>
-        </ul>
+        <div class="gw-page-head__actions">
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="impresion-usb">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+        </div>
     </div>
 
-    <div class="usb-card">
-        <h2>2. Etiqueta de prueba</h2>
-        <div class="usb-row">
-            <label>Cinta: <b>continua 62 mm</b></label>
-            <label>Largo <input type="number" id="lenMm" min="20" max="300" value="60"> mm</label>
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+        <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Conecta la impresora</span>
+            {% call ayuda('ay_usb1', 'Conecta la impresora') %}Cable USB del celular a la impresora encendida. Chrome pide permiso una sola vez por dispositivo.{% endcall %}</li>
+        <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Prueba la conexión</span>
+            {% call ayuda('ay_usb2', 'Prueba la conexión') %}«Probar conexión» lee el estado de la cinta sin imprimir nada.{% endcall %}</li>
+        <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Imprime la etiqueta de prueba</span>
+            {% call ayuda('ay_usb3', 'Imprime la etiqueta de prueba') %}Si sale al revés o invertida, marca «Espejo» o «Invertir» y vuelve a probar. Se recuerda en este dispositivo.{% endcall %}</li>
+    </ol>
+
+    <section class="gw-step" aria-labelledby="usbPaso1" data-gw-tour-step="1" data-gw-tour-title="1. Conexión" data-gw-tour-text="Conecta la impresora y pulsa «Probar conexión»: te dice si hay cinta y si está lista.">
+        <div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">1</span><h2 class="gw-step__title" id="usbPaso1">Conexión</h2></div>
+        <div class="gw-step__body">
+            <div class="gw-row">
+                <button id="btnConnect" type="button" class="gw-btn gw-btn--secondary">{{ ic('wifi-off', 'gw-icon--sm') }} Conectar impresora</button>
+                <button id="btnStatus" type="button" class="gw-btn gw-btn--secondary" disabled>{{ ic('check', 'gw-icon--sm') }} Probar conexión (sin imprimir)</button>
+            </div>
+            <div id="connStatus" class="gw-msg gw-usb__status" role="status" aria-live="polite">Sin conectar.</div>
+            <ul class="gw-list gw-hint">
+                <li>Cable USB del celular a la impresora (con adaptador OTG si el celular lo pide) y la impresora <b>encendida</b>.</li>
+                <li>Si no aparece: apague el modo «Editor Lite» (mantenga el botón de la impresora hasta que se apague la luz verde) y cierre la app de Brother si está abierta.</li>
+                <li>Chrome pide permiso una sola vez por dispositivo (en el primer toque de «Conectar» o de «Imprimir»); después reconoce la impresora solo en cuanto se enchufa.</li>
+                <li><b>iPad / iPhone:</b> Apple no permite USB desde el navegador. Imprima desde ahí a través de un celular Android que tenga la impresora conectada (cola de impresión; ver docs/16, B8).</li>
+            </ul>
         </div>
-        <div class="usb-row">
-            <label><input type="checkbox" id="optMirror"> Espejo</label>
-            <label><input type="checkbox" id="optInvert"> Invertir (blanco/negro)</label>
-            <label><input type="checkbox" id="optCut" checked> Cortar al final</label>
-            <label>Margen de avance <input type="number" id="optFeed" min="0" max="10" step="0.5" value="1.5"> mm</label>
+    </section>
+
+    <section class="gw-step" aria-labelledby="usbPaso2" data-gw-tour-step="2" data-gw-tour-title="2. Etiqueta de prueba" data-gw-tour-text="La etiqueta de prueba es asimétrica a propósito: así se ve si sale en espejo o invertida.">
+        <div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">2</span><h2 class="gw-step__title" id="usbPaso2">Etiqueta de prueba</h2></div>
+        <div class="gw-step__body">
+            <p class="gw-hint">Cinta: <b>continua 62 mm</b>. Espejo, invertir, cortar y margen se guardan en este equipo: el Registro (y la impresión compartida) los usa igual. El alto de la escarapela se elige en el Registro, «Impresión».</p>
+            <div class="gw-fields-row gw-fields-row--2">
+                <div class="gw-field">
+                    <label class="gw-label" for="lenMm">Largo de la prueba (mm)</label>
+                    <input class="gw-input gw-input--short" type="number" id="lenMm" min="20" max="300" value="60" inputmode="numeric">
+                </div>
+                <div class="gw-field">
+                    <label class="gw-label" for="optFeed">Margen de avance (mm)</label>
+                    <input class="gw-input gw-input--short" type="number" id="optFeed" min="0" max="10" step="0.5" value="1.5" inputmode="decimal">
+                </div>
+            </div>
+            <div class="gw-stack">
+                <label class="gw-check"><input type="checkbox" id="optMirror"> <span>Espejo</span></label>
+                <label class="gw-check"><input type="checkbox" id="optInvert"> <span>Invertir (blanco/negro)</span></label>
+                <label class="gw-check"><input type="checkbox" id="optCut" checked> <span>Cortar al final</span></label>
+            </div>
+            <div id="previewBox" class="gw-usb__preview"><canvas id="preview" aria-label="Vista previa de la etiqueta de prueba" role="img"></canvas></div>
+            <div class="gw-row">
+                <button id="btnPrint" type="button" class="gw-btn gw-btn--primary" disabled data-gw-tour-step="3" data-gw-tour-title="3. Imprime la prueba" data-gw-tour-text="Imprime la etiqueta. Si sale bien, el Registro imprimirá igual.">{{ ic('printer', 'gw-icon--sm') }} Imprimir etiqueta de prueba</button>
+            </div>
+            <div id="printStatus" class="gw-msg gw-usb__status" role="status" aria-live="polite">La etiqueta de prueba es asimétrica a propósito: una barra negra a la izquierda, un texto y una flecha «→».</div>
         </div>
-        <p class="usb-help" style="margin:0;">Espejo, invertir, cortar y margen se guardan en este equipo: el Registro (y la impresión compartida) los usa igual. El alto de la escarapela se elige en el Registro, «⚙️ Impresión».</p>
-        <div id="previewBox"><canvas id="preview"></canvas></div>
-        <div class="usb-row">
-            <button id="btnPrint" class="btn" disabled>Imprimir etiqueta de prueba</button>
-        </div>
-        <div id="printStatus" class="usb-status">La etiqueta de prueba es asimétrica a propósito: una barra negra a la izquierda, un texto y una flecha «→».</div>
-    </div>
-</div>
+    </section>
+</main>
 
 <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
 <script>
@@ -72,7 +100,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var DOTS = QLUsb.MEDIA[62].printable;
 
-  function setStatus(el, text, kind) { el.textContent = text; el.className = "usb-status" + (kind ? " " + kind : ""); }
+  function busy(btn, work) { return window.GW && GW.busy ? GW.busy(btn, work) : work(); }                  // rueda y sin doble clic (solo el marco; el trabajo es el mismo)
+  function setStatus(el, text, kind) { el.textContent = text; el.className = "gw-msg gw-usb__status" + (kind === "ok" ? " gw-msg--ok" : kind === "bad" ? " gw-msg--err" : ""); }
   function pref(key, def) { try { var v = localStorage.getItem(QLUsb.PREF_KEYS[key]); return v === null ? def : v === "1"; } catch (e) { return def; } }
   function savePref(key, val) { try { localStorage.setItem(QLUsb.PREF_KEYS[key], val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
   try { QLUsb.dropLegacyPrefs(window.localStorage); } catch (e) { /* sin almacenamiento */ }      // «Espejo» con el significado viejo (antes del 24-oct-2026) no se hereda
@@ -92,8 +121,8 @@
     var canvas = $("preview");
     canvas.width = DOTS; canvas.height = heightDots;
     var ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, DOTS, heightDots);
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = "white"; ctx.fillRect(0, 0, DOTS, heightDots);
+    ctx.fillStyle = "black";
     ctx.fillRect(0, 0, 40, heightDots);                                         // barra negra a la izquierda: se ve de inmediato si sale en espejo
     ctx.font = "bold 64px sans-serif"; ctx.textBaseline = "top";
     ctx.fillText("PRUEBA QL-800", 70, 24);
@@ -102,7 +131,7 @@
     ctx.fillText(new Date().toLocaleString("es-CO"), 70, 170);
     ctx.font = "bold 90px sans-serif";
     ctx.fillText("→  62 mm", 70, 240);
-    ctx.lineWidth = 4; ctx.strokeStyle = "#000"; ctx.strokeRect(46, 6, DOTS - 52, heightDots - 12);
+    ctx.lineWidth = 4; ctx.strokeStyle = "black"; ctx.strokeRect(46, 6, DOTS - 52, heightDots - 12);
     return { canvas: canvas, ctx: ctx, height: heightDots };
   }
   drawTest();
@@ -120,16 +149,16 @@
   }
   function release() { if (QLUsb.info()) QLUsb.close(); }
 
-  $("btnConnect").addEventListener("click", async function () {
+  $("btnConnect").addEventListener("click", function () { return busy(this, async function () {
     try {
       var ok = await withPrinter(true, function (device) {
         setStatus($("connStatus"), "Autorizada: " + (device.productName || "Brother") + ". Pulse «Probar conexión» para ver el estado de la cinta.", "ok");
       });
       if (!ok) setStatus($("connStatus"), "No se eligió ninguna impresora.");
     } catch (e) { setStatus($("connStatus"), (e && e.busy ? "" : "No se pudo conectar: ") + errText(e), "bad"); }
-  });
+  }); });
 
-  $("btnStatus").addEventListener("click", async function () {
+  $("btnStatus").addEventListener("click", function () { return busy(this, async function () {
     try {
       await withPrinter(true, async function () {
         var st = await QLUsb.readStatus();
@@ -137,9 +166,9 @@
         setStatus($("connStatus"), "Cinta de " + st.mediaWidthMm + " mm. " + (st.ready ? "Lista para imprimir." : "Atención: " + st.errors.join(", ") + "."), st.ready ? "ok" : "bad");
       });
     } catch (e) { setStatus($("connStatus"), (e && e.busy ? "" : "Error al leer el estado: ") + errText(e), "bad"); }
-  });
+  }); });
 
-  $("btnPrint").addEventListener("click", async function () {
+  $("btnPrint").addEventListener("click", function () { return busy(this, async function () {
     var t = drawTest();
     try {
       await withPrinter(true, async function () {                                  // sin permiso previo, imprimir lo pide en ese mismo toque
@@ -153,7 +182,7 @@
         setStatus($("printStatus"), "Enviado. Si no salió nada, pruebe «Probar conexión» y revise la cinta y la cubierta. La impresora quedó libre para el Registro.", "ok");
       });
     } catch (e) { setStatus($("printStatus"), (e && e.busy ? "" : "No se pudo imprimir: ") + errText(e), "bad"); }
-  });
+  }); });
 
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") release(); });
   window.addEventListener("pagehide", release);

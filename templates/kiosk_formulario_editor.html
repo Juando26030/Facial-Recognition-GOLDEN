@@ -1,3 +1,11 @@
+{# Editor de formularios (Fase 1.5, rediseño del marco y la configuración, 2026-11-05).
+   Solo cambia el marco: cabecera, pestañas, grupos de la configuración, barra de guardado y ventanas. La VISTA PREVIA (FormRender, form-render.js) y el formulario público NO se tocan:
+   el contenedor #previewHost lleva .gw-no-theme y static/css/gw-editor-form.css le devuelve exactamente la herencia de antes (tipografía, peso, interlineado, color).
+   Los ids, nombres y data-* que lee el JS (y tests/js/editor_*_check.js) son los de siempre. Solo tokens --gw-* y clases .gw-* / .gwe-* (docs/ux/ESTANDARES_VISUALES.md). #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,8 +13,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de formulario | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-editor-form.css') }}">
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
@@ -22,227 +30,330 @@
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
-    <style>
-        .card { background:white; padding:1.2rem 1.4rem; border-radius:18px; box-shadow:0 8px 30px rgba(0,0,0,0.07); margin-bottom:1rem; }
-        .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
-        .bar label, .fld label { display:block; font-size:0.72rem; color:#777; margin-bottom:3px; }
-        input[type=text], input[type=number], input[type=datetime-local], select, textarea { padding:0.5rem 0.65rem; border:1px solid #ddd; border-radius:10px; font-size:0.86rem; font-family:inherit; box-sizing:border-box; }
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
-        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
-        .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
-        .tabs-f { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:1rem; }
-        .tabs-f button { padding:8px 18px; border-radius:20px; border:1px solid #ddd; background:white; cursor:pointer; font-weight:600; font-size:0.84rem; }
-        .tabs-f button.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
-        .pane { display:none; } .pane.active { display:block; }
-        .grid3 { display:grid; grid-template-columns:230px minmax(0,1fr) 290px; gap:1rem; align-items:start; } @media (max-width: 1100px) { .grid3 { grid-template-columns:1fr; } }
-        .pal { display:flex; flex-wrap:wrap; gap:6px; } .pal button { flex:1 1 46%; padding:7px 8px; border:1px dashed #bbb; border-radius:10px; background:#fafafa; cursor:grab; font-size:0.76rem; text-align:left; }
-        .pal button:hover { background:#fffbee; border-color:var(--golden-primary); }
-        #canvas { min-height:300px; background:#f6f7fb; border-radius:14px; padding:12px; }
-        .crow { display:flex; gap:8px; align-items:stretch; position:relative; padding:4px; border-radius:10px; }
-        .crow .rowtools { position:absolute; right:6px; top:-11px; display:none; gap:4px; background:#fff; border-radius:12px; padding:1px 6px; box-shadow:0 2px 8px rgba(0,0,0,.15); font-size:0.7rem; }
-        .crow:hover .rowtools { display:flex; }
-        .ccard { flex:1 1 0; min-width:0; background:#fff; border:2px solid #e3e5ec; border-radius:12px; padding:9px 12px; cursor:grab; position:relative; }
-        .ccard.sel { border-color:var(--golden-primary); box-shadow:0 0 0 3px rgba(212,175,55,.25); }
-        .ccard.dl { box-shadow:inset 5px 0 0 var(--golden-primary); } .ccard.dr { box-shadow:inset -5px 0 0 var(--golden-primary); }
-        .ccard .t { font-size:0.7rem; color:#666; } .ccard .l { font-weight:700; font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .ccard .tags span { font-size:0.62rem; background:#eef; border-radius:8px; padding:1px 6px; margin-right:3px; }
-        .gap { height:10px; border-radius:6px; transition:height .1s; } .gap.over { height:26px; background:rgba(212,175,55,.35); }
-        .props .fld { margin-bottom:0.7rem; } .props input[type=text], .props select, .props textarea { width:100%; }
-        table.ans { width:100%; border-collapse:collapse; font-size:0.8rem; } table.ans th, table.ans td { padding:6px 8px; border-bottom:1px solid #f0f0f0; text-align:left; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
-        .test-row { background:#fff8e1; }
-        #previewOverlay { position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:2rem 1rem; }
-        .hint { font-size:0.76rem; color:#666; }
-        .sched { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:6px; }
-    </style>
 </head>
-<body class="has-sidebar">
-{% include "_kiosk_top.html" %}
-<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<body class="gw-page gw-shell gw-editor-form has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";
+window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.gwIcon = function (n) { return '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>'; };</script>
 <main class="golden-main">
-  <section class="golden-section"><div class="golden-container" style="max-width:1400px;">
-    <div class="card">
-      <div class="bar">
-        <a class="small-btn" href="/kiosk/{{ event.id }}/formularios">← Formularios</a>
-        <div style="flex:1 1 260px;"><label>Nombre del formulario</label><input type="text" id="fname" maxlength="120" style="width:100%;"></div>
-        <div><label>Dirección (parte final del enlace)</label><input type="text" id="fslug" style="width:200px;"></div>
-        <span id="statusPill" class="hint"></span>
-        <button class="small-btn primary" id="saveBtn">💾 Guardar diseño</button>
-        <button class="small-btn" id="previewBtn">👁 Previsualizar</button>
-        <button class="small-btn" id="tableBtn" title="Cargar variantes como una hoja de Excel">📊 Tabla de variantes</button>
-        <a class="small-btn" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">🧪 Probar</a>
-        <button class="small-btn" id="tplBtn">📚 Guardar como plantilla</button>
-        <a class="small-btn" id="statsBtn" href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas" title="Cupos, inscritos y gráficas de este formulario">📈 Estadísticas</a>
-        <button class="small-btn" id="clientBtn" title="Crea un usuario y una contraseña temporal para que tu cliente vea SOLO las estadísticas de este formulario">🔑 Acceso para cliente (solo estadísticas)</button>
+  <div class="gw-container gwe-wrap" data-gw-tour="editor-formulario" data-gw-tour-auto>
+
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name }}</p>
+        <h1 class="gw-page-head__title">Editor de formulario</h1>
+        <p class="gw-page-head__sub"><span id="statusPill">Cargando…</span></p>
+      </div>
+      <div class="gw-page-head__actions">
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/{{ event.id }}/formularios">{{ ic('chevron', 'gw-icon--sm gwe-back') }} Formularios</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="editor-formulario">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
-    <div class="tabs-f" id="tabs">
-      <button data-tab="design" class="active">🎨 Diseño</button><button data-tab="config">⚙️ Configuración</button><button data-tab="answers">📥 Respuestas</button>
-      <button data-tab="payments" id="payTab" style="display:none;">💳 Pagos</button><button data-tab="analytics">📊 Analítica</button><button data-tab="invites" id="invTab" style="display:none;">✉️ Invitaciones</button>
-    </div>
 
-    <!-- ===================== DISEÑO ===================== -->
-    <div class="pane active" id="pane-design"><div class="grid3">
-      <div>
-        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Elementos nuevos</h4><p class="hint" style="margin:0 0 8px;">Arrástralos al lienzo (o haz clic para agregarlos al final).</p><div class="pal" id="palNew"></div></div>
-        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div><button type="button" class="small-btn" id="palSync" style="margin-top:8px;" title="Pone en los campos ya enlazados el tipo y las opciones que hoy tienen en Parámetros; antes te muestra qué cambia">Sincronizar con Parámetros</button></div>
-        <div class="card"><details><summary style="cursor:pointer; font-weight:700; font-size:0.9rem;">Apariencia del formulario</summary><div id="themeBox" class="props" style="margin-top:0.7rem;"></div></details></div>
-      </div>
-      <div><div class="card" style="padding:0.8rem;"><div id="sheetsBar" style="margin-bottom:8px;"></div><div id="sheetsPanel"></div><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
-      <div><div class="card props" id="propsBox"><p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p></div></div>
-    </div></div>
+    {# Guía de 3 pasos (R4). #}
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Arma los campos</span>
+        {% call ayuda('ay_paso1', 'Arma los campos') %}En «Diseño» arrastra los elementos al lienzo, haz clic en uno para editarlo y usa «Previsualizar» para ver cómo lo verá la persona.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Pon cupos y cobros</span>
+        {% call ayuda('ay_paso2', 'Pon cupos y cobros') %}En «Configuración» defines el estado, los cupos, las contraseñas y los textos. Los cobros con Wompi se arman con un campo de «Pago» en el diseño.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Prueba y activa</span>
+        {% call ayuda('ay_paso3', 'Prueba y activa') %}Con «Probar» abres el enlace de pruebas (no cobra dinero real). Cuando todo esté bien, cambia el estado a «Activo» en «Configuración».{% endcall %}</li>
+    </ol>
 
-    <!-- ===================== CONFIGURACIÓN ===================== -->
-    <div class="pane" id="pane-config">
-      <div class="card"><h4 style="margin:0 0 8px;">Reembolsos de este formulario</h4>
-        <div class="bar"><div class="fld"><label for="rfDays">Plazo para pedir el reembolso (días después del pago; vacío = el general)</label><input type="number" id="rfDays" min="1" max="365" style="width:120px;"></div></div>
-        <div class="fld"><label for="rfNote">Nota para quien paga (opcional; por ejemplo, si la comisión de la pasarela se devuelve o no)</label><textarea id="rfNote" rows="3" style="width:100%;"></textarea></div>
-        <p class="hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con «Guardar configuración».</p>
+    <section class="gw-card gwe-meta" aria-label="Datos del formulario" data-gw-tour-step="1" data-gw-tour-title="1. Nombre y dirección" data-gw-tour-text="Ponle nombre al formulario y elige la parte final de su enlace. Desde aquí también lo pruebas y lo previsualizas.">
+      <div class="gwe-bar">
+        <div class="gw-field gw-field--grow"><label class="gw-label" for="fname">Nombre del formulario</label><input type="text" class="gw-input" id="fname" maxlength="120"></div>
+        <div class="gw-field gw-field--inline"><label class="gw-label" for="fslug">Dirección (parte final del enlace)</label><input type="text" class="gw-input" id="fslug"></div>
       </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Cupos por variables</h4>
-        <p class="hint" style="margin:0 0 8px;">Cada cupo pone un máximo de inscripciones a quienes cumplan una o varias condiciones (por ejemplo «Categoría = VIP» y «País = Colombia»). Funciona aunque no pongas cupo total; si pones los dos, se aplican los dos. Una inscripción cuenta en TODOS los cupos que cumple.</p>
-        <div id="qRules"></div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"><button type="button" class="small-btn" id="qAdd">+ Agregar cupo</button>
-          <select id="qQuickField" style="max-width:240px;"></select><button type="button" class="small-btn" id="qQuick">Un cupo por cada opción del campo</button></div>
-        <p class="hint">Se guardan con «Guardar configuración» (más abajo).</p>
+      <div class="gwe-tools">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="previewBtn">{{ ic('eye', 'gw-icon--sm') }} Previsualizar</button>
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">{{ ic('link', 'gw-icon--sm') }} Probar</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tableBtn" title="Cargar variantes como una hoja de Excel">{{ ic('form', 'gw-icon--sm') }} Tabla de variantes</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tplBtn">{{ ic('download', 'gw-icon--sm') }} Guardar como plantilla</button>
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" id="statsBtn" href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas" title="Cupos, inscritos y gráficas de este formulario">{{ ic('chart', 'gw-icon--sm') }} Estadísticas</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="clientBtn" title="Crea un usuario y una contraseña temporal para que tu cliente vea SOLO las estadísticas de este formulario">{{ ic('lock', 'gw-icon--sm') }} Acceso para cliente (solo estadísticas)</button>
       </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Estado y enlaces</h4>
-        <div class="bar"><div class="fld"><label>Estado</label><select id="cfgStatus"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
-          <div class="fld"><label>Cupo de inscripciones (vacío = sin límite)</label><input type="number" id="cfgCap" min="1" style="width:130px;"></div>
-          <button class="small-btn primary" id="cfgStatusSave">Aplicar estado y cupo</button><span class="hint" id="capInfo"></span></div>
-        <div style="margin-top:0.9rem;"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
-          <div id="schedBox" style="margin-top:8px; display:none;"><div id="schedRows"></div><button class="small-btn" id="addSched">+ Agregar tramo</button>
-            <p class="hint">Fuera de cualquier tramo el formulario se comporta como «cerrado» (usa la plantilla de cierre). Con el calendario activo, el estado manual de arriba se ignora.</p><button class="small-btn primary" id="cfgSchedSave">Guardar calendario</button></div></div>
-        <div style="margin-top:1rem;" id="linksBox"></div>
+    </section>
+
+    <div class="gwe-tabs">
+      <div class="gw-tablist gwe-tablist" id="tabs" role="tablist" aria-label="Secciones del editor" data-gw-tour-step="2" data-gw-tour-title="2. Elige la sección" data-gw-tour-text="Diseño arma los campos; Configuración fija estado, cupos y textos; Respuestas, Pagos y Analítica muestran lo que llega.">
+        <button type="button" class="gw-tab" role="tab" id="tab_design" data-tab="design" aria-controls="pane-design" aria-selected="true">{{ ic('edit', 'gw-tab__icon') }}<span class="gw-tab__name">Diseño</span><span class="gw-tab__sum">Arma los campos</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_config" data-tab="config" aria-controls="pane-config" aria-selected="false" tabindex="-1">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Configuración</span><span class="gw-tab__sum">Estado, cupos y textos</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_answers" data-tab="answers" aria-controls="pane-answers" aria-selected="false" tabindex="-1">{{ ic('inbox', 'gw-tab__icon') }}<span class="gw-tab__name">Respuestas</span><span class="gw-tab__sum">Inscripciones recibidas</span></button>
+        <button type="button" class="gw-tab" role="tab" id="payTab" data-tab="payments" aria-controls="pane-payments" aria-selected="false" tabindex="-1" hidden>{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Pagos</span><span class="gw-tab__sum">Cobros con Wompi</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_analytics" data-tab="analytics" aria-controls="pane-analytics" aria-selected="false" tabindex="-1">{{ ic('chart', 'gw-tab__icon') }}<span class="gw-tab__name">Analítica</span><span class="gw-tab__sum">Gráficas y orígenes</span></button>
+        <button type="button" class="gw-tab" role="tab" id="invTab" data-tab="invites" aria-controls="pane-invites" aria-selected="false" tabindex="-1" hidden>{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">Enlaces personales</span></button>
       </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Seguridad</h4>
-        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="secOn"> Activar seguridad con contraseña</label>
-        <div id="secBox" class="bar" style="margin-top:8px; display:none;"><div class="fld"><label>Tipo de contraseña</label><select id="secType"><option value="code">Palabra o código fijo (lo defines tú)</option><option value="cedula">La propia cédula de la persona (debe estar en la base elegida abajo)</option></select></div>
-          <div class="fld" id="secCodeBox"><label>Palabra o código de acceso</label><input type="text" id="secCode" maxlength="60"></div></div>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Pre-llenado de datos</h4>
-        <p class="hint" style="margin-top:0;">Los campos marcados como «se muestra pero no se edita» quedan bloqueados con los datos que ya tenemos de la persona.</p>
-        <div class="bar"><div class="fld"><label>¿Cómo se identifica la persona?</label><select id="preMode"><option value="none">No se pre-llena (formulario en blanco)</option><option value="cedula">Autoservicio: un solo enlace, pide la cédula primero</option><option value="invite">Un enlace personal por invitado (llega por correo)</option></select></div>
-          <div class="fld" id="preSrcBox"><label>¿De dónde salen los datos?</label><select id="preSrc"><option value="event">La base de este evento</option><option value="upload">Una base subida aparte solo para este formulario</option></select></div>
-          <div class="fld" id="preUpBox" style="display:none;"><label>Archivo (.xlsx / .csv, con columna de cédula)</label><input type="file" id="preFile" accept=".xlsx,.csv"></div></div>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Idioma y traducción</h4>
-        <div class="bar"><div class="fld"><label>Idioma en que está escrito el formulario</label><select id="langSel"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></div>
-          <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="trOn"> Mostrar el botón «Translate» a todos (25 idiomas)</label></div>
-        <p class="hint">El botón «🌐 Translate» siempre está visible y ofrece 25 idiomas (inglés, francés, alemán, chino, japonés, árabe, hindi, ruso…). Traduce los textos del formulario con Google Translate; lo que la persona escribe en los campos no se traduce ni se envía. Marca aquí el idioma en que escribiste el formulario para que la traducción parta bien.</p>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Paso de identificación (cédula)</h4>
-        <p class="hint" style="margin:0 0 6px;">Lo que ve la persona antes del formulario cuando se le pide el documento. Vacío = los textos de siempre («Identifícate», la explicación y «Continuar»).</p>
-        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="idTitle" maxlength="120" placeholder="Identifícate" style="width:260px;"></div><div class="fld"><label>Texto del botón</label><input type="text" id="idButton" maxlength="40" placeholder="Continuar" style="width:180px;"></div></div>
-        <div class="bar"><div class="fld"><label>Texto</label><input type="hidden" id="idText"><div id="idTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="idImgFile" accept="image/*"><span class="hint" id="idImgName"></span> <button type="button" class="small-btn" id="idImgX">Quitar</button></div></div>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
-        <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
-          <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
-        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="thText"><div id="thTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Plantilla de «formulario cerrado» / cupo lleno</h4>
-        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="clText"><div id="clTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
-      </div>
-      <div class="card"><h4 style="margin:0 0 8px;">Alimentar la base de datos del evento</h4>
-        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="realtime"> En tiempo real: cada inscripción entra de una vez al roster del evento («No registrado»)</label></div>
-        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="on_close"> Al cerrar el formulario: se cargan todas juntas cuando pasa a cerrado o finalizado</label></div>
-        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="manual"> Manual: no se integra sola (descargas el reporte y lo subes como Excel)</label></div>
-        <p class="hint">Requiere un campo de cédula vinculado al campo «Cédula» del evento. Las inscripciones de prueba nunca se cargan.</p>
-        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:8px;"><input type="checkbox" id="sendBadge"> Enviar la escarapela virtual al correo del inscrito</label>
-        <p class="hint" id="sendBadgeWarn" style="margin-top:2px; color:#8a5a00; background:#fff8e1; padding:6px 10px; border-radius:10px; display:none;">⚠️ <b>Este evento no tiene activada la escarapela digital</b> (Parámetros del Evento): mientras tanto no se enviará nada.</p>
-        <p class="hint" id="sendBadgeHint" style="margin-top:2px;">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
-        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:12px;"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
-        <div id="blockRepBox" style="display:none; margin:4px 0 0 26px;"><label style="font-size:0.82rem;">Campo que identifica a la persona <select id="blockRepField"></select></label></div>
-        <p class="hint" style="margin-top:2px;">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
-        <div style="border:1px solid #d9d9d9; border-radius:12px; padding:10px 14px; margin-top:12px;">
-          <h4 style="margin:0 0 4px;">Personas ya registradas</h4>
-          <p class="hint" style="margin:0 0 6px;">Sube la lista de quienes ya se inscribieron por otro medio (cédula, o el campo identificador de arriba; la columna «Registrado en formulario» es opcional: si existe, solo cuentan las filas con «sí»). Se puede recargar cuando quieras; vale solo para ESTE formulario.</p>
-          <div id="regCount" class="hint" style="font-weight:700;"></div>
-          <input type="file" id="regFile" accept=".xlsx,.csv">
-          <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:6px; font-size:0.84rem;">
-            <label>Al cargar <select id="regMode"><option value="add">Agregar (no quita nada)</option><option value="replace">Reemplazar (deja solo las del archivo)</option></select></label>
-            <label>Qué pasa con ellos <select id="regEffect"><option value="block">Solo bloquear (no ocupan cupo)</option><option value="hold">Ocupar cupo y bloquear</option></select></label>
+
+      <!-- ===================== DISEÑO ===================== -->
+      <div class="pane active" id="pane-design" role="tabpanel" aria-labelledby="tab_design" tabindex="0" data-gw-tour-step="3" data-gw-tour-title="3. Arma y guarda" data-gw-tour-text="Arrastra elementos al lienzo, edita sus propiedades a la derecha y guarda con el botón de abajo (o Ctrl o Cmd + S).">
+        <div class="grid3">
+          <div class="gwe-col">
+            <section class="gw-card gwe-side"><h2 class="gwe-h">Elementos nuevos</h2><p class="hint">Arrástralos al lienzo (o haz clic para agregarlos al final).</p><div class="pal" id="palNew"></div></section>
+            <section class="gw-card gwe-side"><h2 class="gwe-h">Campos del evento</h2><p class="hint">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-mt" id="palSync" title="Pone en los campos ya enlazados el tipo y las opciones que hoy tienen en Parámetros; antes te muestra qué cambia">Sincronizar con Parámetros</button></section>
+            <section class="gw-card gwe-side"><details class="gwe-details"><summary class="gwe-summary">Apariencia del formulario</summary><div id="themeBox" class="props gwe-mt"></div></details></section>
           </div>
-          <label style="display:flex; gap:8px; align-items:center; font-size:0.82rem; margin-top:4px;"><input type="checkbox" id="regEnable" checked> Encender «Bloquear inscripciones repetidas» si está apagado (las marcas solo bloquean con ese interruptor)</label>
-          <div style="margin-top:6px;"><button class="small-btn primary" id="regUp">Cargar / recargar lista</button> <button class="small-btn" id="regClear">Quitar todas las marcas</button></div>
+          <div class="gwe-col">
+            <section class="gw-card gwe-canvas-card"><div id="sheetsBar" class="gwe-mb"></div><div id="sheetsPanel"></div><div id="canvas"></div><p class="hint gwe-canvas-hint">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></section>
+          </div>
+          <div class="gwe-col">
+            <section class="gw-card props" id="propsBox" aria-label="Propiedades del elemento"><p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p></section>
+          </div>
         </div>
-        <button class="small-btn" id="feedNow">Cargar a la base ahora las que falten</button> <span class="hint" id="feedInfo"></span>
       </div>
-      <div style="margin-bottom:2rem;"><button class="small-btn primary" id="cfgSave" style="padding:10px 26px;">💾 Guardar configuración</button></div>
+
+      <!-- ===================== CONFIGURACIÓN ===================== -->
+      <div class="pane" id="pane-config" role="tabpanel" aria-labelledby="tab_config" tabindex="0">
+
+        <details class="gw-group" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Estado y enlaces</span><span class="gw-group__hint">Cuándo está abierto el formulario y a dónde se comparte.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <div class="gwe-bar">
+                <div class="gw-field gw-field--inline" data-instant><label class="gw-label" for="cfgStatus">Estado</label><select id="cfgStatus" class="gw-select"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
+                <div class="gw-field gw-field--inline" data-instant><label class="gw-label" for="cfgCap">Cupo de inscripciones (vacío = sin límite)</label><input type="number" class="gw-input" id="cfgCap" min="1"></div>
+                <button type="button" class="gw-btn gw-btn--secondary" id="cfgStatusSave">Aplicar estado y cupo</button>
+              </div>
+              <p class="gw-hint" id="capInfo"></p>
+              <p class="gw-hint">«Aplicar» actúa al instante, sin esperar al botón de guardar.</p>
+            </div>
+            <div class="gw-group__item">
+              <label class="gw-check" data-instant><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
+              <div id="schedBox" data-instant hidden><div id="schedRows"></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="addSched">{{ ic('plus', 'gw-icon--sm') }} Agregar tramo</button>
+                <p class="gw-hint">Fuera de cualquier tramo el formulario se comporta como «cerrado» (usa la plantilla de cierre). Con el calendario activo, el estado manual de arriba se ignora.</p><button type="button" class="gw-btn gw-btn--secondary" id="cfgSchedSave">Aplicar calendario</button></div>
+            </div>
+            <div class="gw-group__item" id="linksBox"></div>
+          </div>
+        </details>
+
+        <details class="gw-group" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Cupos por variables</span><span class="gw-group__hint">Un máximo de inscripciones para quienes cumplan ciertas condiciones.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <p class="gw-hint">Cada cupo pone un máximo de inscripciones a quienes cumplan una o varias condiciones (por ejemplo «Categoría = VIP» y «País = Colombia»). Funciona aunque no pongas cupo total; si pones los dos, se aplican los dos. Una inscripción cuenta en TODOS los cupos que cumple.</p>
+              <div id="qRules"></div>
+              <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAdd">{{ ic('plus', 'gw-icon--sm') }} Agregar cupo</button>
+                <select id="qQuickField" class="gw-select gwe-select-auto" aria-label="Campo para crear un cupo por cada opción"></select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qQuick">Un cupo por cada opción del campo</button></div>
+              <p class="gw-hint">Se guardan con el botón «Guardar configuración» de abajo.</p>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-group">
+          <summary class="gw-group__sum"><span class="gw-group__title">Seguridad y pre-llenado</span><span class="gw-group__hint">Contraseña de acceso y datos que ya tenemos de la persona.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Seguridad</h3>
+              <label class="gw-check"><input type="checkbox" id="secOn"> Activar seguridad con contraseña</label>
+              <div id="secBox" class="gwe-bar" hidden><div class="gw-field gw-field--inline"><label class="gw-label" for="secType">Tipo de contraseña</label><select id="secType" class="gw-select"><option value="code">Palabra o código fijo (lo defines tú)</option><option value="cedula">La propia cédula de la persona (debe estar en la base elegida abajo)</option></select></div>
+                <div class="gw-field gw-field--inline" id="secCodeBox"><label class="gw-label" for="secCode">Palabra o código de acceso</label><input type="text" class="gw-input" id="secCode" maxlength="60"></div></div>
+            </div>
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Pre-llenado de datos</h3>
+              <p class="gw-hint">Los campos marcados como «se muestra pero no se edita» quedan bloqueados con los datos que ya tenemos de la persona.</p>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="preMode">¿Cómo se identifica la persona?</label><select id="preMode" class="gw-select"><option value="none">No se pre-llena (formulario en blanco)</option><option value="cedula">Autoservicio: un solo enlace, pide la cédula primero</option><option value="invite">Un enlace personal por invitado (llega por correo)</option></select></div>
+                <div class="gw-field gw-field--inline" id="preSrcBox"><label class="gw-label" for="preSrc">¿De dónde salen los datos?</label><select id="preSrc" class="gw-select"><option value="event">La base de este evento</option><option value="upload">Una base subida aparte solo para este formulario</option></select></div>
+                <div class="gw-field gw-field--inline" id="preUpBox" hidden><label class="gw-label" for="preFile">Archivo (.xlsx / .csv, con columna de cédula)</label><input type="file" class="gw-input" id="preFile" accept=".xlsx,.csv"></div></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-group">
+          <summary class="gw-group__sum"><span class="gw-group__title">Textos que ve la persona</span><span class="gw-group__hint">Identificación, mensaje final, formulario cerrado e idioma.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Idioma y traducción</h3>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="langSel">Idioma en que está escrito el formulario</label><select id="langSel" class="gw-select"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></div>
+                <label class="gw-check"><input type="checkbox" id="trOn"> Mostrar el botón «Translate» a todos (25 idiomas)</label></div>
+              <p class="gw-hint">El botón «Translate» siempre está visible y ofrece 25 idiomas (inglés, francés, alemán, chino, japonés, árabe, hindi, ruso…). Traduce los textos del formulario con Google Translate; lo que la persona escribe en los campos no se traduce ni se envía. Marca aquí el idioma en que escribiste el formulario para que la traducción parta bien.</p>
+            </div>
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Paso de identificación (cédula)</h3>
+              <p class="gw-hint">Lo que ve la persona antes del formulario cuando se le pide el documento. Vacío = los textos de siempre («Identifícate», la explicación y «Continuar»).</p>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="idTitle">Título</label><input type="text" class="gw-input" id="idTitle" maxlength="120" placeholder="Identifícate"></div><div class="gw-field gw-field--inline"><label class="gw-label" for="idButton">Texto del botón</label><input type="text" class="gw-input" id="idButton" maxlength="40" placeholder="Continuar"></div></div>
+              <div class="gwe-bar"><div class="gw-field gw-field--grow"><span class="gw-label">Texto</span><input type="hidden" id="idText"><div id="idTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="idImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="idImgFile" accept="image/*"><span class="gw-hint" id="idImgName"></span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="idImgX">Quitar</button></div></div>
+            </div>
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Al terminar el registro</h3>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="thMode">Qué pasa</label><select id="thMode" class="gw-select"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
+                <div class="gw-field gw-field--inline" id="thUrlBox" hidden><label class="gw-label" for="thUrl">Dirección (https://…)</label><input type="text" class="gw-input" id="thUrl"></div></div>
+              <div id="thTplBox" class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="thTitle">Título</label><input type="text" class="gw-input" id="thTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="thText"><div id="thTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="thImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="thImgFile" accept="image/*"><span class="gw-hint" id="thImgName"></span></div></div>
+            </div>
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Plantilla de «formulario cerrado» / cupo lleno</h3>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="clTitle">Título</label><input type="text" class="gw-input" id="clTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="clText"><div id="clTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="clImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="clImgFile" accept="image/*"><span class="gw-hint" id="clImgName"></span></div></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-group">
+          <summary class="gw-group__sum"><span class="gw-group__title">Base del evento y repetidos</span><span class="gw-group__hint">Cómo entran las inscripciones a la base y cómo se evitan los duplicados.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <h3 class="gwe-h">Alimentar la base de datos del evento</h3>
+              <label class="gw-check gw-check--top"><input type="radio" name="feed" value="realtime"> En tiempo real: cada inscripción entra de una vez al roster del evento («No registrado»)</label>
+              <label class="gw-check gw-check--top"><input type="radio" name="feed" value="on_close"> Al cerrar el formulario: se cargan todas juntas cuando pasa a cerrado o finalizado</label>
+              <label class="gw-check gw-check--top"><input type="radio" name="feed" value="manual"> Manual: no se integra sola (descargas el reporte y lo subes como Excel)</label>
+              <p class="gw-hint">Requiere un campo de cédula vinculado al campo «Cédula» del evento. Las inscripciones de prueba nunca se cargan.</p>
+              <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="feedNow">Cargar a la base ahora las que falten</button> <span class="gw-hint" id="feedInfo"></span></div>
+            </div>
+            <div class="gw-group__item">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="sendBadge"> Enviar la escarapela virtual al correo del inscrito</label>
+              <p class="gw-alert gw-alert--warn" id="sendBadgeWarn" hidden>{{ ic('alert') }}<span class="gw-alert__body"><b>Este evento no tiene activada la escarapela digital</b> (Parámetros del Evento): mientras tanto no se enviará nada.</span></p>
+              <p class="gw-hint" id="sendBadgeHint">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
+            </div>
+            <div class="gw-group__item">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
+              <div id="blockRepBox" class="gwe-indent" hidden><div class="gw-field gw-field--inline"><label class="gw-label" for="blockRepField">Campo que identifica a la persona</label><select id="blockRepField" class="gw-select"></select></div></div>
+              <p class="gw-hint">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
+              <fieldset class="gw-fieldset gwe-box" data-instant>
+                <legend class="gwe-h">Personas ya registradas</legend>
+                <p class="gw-hint">Sube la lista de quienes ya se inscribieron por otro medio (cédula, o el campo identificador de arriba; la columna «Registrado en formulario» es opcional: si existe, solo cuentan las filas con «sí»). Se puede recargar cuando quieras; vale solo para ESTE formulario.</p>
+                <div id="regCount" class="gw-hint gwe-strong"></div>
+                <div class="gw-field"><label class="gw-label" for="regFile">Lista (.xlsx / .csv)</label><input type="file" class="gw-input" id="regFile" accept=".xlsx,.csv"></div>
+                <div class="gwe-bar">
+                  <div class="gw-field gw-field--inline"><label class="gw-label" for="regMode">Al cargar</label><select id="regMode" class="gw-select"><option value="add">Agregar (no quita nada)</option><option value="replace">Reemplazar (deja solo las del archivo)</option></select></div>
+                  <div class="gw-field gw-field--inline"><label class="gw-label" for="regEffect">Qué pasa con ellos</label><select id="regEffect" class="gw-select"><option value="block">Solo bloquear (no ocupan cupo)</option><option value="hold">Ocupar cupo y bloquear</option></select></div>
+                </div>
+                <label class="gw-check gw-check--top"><input type="checkbox" id="regEnable" checked> Encender «Bloquear inscripciones repetidas» si está apagado (las marcas solo bloquean con ese interruptor)</label>
+                <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="regUp">Cargar / recargar lista</button> <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="regClear">Quitar todas las marcas</button></div>
+              </fieldset>
+            </div>
+          </div>
+        </details>
+
+        <details class="gw-group">
+          <summary class="gw-group__sum"><span class="gw-group__title">Reembolsos</span><span class="gw-group__hint">Plazo y nota que ve quien paga.</span></summary>
+          <div class="gw-group__body">
+            <div class="gw-group__item">
+              <div class="gw-field gw-field--inline"><label class="gw-label" for="rfDays">Plazo para pedir el reembolso (días después del pago; vacío = el general)</label><input type="number" class="gw-input gw-input--short" id="rfDays" min="1" max="365"></div>
+              <div class="gw-field"><label class="gw-label" for="rfNote">Nota para quien paga (opcional; por ejemplo, si la comisión de la pasarela se devuelve o no)</label><textarea class="gw-textarea" id="rfNote" rows="3"></textarea></div>
+              <p class="gw-hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con el botón «Guardar configuración» de abajo.</p>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- ===================== RESPUESTAS ===================== -->
+      <div class="pane" id="pane-answers" role="tabpanel" aria-labelledby="tab_answers" tabindex="0"><section class="gw-card">
+        <div class="gwe-bar"><label class="gw-check"><input type="checkbox" id="ansTests" checked> Mostrar las de prueba</label>
+          <a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtn" href="#">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a><span class="gw-hint" id="ansInfo"></span></div>
+        <div class="gw-table-wrap"><table class="gw-table ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
+      </section></div>
+
+      <!-- ===================== PAGOS ===================== -->
+      <div class="pane" id="pane-payments" role="tabpanel" aria-labelledby="payTab" tabindex="0"><section class="gw-card">
+        <h2 class="gwe-h">Pagos con Wompi</h2>
+        <div id="payCfg" class="gw-hint"></div>
+        <div class="gwe-bar"><label class="gw-check"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><div class="gw-field gw-field--inline"><label class="gw-label" for="payView">Ver montos</label><select id="payView" class="gw-select" title="La comisión es una ESTIMACIÓN según tu plan (2,65 % + $700 + IVA; QR 1 %). La cifra exacta está en Wompi → Reportes."><option value="gross">Ver montos brutos</option><option value="net">Ver netos de comisión Wompi (estimada)</option></select></div><span id="payTotal" class="gwe-strong"></span></div>
+        <div class="gw-table-wrap"><table class="gw-table ans"><thead><tr><th>Fecha</th><th>Referencia</th><th id="payAmtHead">Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
+        <p class="gw-hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
+      </section></div>
+
+      <!-- ===================== ANALÍTICA ===================== -->
+      <div class="pane" id="pane-analytics" role="tabpanel" aria-labelledby="tab_analytics" tabindex="0">
+        <div class="gwe-stack">
+          <label class="gw-check"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label>
+          <label class="gw-check" title="Estimación según tu plan de Wompi (2,65 % + $700 + IVA; QR 1 %)"><input type="checkbox" id="anNet"> Descontar la comisión estimada de Wompi (ver ingresos netos)</label>
+          <p class="gw-hint"><a href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas">Abrir la página de Estadísticas (cupos, inscritos y variables, en grande)</a></p>
+        </div>
+        <div id="anHost" class="gwe-analytics gw-no-theme"></div>
+        <section class="gw-card gwe-mt"><h2 class="gwe-h">Enlaces por red social</h2><p class="gw-hint">Agrega <code>?utm_source=…</code> al enlace y la analítica te dirá de dónde llegó cada inscripción (Instagram, TikTok, WhatsApp…). Es un conteo de origen; no requiere conectar cuentas.</p><div class="gwe-bar" id="utmBox"></div></section>
+      </div>
+
+      <!-- ===================== INVITACIONES ===================== -->
+      <div class="pane" id="pane-invites" role="tabpanel" aria-labelledby="invTab" tabindex="0"><section class="gw-card">
+        <h2 class="gwe-h">Enlaces personales por invitado</h2>
+        <p class="gw-hint">Se genera un enlace único por cada persona de la base elegida y se envía por correo a quien tenga correo registrado. Cada enlace ya trae identificada a la persona.</p>
+        <p id="invStats"></p>
+        <label class="gw-check"><input type="checkbox" id="invOnlyNew" checked> No reenviar a quienes ya lo recibieron</label>
+        <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary" id="invSend">{{ ic('mail') }} Generar y enviar invitaciones</button></div><div id="invProgress"></div>
+      </section></div>
     </div>
 
-    <!-- ===================== RESPUESTAS ===================== -->
-    <div class="pane" id="pane-answers"><div class="card">
-      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="ansTests" checked> Mostrar las de prueba</label>
-        <a class="small-btn primary" id="repBtn" href="#">⬇️ Descargar reporte (Excel)</a><a class="small-btn" id="repBtnAll" href="#">⬇️ Con las de prueba</a><span class="hint" id="ansInfo"></span></div>
-      <div style="overflow-x:auto;"><table class="ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
-    </div></div>
-
-    <!-- ===================== PAGOS ===================== -->
-    <div class="pane" id="pane-payments"><div class="card">
-      <h4 style="margin:0 0 6px;">Pagos con Wompi</h4>
-      <div id="payCfg" class="hint" style="margin-bottom:10px;"></div>
-      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><select id="payView" title="La comisión es una ESTIMACIÓN según tu plan (2,65 % + $700 + IVA; QR 1 %). La cifra exacta está en Wompi → Reportes."><option value="gross">Ver montos brutos</option><option value="net">Ver netos de comisión Wompi (estimada)</option></select><span id="payTotal" style="font-weight:700;"></span></div>
-      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th id="payAmtHead">Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
-      <p class="hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
-    </div></div>
-
-    <!-- ===================== ANALÍTICA ===================== -->
-    <div class="pane" id="pane-analytics">
-      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;" title="Estimación según tu plan de Wompi (2,65 % + $700 + IVA; QR 1 %)"><input type="checkbox" id="anNet"> Descontar la comisión estimada de Wompi (ver ingresos netos)</label>
-      <p class="hint" style="margin:0 0 8px;"><a href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas">📈 Abrir la página de Estadísticas (cupos, inscritos y variables, en grande)</a></p>
-      <div id="anHost" style="background:#f6f7fb; padding:1rem; border-radius:16px;"></div>
-      <div class="card" style="margin-top:1rem;"><h4 style="margin:0 0 6px;">Enlaces por red social</h4><p class="hint" style="margin-top:0;">Agrega <code>?utm_source=…</code> al enlace y la analítica te dirá de dónde llegó cada inscripción (Instagram, TikTok, WhatsApp…). Es un conteo de origen; no requiere conectar cuentas.</p><div class="bar" id="utmBox"></div></div>
+    {# Barra de guardado ÚNICA (R1): guarda lo de la pestaña en que estás (Diseño o Configuración). Ctrl o Cmd + S hace lo mismo. #}
+    <div class="gw-savebar" id="saveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}">
+      <div class="gw-savebar__status" id="saveStatus" role="status" aria-live="polite">Sin cambios por guardar</div>
+      <button type="button" class="gw-btn gw-btn--primary" id="saveBtn">Guardar diseño</button>
     </div>
-
-    <!-- ===================== INVITACIONES ===================== -->
-    <div class="pane" id="pane-invites"><div class="card"><h4 style="margin:0 0 8px;">Enlaces personales por invitado</h4>
-      <p class="hint" style="margin-top:0;">Se genera un enlace único por cada persona de la base elegida y se envía por correo a quien tenga correo registrado. Cada enlace ya trae identificada a la persona.</p>
-      <p id="invStats" style="font-size:0.88rem;"></p>
-      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="invOnlyNew" checked> No reenviar a quienes ya lo recibieron</label>
-      <button class="small-btn primary" id="invSend" style="margin-top:8px;">✉️ Generar y enviar invitaciones</button><div id="invProgress" style="margin-top:10px;"></div>
-    </div></div>
-  </div></section>
+  </div>
 </main>
 
-<div id="clientOverlay" role="dialog" aria-modal="true" aria-labelledby="clTitle" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9996; display:none; align-items:center; justify-content:center; padding:16px;">
-  <div class="card" style="max-width:520px; width:100%; margin:0; max-height:92vh; overflow:auto;">
-    <h4 id="clTitle" style="margin:0 0 4px;">Acceso para cliente (solo estadísticas)</h4>
-    <p class="hint" style="margin-top:0;">Tu cliente entra con su propio usuario y ve SOLO las estadísticas de este formulario (cupos, inscritos y gráficas). No ve nombres, cédulas ni correos, ni ningún otro formulario o evento.</p>
-    <div id="clNew" style="display:none; background:#f6f7fb; border:2px solid #d4af37; border-radius:12px; padding:12px; margin-bottom:12px;">
-      <p style="margin:0 0 6px; font-weight:700;">Entrégale estos datos a tu cliente. La contraseña NO se vuelve a mostrar.</p>
-      <p style="margin:0;">Dirección: <b id="clUrl"></b></p>
-      <p style="margin:0;">Usuario: <b id="clUser" style="user-select:all;"></b></p>
-      <p style="margin:0;">Contraseña: <b id="clPass" style="user-select:all; font-family:monospace; font-size:1.05rem;"></b></p>
-      <p class="hint" style="margin:6px 0 8px;" id="clUntil"></p>
-      <button class="small-btn primary" id="clCopy">Copiar los datos</button>
+<div class="gw-modal-backdrop gwe-overlay" id="clientOverlay" role="dialog" aria-modal="true" aria-labelledby="clTitleH" hidden>
+  <div class="gw-modal gwe-modal-md">
+    <div class="gw-modal__head"><h2 class="gw-modal__title" id="clTitleH">Acceso para cliente (solo estadísticas)</h2></div>
+    <div class="gw-modal__body">
+      <p class="gw-hint">Tu cliente entra con su propio usuario y ve SOLO las estadísticas de este formulario (cupos, inscritos y gráficas). No ve nombres, cédulas ni correos, ni ningún otro formulario o evento.</p>
+      <div id="clNew" class="gw-alert gw-alert--ok" hidden>
+        <div class="gw-alert__body">
+          <p class="gwe-strong">Entrégale estos datos a tu cliente. La contraseña NO se vuelve a mostrar.</p>
+          <p>Dirección: <b id="clUrl"></b></p>
+          <p>Usuario: <b id="clUser" class="gwe-selectall"></b></p>
+          <p>Contraseña: <b id="clPass" class="gwe-selectall gwe-mono"></b></p>
+          <p class="gw-hint" id="clUntil"></p>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="clCopy">Copiar los datos</button>
+        </div>
+      </div>
+      <div class="gw-field"><label class="gw-label" for="clName">Nombre de quien lo recibe (opcional)</label><input type="text" class="gw-input" id="clName" maxlength="120" placeholder="Ej. María, de la empresa cliente"></div>
+      <div class="gw-field"><label class="gw-label" for="clDays">Vigencia del acceso (días)</label><input type="number" class="gw-input gw-input--short" id="clDays" min="1" max="180" value="30"></div>
+      <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--primary" id="clCreate">Crear acceso</button></div>
+      <h3 class="gwe-h">Accesos de este formulario</h3>
+      <div id="clList" class="gw-hint">Cargando…</div>
     </div>
-    <div class="fld" style="margin-bottom:10px;"><label for="clName">Nombre de quien lo recibe (opcional)</label><input type="text" id="clName" maxlength="120" style="width:100%;" placeholder="Ej. María, de la empresa cliente"></div>
-    <div class="fld" style="margin-bottom:10px;"><label for="clDays">Vigencia del acceso (días)</label><input type="number" id="clDays" min="1" max="180" value="30" style="width:120px;"></div>
-    <div style="display:flex; gap:8px; justify-content:flex-end; margin-bottom:12px;"><button class="small-btn primary" id="clCreate">Crear acceso</button></div>
-    <h4 style="margin:0 0 6px; font-size:0.9rem;">Accesos de este formulario</h4>
-    <div id="clList" class="hint">Cargando…</div>
-    <div style="display:flex; justify-content:flex-end; margin-top:10px;"><button class="small-btn" id="clClose">Cerrar</button></div>
+    <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" id="clClose">Cerrar</button></div>
   </div>
 </div>
 
-<div id="refundOverlay" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9995; display:none; align-items:center; justify-content:center; padding:16px;">
-  <div class="card" style="max-width:480px; width:100%; margin:0; max-height:92vh; overflow:auto;">
-    <h4 style="margin:0 0 4px;">Reembolsar un pago</h4>
-    <p id="rfInfo" class="hint" style="margin-top:0;"></p>
-    <div class="fld" style="margin-bottom:8px;"><label>Cómo se devuelve</label>
-      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="auto" id="rfAuto"> Hacerlo por la API de Wompi (tarjeta: anulación por el valor completo; otros medios: reembolso V2, hoy solo sandbox)</label>
-      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="manual" id="rfManual"> Ya lo devolví por fuera (panel de Wompi o transferencia): solo registrarlo</label></div>
-    <div class="fld" style="margin-bottom:8px;"><label>Monto a devolver (COP)</label><input type="number" id="rfAmount" min="1" style="width:100%;"></div>
-    <div class="fld" style="margin-bottom:8px;"><label>Motivo *</label><input type="text" id="rfReason" maxlength="500" style="width:100%;" placeholder="Ej. La persona no puede asistir"></div>
-    <div class="fld" id="rfNoteBox" style="margin-bottom:8px;"><label>Nota del reembolso manual * (cómo y dónde se devolvió: banco, comprobante…)</label><input type="text" id="rfNote" maxlength="500" style="width:100%;"></div>
-    <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:10px;"><input type="checkbox" id="rfCancel"> Cancelar también la inscripción (sale de las listas y libera el cupo)</label>
-    <div style="display:flex; gap:8px; justify-content:flex-end;"><button class="small-btn" id="rfClose">Cancelar</button><button class="small-btn danger" id="rfGo">Reembolsar</button></div>
+<div class="gw-modal-backdrop gwe-overlay" id="refundOverlay" role="dialog" aria-modal="true" aria-labelledby="rfTitleH" hidden>
+  <div class="gw-modal gwe-modal-md">
+    <div class="gw-modal__head"><h2 class="gw-modal__title" id="rfTitleH">Reembolsar un pago</h2></div>
+    <div class="gw-modal__body">
+      <p id="rfInfo" class="gw-hint"></p>
+      <fieldset class="gw-fieldset"><legend class="gw-label">Cómo se devuelve</legend>
+        <label class="gw-check gw-check--top"><input type="radio" name="rfKind" value="auto" id="rfAuto"> Hacerlo por la API de Wompi (tarjeta: anulación por el valor completo; otros medios: reembolso V2, hoy solo sandbox)</label>
+        <label class="gw-check gw-check--top"><input type="radio" name="rfKind" value="manual" id="rfManual"> Ya lo devolví por fuera (panel de Wompi o transferencia): solo registrarlo</label></fieldset>
+      <div class="gw-field"><label class="gw-label" for="rfAmount">Monto a devolver (COP)</label><input type="number" class="gw-input" id="rfAmount" min="1"></div>
+      <div class="gw-field"><label class="gw-label" for="rfReason">Motivo *</label><input type="text" class="gw-input" id="rfReason" maxlength="500" placeholder="Ej. La persona no puede asistir"></div>
+      <div class="gw-field" id="rfNoteBox"><label class="gw-label" for="rfNote2">Nota del reembolso manual * (cómo y dónde se devolvió: banco, comprobante…)</label><input type="text" class="gw-input" id="rfNote2" maxlength="500"></div>
+      <label class="gw-check gw-check--top"><input type="checkbox" id="rfCancel"> Cancelar también la inscripción (sale de las listas y libera el cupo)</label>
+    </div>
+    <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" id="rfClose">Cancelar</button><button type="button" class="gw-btn gw-btn--danger" id="rfGo">Reembolsar</button></div>
   </div>
 </div>
 
-<div id="tableOverlay" role="dialog" aria-modal="true" aria-label="Tabla de variantes" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:1.5rem 1rem;"><div style="max-width:1100px; margin:0 auto; background:#fff; border-radius:16px; padding:1rem 1.2rem;"><div style="display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">Tabla de variantes</h3><button class="small-btn primary" id="closeTable">Cerrar</button></div><div id="tableHost"></div></div></div>
-<div id="previewOverlay"><div id="previewInner" style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
+<div class="gw-modal-backdrop gwe-overlay gwe-overlay--scroll" id="tableOverlay" role="dialog" aria-modal="true" aria-label="Tabla de variantes" hidden>
+  <div class="gw-modal gwe-modal-xl gw-no-theme">
+    <div class="gw-modal__head"><h2 class="gw-modal__title">Tabla de variantes</h2><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="closeTable">Cerrar</button></div>
+    <div class="gw-modal__body"><div id="tableHost"></div></div>
+  </div>
+</div>
+
+{# Vista previa: el contenedor #previewHost es lo que ve el público; no cambia (ver gw-editor-form.css, bloque «vista previa congelada»). #}
+<div class="gwe-preview" id="previewOverlay" role="dialog" aria-modal="true" aria-label="Vista previa del formulario" hidden>
+  <div id="previewInner" class="gwe-preview__inner"><div class="gwe-preview__bar"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" class="gw-no-theme gwe-preview__host"></div></div>
+</div>
 
 <script>
 const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
@@ -255,9 +366,9 @@ const jpost = (url, body) => j(url, { method: 'POST', headers: { 'Content-Type':
 const assetUrl = (p) => `/api/badge-assets/${p}`;
 const FONTS = GoldenFonts.choices;          // las 6 tipografías alojadas
 const TYPES = {
-  text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
-  checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
-  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'], payment: ['Pago (Wompi)', '💳'], companions: ['Acompañantes', '👥'],
+  text_short: ['Texto corto', 'edit'], text_long: ['Texto largo', 'form'], email: ['Correo', 'mail'], phone: ['Teléfono', 'info'], number: ['Número', 'chart'], date: ['Fecha', 'calendar'],
+  checkbox: ['Casilla sí/no', 'check'], select: ['Lista desplegable', 'chevron'], radio: ['Opción única', 'check'], multiselect: ['Selección múltiple', 'menu'], file: ['Archivo adjunto', 'upload'],
+  heading: ['Título', 'edit'], paragraph: ['Texto informativo', 'form'], image: ['Imagen', 'image'], payment: ['Pago (Wompi)', 'lock'], companions: ['Acompañantes', 'users'],
 };
 const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragraph', 'image'], NOCOND = ['payment', 'companions'];
 const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
@@ -266,8 +377,17 @@ const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrad
 let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
 let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
-const markDirty = () => { dirty = true; namesCache = null; $('saveBtn').textContent = '💾 Guardar diseño *'; };
-window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+const markDirty = () => { dirty = true; namesCache = null; paintSaveBar(); };
+const activeTabName = () => { const t = document.querySelector('#tabs [aria-selected="true"]'); return t ? t.dataset.tab : 'design'; };
+function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendiente y guarda lo de Diseño y Configuración
+  const bar = $('saveBar'), tab = activeTabName(), pend = dirty || cfgDirty;
+  if (!bar) return;
+  bar.hidden = !(tab === 'design' || tab === 'config');
+  bar.dataset.state = pend ? 'dirty' : 'idle';
+  $('saveStatus').textContent = !pend ? 'Sin cambios por guardar' : (dirty && cfgDirty ? 'Hay cambios sin guardar en el diseño y en la configuración' : dirty ? 'Hay cambios sin guardar en el diseño' : 'Hay cambios sin guardar en la configuración');
+  $('saveBtn').textContent = tab === 'config' ? 'Guardar configuración' : 'Guardar diseño';
+}
+window.addEventListener('beforeunload', (e) => { if (dirty || cfgDirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
@@ -322,35 +442,35 @@ const shortNameOf = (id) => { const n = design.fields[id] && elementNames()[id];
 
 function leafHtml(oid, ps, r, others, ck) {
   const collapsed = foldCond.has(ck), at = `data-co="${oid}" data-cp="${ps}"`;
-  const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} la regla" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
-  if (collapsed) return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:3px 6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(r, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(CondTree.summary(r, labelOfField))}</span><button type="button" class="small-btn danger" ${at} data-cx="delnode" aria-label="Quitar la regla" style="padding:0 6px;">✕</button></div>`;
+  const tog = `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} la regla">${collapsed ? '▸' : '▾'}</button>`;
+  if (collapsed) return `<div data-leaf class="gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-1-sp-2 gwe-m-sp-1-0 gwe-d-flex gwe-gap-sp-1 gwe-ai-center">${tog}<span class="hint gwe-flex-1 gwe-of-hidden gwe-to-ellipsis gwe-ws-nowrap" title="${esc(CondTree.summary(r, labelOfField))}">${esc(CondTree.summary(r, labelOfField))}</span><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" ${at} data-cx="delnode" aria-label="Quitar la regla">×</button></div>`;
   const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
   let val = '';
   if (r.op !== 'filled') {
     if (opts) {   // con opciones (propias o del campo del evento) el valor SIEMPRE se elige de la lista; un valor guardado que no coincide ni con tildes/mayúsculas se conserva visible
       const cur = Array.isArray(r.value) ? r.value : [r.value];
       const extra = cur.filter((v) => v !== '' && !FormSync.findOption(opts, v));
-      if (r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div>`;
+      if (r.op === 'in') val = `<div class="gwe-maxh-150px gwe-of-auto gwe-p-sp-1-sp-1">${opts.map((o) => `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" ${at} data-cx="valin" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" ${at} data-cx="valin" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div>`;
       else val = `<select ${at} data-cx="valsel"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(r.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}${extra.map((v) => `<option selected>${esc(v)}</option>`).join('')}</select>${extra.length ? '<div class="hint">El valor guardado no está en la lista de opciones.</div>' : ''}`;
     } else val = `<input type="text" ${at} data-cx="val" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
   }
-  return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin:4px 0; display:grid; gap:4px;">
+  return `<div data-leaf class="gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-2 gwe-m-sp-1-0 gwe-d-grid gwe-gap-sp-1">
     <div>${tog}</div>
     <select ${at} data-cx="field">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(labelOfField(o.id))}</option>`).join('')}</select>
     <select ${at} data-cx="op">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
-    <button type="button" class="small-btn danger" ${at} data-cx="delnode" style="justify-self:end;">Quitar regla</button></div>`;
+    <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-js-end" ${at} data-cx="delnode">Quitar regla</button></div>`;
 }
 function condNodeHtml(oid, node, path, others) {
   const o = condOwners[oid], ps = path.join('.'), at = `data-co="${oid}" data-cp="${ps}"`, ck = `${o.key || oid}|${ps}`;
   if (!CondTree.isGroup(node)) return leafHtml(oid, ps, node, others, ck);
   const collapsed = foldCond.has(ck), n = CondTree.leaves(node).length;
-  const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} el grupo de reglas" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
-  const del = path.length ? `<button type="button" class="small-btn danger" ${at} data-cx="delnode">Quitar grupo</button>` : '';
-  if (collapsed) return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(node, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(node.name ? node.name + ' · ' : '')}${n} ${n === 1 ? 'regla' : 'reglas'}: ${esc(CondTree.summary(node.name ? { ...node, name: '' } : node, labelOfField))}</span>${del}</div>`;
+  const tog = `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} el grupo de reglas">${collapsed ? '▸' : '▾'}</button>`;
+  const del = path.length ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" ${at} data-cx="delnode">Quitar grupo</button>` : '';
+  if (collapsed) return `<div class="gwe-bl-3px-solid-info-line gwe-pl-sp-2 gwe-m-sp-1-0 gwe-d-flex gwe-gap-sp-1 gwe-ai-center">${tog}<span class="hint gwe-flex-1 gwe-of-hidden gwe-to-ellipsis gwe-ws-nowrap" title="${esc(CondTree.summary(node, labelOfField))}">${esc(node.name ? node.name + ' · ' : '')}${n} ${n === 1 ? 'regla' : 'reglas'}: ${esc(CondTree.summary(node.name ? { ...node, name: '' } : node, labelOfField))}</span>${del}</div>`;
   const kids = node.rules.map((c, i) => condNodeHtml(oid, c, path.concat(i), others)).join('') || '<div class="hint">Sin reglas todavía.</div>';
   const root = CondTree.group(condOwners[oid].get());
-  return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0;"><div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${tog}<span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select><input type="text" ${at} data-cx="gname" maxlength="40" placeholder="Nombre del grupo (opcional)" value="${esc(node.name || '')}" aria-label="Nombre del grupo de reglas" style="width:150px;">${del}</div>${kids}
-    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" ${at} data-cx="addleaf" ${CondTree.canAddLeaf(root, path) ? '' : 'disabled'}>+ Regla</button>${path.length + 2 <= CondTree.MAX_DEPTH ? `<button type="button" class="small-btn" ${at} data-cx="addgroup" ${CondTree.canAddGroup(root, path) ? '' : 'disabled'}>+ Grupo (Y/O)</button>` : ''}</div></div>`;
+  return `<div class="gwe-bl-3px-solid-info-line gwe-pl-sp-2 gwe-m-sp-1-0"><div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap">${tog}<span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select><input type="text" ${at} data-cx="gname" maxlength="40" placeholder="Nombre del grupo (opcional)" value="${esc(node.name || '')}" aria-label="Nombre del grupo de reglas" class="gwe-w-150px">${del}</div>${kids}
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" ${at} data-cx="addleaf" ${CondTree.canAddLeaf(root, path) ? '' : 'disabled'}>+ Regla</button>${path.length + 2 <= CondTree.MAX_DEPTH ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" ${at} data-cx="addgroup" ${CondTree.canAddGroup(root, path) ? '' : 'disabled'}>+ Grupo (Y/O)</button>` : ''}</div></div>`;
 }
 const condEditorHtml = (oid) => condNodeHtml(oid, CondTree.group(condOwners[oid].get()), [], ownerOthers(condOwners[oid]));
 
@@ -386,7 +506,7 @@ const isHide = (prop) => prop === 'content' || prop === 'src';
 const itemsOf = (f, prop) => ((f.variants || {})[prop] || { items: [] }).items;
 function valueEditorHtml(prop, key, val) {
   if (prop === 'placeholder') return `<input type="text" data-vtxt="${key}" maxlength="120" value="${esc(val)}">`;
-  if (prop === 'src') return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${val ? `<img src="${esc(assetUrl(val))}" alt="" style="max-height:56px; max-width:120px; border-radius:6px;">` : '<span class="hint">sin imagen</span>'}<input type="file" data-vimg="${key}" accept="image/*"> ${val ? `<button type="button" class="small-btn" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
+  if (prop === 'src') return `<div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap">${val ? `<img src="${esc(assetUrl(val))}" alt="" class="gwe-maxh-56px gwe-maxw-120px gwe-r-radius-sm">` : '<span class="hint">sin imagen</span>'}<input type="file" data-vimg="${key}" accept="image/*"> ${val ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
   return `<div data-vrt="${key}"></div>`;
 }
 const valueText = (prop, val) => (prop === 'src' ? (val ? val.split('/').pop() : '(sin imagen)') : (RichText.toPlain(val || '').replace(/\s+/g, ' ').trim() || '(vacío)'));
@@ -395,21 +515,21 @@ function itemSummary(f, prop, it) { return `${it.name ? it.name + ' · ' : ''}${
 function itemBodyHtml(f, prop, v, it) {   // el cuerpo solo se arma al desplegar: así abrir un formulario con 100 variantes no monta 100 editores
   const oid = regOwner(f.id, () => it.when, (n) => { it.when = n; markDirty(); renderCanvas(); }, { key: `${f.id}:${prop}:${it._uid}` });
   const groups = [...new Set(v.items.map((x) => x.group).filter(Boolean))];
-  return `<div style="display:flex; gap:4px; flex-wrap:wrap; margin:4px 0;"><input type="text" data-vname="${prop}:${it._uid}" maxlength="40" placeholder="Nombre (opcional)" value="${esc(it.name || '')}" style="width:130px;" aria-label="Nombre de la variante"><input type="text" list="vgl_${esc(f.id)}_${prop}" data-vgroup="${prop}:${it._uid}" maxlength="40" placeholder="Grupo (opcional)" value="${esc(it.group || '')}" style="width:130px;" aria-label="Grupo de la variante"><datalist id="vgl_${esc(f.id)}_${prop}">${groups.map((g) => `<option value="${esc(g)}">`).join('')}</datalist></div>
+  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap gwe-m-sp-1-0"><input type="text" data-vname="${prop}:${it._uid}" maxlength="40" placeholder="Nombre (opcional)" value="${esc(it.name || '')}" class="gwe-w-130px" aria-label="Nombre de la variante"><input type="text" list="vgl_${esc(f.id)}_${prop}" data-vgroup="${prop}:${it._uid}" maxlength="40" placeholder="Grupo (opcional)" value="${esc(it.group || '')}" class="gwe-w-130px" aria-label="Grupo de la variante"><datalist id="vgl_${esc(f.id)}_${prop}">${groups.map((g) => `<option value="${esc(g)}">`).join('')}</datalist></div>
     <div class="hint">Se aplica cuando:</div>${condEditorHtml(oid)}<div class="hint">Muestra:</div>${valueEditorHtml(prop, `${prop}:${it._uid}`, it.value)}`;
 }
 function itemHtml(f, prop, v, it, i) {
   const open = isOpen(v, it), q = (searchQ[`${f.id}:${prop}`] || '').toLowerCase(), sum = itemSummary(f, prop, it);
   const hay = `${sum} ${it.group || ''}`.toLowerCase();
-  return `<div class="cv" data-uid="${it._uid}" data-hay="${esc(hay)}" style="border:1px solid #d9dcea; border-radius:10px; padding:4px 6px; margin:4px 0;${q && !hay.includes(q) ? ' display:none;' : ''}">
-    <div style="display:flex; gap:4px; align-items:center;"><button type="button" class="small-btn" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}" style="padding:0 6px;">${open ? '▾' : '▸'}</button>
-      <span class="cvs" title="${esc(`${i + 1}. ${sum}`)}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8rem;"><b>${i + 1}.</b> ${esc(sum)}</span>
-      <button type="button" class="small-btn" data-vact="up" data-vp="${prop}" data-vu="${it._uid}" aria-label="Subir la variante ${i + 1}" ${i === 0 ? 'disabled' : ''} style="padding:0 6px;">↑</button><button type="button" class="small-btn" data-vact="down" data-vp="${prop}" data-vu="${it._uid}" aria-label="Bajar la variante ${i + 1}" ${i === v.items.length - 1 ? 'disabled' : ''} style="padding:0 6px;">↓</button><button type="button" class="small-btn" data-vact="dup" data-vp="${prop}" data-vu="${it._uid}" aria-label="Duplicar la variante ${i + 1}" ${v.items.length >= 200 ? 'disabled' : ''} style="padding:0 6px;">⎘</button><button type="button" class="small-btn danger" data-vact="del" data-vp="${prop}" data-vu="${it._uid}" aria-label="Quitar la variante ${i + 1}" style="padding:0 6px;">✕</button></div>
+  return `<div class="cv gwe-cv"${q && !hay.includes(q) ? ' hidden' : ''} data-uid="${it._uid}" data-hay="${esc(hay)}">
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-ai-center"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}">${open ? '▾' : '▸'}</button>
+      <span class="cvs gwe-flex-1 gwe-of-hidden gwe-to-ellipsis gwe-ws-nowrap gwe-fs-fs-sm" title="${esc(`${i + 1}. ${sum}`)}"><b>${i + 1}.</b> ${esc(sum)}</span>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="up" data-vp="${prop}" data-vu="${it._uid}" aria-label="Subir la variante ${i + 1}" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="down" data-vp="${prop}" data-vu="${it._uid}" aria-label="Bajar la variante ${i + 1}" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="dup" data-vp="${prop}" data-vu="${it._uid}" aria-label="Duplicar la variante ${i + 1}" ${v.items.length >= 200 ? 'disabled' : ''}>⎘</button><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" data-vact="del" data-vp="${prop}" data-vu="${it._uid}" aria-label="Quitar la variante ${i + 1}">×</button></div>
     <div class="cvb" data-vu="${it._uid}">${open ? itemBodyHtml(f, prop, v, it) : ''}</div></div>`;
 }
 function propSectionHtml(f, prop) {
   const v = (f.variants || {})[prop], hide = isHide(prop);
-  if (!v) return `<div class="fld" style="margin-top:6px;"><span class="hint"><b>${VPROPS[prop]}</b>: igual para todos.</span> <button type="button" class="small-btn" data-vact="enable" data-vp="${prop}">Cambiar según respuestas…</button></div>`;
+  if (!v) return `<div class="fld gwe-mt-sp-2"><span class="hint"><b>${VPROPS[prop]}</b>: igual para todos.</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="enable" data-vp="${prop}">Cambiar según respuestas…</button></div>`;
   ensureUids(f);
   const sk = `${f.id}:${prop}`, choice = condOthers(f.id).filter((x) => FormSync.optionsOf(x, eventFields));
   const bands = [];   // grupos = tandas SEGUIDAS de variantes con el mismo grupo (agrupar no cambia el orden ni cuál se muestra)
@@ -417,18 +537,18 @@ function propSectionHtml(f, prop) {
   const list = bands.map((b) => {
     if (!b.g) return itemHtml(f, prop, v, b.items[0][0], b.items[0][1]);
     const gk = `${sk}:${b.g}:${b.items[0][0]._uid}`, open = foldGroup.has(gk) ? foldGroup.get(gk) : true;
-    return `<div style="border-left:3px solid #9fb0ff; padding-left:6px; margin:6px 0;"><div style="display:flex; gap:4px; align-items:center;"><button type="button" class="small-btn" data-vact="gtoggle" data-vp="${prop}" data-vgk="${esc(gk)}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} el grupo ${esc(b.g)}" style="padding:0 6px;">${open ? '▾' : '▸'}</button><b style="font-size:.82rem;">${esc(b.g)}</b><span class="hint">(${b.items.length})</span><input type="text" data-vgname="${prop}:${b.items[0][0]._uid}" maxlength="40" value="${esc(b.g)}" aria-label="Renombrar el grupo" style="width:120px;"></div>${open ? b.items.map(([it, i]) => itemHtml(f, prop, v, it, i)).join('') : ''}</div>`;
+    return `<div class="gwe-bl-3px-solid-info-line gwe-pl-sp-2 gwe-m-sp-2-0"><div class="gwe-d-flex gwe-gap-sp-1 gwe-ai-center"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="gtoggle" data-vp="${prop}" data-vgk="${esc(gk)}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} el grupo ${esc(b.g)}">${open ? '▾' : '▸'}</button><b class="gwe-fs-fs-sm">${esc(b.g)}</b><span class="hint">(${b.items.length})</span><input type="text" data-vgname="${prop}:${b.items[0][0]._uid}" maxlength="40" value="${esc(b.g)}" aria-label="Renombrar el grupo" class="gwe-w-120px"></div>${open ? b.items.map(([it, i]) => itemHtml(f, prop, v, it, i)).join('') : ''}</div>`;
   }).join('');
-  return `<div style="border:1px solid #cfd4e8; border-radius:10px; padding:6px; margin-top:8px;"><div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;"><b>${VPROPS[prop]} — variantes (${v.items.length})</b><button type="button" class="small-btn danger" data-vact="disable" data-vp="${prop}">Quitar variantes</button></div>
+  return `<div class="gwe-b-1px-solid-border-strong gwe-r-radius-sm gwe-p-sp-2 gwe-mt-sp-2"><div class="gwe-d-flex gwe-jc-space-between gwe-ai-center gwe-gap-sp-2 gwe-fwrap-wrap"><b>${VPROPS[prop]} — variantes (${v.items.length})</b><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-vact="disable" data-vp="${prop}">Quitar variantes</button></div>
     <div class="hint">Se muestra la primera variante que se cumpla, de arriba hacia abajo; si ninguna, el texto por defecto${hide ? '; si tampoco hay, el elemento no ocupa espacio' : '; si tampoco hay, se usa el valor del campo'}.</div>
-    <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:6px 0;"><input type="search" data-vsearch="${sk}" value="${esc(searchQ[sk] || '')}" placeholder="Buscar en las variantes…" aria-label="Buscar en las variantes" style="flex:1; min-width:120px;"><button type="button" class="small-btn" data-vact="foldall" data-vp="${prop}">Plegar todas</button><button type="button" class="small-btn" data-vact="unfoldall" data-vp="${prop}">Desplegar todas</button></div>
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap gwe-ai-center gwe-m-sp-2-0"><input type="search" data-vsearch="${sk}" value="${esc(searchQ[sk] || '')}" placeholder="Buscar en las variantes…" aria-label="Buscar en las variantes" class="gwe-flex-1 gwe-minw-120px"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="foldall" data-vp="${prop}">Plegar todas</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="unfoldall" data-vp="${prop}">Desplegar todas</button></div>
     <div data-vlist="${sk}">${list}</div>
-    <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:6px;"><button type="button" class="small-btn" data-vact="add" data-vp="${prop}" ${v.items.length >= 200 ? 'disabled' : ''}>+ Agregar variante</button>
-      ${choice.length ? `<select data-vpo="${prop}" aria-label="Campo cuyas opciones generan variantes">${choice.map((x) => `<option value="${x.id}">${esc(labelOfField(x.id))}</option>`).join('')}</select><button type="button" class="small-btn" data-vact="peropt" data-vp="${prop}">Una variante por cada opción</button>` : ''}</div>
-    <div style="border:1px dashed #cfd4e8; border-radius:10px; padding:6px; margin-top:6px;"><b>Por defecto</b> <span class="hint">(${hide ? 'vacío = no se muestra nada' : 'vacío = se usa el valor del campo'})</span>${valueEditorHtml(prop, `${prop}:def`, v.default || '')}</div></div>`;
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap gwe-ai-center gwe-mt-sp-2"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="add" data-vp="${prop}" ${v.items.length >= 200 ? 'disabled' : ''}>+ Agregar variante</button>
+      ${choice.length ? `<select data-vpo="${prop}" aria-label="Campo cuyas opciones generan variantes">${choice.map((x) => `<option value="${x.id}">${esc(labelOfField(x.id))}</option>`).join('')}</select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="peropt" data-vp="${prop}">Una variante por cada opción</button>` : ''}</div>
+    <div class="gwe-b-1px-dashed-border-strong gwe-r-radius-sm gwe-p-sp-2 gwe-mt-sp-2"><b>Por defecto</b> <span class="hint">(${hide ? 'vacío = no se muestra nada' : 'vacío = se usa el valor del campo'})</span>${valueEditorHtml(prop, `${prop}:def`, v.default || '')}</div></div>`;
 }
 function variantsHtml(f) {
-  let html = `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="hint" style="background:#fff8e1; border:1px solid #f0ad4e; color:#7a5b00; border-radius:8px; padding:6px 8px;"><b>Variantes.</b> ${VARIANT_WARNING}</div>`;
+  let html = `<hr class="gwe-m-sp-3-0 gwe-b-none gwe-bt-1px-solid-border"><div class="hint gwe-bg-warn-bg gwe-b-1px-solid-warn-line gwe-c-warn-text gwe-r-radius-sm gwe-p-sp-2-sp-2"><b>Variantes.</b> ${VARIANT_WARNING}</div>`;
   variantProps(f).forEach((prop) => { html += propSectionHtml(f, prop); });
   return html;
 }
@@ -495,7 +615,7 @@ function onVinput(e) {
   if (t.dataset.vsearch) {   // buscador: filtra sin repintar
     searchQ[t.dataset.vsearch] = t.value;
     const q = t.value.toLowerCase();
-    document.querySelectorAll(`[data-vlist="${t.dataset.vsearch}"] .cv`).forEach((cv) => { cv.style.display = !q || cv.dataset.hay.includes(q) ? '' : 'none'; });
+    document.querySelectorAll(`[data-vlist="${t.dataset.vsearch}"] .cv`).forEach((cv) => { const show = !q || cv.dataset.hay.includes(q); cv.hidden = !show; cv.style.display = show ? '' : 'none'; });
     return;
   }
   const key = t.dataset.vname || t.dataset.vgroup || t.dataset.vtxt || t.dataset.vgname || t.dataset.vimg; if (!key) return;
@@ -589,19 +709,19 @@ function renderSheets() {
   clearSheetRt();
   Object.keys(condOwners).forEach((k) => { if (condOwners[k].keep) delete condOwners[k]; });
   const bar = $('sheetsBar'), panel = $('sheetsPanel');
-  if (!sheetsOn()) { bar.innerHTML = '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><span class="hint">Formulario de una sola hoja.</span><button type="button" class="small-btn" data-shact="split">Dividir en hojas</button></div>'; panel.innerHTML = ''; return; }
+  if (!sheetsOn()) { bar.innerHTML = '<div class="gwe-d-flex gwe-ai-center gwe-gap-sp-2 gwe-fwrap-wrap"><span class="hint">Formulario de una sola hoja.</span><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="split">Dividir en hojas</button></div>'; panel.innerHTML = ''; return; }
   const i = sheetIndex(activeSheet), sh = design.sheets[i];
-  bar.innerHTML = `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;" role="tablist" aria-label="Hojas del formulario">${design.sheets.map((x, k) => `<button type="button" role="tab" aria-selected="${x.id === activeSheet}" class="small-btn ${x.id === activeSheet ? 'primary' : ''}" data-shtab="${x.id}">${k + 1} · ${esc(sheetName(x, k).slice(0, 22))}${x.show_if ? ' ⚙' : ''}</button>`).join('')}<button type="button" class="small-btn" data-shact="add" ${design.sheets.length >= 20 ? 'disabled' : ''}>+ Hoja</button></div>`;
+  bar.innerHTML = `<div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap gwe-ai-center" role="tablist" aria-label="Hojas del formulario">${design.sheets.map((x, k) => `<button type="button" role="tab" aria-selected="${x.id === activeSheet}" class="gw-btn gw-btn--sm gw-btn--secondary" data-shtab="${x.id}">${k + 1} · ${esc(sheetName(x, k).slice(0, 22))}${x.show_if ? ' (con regla)' : ''}</button>`).join('')}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="add" ${design.sheets.length >= 20 ? 'disabled' : ''}>+ Hoja</button></div>`;
   const cond = (i > 0 && i < design.sheets.length - 1)
     ? (() => { const oid = regOwner(null, () => sh.show_if, (n) => { const c = CondTree.compact(n); if (c) sh.show_if = c; else delete sh.show_if; markDirty(); }, { keep: true, key: `sheet:${sh.id}`, others: () => fieldsBeforeSheet(i), rerender: renderSheets });
-        return `<div class="fld"><label>Mostrar esta hoja</label>${sh.show_if ? `${condEditorHtml(oid)}<button type="button" class="small-btn danger" data-co="${oid}" data-cx="clearroot">Siempre (quitar la regla)</button>` : `<span class="hint">Siempre.</span> <button type="button" class="small-btn" data-co="${oid}" data-cx="startroot">Mostrar solo si…</button>`}<div class="hint">Solo puede usar campos de hojas anteriores.</div></div>`; })()
+        return `<div class="fld"><label>Mostrar esta hoja</label>${sh.show_if ? `${condEditorHtml(oid)}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-co="${oid}" data-cx="clearroot">Siempre (quitar la regla)</button>` : `<span class="hint">Siempre.</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-co="${oid}" data-cx="startroot">Mostrar solo si…</button>`}<div class="hint">Solo puede usar campos de hojas anteriores.</div></div>`; })()
     : '<div class="hint">La primera y la última hoja siempre se muestran.</div>';
-  panel.innerHTML = `<details style="margin-bottom:8px;"><summary style="cursor:pointer; font-size:.85rem; font-weight:700;">Opciones de la hoja ${i + 1}</summary><div style="padding:6px 2px; display:grid; gap:6px;">
+  panel.innerHTML = `<details class="gwe-mb-sp-2"><summary class="gwe-cur-pointer gwe-fs-fs-sm gwe-fw-fw-bold">Opciones de la hoja ${i + 1}</summary><div class="gwe-p-sp-2-sp-1 gwe-d-grid gwe-gap-sp-2">
     <div class="fld"><label>Título de la hoja</label><div id="shTitleRt"></div></div><div class="fld"><label>Descripción (opcional)</label><div id="shDescRt"></div></div>${cond}
-    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" data-shact="left" ${i === 0 ? 'disabled' : ''}>← Antes</button><button type="button" class="small-btn" data-shact="right" ${i === design.sheets.length - 1 ? 'disabled' : ''}>Después →</button><button type="button" class="small-btn" data-shact="dup" ${design.sheets.length >= 20 ? 'disabled' : ''}>Duplicar</button><button type="button" class="small-btn danger" data-shact="del">Eliminar</button><button type="button" class="small-btn" data-shact="merge">Volver a una sola hoja</button></div>
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="left" ${i === 0 ? 'disabled' : ''}>← Antes</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="right" ${i === design.sheets.length - 1 ? 'disabled' : ''}>Después →</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="dup" ${design.sheets.length >= 20 ? 'disabled' : ''}>Duplicar</button><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-shact="del">Eliminar</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-shact="merge">Volver a una sola hoja</button></div>
     <div class="hint">El pago y los acompañantes siempre van en la última hoja.</div></div></details>`;
   const mount = (id, opts) => { const m = RichText.mount($(id), opts); sheetMounts.push(m); };
-  mount('shTitleRt', { basic: true, value: sh.title, label: 'Título de la hoja', onChange: (v) => { sh.title = v; markDirty(); const t = bar.querySelector(`[data-shtab="${sh.id}"]`); if (t) t.textContent = `${i + 1} · ${sheetName(sh, i).slice(0, 22)}${sh.show_if ? ' ⚙' : ''}`; } });
+  mount('shTitleRt', { basic: true, value: sh.title, label: 'Título de la hoja', onChange: (v) => { sh.title = v; markDirty(); const t = bar.querySelector(`[data-shtab="${sh.id}"]`); if (t) t.textContent = `${i + 1} · ${sheetName(sh, i).slice(0, 22)}${sh.show_if ? ' (con regla)' : ''}`; } });
   mount('shDescRt', { value: sh.description, label: 'Descripción de la hoja', onChange: (v) => { sh.description = v; markDirty(); } });
 }
 function onSheetAction(e) {
@@ -635,14 +755,14 @@ async function syncWithParams() {
   const ch = FormSync.plan(design, eventFields);
   if (!ch.length) { showToast('Los campos enlazados ya están al día con Parámetros', 'success'); return; }
   const list = ch.map((p) => `<li><b>${esc(p.label)}</b>: ${p.changes.map(esc).join('; ')}</li>`).join('');
-  if (!(await showConfirm(`Esto va a cambiar en el formulario:<ul style="margin:8px 0 0 18px; text-align:left;">${list}</ul>`, { confirmLabel: 'Sincronizar' }))) return;
+  if (!(await showConfirm(`Esto va a cambiar en el formulario:<ul class="gwe-m-sp-2-0-0-sp-4 gwe-ta-left">${list}</ul>`, { confirmLabel: 'Sincronizar' }))) return;
   FormSync.apply(design, ch); markDirty(); renderAll();
 }
 function renderPalette() {
-  $('palNew').innerHTML = Object.entries(TYPES).map(([t, [l, ic]]) => `<button type="button" draggable="true" data-new="${t}">${ic} ${l}</button>`).join('');
+  $('palNew').innerHTML = Object.entries(TYPES).map(([t, [l, ic]]) => `<button type="button" draggable="true" data-new="${t}">${gwIcon(ic)} ${l}</button>`).join('');
   const used = usedKeys();
   const free = eventFields.filter((f) => !used.has(f.key));
-  $('palEvent').innerHTML = free.map((f) => `<button type="button" draggable="true" data-ev="${esc(f.key)}">🔗 ${esc(f.label)}</button>`).join('') || '<span class="hint">Todos los campos del evento ya están en el formulario.</span>';
+  $('palEvent').innerHTML = free.map((f) => `<button type="button" draggable="true" data-ev="${esc(f.key)}">${gwIcon('link')} ${esc(f.label)}</button>`).join('') || '<span class="hint">Todos los campos del evento ya están en el formulario.</span>';
   document.querySelectorAll('[data-new],[data-ev]').forEach((b) => {
     b.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify(b.dataset.new ? { kind: 'new', type: b.dataset.new } : { kind: 'event', key: b.dataset.ev })); e.dataTransfer.effectAllowed = 'copy'; });
     b.addEventListener('click', () => { const f = b.dataset.new ? newField(b.dataset.new) : newField(eventFields.find((x) => x.key === b.dataset.ev).type, eventFields.find((x) => x.key === b.dataset.ev)); if (!f) return; place(f.id, { gap: design.rows.length }); selected = f.id; markDirty(); renderAll(); });
@@ -687,12 +807,12 @@ function renderCanvas() {
   const bandHead = (ri) => {
     const b = bandAt(ri); if (!b || ri !== b.start) return '';
     const folded = canvasFold.has(bandId(b)), n = b.end - b.start;
-    return `<div class="cband" style="display:flex; gap:6px; align-items:center; margin:6px 0 2px; padding:3px 6px; border-left:4px solid #9fb0ff; background:#f3f5ff; border-radius:6px; font-size:.78rem;"><button type="button" class="small-btn" data-bandtoggle="${esc(bandId(b))}" aria-expanded="${!folded}" aria-label="${folded ? 'Desplegar' : 'Plegar'} el bloque condicional" style="padding:0 6px;">${folded ? '▸' : '▾'}</button><span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><b>Se muestra si:</b> ${esc(CondTree.summary(b.cond, labelOfField))}</span><span class="hint">${n} filas</span></div>`;
+    return `<div class="cband gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-m-sp-2-0-sp-1 gwe-p-sp-1-sp-2 gwe-bl-4px-solid-info-line gwe-bg-info-bg gwe-r-radius-sm gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-bandtoggle="${esc(bandId(b))}" aria-expanded="${!folded}" aria-label="${folded ? 'Desplegar' : 'Plegar'} el bloque condicional">${folded ? '▸' : '▾'}</button><span class="gwe-flex-1 gwe-of-hidden gwe-to-ellipsis gwe-ws-nowrap"><b>Se muestra si:</b> ${esc(CondTree.summary(b.cond, labelOfField))}</span><span class="hint">${n} filas</span></div>`;
   };
-  const bandTools = bandList.length ? '<div style="display:flex; gap:4px; justify-content:flex-end; margin-bottom:4px;"><button type="button" class="small-btn" data-bandall="fold">Plegar bloques condicionales</button><button type="button" class="small-btn" data-bandall="unfold">Desplegar bloques</button></div>' : '';
+  const bandTools = bandList.length ? '<div class="gwe-d-flex gwe-gap-sp-1 gwe-jc-flex-end gwe-mb-sp-1"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-bandall="fold">Plegar bloques condicionales</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-bandall="unfold">Desplegar bloques</button></div>' : '';
   $('canvas').innerHTML = bandTools + rows.map((row, ri) => bandHead(ri) + ((sheetsOn() && row.sheet !== activeSheet) || foldedRow(ri) ? '' : gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
-    <div class="rowtools"><select data-align="${ri}" aria-label="Alineación de la fila" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
-    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`)).join('') + gap(endGap) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
+    <div class="rowtools"><select data-align="${ri}" aria-label="Alineación de la fila" class="gwe-fs-fs-sm gwe-p-sp-1"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
+    <button class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila">↑</button><button class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila">↓</button></div></div>`)).join('') + gap(endGap) || '<p class="hint gwe-ta-center gwe-p-sp-7">Arrastra aquí un elemento para empezar.</p>';
   $('canvas').querySelectorAll('.gap').forEach((g) => {
     g.addEventListener('dragover', (e) => { e.preventDefault(); g.classList.add('over'); });
     g.addEventListener('dragleave', () => g.classList.remove('over'));
@@ -732,7 +852,7 @@ function renderCanvas() {
   $('canvas').querySelectorAll('[data-rowdown]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowdown, 1)));
 }
 function cardHtml(f) {
-  const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
+  const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>${gwIcon('link')} ${esc(f.key)}</span>` : '', f.stats ? `<span title="Genera estadísticas">${gwIcon('chart')}</span>` : '', f.readonly_when_prefilled ? `<span title="Solo lectura si ya tenemos el dato">${gwIcon('lock')}</span>` : '', (f.doc_types || []).length ? `<span>${gwIcon('badge')} ${f.doc_types.join('/')}</span>` : '', f.show_if ? `<span>${gwIcon('eye')} condicional</span>` : ''].join('');
   const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(canvasText(f)).replace(/\s+/g, ' ').slice(0, 40)) : f.label;
   const shown = f.internal_name || label;     // el «Nombre interno», si existe, es la etiqueta del lienzo
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (shown || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(shown) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
@@ -757,39 +877,39 @@ function renderProps() {
   const isInput = !STATIC.includes(f.type) && !isPay && !isComp;
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
-  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4><div class="fld"><label for="pInternal">Nombre interno (opcional)</label><input type="text" id="pInternal" maxlength="60" value="${esc(f.internal_name || '')}" placeholder="${esc(shortNameOf(f.id))}"><div class="hint">Solo lo ves tú: aparece en las listas, en el lienzo y en la tabla de variantes. No se muestra a quien llena el formulario.</div></div>`;
+  let html = `<h4 class="gwe-m-0-0-sp-2 gwe-fs-fs-sm">${gwIcon(TYPES[f.type][1])} ${TYPES[f.type][0]}</h4><div class="fld"><label for="pInternal">Nombre interno (opcional)</label><input type="text" id="pInternal" maxlength="60" value="${esc(f.internal_name || '')}" placeholder="${esc(shortNameOf(f.id))}"><div class="hint">Solo lo ves tú: aparece en las listas, en el lienzo y en la tabla de variantes. No se muestra a quien llena el formulario.</div></div>`;
   if (sheetsOn()) { const at = locate(f.id), cur = at ? design.rows[at[0]].sheet : activeSheet; html += `<div class="fld"><label for="pSheet">Hoja</label><select id="pSheet">${design.sheets.map((x, k) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${k + 1} · ${esc(sheetName(x, k))}</option>`).join('')}</select></div>`; }
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
   if ((f.type === 'heading' || f.type === 'paragraph') && !(f.variants && f.variants.content)) html += '<div class="fld"><label>Texto</label><div id="pContentRt"></div></div>';
-  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
-    <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
+  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" class="gwe-maxw-100 gwe-mt-sp-2 gwe-r-radius-sm">` : ''}</div>
+    <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" class="gwe-w-100"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
-  if (f.type === 'file') html += `<div class="fld"><label>Formatos permitidos</label><div>${EXTS.map((x) => `<label style="display:inline-flex; gap:3px; margin-right:8px; font-size:0.78rem;"><input type="checkbox" data-ext="${x}" ${(f.accept || []).includes(x) ? 'checked' : ''}>${x}</label>`).join('')}</div></div>${fieldInput('pMax', 'Tamaño máximo (MB, hasta 20)', f.max_mb || 10)}`;
+  if (f.type === 'file') html += `<div class="fld"><label>Formatos permitidos</label><div>${EXTS.map((x) => `<label class="gwe-d-inline-flex gwe-gap-sp-1 gwe-margin-right-sp-2 gwe-fs-fs-sm"><input type="checkbox" data-ext="${x}" ${(f.accept || []).includes(x) ? 'checked' : ''}>${x}</label>`).join('')}</div></div>${fieldInput('pMax', 'Tamaño máximo (MB, hasta 20)', f.max_mb || 10)}`;
   if (isInput) {
-    const keyOpts = `<option value="">— Solo en este formulario —</option>` + eventFields.filter((e) => e.key === f.key || !used.has(e.key)).map((e) => `<option value="${esc(e.key)}" ${f.key === e.key ? 'selected' : ''}>🔗 ${esc(e.label)}</option>`).join('');
+    const keyOpts = `<option value="">— Solo en este formulario —</option>` + eventFields.filter((e) => e.key === f.key || !used.has(e.key)).map((e) => `<option value="${esc(e.key)}" ${f.key === e.key ? 'selected' : ''}>${esc(e.label)}</option>`).join('');
     html += `<div class="fld"><label>Vinculado al campo del evento</label><select id="pKey">${keyOpts}</select></div>`;
     if (f.type === 'text_short') {
       const on = (f.doc_types || []).length > 0;
-      html += `<div class="fld"><label>Tipo de dato</label><select id="pDocOn"><option value="">Texto libre</option><option value="1" ${on ? 'selected' : ''}>🪪 Documento de identidad (se valida según el tipo)</option></select>
+      html += `<div class="fld"><label>Tipo de dato</label><select id="pDocOn"><option value="">Texto libre</option><option value="1" ${on ? 'selected' : ''}>Documento de identidad (se valida según el tipo)</option></select>
         ${!on && f.key === 'id' ? '<div class="hint">Este es el campo de cédula: elige «Documento de identidad» para permitir cédula de extranjería, pasaporte, NIT, etc. y validarlos.</div>' : ''}</div>`;
-      if (on) html += `<div class="fld"><label>Tipos de documento que se aceptan</label><div style="max-height:220px; overflow:auto; border:1px solid #e3e5ec; border-radius:8px; padding:6px;">${ID_DOCS.map((d) => `<label style="display:flex; gap:6px; font-size:0.78rem; margin-bottom:3px;"><input type="checkbox" data-doc="${d.code}" ${f.doc_types.includes(d.code) ? 'checked' : ''}> <span><b>${esc(d.label)}</b><br><span class="hint">${esc(d.hint)}</span></span></label>`).join('')}</div>
+      if (on) html += `<div class="fld"><label>Tipos de documento que se aceptan</label><div class="gwe-maxh-220px gwe-of-auto gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-2">${ID_DOCS.map((d) => `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-1"><input type="checkbox" data-doc="${d.code}" ${f.doc_types.includes(d.code) ? 'checked' : ''}> <span><b>${esc(d.label)}</b><br><span class="hint">${esc(d.hint)}</span></span></label>`).join('')}</div>
         <div class="hint">Si marcas varios, la persona elige el tipo y el número se valida según lo que elija; si marcas uno solo, se usa ese.</div></div>`;
     }
-    if (f.type === 'number') html += '<div class="hint" style="margin-bottom:6px;">🔢 Este campo solo acepta números: no deja escribir letras.</div>';
-    if (f.type === 'phone') html += '<div class="hint" style="margin-bottom:6px;">📞 Este campo solo acepta dígitos, +, espacios, paréntesis y guiones.</div>';
-    if (!f.key) html += `<label style="display:flex; gap:6px; font-size:0.78rem; margin-bottom:0.6rem;"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
-    html += `<label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
-      <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
-      <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
+    if (f.type === 'number') html += '<div class="hint gwe-mb-sp-2">Este campo solo acepta números: no deja escribir letras.</div>';
+    if (f.type === 'phone') html += '<div class="hint gwe-mb-sp-2">Este campo solo acepta dígitos, +, espacios, paréntesis y guiones.</div>';
+    if (!f.key) html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
+    html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
   }
   // variantes (cualquier elemento) y regla de visibilidad en árbol (Y/O anidados)
   html += variantsHtml(f);
   const showOid = regOwner(f.id, () => f.show_if, (n) => { f.show_if = CondTree.compact(n); markDirty(); renderCanvas(); }, { key: `show:${f.id}` });
-  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label>${f.show_if ? `${condEditorHtml(showOid)}<button type="button" class="small-btn danger" data-co="${showOid}" data-cx="clearroot">Siempre visible (quitar la regla)</button>` : `<span class="hint">Siempre visible.</span> <button type="button" class="small-btn" data-co="${showOid}" data-cx="startroot">Mostrar solo si…</button>`}</div>`;
-  html += `<div style="display:flex; gap:6px; margin-top:0.8rem; flex-wrap:wrap;"><button class="small-btn" id="pUp">← Antes</button><button class="small-btn" id="pDown">Después →</button><button class="small-btn danger" id="pDel">Eliminar</button></div>`;
+  html += `<hr class="gwe-m-sp-3-0 gwe-b-none gwe-bt-1px-solid-border"><div class="fld"><label>Regla de visibilidad</label>${f.show_if ? `${condEditorHtml(showOid)}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-co="${showOid}" data-cx="clearroot">Siempre visible (quitar la regla)</button>` : `<span class="hint">Siempre visible.</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-co="${showOid}" data-cx="startroot">Mostrar solo si…</button>`}</div>`;
+  html += `<div class="gwe-d-flex gwe-gap-sp-2 gwe-mt-sp-3 gwe-fwrap-wrap"><button class="gw-btn gw-btn--secondary gw-btn--sm" id="pUp">← Antes</button><button class="gw-btn gw-btn--secondary gw-btn--sm" id="pDown">Después →</button><button class="gw-btn gw-btn--danger-outline gw-btn--sm" id="pDel">Eliminar</button></div>`;
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
@@ -856,7 +976,7 @@ function valueControl(c, parent, p) {
   if (c.op === 'in' && has && sug.total <= 40) {      // «es alguno de»: se MARCAN los valores en vez de escribirlos
     const sel = Array.isArray(c.value) ? c.value : (c.value ? [c.value] : []);
     const vals = [...sug.values, ...sel.filter((v) => !sug.values.includes(v))];
-    return `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${vals.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-bindin="${p}.value" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
+    return `<div class="gwe-maxh-150px gwe-of-auto gwe-p-sp-1-sp-1">${vals.map((o) => `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" data-bindin="${p}.value" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
   }
   if (c.op !== 'in' && few) {
     const vals = !c.value || sug.values.includes(c.value) ? sug.values : [...sug.values, c.value];
@@ -868,73 +988,73 @@ function valueControl(c, parent, p) {
 }
 function condsHtml(path, list, exceptId) {
   const inputs = Object.values(design.fields).filter((x) => x.id !== exceptId && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
-  return `<div style="margin:4px 0;">${(list || []).map((c, i) => {
+  return `<div class="gwe-m-sp-1-0">${(list || []).map((c, i) => {
     const isDate = c.field === '@date', parent = design.fields[c.field], p = `${path}.${i}`;
     const opSel = isDate ? `<select data-bind="${p}.op" data-rerender><option value="before" ${c.op === 'before' ? 'selected' : ''}>antes de</option><option value="on_or_after" ${c.op === 'on_or_after' ? 'selected' : ''}>desde (incluye el día)</option></select>`
       : `<select data-bind="${p}.op" data-rerender>${OPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const val = isDate ? `<input type="date" data-bind="${p}.value" value="${esc(c.value)}">` : c.op === 'filled' ? '' : valueControl(c, parent, p);
-    return `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px; margin-bottom:4px;">
-      <select data-bind="${p}.field" data-rerender data-resetvalue><option value="@date" ${isDate ? 'selected' : ''}>📅 Fecha de la inscripción (hoy)</option>${inputs.map((o) => `<option value="${o.id}" ${o.id === c.field ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
-      ${opSel}${val}<button type="button" class="small-btn danger" data-del="${p}" style="justify-self:end; padding:0 8px;">Quitar condición</button></div>`;
-  }).join('')}<button type="button" class="small-btn" data-addcond="${path}">+ Condición</button></div>`;
+    return `<div class="gwe-d-grid gwe-gap-sp-1 gwe-bg-surface-2 gwe-p-sp-2 gwe-r-radius-sm gwe-mb-sp-1">
+      <select data-bind="${p}.field" data-rerender data-resetvalue><option value="@date" ${isDate ? 'selected' : ''}>Fecha de la inscripción (hoy)</option>${inputs.map((o) => `<option value="${o.id}" ${o.id === c.field ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+      ${opSel}${val}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-js-end gwe-p-0-sp-2" data-del="${p}">Quitar condición</button></div>`;
+  }).join('')}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-addcond="${path}">+ Condición</button></div>`;
 }
 let CODES = [], codesLoaded = false;
 async function loadCodes() { try { CODES = await j(`${api}/discount-codes`); } catch (e) { CODES = []; } codesLoaded = true; renderProps(); }
 function linkBox(item, what) {
-  if (!item.link_key) return `<div class="hint" style="background:#fff8e1; padding:5px 8px; border-radius:8px; margin-top:4px;">🔗 Guarda el diseño para generar el enlace de este ${what}.</div>`;
+  if (!item.link_key) return `<div class="hint gwe-bg-warn-bg gwe-p-sp-2-sp-2 gwe-r-radius-sm gwe-mt-sp-1">${gwIcon('link')} Guarda el diseño para generar el enlace de este ${what}.</div>`;
   const url = `${window.PUBLIC_BASE || location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
-  return `<div style="display:flex; gap:4px; margin-top:4px;"><input type="text" readonly value="${esc(url)}" style="font-size:0.72rem;"><button type="button" class="small-btn" data-copy="${esc(url)}">Copiar</button></div>
+  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><input type="text" readonly value="${esc(url)}" class="gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(url)}">Copiar</button></div>
     <div class="hint">Solo quien entre por este enlace tendrá este ${what}. Compártelo únicamente con quien deba recibirlo. (Si el formulario está en «Pruebas», el enlace real necesita además <code>&amp;k=…</code>).</div>`;
 }
 function codeBox(d, i) {
-  if (!d.id || dirty) return `<div class="hint" style="background:#fff8e1; padding:5px 8px; border-radius:8px; margin-top:4px;">🎟️ Guarda el diseño para poder generar los códigos de este descuento.</div>`;
+  if (!d.id || dirty) return `<div class="hint gwe-bg-warn-bg gwe-p-sp-2-sp-2 gwe-r-radius-sm gwe-mt-sp-1">${gwIcon('badge')} Guarda el diseño para poder generar los códigos de este descuento.</div>`;
   if (!codesLoaded) { loadCodes(); return '<div class="hint">Cargando códigos…</div>'; }
   const mine = CODES.filter((c) => c.discount_id === d.id), used = mine.reduce((a, c) => a + c.used, 0), cap = mine.reduce((a, c) => a + c.max_uses, 0);
-  return `<div style="background:#f6f7fb; padding:6px; border-radius:8px; margin-top:4px;" data-codebox="${d.id}">
-    <b style="font-size:0.78rem;">🎟️ Códigos de este descuento</b>
+  return `<div class="gwe-bg-surface-2 gwe-p-sp-2 gwe-r-radius-sm gwe-mt-sp-1" data-codebox="${d.id}">
+    <b class="gwe-fs-fs-sm">${gwIcon('badge')} Códigos de este descuento</b>
     <div class="hint">${mine.length ? `${mine.length} código(s) · ${used} uso(s) de ${cap.toLocaleString('es-CO')}` : 'Aún no hay códigos: sin códigos nadie puede usar este descuento.'}</div>
-    ${mine.slice(0, 8).map((c) => `<div style="display:flex; justify-content:space-between; font-size:0.74rem;"><code>${esc(c.code)}</code><span>${c.used}/${c.max_uses} usos</span></div>`).join('')}${mine.length > 8 ? `<div class="hint">… y ${mine.length - 8} más (están en el Excel)</div>` : ''}
-    <label style="font-size:0.78rem; display:flex; gap:4px; margin-top:6px;"><input type="radio" name="cm${i}" data-cmode="shared" checked> Un solo código, válido N veces</label>
-    <label style="font-size:0.78rem; display:flex; gap:4px;"><input type="radio" name="cm${i}" data-cmode="unique"> N códigos distintos, de un solo uso</label>
-    <div data-cshared><input type="text" data-ccode placeholder="Código (opcional; si lo dejas vacío se inventa uno)" style="margin-top:3px;"><input type="number" min="1" data-cuses value="100" style="margin-top:3px;" title="Cuántas veces se puede usar"><div class="hint">Cuántas veces se puede usar en total; al llegar a ese número deja de servir.</div></div>
-    <div data-cunique hidden><input type="number" min="1" max="5000" data-ccount value="100" style="margin-top:3px;" title="Cuántos códigos"><input type="text" data-cprefix maxlength="6" placeholder="Prefijo (opcional, ej. VIP)" style="margin-top:3px;"><div class="hint">Cada código sirve una sola vez (uno por persona).</div></div>
-    <div style="display:flex; gap:4px; margin-top:5px;"><button type="button" class="small-btn" data-gen="${d.id}">Generar</button>${mine.length ? `<a class="small-btn" href="${api}/discount-codes/export" style="text-decoration:none;">⬇ Excel de códigos</a>` : ''}</div></div>`;
+    ${mine.slice(0, 8).map((c) => `<div class="gwe-d-flex gwe-jc-space-between gwe-fs-fs-sm"><code>${esc(c.code)}</code><span>${c.used}/${c.max_uses} usos</span></div>`).join('')}${mine.length > 8 ? `<div class="hint">… y ${mine.length - 8} más (están en el Excel)</div>` : ''}
+    <label class="gwe-fs-fs-sm gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-2"><input type="radio" name="cm${i}" data-cmode="shared" checked> Un solo código, válido N veces</label>
+    <label class="gwe-fs-fs-sm gwe-d-flex gwe-gap-sp-1"><input type="radio" name="cm${i}" data-cmode="unique"> N códigos distintos, de un solo uso</label>
+    <div data-cshared><input type="text" data-ccode placeholder="Código (opcional; si lo dejas vacío se inventa uno)" class="gwe-mt-sp-1"><input type="number" min="1" data-cuses value="100" class="gwe-mt-sp-1" title="Cuántas veces se puede usar"><div class="hint">Cuántas veces se puede usar en total; al llegar a ese número deja de servir.</div></div>
+    <div data-cunique hidden><input type="number" min="1" max="5000" data-ccount value="100" class="gwe-mt-sp-1" title="Cuántos códigos"><input type="text" data-cprefix maxlength="6" placeholder="Prefijo (opcional, ej. VIP)" class="gwe-mt-sp-1"><div class="hint">Cada código sirve una sola vez (uno por persona).</div></div>
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-2"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gen="${d.id}">Generar</button>${mine.length ? `<a class="gw-btn gw-btn--secondary gw-btn--sm gwe-td-none" href="${api}/discount-codes/export">${gwIcon('download')} Excel de códigos</a>` : ''}</div></div>`;
 }
 function payHtml(f) {
   const pay = f.pay;
   const HOW_RULE = [['category', 'Según lo que responda la persona (categoría / variable)'], ['link', 'Con un enlace propio']];
   const HOW_DISC = [...HOW_RULE, ['code', 'Con un código de descuento']];
-  const howSel = (path, cur, opts) => `<select data-bind="${path}.how" data-rerender style="width:100%; margin-top:3px;">${opts.map(([v, l]) => `<option value="${v}" ${(cur || 'category') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  const when = (path, item, what) => `<div class="hint" style="margin-top:4px;">${(item.how || 'category') === 'category' ? `Cuando se cumpla TODO esto${what}:` : 'Condiciones extra (opcional, además de ' + ((item.how) === 'link' ? 'entrar por el enlace' : 'tener un código válido') + '):'}</div>${condsHtml(path, item.when, f.id)}`;
-  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas o enlaces <span class="hint">(si se cumplen varios gana el MÁS ESPECÍFICO —el que pide más condiciones—; si empatan, el primero; si ninguno, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
-      <input type="text" data-bind="rules.${i}.label" value="${esc(r.label)}" placeholder="Nombre (ej. Entrada VIP)"><input type="number" min="0" data-num data-bind="rules.${i}.amount" value="${r.amount}" placeholder="Monto COP" style="width:100%; margin-top:3px;">
+  const howSel = (path, cur, opts) => `<select data-bind="${path}.how" data-rerender class="gwe-w-100 gwe-mt-sp-1">${opts.map(([v, l]) => `<option value="${v}" ${(cur || 'category') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const when = (path, item, what) => `<div class="hint gwe-mt-sp-1">${(item.how || 'category') === 'category' ? `Cuando se cumpla TODO esto${what}:` : 'Condiciones extra (opcional, además de ' + ((item.how) === 'link' ? 'entrar por el enlace' : 'tener un código válido') + '):'}</div>${condsHtml(path, item.when, f.id)}`;
+  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas o enlaces <span class="hint">(si se cumplen varios gana el MÁS ESPECÍFICO —el que pide más condiciones—; si empatan, el primero; si ninguno, el monto base)</span></label>${pay.rules.map((r, i) => `<div class="gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-2 gwe-mb-sp-2">
+      <input type="text" data-bind="rules.${i}.label" value="${esc(r.label)}" placeholder="Nombre (ej. Entrada VIP)"><input type="number" min="0" data-num data-bind="rules.${i}.amount" value="${r.amount}" placeholder="Monto COP" class="gwe-w-100 gwe-mt-sp-1">
       ${howSel(`rules.${i}`, r.how, HOW_RULE)}${r.how === 'link' ? linkBox(r, 'precio') : ''}
-      ${when(`rules.${i}.when`, r, '')}<button type="button" class="small-btn danger" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
-      <button type="button" class="small-btn" data-addrule>+ Agregar monto por regla</button></div>` : '';
-  const disc = `<div class="fld"><label>Descuentos <span class="hint">(se aplican todos los que se cumplan, en este orden)</span></label>${pay.discounts.map((d, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+      ${when(`rules.${i}.when`, r, '')}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-addrule>+ Agregar monto por regla</button></div>` : '';
+  const disc = `<div class="fld"><label>Descuentos <span class="hint">(se aplican todos los que se cumplan, en este orden)</span></label>${pay.discounts.map((d, i) => `<div class="gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-2 gwe-mb-sp-2">
       <input type="text" data-bind="discounts.${i}.label" value="${esc(d.label)}" placeholder="Nombre (ej. Estudiante)">
-      <div style="display:flex; gap:4px; margin-top:3px;"><select data-bind="discounts.${i}.kind"><option value="percent" ${d.kind === 'percent' ? 'selected' : ''}>% de descuento</option><option value="amount" ${d.kind === 'amount' ? 'selected' : ''}>$ COP menos</option></select><input type="number" min="0" step="any" data-num data-bind="discounts.${i}.value" value="${d.value}"></div>
+      <div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><select data-bind="discounts.${i}.kind"><option value="percent" ${d.kind === 'percent' ? 'selected' : ''}>% de descuento</option><option value="amount" ${d.kind === 'amount' ? 'selected' : ''}>$ COP menos</option></select><input type="number" min="0" step="any" data-num data-bind="discounts.${i}.value" value="${d.value}"></div>
       ${howSel(`discounts.${i}`, d.how, HOW_DISC)}${d.how === 'link' ? linkBox(d, 'descuento') : ''}${d.how === 'code' ? codeBox(d, i) : ''}
-      ${when(`discounts.${i}.when`, d, ' (vacío = siempre)')}<button type="button" class="small-btn danger" data-del="discounts.${i}">Quitar descuento</button></div>`).join('')}
-      <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" data-adddisc="category">+ Por categoría / variable</button><button type="button" class="small-btn" data-adddisc="link">+ Con enlace propio</button><button type="button" class="small-btn" data-adddisc="code">+ Con código</button></div></div>`;
+      ${when(`discounts.${i}.when`, d, ' (vacío = siempre)')}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="discounts.${i}">Quitar descuento</button></div>`).join('')}
+      <div class="gwe-d-flex gwe-gap-sp-1 gwe-fwrap-wrap"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-adddisc="category">+ Por categoría / variable</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-adddisc="link">+ Con enlace propio</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-adddisc="code">+ Con código</button></div></div>`;
   return `<div class="fld"><label>Descripción (opcional)</label><input type="text" data-bind="description" value="${esc(pay.description)}" placeholder="Ej. Inscripción Feria 2026"></div>
     <div class="fld"><label>Cómo se define el monto</label><select data-bind="mode" data-rerender><option value="fixed" ${pay.mode === 'fixed' ? 'selected' : ''}>Monto fijo</option><option value="rules" ${pay.mode === 'rules' ? 'selected' : ''}>Depende de otras respuestas</option></select></div>
     <div class="fld"><label>Monto ${pay.mode === 'rules' ? 'base (si no se cumple ninguna regla)' : ''} en pesos colombianos</label><input type="number" min="0" data-num data-bind="amount" value="${pay.amount}"></div>${rules}${disc}
     <div class="fld"><label>IVA</label><select data-bind="tax" data-rerender><option value="" ${!pay.tax ? 'selected' : ''}>No mencionar el IVA</option><option value="add" ${pay.tax === 'add' ? 'selected' : ''}>Sumar el 19 % al precio y aclarar «precio con IVA»</option><option value="none" ${pay.tax === 'none' ? 'selected' : ''}>No sumar nada y aclarar «precio sin IVA»</option></select>
       ${pay.tax === 'add' ? `<div class="hint">Con ${cop(pay.amount)} de base la persona pagará ${cop(Math.round(pay.amount * 1.19))} (los descuentos se aplican antes del IVA).</div>` : ''}</div>
-    <label style="display:flex; gap:6px; font-size:0.82rem; margin:0.5rem 0;"><input type="checkbox" id="pCompCharge" ${pay.companions_charge ? 'checked' : ''}> <span><b>Cobrar también por los acompañantes</b><br><span class="hint">El precio de arriba (con sus reglas y descuentos) es POR PERSONA: se cobra a quien se inscribe + cada acompañante. Agrega solo el campo «Acompañantes».</span></span></label>
+    <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-m-sp-2-0"><input type="checkbox" id="pCompCharge" ${pay.companions_charge ? 'checked' : ''}> <span><b>Cobrar también por los acompañantes</b><br><span class="hint">El precio de arriba (con sus reglas y descuentos) es POR PERSONA: se cobra a quien se inscribe + cada acompañante. Agrega solo el campo «Acompañantes».</span></span></label>
     <p class="hint">Wompi: mínimo $1.500 y máximo $10.000.000 COP por pago. Si el total queda en $0 no se cobra y la inscripción se confirma sola. Acepta tarjeta (también internacional) y PSE.</p>`;
 }
 const PERSON_TYPES = [['text_short', 'Texto'], ['email', 'Correo'], ['phone', 'Teléfono'], ['number', 'Número']];
 function compHtml(f) {
   return `<div class="fld"><label>Cuántos acompañantes se permiten (máximo, hasta 20)</label><input type="number" min="1" max="20" id="cMax" value="${f.max}"></div>
     <div class="fld"><label>Mínimo</label><input type="number" min="0" id="cMin" value="${f.min || 0}"></div>
-    <div class="fld"><label>Qué se pide de CADA acompañante (hasta 6 datos)</label>${(f.person_fields || []).map((p, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+    <div class="fld"><label>Qué se pide de CADA acompañante (hasta 6 datos)</label>${(f.person_fields || []).map((p, i) => `<div class="gwe-b-1px-solid-border gwe-r-radius-sm gwe-p-sp-2 gwe-mb-sp-2">
       <input type="text" data-pf="${i}.label" value="${esc(p.label)}" placeholder="Ej. Nombre completo">
-      <div style="display:flex; gap:4px; margin-top:3px; align-items:center;"><select data-pf="${i}.type">${PERSON_TYPES.map(([v, l]) => `<option value="${v}" ${p.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <label style="font-size:0.78rem; display:flex; gap:3px;"><input type="checkbox" data-pf="${i}.required" ${p.required ? 'checked' : ''}> obligatorio</label>
-      ${f.person_fields.length > 1 ? `<button type="button" class="small-btn danger" data-pfdel="${i}" style="padding:0 8px;">✕</button>` : ''}</div></div>`).join('')}
-      ${(f.person_fields || []).length < 6 ? '<button type="button" class="small-btn" id="pfAdd">+ Agregar dato</button>' : ''}</div>
+      <div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1 gwe-ai-center"><select data-pf="${i}.type">${PERSON_TYPES.map(([v, l]) => `<option value="${v}" ${p.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label class="gwe-fs-fs-sm gwe-d-flex gwe-gap-sp-1"><input type="checkbox" data-pf="${i}.required" ${p.required ? 'checked' : ''}> obligatorio</label>
+      ${f.person_fields.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" data-pfdel="${i}">${gwIcon('close')}</button>` : ''}</div></div>`).join('')}
+      ${(f.person_fields || []).length < 6 ? '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pfAdd">+ Agregar dato</button>' : ''}</div>
     <p class="hint">Al elegir N acompañantes, la persona ve N mini-formularios con estos datos. Si el pago cobra por acompañante, el total sube solo (tú + N). Los acompañantes quedan en las respuestas y el Excel, pero no se cargan a la base del evento.</p>`;
 }
 function bindComp(box, f) {
@@ -1000,24 +1120,25 @@ const COLOR_LABELS = { bg_color: 'Color de fondo de la página', card_color: 'Co
 function renderTheme() {
   const t = design.theme;
   $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
-    ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
-    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${GoldenFonts.resolve(t.font) === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+    ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" class="gwe-w-100 gwe-h-34px gwe-p-sp-1"></div>`).join('') +
+    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${GoldenFonts.resolve(t.font) === f ? 'selected' : ''} data-font="${esc(f)}">${f}</option>`).join('')}</select></div>
      <div class="fld"><label>Ancho del formulario</label><select id="tWidth">${WIDTHS.map(([v, l]) => `<option value="${v}" ${widthKind(t.width) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-       <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" style="margin-top:4px; ${widthKind(t.width) === 'custom' ? '' : 'display:none;'}" aria-label="Ancho en píxeles (480 a 1100)">
+       <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" class="gwe-mt-sp-1" ${widthKind(t.width) === 'custom' ? '' : 'hidden'} aria-label="Ancho en píxeles (480 a 1100)">
        <div class="hint">En celulares y pantallas angostas siempre ocupa todo el ancho. Con 4 campos por fila conviene «Ancho» o más.</div></div>
-     <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
-     <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" style="width:100%;"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
-     <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:0.6rem;"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
-     <div class="fld"><label>Imagen de fondo</label><input type="file" id="tBg" accept="image/*"> <button class="small-btn" id="tBgX">Quitar</button></div>`;
+     <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" class="gwe-w-100"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
+     <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
+     <div class="fld"><label>Imagen de fondo</label><input type="file" id="tBg" accept="image/*"> <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tBgX">Quitar</button></div>`;
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
   on('tTitle', 'input', () => { t.title = $('tTitle').value; markDirty(); }); on('tSub', 'input', () => { t.subtitle = $('tSub').value; markDirty(); }); on('tBtn', 'input', () => { t.button_text = $('tBtn').value; markDirty(); });
   $('themeBox').querySelectorAll('[data-color]').forEach((c) => c.addEventListener('input', () => { t[c.dataset.color] = c.value; markDirty(); }));
   on('tFont', 'change', () => { t.font = $('tFont').value; markDirty(); });
+  $('tFont').querySelectorAll('option[data-font]').forEach((o) => { o.style.fontFamily = `'${o.dataset.font}'`; });   // cada opción en su tipografía (por DOM: sin style en línea)
   const up = (id, key) => on(id, 'change', async () => { const fd = new FormData(); fd.append('file', $(id).files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); t[key] = d.storage_path; markDirty(); showToast('Imagen cargada — guarda el diseño', 'success'); } catch (e) { showToast(e.message, 'error'); } });
   up('tLogo', 'logo'); up('tBg', 'bg_image');
   const setWidth = () => {   // '' = normal (sin llave), full, un valor de la lista o personalizado (480–1100)
     const k = $('tWidth').value;
-    $('tWidthPx').style.display = k === 'custom' ? '' : 'none';
+    $('tWidthPx').hidden = !(k === 'custom');
     if (k === '') delete t.width; else if (k === 'full') t.width = 'full'; else if (k === 'custom') t.width = Math.max(480, Math.min(1100, Math.round(+$('tWidthPx').value) || 800)); else t.width = +k;
     markDirty(); previewWidth();
   };
@@ -1026,7 +1147,7 @@ function renderTheme() {
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
 }
-function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
+function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').hidden = !Object.values(design.fields).some((x) => x.type === 'payment'); }
 
 // ---------------------------------------------------------------- guardar / previsualizar / plantilla
 async function saveDesign() {
@@ -1039,13 +1160,23 @@ async function saveDesign() {
   }
   try {
     form = await jput(api, { name: $('fname').value, slug: $('fslug').value, design });
-    design = form.design; normDesign(); saveGen += 1; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
+    design = form.design; normDesign(); saveGen += 1; dirty = false; paintSaveBar();
     eventFields = await j(`/api/events/${EV}/form-event-fields`);
     showToast('Diseño guardado', 'success'); paintHeader(); renderTheme(); renderAll();
     return true;
   } catch (e) { showToast(e.message, 'error'); return false; }
 }
-$('saveBtn').addEventListener('click', saveDesign);
+const busy = (btn, fn) => (window.GW && GW.busy ? GW.busy(btn, fn) : Promise.resolve(fn()));
+async function saveAll() {   // un solo botón: el diseño (si es la pestaña Diseño o hay cambios) y la configuración (si es la pestaña Configuración o hay cambios)
+  const onConfig = activeTabName() === 'config';
+  if (dirty || !onConfig) { if (!(await saveDesign())) return false; }
+  if (cfgDirty || onConfig) return saveConfig();
+  return true;
+}
+$('saveBtn').addEventListener('click', () => busy($('saveBtn'), saveAll));
+document.addEventListener('keydown', (e) => {   // Ctrl o Cmd + S guarda, igual que el botón
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (!$('saveBar').hidden) $('saveBtn').click(); }
+});
 $('palSync').addEventListener('click', syncWithParams);
 $('testBtn').addEventListener('click', async (e) => {
   if (form.public_state === 'pruebas') return;          // el enlace de pruebas es seguro
@@ -1065,8 +1196,8 @@ let vtUI = null, saveGen = 0;
 function richPrompt(html) {   // editor de texto con formato (el de P3) para UNA celda de la tabla
   return new Promise((resolve) => {
     const ov = document.createElement('div');
-    ov.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
-    ov.innerHTML = '<div style="background:#fff; border-radius:14px; padding:1rem; width:min(640px,94vw);"><div data-vt-richbox></div><div style="text-align:right; margin-top:8px;"><button type="button" class="small-btn" data-no>Cancelar</button> <button type="button" class="small-btn primary" data-ok>Listo</button></div></div>';
+    ov.className = 'gw-modal-backdrop gw-modal-backdrop--top'; ov.setAttribute('data-open', 'true');
+    ov.innerHTML = '<div class="gw-modal gwe-modal-md" role="dialog" aria-modal="true" aria-label="Texto de la celda"><div class="gw-modal__body"><div data-vt-richbox></div></div><div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-no>Cancelar</button> <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-ok>Listo</button></div></div>';
     document.body.appendChild(ov);
     let val = html;
     const m = RichText.mount(ov.querySelector('[data-vt-richbox]'), { value: html, label: 'Texto de la celda', onChange: (v) => { val = v; } });
@@ -1109,14 +1240,14 @@ function vtCtx() {
     },
   };
 }
-$('tableBtn').addEventListener('click', () => { $('tableOverlay').style.display = 'block'; if (!vtUI) vtUI = VariantTableUI.mount($('tableHost'), vtCtx()); else vtUI.paint(); });
-$('closeTable').addEventListener('click', () => { $('tableOverlay').style.display = 'none'; });
+$('tableBtn').addEventListener('click', () => { $('tableOverlay').hidden = false; if (!vtUI) vtUI = VariantTableUI.mount($('tableHost'), vtCtx()); else vtUI.paint(); });
+$('closeTable').addEventListener('click', () => { $('tableOverlay').hidden = true; });
 
 $('previewBtn').addEventListener('click', () => {
   const host = $('previewHost');
   previewWidth();
   RenderPreview(host);
-  $('previewOverlay').style.display = 'block';
+  $('previewOverlay').hidden = false;
 });
 function badgeEmailFieldId() {   // el mismo criterio que el servidor: el correo vinculado al «Correo» del evento o el primer campo de tipo correo
   const f = Object.values(design.fields);
@@ -1127,7 +1258,7 @@ function RenderPreview(host) {
   host.style.background = design.theme.bg_color; if (design.theme.bg_image) { host.style.backgroundImage = `url(${assetUrl(design.theme.bg_image)})`; host.style.backgroundSize = 'cover'; } else host.style.backgroundImage = 'none';
   FormRender.render(host, design, { assetUrl, idDocs: ID_DOCS, previewOnly: true, badgeEmailField: (settings && settings.send_digital_badge) ? badgeEmailFieldId() : null });
 }
-$('closePreview').addEventListener('click', () => { $('previewOverlay').style.display = 'none'; });
+$('closePreview').addEventListener('click', () => { $('previewOverlay').hidden = true; });
 $('tplBtn').addEventListener('click', async () => {
   if (dirty && !(await saveDesign())) return;
   const name = await showPrompt('Nombre de la plantilla (queda en la librería de este cliente):', { defaultValue: form.name, confirmLabel: 'Guardar plantilla' });
@@ -1140,15 +1271,24 @@ function paintHeader() {
   $('statusPill').innerHTML = `Estado: <b>${STATUS_LABEL[form.public_state] || form.public_state}</b> · ${form.submissions} inscripción(es)`;
   $('testBtn').href = form.public_state === 'pruebas' ? form.test_url : form.public_url;
   $('testBtn').title = form.public_state === 'pruebas' ? 'Abre el enlace de pruebas (sandbox, no cobra)' : 'El formulario NO está en Pruebas: abre el enlace público real';
-  $('invTab').style.display = settings.prefill.mode === 'invite' ? '' : 'none';
+  $('invTab').hidden = !(settings.prefill.mode === 'invite');
 }
 
 // ---------------------------------------------------------------- pestañas
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tab]'); if (!b) return;
-  document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+  document.querySelectorAll('#tabs button').forEach((x) => { x.setAttribute('aria-selected', String(x === b)); x.tabIndex = x === b ? 0 : -1; });
   document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + b.dataset.tab));
+  paintSaveBar();
   if (b.dataset.tab === 'payments') loadPayments(); if (b.dataset.tab === 'answers') loadAnswers(); if (b.dataset.tab === 'analytics') mountAnalytics(); if (b.dataset.tab === 'invites') loadInvites();
+});
+
+$('tabs').addEventListener('keydown', (e) => {   // flechas, inicio y fin entre pestañas visibles
+  const tabs = Array.from(document.querySelectorAll('#tabs button[data-tab]')).filter((x) => !x.hidden), i = tabs.indexOf(document.activeElement);
+  if (i < 0 || !['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const to = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs[tabs.length - 1] : tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+  to.focus(); to.click();
 });
 
 // ---------------------------------------------------------------- configuración
@@ -1156,7 +1296,7 @@ let schedule = [];
 function schedRowsHtml() {
   return schedule.map((s, i) => `<div class="sched"><div class="fld"><label>Estado</label><select data-si="${i}" data-k="status">${['pruebas', 'activo', 'cerrado', 'finalizado'].map((v) => `<option ${s.status === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
     <div class="fld"><label>Desde</label><input type="datetime-local" data-si="${i}" data-k="from" value="${esc(s.from)}"></div><div class="fld"><label>Hasta</label><input type="datetime-local" data-si="${i}" data-k="to" value="${esc(s.to)}"></div>
-    <button class="small-btn danger" data-sdel="${i}">Quitar</button></div>`).join('');
+    <button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-sdel="${i}">Quitar</button></div>`).join('');
 }
 function bindSched() {
   $('schedRows').innerHTML = schedRowsHtml();
@@ -1167,18 +1307,18 @@ function paintConfig() {
   const s = settings;
   $('cfgStatus').value = form.manual_status; $('cfgCap').value = form.capacity == null ? '' : form.capacity;
   $('capInfo').textContent = form.capacity ? `${form.submissions} de ${form.capacity} inscripciones` : `${form.submissions} inscripciones`;
-  $('cfgUseSched').checked = form.use_schedule; $('schedBox').style.display = form.use_schedule ? 'block' : 'none';
+  $('cfgUseSched').checked = form.use_schedule; $('schedBox').hidden = !(form.use_schedule);
   schedule = (form.schedule || []).map((x) => ({ ...x })); bindSched();
-  $('linksBox').innerHTML = `<div class="hint" style="margin-bottom:4px;">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.public_url)}">Copiar</button></div>
+  $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button></div>
     ${form.public_state === 'pruebas'
-      ? `<div class="hint" style="margin:8px 0 4px;">🧪 Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.test_url)}">Copiar</button></div>`
-      : `<div class="hint" style="margin:8px 0 4px; color:#8a5a00; background:#fff8e1; padding:8px 10px; border-radius:10px;">⚠️ Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
+      ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button></div>`
+      : `<div class="hint gwe-m-sp-2-0-sp-1 gwe-c-warn-text gwe-bg-warn-bg gwe-p-sp-2-sp-3 gwe-r-radius-sm">${gwIcon('alert')} Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
   $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
-  $('secOn').checked = s.security.enabled; $('secBox').style.display = s.security.enabled ? 'flex' : 'none'; $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').style.display = s.security.type === 'code' ? '' : 'none';
+  $('secOn').checked = s.security.enabled; $('secBox').hidden = !(s.security.enabled); $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').hidden = !(s.security.type === 'code');
   $('preMode').value = s.prefill.mode; $('preSrc').value = s.prefill.source === 'upload' ? 'upload' : (s.prefill.source.startsWith('event:') ? s.prefill.source : 'event');
-  $('preSrcBox').style.display = s.prefill.mode === 'none' ? 'none' : ''; $('preUpBox').style.display = s.prefill.source === 'upload' ? '' : 'none';
+  $('preSrcBox').hidden = s.prefill.mode === 'none'; $('preUpBox').hidden = !(s.prefill.source === 'upload');
   $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
-  $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
+  $('thUrlBox').hidden = !(s.thanks.mode === 'redirect'); $('thTplBox').hidden = s.thanks.mode === 'redirect';
   $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text);
   const idn = s.identify || {}; $('idTitle').value = idn.title || ''; $('idButton').value = idn.button || ''; $('idText').value = idn.text || ''; idRt.setValue(idn.text || ''); $('idImgName').textContent = idn.image ? ' (imagen cargada)' : ''; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
@@ -1188,7 +1328,7 @@ function paintConfig() {
   paintRegCount();
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
-  $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
+  $('sendBadgeWarn').hidden = form.digital_badge_enabled;
 }
 function paintRegCount() {
   const a = form.preregistered || 0, h = form.registered_hold || 0;
@@ -1210,32 +1350,32 @@ function paintBlockRep(b) {
     .map((f) => `<option value="${esc(f.id)}">${esc(f.label)}</option>`));
   sel.innerHTML = opts.join('');
   sel.value = (b.field && design.fields[b.field]) ? b.field : '';
-  $('blockRep').checked = !!b.enabled; $('blockRepBox').style.display = b.enabled ? '' : 'none';
+  $('blockRep').checked = !!b.enabled; $('blockRepBox').hidden = !(b.enabled);
 }
-$('blockRep').addEventListener('change', () => { $('blockRepBox').style.display = $('blockRep').checked ? '' : 'none'; if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
+$('blockRep').addEventListener('change', () => { $('blockRepBox').hidden = !($('blockRep').checked); if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
 const QOPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const qFields = () => Object.values(design.fields).filter((f) => !STATIC.includes(f.type) && !NOCOND.includes(f.type) && f.type !== 'file');
 function qValueHtml(c, ri, ci) {
   if (c.op === 'filled') return '';
   const parent = design.fields[c.field], opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
-  if (opts && c.op === 'in') { const sel = Array.isArray(c.value) ? c.value : (c.value ? [c.value] : []); return `<div style="max-height:130px; overflow:auto;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-qin="${ri}.${ci}" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`; }
+  if (opts && c.op === 'in') { const sel = Array.isArray(c.value) ? c.value : (c.value ? [c.value] : []); return `<div class="gwe-maxh-130px gwe-of-auto">${opts.map((o) => `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" data-qin="${ri}.${ci}" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`; }
   if (opts) return `<select data-qv="${ri}.${ci}"><option value=""></option>${opts.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return `<input type="text" data-qv="${ri}.${ci}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
 }
 function paintQuotas() {
   const rules = ((settings && settings.quotas) || {}).rules || [], st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])), fields = qFields();
-  $('qRules').innerHTML = rules.map((r, ri) => `<div style="border:1px solid #e3e5ec; border-radius:12px; padding:8px; margin-bottom:8px; display:grid; gap:5px;">
-    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><input type="text" data-ql="${ri}" value="${esc(r.label)}" placeholder="Nombre del cupo (ej. VIP Colombia)" style="flex:1; min-width:180px;">
-      <span style="font-size:0.8rem;">máximo</span><input type="number" min="0" data-qn="${ri}" value="${r.limit ?? ''}" style="width:90px;"><span data-qclosed="${ri}" class="hint" style="color:#a1261b; font-weight:700;${r.limit === 0 ? '' : ' display:none;'}">Cerrado temporalmente</span>
-      ${st[r.id] ? `<span class="hint">${st[r.id].used} inscritos · quedan ${st[r.id].left}</span>` : ''}<button type="button" class="small-btn danger" data-qdel="${ri}">Quitar cupo</button></div>
-    ${r.conds.length > 1 ? `<select data-qm="${ri}" style="max-width:300px;"><option value="all" ${r.match !== 'any' ? 'selected' : ''}>Cuenta a quien cumpla TODAS las condiciones</option><option value="any" ${r.match === 'any' ? 'selected' : ''}>Cuenta a quien cumpla ALGUNA condición</option></select>` : ''}
-    ${r.conds.map((c, ci) => `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px;"><select data-qf="${ri}.${ci}">${fields.map((f) => `<option value="${f.id}" ${f.id === c.field ? 'selected' : ''}>${esc(f.label || TYPES[f.type][0])}</option>`).join('')}</select>
+  $('qRules').innerHTML = rules.map((r, ri) => `<div class="gwe-b-1px-solid-border gwe-r-radius-md gwe-p-sp-2 gwe-mb-sp-2 gwe-d-grid gwe-gap-sp-2">
+    <div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap"><input type="text" data-ql="${ri}" value="${esc(r.label)}" placeholder="Nombre del cupo (ej. VIP Colombia)" class="gwe-flex-1 gwe-minw-180px">
+      <span class="gwe-fs-fs-sm">máximo</span><input type="number" min="0" data-qn="${ri}" value="${r.limit ?? ''}" class="gwe-w-90px"><span data-qclosed="${ri}" class="hint gwe-closed-flag"${r.limit === 0 ? '' : ' hidden'}>Cerrado temporalmente</span>
+      ${st[r.id] ? `<span class="hint">${st[r.id].used} inscritos · quedan ${st[r.id].left}</span>` : ''}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-qdel="${ri}">Quitar cupo</button></div>
+    ${r.conds.length > 1 ? `<select data-qm="${ri}" class="gwe-maxw-300px"><option value="all" ${r.match !== 'any' ? 'selected' : ''}>Cuenta a quien cumpla TODAS las condiciones</option><option value="any" ${r.match === 'any' ? 'selected' : ''}>Cuenta a quien cumpla ALGUNA condición</option></select>` : ''}
+    ${r.conds.map((c, ci) => `<div class="gwe-d-grid gwe-gap-sp-1 gwe-bg-surface-2 gwe-p-sp-2 gwe-r-radius-sm"><select data-qf="${ri}.${ci}">${fields.map((f) => `<option value="${f.id}" ${f.id === c.field ? 'selected' : ''}>${esc(f.label || TYPES[f.type][0])}</option>`).join('')}</select>
       <select data-qo="${ri}.${ci}">${QOPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${qValueHtml(c, ri, ci)}
-      ${r.conds.length > 1 ? `<button type="button" class="small-btn danger" data-qcd="${ri}.${ci}" style="justify-self:end;">Quitar condición</button>` : ''}</div>`).join('')}
-    ${r.conds.length < 6 ? `<button type="button" class="small-btn" data-qca="${ri}" style="justify-self:start;">+ Otra condición</button>` : ''}
-    <label style="display:grid; gap:3px; font-size:0.8rem;">Mensaje cuando este cupo esté lleno<textarea rows="2" maxlength="300" data-qmsg="${ri}" placeholder="Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.">${esc(r.message || '')}</textarea>
+      ${r.conds.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-js-end" data-qcd="${ri}.${ci}">Quitar condición</button>` : ''}</div>`).join('')}
+    ${r.conds.length < 6 ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-js-start" data-qca="${ri}">+ Otra condición</button>` : ''}
+    <label class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm">Mensaje cuando este cupo esté lleno<textarea rows="2" maxlength="300" data-qmsg="${ri}" placeholder="Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.">${esc(r.message || '')}</textarea>
       <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span>
-      <span class="hint" data-qhelp="${ri}" style="color:#a1261b;${r.limit === 0 ? '' : ' display:none;'}">0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+      <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
   $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
   const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
   const box = $('qRules');
@@ -1244,7 +1384,7 @@ function paintQuotas() {
     const i = +el.dataset.qn, n = el.value.trim() === '' ? null : Math.max(0, Math.floor(Number(el.value)));   // vacío = sin máximo (se quita al guardar); 0 = cerrado
     R()[i].limit = Number.isFinite(n) ? n : null;
     const closed = R()[i].limit === 0;
-    box.querySelectorAll(`[data-qclosed="${i}"], [data-qhelp="${i}"]`).forEach((x) => { x.style.display = closed ? '' : 'none'; });
+    box.querySelectorAll(`[data-qclosed="${i}"], [data-qhelp="${i}"]`).forEach((x) => { x.hidden = !(closed); });
   }));
   box.querySelectorAll('[data-qmsg]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qmsg].message = el.value; }));
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
@@ -1269,19 +1409,19 @@ $('qQuick').addEventListener('click', () => {
 $('cfgStatusSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
-$('cfgUseSched').addEventListener('change', () => { $('schedBox').style.display = $('cfgUseSched').checked ? 'block' : 'none'; if (!$('cfgUseSched').checked) jput(`${api}/status`, { use_schedule: false }).then((f) => { form = f; paintHeader(); showToast('Calendario desactivado: vale el estado manual', 'success'); }); });
+$('cfgUseSched').addEventListener('change', () => { $('schedBox').hidden = !($('cfgUseSched').checked); if (!$('cfgUseSched').checked) jput(`${api}/status`, { use_schedule: false }).then((f) => { form = f; paintHeader(); showToast('Calendario desactivado: vale el estado manual', 'success'); }); });
 $('addSched').addEventListener('click', () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); schedule.push({ status: 'activo', from: d, to: d }); bindSched(); });
 $('cfgSchedSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { schedule, use_schedule: true }); settings = form.settings; paintHeader(); paintConfig(); showToast('Calendario guardado', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
-$('secOn').addEventListener('change', () => { $('secBox').style.display = $('secOn').checked ? 'flex' : 'none'; });
-$('secType').addEventListener('change', () => { $('secCodeBox').style.display = $('secType').value === 'code' ? '' : 'none'; });
-$('preMode').addEventListener('change', () => { $('preSrcBox').style.display = $('preMode').value === 'none' ? 'none' : ''; });
-$('preSrc').addEventListener('change', () => { $('preUpBox').style.display = $('preSrc').value === 'upload' ? '' : 'none'; });
-$('thMode').addEventListener('change', () => { $('thUrlBox').style.display = $('thMode').value === 'redirect' ? '' : 'none'; $('thTplBox').style.display = $('thMode').value === 'redirect' ? 'none' : ''; });
+$('secOn').addEventListener('change', () => { $('secBox').hidden = !($('secOn').checked); });
+$('secType').addEventListener('change', () => { $('secCodeBox').hidden = !($('secType').value === 'code'); });
+$('preMode').addEventListener('change', () => { $('preSrcBox').hidden = $('preMode').value === 'none'; });
+$('preSrc').addEventListener('change', () => { $('preUpBox').hidden = !($('preSrc').value === 'upload'); });
+$('thMode').addEventListener('change', () => { $('thUrlBox').hidden = !($('thMode').value === 'redirect'); $('thTplBox').hidden = $('thMode').value === 'redirect'; });
 const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
 cfgUpload($('idImgFile'), (p) => { settings.identify = { ...(settings.identify || {}), image: p }; }, $('idImgName'));
-$('idImgX').addEventListener('click', () => { settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; });
+$('idImgX').addEventListener('click', () => { cfgDirty = true; paintSaveBar(); settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; });
 cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
 $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
@@ -1291,7 +1431,7 @@ $('preFile').addEventListener('change', async () => {
 const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChange: (v) => { $('thText').value = v; } });
 const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
 const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
-$('cfgSave').addEventListener('click', async () => {
+async function saveConfig() {
   const payload = {
     security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
     prefill: { mode: $('preMode').value, source: $('preSrc').value },
@@ -1304,8 +1444,10 @@ $('cfgSave').addEventListener('click', async () => {
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
-  try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
-});
+  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(); paintSaveBar(); showToast('Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
+}
+// lo editado en Configuración queda pendiente hasta el botón de guardar; lo que actúa al instante lleva data-instant
+['input', 'change'].forEach((ev) => $('pane-config').addEventListener(ev, (e) => { if (e.target.closest && e.target.closest('[data-instant]')) return; cfgDirty = true; paintSaveBar(); }));
 $('feedNow').addEventListener('click', async () => {
   try { const r = await jpost(`${api}/feed-now`); $('feedInfo').textContent = `${r.fed} inscripción(es) cargadas a la base` + (r.problems.length ? ` · ${r.problems.length} con problema: ${r.problems[0]}` : ''); showToast(`${r.fed} cargadas a la base del evento`, r.problems.length ? 'error' : 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
@@ -1317,9 +1459,9 @@ async function loadAnswers() {
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
   $('ansInfo').textContent = `${d.rows.length} inscripción(es)`;
   $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th>Pagado</th>' : ''}<th>Origen</th><th>En la base</th><th></th></tr>`;
-  $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' 🧪' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
+  $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
     const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
-    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" style="color:#666;">Todavía no hay inscripciones.</td></tr>`;
+    <td><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">Todavía no hay inscripciones.</td></tr>`;
   document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
 }
 $('ansTests').addEventListener('change', loadAnswers);
@@ -1328,16 +1470,16 @@ $('ansTests').addEventListener('change', loadAnswers);
 const PAY_STATES = { refunded: 'Reembolsado', approved: 'Aprobado', declined: 'Rechazado', error: 'Error', voided: 'Anulado', pending: 'En espera', abandoned: 'Abandonado' };
 async function loadPayments() {
   const d = await j(`${api}/payments?include_tests=${$('payTests').checked}`);
-  const okc = (v) => (v ? '✅' : '⚠️ sin configurar');
+  const okc = (v) => (v ? `${gwIcon('check')} listas` : `${gwIcon('alert')} sin configurar`);
   const ws = d.wompi_status || {};
-  const wtxt = ws.indicator === 'none' ? '✅ operando con normalidad' : (ws.indicator === 'unknown' || !ws.indicator) ? 'sin datos' : `⚠️ ${esc(ws.description || 'incidencia')}`;
-  $('payCfg').innerHTML = `Estado del servicio de Wompi: <b>${wtxt}</b> (<a href="https://wompi.statuspage.io" target="_blank" rel="noopener">página de estado</a>) · Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
+  const wtxt = ws.indicator === 'none' ? `${gwIcon('check')} operando con normalidad` : (ws.indicator === 'unknown' || !ws.indicator) ? 'sin datos' : `${gwIcon('alert')} ${esc(ws.description || 'incidencia')}`;
+  $('payCfg').innerHTML = `Estado del servicio de Wompi: <b>${wtxt}</b> (<a href="https://wompi.statuspage.io" target="_blank" rel="noopener">página de estado</a>) · Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="gw-btn gw-btn--secondary gw-btn--sm" id="copyHook">Copiar</button>`;
   $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${window.PUBLIC_BASE || location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
   const net = $('payView').value === 'net';
   $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';
   $('payTotal').textContent = net ? `Ingresos netos de comisión (estimada): ${cop(d.net_after_fees_cop)} COP · comisión Wompi estimada ${cop(d.fees_cop)} COP` : `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
-  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td title="Pagado ${cop(r.amount)} · comisión estimada ${cop(r.fee)} · neto estimado ${cop(r.net)}">${cop(net ? r.net : r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
-    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `⏳ en proceso <button class="small-btn" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="small-btn danger" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#666;">Todavía no hay pagos.</td></tr>';
+  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' (prueba)' : ''}</td><td title="Pagado ${cop(r.amount)} · comisión estimada ${cop(r.fee)} · neto estimado ${cop(r.net)}">${cop(net ? r.net : r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ` <b title="Aprobado pero sin inscripción">${gwIcon('alert')} sin inscripción</b>` : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
+    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `en proceso <button class="gw-btn gw-btn--secondary gw-btn--sm" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="gwe-c-text-muted">Todavía no hay pagos.</td></tr>';
   window.__pays = Object.fromEntries(d.rows.map((r) => [r.id, r]));
   const resolve = (attr, action) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
     const [pid, rid] = b.getAttribute(attr).split(':');
@@ -1355,25 +1497,25 @@ function openRefund(r) {
   $('rfInfo').textContent = `${r.reference} · pagado ${cop(r.amount)} · por devolver ${cop(r.remaining)} · medio: ${r.method || 'desconocido'}`;
   const canAuto = r.auto_refund || r.auto_partial;
   $('rfAuto').disabled = !canAuto; $('rfAuto').checked = canAuto; $('rfManual').checked = !canAuto;
-  $('rfAmount').value = r.remaining; $('rfReason').value = ''; $('rfNote').value = '';
-  syncRefund(); $('refundOverlay').style.display = 'flex';
+  $('rfAmount').value = r.remaining; $('rfReason').value = ''; $('rfNote2').value = '';
+  syncRefund(); $('refundOverlay').hidden = false;
 }
 function syncRefund() {
   const auto = $('rfAuto').checked;
   $('rfAmount').disabled = auto && !refunding.auto_partial; if (auto && !refunding.auto_partial) $('rfAmount').value = refunding.remaining;     // la anulación de tarjeta por API es siempre por el valor completo
-  $('rfNoteBox').style.display = auto ? 'none' : '';
+  $('rfNoteBox').hidden = auto;
   $('rfCancel').checked = !auto ? Number($('rfAmount').value) >= refunding.remaining : true;
 }
 ['rfAuto', 'rfManual'].forEach((id) => $(id).addEventListener('change', syncRefund));
 $('rfAmount').addEventListener('input', () => { $('rfCancel').checked = Number($('rfAmount').value) >= refunding.remaining; });
-$('rfClose').addEventListener('click', () => { $('refundOverlay').style.display = 'none'; });
+$('rfClose').addEventListener('click', () => { $('refundOverlay').hidden = true; });
 $('rfGo').addEventListener('click', async () => {
   const auto = $('rfAuto').checked;
   const ok = await showConfirm(auto ? `Se pedirá a Wompi devolver ${cop($('rfAmount').value)} por su API. Esto no se puede deshacer. ¿Continuar?` : `Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });
   if (!ok) return;
   try {
-    const d = await jpost(`${api}/payments/${refunding.id}/refund`, { reason: $('rfReason').value, manual: !auto, note: $('rfNote').value, amount: $('rfAmount').value, cancel_registration: $('rfCancel').checked });
-    $('refundOverlay').style.display = 'none';
+    const d = await jpost(`${api}/payments/${refunding.id}/refund`, { reason: $('rfReason').value, manual: !auto, note: $('rfNote2').value, amount: $('rfAmount').value, cancel_registration: $('rfCancel').checked });
+    $('refundOverlay').hidden = true;
     showToast(d.message + (d.warning ? ' — ' + d.warning : ''), d.warning ? 'error' : 'success');
     loadPayments();
   } catch (e) { showToast(e.message, 'error'); }
@@ -1384,17 +1526,17 @@ const fmtDay = (iso) => new Date(iso).toLocaleDateString('es-CO', { day: 'numeri
 async function loadClients() {
   try {
     const d = await j(`${api}/client-access`);
-    $('clList').innerHTML = d.users.length ? d.users.map((u) => `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #eee;"><span style="font-size:0.84rem;"><b>${esc(u.username)}</b>${u.full_name ? ' · ' + esc(u.full_name) : ''}<br><span class="hint">${u.expired ? 'Venció el ' : 'Vence el '}${esc(fmtDay(u.expires_at))}${u.is_active ? '' : ' · desactivado'}</span></span><button class="small-btn danger" data-clrevoke="${u.id}" data-cluser="${esc(u.username)}">Quitar acceso</button></div>`).join('') : 'Todavía no hay accesos para este formulario.';
+    $('clList').innerHTML = d.users.length ? d.users.map((u) => `<div class="gwe-d-flex gwe-jc-space-between gwe-ai-center gwe-gap-sp-2 gwe-p-sp-2-0 gwe-bt-1px-solid-border"><span class="gwe-fs-fs-sm"><b>${esc(u.username)}</b>${u.full_name ? ' · ' + esc(u.full_name) : ''}<br><span class="hint">${u.expired ? 'Venció el ' : 'Vence el '}${esc(fmtDay(u.expires_at))}${u.is_active ? '' : ' · desactivado'}</span></span><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-clrevoke="${u.id}" data-cluser="${esc(u.username)}">Quitar acceso</button></div>`).join('') : 'Todavía no hay accesos para este formulario.';
   } catch (e) { $('clList').textContent = e.message; }
 }
-$('clientBtn').addEventListener('click', () => { $('clNew').style.display = 'none'; $('clientOverlay').style.display = 'flex'; loadClients(); });
-$('clClose').addEventListener('click', () => { $('clientOverlay').style.display = 'none'; $('clPass').textContent = ''; });
+$('clientBtn').addEventListener('click', () => { $('clNew').hidden = true; $('clientOverlay').hidden = false; loadClients(); });
+$('clClose').addEventListener('click', () => { $('clientOverlay').hidden = true; $('clPass').textContent = ''; });
 $('clCreate').addEventListener('click', async () => {
   try {
     const d = await jpost(`${api}/client-access`, { days: Number($('clDays').value) || 30, full_name: $('clName').value });
     $('clUrl').textContent = location.origin + '/login'; $('clUser').textContent = d.username; $('clPass').textContent = d.password;
     $('clUntil').textContent = 'El acceso vence el ' + fmtDay(d.expires_at) + '.';
-    $('clNew').style.display = 'block'; $('clName').value = '';
+    $('clNew').hidden = false; $('clName').value = '';
     showToast('Acceso creado. Copia los datos ahora.', 'success');
     loadClients();
   } catch (e) { showToast(e.message, 'error'); }
@@ -1414,7 +1556,7 @@ let dash = null;
 function mountAnalytics() {
   $('anHost').innerHTML = '';
   AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30, large: true });
-  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="small-btn" data-utm="${s}">📋 Copiar enlace para ${s}</button>`).join('');
+  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="gw-btn gw-btn--secondary gw-btn--sm" data-utm="${s}">${gwIcon('link')} Copiar enlace para ${s}</button>`).join('');
   $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
 }
 $('anTests').addEventListener('change', mountAnalytics);
@@ -1446,7 +1588,7 @@ $('invSend').addEventListener('click', async () => {
   form = await j(api); design = form.design; normDesign(); settings = form.settings;
   eventFields = await j(`/api/events/${EV}/form-event-fields`);
   try { ID_DOCS = await j("/api/form-id-docs"); } catch (e) { ID_DOCS = []; }
-  paintHeader(); renderTheme(); renderAll(); paintConfig();
+  paintHeader(); renderTheme(); renderAll(); paintConfig(); paintSaveBar();
   // origen "otro evento": se ofrece cada evento anterior del mismo cliente
   try {
     const events = (await j(`/api/events?tenant_id=${encodeURIComponent(window.TENANT_ID)}`)).filter((e) => e.id !== EV);

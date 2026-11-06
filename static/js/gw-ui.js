@@ -188,7 +188,7 @@
     }
   });
 
-  window.GW = { tour: { start: startTour, seen: tourSeen }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo } };
+  window.GW = Object.assign(window.GW || {}, { tour: { start: startTour, seen: tourSeen }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo } });
 
   function init() {
     applyTheme(currentTheme());

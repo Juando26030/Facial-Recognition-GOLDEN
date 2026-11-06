@@ -85,7 +85,7 @@
         const btn = doc.getElementById('paramsSaveBtn');
         const statusEl = doc.getElementById('paramsSaveStatus');
         const failEl = doc.getElementById('paramsSaveFail');
-        const STORE = 'gw_params_tab';
+        const STORE = rootEl.dataset.tabsKey ? 'gw_tab_' + rootEl.dataset.tabsKey : 'gw_params_tab';          // otras pantallas (Fase 1.5) ponen data-tabs-key para recordar SU pestaña
         const ICONS = bar.dataset.icons || '';
 
         // ---- Pestañas: una sección visible a la vez; la última vista se recuerda por dispositivo (comodidad; sin almacenamiento todo funciona igual).
@@ -165,6 +165,13 @@
         };
         rootEl.addEventListener('input', onEdit);
         rootEl.addEventListener('change', onEdit);
+
+        // Ctrl o Cmd + S guarda (igual que el botón); si no hay nada pendiente, no hace nada pero tampoco abre «Guardar página como…»
+        doc.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || String(e.key).toLowerCase() !== 's') return;
+            e.preventDefault();
+            if (!btn.disabled) btn.click();
+        });
 
         win.addEventListener('beforeunload', (e) => {
             if (!ctl.hasDirty()) return undefined;

@@ -166,35 +166,40 @@
      (client_id, huella de la copia local, método `manual`), con el aviso de DUPLICADO si ya consta o está en la cola. Guardar nunca dice «Error de red» genérico. Devuelve los controles
      (para las pruebas). */
   const OFFLINE_EDIT_NOTICE = 'Sin conexión: solo se puede cambiar el estado de registro; para editar datos espera a que vuelva la red';
+  /* Acción con rueda (GW.busy, gw-busy.js): bloquea el doble clic y muestra «trabajando» en el botón. Sin el ayudante (pruebas con DOM falso) solo corre la acción. La acción arranca
+     de inmediato (síncrona hasta su primer await), así que la ventana de impresión preparada dentro del clic sigue válida. */
+  const busyBtn = (btn, work) => (window.GW && window.GW.busy && btn && btn.setAttribute ? window.GW.busy(btn, work) : new Promise((resolve) => resolve(work())));
   function buildOfflineEditModal(user, GC) {
-    const mk = (tag, text, css) => { const el = document.createElement(tag); if (text) el.textContent = text; if (css) el.style.cssText = css; return el; };
-    const overlay = mk('div', '', 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;');
-    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
-    const box = mk('div', '', 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);');
-    const notice = mk('p', OFFLINE_EDIT_NOTICE, 'background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:8px 12px; border-radius:8px; font-size:0.85rem; font-weight:600;');
+    const mk = (tag, text, cls) => { const el = document.createElement(tag); if (text) el.textContent = text; if (cls) el.className = cls; return el; };
+    const overlay = mk('div', '', 'gw-modal-backdrop gw-registro__edit'); overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
+    const box = mk('div', '', 'gw-modal gw-registro__editbox');
+    const notice = mk('p', OFFLINE_EDIT_NOTICE, 'gw-alert gw-alert--warn');
     notice.setAttribute('role', 'status');
-    const name = mk('input', '', 'width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#555; margin-bottom:0.8rem;');
+    const name = mk('input', '', 'gw-input gw-registro__editgap');
     name.value = `${user.first_name || ''} ${user.last_name || ''}`.trim(); name.readOnly = true; name.disabled = true; name.setAttribute('aria-label', 'Nombre (solo lectura)');
-    const statusLabel = mk('label', 'Estado de registro', 'display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;');
-    const select = mk('select', '', 'width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;');
+    const statusLabel = mk('label', 'Estado de registro', 'gw-label');
+    const select = mk('select', '', 'gw-select'); select.id = 'offlineEditStatusSimple'; statusLabel.setAttribute('for', 'offlineEditStatusSimple');
     [['no_registrado', 'No registrado'], ['registrado', 'Registrado']].forEach(([v, t]) => { const o = mk('option', t); o.value = v; select.appendChild(o); });
     select.value = 'registrado';                                              // igual que en línea: «Registrado» preseleccionado
-    const actions = mk('div', '', 'display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;');
-    const cancel = mk('button', 'Cancelar', 'border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;'); cancel.type = 'button';
-    const save = mk('button', 'Guardar cambios', 'border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;'); save.type = 'button';
+    const actions = mk('div', '', 'gw-rowact gw-registro__editactions');
+    const cancel = mk('button', 'Cancelar', 'gw-btn gw-btn--secondary'); cancel.type = 'button';
+    const save = mk('button', 'Guardar cambios', 'gw-btn gw-btn--primary'); save.type = 'button';
     [cancel, save].forEach((b) => actions.appendChild(b));
-    [mk('h4', 'Editar persona', 'margin-top:0; color:var(--golden-dark);'), notice, name, statusLabel, select, actions].forEach((el) => box.appendChild(el));
+    [mk('h4', 'Editar persona', 'gw-modal__title gw-registro__edittitle'), notice, name, statusLabel, select, actions].forEach((el) => box.appendChild(el));
     overlay.appendChild(box); document.body.appendChild(overlay);
     const close = () => overlay.remove();
     cancel.addEventListener('click', close);
     save.addEventListener('click', async () => {
-      if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
-      if (select.value !== 'registrado') { showToast('Sin conexión: solo se puede registrar; para quitar un registro espera a que vuelva la red', 'error'); return; }
-      save.disabled = true;
-      try {
-        const found = await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual');
-        if (found) close();
-      } finally { save.disabled = false; }
+      await busyBtn(save, async () => {
+        if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
+        if (select.value !== 'registrado') { showToast('Sin conexión: solo se puede registrar; para quitar un registro espera a que vuelva la red', 'error'); return; }
+        save.disabled = true;
+        try {
+          const found = await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual');
+          if (found) close();
+        } finally { save.disabled = false; }
+      });
     });
     return { overlay, box, notice, name, select, save, cancel, close };
   }
@@ -211,19 +216,19 @@
     const cfgs = window.FIELD_CONFIGS || [];
     const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const blocked = (cfg) => cfg.key === 'id' || OFFLINE_BLOCKED_TYPES.includes(cfg.field_type) || cfg.key === 'birth_date';
-    const wrap = (cfg, control) => `<div class="badge-input-group" data-field-key="${esc(cfg.key)}"><label>${esc(cfg.label)}</label>${control}</div>`;
+    const wrap = (cfg, control) => `<div class="gw-field badge-input-group" data-field-key="${esc(cfg.key)}"><label class="gw-label">${esc(cfg.label)}</label>${control}</div>`;
     const fieldsHtml = cfgs.map((cfg) => {
-      if (cfg.key === 'id') return wrap(cfg, `<input type="text" name="id_readonly" value="${esc(user.id || '')}" disabled>`);
+      if (cfg.key === 'id') return wrap(cfg, `<input type="text" name="id_readonly" class="gw-input" value="${esc(user.id || '')}" disabled>`);
       if (cfg.field_type === 'categories') return wrap(cfg, window.FieldRender.renderControl(cfg, user.categories));
       if (cfg.field_type === 'certificate') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
       if (cfg.field_type === 'digital_contact' || cfg.field_type === 'date' || cfg.field_type === 'signature' || cfg.field_type === 'consent') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
       return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
     }).join('');
     const overlay = document.createElement('div');
-    overlay.className = 'gw-modal-backdrop'; overlay.setAttribute('data-open', 'true');
-    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
+    overlay.className = 'gw-modal-backdrop gw-registro__edit'; overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
     const name = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    overlay.innerHTML = `<div class="gw-modal">
+    overlay.innerHTML = `<div class="gw-modal gw-registro__editflush">
       <div class="gw-modal__head"><h4 class="gw-modal__title">Editar persona</h4></div>
       <div class="gw-modal__body">
         <div class="gw-alert gw-alert--warn" role="status"><div><div class="gw-alert__title">Sin conexión</div><div class="gw-alert__body"></div></div></div>
@@ -258,7 +263,7 @@
     };
     const save = overlay.querySelector('[data-pf-save]');
     overlay.querySelector('[data-pf-cancel]').addEventListener('click', close);
-    save.addEventListener('click', async () => {
+    save.addEventListener('click', async () => { await busyBtn(save, async () => {
       if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
       const fields = collect(), status = overlay.querySelector('#offlineEditStatus').value;
       if (status !== 'registrado' && !Object.keys(fields).length) { showToast('Sin conexión: escribe lo que cambia, o deja «Registrado» para acreditarla', 'error'); return; }
@@ -276,7 +281,7 @@
         close();
       } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); }
       finally { save.disabled = false; }
-    });
+    }); });
     return { overlay, form, ctl, save, close, collect };
   }
 
@@ -321,16 +326,16 @@
 
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
     function fieldRow(label, name, value, type) {
-      return `<div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(label)} *</label>
-        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+      return `<div class="gw-field gw-registro__editfield">
+        <label class="gw-label">${esc(label)} *</label>
+        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" class="gw-input">
       </div>`;
     }
     function cedulaRow(label) {
-      return `<div style="margin-bottom:0.8rem;">
-          <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(label)}</label>
-          <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} style="width:100%; box-sizing:border-box; border:1px solid ${isAdmin ? '#ccc' : '#ddd'}; border-radius:8px; padding:8px 10px; font-size:0.95rem; ${isAdmin ? '' : 'background:#f5f5f5; color:#888;'}">
-          ${isAdmin ? '<p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
+      return `<div class="gw-field gw-registro__editfield">
+          <label class="gw-label" for="editModalCedulaField">${esc(label)}</label>
+          <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} class="gw-input">
+          ${isAdmin ? '<p class="gw-hint">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
         </div>`;
     }
     function configuredValueOf(key, cfg) {
@@ -341,8 +346,8 @@
     }
     function configuredFieldRow(cfg, valueOverride) {
       const control = window.FieldRender.renderControl(cfg, valueOverride !== undefined ? valueOverride : configuredValueOf(cfg.key, cfg));
-      return `<div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
+      return `<div class="gw-field gw-registro__editfield">
+        <label class="gw-label">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
         ${control}
       </div>`;
     }
@@ -356,10 +361,10 @@
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
-      if (cfg.field_type === 'date') return `<div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}</label>
-        <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
-        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
+      if (cfg.field_type === 'date') return `<div class="gw-field gw-registro__editfield">
+        <label class="gw-label">${esc(cfg.label)}</label>
+        <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" class="gw-input">
+        <p class="gw-hint">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
       </div>`;
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
@@ -371,37 +376,43 @@
     const defaultStatus = 'registrado';
 
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;';
+    overlay.className = 'gw-modal-backdrop gw-registro__edit'; overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Editar persona');
     const box = document.createElement('div');
-    box.style.cssText = 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:90vh; overflow:auto;';
+    box.className = 'gw-modal gw-registro__editbox';
+    const iconUrl = (window.GW_ICON_URL || '/static/img/icons.svg');
     box.innerHTML = `
-      <div class="gw-modal-head" style="position:sticky; top:-1.8rem; z-index:2; background:white; margin:-1.8rem -1.8rem 1rem; padding:1rem 1.8rem 0.8rem; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-wrap:wrap; border-radius:16px 16px 0 0;">
-        <h4 style="margin:0; color:var(--golden-dark); flex:1 1 auto;">Editar persona</h4>
-        <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:10px 18px; min-height:44px; cursor:pointer; font-weight:600;">Cancelar</button>
-        <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:10px 18px; min-height:44px; cursor:pointer; font-weight:700;">Guardar cambios</button>
+      <div class="gw-modal__head gw-registro__edithead">
+        <h4 class="gw-modal__title gw-registro__edittitle">Editar persona</h4>
+        <button type="button" id="editModalCancel" class="gw-btn gw-btn--secondary">Cancelar</button>
+        <button type="button" id="editModalSave" class="gw-btn gw-btn--primary">Guardar cambios</button>
       </div>
-      <div id="editModalNotice" role="alert" style="display:none; background:#fff6e5; border-left:4px solid #b26a00; color:#7a4a00; padding:8px 12px; border-radius:8px; margin-bottom:0.8rem; font-weight:600;"></div>
-      <label style="display:flex; gap:8px; align-items:center; font-weight:600; margin-bottom:0.6rem;"><input type="checkbox" id="editNewCedulaChk" style="width:20px; height:20px;"> ¿Es cédula nueva?</label>
-      <div id="editNewCedulaBox" hidden style="margin-bottom:0.8rem; padding:0.6rem; background:#faf8f0; border-radius:10px; display:flex; gap:6px; flex-wrap:wrap;">
-        <button type="button" id="editMrzFileBtn" class="small-btn">Adjuntar imagen</button>
-        <button type="button" id="editMrzCamBtn" class="small-btn">Usar cámara</button>
-        <input type="file" id="editMrzInput" accept="image/*" style="display:none;">
+      <div class="gw-modal__body">
+      <div id="editModalNotice" role="alert" class="gw-alert gw-alert--warn" hidden></div>
+      <label class="gw-check"><input type="checkbox" id="editNewCedulaChk"> ¿Es cédula nueva?</label>
+      <div id="editNewCedulaBox" hidden class="gw-card gw-registro__editnew">
+        <div class="gw-rowact">
+          <button type="button" id="editMrzFileBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-upload"/></svg>Adjuntar imagen</button>
+          <button type="button" id="editMrzCamBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Usar cámara</button>
+        </div>
+        <input type="file" id="editMrzInput" accept="image/*" aria-label="Imagen del reverso de la cédula nueva" hidden>
       </div>
       <form id="editModalForm">
         ${configuredHtml}
       </form>
       ${canManageStatus ? `
-      <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
-      <div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
-        <select id="editModalStatus" style="width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+      <hr class="gw-registro__editsep">
+      <div class="gw-field gw-registro__editfield">
+        <label class="gw-label" for="editModalStatus">Estado de registro</label>
+        <select id="editModalStatus" class="gw-select">
           <option value="no_registrado" ${defaultStatus === 'no_registrado' ? 'selected' : ''}>No registrado</option>
           <option value="registrado" ${defaultStatus === 'registrado' ? 'selected' : ''}>Registrado</option>
         </select>
-        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
+        <p class="gw-hint">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
-      <button type="button" id="editModalDelete" class="btn-table-delete" style="width:100%; padding:10px; font-size:0.85rem;">Eliminar de este evento</button>
+      <button type="button" id="editModalDelete" class="gw-btn gw-btn--danger gw-btn--block"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-trash"/></svg>Eliminar de este evento</button>
       ` : ''}
+      </div>
     `;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -415,8 +426,7 @@
     function close() { overlay.remove(); }
     {                                                                   // B3: cédula NUEVA (foto del reverso, MRZ): llena nombres, apellidos y —si se puede editar— la cédula
       const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox'), file = box.querySelector('#editMrzInput');
-      chk.addEventListener('change', () => { nbox.hidden = !chk.checked; nbox.style.display = chk.checked ? 'flex' : 'none'; });
-      nbox.style.display = 'none';
+      chk.addEventListener('change', () => { nbox.hidden = !chk.checked; });
       const readMrz = async (blob) => {
         const fd = new FormData(); fd.append('file', blob, 'cedula.jpg');
         try {
@@ -435,9 +445,9 @@
     if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío
       const note = box.querySelector('#editModalNotice');
       note.textContent = `Falta el campo obligatorio: ${opts.missing.map((m) => m.label).join(', ')}. Complétalo y guarda: queda acreditado(a) en el mismo paso.`;
-      note.style.display = 'block';
+      note.hidden = false;
       const first = box.querySelector(`#editModalForm [name="${CSS.escape(opts.missing[0].key)}"]`);
-      if (first) setTimeout(() => { first.scrollIntoView({ block: 'center' }); first.focus(); first.style.outline = '3px solid #b26a00'; }, 60);
+      if (first) setTimeout(() => { first.scrollIntoView({ block: 'center' }); first.focus(); if (first.classList) first.classList.add('gw-registro__editmissing'); }, 60);
     }
     const snapshot = () => { const f = box.querySelector('#editModalForm'); return f ? JSON.stringify(Array.from(new FormData(f).entries()).filter(([, v]) => typeof v === 'string')) : ''; };
     const initialData = snapshot();
@@ -473,7 +483,7 @@
       if (isAdmin && newId && newId !== user.id) {
         const ok = await showConfirm(`¿Cambiar la cédula de "${window.escapeHtml(user.id)}" a "${window.escapeHtml(newId)}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir y guardar' });
         if (!ok) return;
-        saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+        saveBtn.disabled = true;
         try {
           const cedulaRes = await fetch(withEvent(`/api/users/${user.id}/cedula`), {
             method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_id: newId }),
@@ -481,13 +491,13 @@
           if (!cedulaRes.ok) {
             const data = await cedulaRes.json().catch(() => ({}));
             showToast(data.detail || 'No se pudo cambiar la cédula', 'error');
-            saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+            saveBtn.disabled = false;
             return;
           }
           currentId = newId;
         } catch (e) {
           showToast('Error de red', 'error');
-          saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+          saveBtn.disabled = false;
           return;
         }
       }
@@ -507,7 +517,7 @@
           // justo el flujo de "buscar, Editar, Guardar". Volver a "No registrado" sí la pide.
           const ok = newStatus === 'registrado' || await showConfirm(`¿Cambiar el estado de registro de esta persona a "${window.escapeHtml(label)}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
           if (!ok) return false;
-          saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+          saveBtn.disabled = true;
           try {
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
               method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: newStatus, method: opts.method }, newStatus === 'registrado' && window.RegTimer ? RegTimer.payload() : null)),
@@ -516,7 +526,7 @@
               const data = await statusRes.json().catch(() => ({}));
               const d = data.detail && typeof data.detail === 'object' ? data.detail.message : data.detail;
               showToast(d || 'No se pudo cambiar el estado', 'error');
-              saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+              saveBtn.disabled = false;
               return false;
             }
             // Autoimpresión (2026-09-17, pedido explícito): "apenas cambia el estado a
@@ -527,7 +537,7 @@
             if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
           } catch (e) {
             showToast('Error de red', 'error');
-            saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+            saveBtn.disabled = false;
             return false;
           }
         }
@@ -554,7 +564,7 @@
         payload.categories = Array.from(form.querySelectorAll('input[name="categories"]:checked')).map((i) => i.value);
       }
 
-      saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+      saveBtn.disabled = true;
       try {
         const res = dataChanged ? await fetch(withEvent(`/api/users/${currentId}`), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -586,11 +596,11 @@
         } else {
           const data = await res.json().catch(() => ({}));
           showToast(data.detail || 'Error al guardar cambios', 'error');
-          saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+          saveBtn.disabled = false;
         }
       } catch (e) {
         showToast('Error de red', 'error');
-        saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+        saveBtn.disabled = false;
       }
     };
     box.querySelector('#editModalSave').addEventListener('click', async () => {
@@ -599,7 +609,7 @@
       const statusSel = box.querySelector('#editModalStatus');
       const willRegister = canManageStatus ? !!(statusSel && statusSel.value === 'registrado' && originalStatus !== 'registrado') : !isRegistered;
       if (willRegister && !(GCw && GCw.active())) primePrint();
-      try { await saveHandler(); } finally { cancelPrimedPrint(); }
+      try { await busyBtn(box.querySelector('#editModalSave'), saveHandler); } finally { cancelPrimedPrint(); }
     });
 
     if (canManageStatus) {
@@ -819,7 +829,7 @@
       const count = scoped.filter(u => u.status === 'No registrado').length;
       const registered = total - count;
       counterBtn.innerText = `${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
-      counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : '';
+      counterBtn.hidden = count === 0 && !onlyNotRegistered;
       const scope = origin && ORIGINS[origin] ? ORIGINS[origin].label : 'Total';
       if (totalCounterEl) totalCounterEl.innerText = `${scope}: ${registered} registrados de ${total}`;
     }
@@ -891,9 +901,8 @@
           const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
           if (!td) return;
           const b = document.createElement('span');
-          b.className = 'gw-badge gw-badge--info gw-reason';
+          b.className = 'gw-badge gw-badge--info gw-reason gw-registro__reason';
           b.textContent = motivo;
-          b.style.marginLeft = '6px';
           td.appendChild(b);
         });
       }
@@ -1137,7 +1146,7 @@
       if (!incompleteBar && table) {
         incompleteBar = document.createElement('div');
         incompleteBar.setAttribute('role', 'status');
-        incompleteBar.className = 'gw-alert gw-alert--warn gw-registro__incomplete'; incompleteBar.style.display = 'none';
+        incompleteBar.className = 'gw-alert gw-alert--warn gw-registro__incomplete'; incompleteBar.hidden = true;
         const host = table.closest('table') || table;
         host.parentNode.insertBefore(incompleteBar, host);
         incompleteBar.addEventListener('click', async (e) => {
@@ -1148,7 +1157,7 @@
       }
       if (!incompleteBar) return;
       incompleteBar.__people = data.people;
-      incompleteBar.style.display = data.count ? 'flex' : 'none';
+      incompleteBar.hidden = !data.count;
       if (!data.count) return;
       const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       incompleteBar.innerHTML = `<div class="gw-registro__grow"><b>${data.count} persona(s) registradas con datos obligatorios por completar.</b> <button type="button" data-toggle class="gw-btn gw-btn--secondary gw-btn--sm">Ver lista</button>

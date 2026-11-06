@@ -1,3 +1,9 @@
+{# Eventos (Fase 1.5, Ola 3): tarjetas con el estado en insignia, cliente, ciudad y fechas; filtros en una franja; todas las acciones de cada evento a la vista en su tarjeta (también en celular).
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md; lo propio de esta pantalla, en static/css/gw-eventos.css). La lógica, las rutas, los permisos y los ids son los de siempre. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,43 +11,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eventos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
     {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
-    <style>
-        .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
-        .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; }
-        .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
-        .tenant-head .meta { font-size: 0.8rem; color:#666; }
-        .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
-        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
-        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
-        .status-finalizado { background: #eee; color:#777; }
-        .event-actions .small-btn { white-space:nowrap; }
-        @media (max-width: 700px) { .tenant-head { flex-direction:column; align-items:flex-start; gap:0.8rem; } .event-actions { justify-content:flex-start; } }
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
-        .search-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:1.5rem; }
-        .search-box { flex:1; min-width:240px; padding:1rem 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.95rem; }
-        .search-box:focus { outline:none; border-color: var(--golden-primary); }
-        .status-filter { padding:0 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.9rem; min-width:180px; }
-    </style>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" class="small-btn">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -49,72 +39,108 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
-      <span>PANEL</span>
-      <h2>Eventos</h2>
+  <div class="gw-container gw-ev-shell gw-stack-lg" data-gw-tour="eventos" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Panel</p>
+        <h1 class="gw-page-head__title">Eventos</h1>
+        <p class="gw-page-head__sub">Busca un evento, mira en qué estado está y entra a trabajarlo.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        {% if staff_role == "super_admin" %}
+        <button type="button" class="gw-btn gw-btn--secondary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">{{ ic('upload', 'gw-icon--sm') }} Importar evento</button>
+        {% endif %}
+        <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-gw-tour-restart="eventos">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
     </div>
 
-    <div class="search-row">
-      <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre o código de evento...">
-      <select id="statusFilter" class="status-filter">
-        <option value="">Todos los estados</option>
-        <option value="creado">Creado</option>
-        <option value="en_proceso">En Proceso</option>
-        <option value="finalizado">Finalizado</option>
-      </select>
-      {% if staff_role == "comercial" %}
-      <select id="mineFilter" class="status-filter">
-        <option value="mine">Mis eventos</option>
-        <option value="all">Todos</option>
-      </select>
-      {% elif staff_role in ("admin", "super_admin") %}
-      <select id="commercialFilter" class="status-filter">
-        <option value="">Todas las comerciales</option>
-      </select>
-      <select id="coordinatorFilter" class="status-filter">
-        <option value="">Todos los coordinadores</option>
-      </select>
-      {% endif %}
-    </div>
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Filtra</span>
+        {% call ayuda('ay_ev1', 'Filtra') %}Escribe parte del nombre o del código del evento, o elige un estado{% if staff_role == "comercial" %}. «Mis eventos» muestra solo los tuyos{% elif staff_role in ("admin", "super_admin") %}. También puedes filtrar por comercial o por coordinador{% endif %}.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Entra al evento</span>
+        {% call ayuda('ay_ev2', 'Entra al evento') %}«Ingresar» abre el menú del evento. «Editar» abre sus datos: fechas, lugar, responsables e informe final.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Cambia su estado</span>
+        {% call ayuda('ay_ev3', 'Cambia su estado') %}El estado cambia en la misma tarjeta. Al pasar un evento a «Finalizado» te explico qué pasa antes de confirmar.{% endcall %}</li>
+    </ol>
 
-    {% if staff_role == "super_admin" %}
-    <div style="margin:-0.6rem 0 1rem;"><button type="button" class="small-btn primary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">📥 Importar evento</button></div>
-    {% endif %}
-    <div id="eventsList"></div>
+    <section aria-label="Filtros de eventos">
+      <div class="ev-filters" data-gw-tour-step="1" data-gw-tour-title="1. Filtra" data-gw-tour-text="Busca por nombre o código y filtra por estado. La lista se actualiza sola mientras escribes.">
+        <div class="gw-field"><label class="gw-label" for="searchBox">Buscar</label>
+          <input type="search" id="searchBox" class="gw-input" placeholder="Nombre o código de evento" autocomplete="off"></div>
+        <div class="gw-field"><label class="gw-label" for="statusFilter">Estado</label>
+          <select id="statusFilter" class="gw-select">
+            <option value="">Todos los estados</option>
+            <option value="creado">Creado</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="finalizado">Finalizado</option>
+          </select></div>
+        {% if staff_role == "comercial" %}
+        <div class="gw-field"><label class="gw-label" for="mineFilter">Mostrar</label>
+          <select id="mineFilter" class="gw-select">
+            <option value="mine">Mis eventos</option>
+            <option value="all">Todos</option>
+          </select></div>
+        {% elif staff_role in ("admin", "super_admin") %}
+        <div class="gw-field"><label class="gw-label" for="commercialFilter">Comercial</label>
+          <select id="commercialFilter" class="gw-select">
+            <option value="">Todas las comerciales</option>
+          </select></div>
+        <div class="gw-field"><label class="gw-label" for="coordinatorFilter">Coordinador</label>
+          <select id="coordinatorFilter" class="gw-select">
+            <option value="">Todos los coordinadores</option>
+          </select></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section aria-labelledby="evListTitle" aria-busy="false" id="eventsWrap">
+      <h2 class="gw-sr-only" id="evListTitle">Lista de eventos</h2>
+      <div id="eventsList" class="ev-list" data-gw-tour-step="2" data-gw-tour-title="2. Entra al evento" data-gw-tour-text="Cada tarjeta trae sus acciones: Ingresar para trabajar el evento y Editar para cambiar sus datos."></div>
+      <p class="gw-hint" data-gw-tour-step="3" data-gw-tour-title="3. Cambia su estado" data-gw-tour-text="Elige el estado en la tarjeta. Pasar a Finalizado pide confirmación y explica las consecuencias.">El estado se cambia en la misma tarjeta, con confirmación.</p>
+    </section>
   </div>
 </main>
 
 <script>
+const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
+const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
+const STATUS_BADGE = { creado: "gw-badge--info", en_proceso: "gw-badge--ok", finalizado: "" };
 
 function eventCard(e) {
   return `
-    <div class="tenant-card"><div class="tenant-head">
-      <div>
-        <h3>${reportBulbHtml(e)} ${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
-        <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</div>
-        <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}${e.super_event_name ? ` · 🔗 Superevento: ${esc(e.super_event_name)}` : ""}</div>
+    <article class="gw-card-row ev-card" aria-label="${esc(e.name)}">
+      <div class="gw-card-row__head">
+        <h3 class="gw-card-row__title ev-card__title">${esc(e.name)} ${e.event_code ? `<span class="ev-card__code">(${esc(e.event_code)})</span>` : ""}</h3>
+        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
       </div>
-      <div class="event-actions" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
-          ${Object.entries(STATUS_LABELS).map(([value, label]) =>
-            `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
-          ).join("")}
-        </select>
-        <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
-        ${CAN_REVERT && e.status === "en_proceso" ? `<button type="button" class="small-btn" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">↩ Devolver a Creado</button>` : ""}
-        ${STAFF_ROLE === "super_admin" ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}
-        <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+      <div class="ev-card__meta">
+        <p class="gw-card-row__meta">${esc(e.tenant_name)} · ${esc(e.city) || ""}${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</p>
+        <p class="gw-card-row__meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}${e.super_event_name ? ` · ${icon("link", "gw-icon--sm")} Superevento: ${esc(e.super_event_name)}` : ""}</p>
+        <p class="gw-card-row__meta">${reportBulbHtml(e)}</p>
       </div>
-    </div></div>
+      <div class="ev-card__bar">
+        <div class="gw-field"><label class="gw-label" for="st_${e.id}">Cambiar estado</label>
+          <select class="gw-select" id="st_${e.id}" data-status-select data-event-id="${e.id}">
+            ${Object.entries(STATUS_LABELS).map(([value, label]) =>
+              `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
+            ).join("")}
+          </select></div>
+      </div>
+      <div class="gw-card-row__actions ev-card__actions">
+        <button type="button" class="gw-btn gw-btn--secondary" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
+        ${CAN_REVERT && e.status === "en_proceso" ? `<button type="button" class="gw-btn gw-btn--secondary" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>` : ""}
+        ${STAFF_ROLE === "super_admin" ? `<button type="button" class="gw-btn gw-btn--secondary" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>` : ""}
+        <a class="gw-btn gw-btn--primary ev-card__enter" href="/kiosk/${e.id}">Ingresar ${icon("chevron", "gw-icon--sm")}</a>
+      </div>
+    </article>
   `;
 }
 
-const STAFF_ROLE = "{{ staff_role }}";
+const STAFF_ROLE = {{ staff_role|tojson }};
 const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin";      // devolver «En proceso» a «Creado»: solo admin y super_admin
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 
@@ -124,6 +150,8 @@ const statusFilter = document.getElementById("statusFilter");
 const mineFilter = document.getElementById("mineFilter");
 const commercialFilter = document.getElementById("commercialFilter");
 const coordinatorFilter = document.getElementById("coordinatorFilter");
+const eventsList = document.getElementById("eventsList");
+const eventsWrap = document.getElementById("eventsWrap");
 searchBox.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); });
 statusFilter.addEventListener("change", runSearch);
 if (mineFilter) mineFilter.addEventListener("change", runSearch);
@@ -133,50 +161,74 @@ if (coordinatorFilter) coordinatorFilter.addEventListener("change", runSearch);
 // Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): admin+ filtra por cualquier comercial o
 // coordinador asignado; comercial filtra por pertenencia propia ("Mis eventos"/"Todos").
 async function loadAdminFilterOptions() {
-  if (commercialFilter) {
-    const res = await fetch("/api/staff/commercials");
-    const list = await res.json();
-    commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
-      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
-  }
-  if (coordinatorFilter) {
-    const res = await fetch("/api/staff/coordinators");
-    const list = await res.json();
-    coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
-      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
-  }
+  try {
+    if (commercialFilter) {
+      const res = await fetch("/api/staff/commercials");
+      const list = res.ok ? await res.json() : [];
+      commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
+        list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
+    }
+    if (coordinatorFilter) {
+      const res = await fetch("/api/staff/coordinators");
+      const list = res.ok ? await res.json() : [];
+      coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
+        list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
+    }
+  } catch (err) { /* los filtros extra son opcionales: la lista funciona sin ellos */ }
 }
 loadAdminFilterOptions();
+
+function showLoading() {
+  eventsWrap.setAttribute("aria-busy", "true");
+  if (!eventsList.querySelector(".gw-card-row")) eventsList.innerHTML = '<div class="gw-skeleton" role="status" aria-label="Cargando eventos"></div><div class="gw-skeleton"></div><div class="gw-skeleton"></div>';
+}
 
 async function runSearch() {
   const q = searchBox.value.trim();
   const status = statusFilter.value;
-  const resultsEl = document.getElementById("eventsList");
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
   if (mineFilter && mineFilter.value === "mine" && STAFF_ID) params.set("commercial_staff_id", STAFF_ID);
   if (commercialFilter && commercialFilter.value) params.set("commercial_staff_id", commercialFilter.value);
   if (coordinatorFilter && coordinatorFilter.value) params.set("coordinator_staff_id", coordinatorFilter.value);
-  const res = await fetch(`/api/events/search?${params.toString()}`);
-  const events = await res.json();
-  eventsCache = events;
-  resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#666;">Sin resultados.</p>';
+  showLoading();
+  try {
+    const res = await fetch(`/api/events/search?${params.toString()}`);
+    if (!res.ok) throw new Error("http " + res.status);
+    const events = await res.json();
+    eventsCache = events;
+    if (events.length) eventsList.innerHTML = events.map(eventCard).join("");
+    else {
+      const filtered = q || status || params.has("commercial_staff_id") || params.has("coordinator_staff_id");
+      eventsList.innerHTML = `<div class="gw-empty" role="status">${icon("calendar", "gw-icon--lg")}<p><strong>${filtered ? "Ningún evento coincide con los filtros." : "Todavía no hay eventos."}</strong></p><p>${filtered ? "Cambia o quita algún filtro para ver más." : "Los eventos se crean desde la ficha de cada cliente, en Clientes - Cuentas."}</p></div>`;
+    }
+  } catch (err) {
+    eventsList.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar la lista de eventos</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry-search>Reintentar</button></div>`;
+  } finally {
+    eventsWrap.setAttribute("aria-busy", "false");
+  }
 }
 
 // "Editar evento": la misma vista que Calendario y la ficha de Cliente/Cuenta (_event_edit_modal.html).
 let eventsCache = [];
-document.getElementById("eventsList").addEventListener("click", (e) => {
+eventsList.addEventListener("click", async (e) => {
+  const retry = e.target.closest("[data-retry-search]");
+  if (retry) { runSearch(); return; }
   const btn = e.target.closest("[data-edit-event]");
-  if (!btn) return;
-  const ev = eventsCache.find(x => String(x.id) === btn.dataset.editEvent);
-  if (ev) openEventEditModal(ev, runSearch);
+  if (btn) {
+    const ev = eventsCache.find(x => String(x.id) === btn.dataset.editEvent);
+    if (ev) openEventEditModal(ev, runSearch);
+    return;
+  }
+  const rev = e.target.closest("[data-revert-event]");
+  if (rev) await GW.busy(rev, async () => { if (await revertEventToCreated(rev.dataset.revertEvent)) runSearch(); });
 });
 
 // Cambiar el estado del evento directo desde el panel de Eventos (2026-09-17, pedido explícito:
 // antes solo se podía desde Clientes - Cuentas, entrando a la tarjeta del cliente) — mismo select
 // + confirmación que ya usa clientes.html.
-document.getElementById("eventsList").addEventListener("change", async (e) => {
+eventsList.addEventListener("change", async (e) => {
   const select = e.target.closest("[data-status-select]");
   if (!select) return;
   const newStatus = select.value;
@@ -188,16 +240,19 @@ document.getElementById("eventsList").addEventListener("change", async (e) => {
   }
   const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
-  const res = await fetch(`/api/events/${select.dataset.eventId}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }),
-  });
-  showToast(res.ok ? `Evento pasó a "${STATUS_LABELS[newStatus]}"` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
-  if (!res.ok) select.value = previousStatus;
-});
-
-document.getElementById("eventsList").addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-revert-event]");
-  if (btn && await revertEventToCreated(btn.dataset.revertEvent)) runSearch();
+  select.disabled = true;
+  select.setAttribute("aria-busy", "true");
+  let ok = false;
+  try {
+    const res = await fetch(`/api/events/${select.dataset.eventId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }),
+    });
+    ok = res.ok;
+  } catch (err) { ok = false; }
+  select.disabled = false;
+  select.removeAttribute("aria-busy");
+  showToast(ok ? `Evento pasó a "${STATUS_LABELS[newStatus]}"` : "No se pudo actualizar el evento", ok ? "success" : "error");
+  if (ok) runSearch(); else select.value = previousStatus;
 });
 
 runSearch();

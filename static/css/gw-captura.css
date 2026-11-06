@@ -1,0 +1,6 @@
+/* Cámara y lector de QR (static/js/camera-capture.js, qr.js): contenido de las ventanas, sobre .gw-modal de design-system.css. Solo tokens --gw-*. */
+.gw-cam .gw-cam__video { display: block; width: 100%; border-radius: var(--gw-radius-md); background: var(--gw-navy-deep); }
+.gw-cam canvas[hidden], .gw-cam .gw-alert[hidden] { display: none; }
+.gw-cam .gw-alert { margin-top: var(--gw-sp-3); }
+.gw-cam__status { margin: var(--gw-sp-3) 0 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-cam__status--err { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); }

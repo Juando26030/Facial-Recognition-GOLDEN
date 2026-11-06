@@ -1,0 +1,176 @@
+/* Diseñador de escarapela y de certificado + Impresora USB (Fase 1.5, Ola 2): SOLO el marco (encabezado, barra de herramientas, paneles, ventana de plantillas, estados y botones).
+   El lienzo y la composición de la etiqueta NO cambian (badge-render.js, badge-geometry.js, label-compose.js) ni ningún parámetro de impresión (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md).
+   Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); los componentes .gw-* viven en design-system.css. */
+
+/* ============================================================ Impresora USB */
+.gw-usb__top { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); }
+.gw-usb .gw-container { padding-bottom: var(--gw-sp-7); }
+.gw-usb__status { padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); background: var(--gw-surface-2); color: var(--gw-text); font-size: var(--gw-fs-md); white-space: pre-wrap; }
+.gw-usb__status.gw-msg--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); }
+.gw-usb__status.gw-msg--err { background: var(--gw-err-bg); color: var(--gw-err-text); }
+.gw-usb__preview { max-height: 340px; padding: var(--gw-sp-3); overflow: auto; text-align: center; background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-usb__preview canvas { max-width: 100%; background: var(--gw-surface); box-shadow: 0 0 0 1px var(--gw-border-strong); image-rendering: pixelated; }
+
+/* ============================================================ Diseñador: marco de la página */
+body.gw-disenador { background: var(--gw-bg); color: var(--gw-text); --gw-ed-savebar-h: 4.5rem; }
+.gw-disenador__wrap { max-width: 1400px; padding-top: var(--gw-sp-3); padding-bottom: var(--gw-sp-3); }
+.gw-disenador .gw-page-head { margin: 0 0 var(--gw-sp-3); }
+.gw-disenador .gw-page-head__title { font-size: var(--gw-fs-xl); }
+.gw-disenador__kicker { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.06em; color: var(--gw-gold-text); }
+.gw-disenador__guide { position: relative; margin: 0; flex: 1 1 auto; }
+.gw-disenador__guide .gw-steps { margin: 0; }
+.gw-disenador__guide .gw-group__body { padding-top: var(--gw-sp-3); }
+.gw-disenador__guide > .gw-group__sum { font-size: var(--gw-fs-md); min-height: var(--gw-tap); padding-top: 0; padding-bottom: 0; }
+.gw-disenador__link { padding: var(--gw-sp-3) var(--gw-sp-4); margin-bottom: var(--gw-sp-3); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-disenador__sr-title { margin: 0; }
+
+/* ============================================================ Barra de herramientas (plantilla, medidas, fondo, vista previa) */
+.gw-ed-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-2) var(--gw-sp-4); margin-bottom: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3);
+  background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+.gw-ed-toolbar[hidden] { display: none; }
+.gw-ed-toolbar--stack { flex-direction: column; align-items: stretch; }
+.gw-ed-group { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-ed-group + .gw-ed-group { padding-left: var(--gw-sp-4); border-left: 1px solid var(--gw-border); }
+.gw-ed-group[hidden] { display: none; }
+.gw-ed-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gw-ed-field[hidden] { display: none; }
+.gw-ed-field .gw-label { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.gw-ed-field .gw-input, .gw-ed-field .gw-select { min-height: var(--gw-tap); }
+.gw-ed-field--name { flex: 1 1 11rem; min-width: 9rem; }
+.gw-ed-field--num .gw-input { width: 5.5rem; }
+.gw-ed-field--color .gw-input { width: 4rem; padding: var(--gw-sp-1); }
+.gw-ed-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin-left: auto; }
+.gw-ed-note { margin: 0; max-width: 28rem; align-self: center; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+
+/* ============================================================ Avisos del diseñador (medida, cinta, orientación) */
+.gw-ed-alert { margin: 0 0 var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-warn-line); border-left-width: 6px; border-radius: var(--gw-radius-sm); background: var(--gw-warn-bg); color: var(--gw-warn-text); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-body); }
+.gw-ed-alert.bad { border-color: var(--gw-err-line); background: var(--gw-err-bg); color: var(--gw-err-text); }
+.gw-ed-alert--info { display: none; align-items: center; gap: var(--gw-sp-3); flex-wrap: wrap; border-color: var(--gw-info-line); background: var(--gw-info-bg); color: var(--gw-info-text); }
+.gw-ed-info { margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-ed-info:empty { display: none; }
+.gw-ed-hint { margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-ed-hint kbd { padding: 0 var(--gw-sp-1); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); background: var(--gw-surface-2); font: inherit; font-weight: var(--gw-fw-bold); }
+
+/* ============================================================ Cuerpo: elementos · lienzo · propiedades */
+.gw-ed-body { display: flex; flex-wrap: wrap; gap: var(--gw-sp-4); align-items: flex-start; }
+.gw-ed-tools { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); }
+.gw-ed-tool { display: flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); text-align: left;
+  color: var(--gw-secondary-text); background: var(--gw-secondary-bg); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
+.gw-ed-tool:hover { border-color: var(--gw-gold-2); }
+.gw-ed-tool:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-ed-tools__title { display: none; margin: 0 0 var(--gw-sp-1); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gw-gold-text); }
+.badge-canvas-zone { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.zoom-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.zoom-bar .gw-btn { min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-3); }
+.zoom-bar .gw-btn.on { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+#zoomLabel { min-width: 7rem; text-align: center; font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.badge-canvas-wrapper { flex: 1 1 auto; display: flex; align-items: flex-start; justify-content: center; min-height: 400px; max-height: 70vh; max-width: 100%; padding: var(--gw-sp-5); overflow: auto;
+  background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); }
+.badge-canvas-host { position: relative; flex-shrink: 0; }
+.badge-sel-overlay { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.badge-canvas { box-shadow: var(--gw-shadow-lg); flex-shrink: 0; }
+.badge-element { cursor: move; touch-action: none; outline: 1px dashed var(--gw-border-strong); }
+.badge-element.is-selected { outline: 2px dashed var(--gw-gold-2); }
+.badge-element.oob { outline: 2px solid var(--gw-err-line) !important; }
+.badge-element:focus-visible { outline: 3px solid var(--gw-focus) !important; outline-offset: 2px; }
+/* Manijas del elemento seleccionado: capa ENCIMA de todo (selOverlay); solo se ven, qué manija se tocó lo decide BadgeGeometry.hitHandle (zona de 32 px). */
+.sel-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; box-sizing: border-box; background: var(--gw-surface); border: 2px solid var(--gw-gold-2); border-radius: 3px; pointer-events: auto; touch-action: none; }
+.sel-handle::after, .rotate-handle::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
+.rotate-handle { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; box-sizing: border-box; background: var(--gw-surface); border: 2px solid var(--gw-gold-2); border-radius: 50%; pointer-events: auto; touch-action: none; }
+.rotate-badge { position: absolute; transform: translate(-50%, -50%); padding: 2px 6px; background: var(--gw-nav-bg); color: var(--gw-nav-text); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); border-radius: var(--gw-radius-sm); white-space: nowrap; pointer-events: none; }
+.snap-guide { position: absolute; pointer-events: none; z-index: 99998; background: var(--gw-info-line); }
+.snap-guide.v { top: 0; bottom: 0; width: 1px; }
+.snap-guide.h { left: 0; right: 0; height: 1px; }
+
+/* ============================================================ Panel de propiedades (grupos plegables) */
+.badge-props-panel { width: 320px; flex-shrink: 0; max-height: 75vh; overflow-y: auto; box-sizing: border-box; padding: var(--gw-sp-3); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); }
+.props-title { margin: 0 0 var(--gw-sp-3); font-size: var(--gw-fs-lg); color: var(--gw-text); }
+.props-empty { margin: var(--gw-sp-5) 0; text-align: center; color: var(--gw-text-muted); font-size: var(--gw-fs-md); }
+.badge-props-panel .gw-group { margin-bottom: var(--gw-sp-2); box-shadow: none; border-radius: var(--gw-radius-md); }
+.badge-props-panel .gw-group__sum { padding: var(--gw-sp-2) var(--gw-sp-3); font-size: var(--gw-fs-md); border-radius: var(--gw-radius-md); }
+.badge-props-panel .gw-group__body { padding: var(--gw-sp-3); }
+.prop-field { margin-bottom: var(--gw-sp-3); }
+.prop-field:last-child { margin-bottom: 0; }
+.prop-field > label { display: block; margin-bottom: var(--gw-sp-1); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.prop-field input:not([type="color"]):not([type="file"]), .prop-field select, .prop-field textarea { width: 100%; min-height: var(--gw-tap); box-sizing: border-box; padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+.prop-field select[multiple] { min-height: 7rem; }
+.prop-field input[type="color"] { width: 100%; height: var(--gw-tap); padding: var(--gw-sp-1); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+.prop-field input[type="file"] { width: 100%; font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); }
+.prop-field :focus-visible, .badge-props-panel button:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.prop-row { display: flex; gap: var(--gw-sp-2); }
+.prop-row .prop-field { flex: 1; min-width: 0; }
+.prop-note { margin: 0 0 var(--gw-sp-3); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-body); color: var(--gw-text-muted); }
+.prop-preview { max-width: 100%; margin-bottom: var(--gw-sp-3); border-radius: var(--gw-radius-sm); }
+.prop-upload { display: inline-flex; align-items: center; gap: var(--gw-sp-2); margin-left: var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.prop-upload .gw-spinner { width: 1rem; height: 1rem; border-width: 2px; }
+.prop-btn { display: flex; align-items: center; justify-content: center; min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-2); font: inherit; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-secondary-text); background: var(--gw-secondary-bg); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); cursor: pointer; }
+.prop-btn:hover { border-color: var(--gw-gold-2); }
+.prop-btn.on { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+.prop-btn--wide { width: 100%; margin-top: var(--gw-sp-2); border-style: dashed; }
+.align-row, .case-row, .quick-rot, .prop-actions { display: flex; gap: var(--gw-sp-1); }
+.align-row .prop-btn, .case-row .prop-btn, .quick-rot .prop-btn, .prop-actions .prop-btn { flex: 1; }
+.quick-rot { margin-top: var(--gw-sp-1); }
+.prop-actions { gap: var(--gw-sp-2); }
+.prop-danger { width: 100%; margin-top: var(--gw-sp-2); }
+
+/* ============================================================ Ventana «Importar plantilla» (.gw-modal) */
+.saved-tpl-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); padding: var(--gw-sp-3) var(--gw-sp-1); border-bottom: 1px solid var(--gw-border); }
+.saved-tpl-row:last-child { border-bottom: 0; }
+.saved-tpl-row small { color: var(--gw-text-muted); }
+.saved-tpl-actions { display: flex; gap: var(--gw-sp-2); }
+.gw-ed-state { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-md); }
+.gw-ed-state--err { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); }
+
+/* ============================================================ Móvil: barra superior, pestañas, ajuste fino (ocultos en escritorio) */
+.editor-mobile-tabs, .editor-nudge-bar, #mobileTopBar { display: none; }
+.gw-disenador .gw-savebar { margin-top: var(--gw-sp-2); }
+.gw-disenador .gw-savebar__fail { position: absolute; left: 0; right: 0; bottom: 100%; }
+@media (min-width: 821px) {
+  /* Cabecera compacta: la guía de 3 pasos se despliega como panel flotante (no empuja el lienzo hacia abajo). */
+  body.editor-page .gw-disenador__kicker, body.editor-page .gw-page-head__sub { display: none; }
+  body.editor-page .gw-disenador .gw-page-head, body.editor-page.gw-disenador .gw-page-head { margin-bottom: var(--gw-sp-2); }
+  .gw-disenador__guide { flex: 0 0 auto; }
+  .gw-disenador__guide[open] > .gw-group__body { position: absolute; right: 0; top: 100%; z-index: 60; width: min(720px, 90vw); background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+  /* El cuerpo ocupa lo que queda de la ventana (JS: --editor-h) y la página no se desplaza; la regla body.editor-page { overflow:hidden } va en la plantilla. */
+  body.editor-page .gw-disenador__wrap { max-width: none; padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  body.editor-page .golden-event-strip { padding: var(--gw-sp-1) var(--gw-sp-5); font-size: var(--gw-fs-sm); }
+  body.editor-page .golden-main { padding: 0; }
+  .gw-ed-body { display: grid; grid-template-columns: 170px minmax(0, 1fr) 320px; gap: var(--gw-sp-3); height: var(--editor-h, 520px); align-items: stretch; flex-wrap: nowrap; }
+  .gw-ed-tools { flex-direction: column; align-items: stretch; margin: 0; overflow-y: auto; align-content: flex-start; flex-wrap: nowrap; }
+  .gw-ed-tools__title { display: block; }
+  .badge-canvas-wrapper { flex: 1 1 auto; min-height: 0; max-height: none; padding: var(--gw-sp-3); align-items: center; justify-content: center; }
+  .badge-props-panel { width: auto; max-height: none; height: 100%; }
+  #kbHint { display: none; }
+}
+@media (max-width: 820px) {
+  body.editor-page { padding-bottom: calc(var(--gw-ed-savebar-h) + 4.5rem); }
+  .gw-disenador__wrap { padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); }
+  body.editor-page .golden-event-strip { padding: var(--gw-sp-1) var(--gw-sp-3); font-size: var(--gw-fs-sm); }
+  body.editor-page .golden-event-strip-inner { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .gw-ed-toolbar { padding: var(--gw-sp-2); }
+  .gw-ed-actions { margin-left: 0; width: 100%; }
+  .gw-ed-group + .gw-ed-group { padding-left: 0; border-left: 0; }
+  body.editor-page .gw-ed-toolbar--main { display: none; }
+  body.editor-page.toolbar-open .gw-ed-toolbar--main { display: flex; }
+  #mobileTopBar { display: flex; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-2); }
+  #mobileTopBar .gw-btn { flex: 1; }
+  .editor-mobile-tabs { display: flex; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-2); }
+  .editor-mobile-tabs .gw-btn { flex: 1; }
+  .editor-mobile-tabs .gw-btn.active { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+    #propsDot { color: var(--gw-gold-2); }
+  .gw-ed-body { display: block; }
+  .gw-ed-body[data-tab="canvas"] .badge-props-panel { display: none; }
+  .gw-ed-body[data-tab="props"] .badge-canvas-zone, .gw-ed-body[data-tab="props"] .gw-ed-tools { display: none; }
+  .badge-props-panel { width: auto; max-height: none; }
+  .badge-canvas-wrapper { max-height: none; padding: var(--gw-sp-2); border-radius: var(--gw-radius-md); }
+  /* barra de elementos fija ENCIMA de la barra de guardado (que queda pegada abajo) */
+  .gw-ed-tools { position: fixed; left: 0; right: 0; bottom: var(--gw-ed-savebar-h); z-index: 900; flex-wrap: nowrap; margin: 0; padding: var(--gw-sp-2); overflow-x: auto; background: var(--gw-surface); box-shadow: var(--gw-shadow-lg); border-top: 1px solid var(--gw-border); }
+  .gw-ed-tool { flex: 0 0 auto; white-space: nowrap; }
+  .editor-nudge-bar.on { display: flex; position: fixed; left: 0; right: 0; bottom: calc(var(--gw-ed-savebar-h) + 4.25rem); z-index: 901; align-items: center; justify-content: center; gap: var(--gw-sp-2); padding: var(--gw-sp-2); background: var(--gw-nav-bg); color: var(--gw-nav-text); font-size: var(--gw-fs-sm); }
+  .editor-nudge-bar .gw-btn { min-width: 3rem; font-size: var(--gw-fs-lg); }
+  #kbHint { display: none; }
+  .gw-disenador .gw-savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 950; flex-direction: row; flex-wrap: nowrap; align-items: center; margin: 0; border-radius: 0; min-height: var(--gw-ed-savebar-h); }
+  .gw-disenador .gw-savebar__status { margin-right: auto; min-width: 0; }
+  .gw-disenador .gw-savebar__status .gw-text-sm { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .gw-ed-tool, .prop-btn { transition: none; } }

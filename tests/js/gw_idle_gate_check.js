@@ -52,7 +52,7 @@ const ALLOWED = {
   'templates/digital_badge.html': 'pantalla de exhibición del carné digital',
   'templates/roulette_display.html': 'pantalla de exhibición de la ruleta',
   'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health (sin base) y contador, que solo consulta tras un intento reciente (5 min)',
-  'templates/sistema.html': 'solo la línea del reloj local «Actualizado hace»; el refresco va por GW.poll',
+  'static/js/sistema.js': 'solo la línea del reloj local «Actualizado hace»; el refresco va por GW.poll',
 };
 const files = [];
 for (const dir of ['static/js', 'templates']) for (const n of fs.readdirSync(dir)) if (/\.(js|html)$/.test(n)) files.push(path.join(dir, n));

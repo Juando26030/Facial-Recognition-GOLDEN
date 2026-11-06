@@ -97,7 +97,7 @@ def test_the_replace_dates_checkbox_has_an_accessible_name(client, factory, db):
 def test_finalizing_an_event_asks_with_its_consequences_everywhere(client, factory):
     toast = open("static/js/toast.js", encoding="utf-8").read()
     assert "window.FINALIZE_CONFIRM" in toast and "nadie podrá registrar" in toast and "7 días" in toast
-    for tpl in ("templates/eventos.html", "templates/clientes.html"):
+    for tpl in ("templates/eventos.html", "static/js/gw-clientes.js"):          # clientes: la lógica salió de la plantilla (Fase 1.5)
         assert "confirmStatusChange(newStatus" in open(tpl, encoding="utf-8").read()
     modal = open("templates/_event_edit_modal.html", encoding="utf-8").read()
     assert "payload.status === 'finalizado'" in modal and "window.FINALIZE_CONFIRM" in modal and "dataset.initial" in modal

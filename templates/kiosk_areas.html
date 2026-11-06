@@ -1,3 +1,8 @@
+{# Control de áreas (Fase 1.5, rediseño visual): solo tokens --gw-* y clases .gw-*. La lógica, los ids y las rutas son los de siempre (static/js/areas.js). #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,189 +10,125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Áreas | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-areas-inv.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
     <script src="{{ url_for('static', path='js/directory.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-captura.css') }}">
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
-    <style>
-        .card { background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
-        .toolbar { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:end; }
-        .toolbar label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
-        .toolbar select, .toolbar input[type=text] { padding:0.65rem 0.8rem; border:1px solid #ddd; border-radius:10px; font-size:0.95rem; }
-        .dir-btn { border:1px solid #ccc; background:white; border-radius:20px; padding:8px 16px; cursor:pointer; font-weight:600; }
-        .dir-btn.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
-        .banner { border-radius:14px; padding:1rem 1.2rem; margin-top:1rem; font-size:1rem; display:none; }
-        .banner.ok-in { background:#d4edda; color:#155724; border:1px solid #28a745; }
-        .banner.ok-out { background:#f8d7da; color:#721c24; border:1px solid #dc3545; }
-        .banner.alert { background:#dc3545; color:white; font-weight:700; font-size:1.1rem; }
-        .banner.warn { background:#fff3cd; color:#664d03; border:1px solid #ffe69c; }
-        table.pres { width:100%; border-collapse:collapse; }
-        table.pres td, table.pres th { padding:0.55rem 0.6rem; font-size:0.88rem; text-align:left; border-bottom:1px solid #f0f0f0; }
-        tr.in td { background:rgba(40,167,69,0.16); } tr.out td { background:rgba(220,53,69,0.14); }
-        .suggest { margin-top:0.6rem; display:flex; flex-direction:column; gap:4px; }
-        .suggest button { text-align:left; border:1px solid #eee; background:#fafafa; border-radius:10px; padding:6px 10px; cursor:pointer; }
-    </style>
 </head>
-<body class="has-sidebar">
-{% include "_kiosk_top.html" %}
+<body class="gw-page gw-shell has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if event.auto_register else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
 
 <main class="golden-main">
-  <section class="golden-section">
-    <div class="golden-container">
-      <div class="golden-section-title">
-        <span>{{ company_name|upper }}</span>
-        <h2>Control de <span class="gradient-text">Áreas</span></h2>
+  <div class="gw-container gw-stack-lg gw-ai__wrap" data-gw-tour="areas"{% if event.areas_enabled %} data-gw-tour-auto{% endif %}>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name }}</p>
+        <h1 class="gw-page-head__title">Control de áreas</h1>
+        <p class="gw-page-head__sub">Entradas y salidas por zona, con cédula, QR o reconocimiento facial.</p>
       </div>
-      <div class="app-container">
-        <div class="card" id="disabledCard" style="display:none;">El control de áreas no está activado en este evento (Parámetros del Evento).</div>
-        <div id="mainArea" style="display:none;">
-          <div class="card">
-            <div class="toolbar">
-              <div><label>Zona</label><select id="areaSelect"></select></div>
-              <div>
-                <label>Movimiento</label>
-                <div style="display:flex; gap:6px;">
-                  <button type="button" class="dir-btn active" data-dir="auto">Automático</button>
-                  <button type="button" class="dir-btn" data-dir="in">Entrada</button>
-                  <button type="button" class="dir-btn" data-dir="out">Salida</button>
-                </div>
-              </div>
-              <div style="flex:1; min-width:240px;"><label>Cédula / QR / lector</label><input type="text" id="scanInput" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter" style="width:100%; box-sizing:border-box;"></div>
-            <div style="align-self:flex-end;"><button type="button" id="scanQrBtn" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;">📷 Escanear QR con cámara</button></div>
-              <button type="button" id="faceBtn" class="dir-btn" style="display:none;">📸 Facial</button>
-            </div>
-            <div style="margin-top:0.8rem;"><label style="font-size:0.78rem; color:#777;">O busca por nombre</label>
-              <input type="text" id="nameSearch" autocomplete="off" placeholder="Nombre o apellido" style="width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px;">
-              <div class="suggest" id="suggest"></div>
-            </div>
-            <div class="banner" id="banner"></div>
-            <p style="font-size:0.78rem; color:#666; margin:0.8rem 0 0;">Modo autoregistro: <strong id="autoregLabel"></strong> — con "OFF" hay que confirmar cada movimiento con "Acreditar".</p>
-          </div>
-          <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
-              <h4 style="margin:0; color:var(--golden-dark);">Personas en la zona: <span id="insideCount">0</span> adentro</h4>
-              <a id="reportBtn" href="/api/events/{{ event.id }}/areas-report" style="display:none; border:1px solid var(--golden-primary); background:var(--golden-primary); color:var(--golden-dark); border-radius:20px; padding:6px 14px; font-weight:700; text-decoration:none; font-size:0.8rem;">⬇ Reporte de movimientos (Excel)</a>
-            </div>
-            <table class="pres"><thead><tr><th>Cédula</th><th>Persona</th><th>Estado</th><th>Hora</th></tr></thead><tbody id="presBody"></tbody></table>
-          </div>
-        </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="areas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
-  </section>
+
+    <div id="disabledCard" class="gw-alert gw-alert--warn" role="status"{% if event.areas_enabled %} hidden{% endif %}>
+      {{ ic('alert') }}
+      <div>El control de áreas no está activado en este evento. Un coordinador puede activarlo en Parámetros del evento.</div>
+    </div>
+
+    <div id="mainArea" class="gw-stack-lg"{% if not event.areas_enabled %} hidden{% endif %}>
+      <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+        <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la zona</span>
+          {% call ayuda('ay_a1', 'Elige la zona') %}Cada zona lleva su propio conteo de personas adentro. Si la zona no permite reingresos, el sistema avisa cuando alguien intenta entrar de nuevo.{% endcall %}</li>
+        <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Escanea o busca</span>
+          {% call ayuda('ay_a2', 'Escanea o busca') %}Escanea la cédula o el QR, escribe la cédula y pulsa Enter, o busca por nombre. En «Automático» el sistema decide si es entrada o salida.{% endcall %}</li>
+        <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Mira quién está dentro</span>
+          {% call ayuda('ay_a3', 'Mira quién está dentro') %}La lista de abajo muestra el último movimiento de cada persona en la zona elegida y se actualiza con cada registro.{% endcall %}</li>
+      </ol>
+
+      <section class="gw-card gw-stack" aria-labelledby="areasMovTitle">
+        <h2 class="gw-card__title" id="areasMovTitle">Registrar un movimiento</h2>
+        <div class="gw-fields-row">
+          <div class="gw-field" data-gw-tour-step="1" data-gw-tour-title="1. Elige la zona" data-gw-tour-text="Escoge la zona donde estás. Entre paréntesis ves cuántas personas hay adentro.">
+            <label class="gw-label" for="areaSelect">Zona</label>
+            <select id="areaSelect" class="gw-select"></select>
+          </div>
+          <div class="gw-field">
+            <span class="gw-label" id="dirLabel">Movimiento</span>
+            <div class="gw-ai__dir" role="group" aria-labelledby="dirLabel">
+              <button type="button" class="gw-chip dir-btn active" data-dir="auto" aria-pressed="true">Automático</button>
+              <button type="button" class="gw-chip dir-btn" data-dir="in" aria-pressed="false">Entrada</button>
+              <button type="button" class="gw-chip dir-btn" data-dir="out" aria-pressed="false">Salida</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="gw-ai__scan" data-gw-tour-step="2" data-gw-tour-title="2. Escanea o busca" data-gw-tour-text="Escanea la cédula o el QR, o escríbela y pulsa Enter. También puedes buscar por nombre o usar la cámara.">
+          <div class="gw-field">
+            <label class="gw-label" for="scanInput">Cédula, QR o lector</label>
+            <input type="text" id="scanInput" class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
+          </div>
+          <button type="button" id="registerBtn" class="gw-btn gw-btn--primary">Registrar</button>
+          <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary">{{ ic('qr', 'gw-icon--sm') }} Escanear QR con cámara</button>
+          <button type="button" id="faceBtn" class="gw-btn gw-btn--secondary" hidden>{{ ic('face', 'gw-icon--sm') }} Facial</button>
+        </div>
+
+        <div class="gw-field">
+          <label class="gw-label" for="nameSearch">O busca por nombre</label>
+          <input type="text" id="nameSearch" class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
+          <div class="gw-ai__suggest" id="suggest"></div>
+        </div>
+
+        <div id="banner" class="gw-alert gw-ai__banner" role="status" aria-live="polite" hidden></div>
+        <p class="gw-hint">Modo autoregistro: <strong id="autoregLabel"></strong>. Con «OFF» hay que confirmar cada movimiento con «Acreditar».</p>
+      </section>
+
+      <section class="gw-card gw-stack" aria-labelledby="presTitle" data-gw-tour-step="3" data-gw-tour-title="3. Mira quién está dentro" data-gw-tour-text="Aquí aparece el último movimiento de cada persona en la zona. Arriba ves cuántas hay adentro.">
+        <div class="gw-row gw-row--between">
+          <h2 class="gw-card__title" id="presTitle">Personas en la zona: <span class="gw-ai__count" id="insideCount">0</span> adentro</h2>
+          <a id="reportBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/areas-report" hidden>{{ ic('download', 'gw-icon--sm') }} Reporte de movimientos (Excel)</a>
+        </div>
+        <div id="presLoading" class="gw-skeleton" hidden></div>
+        <div id="presState" class="gw-empty" role="status" hidden></div>
+        <div class="gw-table-wrap" id="presWrap">
+          <table class="gw-table gw-table-cards">
+            <caption class="gw-sr-only">Personas en la zona elegida</caption>
+            <thead><tr><th scope="col">Cédula</th><th scope="col">Persona</th><th scope="col">Estado</th><th scope="col">Hora</th></tr></thead>
+            <tbody id="presBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
 </main>
-
-<script>
-let direction = 'auto', users = [];
-const $ = (id) => document.getElementById(id);
-function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-const areaId = () => $('areaSelect').value;
-
-async function init() {
-  if (!ENABLED) { $('disabledCard').style.display = 'block'; return; }
-  $('mainArea').style.display = 'block';
-  $('autoregLabel').textContent = AUTOREG ? 'ON' : 'OFF';
-  if (FACIAL) $('faceBtn').style.display = 'inline-block';
-  if (CAN_REPORT) $('reportBtn').style.display = 'inline-block';
-  users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
-  await loadAreas();
-  $('scanInput').focus();
-}
-
-async function loadAreas(keep) {
-  const areas = await (await fetch(`/api/events/${EVENT_ID}/areas`)).json();
-  const current = keep || areaId();
-  $('areaSelect').innerHTML = areas.length ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('') : '<option value="">Crea zonas en Parámetros del Evento</option>';
-  if (current) $('areaSelect').value = current;
-  loadPresence();
-}
-
-async function loadPresence() {
-  if (!areaId()) { $('presBody').innerHTML = ''; $('insideCount').textContent = '0'; return; }
-  const rows = await (await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/presence`)).json();
-  $('insideCount').textContent = rows.filter(r => r.direction === 'in').length;
-  $('presBody').innerHTML = rows.length ? rows.map(r => `<tr class="${r.direction}"><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.direction === 'in' ? '🟢 Entró' : '🔴 Salió'}</td><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#666;">Sin movimientos todavía.</td></tr>';
-}
-
-function show(cls, html) { const b = $('banner'); b.className = 'banner ' + cls; b.innerHTML = html; b.style.display = 'block'; }
-
-async function handle(result, retry) {
-  const who = result.data ? `${esc(result.data.first_name)} ${esc(result.data.last_name)}` : '';
-  if (result.result === 'OK') {
-    show(result.direction === 'in' ? 'ok-in' : 'ok-out', `${result.direction === 'in' ? '🟢 ENTRÓ' : '🔴 SALIÓ'}: <strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}`);
-    await loadAreas(areaId());
-  } else if (result.result === 'FOUND_PENDING') {
-    show('warn', `Encontrado(a): <strong>${who}</strong> — se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="dir-btn active" style="margin-left:8px;">✅ Acreditar</button>`);
-    $('confirmBtn').addEventListener('click', () => retry(true, result.direction));
-  } else if (result.result === 'ALREADY_ENTERED') {
-    show('alert', `⛔ ALERTA: ${esc(result.details)}`);
-  } else if (result.result === 'NOT_INSIDE') {
-    show('warn', `⚠️ ${esc(result.details)}`);
-  } else {
-    show('warn', esc(result.details || 'No se encontró a la persona'));
-  }
-}
-
-async function register(cedula, confirm, forcedDirection, method) {
-  if (!areaId()) { showToast('Primero elige una zona', 'error'); return; }
-  method = method || 'cedula';
-  const res = await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/movement`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
-  await handle(data, (c, d) => register(cedula, c, d, method));
-}
-
-document.querySelectorAll('.dir-btn[data-dir]').forEach(btn => btn.addEventListener('click', () => {
-  direction = btn.dataset.dir;
-  document.querySelectorAll('.dir-btn[data-dir]').forEach(b => b.classList.toggle('active', b === btn));
-}));
-$('areaSelect').addEventListener('change', loadPresence);
-
-$('scanInput').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  e.preventDefault();
-  const raw = e.target.value.trim(); e.target.value = '';
-  if (!raw) return;
-  const qr = QrCode.parse(raw);
-  if (qr && qr.isQr) { register(qr.cedula, false, undefined, 'qr'); return; }   // QR propio: en vez de entregar la cédula
-  const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);  // cédula vieja (CSV del lector) o ID suelto
-  register(parsed ? parsed.cedula : raw);
-});
-
-// Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
-if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
-  title: 'Escanear QR — Control de Áreas',
-  onCode: (text) => { const qr = QrCode.parse(text); if (qr) register(qr.cedula, false, undefined, 'qr'); },
-}));
-
-$('nameSearch').addEventListener('input', (e) => {
-  const q = e.target.value.trim();
-  const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
-  $('suggest').innerHTML = found.map(u => `<button type="button" data-id="${esc(u.id)}">${esc(u.first_name)} ${esc(u.last_name)} · ${esc(u.id)}</button>`).join('');
-});
-$('suggest').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-id]'); if (!btn) return;
-  register(btn.dataset.id); $('suggest').innerHTML = ''; $('nameSearch').value = '';
-});
-
-$('faceBtn').addEventListener('click', () => CameraCapture.open({ title: 'Reconocimiento facial', onCapture: async (blob) => {
-  const send = async (confirm, forcedDirection) => {
-    const fd = new FormData(); fd.append('file', blob, 'face.jpg'); fd.append('direction', forcedDirection || direction); fd.append('confirm', confirm ? 'true' : 'false');
-    const res = await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/movement-face`, { method: 'POST', body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
-    await handle(data, send);
-  };
-  await send(false);
-} }));
-
-init();
-</script>
+<script src="{{ url_for('static', path='js/areas.js') }}"></script>
 </body>
 </html>

@@ -175,3 +175,68 @@ html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[da
   .gw-registro .gw-reason { animation: gw-reg-in 160ms ease-out; }
   .gw-regcfg__panel:not([hidden]) { animation: gw-reg-in 180ms ease-out; }
 }
+
+/* ================= Fase 1.5 · ventanas internas de Registro (editar persona, sin conexión, cámara, QR, alta) y pestaña del escáner. Solo tokens --gw-*. ================= */
+.gw-registro [hidden] { display: none !important; }                     /* lo que se oculta con `hidden` se oculta aunque su clase le dé otro display */
+/* «Editar persona» (en línea y sin conexión): hoja de .gw-modal; en celular design-system.css la pasa a pantalla completa */
+.gw-modal-backdrop.gw-registro__edit { z-index: 9997; }                 /* por encima de la lista y del panel de ajustes; los cuadros de confirmar (9998) siguen encima */
+.gw-registro__editbox, .gw-registro__editflush { max-width: 560px; }
+.gw-registro__editbox > .gw-modal__body { padding-top: var(--gw-sp-4); }
+.gw-registro__editbox > :not(.gw-modal__head):not(.gw-modal__body) { margin-left: var(--gw-sp-5); margin-right: var(--gw-sp-5); }
+.gw-registro__editbox > .gw-registro__edittitle { margin-top: var(--gw-sp-5); }
+.gw-registro__editbox > .gw-registro__editgap { width: auto; margin-bottom: var(--gw-sp-3); }
+.gw-registro__editbox > .gw-alert { margin-top: var(--gw-sp-3); margin-bottom: var(--gw-sp-3); }
+.gw-registro__editbox > .gw-label { display: block; margin-bottom: var(--gw-sp-1); }
+.gw-registro__editbox > .gw-select { width: auto; max-width: calc(100% - 2 * var(--gw-sp-5)); }
+.gw-registro__editbox > .gw-registro__editactions { justify-content: flex-end; margin-top: var(--gw-sp-4); margin-bottom: var(--gw-sp-5); }
+.gw-registro__edittitle { margin: 0; flex: 1 1 auto; font-size: var(--gw-fs-xl); }
+.gw-registro__edithead { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; background: var(--gw-surface); border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; }
+.gw-registro__editfield { margin-bottom: var(--gw-sp-3); }
+.gw-registro__editsep { margin: var(--gw-sp-4) 0; border: 0; border-top: 1px solid var(--gw-border); }
+.gw-registro__editnew { margin: var(--gw-sp-2) 0 var(--gw-sp-3); padding: var(--gw-sp-3); background: var(--gw-surface-2); box-shadow: none; }
+.gw-registro__editmissing { outline: 3px solid var(--gw-warn-line); outline-offset: 2px; }
+.gw-registro__reason { margin-left: var(--gw-sp-2); }
+/* los controles que dibuja FieldRender (sin clases) se ven como .gw-input dentro de las ventanas de edición y de alta */
+.gw-registro__editbox input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not(.gw-input),
+.gw-registro__editbox select:not(.gw-select), .gw-registro__editbox textarea:not(.gw-textarea),
+.gw-registro #registerModal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not(.gw-input),
+.gw-registro #registerModal select:not(.gw-select), .gw-registro #registerModal textarea:not(.gw-textarea) {
+  width: 100%; min-height: var(--gw-tap); box-sizing: border-box; padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface);
+  border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); }
+.gw-registro__editbox input:focus-visible, .gw-registro__editbox select:focus-visible, .gw-registro__editbox textarea:focus-visible,
+.gw-registro #registerModal input:focus-visible, .gw-registro #registerModal select:focus-visible, .gw-registro #registerModal textarea:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-registro__editbox input[type="checkbox"], .gw-registro__editbox input[type="radio"] { width: 1.5rem; height: 1.5rem; accent-color: var(--gw-navy); }
+/* «Registrar nuevo»: campos .gw-field en una columna; en celular la ventana es una hoja a pantalla completa */
+.gw-registro #registerModal .gw-field { margin-bottom: var(--gw-sp-3); }
+.gw-registro #registerModal .gw-field > .gw-label { display: block; }
+.gw-registro__sibling { margin-top: var(--gw-sp-2); }
+@media (max-width: 640px) {
+  .gw-registro__overlay { padding: 0; align-items: stretch; }
+  .gw-registro__overlay > .gw-registro__modal { max-width: none; max-height: none; min-height: 100%; border-radius: 0; }
+  .gw-registro__editbox > :not(.gw-modal__head):not(.gw-modal__body) { margin-left: var(--gw-sp-4); margin-right: var(--gw-sp-4); }
+}
+/* botones de menú que trabajan (GW.busy): la misma rueda que .gw-btn */
+.gw-registro .gw-menu__item[aria-busy="true"] { cursor: progress; }
+.gw-registro .gw-menu__item[aria-busy="true"]::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-right: var(--gw-sp-2); vertical-align: -0.15em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: gw-spin 0.8s linear infinite; }
+/* pestaña «Escáner de acceso»: lo que style.css pintaba con colores fijos, a tokens (claro y oscuro) */
+.gw-registro .camera-wrapper { background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); padding: var(--gw-sp-4); }
+.gw-registro #video { display: block; margin-bottom: var(--gw-sp-3); border: 3px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-navy-deep); }
+.gw-registro__result { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-registro__result--ok { color: var(--gw-ok-text); }
+.gw-registro__result--warn { color: var(--gw-warn-text); }
+.gw-registro__result--err { color: var(--gw-err-text); }
+.gw-registro__result--gold { color: var(--gw-gold-text); }
+.gw-registro .scan-compare figure { margin: 0; text-align: center; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-registro .scan-compare img { background: var(--gw-surface-2); border: 1px solid var(--gw-border); }
+.gw-registro .scan-info { font-size: var(--gw-fs-sm); }
+.gw-registro .scan-info dt { color: var(--gw-text-muted); }
+.gw-registro .scan-info dd { color: var(--gw-text); }
+.gw-registro .scan-conf { display: inline-block; padding: 2px var(--gw-sp-3); border-radius: var(--gw-radius-pill); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); border: 1px solid transparent; }
+.gw-registro .scan-conf-high { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-registro .scan-conf-medium { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); }
+.gw-registro .scan-conf-low { background: var(--gw-warn-bg); color: var(--gw-warn-text); border-color: var(--gw-warn-line); }
+.gw-registro .scan-conf-out { background: var(--gw-surface-2); color: var(--gw-text-muted); border-color: var(--gw-border); }
+.gw-registro .scan-cand { background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); padding: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-registro .scan-cand img { background: var(--gw-surface-2); }
+.gw-registro .scan-cand .who { font-size: var(--gw-fs-sm); }
+.gw-registro .scan-cand .gw-btn { flex: none; }

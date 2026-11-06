@@ -58,3 +58,12 @@
 .fs-empty { text-align: center; }
 @media (max-width: 520px) { .fs-main { padding-top: var(--gw-sp-4); gap: var(--gw-sp-5); } .fs-kpi { padding: var(--gw-sp-4); } }
 @media print { .fs-top, .fs-actions { display: none; } }
+
+/* Fase 1.5: lo que antes iba en línea */
+.fs-top__logout { margin: 0; }
+.fs-share { margin-bottom: var(--gw-sp-5); }
+.fs-head__eyebrow, .fs-head__updated { margin: 0; }
+.fs-body { display: flex; flex-direction: column; gap: var(--gw-sp-6); margin-top: var(--gw-sp-5); }
+.fs-cap-one { margin-bottom: var(--gw-sp-4); }
+.fs-top a.gw-btn:hover, .fs-top .gw-btn--secondary:hover { background: var(--gw-nav-hover); }
+.fs-top__brand img { max-width: 40px; }

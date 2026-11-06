@@ -1,3 +1,9 @@
+{# Certificados del evento (Fase 1.5): asistente de 3 pasos (revisar la plantilla, revisar quién recibe, generar el ZIP) + enlace público para que cada persona descargue el suyo.
+   Solo tokens --gw-* y clases .gw-*. La generación del ZIP (html2canvas + jsPDF + JSZip) vive en static/js/certificados.js, igual que antes. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,8 +11,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Certificados | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-certificados.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -16,100 +23,164 @@
     <script src="{{ url_for('static', path='vendor/jspdf-2.5.1.umd.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/jszip-3.10.1.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
-    <script src="{{ url_for('static', path='js/certificate-link.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
-    <style>
-        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
-        .progress { height:10px; background:#eee; border-radius:6px; overflow:hidden; margin-top:0.8rem; }
-        .progress > div { height:100%; width:0; background:var(--golden-primary); transition:width .2s; }
-    </style>
 </head>
-<body class="has-sidebar">
-{% include "_kiosk_top.html" %}
+<body class="gw-page gw-shell has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }}; window.EVENT_CODE = "{{ event.event_code }}"; window.EVENT_FINALIZED = {{ "true" if event.status == "finalizado" else "false" }}; window.CERT_ENABLED = {{ "true" if event.certificates_enabled else "false" }};</script>
 
 <main class="golden-main">
-  <section class="golden-section">
-    <div class="golden-container">
-      <div class="golden-section-title">
-        <span>{{ company_name|upper }}</span>
-        <h2><span class="gradient-text">Certificados</span> del Evento</h2>
+  <div class="gw-container gw-container--narrow gw-stack-lg gw-cert" data-gw-tour="certificados"{% if event.certificates_enabled %} data-gw-tour-auto{% endif %}>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name|upper }}</p>
+        <h1 class="gw-page-head__title">Certificados del evento</h1>
+        <p class="gw-page-head__sub">Genera en un ZIP el certificado en PDF de cada persona con Certificado = Sí.</p>
       </div>
-      <div class="app-container">
-        <div class="card" id="statusCard"></div>
-        <div class="card" id="linkCard"></div>
-        <div id="renderStage" style="position:fixed; left:-20000px; top:0; background:#fff;"></div>
+      {% if event.certificates_enabled %}
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="certificados">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
+      {% endif %}
     </div>
-  </section>
+
+    {% if not event.certificates_enabled %}
+    <div class="gw-state" id="certOff" role="status">
+      <div class="gw-state__icon">{{ ic('badge') }}</div>
+      <h2 class="gw-state__title">El módulo de certificados no está activado</h2>
+      <p class="gw-state__text">Actívalo en los Parámetros del evento para poder generar certificados.</p>
+      <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/parametros">Ir a Parámetros</a>
+    </div>
+    {% else %}
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla" data-gw-tour-step="1" data-gw-tour-title="1. Revisa la plantilla" data-gw-tour-text="Confirma el diseño del certificado. Si hay que cambiarlo, se edita en el diseñador.">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Revisa la plantilla</span>
+        {% call ayuda('ay_cert1', 'Revisa la plantilla') %}Aquí ves el nombre y el tamaño de la plantilla vigente del certificado. El diseño se cambia en «Editar la plantilla».{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Revisa quién recibe</span>
+        {% call ayuda('ay_cert2', 'Revisa quién recibe') %}Reciben certificado las personas del evento marcadas con Certificado = Sí. Esa marca se cambia en el registro o al cargar la base. Esta sección se habilita cuando el evento está Finalizado.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Genera el ZIP</span>
+        {% call ayuda('ay_cert3', 'Genera el ZIP') %}Crea un PDF por persona y los junta en un ZIP que se descarga solo. Con muchas personas puede tardar unos minutos: deja la pestaña abierta hasta que termine.{% endcall %}</li>
+    </ol>
+
+    <section class="gw-card gw-wizard" id="certWizard" aria-labelledby="certStepTitle" data-step="0">
+      <div class="gw-wizard__head">
+        <h2 class="gw-card__title" id="certStepTitle">Revisa la plantilla</h2>
+        <span class="gw-wizard__count" id="certCount" aria-live="polite">Paso 1 de 3</span>
+      </div>
+      <div class="gw-progress" role="progressbar" aria-label="Avance del asistente" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1"><div class="gw-progress__bar" id="certBar"></div></div>
+
+      <div id="statusCard" data-gw-tour-step="2" data-gw-tour-title="2. Avanza paso a paso" data-gw-tour-text="Cada paso muestra lo que necesitas ver antes de continuar. Puedes volver atrás cuando quieras.">
+        <div class="gw-wizard__panel" id="certPanel1" data-panel="1">
+          <div id="tplLoading" class="gw-state" role="status"><div class="gw-spinner" aria-label="Cargando la plantilla"></div></div>
+          <div id="tplError" class="gw-alert gw-alert--err" role="alert" hidden>
+            {{ ic('error') }}
+            <div><div class="gw-alert__title">No se pudo cargar la plantilla</div><div class="gw-alert__body" id="tplErrorText"></div></div>
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tplRetry">Reintentar</button>
+          </div>
+          <div id="tplInfo" class="gw-stack" hidden>
+            <dl class="gw-cert__dl">
+              <dt>Plantilla</dt><dd id="tplName"></dd>
+              <dt>Tamaño</dt><dd id="tplSize"></dd>
+              <dt>Orientación</dt><dd id="tplOrient"></dd>
+              <dt>Última edición</dt><dd id="tplUpdated"></dd>
+            </dl>
+            <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/certificado">{{ ic('edit', 'gw-icon--sm') }} Editar la plantilla</a>
+          </div>
+        </div>
+
+        <div class="gw-wizard__panel" id="certPanel2" data-panel="2" hidden>
+          {% if event.status != "finalizado" %}
+          <div class="gw-alert gw-alert--warn" id="notFinalized" role="status">
+            {{ ic('alert') }}
+            <div><div class="gw-alert__title">El evento todavía no está Finalizado</div><div class="gw-alert__body">Esta sección se habilita cuando el evento está <b>Finalizado</b>. Cambia el estado del evento y vuelve aquí.</div></div>
+          </div>
+          {% else %}
+          <div id="usersLoading" class="gw-state" role="status"><div class="gw-spinner" aria-label="Cargando personas"></div></div>
+          <div id="usersError" class="gw-alert gw-alert--err" role="alert" hidden>
+            {{ ic('error') }}
+            <div><div class="gw-alert__title">No se pudo cargar la lista de personas</div><div class="gw-alert__body" id="usersErrorText"></div></div>
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="usersRetry">Reintentar</button>
+          </div>
+          <div id="usersEmpty" class="gw-state" hidden>
+            <div class="gw-state__icon">{{ ic('users') }}</div>
+            <h3 class="gw-state__title">Nadie tiene Certificado = Sí</h3>
+            <p class="gw-state__text">Marca «Certificado» en las personas que lo recibirán (en el registro o en la carga de la base) y vuelve aquí.</p>
+          </div>
+          <div id="usersInfo" class="gw-stack" hidden>
+            <p class="gw-cert__count"><span id="recipCount">0</span> <span class="gw-text-sm">de <span id="totalCount">0</span> personas reciben certificado</span></p>
+            <ul class="gw-cert__names" id="recipNames" aria-label="Primeras personas de la lista"></ul>
+            <p class="gw-hint" id="recipMore" hidden></p>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="gw-wizard__panel" id="certPanel3" data-panel="3" hidden>
+          <div class="gw-stack">
+            <p>Se creará un PDF por persona y se descargará un ZIP con todos. Deja esta pestaña abierta hasta que termine.</p>
+            <div id="progressHost" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="gw-cert__nav" data-gw-tour-step="3" data-gw-tour-title="3. Genera el ZIP" data-gw-tour-text="En el último paso este botón crea todos los certificados y descarga el ZIP.">
+        <button type="button" class="gw-btn gw-btn--secondary" id="certBack" hidden>Atrás</button>
+        <button type="button" class="gw-btn gw-btn--primary" id="genBtn" data-label="Continuar" data-label-last="Generar ZIP de certificados (PDF)" disabled>Continuar</button>
+      </div>
+    </section>
+
+    <section class="gw-card gw-stack" id="linkCard" aria-labelledby="linkTitle">
+      <div class="gw-row">
+        <h2 class="gw-card__title" id="linkTitle">Enlace para que cada persona descargue su certificado</h2>
+        {% call ayuda('ay_cert_link', 'Enlace público') %}Es un enlace público: quien lo abre no necesita iniciar sesión, escribe su cédula, confirma que es él o ella y descarga su propio certificado. Desde ahí no se puede entrar a nada más de la plataforma. Solo aparecen quienes tengan Certificado = Sí, y cuando el evento esté Finalizado.{% endcall %}
+      </div>
+      <div id="linkLoading" class="gw-state" role="status"><div class="gw-spinner" aria-label="Cargando el enlace"></div></div>
+      <div id="linkNone" class="gw-stack" hidden>
+        <p class="gw-hint">Todavía no hay enlace. Al generarlo, quien lo abra podrá descargar su certificado sin iniciar sesión.</p>
+        <div><button type="button" class="gw-btn gw-btn--secondary" id="clGenerate">{{ ic('link', 'gw-icon--sm') }} Generar enlace</button></div>
+      </div>
+      <div id="linkHave" class="gw-stack" hidden>
+        <div class="gw-cert__link">
+          <label class="gw-sr-only" for="clInput">Enlace público de certificados</label>
+          <input type="text" class="gw-input" id="clInput" readonly>
+          <button type="button" class="gw-btn gw-btn--secondary" id="clCopy">Copiar enlace</button>
+          <a class="gw-btn gw-btn--secondary" id="clOpen" target="_blank" rel="noopener">Abrir</a>
+        </div>
+        <div><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="clRegen">Cambiar enlace</button></div>
+        <p class="gw-hint">Al cambiar el enlace, el anterior deja de funcionar.</p>
+      </div>
+      <div id="linkError" class="gw-alert gw-alert--err" role="alert" hidden>
+        {{ ic('error') }}
+        <div id="linkErrorText"></div>
+      </div>
+    </section>
+    {% endif %}
+
+    <div id="renderStage" class="gw-cert-stage" aria-hidden="true"></div>
+  </div>
 </main>
 
-<script>
-const card = document.getElementById('statusCard');
-const stage = document.getElementById('renderStage');
-const safe = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '');
-
-async function init() {
-  if (!CERT_ENABLED) { card.innerHTML = '<p>El módulo de certificados no está activado en este evento (Parámetros del Evento).</p>'; return; }
-  CertificateLink.mount(document.getElementById('linkCard'), EVENT_ID);
-  if (!EVENT_FINALIZED) { card.innerHTML = '<p>Esta sección se habilita cuando el evento está <strong>Finalizado</strong>. Cambia el estado del evento y vuelve aquí.</p>'; return; }
-  const users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
-  const recipients = users.filter(u => u.certificate);
-  card.innerHTML = `
-    <h4 style="margin:0 0 0.5rem; color:var(--golden-dark);">Generar certificados</h4>
-    <p style="margin:0 0 0.8rem;">Personas con <strong>Certificado = Sí</strong>: <strong>${recipients.length}</strong> de ${users.length}.</p>
-    <button type="button" id="genBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;" ${recipients.length ? '' : 'disabled'}>Generar ZIP de certificados (PDF)</button>
-    <a href="/kiosk/${EVENT_ID}/certificado" style="margin-left:1rem; color:var(--golden-primary); font-weight:600;">Editar la plantilla</a>
-    <div id="progressHost" style="margin-top:0.8rem;"></div>`;
-  document.getElementById('genBtn').addEventListener('click', () => generate(recipients));
-}
-
-async function generate(recipients) {
-  const btn = document.getElementById('genBtn');
-  setButtonLoading(btn, true, 'Generando...');
-  const host = document.getElementById('progressHost'); host.innerHTML = '';
-  const pb = ProgressBar.create(host, { title: 'Generando certificados', stage: 'Preparando…' });
-  try {
-    const tplRes = await fetch(`/api/events/${EVENT_ID}/badge-template?kind=certificate`);
-    if (!tplRes.ok) throw new Error('No se pudo cargar la plantilla del certificado');
-    const template = await tplRes.json();
-    const { jsPDF } = window.jspdf;
-    const zip = new JSZip();
-    const used = new Set();
-    for (let i = 0; i < recipients.length; i++) {
-      const u = recipients[i];
-      pb.update(i / recipients.length, `Generando ${i + 1} de ${recipients.length}: ${u.first_name || ''} ${u.last_name || ''}`);
-      const data = await (await fetch(`/api/users/${encodeURIComponent(u.id)}/badge-print-data?event_id=${EVENT_ID}`)).json();
-      BadgeRender.renderBadge(stage, template, data, { eventId: EVENT_ID });
-      await document.fonts.ready;
-      await Promise.all(Array.from(stage.querySelectorAll('img')).map(img => img.decode ? img.decode().catch(() => {}) : null));
-      const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const w = template.width_mm, h = template.height_mm;
-      const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'mm', format: [w, h] });
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
-      let name = `${safe(u.id)}_${safe(u.first_name)}_${safe(u.last_name)}.pdf`;
-      for (let n = 2; used.has(name); n++) name = name.replace(/(_\d+)?\.pdf$/, `_${n}.pdf`);
-      used.add(name);
-      zip.file(name, pdf.output('arraybuffer'));
-    }
-    pb.update(0.99, 'Comprimiendo…');
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Certificados_${EVENT_CODE}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    pb.finish(`Listo: ${recipients.length} certificados en el ZIP.`);
-    showToast('ZIP de certificados generado', 'success');
-  } catch (e) {
-    showToast(e.message || 'No se pudieron generar los certificados', 'error');
-    pb.fail(e.message || 'No se pudieron generar los certificados');
-  }
-  setButtonLoading(btn, false);
-  stage.innerHTML = '';
-}
-
-init();
-</script>
+<script src="{{ url_for('static', path='js/certificados.js') }}"></script>
 </body>
 </html>

@@ -263,3 +263,8 @@ gcloud billing budgets list --billing-account <ID de la cuenta de facturación> 
 10. **J** Dominio (Firebase + Cloudflare gris) y prueba de IP.
 11. **J** Monitores (Google ya creados; UptimeRobot a `/health`).
 12. *(Presupuesto: ya existe a nivel de la cuenta; nada que hacer.)*
+
+
+## Despliegue manual sin GitHub Actions (plan B)
+
+Si Actions no está disponible (el 5-nov-2026 estuvo bloqueado por facturación de la cuenta de GitHub), `deploy/gcp/manual_deploy.sh <staging|production> <ID-del-proyecto>` hace lo mismo que el workflow desde Cloud Shell: construye la imagen, la sube (de a una capa y con reintentos), corre `deploy.sh` y publica Firebase Hosting. Se lanza con `nohup ... &` para que sobreviva a una desconexión; la primera construcción tarda 20-60 min por dlib. Producción respeta el congelamiento (`FORCE=1` lo salta, solo con orden de Juan David). Las pruebas (CI) NO corren en este camino: correrlas antes o revisar a mano en staging.
