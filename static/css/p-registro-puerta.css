@@ -1,0 +1,82 @@
+/* Registro del digitador, Fase 1.7 Ola 1A (remodelado de puerta): una cosa grande y sencilla. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); se carga después de registro.css.
+   Es solo disposición: no cambia ids, atributos, clases que usa el JS ni la lógica. Las filas del directorio siguen siendo <tr>/<td> (directory.js); aquí se dibujan como tarjetas de persona. */
+
+/* ---- Barra de arriba: buscador gigante + Escanear + Registrar nuevo ---- */
+.gw-registro .gw-workarea__bar .gw-toolbar { align-items: stretch; gap: var(--gw-sp-3); }
+.gw-registro .gw-workarea__bar .gw-toolbar__grow { flex: 1 1 22rem; min-width: 0; }
+.gw-registro .gw-workarea__bar .gw-toolbar__actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--gw-sp-3); }
+.gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn,
+.gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-menu__btn { min-height: var(--gw-tap-lg); }
+.gw-registro .gw-search--hero .gw-search__field .gw-input { padding-left: calc(var(--gw-sp-5) + 2rem); }            /* aunque el modo «solo lector» envuelva la caja, la lupa no pisa el texto */
+.gw-registro .gw-search--hero .gw-search__field .sp-kbd-wrap { display: flex; flex: 1 1 auto; min-width: 0; }
+.gw-registro .gw-search--hero .gw-label { font-size: var(--gw-fs-md); }
+
+/* ---- Estado de conexión (palabras + ícono + color) ---- */
+.gw-registro__headside { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gw-sp-3); }
+.gw-registro #gwConn { font-size: var(--gw-fs-md); min-height: 2.5rem; padding: var(--gw-sp-1) var(--gw-sp-4); }
+
+/* ---- Veredicto (acreditado / ya registrado / no está): banda debajo del buscador ---- */
+.gw-registro #gwVerdict { margin: 0; }
+.gw-registro #gwVerdict .gw-verdict__title { font-size: var(--gw-fs-2xl); }
+.gw-registro #gwVerdict .gw-verdict__aside .gw-btn { min-height: var(--gw-tap-lg); }
+
+/* ---- Cada persona del directorio = una tarjeta (las filas siguen siendo <tr>; la tabla es solo el contenedor) ---- */
+body.gw-registro .gw-reg__list { padding: var(--gw-sp-3) var(--gw-sp-4); }
+body.gw-registro .gw-reg__list .golden-table thead { display: none; }
+body.gw-registro .gw-reg__list .golden-table,
+body.gw-registro .gw-reg__list .golden-table tbody { display: block; width: 100%; max-width: 100%; }
+body.gw-registro .gw-reg__list .golden-table tbody tr { display: block; }
+body.gw-registro .gw-reg__list .golden-table tbody tr td[colspan] { display: block; }
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-1) var(--gw-sp-4); margin: 0 0 var(--gw-sp-3); padding: var(--gw-sp-4) var(--gw-sp-5);
+  color: var(--gw-text); border: 1px solid var(--gw-border); border-left: 6px solid var(--gw-info-line); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm);
+}
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { background-color: var(--gw-surface) !important; }
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado { background-color: var(--gw-ok-bg) !important; border-left-color: var(--gw-ok-line); }
+body.gw-registro .gw-reg__list .golden-table tbody tr td { display: block; padding: 0; border: 0; background: transparent; min-width: 0; color: var(--gw-text); font-size: var(--gw-fs-md); overflow-wrap: anywhere; word-break: normal; }
+body.gw-registro .gw-reg__list .golden-table tbody tr td.touch-only { display: block; }
+body.gw-registro .gw-reg__list .golden-table tbody tr td:empty { display: none; }
+/* nombre grande, estado a la derecha, datos debajo, acciones al final */
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 1; font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { order: 2; margin-left: auto; padding: var(--gw-sp-1) var(--gw-sp-3); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); color: var(--gw-text); font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado td[data-field=status] { background: var(--gw-ok-bg); color: var(--gw-ok-text); border: 2px solid var(--gw-ok-line); }
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 3; flex-basis: 100%; font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id],
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 4; color: var(--gw-text-muted); white-space: nowrap; }
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id]::before { content: "C.C. "; font-weight: var(--gw-fw-bold); }
+body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] .gw-origin { display: block; width: fit-content; margin: var(--gw-sp-1) 0 0; }
+body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 10; flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); min-width: 0; width: auto; white-space: normal; }
+/* botones grandes: Acreditar (principal) e Imprimir (solo apariencia); Editar y Más quedan al tamaño normal */
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn { flex: 0 1 auto; min-height: var(--gw-tap); }
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { flex: 1 1 12rem; min-height: var(--gw-tap-lg); padding: var(--gw-sp-3) var(--gw-sp-6); font-size: var(--gw-fs-xl); }
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl.btn-accredit-row.is-done:disabled { opacity: 1; background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl[title='Imprimir escarapela'] { flex: 1 1 12rem; font-size: var(--gw-fs-xl) !important; }
+/* el texto de los botones siempre se ve (antes quedaba solo el ícono en pantallas justas) */
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn:not(.gw-btn--xl) { padding: 0 var(--gw-sp-4); }
+/* filas de aviso de la lista (cargando, sin resultados, copia local, paginador) */
+body.gw-registro .gw-reg__list .golden-table tbody tr.directory-more td,
+body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { display: block; text-align: center; }
+
+/* ---- Ventana «Registrar nuevo»: lo mínimo arriba, lo demás plegado ---- */
+.gw-registro #registerModal .gw-registro__modalhead .gw-btn { min-height: var(--gw-tap-lg); }
+.gw-registro #registerModal .gw-form-group { margin-top: var(--gw-sp-4); }
+.gw-registro #registerModal .gw-form-group__body > .gw-field:first-child { margin-top: var(--gw-sp-2); }
+.gw-registro #registerModal #dynamicFieldsContainer .gw-input { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
+
+@media (max-width: 640px) {
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions { width: 100%; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn,
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-menu { flex: 1 1 100%; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-menu__btn { width: 100%; }
+  body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
+  body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { padding: var(--gw-sp-3) var(--gw-sp-4); }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { flex-basis: 100%; }
+}
+
+/* movimiento: ninguno si la persona lo pidió (el aviso de veredicto ya trae su animación corta de design-system.css) */
+@media (prefers-reduced-motion: reduce) {
+  .gw-registro #gwVerdict { animation: none; }
+}

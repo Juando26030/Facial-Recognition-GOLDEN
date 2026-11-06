@@ -147,17 +147,20 @@
   const jsonOf = async (r) => { try { return (await r.json()) || {}; } catch (e) { return {}; } };
   const primePrint = () => { if (window.BadgePrint && BadgePrint.primeWindow) { try { BadgePrint.primeWindow(); } catch (e) { /* sin ventana preparada */ } } };       // dentro del gesto del usuario (ver badge-render.js)
   const cancelPrimedPrint = () => { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); };
+  /* Veredicto grande (static/js/registro-veredicto.js, Fase 1.7): solo muestra el resultado con ícono y palabras; los avisos de siempre (toasts) y el flujo no cambian. Sin la banda, no hace nada. */
+  const verdict = (kind, title, text) => { try { if (typeof window !== 'undefined' && window.GWVerdict) window.GWVerdict.show(kind, title, text); } catch (e) { /* sin banda: nada */ } };
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
     const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
-    if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return null; }
-    if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return null; }
-    if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return null;
+    if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); verdict('err', 'Verificar manualmente', 'No hay copia local vigente de la lista.'); return null; }
+    if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); verdict('err', 'No está en la lista', 'Verificar manualmente.'); return null; }
+    if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) { verdict('warn', 'Ya estaba registrado(a)', found.person.n); return null; }
     const tm = window.RegTimer ? RegTimer.payload() : null;          // 1A: tiempo medido; viaja en la cola y se envía al sincronizar
     await GC.enqueue(found, method, cid, tm);
     if (window.RegTimer) RegTimer.done();
     lastAccredit = { cid, name: found.person.n, offline: true, at: Date.now() };
     showToast(`Acreditado: ${found.person.n}`, 'success');
+    verdict('ok', 'Acreditado(a)', `${found.person.n} · sin conexión: queda guardado y se envía solo al volver la red`);
     accreditHooks.forEach((f) => f(found));
     return found;
   }
@@ -682,7 +685,7 @@
     /* «Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
     if (rowAccredit) {
       const done = user.status === 'Registrado' || user.status === 'Nuevo';
-      const acc = actBtn(done ? 'Acreditado' : 'Acreditar', 'check', 'gw-btn gw-btn--secondary btn-table-action btn-accredit-row' + (done ? ' is-done' : ''), done ? 'Ya acreditado' : 'Acreditar a esta persona', (done ? 'Ya acreditado: ' : 'Acreditar a ') + ([user.first_name, user.last_name].filter(Boolean).join(' ') || 'la persona'));
+      const acc = actBtn(done ? 'Acreditado' : 'Acreditar', 'check', 'gw-btn ' + (done ? 'gw-btn--secondary' : 'gw-btn--primary') + ' gw-btn--xl btn-table-action btn-accredit-row' + (done ? ' is-done' : ''), done ? 'Ya acreditado' : 'Acreditar a esta persona', (done ? 'Ya acreditado: ' : 'Acreditar a ') + ([user.first_name, user.last_name].filter(Boolean).join(' ') || 'la persona'));
       acc.disabled = done;
       if (!done) acc.addEventListener('click', () => rowAccredit(user, acc));
       actionTd.appendChild(acc);
@@ -694,7 +697,7 @@
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
     const who = [user.first_name, user.last_name].filter(Boolean).join(' ');
     if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {
-      const printBtn = actBtn('Imprimir', 'printer', 'gw-btn gw-btn--secondary btn-table-action', 'Imprimir escarapela', 'Imprimir escarapela' + (who ? ' de ' + who : ''));
+      const printBtn = actBtn('Imprimir', 'printer', 'gw-btn gw-btn--secondary gw-btn--xl btn-table-action', 'Imprimir escarapela', 'Imprimir escarapela' + (who ? ' de ' + who : ''));
       printBtn.addEventListener('click', () => { if (window.BadgePrint) BadgePrint.openPrintWindow(user.id); });
       actionTd.appendChild(printBtn);
     }
@@ -1276,19 +1279,20 @@
     async function offlineCheckin(GC, cedula, method, cid) {
       if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
       const found = await GC.scanLocal(cedula);
-      if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return; }
-      if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return; }
+      if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); verdict('err', 'Verificar manualmente', 'No hay copia local vigente de la lista.'); return; }
+      if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); verdict('err', 'No está en la lista', 'Verificar manualmente.'); return; }
       if (cedulaInput) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); applyFilters(); }          // la huella ya se conoce: el filtro de la lista local es inmediato
       const tbody = document.getElementById(opts.tbodyId);
       const row = tbody && (tbody.querySelector(`tr[data-user-id="${CSS.escape(found.cedula)}"]`) || tbody.querySelector(`tr[data-h="${found.person.h}"]`));
       const actionTd = row ? row.querySelector('.action-cell') : null;
       if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
         const btn = document.createElement('button');
-        btn.type = 'button'; btn.innerText = 'Acreditar'; btn.className = 'gw-btn gw-btn--secondary btn-table-action btn-accredit-pending';
+        btn.type = 'button'; btn.innerText = 'Acreditar'; btn.className = 'gw-btn gw-btn--primary gw-btn--xl btn-table-action btn-accredit-pending';
         btn.addEventListener('click', async () => { btn.disabled = true; btn.innerText = 'Acreditando...'; await offlineAccredit(GC, { cedula: found.cedula }, method, newClientId()); });
         actionTd.appendChild(btn);
       }
       showToast(`${found.person.n} encontrado(a) — el modo autoregistro está apagado: confirma con "Acreditar" en la fila`, 'success');
+      verdict('info', 'Encontrado(a): confirma', `${found.person.n} · pulsa «Acreditar» en su tarjeta`);
     }
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
@@ -1319,21 +1323,23 @@
           if (!res || [502, 503, 504].includes(res.status)) {          // agotó sus reintentos: 2 seguidos activan la contingencia y ESTE escaneo ya se atiende sin red
             GC.noteScanExhausted();
             if (GC.active()) return offlineCheckin(GC, cedula, method, cid);
-            if (!res) { showToast('Error de red', 'error'); return; }
+            if (!res) { showToast('Error de red', 'error'); verdict('err', 'Sin conexión con el servidor', 'Revisa la red e inténtalo de nuevo.'); return; }
           } else if (res.status < 500 && res.status !== 401 && res.status !== 403) GC.noteAuthGood();
         }
         const data = await res.json();
-        if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
+        if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); verdict('err', 'No se pudo acreditar', data.detail || ''); return; }
         if (data.result === 'DUPLICADO') {
           cancelPrimedPrint();                                      // mientras se pregunta no queda una ventana en blanco abierta
           const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
           if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
+          else verdict('warn', 'Ya estaba registrado(a)', `${[data.data.first_name, data.data.last_name].filter(Boolean).join(' ')} · no se volvió a acreditar`.replace(/^ · /, ''));
           return;
         }
         if (data.result === 'MISSING_REQUIRED') {
           // A3 (26-oct-2026): falta un campo OBLIGATORIO (p. ej. se marcó obligatorio después de cargar la base): NO se acredita. Se dice cuál y se abre «Editar persona» con el foco en el
           // primer campo vacío; al guardar queda acreditado(a) en el mismo paso y la autoimpresión imprime después, con el dato ya lleno.
           showToast(data.details || `Falta el campo obligatorio: ${(data.missing || []).map((m) => m.label).join(', ')}`, 'warning');
+          verdict('warn', 'Falta un dato obligatorio', (data.missing || []).map((m) => m.label).join(', '));
           await reload();
           const person = allUsers.find((u) => u.id === data.data.id) || Object.assign({ status: 'No registrado' }, data.data);
           buildEditModal(person, { missing: data.missing || [], method });
@@ -1344,6 +1350,7 @@
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          verdict('ok', 'Acreditado(a)', `${data.data.first_name} ${data.data.last_name}`.trim());
           if (window.RegTimer) RegTimer.done();
           Recent.add(data.data.id);
           lastAccredit = { cid, id: data.data.id, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
@@ -1369,7 +1376,7 @@
             const acreditarBtn = document.createElement('button');
             acreditarBtn.type = 'button';
             acreditarBtn.innerText = 'Acreditar';
-            acreditarBtn.className = 'gw-btn gw-btn--secondary btn-table-action btn-accredit-pending';
+            acreditarBtn.className = 'gw-btn gw-btn--primary gw-btn--xl btn-table-action btn-accredit-pending';
             acreditarBtn.addEventListener('click', async () => {
               acreditarBtn.disabled = true; acreditarBtn.innerText = 'Acreditando...';
               await fastCheckin(data.data.id, false, null, true, method);
@@ -1377,6 +1384,7 @@
             actionTd.appendChild(acreditarBtn);
           }
           showToast(`${data.data.first_name} ${data.data.last_name} encontrado(a) — confirma con "Acreditar" en la fila`, 'success');
+          verdict('info', 'Encontrado(a): confirma', `${data.data.first_name} ${data.data.last_name}`.trim() + ' · pulsa «Acreditar» en su tarjeta');
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos ya están guardados`, 'success');
           }
@@ -1398,11 +1406,15 @@
               : `Cédula no encontrada y sin coincidencias por nombre para "${fullName}"`,
             found ? 'success' : 'error'
           );
+          if (found) verdict('info', 'Cédula no encontrada', `Mostrando coincidencias por nombre para «${fullName}»`);
+          else verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`);
         } else {
           showToast(data.details || 'Cédula no encontrada', 'error');
+          verdict('err', 'No está en la lista', 'Cédula no encontrada. Si es una persona nueva, usa «Registrar nuevo».');
         }
       } catch (e) {
         showToast('Error de red', 'error');
+        verdict('err', 'Error de red', 'Revisa la conexión e inténtalo de nuevo.');
       }
     }
 
