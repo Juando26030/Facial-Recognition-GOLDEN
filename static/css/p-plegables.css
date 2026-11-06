@@ -1,0 +1,12 @@
+/* Información anidada plegable: una línea resumen por elemento y, al tocarla, el detalle completo. Solo tokens --gw-*. */
+.gwp-fold { background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); margin-bottom: var(--gw-sp-2); }
+.gwp-fold__sum { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gw-sp-2) var(--gw-sp-3); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-4); list-style: none; cursor: pointer; border-radius: var(--gw-radius-md); }
+.gwp-fold__sum::-webkit-details-marker { display: none; }
+.gwp-fold__sum::before { content: ""; flex: none; width: 0.5em; height: 0.5em; border-right: 3px solid currentColor; border-bottom: 3px solid currentColor; transform: rotate(-45deg); transition: transform var(--gw-dur); }
+.gwp-fold[open] > .gwp-fold__sum { background: var(--gw-surface-2); border-bottom: 1px solid var(--gw-border); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.gwp-fold[open] > .gwp-fold__sum::before { transform: rotate(45deg); }
+.gwp-fold__sum:hover { background: var(--gw-surface-2); }
+.gwp-fold__sum:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gwp-fold__name { font-weight: var(--gw-fw-bold); margin-right: auto; min-width: 8em; overflow-wrap: anywhere; }
+.gwp-fold__meta { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gwp-fold__body { padding: var(--gw-sp-3) var(--gw-sp-4) var(--gw-sp-4); }

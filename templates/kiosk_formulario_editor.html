@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-editor-form.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-plegables.css') }}">
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
@@ -149,8 +150,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </div>
         </details>
 
-        <details class="gw-group" open>
-          <summary class="gw-group__sum"><span class="gw-group__title">Cupos por variables</span><span class="gw-group__hint">Un máximo de inscripciones para quienes cumplan ciertas condiciones.</span></summary>
+        <details class="gw-group" id="qGroup" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Cupos por variables</span><span class="gw-badge gw-badge--info" id="qGroupCount" hidden></span><span class="gw-group__hint">Un máximo de inscripciones para quienes cumplan ciertas condiciones.</span></summary>
           <div class="gw-group__body">
             <div class="gw-group__item">
               <p class="gw-hint">Cada cupo pone un máximo de inscripciones a quienes cumplan una o varias condiciones (por ejemplo «Categoría = VIP» y «País = Colombia»). Funciona aunque no pongas cupo total; si pones los dos, se aplican los dos. Una inscripción cuenta en TODOS los cupos que cumple.</p>
@@ -1427,14 +1428,23 @@ function qValueHtml(c, ri, ci) {
   return `<input type="text" data-qv="${ri}.${ci}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
 }
 let quotaMounts = [];
+const quotaOpen = new WeakSet();   // cupos abiertos por la persona: se conserva entre repintados (las reglas son los mismos objetos)
+const QSTATUS = { activo: 'Activo', cerrado: 'Cerrado', finalizado: 'Finalizado', pruebas: 'En pruebas' };
+function quotaSumHtml(r, stt) {   // UNA línea: nombre, máximo, estado y alerta de cierre
+  const closed = r.limit === 0, stName = r.use_schedule ? 'Por fechas' : (QSTATUS[r.status || 'activo'] || 'Activo');
+  const tone = closed || r.status === 'cerrado' || r.status === 'finalizado' ? 'err' : (r.use_schedule || r.status === 'pruebas' ? 'warn' : 'ok');
+  return `<span class="gwp-fold__name">${esc(r.label || 'Cupo sin nombre')}</span><span class="gwp-fold__meta">${closed ? 'Cerrado temporalmente' : (r.limit == null ? 'sin máximo' : `máximo ${r.limit}`)}${stt ? ` · ${stt.used} inscritos` : ''}</span><span class="gw-badge gw-badge--${tone}">${esc(stName)}</span>${closeAlertHtml(r.closes_at)}`;
+}
+function openQuotaAt(i) { const r = ((settings.quotas || {}).rules || [])[i]; if (!r) return; quotaOpen.add(r); const d = $('qRules').querySelector(`[data-qrule="${i}"]`); if (d) d.open = true; const g = $('qGroup'); if (g) g.open = true; }
 function closeAlertHtml(v) {   // misma regla que en estadísticas: verde > 5 días, amarillo entre 2 y 5, rojo con 1 día o menos (o ya pasó); con ícono y texto, no solo color
   const t = v ? new Date(v) : null; if (!t || isNaN(t)) return '';
   const d = (t - new Date()) / 864e5, tone = d > 5 ? 'ok' : d > 1 ? 'warn' : 'err', n = Math.ceil(d);
   return `<span class="gw-badge gw-badge--${tone}">${window.gwIcon('alert')} ${d < 0 ? 'La fecha ya pasó' : d < 1 ? 'Falta menos de 1 día' : `Faltan ${n} ${n === 1 ? 'día' : 'días'}`}</span>`;
 }
+let quotaGroupSeen = false;
 function paintQuotas() {
   const rules = ((settings && settings.quotas) || {}).rules || [], st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])), fields = qFields();
-  $('qRules').innerHTML = rules.map((r, ri) => `<div class="gwe-b-1px-solid-border gwe-r-radius-md gwe-p-sp-2 gwe-mb-sp-2 gwe-d-grid gwe-gap-sp-2">
+  $('qRules').innerHTML = rules.map((r, ri) => `<details class="gwp-fold" data-qrule="${ri}"${quotaOpen.has(r) ? ' open' : ''}><summary class="gwp-fold__sum">${quotaSumHtml(r, st[r.id])}</summary><div class="gwp-fold__body gwe-d-grid gwe-gap-sp-2">
     <div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap"><input type="text" data-ql="${ri}" value="${esc(r.label)}" placeholder="Nombre del cupo (ej. VIP Colombia)" class="gwe-flex-1 gwe-minw-180px">
       <span class="gwe-fs-fs-sm">máximo</span><input type="number" min="0" data-qn="${ri}" value="${r.limit ?? ''}" class="gwe-w-90px"><span data-qclosed="${ri}" class="hint gwe-closed-flag"${r.limit === 0 ? '' : ' hidden'}>Cerrado temporalmente</span>
       ${st[r.id] ? `<span class="hint">${st[r.id].used} inscritos · quedan ${st[r.id].left}</span>` : ''}<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-qdel="${ri}">Quitar cupo</button></div>
@@ -1455,10 +1465,12 @@ function paintQuotas() {
       <span class="hint">Igual que el formulario: con calendario, fuera de cualquier tramo el cupo queda cerrado. Si el formulario general está cerrado o finalizado, todo está cerrado aunque este cupo esté activo; y si este cupo se cierra, el formulario sigue abierto para los demás.</span></div>
     <div class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm"><span class="gw-label">Mensaje cuando este cupo esté lleno</span><div data-qmsgrt="${ri}" class="gw-no-theme"></div>
       <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span>
-      <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></div></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+      <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></div></div></details>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
   $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
   const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
   const box = $('qRules');
+  const gc = $('qGroupCount'); if (gc) { gc.hidden = !rules.length; gc.textContent = `${rules.length} ${rules.length === 1 ? 'cupo' : 'cupos'}`; }
+  if (!quotaGroupSeen && rules.length) { quotaGroupSeen = true; if (rules.length > 5) $('qGroup').open = false; }   // con muchos cupos el grupo arranca cerrado
   box.querySelectorAll('[data-ql]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.ql].label = el.value; }));
   box.querySelectorAll('[data-qn]').forEach((el) => el.addEventListener('input', () => {
     const i = +el.dataset.qn, n = el.value.trim() === '' ? null : Math.max(0, Math.floor(Number(el.value)));   // vacío = sin máximo (se quita al guardar); 0 = cerrado
@@ -1484,9 +1496,12 @@ function paintQuotas() {
   box.querySelectorAll('[data-qv]').forEach((el) => { const [r, c] = ix(el.dataset.qv); el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { const cd = R()[r].conds[c]; cd.value = cd.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value; }); });
   box.querySelectorAll('[data-qin]').forEach((el) => el.addEventListener('change', () => { const [r, c] = ix(el.dataset.qin); R()[r].conds[c].value = Array.from(box.querySelectorAll(`[data-qin="${el.dataset.qin}"]:checked`)).map((x) => x.value); }));
 }
+$('qRules').addEventListener('toggle', (e) => { const d = e.target; if (!d.matches || !d.matches('[data-qrule]')) return; const r = ((settings.quotas || {}).rules || [])[+d.dataset.qrule]; if (r) { if (d.open) quotaOpen.add(r); else quotaOpen.delete(r); } }, true);
+const quotaSumRefresh = (e) => { const d = e.target.closest && e.target.closest('[data-qrule]'); if (!d) return; const i = +d.dataset.qrule, r = ((settings.quotas || {}).rules || [])[i]; if (!r) return; const st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])); d.querySelector('.gwp-fold__sum').innerHTML = quotaSumHtml(r, st[r.id]); };
+$('qRules').addEventListener('input', quotaSumRefresh); $('qRules').addEventListener('change', quotaSumRefresh);
 $('qAdd').addEventListener('click', () => {
   const fields = qFields(); if (!fields.length) { showToast('Agrega primero campos al formulario', 'error'); return; }
-  settings.quotas = settings.quotas || { rules: [] }; settings.quotas.rules.push({ label: '', message: '', match: 'all', limit: 50, conds: [{ field: fields[0].id, op: 'equals', value: '' }] }); paintQuotas();
+  settings.quotas = settings.quotas || { rules: [] }; settings.quotas.rules.push({ label: '', message: '', match: 'all', limit: 50, conds: [{ field: fields[0].id, op: 'equals', value: '' }] }); quotaOpen.add(settings.quotas.rules[settings.quotas.rules.length - 1]); $('qGroup').open = true; paintQuotas();
 });
 $('qQuick').addEventListener('click', () => {
   const f = design.fields[$('qQuickField').value]; if (!f) { showToast('Elige el campo', 'error'); return; }
@@ -1514,9 +1529,9 @@ const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChan
 const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
 const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
 async function saveConfig(opts = {}) {
-  for (const r of ((settings.quotas || {}).rules || [])) {      // calendario de cada cupo: tramos completos y con fin posterior al inicio (si no, el servidor los descartaría sin avisar)
+  for (const [qi, r] of ((settings.quotas || {}).rules || []).entries()) {      // calendario de cada cupo: tramos completos y con fin posterior al inicio (si no, el servidor los descartaría sin avisar)
     for (const t of (r.use_schedule ? (r.schedule || []) : [])) {
-      if (!t.from || !t.to || t.to <= t.from) { showToast(`El calendario del cupo «${r.label || 'sin nombre'}» tiene un tramo incompleto o con el cierre antes de la apertura`, 'error'); return false; }
+      if (!t.from || !t.to || t.to <= t.from) { openQuotaAt(qi); showToast(`El calendario del cupo «${r.label || 'sin nombre'}» tiene un tramo incompleto o con el cierre antes de la apertura`, 'error'); return false; }
     }
   }
   const payload = {
