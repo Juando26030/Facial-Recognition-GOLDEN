@@ -242,3 +242,17 @@ def test_list_is_not_redrawn_under_the_finger_so_the_touch_scroll_is_not_cancell
     css = pathlib.Path("static/css/p-registro-puerta.css").read_text(encoding="utf-8")
     assert "touch-action: manipulation" in css
     assert "preventDefault" not in "".join(l for l in js.splitlines() if "touchstart" in l or "touchmove" in l)
+
+
+def test_m10_person_card_compact_kebab_and_loose_badges():
+    """M10: tarjeta compacta (nombre en una línea, cédula+estado+origen sueltos, acciones en una fila con «Más» como tres puntos) y CSS bien cerrado."""
+    css = (ROOT / "static" / "css" / "p-registro-puerta.css").read_text(encoding="utf-8")
+    assert css.count("{") == css.count("}"), "llaves balanceadas: un bloque sin cerrar dejó las reglas de M2/M4 dentro de prefers-reduced-motion"
+    assert "'more'" in DIR_JS and "gw-menu__btn--kebab" in DIR_JS and 'aria-expanded' in DIR_JS and "'Escape'" in DIR_JS and "ArrowDown" in DIR_JS
+    assert 'id="i-more"' in (ROOT / "static" / "img" / "icons.svg").read_text(encoding="utf-8")
+    row = DIR_JS[DIR_JS.index("function buildRow"):DIR_JS.index("function renderRows")]
+    assert "dataset.field = 'origin'" in row and "['recent', 'reason']" in row, "origen, «Recién registrado» y motivo van en casillas propias (sin insignias anidadas en el estado)"
+    assert "statusTd.appendChild" not in row
+    for rule in ("td[data-field=origin]", "td[data-field=recent]", "text-overflow: ellipsis", ".gw-menu__btn--kebab", "flex-wrap: nowrap"):
+        assert rule in css, rule
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css), "solo tokens --gw-*"

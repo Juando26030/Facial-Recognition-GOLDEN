@@ -56,7 +56,7 @@ window.SearchCore = require('../../static/js/search-core.js');
 eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 const rows = () => els.tbody.children.filter((tr) => tr.className !== 'directory-more' && tr.className !== 'directory-local-note');
 const ids = () => rows().map((tr) => tr.dataset.userId);
-const nameTd = (tr) => tr.children[2];
+const nameTd = (tr) => tr.children.find((c) => c.dataset && c.dataset.field === 'reason');          // el motivo vive en su casilla propia (data-field=reason)
 const reasonOf = (tr) => nameTd(tr).children.filter((c) => c.className.includes('gw-reason')).map((c) => c.textContent);
 const type = (el, text) => { el.value = text; el.listeners.input(); advance(250); };
 const enter = (el, text) => { el.value = text; let prevented = false; el.listeners.keydown({ key: 'Enter', preventDefault() { prevented = true; }, stopPropagation() {} }); return prevented; };
