@@ -70,7 +70,7 @@
     var sc = q.schedule, NAMES = { cerrado: 'Cerrado', finalizado: 'Finalizado', pruebas: 'En pruebas' };
     nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 && !(sc && sc.state !== 'abierto') ? 'Cerrado temporalmente' : (sc && sc.state !== 'abierto') ? NAMES[sc.state] : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
     card.appendChild(nums);
-    if (sc && sc.state === 'abierto' && sc.closes) card.appendChild(el('p', 'fs-cap__rule', 'Cierra el ' + when(sc.closes)));
+    if (sc && sc.state === 'abierto' && sc.closes) card.appendChild(el('p', 'fs-cap__rule', (sc.enforced === false ? 'Fecha de cierre prevista: ' : 'Cierra el ') + when(sc.closes)));
     else if (sc && sc.state === 'cerrado') card.appendChild(el('p', 'fs-cap__rule', sc.opens ? 'Abre el ' + when(sc.opens) : 'Cerrado por ahora'));
     card.appendChild(track(q.pct, tone(q.pct, q.full), 'Cupo ' + q.label));
     return card;

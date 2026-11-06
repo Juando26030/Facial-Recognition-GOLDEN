@@ -1440,6 +1440,8 @@ function paintQuotas() {
     ${r.conds.length < 6 ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-js-start" data-qca="${ri}">+ Otra condición</button>` : ''}
     <div class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm"><span class="gw-label">Estado de este cupo</span>
       <select data-qst="${ri}" class="gwe-maxw-300px">${[['activo', 'Activo (recibe inscripciones)'], ['cerrado', 'Cerrado'], ['finalizado', 'Finalizado'], ['pruebas', 'En pruebas']].map(([v, l]) => `<option value="${v}" ${(r.status || 'activo') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <div class="sched"><div class="fld"><label>Fecha de cierre (opcional)</label><input type="datetime-local" data-qcl="${ri}" value="${esc(r.closes_at || '')}"></div>
+        <label class="gw-check"><input type="checkbox" data-qce="${ri}" ${r.closes_enforce ? 'checked' : ''}> Cerrar este cupo en esa fecha (si no, es solo un aviso: se ve en las estadísticas pero no cierra)</label></div>
       <label class="gw-check"><input type="checkbox" data-qus="${ri}" ${r.use_schedule ? 'checked' : ''}> Programar el estado de este cupo por fechas (el estado de arriba se ignora)</label>
       ${r.use_schedule ? `${(r.schedule || []).map((t, ti) => `<div class="sched"><div class="fld"><label>Estado</label><select data-qs="${ri}.${ti}" data-k="status">${['activo', 'cerrado', 'finalizado', 'pruebas'].map((v) => `<option ${t.status === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
         <div class="fld"><label>Desde</label><input type="datetime-local" data-qs="${ri}.${ti}" data-k="from" value="${esc(t.from)}"></div><div class="fld"><label>Hasta</label><input type="datetime-local" data-qs="${ri}.${ti}" data-k="to" value="${esc(t.to)}"></div>
@@ -1462,6 +1464,8 @@ function paintQuotas() {
   quotaMounts.forEach((m) => m.destroy()); quotaMounts = [];
   box.querySelectorAll('[data-qmsgrt]').forEach((el) => { const i = +el.dataset.qmsgrt; quotaMounts.push(RichText.mount(el, { basic: true, value: R()[i].message || '', label: 'Mensaje cuando este cupo esté lleno', onChange: (v) => { R()[i].message = v; } })); });   // con formato: negrilla, cursiva, subrayado, color
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
+  box.querySelectorAll('[data-qcl]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qcl].closes_at = el.value; }));
+  box.querySelectorAll('[data-qce]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qce].closes_enforce = el.checked; }));
   box.querySelectorAll('[data-qst]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qst].status = el.value; }));
   box.querySelectorAll('[data-qus]').forEach((el) => el.addEventListener('change', () => { const r = R()[+el.dataset.qus]; r.use_schedule = el.checked; if (el.checked && !(r.schedule || []).length) r.schedule = [{ status: 'activo', from: '', to: '' }]; paintQuotas(); }));
   box.querySelectorAll('[data-qs]').forEach((el) => el.addEventListener('input', () => { const [r, t] = ix(el.dataset.qs); R()[r].schedule[t][el.dataset.k] = el.value; }));
