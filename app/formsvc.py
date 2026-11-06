@@ -389,13 +389,17 @@ def mark_counts(db: Session, form: WebForm) -> dict:
     return {"block": int(rows.get(PREREGISTERED, 0)), "hold": int(rows.get("confirmed", 0))}
 
 
-def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ftype: str, replace: bool, hold: bool) -> dict:
+def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ftype: str, replace: bool, hold: bool, extras: Optional[dict] = None) -> dict:
     """Carga/recarga la lista de «ya registrados» de ESTE formulario. `values` = cédulas (`kind='cedula'`, `fid` = campo de cédula) o valores del campo identificador (`kind='field'`).
     `replace`: antes quita las marcas previas; si no, solo agrega. `hold`: las filas son inscripciones confirmadas (ocupan cupo, `form_reserve_slot` y `held_count` ya las cuentan);
     si no, solo bloquean (estado `preregistered`, no ocupan cupo). Todo ocurre con la fila del formulario BLOQUEADA, así que ningún envío simultáneo ve la lista a medias ni vende
-    de más. Idempotente. Devuelve conteos: added, converted, existing, removed, skipped."""
+    de más. Idempotente. Devuelve conteos: added, converted, existing, removed, skipped.
+    `extras` = {valor tal como viene en el archivo: {id de campo: valor}}: los datos del formulario que trae la lista (p. ej. la ciudad). Con ellos la fila se guarda con esos valores y sus
+    llaves de cupo (cuenta contra los cupos por variables si ocupa cupo). UNA sola fila por persona: si ya hay una inscripción real (o una marca) con esa cédula, NO se crea otra ni se toca
+    la real; una marca que solo bloqueaba y ahora ocupa cupo se completa con los datos."""
     db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
     removed = clear_marks(db, form) if replace else 0
+    rules = quota_rules(form) if extras is not None else []
     status, source = ("confirmed", "lista_cupo") if hold else (PREREGISTERED, "lista")
     real_or_marked = (PREREGISTERED, "confirmed")
     added = converted = existing = skipped = 0
@@ -415,12 +419,21 @@ def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ft
                 if hold and have[pid] == PREREGISTERED:
                     to_convert.append(pid)
                 continue
-            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps({fid: pid}), is_test=False, person_id=pid, source=source, status=status, fed=True))
+            data = {**(extras or {}).get(str(raw).strip(), {}), fid: pid}
+            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps(data), is_test=False, person_id=pid, source=source, status=status, fed=True,
+                                  quota_keys=quota_keys_for(rules, data) if extras is not None else None))
             added += 1
         for i in range(0, len(to_convert), 1000):
             part = to_convert[i:i + 1000]
             converted += db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == PREREGISTERED,  # noqa: E712
                                                          FormSubmission.person_id.in_(part)).update({"status": "confirmed", "source": "lista_cupo"}, synchronize_session=False)
+        if extras:      # las marcas que pasan a ocupar cupo se completan con los datos del archivo (la ciudad cuenta para el cupo por ciudad)
+            by_pid = {str(k).strip().replace(".", "").replace(" ", ""): v for k, v in extras.items()}
+            for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.source == "lista_cupo",  # noqa: E712
+                                                       FormSubmission.person_id.in_([p for p in to_convert if by_pid.get(p)])):
+                data = {**json.loads(sub.data_json or "{}"), **by_pid[sub.person_id], fid: sub.person_id}
+                sub.data_json = json.dumps(data)
+                sub.quota_keys = quota_keys_for(rules, data)
     else:
         cell = "CAST(data_json AS jsonb) ->> CAST(:fid AS text)"
         have = {formlib.normalize_identifier(r[0], ftype) for r in db.execute(text(f"SELECT {cell} FROM form_submissions WHERE form_id = :f AND is_test = false AND status IN ('confirmed', 'preregistered')"),  # nosec B608 - solo fragmentos fijos (expresión, columna de lista cerrada); lo del usuario va enlazado (:want, :fid)
@@ -434,7 +447,9 @@ def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ft
                 existing += 1
                 continue
             seen.add(norm)
-            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps({fid: str(raw).strip()}), is_test=False, person_id=None, source=source, status=status, fed=True))
+            data = {**(extras or {}).get(str(raw).strip(), {}), fid: str(raw).strip()}
+            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps(data), is_test=False, person_id=None, source=source, status=status, fed=True,
+                                  quota_keys=quota_keys_for(rules, data) if extras is not None else None))
             added += 1
     db.flush()
     return {"added": added, "converted": converted, "existing": existing, "removed": removed, "skipped": skipped}
