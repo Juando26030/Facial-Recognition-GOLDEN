@@ -927,3 +927,45 @@
   .gw-steps > li:nth-child(3) .gw-popover { left: calc(-200% - 2 * var(--gw-sp-2)); }
   .gw-grid-2m { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-2); }
 }
+
+/* ============================================================ Fase 1.7 · M6 · introducción mínima en celular (<= 640 px)
+   Lo que NO sirve para actuar (etiqueta superior, título, subtítulo, pasos 1·2·3 y «Guía») se compacta en un bloque pegado arriba, para que buscador, listas, formularios y tarjetas
+   arranquen casi junto a la cabecera. Nada se quita del DOM: la etiqueta superior queda solo para lectores de pantalla, el subtítulo se recorta con «…» (el texto completo va en title,
+   lo pone gw-ui.js) y el botón «Ver la guía» se reubica como 4.º chip de `.gw-steps` (gw-ui.js; conserva id y data-gw-tour-restart). El escritorio no cambia. */
+.gw-theme-toggle { flex: none; }
+.gw-theme-toggle .gw-icon { width: 1.25rem; height: 1.25rem; min-width: 1.25rem; flex: none; stroke: currentColor; fill: none; }   /* el ícono nunca se encoge a «un punto» dentro de encabezados apretados */
+.gw-steps__guide { list-style: none; }
+@media (max-width: 640px) {
+  .gw-page .gw-page-head .gw-eyebrow, .gw-page .gw-parametros__kicker, .gw-page .gw-stack-lg > .gw-stack:first-child > .gw-eyebrow { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .gw-page .gw-page-head { flex-wrap: nowrap; gap: var(--gw-sp-2); margin: var(--gw-sp-1) 0 var(--gw-sp-1); }
+  .gw-page .gw-page-head__text { flex: 1 1 0; min-width: 0; }
+  .gw-page .gw-page-head__title, .gw-page h1.gw-title, .gw-page .golden-section-title h2 { font-size: var(--gw-fs-lg); line-height: var(--gw-lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gw-page .gw-page-head__sub, .gw-page .gw-stack-lg > .gw-stack:first-child > .gw-lead { margin-top: 0; font-size: var(--gw-fs-sm); line-height: var(--gw-lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gw-page .gw-page-head__actions { width: auto; flex: none; gap: var(--gw-sp-1); }
+  .gw-page .gw-page-head__actions:not(:has(*)) { display: none; }
+  .gw-page .gw-page-head__actions .gw-btn { flex: none; }
+  .gw-page .gw-stack-lg > * + * { margin-top: var(--gw-sp-3); }
+  .gw-page .gw-stack > * + * { margin-top: var(--gw-sp-2); }
+  .gw-page .gw-stack-lg > .gw-page-head + .gw-steps, .gw-page .gw-stack-lg > .gw-stack:first-child + .gw-steps { margin-top: var(--gw-sp-1); }
+  .gw-page .gw-parametros__wrap { gap: var(--gw-sp-2); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-3); }
+  .gw-page .gw-container { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .gw-page .golden-main > .gw-container { padding-top: var(--gw-sp-2); }
+  .gw-page .gw-card { padding: var(--gw-sp-3); }
+  .gw-page .gw-card__head { margin-bottom: var(--gw-sp-2); }
+  .gw-page .gw-card-row { padding: var(--gw-sp-3); gap: var(--gw-sp-2); }
+  .gw-page .gw-cards { gap: var(--gw-sp-2); }
+  .gw-page .golden-section-title { margin-bottom: var(--gw-sp-2); }
+  /* Pasos 1·2·3 + «Guía» = UNA fila de 4 chips (el 4.º lo mueve gw-ui.js) */
+  .gw-steps { display: flex; gap: var(--gw-sp-1); margin: var(--gw-sp-1) 0 var(--gw-sp-2); }
+  .gw-steps > li { flex: 1 1 0; min-height: 2.5rem; }
+  .gw-steps > li.gw-steps__guide { flex: none; padding: 0; background: transparent; border: 0; }
+  .gw-steps__guide > .gw-btn { min-height: 2.5rem; padding: 0 var(--gw-sp-2); gap: var(--gw-sp-1); border-radius: var(--gw-radius-pill); font-size: 0; }
+  .gw-steps__guide > .gw-btn::after { content: "Guía"; font-size: var(--gw-fs-sm); }
+  .gw-steps__text { -webkit-line-clamp: 2; font-size: var(--gw-fs-sm); }
+  /* Menú ☰ flotante: se alinea con la cabecera de una línea (56 px) en vez de dejar un hueco */
+  .gw-page .golden-sidebar-toggle { width: 2.5rem; height: 2.5rem; top: var(--gw-sp-2); }
+  .gw-page .golden-content-spacer { display: none; }
+  .gw-page .golden-event-strip { padding: var(--gw-sp-1) var(--gw-sp-3); }
+  .gw-page .golden-event-strip-inner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gw-page .golden-event-strip-inner > span { display: inline; white-space: nowrap; }
+}

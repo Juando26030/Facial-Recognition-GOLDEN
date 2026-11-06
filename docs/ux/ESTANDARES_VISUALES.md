@@ -104,3 +104,10 @@ Para el digitador en tableta, celular o quiosco. Reglas: una acción principal p
 - `.gw-state.gw-empty--hero`: estado vacío grande de puerta.
 - `.gw-keypad` (`__display/__keys/__key`, `--clear` rojo, `--ok` verde): teclado numérico opcional con teclas de 72 px; no sustituye al lector.
 - Íconos nuevos del sprite: `scan`, `wifi`, `backspace`, `check-lg`, `id-card`, `clock`, `arrow-in`, `arrow-out`.
+
+## 10. Fase 1.7 · M6 · introducción mínima en celular (<= 640 px)
+- Lo que no sirve para actuar (etiqueta superior, título, subtítulo, pasos 1·2·3 y «Guía») va en un bloque compacto pegado a la cabecera: etiqueta superior solo para lectores de pantalla, título `--gw-fs-lg` en una línea con «…», subtítulo de una línea con «…» (el texto completo queda en `title`, lo pone `gw-ui.js`), márgenes de 4-8 px. Nada se quita del DOM.
+- «Ver la guía» (`data-gw-tour-restart`) pasa a ser el 4.º chip «Guía» de `.gw-steps` (`gw-ui.js` lo reubica en un `li.gw-steps__guide`; al ensanchar la ventana vuelve a su sitio; ids y `data-gw-tour*` intactos). Pasos + guía = una fila.
+- Un nivel menos de espaciado en `.gw-container`, `.gw-stack(-lg)`, `.gw-card`, `.gw-card-row`, `.gw-cards`; franja azul del evento en una línea con «…»; botón ☰ de 40 px alineado con la cabecera de 56 px; el separador `.golden-content-spacer` no ocupa espacio.
+- El ícono del interruptor de tema (`.gw-theme-toggle .gw-icon`) tiene tamaño y trazo propios y no se encoge en cabeceras apretadas (Registro).
+- Escritorio sin cambios (todo va dentro de `@media (max-width: 640px)`).
