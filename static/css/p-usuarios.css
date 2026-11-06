@@ -1,6 +1,6 @@
 /* Usuarios del evento (/kiosk/{id}/usuarios) y Usuarios de staff (/staff): acciones de cada tarjeta alineadas y el menú «Más acciones» (tres puntos). Solo tokens --gw-*. */
 .gw-usr__actions, .gw-staff__actions { align-items: stretch; }
-.gw-usr__actions > .gw-btn, .gw-staff__actions > .gw-btn { flex: 1 1 12rem; min-width: 0; white-space: normal; }
+.gw-usr__actions > .gw-btn, .gw-staff__actions > .gw-btn { flex: 1 1 6.5rem; min-width: 0; white-space: normal; }
 .gw-usr__more, .gw-staff__more { flex: none; display: flex; margin-left: auto; }
 .gw-usr__more > .gw-btn, .gw-staff__more > .gw-btn { width: var(--gw-tap); padding: 0; }
 .gw-usr__more .gw-menu__panel, .gw-staff__more .gw-menu__panel { min-width: min(15rem, 80vw); }
@@ -10,6 +10,5 @@
 .gw-staff__mail { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); min-width: 0; }
 .gw-staff__mail > .gw-staff__who { flex: 1 1 auto; min-width: 0; }
 .gw-staff__mail > .gw-btn { flex: none; }
-@media (max-width: 640px) {
-  .gw-usr__actions > .gw-btn, .gw-staff__actions > .gw-btn { flex-basis: 6.5rem; }
-}
+/* las acciones se pegan al pie de la tarjeta: en escritorio (tarjetas en rejilla) las filas de botones quedan a la misma altura entre tarjetas vecinas */
+.gw-usr__actions, .gw-staff__actions { margin-top: auto; }
