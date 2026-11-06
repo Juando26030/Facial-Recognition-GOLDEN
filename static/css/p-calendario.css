@@ -94,3 +94,12 @@
 @media (min-width: 48.0625rem) and (max-width: 75rem) {
   .cal-add { padding: 0 var(--gw-sp-1); }
 }
+
+/* ---- Escritorio (>= 901 px): ancho máximo y filas delgadas (Fase 1.7-W). Vista «Día»: todo el ancho y una línea por evento (nombre | cliente, lugar y horario | comercial y coordinador). El celular no cambia. ---- */
+@media (min-width: 901px) {
+  .cal-day { max-width: none; gap: var(--gw-sp-2); }
+  .cal-day__title { margin-bottom: var(--gw-sp-1); }
+  .cal-chip--big .cal-chip__main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 4fr) minmax(0, 4fr); align-items: center; column-gap: var(--gw-sp-5); padding: var(--gw-sp-2) var(--gw-sp-4); min-height: var(--gw-tap); }
+  .cal-chip--big .cal-chip__line, .cal-chip--big .cal-chip__line + .cal-chip__line { margin-top: 0; font-size: var(--gw-fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cal-day .gw-empty { max-width: none; }
+}

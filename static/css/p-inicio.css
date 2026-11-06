@@ -19,3 +19,25 @@
   .gw-event-card .gw-card-row__actions { margin-top: auto; }
   .gw-event-card .gw-card-row__actions .gw-btn { width: auto; flex: 0 0 auto; min-width: 12rem; min-height: var(--gw-tap); }
 }
+
+/* ---- Escritorio (>= 901 px): ancho máximo y filas delgadas (Fase 1.7-W). El celular no cambia. ---- */
+@media (min-width: 901px) {
+  /* Lista de eventos: una fila por evento (nombre y estado | lugar y fecha | «Entrar»), no tarjetas altas de a dos */
+  #myEventsList .gw-cards { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); }
+  .gw-event-card { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; align-items: center; column-gap: var(--gw-sp-5); padding: var(--gw-sp-3) var(--gw-sp-5); border-width: 1px; }
+  .gw-event-card .gw-card-row__head { flex-wrap: nowrap; justify-content: flex-start; gap: var(--gw-sp-3); min-width: 0; }
+  .gw-event-card .gw-card-row__title { font-size: var(--gw-fs-lg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-event-card .gw-card-row__meta { font-size: var(--gw-fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-event-card .gw-card-row__actions { margin-top: 0; flex-wrap: nowrap; }
+  .gw-event-card .gw-card-row__actions .gw-btn { min-width: 9rem; font-size: var(--gw-fs-md); }
+
+  /* Mosaico principal «Registro»: ocupa TODA la fila (banda ancha) y los demás mosaicos llenan las filas siguientes; ya no queda un hueco al lado */
+  .gw-tile-group > .gw-tiles > .gw-tile--hero { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: wrap; column-gap: var(--gw-sp-5); min-height: 8.5rem; }
+  .gw-tile--hero .gw-tile__name { flex: 0 1 auto; }
+  .gw-tile--hero .gw-tile__help { flex: 1 1 16rem; min-width: 0; }
+  .gw-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
+  /* Lo de todos los días: 3 columnas bajo la banda; si el último queda solo o de a dos, se estira para no dejar huecos */
+  .gw-tile-group > .gw-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gw-tile-group > .gw-tiles > .gw-tile--hero ~ .gw-tile:last-child:nth-child(3n + 2) { grid-column: 1 / -1; }
+  .gw-tile-group > .gw-tiles > .gw-tile--hero ~ .gw-tile:last-child:nth-child(3n + 3) { grid-column: span 2; }
+}
