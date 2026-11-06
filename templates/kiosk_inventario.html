@@ -64,40 +64,59 @@
     </div>
 
     <div id="mainArea" class="gw-stack-lg"{% if not event.inventory_enabled %} hidden{% endif %}>
-      <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
-        <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige a quién</span>
-          {% call ayuda('ay_i1', 'Elige a quién') %}Escanea o escribe la cédula, usa la cámara para leer el QR o busca por nombre. Solo se entrega a personas que están en la base del evento.{% endcall %}</li>
-        <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Marca qué se entrega</span>
-          {% call ayuda('ay_i2', 'Marca qué se entrega') %}Puedes entregar uno o varios ítems a la vez (combos). Verás cuántos quedan disponibles de cada uno.{% endcall %}</li>
-        <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Confirma</span>
-          {% call ayuda('ay_i3', 'Confirma') %}Al pulsar «Entregar» se descuenta del inventario y queda en «Últimas entregas». Si algo falla, el aviso te dice qué.{% endcall %}</li>
-      </ol>
+      <details class="gw-form-group">
+        <summary class="gw-form-group__summary">Cómo se usa esta pantalla</summary>
+        <div class="gw-form-group__body">
+          <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+            <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige a quién</span>
+              {% call ayuda('ay_i1', 'Elige a quién') %}Escanea o escribe la cédula, usa la cámara para leer el QR o busca por nombre. Solo se entrega a personas que están en la base del evento.{% endcall %}</li>
+            <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Marca qué se entrega</span>
+              {% call ayuda('ay_i2', 'Marca qué se entrega') %}Puedes entregar uno o varios ítems a la vez (combos). Verás cuántos quedan disponibles de cada uno.{% endcall %}</li>
+            <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Confirma</span>
+              {% call ayuda('ay_i3', 'Confirma') %}Al pulsar «Entregar» se descuenta del inventario y queda en «Últimas entregas». Si algo falla, el aviso te dice qué.{% endcall %}</li>
+          </ol>
+        </div>
+      </details>
+
+      <div class="gw-stats-row" aria-label="Resumen del inventario">
+        <div class="gw-stat gw-stat--ok">{{ ic('check-lg', 'gw-stat__icon') }}<span class="gw-stat__value" id="statStock">0</span><span class="gw-stat__label">Con existencias</span></div>
+        <div class="gw-stat" id="statOutBox">{{ ic('alert', 'gw-stat__icon') }}<span class="gw-stat__value" id="statOut">0</span><span class="gw-stat__label">Agotados</span></div>
+        <div class="gw-stat">{{ ic('clock', 'gw-stat__icon') }}<span class="gw-stat__value" id="statDeliveries">0</span><span class="gw-stat__label">Entregas recientes</span></div>
+      </div>
 
       <section class="gw-card gw-stack" aria-labelledby="invWhoTitle" data-gw-tour-step="1" data-gw-tour-title="1. Elige a quién" data-gw-tour-text="Escanea la cédula o el QR, o busca a la persona por nombre.">
         <h2 class="gw-card__title" id="invWhoTitle">1. ¿A quién se le entrega?</h2>
-        <div class="gw-ai__scan">
-          <div class="gw-field">
-            <label class="gw-label" for="scanInput">Cédula, QR o lector</label>
-            <input type="text" id="scanInput" class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
+        <div class="gw-search gw-search--hero">
+          <label class="gw-sr-only" for="scanInput">Cédula, QR o lector</label>
+          <div class="gw-search__row">
+            <div class="gw-search__field">
+              {{ ic('search', 'gw-search__icon') }}
+              <input type="text" id="scanInput" class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
+            </div>
+            <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear QR con cámara" title="Escanear QR con cámara">{{ ic('scan') }}</button>
           </div>
-          <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary">{{ ic('qr', 'gw-icon--sm') }} Escanear QR con cámara</button>
         </div>
-        <div class="gw-field">
-          <label class="gw-label" for="nameSearch">O busca por nombre</label>
-          <input type="text" id="nameSearch" class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
-          <div class="gw-ai__suggest" id="suggest"></div>
-        </div>
-        <div class="gw-alert gw-alert--ok" id="personBanner" role="status" aria-live="polite" hidden></div>
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary">Buscar por nombre</summary>
+          <div class="gw-form-group__body gw-stack">
+            <div class="gw-field">
+              <label class="gw-label" for="nameSearch">Nombre o apellido</label>
+              <input type="text" id="nameSearch" class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
+              <div class="gw-ai__suggest" id="suggest"></div>
+            </div>
+          </div>
+        </details>
+        <article class="gw-person gw-person--ok gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
       </section>
 
       <section class="gw-card gw-stack" aria-labelledby="invWhatTitle" data-gw-tour-step="2" data-gw-tour-title="2. Marca qué se entrega" data-gw-tour-text="Pon la cantidad o marca «Entregar 1» en cada ítem. Puedes combinar varios.">
         <h2 class="gw-card__title" id="invWhatTitle">2. ¿Qué se le entrega? <span class="gw-hint">(uno o varios a la vez, combos)</span></h2>
         <div id="itemsLoading" class="gw-skeleton"></div>
-        <div id="itemsList"></div>
+        <div class="gw-cards" id="itemsList"></div>
         <div class="gw-ai__foot" data-gw-tour-step="3" data-gw-tour-title="3. Confirma" data-gw-tour-text="Pulsa «Entregar»: se descuenta del inventario y queda en la lista de abajo.">
-          <button type="button" id="deliverBtn" class="gw-btn gw-btn--primary">Entregar</button>
+          <button type="button" id="deliverBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} Entregar</button>
         </div>
-        <div class="gw-alert" id="resultBanner" role="status" aria-live="polite" hidden></div>
+        <div class="gw-verdict" id="resultBanner" role="status" aria-live="polite" hidden></div>
       </section>
 
       <section class="gw-card gw-stack" aria-labelledby="invLastTitle">
@@ -105,13 +124,9 @@
           <h2 class="gw-card__title" id="invLastTitle">Últimas entregas</h2>
           <a id="reportBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/inventory-report" hidden>{{ ic('download', 'gw-icon--sm') }} Reporte (Excel)</a>
         </div>
-        <div id="delState" class="gw-empty" role="status" hidden></div>
-        <div class="gw-table-wrap" id="delWrap">
-          <table class="gw-table gw-table-cards">
-            <caption class="gw-sr-only">Últimas entregas de inventario</caption>
-            <thead><tr><th scope="col">Hora</th><th scope="col">Persona</th><th scope="col">Ítem</th><th scope="col">Cant.</th></tr></thead>
-            <tbody id="delBody"></tbody>
-          </table>
+        <div id="delState" class="gw-state gw-empty--hero" role="status" hidden></div>
+        <div id="delWrap">
+          <div class="gw-cards" id="delBody"></div>
         </div>
       </section>
     </div>
