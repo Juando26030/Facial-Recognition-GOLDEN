@@ -33,7 +33,7 @@
     $('docCount').textContent = docs.length ? '(' + docs.length + ')' : '';
     $('zipBtn').hidden = !docs.length;
     if (!docs.length) {
-      setList('<div class="gw-state">' + icon('inbox') + '<p class="gw-state__title">Todavía no hay documentos</p><p class="gw-state__text">Sube el primero con el botón «Subir documento» de arriba.</p></div>');
+      setList('<div class="gw-state"><span class="gw-state__icon">' + icon('inbox').replace(' gw-icon--sm', '') + '</span><p class="gw-state__title">Todavía no hay documentos</p><p class="gw-state__text">Sube el primero con el botón «Subir documento» de arriba.</p></div>');
       return;
     }
     setList(docs.map((d) => `
