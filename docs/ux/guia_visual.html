@@ -78,6 +78,14 @@
 <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 9h10a6 6 0 0 1 0 12H9"/><path d="M8 5L4 9l4 4"/></symbol>
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 19.5h16"/></symbol>
 <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18l5.5-5 4 3.5 3-2.5L21 17"/></symbol>
+<symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M4 12h16"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2.5 9.5a14 14 0 0 1 19 0M5.5 13a9 9 0 0 1 13 0M9 16.5a4.5 4.5 0 0 1 6 0M12 20v.2"/></symbol>
+<symbol id="i-backspace" viewBox="0 0 24 24"><path d="M9 5h10a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 19 19H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></symbol>
+<symbol id="i-check-lg" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11"/></symbol>
+<symbol id="i-id-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16c.5-1.4 1.6-2 3-2s2.5.6 3 2M14 10h4.5M14 13.5h4.5"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+<symbol id="i-arrow-in" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M4 12h11M11 8l4 4-4 4"/></symbol>
+<symbol id="i-arrow-out" viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M9 12h11M16 8l4 4-4 4"/></symbol>
 </svg>
 <a class="gw-skip" href="#contenido">Ir al contenido</a>
 
@@ -90,6 +98,7 @@
       <li><a class="gw-nav__link" href="#componentes">Componentes</a></li>
       <li><a class="gw-nav__link" href="#ayuda">Ayuda y recorrido</a></li>
       <li><a class="gw-nav__link" href="#pestanas">Pestañas</a></li>
+      <li><a class="gw-nav__link" href="#puerta">Puerta</a></li>
       <li><a class="gw-nav__link" href="#iconos">Íconos</a></li>
     </ul>
     <div class="gw-nav__search" data-gw-search-slot hidden></div>
@@ -430,6 +439,91 @@
   &lt;section class="gw-tabpanel" role="tabpanel" id="p1"&gt;&lt;div class="gw-tabpanel__head"&gt;…&lt;/div&gt; &lt;div class="gw-group__item"&gt;&lt;div class="gw-item-head"&gt;&lt;h4&gt;…&lt;/h4&gt;badge «Al instante» + «?»&lt;/div&gt;…&lt;/div&gt;&lt;/section&gt;
 &lt;/div&gt;
 Piezas: .gw-steps (guía de 3 pasos) · .gw-setting (control + «?») · .gw-choice (radio con una línea) · .gw-fieldset · .gw-actions · .gw-form-grid · .gw-msg(--ok/--err) · .gw-danger-zone + .gw-btn--danger-outline (siempre con confirmación)</pre>
+</section>
+
+<section class="g-sec" id="puerta">
+  <h2 class="gw-title">Piezas de puerta (Fase 1.7)</h2>
+  <p class="gw-lead">Para el digitador en tableta, celular o quiosco: una tarea por pantalla, una acción principal, objetivos de <code class="g-code">--gw-tap-lg</code> (64 px), texto de 18 a 24 px (<code class="g-code">--gw-fs-door</code>) y estado siempre con ícono + texto. Son clases nuevas: no cambian ninguna pantalla hasta que se usen.</p>
+
+  <h3 class="gw-subtitle">Botón xl y buscador hero</h3>
+  <p class="gw-muted">Solo las 1-2 acciones de la puerta van en <code class="g-code">.gw-btn--xl</code> (alto 64 px, texto 22 px). El buscador <code class="g-code">.gw-search--hero</code> lleva la lupa dentro (<code class="g-code">.gw-search__field</code> + <code class="g-code">.gw-search__icon</code>) y el botón cuadrado <code class="g-code">.gw-search__scan</code> al lado; debe llevar <code class="g-code">aria-label</code>.</p>
+  <div class="g-demo gw-stack">
+    <div class="gw-search gw-search--hero">
+      <label class="gw-sr-only" for="gHero">Buscar a la persona</label>
+      <div class="gw-search__row">
+        <div class="gw-search__field"><svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="#i-search"/></svg><input class="gw-input" type="text" id="gHero" placeholder="Cédula, nombre o empresa" autocomplete="off"></div>
+        <button type="button" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear código QR o cédula"><svg class="gw-icon" aria-hidden="true"><use href="#i-scan"/></svg></button>
+      </div>
+    </div>
+    <div class="gw-row"><button type="button" class="gw-btn gw-btn--primary gw-btn--xl"><svg class="gw-icon" aria-hidden="true"><use href="#i-scan"/></svg>Escanear</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--xl"><svg class="gw-icon" aria-hidden="true"><use href="#i-user-plus"/></svg>Registrar nuevo</button></div>
+  </div>
+
+  <h3 class="gw-subtitle">Veredicto</h3>
+  <p class="gw-muted"><code class="g-code">.gw-verdict</code> (<code class="g-code">--ok</code>, <code class="g-code">--warn</code>, <code class="g-code">--err</code>; sin variante = informa). Con <code class="g-code">role="status"</code>; el rojo con <code class="g-code">role="alert"</code>. <code class="g-code">--door</code> es la versión de pantalla grande.</p>
+  <div class="g-demo gw-stack">
+    <div class="gw-verdict gw-verdict--ok" role="status"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="#i-check-lg"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">Acreditado</p><p class="gw-verdict__text">Ana María Gómez Rodríguez</p></div></div>
+    <div class="gw-verdict gw-verdict--warn" role="status"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="#i-alert"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">Ya ingresó</p><p class="gw-verdict__text">Hoy a las 8:42 a. m.</p></div></div>
+    <div class="gw-verdict gw-verdict--err" role="alert"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="#i-error"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">No está en la lista</p><p class="gw-verdict__text">Pide ayuda al coordinador o usa «Registrar nuevo».</p></div></div>
+    <div class="gw-verdict gw-verdict--ok gw-verdict--door" role="status"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="#i-check-lg"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">Acceso concedido</p><p class="gw-verdict__text">Bienvenida, Ana María</p></div></div>
+  </div>
+
+  <h3 class="gw-subtitle">Tarjeta de persona</h3>
+  <p class="gw-muted"><code class="g-code">.gw-person</code> con barra lateral de estado (<code class="g-code">--ok/--warn/--err/--info</code>), foto o inicial, nombre de 22 px y las acciones de la puerta debajo (<code class="g-code">--big</code>: foto y nombre mayores). En celular las acciones ocupan todo el ancho.</p>
+  <div class="g-demo gw-stack">
+    <article class="gw-person gw-person--ok"><div class="gw-person__photo" aria-hidden="true">A</div><div class="gw-person__body"><h4 class="gw-person__name">Ana María Gómez Rodríguez</h4><p class="gw-person__meta">C.C. 1016 000 000 · Empresa Ejemplo S.A.S.</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--ok"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg>Registrada</span></div>
+      <div class="gw-person__actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--xl"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg>Acreditar</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--xl"><svg class="gw-icon" aria-hidden="true"><use href="#i-printer"/></svg>Imprimir escarapela</button></div></article>
+    <article class="gw-person gw-person--warn"><div class="gw-person__photo" aria-hidden="true"><svg class="gw-icon" aria-hidden="true"><use href="#i-users"/></svg></div><div class="gw-person__body"><h4 class="gw-person__name">Pedro Pérez</h4><p class="gw-person__meta">C.C. 79 000 000 · Sin empresa</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--warn"><svg class="gw-icon" aria-hidden="true"><use href="#i-clock"/></svg>Pendiente</span></div>
+      <div class="gw-person__actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--xl"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg>Acreditar</button></div></article>
+  </div>
+
+  <h3 class="gw-subtitle">Cifras grandes</h3>
+  <p class="gw-muted"><code class="g-code">.gw-stat</code> (cifra de 36 px, etiqueta de 16 px, ícono; <code class="g-code">--ok/--warn/--err</code>) dentro de <code class="g-code">.gw-stats-row</code>: tres por fila también en celular (<code class="g-code">--2</code>: dos).</p>
+  <div class="g-demo gw-stack">
+    <div class="gw-stats-row">
+      <div class="gw-stat"><svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="#i-users"/></svg><span class="gw-stat__value">1.731</span><span class="gw-stat__label">Inscritos</span></div>
+      <div class="gw-stat gw-stat--ok"><svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="#i-check"/></svg><span class="gw-stat__value">1.385</span><span class="gw-stat__label">Acreditados</span></div>
+      <div class="gw-stat gw-stat--warn"><svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="#i-clock"/></svg><span class="gw-stat__value">344</span><span class="gw-stat__label">Faltan</span></div>
+    </div>
+    <div class="gw-stats-row gw-stats-row--2">
+      <div class="gw-stat gw-stat--ok"><svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="#i-arrow-in"/></svg><span class="gw-stat__value">212</span><span class="gw-stat__label">Dentro ahora</span><span class="gw-stat__hint">de 300 de aforo</span></div>
+      <div class="gw-stat gw-stat--err"><svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="#i-error"/></svg><span class="gw-stat__value">7</span><span class="gw-stat__label">No autorizados</span></div>
+    </div>
+  </div>
+
+  <h3 class="gw-subtitle">Mosaico hero, segmentos, conexión y estado vacío</h3>
+  <p class="gw-muted"><code class="g-code">.gw-tile--hero</code> ocupa dos columnas de <code class="g-code">.gw-tiles</code> (una en celular). <code class="g-code">.gw-segment</code> elige una opción entre pocas: con botones (<code class="g-code">aria-pressed</code>), <code class="g-code">role="radio"</code> (<code class="g-code">aria-checked</code>) o <code class="g-code">&lt;label&gt;</code> + radio; la elegida lleva un visto y color dorado. <code class="g-code">.gw-conn</code> siempre dice la palabra. <code class="g-code">.gw-state.gw-empty--hero</code> es el vacío grande de puerta.</p>
+  <div class="g-demo gw-stack">
+    <div class="gw-tiles">
+      <a class="gw-tile gw-tile--hero" href="#puerta"><span class="gw-tile__icon"><svg class="gw-icon" aria-hidden="true"><use href="#i-user-plus"/></svg></span><span class="gw-tile__name">Registro</span><span class="gw-tile__help">Buscar, acreditar e imprimir la escarapela.</span></a>
+      <a class="gw-tile" href="#puerta"><span class="gw-tile__icon"><svg class="gw-icon" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="gw-tile__name">Estadísticas</span><span class="gw-tile__help">Cuántos han llegado.</span></a>
+    </div>
+    <div class="gw-segment gw-segment--lg" role="group" aria-label="Zona">
+      <button type="button" class="gw-segment__opt" aria-pressed="true">Zona VIP</button><button type="button" class="gw-segment__opt" aria-pressed="false">Auditorio</button><button type="button" class="gw-segment__opt" aria-pressed="false">Backstage</button>
+    </div>
+    <div class="gw-segment" role="radiogroup" aria-label="Movimiento">
+      <label class="gw-segment__opt"><input type="radio" name="gMov" value="in" checked><svg class="gw-icon" aria-hidden="true"><use href="#i-arrow-in"/></svg><span>Entrada</span></label><label class="gw-segment__opt"><input type="radio" name="gMov" value="out"><svg class="gw-icon" aria-hidden="true"><use href="#i-arrow-out"/></svg><span>Salida</span></label>
+    </div>
+    <div class="gw-row"><span class="gw-conn" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-wifi"/></svg>En línea</span><span class="gw-conn gw-conn--warn" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-wifi-off"/></svg>Sin conexión, guardando</span><span class="gw-conn gw-conn--err" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-error"/></svg>No se pudo sincronizar</span><span class="gw-conn gw-conn--lg" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-wifi"/></svg>En línea</span></div>
+    <div class="gw-state gw-empty--hero"><span class="gw-state__icon"><svg class="gw-icon" aria-hidden="true"><use href="#i-scan"/></svg></span><p class="gw-state__title">Esperando búsqueda…</p><p class="gw-state__text">Escribe la cédula o el nombre, o escanea el código de la persona.</p></div>
+  </div>
+
+  <h3 class="gw-subtitle">Dos paneles y teclado numérico</h3>
+  <p class="gw-muted"><code class="g-code">.gw-split</code> pone el principal y el lateral lado a lado desde 960 px; en celular el lateral queda debajo (<code class="g-code">--aside-first</code>: arriba). <code class="g-code">.gw-keypad</code> es opcional y nunca sustituye al lector: teclas de 72 px, borrar en rojo, confirmar en verde.</p>
+  <div class="g-demo">
+    <div class="gw-split">
+      <div class="gw-split__main gw-card"><p class="gw-subtitle">Principal</p><p class="gw-muted">Aquí va la búsqueda y el resultado.</p></div>
+      <aside class="gw-split__aside gw-card"><p class="gw-subtitle">Acciones</p><p class="gw-muted">Guarde o busque un participante.</p></aside>
+    </div>
+  </div>
+  <div class="g-demo">
+    <div class="gw-keypad"><output class="gw-keypad__display" aria-live="polite" aria-label="Documento escrito">1016</output>
+      <div class="gw-keypad__keys">
+        <button type="button" class="gw-keypad__key">1</button><button type="button" class="gw-keypad__key">2</button><button type="button" class="gw-keypad__key">3</button>
+        <button type="button" class="gw-keypad__key">4</button><button type="button" class="gw-keypad__key">5</button><button type="button" class="gw-keypad__key">6</button>
+        <button type="button" class="gw-keypad__key">7</button><button type="button" class="gw-keypad__key">8</button><button type="button" class="gw-keypad__key">9</button>
+        <button type="button" class="gw-keypad__key gw-keypad__key--clear" aria-label="Borrar"><svg class="gw-icon" aria-hidden="true"><use href="#i-backspace"/></svg></button><button type="button" class="gw-keypad__key">0</button><button type="button" class="gw-keypad__key gw-keypad__key--ok" aria-label="Confirmar"><svg class="gw-icon" aria-hidden="true"><use href="#i-check-lg"/></svg></button>
+      </div></div>
+  </div>
 </section>
 
 <section class="g-sec" id="iconos">
