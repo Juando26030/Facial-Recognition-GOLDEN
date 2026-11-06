@@ -1,4 +1,4 @@
-/* Estado del sistema (/sistema): semaforo general grande, grupos por importancia y tarjetas plegables (de a 2 columnas en celular). Solo tokens --gw-*; el estado se dice con texto e icono, no solo con color. */
+/* Estado del sistema (/sistema): en escritorio las tarjetas van en 3 columnas (4 desde 1700 px) y el semáforo general ocupa todo el ancho; semaforo general grande, grupos por importancia y tarjetas plegables (de a 2 columnas en celular). Solo tokens --gw-*; el estado se dice con texto e icono, no solo con color. */
 .gw-sistema__overall { padding: var(--gw-sp-5); align-items: center; }
 .gw-sistema__overall .gw-icon { width: 2.5rem; height: 2.5rem; }
 .gw-sistema__overall-title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
@@ -24,6 +24,13 @@ summary.gw-sistema__sum::-webkit-details-marker { display: none; }
 .gw-sistema__action { margin: 0; padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface-2); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
 .gw-sistema__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .gw-sistema__skeleton { min-height: 6rem; }
+@media (min-width: 901px) {
+  .gw-sistema__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gw-sp-3); }
+  .gw-sistema__overall { padding: var(--gw-sp-4) var(--gw-sp-5); }
+}
+@media (min-width: 1700px) {
+  .gw-sistema__cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 40rem) {
   .gw-sistema__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-2); align-items: stretch; }
   .gw-sistema__head { flex-direction: column; align-items: flex-start; }
