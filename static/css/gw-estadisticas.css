@@ -83,3 +83,11 @@
 .gw-stats-empty { margin-top: var(--gw-sp-4); }
 .gw-stats-empty:not([hidden]) + .gw-chart-grid { margin-top: 0; }
 .gw-chart-grid { margin-top: var(--gw-sp-4); }
+
+/* Compartir en celular: los botones ocupan el ancho y quedan centrados (Fase 1.7, auditoría de botones). */
+.gw-share__row .gw-btn, .gw-share__line .gw-btn { min-height: var(--gw-tap); }
+@media (max-width: 768px) {
+  .gw-share__row .gw-field { flex: none; width: 100%; }
+  .gw-share__row .gw-btn, .gw-share__line .gw-btn { width: 100%; }
+  .gw-share__line .gw-input { flex: 1 1 100%; }
+}
