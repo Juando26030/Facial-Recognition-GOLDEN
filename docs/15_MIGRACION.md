@@ -1007,3 +1007,6 @@ Migración `0084_stats_links` (aditiva). Coordinador+ crea, ve y cancela enlaces
 ## Fase 1.5 (rediseño visual) — integración de 16 ramas (2026-11-05)
 Ola 0 + 1 + 2 + 3 integradas en `ux/fase-1-5` (16 ramas `ux/f15-*`, una por pantalla o grupo). Pantallas nuevas agregadas al candado `MIGRADAS`.
 Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista de cada rama. Páginas públicas siguen congeladas.
+
+## Fase 1.5 — ronda 2 (2026-11-05, noche)
+Íconos de colores por tipo (`--gw-ic-*`), tablas sin scroll lateral (`gw-tablas.css`, Respuestas/Pagos en el editor), botón único de guardado en el editor de formularios (estado, cupo y calendario ya no tienen botón propio), control de archivo propio (`.gwe-file`) con aviso «imagen ya cargada», negrilla corregida en los editores de texto con formato (el peso 600 de `--gw-fw-normal` hacía que Chrome contara el texto como negrilla y «N» la quitara; los `.rt-ed` usan 599), mensaje de cupo lleno con formato, buscador al asignar cuenta existente, retiro del rol «cliente» temporal de evento (enlaces con vencimiento), ruleta rediseñada (huellas de `roulette_display.html`/`roulette-render.js`/`form-render.js` actualizadas en `test_publico_congelado.py` a pedido de Juan David). Arnés de navegador: `scripts/editor_roundtrip_playwright.py` (no corre en el CI).
