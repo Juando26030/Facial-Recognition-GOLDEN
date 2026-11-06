@@ -1,0 +1,42 @@
+/* Control de inventario: botones, insignias y controles bien centrados y sin desbordes (celular 360-410 px y escritorio).
+   Todo va bajo .gw-inv para no tocar Áreas, que comparte gw-areas-inv.css. Solo tokens --gw-*. */
+.gw-inv .gw-btn, .gw-inv .gw-badge { text-align: center; }
+.gw-inv .gw-btn { justify-content: center; align-items: center; max-width: 100%; }
+.gw-inv .gw-badge { max-width: 100%; }
+
+/* Buscador: el texto de ayuda se corta con puntos suspensivos en vez de quedar recortado. */
+.gw-inv .gw-search .gw-input { text-overflow: ellipsis; }
+
+/* Insumos: la información cede y el control (cantidad o «Entregar 1») queda alineado. */
+.gw-inv .gw-ai__item > div:first-child { flex: 1 1 14rem; min-width: 0; display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-inv .gw-ai__item > div:last-child { flex: 0 0 auto; display: flex; align-items: center; }
+.gw-inv .gw-ai__avail { flex-wrap: wrap; align-items: center; }
+.gw-inv .gw-ai__avail .gw-badge { align-self: center; }
+.gw-inv .gw-card-row__title { min-width: 0; }
+
+/* Entregas: la insignia «N × ítem» parte en líneas dentro de su caja y queda centrada. */
+.gw-inv .gw-card-row__head > .gw-badge { white-space: normal; text-align: center; justify-content: center; border-radius: var(--gw-radius-md); line-height: var(--gw-lh-tight); padding-top: var(--gw-sp-1); padding-bottom: var(--gw-sp-1); overflow-wrap: anywhere; }
+.gw-inv .gw-card-row__head > .gw-card-row__title { flex: 1 1 10rem; min-width: 0; }
+
+/* Persona elegida: el estado se centra y el nombre cabe. */
+.gw-inv .gw-person__status .gw-badge { white-space: normal; }
+
+@media (max-width: 640px) {
+  /* Pasos y «Guía»: dos por fila (la guía va tras el tercer paso) para que el texto quepa sin cortarse. */
+  .gw-inv .gw-steps { flex-wrap: wrap; }
+  .gw-inv .gw-steps > li { flex: 1 1 calc(50% - var(--gw-sp-1)); min-height: var(--gw-tap); }
+  .gw-inv .gw-steps > li.gw-steps__guide { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+  .gw-inv .gw-steps__guide > .gw-btn { width: 100%; min-height: var(--gw-tap); justify-content: center; }
+  .gw-inv .gw-steps__text { font-size: var(--gw-fs-md); }
+  .gw-inv .gw-steps .gw-popover { width: min(18rem, calc(100vw - 2 * var(--gw-sp-4))); }
+  .gw-inv .gw-steps > li:nth-child(n) .gw-popover { left: 0; right: auto; }
+  .gw-inv .gw-steps > li:nth-child(2) .gw-popover { left: auto; right: 0; }
+  .gw-inv .gw-search--hero .gw-input { font-size: var(--gw-fs-md); padding-left: calc(var(--gw-sp-4) + 2rem); padding-right: var(--gw-sp-3); }
+  .gw-inv .gw-person--big .gw-person__photo { width: 4.5rem; height: 4.5rem; }
+  .gw-inv .gw-person--big .gw-person__name { font-size: var(--gw-fs-xl); }
+  /* Control del ítem en su propia fila, a todo el ancho. */
+  .gw-inv .gw-ai__item > div:last-child { flex: 1 1 100%; }
+  .gw-inv .gw-ai__item .qty { width: 100%; }
+  .gw-inv .gw-ai__item .gw-check { width: 100%; }
+  .gw-inv .gw-btn--sm { min-height: var(--gw-tap); }
+}

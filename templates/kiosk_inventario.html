@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-areas-inv.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-inventario.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -46,7 +47,7 @@
 <script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }};</script>
 
 <main class="golden-main">
-  <div class="gw-container gw-stack-lg gw-ai__wrap" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
+  <div class="gw-container gw-stack-lg gw-ai__wrap gw-inv" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name }}</p>
