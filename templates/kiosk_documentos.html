@@ -26,7 +26,7 @@
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
-      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post">
         <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>

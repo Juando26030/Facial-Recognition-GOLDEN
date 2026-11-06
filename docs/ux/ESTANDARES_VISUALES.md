@@ -82,6 +82,14 @@ Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existente
 - **Celular:** bajo 768 px la barra de guardado respeta el borde inferior; bajo 640 px los `.gw-modal` ocupan toda la pantalla.
 - **Congelado:** lo que ven las personas no se toca (`tests/test_publico_congelado.py`).
 
+### Cabecera y pasos compactos en celular (Fase 1.7, M1; muestrario: `guia_visual.html#cabecera-movil`)
+Retroalimentación real de Juan David (celular de ~410 px): la cabecera comía media pantalla. Todo es CSS bajo `.gw-page` y solo cambia a <= 640 px; el escritorio queda igual.
+- **Franja blanca (`.golden-header`)**: UNA línea de 56 px: menú ☰, logo de 32 px, botón de tema SOLO ÍCONO (`.gw-theme-toggle` dentro del header oculta `[data-gw-theme-label]`; `aria-label` y `title` «Tema claro/oscuro» los pone `_gw_theme_toggle.html` y `gw-ui.js`), nombre recortado con «…» (el rol completo va en `title`) y «Salir». Al crear una cabecera nueva: nombre en `.gw-shell__who` / `.golden-nav-user` con `title="nombre (rol)"`.
+- **Franja azul (`.golden-event-strip`)**: Cliente · Evento · Código seguidos y separados por «·»; los rótulos (`<strong>`) quedan en el DOM pero ocultos a la vista (solo lectores de pantalla).
+- **`.gw-steps` = tira de 3 chips** (una sola fila, también en escritorio): cada `<li>` es una píldora con número + título corto (máx. 2 líneas); tocarla abre su «?» (`.gw-help`/`.gw-popover`, igual que antes) porque el botón `.gw-help__btn` se estira invisible sobre todo el chip. El marcado no cambia (`<ol class="gw-steps">` con `<li>` = `.gw-steps__n` + `.gw-steps__text` + `ayuda()` opcional); si un `<li>` no trae `ayuda()`, es un chip informativo. Se aplica solo a toda pantalla que ya usa `.gw-steps` (Sistema y Registro la heredan por CSS).
+- **`.gw-grid-2m`**: cuadrícula para tarjetas de información o cifras que en celular reparte SIEMPRE de a 2 columnas (en escritorio: auto-fit de 14 rem).
+- Encabezado de página en celular: `.gw-page-head` con menos margen y título de `--gw-fs-xl`; `.golden-section-title h2` igual.
+
 ### Piezas de puerta (Fase 1.7, Ola 0; muestrario: `guia_visual.html#puerta`)
 Para el digitador en tableta, celular o quiosco. Reglas: una acción principal por vista, objetivos de `--gw-tap-lg` (64 px), texto de 18 a 24 px, estado siempre con ícono + texto, poca densidad. Solo clases nuevas: no alteran las pantallas ya migradas.
 - `.gw-btn--xl`: solo las 1-2 acciones de la puerta (Escanear, Acreditar); el resto sigue en 44 px.
