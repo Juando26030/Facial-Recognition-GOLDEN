@@ -642,13 +642,19 @@
   function buildMoreMenu(items, who) {
     wireMenuClose();
     const wrap = document.createElement('div'); wrap.className = 'gw-menu';
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--secondary btn-table-action gw-menu__btn'; btn.innerText = 'Más'; btn.title = 'Más opciones';
-    btn.setAttribute('aria-haspopup', 'true'); btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-label', 'Más acciones' + (who ? ' de ' + who : ''));
+    const btn = actBtn('Más', 'more', 'gw-btn gw-btn--secondary btn-table-action gw-menu__btn gw-menu__btn--kebab', 'Más opciones', 'Más acciones' + (who ? ' de ' + who : ''));          // tres puntos (ícono `more` del sprite); el texto «Más» queda solo para lectores de pantalla
+    btn.setAttribute('aria-haspopup', 'true'); btn.setAttribute('aria-expanded', 'false');
     const panel = document.createElement('div'); panel.className = 'gw-menu__panel'; panel.hidden = true; panel.setAttribute('role', 'group');
     items.forEach((it) => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-menu__item' + (it.danger ? ' gw-menu__item--danger' : ''); b.innerText = it.label;
       b.addEventListener('click', () => { closeMenu(); it.run(); });
       panel.appendChild(b);
+    });
+    panel.addEventListener('keydown', (e) => {          // flechas arriba/abajo entre las opciones (Esc lo atiende el documento)
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const list = Array.prototype.slice.call(panel.children || []), at = list.indexOf(document.activeElement);
+      const next = list[(at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length];
+      if (next && next.focus) { if (e.preventDefault) e.preventDefault(); next.focus(); }
     });
     btn.addEventListener('click', (e) => {
       if (e.stopPropagation) e.stopPropagation();
@@ -717,21 +723,32 @@
     statusTd.dataset.field = 'status';
     statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : 'Registrado';
     statusTd.className = 'gw-registro__status';
-    const og = ORIGINS[user.origin];
-    if (og && user.origin !== 'desconocido') {                      // B1: el ORIGEN de carga, aparte del estado (no cambia al registrar o quitar el registro)
-      const tag = document.createElement('span');
-      tag.className = 'gw-origin'; tag.dataset.origin = user.origin; tag.textContent = og.label; tag.title = 'Origen de carga: ' + og.label;
-            statusTd.appendChild(tag);
-    }
     tr.appendChild(statusTd);
-
     const entityTd = document.createElement('td');   // la empresa: va AL FINAL (las columnas de siempre no se corren) y solo se ve en la tarjeta del modo touch (en la tabla de escritorio no hay columna para ella)
     entityTd.dataset.field = 'entity';
     entityTd.className = 'touch-only';
     entityTd.innerText = user.entity || '';
     tr.appendChild(entityTd);
 
+    /* Casillas propias de la tarjeta (cada una es una pieza suelta, sin insignias anidadas dentro de otra): origen de carga (B1: aparte del estado, no cambia al registrar o quitar el registro),
+       «Recién registrado/creado» (la pone drawRows junto al nombre) y el motivo de la búsqueda unificada (drawRows). Vacías no se ven. */
+    const og = ORIGINS[user.origin];
+    const originTd = document.createElement('td'); originTd.dataset.field = 'origin';
+    if (og && user.origin !== 'desconocido') {
+      const tag = document.createElement('span');
+      tag.className = 'gw-origin'; tag.dataset.origin = user.origin; tag.textContent = og.label; tag.title = 'Origen de carga: ' + og.label;
+      originTd.appendChild(tag);
+    }
+    tr.appendChild(originTd);
+    ['recent', 'reason'].forEach((slot) => { const td = document.createElement('td'); td.dataset.field = slot; tr.appendChild(td); });
+
     return tr;
+  }
+
+  /* Casilla de la tarjeta por su marca (`recent`, `reason`); en las pruebas con DOM falso se busca entre los hijos. */
+  function slotOf(tr, name) {
+    const q = tr.querySelector && tr.querySelector('td[data-field="' + name + '"]');
+    return q || Array.prototype.find.call(tr.children || [], (c) => c.dataset && c.dataset.field === name) || null;
   }
 
   function renderRows(tbodyId, users) {
@@ -904,7 +921,7 @@
         tr.querySelectorAll('.gw-recent-tag').forEach((n) => n.remove());
         if (!isRecentRow(u, newest)) { delete tr.dataset.recent; return; }
         tr.dataset.recent = '1';
-        const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+        const td = slotOf(tr, 'recent');
         if (!td) return;
         const b = document.createElement('span');
         const created = u.origin === 'manual';                         // alta manual («Registrar nuevo»): «Recién creado» (azul); acreditar a alguien de la base: «Recién registrado» (verde)
@@ -919,7 +936,7 @@
           tr.querySelectorAll('.gw-reason').forEach((n) => n.remove());
           const motivo = activeQuery ? reasons.get(u) : '';
           if (!motivo) return;
-          const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+          const td = slotOf(tr, 'reason');
           if (!td) return;
           const b = document.createElement('span');
           b.className = 'gw-badge gw-badge--info gw-reason gw-registro__reason';

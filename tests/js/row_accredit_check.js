@@ -106,7 +106,7 @@ const lastToast = () => toasts[toasts.length - 1];
   {
     const tr = rows()[0];
     const fields = tr.children.map((td) => td.dataset.field || td.className);
-    assert.deepStrictEqual(fields, ['action-cell', 'id', 'first_name', 'last_name', 'opt_1', 'status', 'entity'], fields.join(','));
+    assert.deepStrictEqual(fields, ['action-cell', 'id', 'first_name', 'last_name', 'opt_1', 'status', 'entity', 'origin', 'recent', 'reason'], fields.join(','));
     const ent = tr.children.find((td) => td.dataset.field === 'entity');
     assert.strictEqual(ent.className, 'touch-only'); assert.ok(typeof ent.innerText === 'string');
     assert.ok(tr.children[0].children.length >= 1, 'los botones siguen en su celda (mismo comportamiento)');

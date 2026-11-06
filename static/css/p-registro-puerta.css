@@ -19,46 +19,80 @@
 .gw-registro #gwVerdict { margin: 0; }
 .gw-registro #gwVerdict .gw-verdict__title { font-size: var(--gw-fs-2xl); }
 .gw-registro #gwVerdict .gw-verdict__aside .gw-btn { min-height: var(--gw-tap-lg); }
+.gw-registro #gwVerdict .gw-verdict__aside { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); max-width: 100%; }
+@media (max-width: 720px) { .gw-registro #gwVerdict { flex-wrap: wrap; } .gw-registro #gwVerdict .gw-verdict__aside { flex: 1 1 100%; } .gw-registro #gwVerdict .gw-verdict__aside .gw-btn { flex: 1 1 auto; justify-content: center; } }
 
-/* ---- Cada persona del directorio = una tarjeta (las filas siguen siendo <tr>; la tabla es solo el contenedor) ---- */
+/* ---- Cada persona del directorio = una tarjeta compacta (las filas siguen siendo <tr>; la tabla es solo el contenedor) ----
+   Fila 1: nombre y apellido en UNA línea con elipsis + «Recién registrado» (insignia pequeña). Fila 2: cédula, estado y origen, cada uno como pieza suelta (nada de insignias dentro de otra).
+   Fila 3 (solo si hay): tipo y empresa. Última fila: [Acreditar (flexible)] [Imprimir] [Editar] [⋯]. Las casillas origin/recent/reason las arma directory.js (buildRow/drawRows). */
 body.gw-registro .gw-reg__list { padding: var(--gw-sp-3) var(--gw-sp-4); }
 body.gw-registro .gw-reg__list .golden-table thead { display: none; }
 body.gw-registro .gw-reg__list .golden-table,
-body.gw-registro .gw-reg__list .golden-table tbody { display: block; width: 100%; max-width: 100%; }
-body.gw-registro .gw-reg__list .golden-table tbody tr { display: block; }
-body.gw-registro .gw-reg__list .golden-table tbody tr td[colspan] { display: block; }
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-1) var(--gw-sp-4); margin: 0 0 var(--gw-sp-3); padding: var(--gw-sp-4) var(--gw-sp-5);
+html body.gw-registro .gw-reg__list .golden-table tbody { display: block; width: 100%; max-width: 100%; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr { display: block; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr td[colspan] { display: block; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-1) var(--gw-sp-3); margin: 0 0 var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3);
   color: var(--gw-text); border: 1px solid var(--gw-border); border-left: 6px solid var(--gw-info-line); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm);
 }
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { background-color: var(--gw-surface) !important; }
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado { background-color: var(--gw-ok-bg) !important; border-left-color: var(--gw-ok-line); }
-body.gw-registro .gw-reg__list .golden-table tbody tr td { display: block; padding: 0; border: 0; background: transparent; min-width: 0; color: var(--gw-text); font-size: var(--gw-fs-md); overflow-wrap: anywhere; word-break: normal; }
-body.gw-registro .gw-reg__list .golden-table tbody tr td.touch-only { display: block; }
-body.gw-registro .gw-reg__list .golden-table tbody tr td:empty { display: none; }
-/* nombre grande, estado a la derecha, datos debajo, acciones al final */
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 1; font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { order: 2; margin-left: auto; padding: var(--gw-sp-1) var(--gw-sp-3); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); color: var(--gw-text); font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado td[data-field=status] { background: var(--gw-ok-bg); color: var(--gw-ok-text) !important; border: 2px solid var(--gw-ok-line); }   /* el modo touch (shared-print.js) pone `color: #fff !important`: blanco sobre verde claro era ilegible */
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 3; flex-basis: 100%; font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id],
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 4; color: var(--gw-text-muted); white-space: nowrap; }
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id]::before { content: "C.C. "; font-weight: var(--gw-fw-bold); }
-body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] .gw-origin { display: block; width: fit-content; margin: var(--gw-sp-1) 0 0; }
-body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 10; flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); min-width: 0; width: auto; white-space: normal; }
-/* botones grandes: Acreditar (principal) e Imprimir (solo apariencia); Editar y Más quedan al tamaño normal */
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn { flex: 0 1 auto; min-height: var(--gw-tap); }
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { flex: 1 1 12rem; min-height: var(--gw-tap-lg); padding: var(--gw-sp-3) var(--gw-sp-6); font-size: var(--gw-fs-xl); }
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl.btn-accredit-row.is-done:disabled { opacity: 1; background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl[title='Imprimir escarapela'] { flex: 1 1 12rem; font-size: var(--gw-fs-xl) !important; }
-/* el texto de los botones siempre se ve (antes quedaba solo el ícono en pantallas justas) */
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
-body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn:not(.gw-btn--xl) { padding: 0 var(--gw-sp-4); }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { background-color: var(--gw-surface) !important; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado { background-color: var(--gw-ok-bg) !important; border-left-color: var(--gw-ok-line); }
+html body.gw-registro .gw-reg__list .golden-table tbody tr td { display: block; padding: 0; border: 0; background: transparent; min-width: 0; color: var(--gw-text); font-size: var(--gw-fs-md); overflow-wrap: anywhere; word-break: normal; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr td.touch-only { display: block; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr td:empty { display: none; }
+/* fila 1: nombre y apellido, una línea con elipsis */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 1; flex: 0 1 auto; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name] { max-width: 28%; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { max-width: 24%; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=recent] { order: 1; flex: 0 0 auto; margin-left: auto; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=recent] .gw-recent-tag { margin: 0; min-height: 1.375rem; padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); white-space: nowrap; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado::after, html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado::after { content: ''; order: 2; flex: 1 0 100%; height: 0; }          /* corta la línea: lo siguiente va siempre en la fila 2 */
+/* fila 2: cédula, estado, origen (piezas sueltas, alineadas) */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id] { order: 4; color: var(--gw-text-muted); white-space: nowrap; overflow-wrap: normal; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id]::before { content: "C.C. "; font-weight: var(--gw-fw-bold); }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { order: 5; margin: 0; padding: 0 var(--gw-sp-3); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); line-height: 1.5rem; white-space: nowrap; overflow-wrap: normal; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado td[data-field=status] { background: var(--gw-ok-bg); color: var(--gw-ok-text) !important; border: 1px solid var(--gw-ok-line); }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] { order: 6; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] .gw-origin { display: inline-block; margin: 0; line-height: 1.375rem; font-size: var(--gw-fs-sm); white-space: nowrap; }
+/* fila 3: tipo y empresa (muted, una línea); el motivo de la búsqueda va en su propia línea */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 7; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); white-space: nowrap; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 8; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 9; flex: 1 1 100%; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] .gw-reason { margin-top: 0; }
+/* última fila: acciones. Una sola línea, nada se sale: Acreditar toma el espacio sobrante; Imprimir, Editar y «⋯» al tamaño del contenido */
+html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 10; flex: 1 1 100%; display: flex; flex-wrap: nowrap; align-items: stretch; gap: var(--gw-sp-2); margin-top: var(--gw-sp-1); min-width: 0; width: auto; white-space: nowrap; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn,
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: var(--gw-sp-2); min-width: var(--gw-tap); min-height: var(--gw-tap) !important; margin: 0; padding: 0 var(--gw-sp-3) !important; border-radius: var(--gw-radius-md); font-size: var(--gw-fs-md) !important; line-height: 1.1; text-align: center; white-space: nowrap; overflow: hidden; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn .gw-icon { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { position: static; width: auto; height: auto; overflow: hidden; clip-path: none; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { flex: 1 1 0; min-width: 0; font-weight: var(--gw-fw-bold); }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row.is-done:disabled { opacity: 1; background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+/* Editar: solo ícono cuando no cabe (el texto sigue para lectores de pantalla); «Más» = tres puntos en un cuadrado del tamaño de los otros botones */
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-act__t,
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'],
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab { width: var(--gw-tap); padding: 0 !important; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu { flex: 0 0 auto; display: flex; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab .gw-icon { width: 1.5rem; height: 1.5rem; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__panel { right: 0; left: auto; }
 /* filas de aviso de la lista (cargando, sin resultados, copia local, paginador) */
-body.gw-registro .gw-reg__list .golden-table tbody tr.directory-more td,
-body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { display: block; text-align: center; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr.directory-more td,
+html body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { display: block; text-align: center; }
+@media (max-width: 479px) {
+  /* celular: Imprimir pasa a solo ícono (nombre accesible y tooltip siguen) para que Acreditar conserve su texto completo */
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] { padding: 0 !important; width: var(--gw-tap); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+@media (min-width: 721px) {
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { font-size: var(--gw-fs-xl); max-width: 40%; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { flex: 0 1 14rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { flex: 1 1 100%; }
+}
 
 /* ---- Ventana «Registrar nuevo»: lo mínimo arriba, lo demás plegado ---- */
 .gw-registro #registerModal .gw-registro__modalhead .gw-btn { min-height: var(--gw-tap-lg); }
@@ -71,9 +105,6 @@ body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { 
   .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn,
   .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-menu { flex: 1 1 100%; }
   .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-menu__btn { width: 100%; }
-  body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
-  body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { padding: var(--gw-sp-3) var(--gw-sp-4); }
-  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { flex-basis: 100%; }
 }
 
 /* movimiento: ninguno si la persona lo pidió (el aviso de veredicto ya trae su animación corta de design-system.css) */
@@ -161,17 +192,6 @@ body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { 
   .gw-registro .gw-workarea__bar { padding: var(--gw-sp-1) var(--gw-sp-2); gap: var(--gw-sp-1); }
   body.gw-registro .gw-reg__list { padding: var(--gw-sp-2) var(--gw-sp-2); }
 }
-@media (max-width: 720px) {
-  /* tarjeta de persona más baja: la primera cabe en la primera pantalla; «Acreditar» sigue grande y a la vista */
-  body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
-  body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { padding: var(--gw-sp-2) var(--gw-sp-3); margin-bottom: var(--gw-sp-2); gap: 0 var(--gw-sp-3); }
-  body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
-  body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { font-size: var(--gw-fs-lg); }
-  body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { margin-top: var(--gw-sp-2); gap: var(--gw-sp-2); }
-  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { min-height: var(--gw-tap); padding: 0 var(--gw-sp-4); font-size: var(--gw-fs-md); }
-  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl[title='Imprimir escarapela'] { font-size: var(--gw-fs-md) !important; }
-}
-
 /* El dedo que cae sobre una persona o su botón también desplaza la página (sin zoom por doble toque ni retraso de clic). Ver la causa real en static/js/directory.js (drawRows). */
 body.gw-registro .gw-reg__list .golden-table tbody tr,
 body.gw-registro .gw-reg__list .golden-table tbody td,
@@ -181,8 +201,7 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
 /* el chip «Filtros» solo existe en celular */
 .gw-registro .gw-summary__more { display: none; }
 
-/* ================= M8 · Registro en celular (410 px): cabecera en una fila, buscador bajo, DOS botones, contadores en una fila y la primera persona completa a la vista =================
-   Cálculo de alturas (viewport útil 410 x 730; todo en px con 1rem = 16 px; --gw-sp-1 = 4, --gw-sp-2 = 8, --gw-sp-3 = 12):
+/* ================= M8 · Registro en celular (410 px): cabecera en una fila, buscador bajo, DOS botones, contadores en una fila y la primera persona completa a la vista ==========   Cálculo de alturas (viewport útil 410 x 730; todo en px con 1rem = 16 px; --gw-sp-1 = 4, --gw-sp-2 = 8, --gw-sp-3 = 12):
      cabecera fija de la cuenta (.golden-header)                64   (la tapa; lo de abajo arranca debajo de ella)
      franja del evento (.golden-event-strip, 1 línea)           28
      fila título + «En línea» + engranaje                       36   (la etiqueta de la empresa se quita en celular)
@@ -243,3 +262,24 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   body.gw-registro .gw-steps__guidebtn { padding: 0 var(--gw-sp-2) !important; }
 }
 
+=======
+/* ================= M10 · botones y chips que no se parten ni se descentran (celular) ================= */
+@media (max-width: 720px) {
+  .gw-registro .gw-steps--compact .gw-steps__text { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; word-break: normal; }
+  .gw-registro .gw-steps--compact > li { min-width: 0; }
+  .gw-registro .gw-registro__modalhead { flex-wrap: wrap; }
+  .gw-registro .gw-registro__modalhead .gw-registro__modaltitle { flex: 1 1 100%; }
+  .gw-registro .gw-registro__modalhead .gw-btn { flex: 1 1 auto; justify-content: center; border-radius: var(--gw-radius-md); text-align: center; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions { flex-wrap: wrap; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn,
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-btn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
+}
+@media (max-width: 400px) {
+  .gw-registro .gw-steps--compact .gw-steps__n { display: none; }          /* el número es adorno (aria-hidden): sin él, «Acredita» y «Imprime» caben enteros */
+  .gw-registro .gw-steps--compact > li { justify-content: center; padding: 0 var(--gw-sp-2); }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado { padding: var(--gw-sp-2); }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { gap: var(--gw-sp-1); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); }
+}

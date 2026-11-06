@@ -57,7 +57,8 @@ window.SearchCore = require('../../static/js/search-core.js');
 eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 const rows = () => els.tbody.children.filter((tr) => tr.className !== 'directory-more' && tr.className !== 'directory-local-note');
 const ids = () => rows().map((tr) => tr.dataset.userId);
-const tags = () => rows().filter((tr) => tr.children[2].children.some((c) => c.className.includes('gw-recent-tag'))).map((tr) => tr.dataset.userId);
+const slot = (tr, f) => tr.children.find((c) => c.dataset && c.dataset.field === f);          // «Recién registrado» vive en su casilla propia (data-field=recent), junto al nombre
+const tags = () => rows().filter((tr) => slot(tr, 'recent').children.some((c) => c.className.includes('gw-recent-tag'))).map((tr) => tr.dataset.userId);
 const type = (el, text) => { el.value = text; el.listeners.input(); advance(250); };
 const tick = () => new Promise((r) => setImmediate(r));
 const mount = (extra) => window.GoldenDirectory.mountSearch(Object.assign({ tbodyId: 'tbody', unified: true, pageSize: 200, searchIds: { cedula: 'cedula', nombre: 'searchNombre', entidad: 'searchEntidad' } }, extra || {}));
@@ -71,12 +72,12 @@ const sortedServed = order.map((idx) => 'P' + String(idx).padStart(2, '0'));    
   // etiqueta: solo dentro de 15 min de la más nueva (k*2 < 15 -> k = 0..7)
   assert.deepStrictEqual(tags(), sortedServed.slice(0, 8));
   assert.ok(rows().slice(0, 8).every((tr) => tr.dataset.recent === '1') && rows().slice(8).every((tr) => tr.dataset.recent !== '1'));
-  assert.strictEqual(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).textContent, 'Recién registrado');
-  assert.ok(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).className.includes('gw-badge gw-recent-tag'));
+  assert.strictEqual(slot(rows()[0], 'recent').children.find((c) => c.className.includes('gw-recent-tag')).textContent, 'Recién registrado');
+  assert.ok(slot(rows()[0], 'recent').children.find((c) => c.className.includes('gw-recent-tag')).className.includes('gw-badge gw-recent-tag'));
   // alta manual («Registrar nuevo») = «Recién creado» en azul; acreditar a alguien de la base sigue siendo «Recién registrado» en verde (5-nov-2026)
   const nuevoId = rows()[0].dataset.userId; users.find((u) => u.id === nuevoId).origin = 'manual'; users.find((u) => u.id === rows()[1].dataset.userId).origin = 'base';
   await d.reload();
-  const tagOf = (i) => rows()[i].children[2].children.find((c) => c.className.includes('gw-recent-tag'));
+  const tagOf = (i) => slot(rows()[i], 'recent').children.find((c) => c.className.includes('gw-recent-tag'));
   assert.strictEqual(tagOf(0).textContent, 'Recién creado'); assert.ok(tagOf(0).className.includes('gw-recent-tag--new'), 'la píldora de «Recién creado» es la azul');
   assert.strictEqual(tagOf(1).textContent, 'Recién registrado'); assert.ok(!tagOf(1).className.includes('gw-recent-tag--new'), 'la de «Recién registrado» sigue verde');
 
