@@ -66,11 +66,11 @@
   bar.setAttribute('role', 'status');
   bar.setAttribute('aria-live', 'polite');
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
-    '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
-    '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
-    '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
-    '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
-    '<button type="button" class="sp-btn" id="spKeyboard" hidden>⌨️ Teclado</button>';
+    '<button type="button" class="sp-btn" id="spConnect">Conectar impresora</button>' +
+    '<button type="button" class="sp-btn" id="spPending" hidden>Imprimir pendientes</button>' +
+    '<button type="button" class="sp-btn" id="spQueue">Cola</button>' +
+    '<button type="button" class="sp-btn" id="spPrefs">Impresión</button>' +
+    '<button type="button" class="sp-btn" id="spKeyboard" hidden>Teclado</button>';
   const style = document.createElement('style');
   style.textContent = [
     '#sharedPrintBar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;margin:0 0 12px;border-radius:12px;background:#fff;border:2px solid #d0d4de;font-size:0.95rem}',
@@ -92,7 +92,7 @@
     'body.touch-mode #clearFiltersBtn,body.touch-mode .golden-sidebar-toggle{display:none !important}',
     'body.touch-mode #searchCedula,body.touch-mode #searchNombre,body.touch-mode #searchEntidad{min-height:60px;font-size:1.3rem !important;width:100%;box-sizing:border-box}',
     '.sp-kbd-wrap{position:relative;display:block}.sp-kbd-wrap>input{padding-right:64px !important}',
-    '.sp-kbd{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-width:48px;min-height:48px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;font-size:1.4rem;line-height:1;cursor:pointer;padding:0}',
+    '.sp-kbd{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-width:48px;min-height:48px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;font-size:1rem;font-weight:700;line-height:1;cursor:pointer;padding:0}',
     '.sp-kbd[aria-pressed=true]{background:#0a0e2e;color:#fff}',
     'body.touch-mode label[for],body.touch-mode .badge-input-group label{font-size:1rem}',
     /* Directorio en vivo como TARJETAS de dos filas (25-oct-2026, celular vertical: el nombre quedaba fuera de la pantalla detrás de los botones). Solo con el modo touch;
@@ -171,7 +171,7 @@
     bar.querySelector('#spQueue').hidden = !(SHARED && shown);
     bar.querySelector('#spPrefs').hidden = !shown;
     bar.querySelector('#spPending').hidden = !(SHARED && !usb.ok && waitingCount());            // la acción del puesto: se ve también con el menú escondido
-    bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
+    bar.querySelector('#spPending').textContent = `Imprimir pendientes (${waitingCount()})`;
   }
   function stationLine() {
     const names = route.serving_names && route.serving_names.length ? route.serving_names.join(', ') : '';
@@ -636,7 +636,7 @@
     if (!wrap) {
       wrap = document.createElement('span'); wrap.className = 'sp-kbd-wrap';
       el.parentNode.insertBefore(wrap, el); wrap.appendChild(el);
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'sp-kbd'; b.textContent = '⌨️'; b.setAttribute('aria-label', 'Abrir el teclado');
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'sp-kbd'; b.textContent = 'Abc'; b.setAttribute('aria-label', 'Abrir el teclado');
       b.addEventListener('click', () => { keyboard = !keyboard; applyTouch(); el.blur(); setTimeout(() => el.focus(), 50); });
       wrap.appendChild(b);
     }

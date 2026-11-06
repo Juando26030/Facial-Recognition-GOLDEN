@@ -68,8 +68,8 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const altLink = document.getElementById('bioAltLink');
         if (altLink) altLink.addEventListener('click', goCedula);
-        const cameraOn = () => { cameraBox.style.display = 'block'; if (scanBtn) scanBtn.disabled = !eventOpen; ident.style.display = 'none'; startCamera(); };
-        const cameraOff = () => { stopCamera(); cameraBox.style.display = 'none'; if (scanBtn) scanBtn.disabled = true; ident.style.display = 'block'; identInput.value = ''; clickToken = ''; };
+        const cameraOn = () => { setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); startCamera(); };
+        const cameraOff = () => { stopCamera(); setOff(cameraBox, true); if (scanBtn) scanBtn.disabled = true; setOff(ident, false); identInput.value = ''; clickToken = ''; };
         afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
         resetGate = () => { cameraOff(); setTimeout(startClickScreen, 0); };
         async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     next = okId && await gate.verify(cedula) ? await gate.ensure(cedula) : 'cedula';
                 }
                 if (next === 'camera') { identMsg.textContent = ''; cameraOn(); }
-                else if (next === 'enroll') { enrollCedula = cedula; identMsg.textContent = ''; cameraOn(); resTexto.innerText = 'Capta el rostro de la persona: hoy ingresa por cédula; desde la próxima entrada, por rostro.'; resTexto.style.color = '#D4AF37'; }
+                else if (next === 'enroll') { enrollCedula = cedula; identMsg.textContent = ''; cameraOn(); setResult('Capta el rostro de la persona: hoy ingresa por cédula; desde la próxima entrada, por rostro.', 'gold'); }
                 else if (next === 'pending') { identMsg.textContent = 'Tu reconocimiento facial se está preparando: hoy ingresa por cédula o QR.'; goCedula(null, cedula); }
                 else { identMsg.textContent = ''; identInput.value = ''; goCedula(null, cedula); }
             } finally { identBtn.disabled = false; }
@@ -106,6 +106,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const escanearBtn = document.getElementById('escanearBtn');
     const resTexto = document.getElementById('resultadoTexto');
     const printScanBtn = document.getElementById('printScanBtn');
+    /* Mostrar / ocultar sin estilos en línea: la clase gw-registro__off (registro.css) esconde; quitarla devuelve el aspecto normal del elemento. */
+    const setOff = (el, off) => { if (el) el.classList.toggle('gw-registro__off', !!off); };
+    /* Resultado del escáner: el color lo da la clase (ok / warn / err / gold), siempre acompañado de las palabras. */
+    const setResult = (text, tone) => { if (!resTexto) return; resTexto.innerText = text; resTexto.className = 'gw-registro__result' + (tone ? ' gw-registro__result--' + tone : ''); };
+    /* Acción con rueda (GW.busy): sin el ayudante (pruebas) solo corre la acción. Arranca de inmediato, dentro del gesto del usuario. */
+    const busyRun = (btn, work) => (window.GW && window.GW.busy && btn && btn.setAttribute ? window.GW.busy(btn, work) : new Promise((resolve) => resolve(work())));
 
     // Botón "Imprimir Escarapela" (Historia 2.2) — NUNCA se dispara solo por defecto, el
     // digitador decide si lo pulsa; si el evento tiene la auto-impresión activada
@@ -114,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // imprimir") — el backend ya lo bloquea, esto evita ofrecerle un botón que le va a fallar.
     function offerPrint(btn, userId) {
         if (!btn || window.STAFF_ROLE === 'comercial') return;
-        btn.style.display = 'block';
+        setOff(btn, false);
         btn.onclick = () => BadgePrint.openPrintWindow(userId);
         if (window.BadgePrint) BadgePrint.maybeAutoPrint(userId);
     }
@@ -132,7 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let scanToken = null, captureUrl = null, photoUrls = [];
 
     function hideScanResult() {
-        if (scanResult) scanResult.style.display = 'none';
+        setOff(scanResult, true);
         photoUrls.forEach((u) => URL.revokeObjectURL(u));
         if (captureUrl) URL.revokeObjectURL(captureUrl);
         photoUrls = []; captureUrl = null; scanToken = null;
@@ -186,7 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!c.within_tolerance) { const t = document.createElement('small'); t.textContent = ' Fuera de la tolerancia'; conf.appendChild(t); }
             who.append(name, detail, conf);
             const btn = document.createElement('button');
-            btn.type = 'button'; btn.className = 'golden-btn scan-pick'; btn.dataset.index = c.index; btn.style.cssText = 'width:auto; padding:6px 12px;';
+            btn.type = 'button'; btn.className = 'gw-btn gw-btn--secondary gw-btn--sm scan-pick'; btn.dataset.index = c.index;
             btn.textContent = 'Abrir registro';
             row.append(img, who, btn);
             scanEls.cands.appendChild(row);
@@ -213,8 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!res.ok) { showToast(row.detail || 'No se pudo abrir el registro', 'error'); return; }
             GoldenDirectory.openEdit(row, { method: 'biometrico', onSaved: (id) => {
                 hideScanResult();
-                resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
-                resTexto.style.color = "#28a745";
+                setResult("ACCESO AUTORIZADO Y GUARDADO", 'ok');
                 showPrint(id);
             } });
         } catch (e) { showToast('Error de red', 'error'); }
@@ -223,19 +228,19 @@ document.addEventListener("DOMContentLoaded", () => {
     // «Imprimir» ahí mismo tras guardar. El modal ya dispara la auto-impresión si el evento la tiene (badge-render.js), así que aquí solo se ofrece el botón.
     function showPrint(userId) {
         if (!printScanBtn || window.STAFF_ROLE === 'comercial') return;
-        printScanBtn.style.display = 'block';
+        setOff(printScanBtn, false);
         printScanBtn.onclick = () => BadgePrint.openPrintWindow(userId);
     }
 
     function showScanResult(data) {
         if (!scanResult) return;
         const doubtful = data.result === 'DUDOSO';
-        scanEls.title.textContent = doubtful ? '⚠️ Coincidencia dudosa — elige a la persona'
-            : data.result === 'SÍ' ? '✅ Ingreso registrado automáticamente' : '🟡 Verifica y confirma el ingreso';
-        scanEls.main.style.display = doubtful ? 'none' : 'block';
+        scanEls.title.textContent = doubtful ? 'Coincidencia dudosa — elige a la persona'
+            : data.result === 'SÍ' ? 'Ingreso registrado automáticamente' : 'Verifica y confirma el ingreso';
+        setOff(scanEls.main, doubtful);
         scanEls.cands.replaceChildren();
-        scanEls.more.style.display = data.has_candidates ? 'inline-block' : 'none';
-        scanEls.open.style.display = data.result === 'SÍ' ? 'none' : 'inline-block';
+        setOff(scanEls.more, !data.has_candidates);
+        setOff(scanEls.open, data.result === 'SÍ');
         if (doubtful) {
             renderCandidates(data.candidates);
             const p = document.createElement('p');
@@ -253,7 +258,7 @@ document.addEventListener("DOMContentLoaded", () => {
             infoRow(scanEls.info, 'Estado', m.registered || data.result === 'SÍ' ? 'Registrado' : 'No registrado');
             if (m.confidence) infoRow(scanEls.info, 'Confianza', confBadge(m));
         }
-        scanResult.style.display = 'flex';
+        setOff(scanResult, false);
     }
 
     if (scanResult) {
@@ -272,15 +277,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
 
             if (!res.ok) {
-                resTexto.innerText = "❌ " + (data.detail || "No se pudo procesar");
-                resTexto.style.color = "#dc3545";
+                setResult(data.detail || "No se pudo procesar", 'err');
                 return;
             }
             if (data.match_token) scanToken = data.match_token;
 
             if (data.result === 'DUPLICADO') {
-                resTexto.innerText = "⚠️ Ya registrado(a) en este evento";
-                resTexto.style.color = "#f0ad4e";
+                setResult("Ya registrado(a) en este evento", 'warn');
                 const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
                 if (confirmado) {
                     formData.set('force', 'true');
@@ -291,8 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (data.result === 'DUDOSO') {
-                resTexto.innerText = "⚠️ Coincidencia dudosa — verifica quién es";
-                resTexto.style.color = "#f0ad4e";
+                setResult("Coincidencia dudosa — verifica quién es", 'warn');
                 showScanResult(data);
                 return;
             }
@@ -303,35 +305,30 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             if (data.result === 'MATCH_PENDING') {
-                resTexto.innerText = "🟡 Coincidencia encontrada — compara las fotos y confirma";
-                resTexto.style.color = "#f0ad4e";
+                setResult("Coincidencia encontrada — compara las fotos y confirma", 'warn');
                 showScanResult(data);
                 return;
             }
 
             if (data.result === 'SÍ') {
-                resTexto.innerText = "✅ IDENTIDAD VALIDADA Y ACCESO AUTORIZADO";
-                resTexto.style.color = "#28a745";
+                setResult("IDENTIDAD VALIDADA Y ACCESO AUTORIZADO", 'ok');
                 showScanResult(data);
                 offerPrint(printScanBtn, data.data.id);
                 if (window.directorySearch) window.directorySearch.reload();
             } else {
-                if (printScanBtn) printScanBtn.style.display = 'none';
-                resTexto.innerText = "❌ " + data.details;
-                resTexto.style.color = "#dc3545";
+                setOff(printScanBtn, true);
+                setResult(data.details, 'err');
             }
         } catch (e) {
-            resTexto.innerText = "❌ Error de conexión al servidor FastAPI";
-            resTexto.style.color = "#dc3545";
+            setResult("Error de conexión con el servidor", 'err');
         }
     }
 
     if(escanearBtn) {
         escanearBtn.addEventListener('click', () => {
-            resTexto.innerText = "Analizando geometría facial...";
-            resTexto.style.color = "#D4AF37";
+            setResult("Analizando geometría facial...", 'gold');
             hideScanResult();
-            if(printScanBtn) printScanBtn.style.display = 'none';
+            setOff(printScanBtn, true);
 
             // Se reduce la foto en el navegador (lado mayor ~640 px, JPEG): pesa ~40 KB en vez de varios MB y el servidor no tiene que reducirla él.
             const MAX_SIDE = 640;
@@ -347,7 +344,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (enrollCedula) {                              // camino A: guardar la captura y encolar el vector; la persona entra YA por cédula (nunca se bloquea la puerta)
                     const fd = new FormData(); fd.append('user_id', enrollCedula); fd.append('file', blob, 'webcam.jpg');
                     const who = enrollCedula;
-                    fetch(`/api/events/${EVENT_ID}/enroll-face`, { method: 'POST', body: fd }).then((r) => { resTexto.innerText = r.ok ? '✅ Listo. Hoy ingresa por cédula o QR; tu rostro quedará listo en unos momentos.' : '⚠️ No se pudo guardar el rostro: ingresa por cédula o QR.'; resTexto.style.color = r.ok ? '#28a745' : '#f0ad4e'; }).catch(() => { resTexto.innerText = '⚠️ Sin conexión: ingresa por cédula o QR.'; }).finally(() => afterEnroll(who));
+                    fetch(`/api/events/${EVENT_ID}/enroll-face`, { method: 'POST', body: fd }).then((r) => { setResult(r.ok ? 'Listo. Hoy ingresa por cédula o QR; tu rostro quedará listo en unos momentos.' : 'No se pudo guardar el rostro: ingresa por cédula o QR.', r.ok ? 'ok' : 'warn'); }).catch(() => { setResult('Sin conexión: ingresa por cédula o QR.', 'warn'); }).finally(() => afterEnroll(who));
                     return;
                 }
                 formData.append('event_id', EVENT_ID);
@@ -371,11 +368,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // evento hermano y ofrece SOLO vincularla (sus datos ya están guardados) en vez de capturarlos de nuevo.
         const idInput = regForm.querySelector('[name="id"]');
         const siblingBanner = document.createElement('div');
-        siblingBanner.style.cssText = 'display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:10px; padding:10px 12px; font-size:0.82rem; margin-top:6px;';
+        siblingBanner.className = 'gw-alert gw-alert--warn gw-registro__sibling'; siblingBanner.hidden = true; siblingBanner.setAttribute('role', 'status');
         idInput.insertAdjacentElement('afterend', siblingBanner);
         idInput.addEventListener('blur', async () => {
             const id = idInput.value.trim();
-            siblingBanner.style.display = 'none';
+            siblingBanner.hidden = true;
             if (!id) return;
             let res;
             try { res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`); } catch (e) { return; }       // sin red: no hay aviso de hermanos
@@ -383,7 +380,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             if (!data.siblings.length || !data.user) return;
             const who = `${data.user.first_name || ''} ${data.user.last_name || ''}`.trim();
-            siblingBanner.innerHTML = `⚠️ <strong></strong> ya asistió a <span class="sib-events"></span> (mismo superevento «<span class="sib-super"></span>»). Sus datos ya están guardados. <button type="button" class="sib-link" style="margin-left:6px; border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:14px; padding:4px 12px; font-weight:700; cursor:pointer;">Solo vincular a este evento</button> <span style="color:#8a6d1a;">(o sigue llenando el formulario para actualizar sus datos)</span>`;
+            siblingBanner.innerHTML = `<div class="gw-registro__grow"><strong></strong> ya asistió a <span class="sib-events"></span> (mismo superevento «<span class="sib-super"></span>»). Sus datos ya están guardados. <button type="button" class="sib-link gw-btn gw-btn--secondary gw-btn--sm">Solo vincular a este evento</button> <span class="gw-hint">(o sigue llenando el formulario para actualizar sus datos)</span></div>`;
             siblingBanner.querySelector('strong').textContent = who || id;
             siblingBanner.querySelector('.sib-events').textContent = data.siblings.map(s => s.event_name).join(', ');
             siblingBanner.querySelector('.sib-super').textContent = data.super_event_name || '';
@@ -391,9 +388,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 const fd = new FormData();
                 fd.append('event_id', EVENT_ID); fd.append('id', id);
                 fd.append('first_name', data.user.first_name || ''); fd.append('last_name', data.user.last_name || '');
-                await submitManualRegister(fd, siblingBanner.querySelector('.sib-link'));
+                const link = siblingBanner.querySelector('.sib-link');
+                await busyRun(link, () => submitManualRegister(fd, link));
             });
-            siblingBanner.style.display = 'block';
+            siblingBanner.hidden = false;
         });
         /* «Registrar nuevo» SIEMPRE abre en blanco (5-nov-2026): la cédula de la última persona guardada no puede quedar escrita. Se limpia explícitamente al abrir (además del reset al guardar), también
            lo que el navegador haya recordado. Lo llama el botón «Registrar nuevo» al abrir la ventana. */
@@ -405,11 +403,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 el.value = el.defaultValue || '';
             });
             idInput.value = '';
-            siblingBanner.style.display = 'none';
+            siblingBanner.hidden = true;
             if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
         };
         regForm.addEventListener('reset', () => setTimeout(() => {
-            siblingBanner.style.display = 'none';
+            siblingBanner.hidden = true;
             regForm.querySelectorAll('.sig-canvas').forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
             regForm.querySelectorAll('.sig-wrap').forEach(w => { w._dirty = false; });
         }, 0));
@@ -446,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 showToast(data.message || data.error, data.error ? "error" : "success");
-                if (data.digital) showToast(`📲 Escarapela digital: ${data.digital.detail}`, 'success');
+                if (data.digital) showToast(`Escarapela digital: ${data.digital.detail}`, 'success');
                 if (!data.error) {
                     if (window.RegTimer) RegTimer.done();
                     const registeredId = formData.get('id');
@@ -480,7 +478,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast('Para guardar la foto, marca que la persona autoriza el uso de su rostro. Si no la autoriza, quita la foto y registra solo por cédula.', 'error');
                 return;
             }
-            setButtonLoading(btn, true, "Guardando...");
+            await busyRun(btn, async () => {          // rueda en «Guardar» y sin doble envío (GW.busy)
             if (window.regPersonForm) window.regPersonForm.applyAll();          // formulario de persona: «Texto al escribir» también en lo que se llenó por lector o por foto de la cédula
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
@@ -513,11 +511,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const GCo = window.GoldenContingency && window.GoldenContingency.instance, box = window.GoldenOutbox && window.GoldenOutbox.instance;
             if (GCo && GCo.active && GCo.active() && box && box.supported) {
                 await queueOffline(formData, box);
-                setButtonLoading(btn, false);
                 return;
             }
             await submitManualRegister(formData, btn);
-            setButtonLoading(btn, false);
+            });
         };
 
         async function queueOffline(formData, box) {

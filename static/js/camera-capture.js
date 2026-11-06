@@ -12,19 +12,24 @@
     const onCapture = opts.onCapture || function () {};
 
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.6); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;';
+    overlay.className = 'gw-modal-backdrop gw-modal-backdrop--top'; overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', title);
     const box = document.createElement('div');
-    box.style.cssText = 'background:white; border-radius:16px; padding:1.4rem; max-width:480px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.4); text-align:center; font-family: var(--font-body, sans-serif);';
+    box.className = 'gw-modal gw-modal--dialog gw-cam';
+    const iconUrl = (window.GW_ICON_URL || '/static/img/icons.svg');
     box.innerHTML = `
-      <h4 style="margin-top:0; color:var(--golden-dark);">${title}</h4>
-      <video autoplay playsinline style="width:100%; border-radius:10px; background:#000;"></video>
-      <canvas style="display:none;"></canvas>
-      <p class="cam-error" style="color:#dc3545; font-size:0.85rem; display:none; margin-top:0.6rem;"></p>
-      <div style="display:flex; justify-content:center; gap:10px; margin-top:1rem;">
-        <button type="button" class="cam-cancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-        <button type="button" class="cam-capture" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">📸 Tomar foto</button>
+      <div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>
+      <div class="gw-modal__body">
+        <video class="gw-cam__video" autoplay playsinline aria-label="Vista de la cámara"></video>
+        <canvas hidden></canvas>
+        <p class="gw-alert gw-alert--err cam-error" role="alert" hidden></p>
+      </div>
+      <div class="gw-modal__foot">
+        <button type="button" class="gw-btn gw-btn--secondary cam-cancel">Cancelar</button>
+        <button type="button" class="gw-btn gw-btn--primary cam-capture"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Tomar foto</button>
       </div>
     `;
+    box.querySelector('.gw-modal__title').textContent = title;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
@@ -42,7 +47,7 @@
       .then(s => { stream = s; video.srcObject = s; })
       .catch(() => {
         errorEl.innerText = 'No se pudo acceder a la cámara — revisa los permisos del navegador, o usa "Adjuntar imagen" en su lugar.';
-        errorEl.style.display = 'block';
+        errorEl.hidden = false;
       });
 
     box.querySelector('.cam-cancel').addEventListener('click', close);
