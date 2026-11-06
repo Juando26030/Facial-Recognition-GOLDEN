@@ -7,6 +7,7 @@
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const icon = (n) => '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>';
   const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB');
+  const fileKind = (n) => { const m = /\.([A-Za-z0-9]{1,5})$/.exec(n || ''); return m ? m[1].toUpperCase() : 'Archivo'; };
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
 
   function setList(html, loading) {
@@ -23,19 +24,21 @@
       docs = await res.json();
     } catch (err) {
       $('docCount').textContent = '';
+      $('docTotal').textContent = '–';
       $('zipBtn').hidden = true;
       setList('<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudieron cargar los documentos</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry>Reintentar</button></div>');
       return;
     }
+    $('docTotal').textContent = String(docs.length);
     $('docCount').textContent = docs.length ? '(' + docs.length + ')' : '';
     $('zipBtn').hidden = !docs.length;
     if (!docs.length) {
-      setList('<div class="gw-empty">' + icon('inbox') + '<p>Todavía no hay documentos en este evento.</p><p class="gw-hint">Adjunta el primero con el formulario de arriba.</p></div>');
+      setList('<div class="gw-state">' + icon('inbox') + '<p class="gw-state__title">Todavía no hay documentos</p><p class="gw-state__text">Sube el primero con el botón «Subir documento» de arriba.</p></div>');
       return;
     }
     setList(docs.map((d) => `
       <article class="gw-card-row">
-        <div class="gw-card-row__head"><h3 class="gw-card-row__title">${esc(d.name)}</h3></div>
+        <div class="gw-card-row__head"><h3 class="gw-card-row__title">${esc(d.name)}</h3><span class="gw-badge gw-badge--ok">${esc(fileKind(d.filename))}</span></div>
         <p class="gw-card-row__meta">${esc(d.filename)} · ${fmtSize(d.size_bytes)}${d.created_at ? ' · ' + new Date(d.created_at + 'Z').toLocaleDateString() : ''}</p>
         ${d.description ? `<p class="gw-text-sm">${esc(d.description)}</p>` : ''}
         <div class="gw-card-row__actions">
@@ -52,12 +55,12 @@
     busy(btn, async () => {
       const fd = await DirectUpload.replaceFiles(new FormData(form), { file: ['upload', 'event_doc'] }, { body: { event_id: EVENT_ID } });
       const res = await fetch('/api/events/' + EVENT_ID + '/documents', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'No se pudo adjuntar');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'No se pudo subir el documento');
     }).then(() => {
       form.reset();
-      showToast('Documento adjuntado', 'success');
+      showToast('Documento subido', 'success');
       loadDocs();
-    }).catch((err) => showToast(err.message || 'No se pudo adjuntar', 'error'));
+    }).catch((err) => showToast(err.message || 'No se pudo subir el documento', 'error'));
   });
 
   $('docList').addEventListener('click', async (e) => {

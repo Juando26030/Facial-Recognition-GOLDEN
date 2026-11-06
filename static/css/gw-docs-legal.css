@@ -1,3 +1,9 @@
 /* Documentos y Legalizaciones (Fase 1.5): solo lo que el sistema de diseño no trae. Únicamente tokens --gw-*. */
 .gw-btn[hidden] { display: none; }
 .gw-card-row__thumb { display: block; height: 4.5rem; width: auto; max-width: 100%; object-fit: cover; border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); }
+
+/* Fase 1.7: acción principal grande, importe del gasto bien visible y botón del ZIP dentro de su cifra. */
+.gw-docs-main { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
+.gw-card-row__amount { margin: 0; font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; }
+.gw-docs-zip .gw-btn { margin-top: var(--gw-sp-1); }
+@media (max-width: 640px) { .gw-docs-main { width: 100%; } }
