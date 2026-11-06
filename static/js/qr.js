@@ -53,17 +53,21 @@
     const cooldown = opts.cooldownMs || 3000;
 
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.6); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;';
+    overlay.className = 'gw-modal-backdrop gw-modal-backdrop--top'; overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', opts.title || 'Escanear código QR');
     const box = document.createElement('div');
-    box.style.cssText = 'background:white; border-radius:16px; padding:1.4rem; max-width:480px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.4); text-align:center; font-family: var(--font-body, sans-serif);';
+    box.className = 'gw-modal gw-modal--dialog gw-cam';
     box.innerHTML = `
-      <h4 style="margin-top:0; color:var(--golden-dark);">${opts.title || 'Escanear código QR'}</h4>
-      <video autoplay playsinline muted style="width:100%; border-radius:10px; background:#000;"></video>
-      <canvas style="display:none;"></canvas>
-      <p class="qr-status" style="font-size:0.85rem; color:#555; margin:0.6rem 0 0;">Apunta la cámara al código QR.</p>
-      <div style="display:flex; justify-content:center; margin-top:1rem;">
-        <button type="button" class="qr-close" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 22px; cursor:pointer; font-weight:600;">Cerrar</button>
+      <div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>
+      <div class="gw-modal__body">
+        <video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video>
+        <canvas hidden></canvas>
+        <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
+      </div>
+      <div class="gw-modal__foot">
+        <button type="button" class="gw-btn gw-btn--secondary qr-close">Cerrar</button>
       </div>`;
+    box.querySelector('.gw-modal__title').textContent = opts.title || 'Escanear código QR';
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
@@ -92,7 +96,7 @@
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       } catch (e) {
-        status.style.color = '#dc3545';
+        status.classList.add('gw-cam__status--err');
         status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
         return;
       }
@@ -102,7 +106,7 @@
         try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { detector = null; }
       }
       const jsQR = detector ? null : await loadJsQr().catch(() => null);
-      if (!detector && !jsQR) { status.style.color = '#dc3545'; status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
+      if (!detector && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       async function tick() {
