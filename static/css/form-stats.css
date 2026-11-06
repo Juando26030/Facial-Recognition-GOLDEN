@@ -76,3 +76,4 @@
   .fs-actions .gw-btn { flex: 1 1 100%; }
   .fs-top .gw-btn { max-width: 100%; white-space: normal; text-align: center; }
 }
+#fs-root > .gw-steps { margin-top: var(--gw-sp-4); }
