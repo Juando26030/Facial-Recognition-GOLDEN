@@ -35,23 +35,32 @@
 a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 
 /* ---------- Eventos: tarjetas ---------- */
-.ev-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--gw-sp-3); align-items: end; margin-bottom: var(--gw-sp-4); }
+.ev-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--gw-sp-4); align-items: end; padding: var(--gw-sp-5); margin-bottom: var(--gw-sp-5); }
 .ev-filters .gw-field { margin: 0; }
-.ev-card { position: relative; }
-.ev-card__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
-.ev-card__code { font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
-.ev-card__meta { display: grid; gap: var(--gw-sp-1); }
-.ev-card__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: end; }
-.ev-card__bar .gw-field { flex: 0 1 12rem; margin: 0; }
-.ev-card__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
-.ev-card__actions .gw-btn { flex: 0 1 auto; }
-.ev-card__enter { margin-left: auto; }
+.ev-filters .gw-input, .ev-filters .gw-select { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
+.ev-filters .gw-label { font-size: var(--gw-fs-md); }
+.ev-card { position: relative; gap: var(--gw-sp-4); padding: var(--gw-sp-5); }
+.ev-card__head { align-items: flex-start; gap: var(--gw-sp-3); }
+.ev-card__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); font-size: var(--gw-fs-xl); }
+.ev-card__code { font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); font-size: var(--gw-fs-md); }
+.ev-card__state { font-size: var(--gw-fs-md); padding: var(--gw-sp-2) var(--gw-sp-4); gap: var(--gw-sp-2); }
+.ev-card__meta { display: grid; gap: var(--gw-sp-2); }
+.ev-card__row { display: flex; align-items: flex-start; gap: var(--gw-sp-3); margin: 0; font-size: var(--gw-fs-md); color: var(--gw-text); }
+.ev-card__row .gw-icon { flex: 0 0 auto; margin-top: 0.2em; color: var(--gw-text-muted); }
+.ev-card__row--plain { padding-left: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.ev-card__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-4); align-items: end; }
+.ev-card__bar .gw-field { flex: 0 1 16rem; margin: 0; }
+.ev-card__bar .gw-select { min-height: var(--gw-tap-lg); }
+.ev-card__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: center; }
+.ev-card__actions .gw-btn { flex: 0 1 auto; min-height: calc(var(--gw-tap) + var(--gw-sp-2)); }
+.ev-card__actions .ev-card__enter { min-height: var(--gw-tap-lg); }
+.ev-card__enter { order: 99; margin-left: auto; }
 @media (max-width: 640px) {
   .ev-card__bar .gw-field { flex: 1 1 100%; }
   .ev-card__actions .gw-btn { flex: 1 1 auto; }
-  .ev-card__enter { margin-left: 0; flex-basis: 100%; }
+  .ev-card__enter { order: -1; margin-left: 0; flex-basis: 100%; }
 }
-.ev-list { display: grid; gap: var(--gw-sp-3); }
+.ev-list { display: grid; gap: var(--gw-sp-5); }
 .gw-ev-shell { max-width: 1000px; }
 
 /* ---------- Calendario ---------- */
