@@ -1,6 +1,7 @@
 """Formularios Web — lado del coordinador (Sprint 5): crear/editar formularios de un evento, estados y calendario, cupo,
 plantillas, respuestas, archivos, invitaciones, reporte y carga a la base. Todo coordinador+ (comercial incluida).
 La página pública que llena la gente vive en `forms_public.py` (`/f/<evento>/<formulario>`, sin login)."""
+import io
 import json
 import os
 import re
@@ -186,18 +187,11 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     return _detail(db, form, request)
 
 
-@router.post("/events/{event_id}/forms/{form_id}/registered")
-def upload_registered(event_id: int, form_id: int, file: UploadFile = File(...), mode: str = Form("add"), effect: str = Form("block"), enable: str = Form("1"),
-                      db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
-    """Carga o recarga la lista de «Personas ya registradas» de ESTE formulario (cédula, o el campo identificador elegido; la columna «Registrado en formulario» es opcional: si viene, solo
-    cuentan las filas con «sí»). `mode`: `add` (no quita nada) | `replace` (quita las marcas previas de este formulario). `effect`: `block` (solo bloquea; por defecto) | `hold` (ocupa cupo
-    como una inscripción y bloquea). `enable` (por defecto sí): si el interruptor «Bloquear inscripciones repetidas» está apagado, lo enciende (las marcas solo bloquean con él encendido)."""
-    from app import roster_columns
+def _registered_parse(db: Session, event: Event, form: WebForm, file: UploadFile, with_data: bool = False) -> dict:
+    """Lee el archivo de «Personas ya registradas»: columna de la cédula (o del campo identificador), filas que cuentan y, con `with_data`, los datos de los campos del formulario que trae
+    (p. ej. la ciudad) para que cuenten en los cupos por variables. Lo comparten la vista previa y la carga: ven exactamente lo mismo."""
+    from app import registered_list, roster_columns
     from app.routers.api import _read_roster_rows, _truthy
-    event = get_event_for_staff(event_id, db, staff)
-    form = _get_form(db, event, form_id)
-    if mode not in ("add", "replace") or effect not in ("block", "hold"):
-        raise HTTPException(status_code=400, detail="Modo no válido")
     settings, design = formsvc.get_settings(form), formsvc.get_design(form)
     probe = {**settings, "block_repeats": {**settings["block_repeats"], "enabled": True}}
     target = formsvc.repeat_target(probe, design)
@@ -222,27 +216,142 @@ def upload_registered(event_id: int, form_id: int, file: UploadFile = File(...),
             col = others[0] if len(others) == 1 else None
         if not col:
             raise HTTPException(status_code=400, detail=f"El archivo necesita una columna llamada «{field.get('label')}»")
-    values = [r.get(col, "") for r in rows if not flag_col or _truthy(r.get(flag_col, ""))]
+    kept = [r for r in rows if not flag_col or _truthy(r.get(flag_col, ""))]
+    values = [r.get(col, "") for r in kept]
     if not values:
         raise HTTPException(status_code=400, detail="El archivo no trae filas para cargar" + (" (ninguna con «sí» en «Registrado en formulario»)" if flag_col else ""))
-    res = formsvc.apply_list(db, form, values, target[0], target[1], field.get("type"), mode == "replace", effect == "hold")
+    labels = {cfg["key"]: cfg["label"] for cfg in parametros.field_configs_for_event(db, event)}
+    colmap = registered_list.match_columns(design, header, {h: k for h, k in kind_of.items() if k}, labels, skip={col, flag_col} - {None})
+    colmap.pop(target[1], None)                      # el identificador ya va por su columna
+    extras = {str(r.get(col, "")).strip(): registered_list.row_values(r, colmap) for r in kept} if with_data else None
+    return {"target": target, "design": design, "settings": settings, "field": field, "values": values, "rows": kept, "col": col, "colmap": colmap, "extras": extras}
+
+
+@router.post("/events/{event_id}/forms/{form_id}/registered/preview")
+def preview_registered(event_id: int, form_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Antes de cargar: qué columnas del archivo corresponden a campos del formulario, cuáles de ellas definen cupos por variables (p. ej. la ciudad) y cuánto restaría cada cupo.
+    No guarda nada. La pantalla usa esto para preguntar si las personas deben restar de esos cupos."""
+    from app import registered_list
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    p = _registered_parse(db, event, form, file, with_data=True)
+    rules = formsvc.quota_rules(form)
+    qids = registered_list.quota_field_ids(rules)
+    design = p["design"]
+    in_file = [fid for fid in p["colmap"] if fid in qids]
+    missing = [design["fields"][fid].get("label") or fid for fid in qids if fid not in p["colmap"] and fid in design["fields"] and fid != p["target"][1]]
+    # solo las personas NUEVAS restan (las que ya están inscritas o marcadas no se duplican): se comparan por cédula
+    existing = set()
+    if p["target"][0] == "cedula":
+        existing = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
+                                                                            FormSubmission.person_id != None, FormSubmission.status.in_(("preregistered", "confirmed")))}  # noqa: E711
+    new_rows, seen = [], set()
+    for raw, row in zip(p["values"], p["rows"]):
+        pid = str(raw or "").strip().replace(".", "").replace(" ", "")
+        if not pid or pid in seen or pid in existing:
+            continue
+        seen.add(pid)
+        new_rows.append({**(p["extras"].get(str(raw).strip()) or {}), p["target"][1]: pid})
+    counts = formsvc.quota_counts(db, form, rules) if rules else {}
+    return {"rows": len(p["values"]), "new": len(new_rows), "already": len(p["values"]) - len(new_rows),
+            "columns": [{"field": fid, "label": design["fields"][fid].get("label") or fid, "column": col, "defines_quota": fid in qids} for fid, col in p["colmap"].items()],
+            "quota_fields": [design["fields"][fid].get("label") or fid for fid in in_file], "quota_missing": missing,
+            "impact": registered_list.impact(rules, new_rows, counts) if in_file else [],
+            "unmatched": sum(1 for v in new_rows if in_file and not any(f in v for f in in_file))}
+
+
+@router.get("/events/{event_id}/forms/{form_id}/registered/template")
+def registered_template(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Plantilla de la lista de «Personas ya registradas» con las columnas de ESTE formulario (cédula y cada campo que se puede traer: nombres, ciudad, etc.). Los títulos son los del
+    formulario, así la carga los reconoce y no se mezclan con la base del evento. Hoja «Instrucciones» con los valores válidos de cada lista."""
+    from app import registered_list
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    design = formsvc.get_design(form)
+    target = formsvc.repeat_target({**formsvc.get_settings(form), "block_repeats": {**formsvc.get_settings(form)["block_repeats"], "enabled": True}}, design)
+    if not target:
+        raise HTTPException(status_code=400, detail="Elige el campo identificador o agrega un campo de cédula al formulario antes de descargar la plantilla")
+    cols = registered_list.template_columns(design, target[1])
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Lista"
+    ws.append(cols)
+    for c in range(1, len(cols) + 1):
+        ws.cell(row=1, column=c).font = Font(bold=True)
+        ws.column_dimensions[get_column_letter(c)].width = 26
+    ws.freeze_panes = "A2"
+    info = wb.create_sheet("Instrucciones")
+    info.column_dimensions["A"].width = 38
+    info.column_dimensions["B"].width = 90
+    info.append(["Cómo llenar esta lista", ""])
+    info["A1"].font = Font(bold=True)
+    for line in ("Una fila por persona; la primera columna (cédula) es obligatoria.",
+                 "No cambies los títulos de las columnas: así se reconocen y no se mezclan con la base del evento.",
+                 "Las columnas que definen cupos (por ejemplo la ciudad) deben traer el valor EXACTO de la lista de opciones: sin él la persona no resta de ningún cupo.",
+                 "Si una cédula ya está inscrita en este formulario NO se duplica ni se cambia su inscripción.",
+                 "Para que resten de los cupos hay que elegir «Bloquear y ocupar cupo» y aceptar la pregunta de cupos al cargar."):
+        info.append(["", line])
+    row = 3
+    qids = registered_list.quota_field_ids(formsvc.quota_rules(form))
+    info.append([])
+    info.append(["Valores válidos", ""])
+    info.cell(row=info.max_row, column=1).font = Font(bold=True)
+    for fid in qids:
+        f = design["fields"].get(fid)
+        if not f:
+            continue
+        vals = sorted({c.get("value") for r in formsvc.quota_rules(form) for c in r["conds"] if c["field"] == fid and isinstance(c.get("value"), str)})
+        info.append([f.get("label") or fid, ", ".join(vals) if vals else (", ".join(f.get("options") or []) or "libre")])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="lista-ya-registradas.xlsx"', "Cache-Control": "no-store"})
+
+
+@router.post("/events/{event_id}/forms/{form_id}/registered")
+def upload_registered(event_id: int, form_id: int, file: UploadFile = File(...), mode: str = Form("add"), effect: str = Form("block"), enable: str = Form("1"), with_data: str = Form("0"),
+                      db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Carga o recarga la lista de «Personas ya registradas» de ESTE formulario (cédula, o el campo identificador elegido; la columna «Registrado en formulario» es opcional: si viene, solo
+    cuentan las filas con «sí»). `mode`: `add` (no quita nada) | `replace` (quita las marcas previas de este formulario). `effect`: `block` (solo bloquea; por defecto) | `hold` (ocupa cupo
+    como una inscripción y bloquea). `enable` (por defecto sí): si el interruptor «Bloquear inscripciones repetidas» está apagado, lo enciende (las marcas solo bloquean con él encendido).
+    `with_data` (sí): además de la cédula se guardan los datos de los campos del formulario que trae el archivo (p. ej. la ciudad) y, como ocupan cupo, restan de los cupos por variables.
+    Una persona que ya está inscrita (o ya marcada) no se duplica."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    if mode not in ("add", "replace") or effect not in ("block", "hold"):
+        raise HTTPException(status_code=400, detail="Modo no válido")
+    data_on = with_data not in ("0", "false", "")
+    if data_on:
+        effect = "hold"             # para restar de los cupos tienen que contar como inscripciones confirmadas
+    p = _registered_parse(db, event, form, file, with_data=data_on)
+    settings, target, field = p["settings"], p["target"], p["field"]
+    res = formsvc.apply_list(db, form, p["values"], target[0], target[1], field.get("type"), mode == "replace", effect == "hold", extras=p["extras"])
     turned_on = False
     if enable not in ("0", "false", "") and not settings["block_repeats"]["enabled"]:
         settings["block_repeats"] = {"enabled": True, "field": "" if target[0] == "cedula" else target[1]}
         form.settings_json = json.dumps(settings)
         turned_on = True
+    over = []
+    if data_on:
+        for r, st in zip(formsvc.quota_rules(form), formsvc.quota_status(db, form)):
+            if st["used"] > r["limit"]:
+                over.append(f"«{r['label']}» ({st['used']} de {r['limit']})")
     db.commit()
     formsvc.invalidate_public_cache()
     formsvc.invalidate_held()
     msg = f"Lista cargada: {res['added']} nuevas" + (f", {res['converted']} pasaron a ocupar cupo" if res["converted"] else "") + f", {res['existing']} ya estaban"
     msg += f", {res['removed']} marcas anteriores quitadas." if res["removed"] else "."
+    if data_on:
+        msg += " Restan de los cupos por variables."
+    if over:
+        msg += " ATENCIÓN: con esta lista quedaron superados los cupos " + ", ".join(over) + "."
     if effect == "hold" and form.capacity is not None and formsvc.held_count(db, form) > form.capacity:
         msg += " ATENCIÓN: con esta lista el cupo del formulario quedó superado."
     if turned_on:
         msg += " Se activó «Bloquear inscripciones repetidas» en este formulario."
     elif not settings["block_repeats"]["enabled"]:
         msg += " OJO: «Bloquear inscripciones repetidas» está apagado: las marcas solo bloquean con ese interruptor encendido."
-    return {**res, "message": msg, **formsvc.mark_counts(db, form), "turned_on": turned_on}
+    return {**res, "message": msg, **formsvc.mark_counts(db, form), "turned_on": turned_on, "over": over}
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/registered")

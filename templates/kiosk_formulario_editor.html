@@ -239,7 +239,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                   <div class="gw-field gw-field--inline"><label class="gw-label" for="regEffect">Qué pasa con ellos</label><select id="regEffect" class="gw-select"><option value="block">Solo bloquear (no ocupan cupo)</option><option value="hold">Ocupar cupo y bloquear</option></select></div>
                 </div>
                 <label class="gw-check gw-check--top"><input type="checkbox" id="regEnable" checked> Encender «Bloquear inscripciones repetidas» si está apagado (las marcas solo bloquean con ese interruptor)</label>
-                <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="regUp">Cargar / recargar lista</button> <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="regClear">Quitar todas las marcas</button></div>
+                <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="regUp">Cargar / recargar lista</button> <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="regClear">Quitar todas las marcas</button> <a class="gw-btn gw-btn--ghost gw-btn--sm" id="regTemplate" href="#" download>Descargar plantilla de este formulario</a></div>
               </fieldset>
             </div>
           </div>
@@ -1388,8 +1388,21 @@ $('regUp').addEventListener('click', async () => {
   if (!(await discardOk())) return;
   if ($('regMode').value === 'replace' && !(await showConfirm('«Reemplazar» quita las marcas anteriores de este formulario y deja solo las del archivo. ¿Continuar?', { confirmLabel: 'Reemplazar' }))) return;
   const fd = new FormData(); fd.append('file', f); fd.append('mode', $('regMode').value); fd.append('effect', $('regEffect').value); fd.append('enable', $('regEnable').checked ? '1' : '0');
-  try { const d = await j(`${api}/registered`, { method: 'POST', body: fd }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); $('regFile').value = ''; gweFileName($('regFile')); } catch (e) { showToast(e.message, 'error'); }
+  try {
+    const pv = new FormData(); pv.append('file', f);
+    const p = await j(`${api}/registered/preview`, { method: 'POST', body: pv });
+    if (p.quota_fields && p.quota_fields.length) {
+      const lines = (p.impact || []).map(i => `${esc(i.label)}: entran ${i.adding} (quedan ${i.left_after} de ${i.limit})`).join('<br>');
+      const warn = [p.unmatched ? `${p.unmatched} persona(s) no traen un valor que coincida con ningún cupo y no restarán de ninguno.` : '', (p.quota_missing || []).length ? `Falta la columna de: ${p.quota_missing.join(', ')}.` : ''].filter(Boolean).join(' ');
+      const ask = `El archivo trae la columna de ${esc(p.quota_fields.join(', '))}, que define cupos de este formulario. ¿Restar estas personas de esos cupos?<br>${lines}${warn ? '<br>' + esc(warn) : ''}`;
+      if (await showConfirm(ask, { confirmLabel: 'Sí, restar de los cupos' })) { fd.append('with_data', '1'); fd.set('effect', 'hold'); }
+      else if (!(await showConfirm('¿Cargarlas solo por la cédula, sin restar de los cupos por variable?', { confirmLabel: 'Cargar solo cédula' }))) return;
+    }
+    const d = await j(`${api}/registered`, { method: 'POST', body: fd });
+    showToast(d.message, (d.over && d.over.length) ? 'error' : 'success'); form = await j(api); settings = form.settings; paintConfig(); $('regFile').value = ''; gweFileName($('regFile'));
+  } catch (e) { showToast(e.message, 'error'); }
 });
+$('regTemplate').addEventListener('click', () => { $('regTemplate').href = `${api}/registered/template`; });
 $('regClear').addEventListener('click', async () => {
   if (!(await discardOk())) return;
   if (!(await showConfirm('Se quitarán TODAS las marcas de «ya registrado» de este formulario (las que ocupaban cupo lo liberan). Las inscripciones reales no se tocan. ¿Continuar?', { confirmLabel: 'Quitar todas' }))) return;
