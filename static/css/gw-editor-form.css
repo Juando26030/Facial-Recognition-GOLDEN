@@ -1,0 +1,185 @@
+/* Editor de formularios (Fase 1.5, 2026-11-05): SOLO el marco y la configuración. Todo con tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); los componentes viven en design-system.css.
+   Las clases .gwe-* son de esta pantalla. El bloque «vista previa congelada» (más abajo) deja la vista previa del formulario exactamente como se veía antes: no se toca. */
+
+/* ------------------------------------------------------------ marco */
+.gw-editor-form .gwe-wrap { max-width: min(100%, 87.5rem); display: flex; flex-direction: column; gap: var(--gw-sp-4); padding-top: var(--gw-sp-5); padding-bottom: var(--gw-sp-6); min-width: 0; }
+.gw-editor-form .gwe-wrap > .gw-page-head { margin: 0; }
+.gw-editor-form .gwe-wrap .gw-steps { margin-bottom: 0; }
+.gw-editor-form .gwe-back { transform: rotate(180deg); }
+.gw-editor-form [hidden] { display: none !important; }
+.gwe-bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: flex-end; }
+.gwe-tools { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; margin-top: var(--gw-sp-3); }
+.gwe-meta { display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.gwe-meta .gwe-tools { margin-top: 0; }
+.gwe-stack { display: flex; flex-direction: column; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); }
+.gwe-mt { margin-top: var(--gw-sp-2); }
+.gwe-mb { margin-bottom: var(--gw-sp-2); }
+.gwe-h { margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+.gwe-strong { font-weight: var(--gw-fw-bold); }
+.gwe-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.gwe-selectall { user-select: all; }
+.gwe-indent { margin-left: var(--gw-sp-6); }
+.gwe-box { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-3) var(--gw-sp-4); margin: var(--gw-sp-3) 0 0; }
+.gwe-select-auto { width: auto; max-width: 15rem; }
+.gwe-details > summary { cursor: pointer; }
+.gwe-summary { font-weight: var(--gw-fw-bold); min-height: var(--gw-tap); display: flex; align-items: center; }
+.gwe-analytics { background: var(--gw-surface-2); padding: var(--gw-sp-4); border-radius: var(--gw-radius-lg); color: var(--gw-text); }
+.gwe-cv { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); padding: var(--gw-sp-1) var(--gw-sp-2); margin: var(--gw-sp-1) 0; }
+.gwe-closed-flag { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); }
+.gwe-closed-help { color: var(--gw-err-text); }
+
+/* pestañas: una fila que se desplaza en celular (las reglas de .gw-tabs vertical no aplican aquí) */
+.gwe-tabs { display: flex; flex-direction: column; gap: var(--gw-sp-4); min-width: 0; }
+.gw-editor-form .gwe-tablist { flex: 0 0 auto; flex-direction: row; overflow-x: auto; position: static; padding: var(--gw-sp-1); }
+.gw-editor-form .gwe-tablist .gw-tab { min-width: 0; }
+.gw-editor-form .gwe-tablist .gw-tab[hidden] { display: none; }
+.pane { display: none; min-width: 0; }
+.pane.active { display: block; animation: gw-tab-in var(--gw-dur) ease-out; }
+.pane:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+
+/* hojas del formulario (pestañas hechas con botones): la activa lleva borde dorado y marca abajo */
+.gwe-wrap .gw-btn[role="tab"][aria-selected="true"] { border-color: var(--gw-gold-1); background: var(--gw-surface-2); box-shadow: inset 0 -3px 0 var(--gw-gold-2); }
+
+/* diseño: paleta · lienzo · propiedades */
+.grid3 { display: grid; grid-template-columns: minmax(14rem, 15rem) minmax(0, 1fr) minmax(16rem, 19rem); gap: var(--gw-sp-4); align-items: start; }
+.gwe-col { display: flex; flex-direction: column; gap: var(--gw-sp-4); min-width: 0; }
+.gwe-side { padding: var(--gw-sp-4); }
+.gwe-canvas-card { padding: var(--gw-sp-3); }
+.gwe-canvas-hint { margin: var(--gw-sp-2) var(--gw-sp-1) 0; }
+@media (max-width: 1100px) { .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.pal { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.pal button { flex: 1 1 46%; display: inline-flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: var(--gw-sp-2); border: 1px dashed var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); color: var(--gw-text); cursor: grab; font: inherit; font-size: var(--gw-fs-sm); text-align: left; }
+.pal button:hover { background: var(--gw-warn-bg); border-color: var(--gw-gold-1); }
+#canvas { min-height: 18rem; background: var(--gw-surface-2); border-radius: var(--gw-radius-md); padding: var(--gw-sp-3); }
+.crow { display: flex; gap: var(--gw-sp-2); align-items: stretch; position: relative; padding: var(--gw-sp-1); border-radius: var(--gw-radius-sm); }
+.crow .rowtools { position: absolute; right: var(--gw-sp-2); top: calc(-1 * var(--gw-sp-3)); display: none; gap: var(--gw-sp-1); background: var(--gw-surface); border-radius: var(--gw-radius-md); padding: var(--gw-sp-1); box-shadow: var(--gw-shadow-md); z-index: 2; }
+.crow:hover .rowtools, .crow:focus-within .rowtools { display: flex; }
+.ccard { flex: 1 1 0; min-width: 0; background: var(--gw-surface); color: var(--gw-text); border: 2px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-2) var(--gw-sp-3); cursor: grab; position: relative; }
+.ccard.sel { border-color: var(--gw-gold-1); box-shadow: var(--gw-ring); }
+.ccard.dl { box-shadow: inset 5px 0 0 var(--gw-gold-2); } .ccard.dr { box-shadow: inset -5px 0 0 var(--gw-gold-2); }
+.ccard .t { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.ccard .l { font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ccard .tags { display: flex; flex-wrap: wrap; gap: var(--gw-sp-1); margin-top: var(--gw-sp-1); }
+.ccard .tags span { display: inline-flex; align-items: center; gap: var(--gw-sp-1); font-size: var(--gw-fs-sm); background: var(--gw-info-bg); color: var(--gw-info-text); border-radius: var(--gw-radius-pill); padding: 0 var(--gw-sp-2); }
+.gap { height: var(--gw-sp-3); border-radius: var(--gw-radius-sm); transition: height var(--gw-dur); }
+.gap.over { height: var(--gw-sp-6); background: var(--gw-warn-bg); outline: 2px dashed var(--gw-warn-line); }
+.cband { display: flex; gap: var(--gw-sp-2); align-items: center; margin: var(--gw-sp-2) 0 var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-2); border-left: 4px solid var(--gw-info-line); background: var(--gw-info-bg); color: var(--gw-info-text); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
+.sched { display: flex; gap: var(--gw-sp-2); flex-wrap: wrap; align-items: flex-end; margin-bottom: var(--gw-sp-2); }
+.test-row { background: var(--gw-warn-bg); }
+table.ans th, table.ans td { white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+
+/* textos de ayuda, etiquetas y controles que arma el JS del editor (sin clases .gw-*) */
+.gwe-wrap .hint, .gwe-overlay .hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); line-height: var(--gw-lh-body); }
+.gwe-wrap .fld label, .gwe-wrap .bar label, .gwe-overlay .fld label { display: block; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); margin-bottom: var(--gw-sp-1); }
+.gwe-wrap .fld, .gwe-overlay .fld { margin-bottom: var(--gw-sp-3); }
+.gwe-wrap .bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: flex-end; }
+.gwe-wrap :is(input[type="text"], input[type="number"], input[type="search"], input[type="datetime-local"], input[type="date"], select, textarea):not(.gw-input):not(.gw-select):not(.gw-textarea),
+.gwe-overlay :is(input[type="text"], input[type="number"], select, textarea):not(.gw-input):not(.gw-select):not(.gw-textarea) { min-height: calc(var(--gw-tap) - var(--gw-sp-1)); padding: var(--gw-sp-1) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+.gwe-wrap .props :is(input[type="text"], input[type="number"], input[type="search"], select, textarea) { width: 100%; }
+.gwe-wrap :is(input[type="text"], input[type="number"], input[type="search"], select, textarea):not(.gw-input):hover { border-color: var(--gw-text); }
+.gwe-wrap input[type="checkbox"], .gwe-wrap input[type="radio"], .gwe-overlay input[type="checkbox"], .gwe-overlay input[type="radio"] { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
+:root[data-theme="dark"] .gwe-wrap input[type="checkbox"], :root[data-theme="dark"] .gwe-wrap input[type="radio"], :root[data-theme="dark"] .gwe-overlay input[type="checkbox"], :root[data-theme="dark"] .gwe-overlay input[type="radio"] { accent-color: var(--gw-gold-2); }
+.gwe-wrap .props .fld { margin-bottom: var(--gw-sp-3); }
+.gwe-wrap .props h4 { display: flex; align-items: center; gap: var(--gw-sp-2); }
+.gwe-wrap .gw-btn.gwe-p-0-sp-2 { min-width: var(--gw-tap); }
+
+/* ------------------------------------------------------------ ventanas */
+.gwe-overlay { z-index: 9990; }
+.gwe-overlay:not([hidden]) { display: flex; }
+.gwe-overlay--scroll:not([hidden]) { align-items: flex-start; overflow: auto; }
+.gwe-modal-md { max-width: 32.5rem; }
+.gwe-modal-xl { max-width: 69rem; }
+#refundOverlay { z-index: 9995; } #clientOverlay { z-index: 9996; }
+
+/* ------------------------------------------------------------ vista previa congelada
+   #previewHost lo llena FormRender (form-render.js, el mismo del formulario público). Antes de este rediseño heredaba de <body> (style.css): tipografía --font-body, peso normal, interlineado normal,
+   color #333, foco y enlaces del navegador. La base .gw-page cambiaría todo eso, así que aquí se devuelve a lo de antes. NO tocar sin orden de Juan David (tests/test_publico_congelado.py). */
+.gwe-preview { position: fixed; inset: 0; z-index: 9990; background: var(--gw-overlay); overflow: auto; padding: var(--gw-sp-6) var(--gw-sp-4); }
+.gwe-preview:not([hidden]) { display: block; }
+.gwe-preview__inner { max-width: 800px; margin: 0 auto; }
+.gwe-preview__bar { text-align: right; margin-bottom: var(--gw-sp-2); }
+.gwe-preview__host { border-radius: var(--gw-radius-lg); padding: var(--gw-sp-5) 0;
+  font-family: var(--font-body); font-size: 1rem; font-weight: normal; line-height: normal; color: #333333; letter-spacing: normal; -webkit-text-size-adjust: auto; text-size-adjust: auto; }
+.gwe-preview__host :focus, .gwe-preview__host :focus-visible { outline: revert; outline-offset: revert; }
+.gwe-preview__host img, .gwe-preview__host svg { max-width: none; }
+:where(.gwe-preview__host) a { color: revert; text-underline-offset: auto; }
+:where(.gwe-preview__host) a:hover { text-decoration-thickness: auto; }
+
+/* ------------------------------------------------------------ utilidades generadas (antes style="" en línea; solo tokens) */
+.gwe-fs-fs-sm { font-size: var(--gw-fs-sm); }
+.gwe-d-flex { display: flex; }
+.gwe-jc-space-between { justify-content: space-between; }
+.gwe-ai-center { align-items: center; }
+.gwe-gap-sp-2 { gap: var(--gw-sp-2); }
+.gwe-p-sp-2-0 { padding: var(--gw-sp-2) 0; }
+.gwe-bt-1px-solid-border { border-top: 1px solid var(--gw-border); }
+.gwe-c-text-muted { color: var(--gw-text-muted); }
+.gwe-d-grid { display: grid; }
+.gwe-gap-sp-1 { gap: var(--gw-sp-1); }
+.gwe-js-start { justify-self: start; }
+.gwe-js-end { justify-self: end; }
+.gwe-bg-surface-2 { background: var(--gw-surface-2); }
+.gwe-p-sp-2 { padding: var(--gw-sp-2); }
+.gwe-r-radius-sm { border-radius: var(--gw-radius-sm); }
+.gwe-maxw-300px { max-width: 300px; }
+.gwe-w-90px { width: 90px; }
+.gwe-flex-1 { flex: 1; }
+.gwe-minw-180px { min-width: 180px; }
+.gwe-fwrap-wrap { flex-wrap: wrap; }
+.gwe-b-1px-solid-border { border: 1px solid var(--gw-border); }
+.gwe-r-radius-md { border-radius: var(--gw-radius-md); }
+.gwe-mb-sp-2 { margin-bottom: var(--gw-sp-2); }
+.gwe-maxh-130px { max-height: 130px; }
+.gwe-of-auto { overflow: auto; }
+.gwe-m-sp-2-0-sp-1 { margin: var(--gw-sp-2) 0 var(--gw-sp-1); }
+.gwe-c-warn-text { color: var(--gw-warn-text); }
+.gwe-bg-warn-bg { background: var(--gw-warn-bg); }
+.gwe-p-sp-2-sp-3 { padding: var(--gw-sp-2) var(--gw-sp-3); }
+.gwe-w-min-460px-100 { width: min(460px,100%); }
+.gwe-mb-sp-1 { margin-bottom: var(--gw-sp-1); }
+.gwe-mt-sp-2 { margin-top: var(--gw-sp-2); }
+.gwe-mb-sp-3 { margin-bottom: var(--gw-sp-3); }
+.gwe-w-100 { width: 100%; }
+.gwe-h-34px { height: 34px; }
+.gwe-p-sp-1 { padding: var(--gw-sp-1); }
+.gwe-p-0-sp-2 { padding: 0 var(--gw-sp-2); }
+.gwe-mt-sp-1 { margin-top: var(--gw-sp-1); }
+.gwe-m-sp-2-0 { margin: var(--gw-sp-2) 0; }
+.gwe-td-none { text-decoration: none; }
+.gwe-p-sp-2-sp-2 { padding: var(--gw-sp-2) var(--gw-sp-2); }
+.gwe-m-sp-1-0 { margin: var(--gw-sp-1) 0; }
+.gwe-maxh-150px { max-height: 150px; }
+.gwe-p-sp-1-sp-1 { padding: var(--gw-sp-1) var(--gw-sp-1); }
+.gwe-mt-sp-3 { margin-top: var(--gw-sp-3); }
+.gwe-m-sp-3-0 { margin: var(--gw-sp-3) 0; }
+.gwe-b-none { border: none; }
+.gwe-maxh-220px { max-height: 220px; }
+.gwe-d-inline-flex { display: inline-flex; }
+.gwe-margin-right-sp-2 { margin-right: var(--gw-sp-2); }
+.gwe-maxw-100 { max-width: 100%; }
+.gwe-m-0-0-sp-2 { margin: 0 0 var(--gw-sp-2); }
+.gwe-ta-center { text-align: center; }
+.gwe-p-sp-7 { padding: var(--gw-sp-7); }
+.gwe-jc-flex-end { justify-content: flex-end; }
+.gwe-of-hidden { overflow: hidden; }
+.gwe-to-ellipsis { text-overflow: ellipsis; }
+.gwe-ws-nowrap { white-space: nowrap; }
+.gwe-p-sp-1-sp-2 { padding: var(--gw-sp-1) var(--gw-sp-2); }
+.gwe-bl-4px-solid-info-line { border-left: 4px solid var(--gw-info-line); }
+.gwe-bg-info-bg { background: var(--gw-info-bg); }
+.gwe-m-sp-2-0-0-sp-4 { margin: var(--gw-sp-2) 0 0 var(--gw-sp-4); }
+.gwe-ta-left { text-align: left; }
+.gwe-p-sp-2-sp-1 { padding: var(--gw-sp-2) var(--gw-sp-1); }
+.gwe-cur-pointer { cursor: pointer; }
+.gwe-fw-fw-bold { font-weight: var(--gw-fw-bold); }
+.gwe-b-1px-solid-warn-line { border: 1px solid var(--gw-warn-line); }
+.gwe-b-1px-dashed-border-strong { border: 1px dashed var(--gw-border-strong); }
+.gwe-minw-120px { min-width: 120px; }
+.gwe-b-1px-solid-border-strong { border: 1px solid var(--gw-border-strong); }
+.gwe-w-120px { width: 120px; }
+.gwe-bl-3px-solid-info-line { border-left: 3px solid var(--gw-info-line); }
+.gwe-pl-sp-2 { padding-left: var(--gw-sp-2); }
+.gwe-w-130px { width: 130px; }
+.gwe-maxh-56px { max-height: 56px; }
+.gwe-maxw-120px { max-width: 120px; }
+.gwe-w-150px { width: 150px; }
