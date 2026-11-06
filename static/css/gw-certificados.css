@@ -30,3 +30,18 @@
   .gw-cert .gw-steps > li:not(.gw-steps__guide) { flex-direction: column; justify-content: center; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-1); border-radius: var(--gw-radius-lg); text-align: center; }
   .gw-cert .gw-steps > li:not(.gw-steps__guide) .gw-steps__text { flex: none; width: 100%; text-align: center; -webkit-line-clamp: 3; }
 }
+
+/* Fase 1.7 (ancho): en escritorio la pantalla usa todo el ancho (el asistente y el enlace van lado a lado) y los destinatarios son filas delgadas de una línea. */
+@media (min-width: 901px) {
+  .gw-cert.gw-container--narrow { max-width: var(--gw-content-w); }
+  .gw-cert__names { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-1); }
+  .gw-cert__names li { padding: var(--gw-sp-1) var(--gw-sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-cert__dl { grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); }
+}
+@media (min-width: 1100px) {
+  .gw-cert { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+  .gw-cert > * { grid-column: 1 / -1; }
+  .gw-cert > #certWizard { grid-column: 1; }
+  .gw-cert > #linkCard { grid-column: 2; }
+  .gw-cert.gw-stack-lg > * + * { margin-top: 0; }
+}
