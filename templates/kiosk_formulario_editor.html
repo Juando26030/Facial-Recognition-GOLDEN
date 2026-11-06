@@ -437,8 +437,8 @@ function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
 // ---------------------------------------------------------------- condiciones en árbol y variantes (P9)
-function fileCtl(attrs, accept) {   // control de archivo propio (.gwe-file en gw-editor-form.css): el <input type=file> conserva sus id/data-*; el nombre se recorta con «…» y nunca desborda la caja
-  return `<label class="gwe-file"><input type="file" class="gwe-file__input" ${attrs} accept="${accept}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">${typeof gwIcon === 'function' ? gwIcon('upload') : ''} Seleccionar archivo</span><span class="gwe-file__name" data-gwe-file-name>Ningún archivo seleccionado</span></label>`;
+function fileCtl(attrs, accept, saved) {   // control de archivo propio (.gwe-file en gw-editor-form.css): el <input type=file> conserva sus id/data-*; el nombre se recorta con «…» y nunca desborda la caja
+  return `<label class="gwe-file"><input type="file" class="gwe-file__input" ${attrs} data-saved="${esc(saved || '')}" accept="${accept}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">${typeof gwIcon === 'function' ? gwIcon('upload') : ''} Seleccionar archivo</span><span class="gwe-file__name" data-gwe-file-name${saved ? ` title="${esc(String(saved).split('/').pop())}"` : ''}>${saved ? 'Imagen ya cargada (elige otra para cambiarla)' : 'Ningún archivo seleccionado'}</span></label>`;
 }
 const OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const VARIANT_WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
@@ -879,7 +879,7 @@ function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>${gwIcon('link')} ${esc(f.key)}</span>` : '', f.stats ? `<span title="Genera estadísticas">${gwIcon('chart')}</span>` : '', f.readonly_when_prefilled ? `<span title="Solo lectura si ya tenemos el dato">${gwIcon('lock')}</span>` : '', (f.doc_types || []).length ? `<span>${gwIcon('badge')} ${f.doc_types.join('/')}</span>` : '', f.show_if ? `<span>${gwIcon('eye')} condicional</span>` : ''].join('');
   const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(canvasText(f)).replace(/\s+/g, ' ').slice(0, 40)) : f.label;
   const shown = f.internal_name || label;     // el «Nombre interno», si existe, es la etiqueta del lienzo
-  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (shown || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(shown) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
+  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (shown || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${gwIcon(TYPES[f.type][1])} ${TYPES[f.type][0]}</div><div class="l">${esc(shown) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
@@ -907,7 +907,7 @@ function renderProps() {
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
   if ((f.type === 'heading' || f.type === 'paragraph') && !(f.variants && f.variants.content)) html += '<div class="fld"><label>Texto</label><div id="pContentRt"></div></div>';
-  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label>${fileCtl('id="pImg"', 'image/*')}${f.src ? `<img src="${esc(assetUrl(f.src))}" class="gwe-maxw-100 gwe-mt-sp-2 gwe-r-radius-sm">` : ''}</div>
+  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label>${fileCtl('id="pImg"', 'image/*', f.src)}${f.src ? `<img src="${esc(assetUrl(f.src))}" class="gwe-maxw-100 gwe-mt-sp-2 gwe-r-radius-sm">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" class="gwe-w-100"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
@@ -1149,10 +1149,10 @@ function renderTheme() {
      <div class="fld"><label>Ancho del formulario</label><select id="tWidth">${WIDTHS.map(([v, l]) => `<option value="${v}" ${widthKind(t.width) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
        <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" class="gwe-mt-sp-1" ${widthKind(t.width) === 'custom' ? '' : 'hidden'} aria-label="Ancho en píxeles (480 a 1100)">
        <div class="hint">En celulares y pantallas angostas siempre ocupa todo el ancho. Con 4 campos por fila conviene «Ancho» o más.</div></div>
-     <div class="fld"><label>Logo o banner</label>${fileCtl('id="tLogo"', 'image/*')} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Logo o banner</label>${fileCtl('id="tLogo"', 'image/*', t.logo)} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tLogoX">Quitar</button></div>
      <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" class="gwe-w-100"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
-     <div class="fld"><label>Imagen de fondo</label>${fileCtl('id="tBg"', 'image/*')} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tBgX">Quitar</button></div>`;
+     <div class="fld"><label>Imagen de fondo</label>${fileCtl('id="tBg"', 'image/*', t.bg_image)} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tBgX">Quitar</button></div>`;
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
   on('tTitle', 'input', () => { t.title = $('tTitle').value; markDirty(); }); on('tSub', 'input', () => { t.subtitle = $('tSub').value; markDirty(); }); on('tBtn', 'input', () => { t.button_text = $('tBtn').value; markDirty(); });
   $('themeBox').querySelectorAll('[data-color]').forEach((c) => c.addEventListener('input', () => { t[c.dataset.color] = c.value; markDirty(); }));
@@ -1169,7 +1169,7 @@ function renderTheme() {
   on('tWidth', 'change', setWidth); on('tWidthPx', 'input', setWidth);
   on('tLogoW', 'input', () => { const v = +$('tLogoW').value; t.logo_width = v >= 10 ? v : 0; $('tLogoWv').textContent = t.logo_width ? t.logo_width + ' %' : 'automático'; markDirty(); });
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
-  on('tLogoX', 'click', () => { t.logo = ''; $('tLogo').value = ''; gweFileName($('tLogo')); markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; $('tBg').value = ''; gweFileName($('tBg')); markDirty(); });
+  on('tLogoX', 'click', () => { t.logo = ''; $('tLogo').value = ''; gweFileName($('tLogo'), ''); markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; $('tBg').value = ''; gweFileName($('tBg'), ''); markDirty(); });
 }
 function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').hidden = !Object.values(design.fields).some((x) => x.type === 'payment'); }
 
@@ -1308,10 +1308,11 @@ function paintHeader() {
 }
 
 // ---------------------------------------------------------------- controles de archivo (.gwe-file): muestran el nombre elegido, recortado con «…» y con tooltip
-function gweFileName(input) {
+function gweFileName(input, saved) {   // `saved` (ruta ya guardada, o '' si se quitó) hace que, sin archivo nuevo, el rótulo diga que la imagen YA está cargada y no «Ningún archivo seleccionado»
   const n = input && input.parentElement && input.parentElement.querySelector('[data-gwe-file-name]'); if (!n) return;
-  const f = input.files && input.files[0];
-  n.textContent = f ? f.name : 'Ningún archivo seleccionado'; n.title = f ? f.name : '';
+  if (saved !== undefined) input.dataset.saved = saved || '';
+  const f = input.files && input.files[0], sv = input.dataset.saved || '';
+  n.textContent = f ? f.name : sv ? 'Imagen ya cargada (elige otra para cambiarla)' : 'Ningún archivo seleccionado'; n.title = f ? f.name : sv.split('/').pop();
 }
 document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('gwe-file__input')) gweFileName(e.target); });
 
@@ -1359,12 +1360,14 @@ function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin
       : `<div class="hint gwe-m-sp-2-0-sp-1 gwe-c-warn-text gwe-bg-warn-bg gwe-p-sp-2-sp-3 gwe-r-radius-sm">${gwIcon('alert')} Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
   $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
   $('secOn').checked = s.security.enabled; $('secBox').hidden = !(s.security.enabled); $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').hidden = !(s.security.type === 'code');
+  if (/^event:\d+$/.test(s.prefill.source) && ![...$('preSrc').options].some((o) => o.value === s.prefill.source)) $('preSrc').add(new Option(`La base del evento n.º ${s.prefill.source.slice(6)}`, s.prefill.source));   // el origen guardado siempre está en la lista, aunque el evento no se pueda listar
   $('preMode').value = s.prefill.mode; $('preSrc').value = s.prefill.source === 'upload' ? 'upload' : (s.prefill.source.startsWith('event:') ? s.prefill.source : 'event');
   $('preSrcBox').hidden = s.prefill.mode === 'none'; $('preUpBox').hidden = !(s.prefill.source === 'upload');
   $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
   $('thUrlBox').hidden = !(s.thanks.mode === 'redirect'); $('thTplBox').hidden = s.thanks.mode === 'redirect';
   $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text);
   const idn = s.identify || {}; $('idTitle').value = idn.title || ''; $('idButton').value = idn.button || ''; $('idText').value = idn.text || ''; idRt.setValue(idn.text || ''); $('idImgName').textContent = idn.image ? ' (imagen cargada)' : ''; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
+  [['idImgFile', idn.image], ['thImgFile', s.thanks.image], ['clImgFile', s.closed_template.image]].forEach(([id, v]) => { $(id).value = ''; gweFileName($(id), v || ''); });
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
@@ -1463,7 +1466,7 @@ $('preSrc').addEventListener('change', () => { $('preUpBox').hidden = !($('preSr
 $('thMode').addEventListener('change', () => { $('thUrlBox').hidden = !($('thMode').value === 'redirect'); $('thTplBox').hidden = $('thMode').value === 'redirect'; });
 const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
 cfgUpload($('idImgFile'), (p) => { settings.identify = { ...(settings.identify || {}), image: p }; }, $('idImgName'));
-$('idImgX').addEventListener('click', () => { cfgDirty = true; paintSaveBar(); settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; gweFileName($('idImgFile')); });
+$('idImgX').addEventListener('click', () => { cfgDirty = true; paintSaveBar(); settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; gweFileName($('idImgFile'), ''); });
 cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
 $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
