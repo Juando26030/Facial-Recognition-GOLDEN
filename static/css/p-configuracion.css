@@ -27,3 +27,7 @@
   .gw-config__wrap .gw-tablist { flex-direction: column; overflow: visible; }
   .gw-config__wrap .gw-tab { width: 100%; }
 }
+/* Con el menú lateral fijo (220 px, igual que style.css) la barra de guardado no puede quedar debajo de él: su estado quedaba tapado */
+@media (min-width: 901px) {
+  body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
+}
