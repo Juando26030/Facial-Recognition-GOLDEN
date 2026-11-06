@@ -14,8 +14,17 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 ENV_NAME="${1:?Uso: $0 staging|production <ID-del-proyecto>}"
 export PROJECT_ID="${2:?Falta el ID del proyecto de Google Cloud}"
-# Producción: sitio de Hosting y dirección pública (mismos valores que las variables del Environment de GitHub; no son secretos). Staging usa los de config.sh.
-if [ "$ENV_NAME" = production ]; then export FIREBASE_SITE="${FIREBASE_SITE:-golden-app-617335535465}" PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"; fi
+# Sitio de Firebase Hosting y dirección pública, igual que las variables FIREBASE_SITE y PUBLIC_BASE_URL del Environment de GitHub (no son secretos).
+# OJO: config.sh deja FIREBASE_SITE vacío en staging (FIREBASE_DEPLOY=0), pero el workflow SÍ publica Hosting y fija PUBLIC_BASE_URL; por eso aquí se guarda el sitio
+# en HOSTING_SITE antes de cargar config.sh y PUBLIC_BASE_URL se exporta antes. (Primera vez en staging, 5-nov-2026: sin esto los servicios quedaron con la URL run.app
+# como dirección pública y Hosting sin publicar.)
+PROJECT_NUMBER_="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')" || exit 1
+if [ "$ENV_NAME" = production ]; then
+  HOSTING_SITE="${FIREBASE_SITE:-golden-app-${PROJECT_NUMBER_}}"; export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"
+else
+  HOSTING_SITE="${FIREBASE_SITE:-golden-staging-${PROJECT_NUMBER_}}"; export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://${HOSTING_SITE}.web.app}"
+fi
+export FIREBASE_SITE="$HOSTING_SITE"
 source deploy/gcp/config.sh "$ENV_NAME"
 SHA="$(git rev-parse HEAD)"
 IMAGE="${IMAGE_BASE}:${SHA}"
@@ -40,9 +49,9 @@ done
 say "3. DESPLEGAR"
 bash deploy/gcp/deploy.sh "$ENV_NAME" "$IMAGE" || { echo "ERROR en deploy.sh (no se publica Hosting)" >&2; exit 1; }
 
-if [ -n "${FIREBASE_SITE:-}" ]; then   # igual que el workflow: se publica Hosting siempre que el entorno tenga sitio
+if [ -n "$HOSTING_SITE" ]; then   # igual que el workflow: se publica Hosting siempre que el entorno tenga sitio
   say "4. FIREBASE HOSTING (/static sale de la CDN: sin esto los archivos nuevos no llegan)"
-  python3 deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$FIREBASE_SITE" || exit 1
+  python3 deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$HOSTING_SITE" || exit 1
   npx -y firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase/firebase.json --non-interactive || { echo "ERROR en Hosting" >&2; exit 1; }
 fi
 say "LISTO ($ENV_NAME, commit ${SHA:0:7})"
