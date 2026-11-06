@@ -1,0 +1,15 @@
+/* Respuestas del editor de formularios: buscador, filtro de cupo y paginación (solo tokens --gw-*). */
+.gwr-tools { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: center; margin-bottom: var(--gw-sp-3); }
+.gwr-search { flex: 1 1 16rem; min-width: 0; max-width: 28rem; }
+.gwr-quota { flex: 0 1 16rem; min-width: 0; }
+.gwr-quota[hidden], .gwr-pager[hidden] { display: none; }
+.gwr-info { flex: 1 1 auto; margin: 0; }
+.gwr-pager { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: center; justify-content: center; margin-top: var(--gw-sp-3); }
+.gwr-size { display: inline-flex; align-items: center; gap: var(--gw-sp-2); }
+.gwr-size .gw-select { width: auto; min-width: 5rem; }
+@media (max-width: 40rem) {
+  .gwr-search, .gwr-quota, .gwr-info { flex: 1 1 100%; max-width: none; }
+  .gwr-pager { justify-content: space-between; }
+  .gwr-pager .gw-hint { order: -1; flex: 1 1 100%; text-align: center; }
+  .gwr-size { flex: 1 1 100%; justify-content: center; }
+}

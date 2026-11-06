@@ -1157,3 +1157,107 @@ def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
     if info["closes"]:
         info["days_left"] = round((datetime.fromisoformat(info["closes"]) - now_local).total_seconds() / 86400, 2)      # negativo = la fecha ya pasó
     return info
+
+
+# ------------------------------------------------------------------ tabla de respuestas: paginación y búsqueda (pura, sin base)
+ANSWERS_PAGE_SIZES = (20, 50, 100)
+ANSWERS_DEFAULT_PAGE_SIZE = 50
+ANSWERS_MAX_QUERY = 80
+
+
+def answers_page_size(raw) -> int:
+    """Tamaño de página de la tabla de respuestas: 20, 50 o 100. Un valor no válido (o ausente) usa 50; uno mayor a 100 se acota a 100."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return ANSWERS_DEFAULT_PAGE_SIZE
+    if n in ANSWERS_PAGE_SIZES:
+        return n
+    return ANSWERS_PAGE_SIZES[-1] if n > ANSWERS_PAGE_SIZES[-1] else ANSWERS_DEFAULT_PAGE_SIZE
+
+
+def answers_paging(total: int, page, page_size) -> dict:
+    """{page, page_size, pages, offset}: la página pedida se acota a [1, pages] (pedir la 9 de 3 devuelve la 3); sin resultados hay 1 página vacía."""
+    size = answers_page_size(page_size)
+    pages = max(1, -(-max(0, int(total)) // size))
+    try:
+        p = int(page)
+    except (TypeError, ValueError):
+        p = 1
+    p = min(max(1, p), pages)
+    return {"page": p, "page_size": size, "pages": pages, "offset": (p - 1) * size}
+
+
+def _compact_id(value) -> str:
+    """Documento comparable: minúsculas, sin espacios/puntos/guiones y, si es solo números, sin ceros a la izquierda."""
+    text = re.sub(r"[\s.\-]", "", str(value if value is not None else "").lower())
+    return text.lstrip("0") if text.isdigit() else text
+
+
+def answers_search_fields(design: dict) -> dict:
+    """Qué campos del formulario sirven para buscar: `ids` (clave de identidad `id` o campo con tipos de documento) y `names` (claves first_name y last_name).
+    Si el formulario no marca ninguno de un grupo, `answers_match` busca en TODOS los valores de texto para ese grupo."""
+    ids, names = [], []
+    for fid, f in design.get("fields", {}).items():
+        if f.get("type") not in INPUT_TYPES:
+            continue
+        if f.get("key") == "id" or f.get("doc_types"):
+            ids.append(fid)
+        elif f.get("key") in ("first_name", "last_name"):
+            names.append(fid)
+    return {"ids": ids, "names": names}
+
+
+def answers_parse_query(q) -> Optional[dict]:
+    """Prepara la búsqueda una sola vez. None = sin filtro. Regla (misma idea que el buscador del Registro, sin corrección de tipeo):
+      - documento: lo escrito sin espacios/puntos/guiones (y sin ceros a la izquierda si son solo números) debe ser el INICIO del documento de la persona (exacto o prefijo);
+      - nombre: cada palabra escrita (sin tildes ni mayúsculas) debe ser el INICIO de una palabra distinta del nombre o apellido, en cualquier orden (nada de «contiene»: «ma» no encuentra «Amaya»)."""
+    text = str(q or "").strip()[:ANSWERS_MAX_QUERY]
+    if not text:
+        return None
+    words = re.findall(r"[a-z0-9]+", norm_value(text))
+    if not words:
+        return None
+    return {"doc": _compact_id(text), "words": words, "numeric": bool(re.fullmatch(r"[\d.\s\-]+", text))}
+
+
+def _scalars(data: dict, fids=None) -> list:
+    out = []
+    for fid, v in data.items():
+        if fids is not None and fid not in fids:
+            continue
+        if isinstance(v, (str, int, float)) and not isinstance(v, bool) and str(v).strip():
+            out.append(str(v))
+    return out
+
+
+def answers_match(parsed: Optional[dict], data: dict, person_id, fields: dict) -> bool:
+    """¿La inscripción cumple la búsqueda `parsed` (de `answers_parse_query`)? `fields` sale de `answers_search_fields`."""
+    if parsed is None:
+        return True
+    id_vals = _scalars(data, set(fields["ids"])) if fields["ids"] else []
+    if person_id:
+        id_vals.append(str(person_id))
+    if not fields["ids"] and not person_id:
+        id_vals = _scalars(data)          # el formulario no marca documento: cualquier valor puede serlo
+    if parsed["doc"] and any(_compact_id(v).startswith(parsed["doc"]) for v in id_vals):
+        return True
+    if parsed["numeric"]:
+        return False
+    name_vals = _scalars(data, set(fields["names"])) if fields["names"] else _scalars(data)
+    hay = [w for v in name_vals for w in re.findall(r"[a-z0-9]+", norm_value(v))]
+    for qw in parsed["words"]:
+        i = next((k for k, hw in enumerate(hay) if hw.startswith(qw)), -1)
+        if i < 0:
+            return False
+        hay.pop(i)
+    return True
+
+
+def answers_quota_groups(rules: list, design: dict) -> dict:
+    """{id de la regla de cupo: nombre de la variable que la define} para agrupar el filtro: la etiqueta del campo si todas sus condiciones miran el mismo campo; si no, ''."""
+    out = {}
+    for r in rules:
+        fields = {c["field"] for c in r["conds"]}
+        out[r["id"]] = design.get("fields", {}).get(next(iter(fields)), {}).get("label", "") if len(fields) == 1 else ""
+    return out

@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-editor-form.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-respuestas.css') }}">
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
@@ -266,8 +267,24 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             {% call ayuda('ay_ans_rep', 'Descargar reporte (Excel)') %}Baja el Excel SOLO con las inscripciones reales: no incluye las de prueba, sin importar lo que tengas marcado en la casilla.{% endcall %}</div>
           <div class="gwe-inline-help"><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a>
             {% call ayuda('ay_ans_all', 'Con las de prueba') %}Baja el Excel con TODO: las inscripciones reales y también las de prueba. Es independiente de la casilla «Mostrar las de prueba»: esa solo cambia la tabla de abajo.{% endcall %}</div>
-          <span class="gw-hint" id="ansInfo"></span></div>
+          </div>
+        <div class="gwr-tools">
+          <div class="gw-search__row gwr-search">
+            <input type="search" class="gw-input" id="ansSearch" placeholder="Buscar por cédula o nombre" aria-label="Buscar inscripciones por cédula o nombre" autocomplete="off" maxlength="80">
+            <button type="button" class="gw-btn gw-btn--secondary gw-search__clear" id="ansSearchClear" aria-label="Vaciar búsqueda" hidden>{{ ic('trash', 'gw-icon--sm') }}</button>
+          </div>
+          <label class="gwr-quota" id="ansQuotaWrap" hidden><span class="gw-sr-only">Filtrar por cupo</span>
+            <select class="gw-select" id="ansQuota" aria-label="Filtrar por cupo"></select></label>
+          <span class="gw-hint gwr-info" id="ansInfo" role="status" aria-live="polite"></span>
+        </div>
         <div class="gw-table-wrap gwe-table-wrap"><table class="gw-table gw-table-cards gwe-fit ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
+        <nav class="gwr-pager" id="ansPager" aria-label="Paginación de respuestas" hidden>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="ansPrev">&lsaquo; Anterior</button>
+          <span class="gw-hint" id="ansPageInfo" aria-live="polite"></span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="ansNext">Siguiente &rsaquo;</button>
+          <label class="gwr-size"><span>Por página:</span>
+            <select class="gw-select" id="ansSize" aria-label="Inscripciones por página"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+        </nav>
       </section></div>
 
       <!-- ===================== PAGOS ===================== -->
@@ -1555,20 +1572,63 @@ function fitTable(table) {   // las tablas se ajustan al ancho de la pantalla: c
     if (!td.title && td.textContent.trim() && !td.querySelector('button')) td.title = td.textContent.trim();
   }));
 }
+const ans = { page: 1, size: 50, q: '', quota: '', seq: 0, timer: null, quotaSig: '' };   // estado de la tabla de respuestas (la paginación, el buscador y el cupo los resuelve el servidor)
+function ansRenderQuotas(list) {
+  const wrap = $('ansQuotaWrap'), sel = $('ansQuota');
+  wrap.hidden = !list.length;
+  const sig = JSON.stringify(list.map((x) => [x.id, x.label, x.group, x.count]));
+  if (!list.length) { ans.quota = ''; ans.quotaSig = ''; sel.innerHTML = ''; return; }
+  if (!list.some((x) => x.id === ans.quota)) ans.quota = '';
+  if (sig !== ans.quotaSig) {
+    const opt = (x) => `<option value="${esc(x.id)}">${esc(x.label)} (${x.count})</option>`;
+    const groups = [...new Set(list.map((x) => x.group))];
+    const body = groups.length > 1 || groups[0] ? groups.map((g) => (g ? `<optgroup label="${esc(g)}">${list.filter((x) => x.group === g).map(opt).join('')}</optgroup>` : list.filter((x) => !x.group).map(opt).join(''))).join('') : list.map(opt).join('');
+    sel.innerHTML = `<option value="">Cupo: Todos</option>${body}`;
+    ans.quotaSig = sig;
+  }
+  sel.value = ans.quota;
+}
 async function loadAnswers() {
-  const withTests = $('ansTests').checked;
-  const d = await j(`${api}/submissions?include_tests=${withTests}`);
+  const withTests = $('ansTests').checked, mySeq = ++ans.seq;
+  const qs = new URLSearchParams({ include_tests: withTests, page: ans.page, page_size: ans.size });
+  if (ans.q) qs.set('q', ans.q);
+  if (ans.quota) qs.set('quota', ans.quota);
+  let d;
+  try { d = await j(`${api}/submissions?${qs}`); } catch (e) { if (mySeq === ans.seq) showToast(e.message || 'No se pudieron cargar las respuestas', 'error'); return; }
+  if (mySeq !== ans.seq) return;      // llegó tarde: ya hay una consulta más nueva
+  ans.page = d.page; ans.size = d.page_size; $('ansSize').value = String(d.page_size);
+  ansRenderQuotas(d.quotas || []);
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
-  $('ansInfo').textContent = `${d.rows.length} inscripción(es)`;
+  const filtered = Boolean(ans.q || ans.quota), from = d.total ? (d.page - 1) * d.page_size + 1 : 0, to = Math.min(d.total, d.page * d.page_size);
+  $('ansInfo').textContent = d.total ? `Mostrando ${from}–${to} de ${d.total}${filtered ? ` (de ${d.total_all} sin filtros)` : ''}` : (filtered ? `Sin resultados (de ${d.total_all} sin filtros)` : '0 inscripciones');
+  $('ansPager').hidden = d.total_all <= 20 && d.pages <= 1;
+  $('ansPageInfo').textContent = `Página ${d.page} de ${d.pages}`;
+  $('ansPrev').disabled = d.page <= 1; $('ansNext').disabled = d.page >= d.pages;
   $('ansHead').innerHTML = `<tr><th class="gwe-col-id">#</th><th class="gwe-col-date">Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th class="gwe-col-amt">Pagado</th>' : ''}<th class="gwe-col-src">Origen</th><th class="gwe-col-fed">En la base</th><th class="gwe-col-act"><span class="gw-sr-only">Acciones</span></th></tr>`;
   $('ansBody').closest('table').classList.toggle('gwe-many', d.columns.length > 7);   // con muchas columnas la tabla pasa a tarjetas (nada de desplazamiento lateral)
   $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
     const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
-    <td class="gwe-cell-wrap gw-table-cards__actions"><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">Todavía no hay inscripciones.</td></tr>`;
+    <td class="gwe-cell-wrap gw-table-cards__actions"><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">${filtered ? 'Ninguna inscripción coincide con la búsqueda.' : 'Todavía no hay inscripciones.'}</td></tr>`;
   fitTable($('ansBody').closest('table'));
-  document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
 }
-$('ansTests').addEventListener('change', loadAnswers);
+$('ansBody').addEventListener('click', async (e) => {      // delegación: las filas se regeneran en cada página
+  const b = e.target.closest('[data-delsub]'); if (!b) return;
+  if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return;
+  await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' });
+  loadAnswers();      // recarga la página actual (si quedó vacía, el servidor devuelve la última)
+});
+function ansReset() { ans.page = 1; loadAnswers(); }
+$('ansSearch').addEventListener('input', () => {
+  $('ansSearchClear').hidden = !$('ansSearch').value;
+  clearTimeout(ans.timer);
+  ans.timer = setTimeout(() => { ans.q = $('ansSearch').value.trim(); ansReset(); }, 300);
+});
+$('ansSearchClear').addEventListener('click', () => { clearTimeout(ans.timer); $('ansSearch').value = ''; $('ansSearchClear').hidden = true; ans.q = ''; ansReset(); $('ansSearch').focus(); });
+$('ansQuota').addEventListener('change', () => { ans.quota = $('ansQuota').value; ansReset(); });
+$('ansSize').addEventListener('change', () => { ans.size = Number($('ansSize').value) || 50; ansReset(); });
+$('ansPrev').addEventListener('click', () => { if (ans.page > 1) { ans.page -= 1; loadAnswers(); } });
+$('ansNext').addEventListener('click', () => { ans.page += 1; loadAnswers(); });
+$('ansTests').addEventListener('change', ansReset);
 
 // ---------------------------------------------------------------- pagos (Wompi)
 const PAY_STATES = { refunded: 'Reembolsado', approved: 'Aprobado', declined: 'Rechazado', error: 'Error', voided: 'Anulado', pending: 'En espera', abandoned: 'Abandonado' };
