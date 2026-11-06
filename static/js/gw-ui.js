@@ -7,6 +7,8 @@
    - Recorrido:  elementos [data-gw-tour-step="n" data-gw-tour-title data-gw-tour-text] dentro de un contenedor con [data-gw-tour="clave"]; se muestra UNA vez por dispositivo
                  (localStorage 'gw_tour_<clave>'); [data-gw-tour-restart="clave"] lo repite. API: window.GW.tour.start(clave, {force:true}).
    - Asistente:  [data-gw-wizard] con [data-gw-wizard-panel], [data-gw-wizard-next], [data-gw-wizard-prev], [data-gw-wizard-count], [data-gw-wizard-bar].
+   - Celular (<= 640 px): el botón [data-gw-tour-restart] pasa a ser el 4.º chip («Guía») del `.gw-steps` de su pantalla y los subtítulos largos llevan su texto completo en title;
+                 al ensanchar la ventana todo vuelve a su sitio. No cambia ids ni atributos.
    - Buscador «¿qué quieres hacer?» (Fase 2): NO está construido; el hueco es [data-gw-search-slot] y los data-gw-keywords. */
 (function () {
   'use strict';
@@ -143,6 +145,35 @@
     tourShow(t, 0);
   }
 
+  /* ----------------------------------------------------------------- Introducción compacta en celular */
+  var moved = [];                                         // {btn, home, next, li}
+  var mqMobile = window.matchMedia ? window.matchMedia('(max-width: 640px)') : null;
+  function stepsFor(btn) {
+    var key = btn.getAttribute('data-gw-tour-restart'), host = key ? document.querySelector('[data-gw-tour="' + key + '"]') : null;
+    return (host && host.querySelector('.gw-steps')) || document.querySelector('.gw-steps');
+  }
+  function compactIntro() {
+    var mobile = !!(mqMobile && mqMobile.matches);
+    if (mobile) {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gw-tour-restart]'), function (btn) {
+        if (!btn.classList.contains('gw-btn') || btn.closest('.gw-steps')) return;
+        var ol = stepsFor(btn); if (!ol) return;
+        var li = document.createElement('li'); li.className = 'gw-steps__guide';
+        moved.push({ btn: btn, home: btn.parentNode, next: btn.nextSibling, li: li });
+        ol.appendChild(li); li.appendChild(btn);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.gw-page-head__sub, .gw-page .gw-stack-lg > .gw-stack:first-child > .gw-lead'), function (el) {
+        if (!el.getAttribute('title')) el.setAttribute('title', (el.textContent || '').replace(/\s+/g, ' ').trim());
+      });
+    } else {
+      while (moved.length) {
+        var m = moved.pop();
+        if (m.home && m.home.isConnected) m.home.insertBefore(m.btn, m.next && m.next.parentNode === m.home ? m.next : null);
+        if (m.li.parentNode) m.li.parentNode.removeChild(m.li);
+      }
+    }
+  }
+
   /* ----------------------------------------------------------------- Eventos (delegados) */
   document.addEventListener('click', function (e) {
     var tgt = e.target; if (!tgt || !tgt.closest) return;
@@ -194,6 +225,8 @@
 
   function init() {
     applyTheme(currentTheme());
+    compactIntro();
+    if (mqMobile) { if (mqMobile.addEventListener) mqMobile.addEventListener('change', compactIntro); else if (mqMobile.addListener) mqMobile.addListener(compactIntro); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-gw-wizard]'), function (w) { wizardGo(w, 0); });
     var auto = document.querySelector('[data-gw-tour][data-gw-tour-auto]');          // recorrido de primera vez: solo si la página lo pide
     if (auto) window.setTimeout(function () { startTour(auto.getAttribute('data-gw-tour')); }, 400);
