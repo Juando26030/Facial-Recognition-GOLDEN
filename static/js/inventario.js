@@ -5,6 +5,15 @@
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
   let users = [], person = null, items = [];
+  const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
+  const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
+  function verdict(cls, title, html) {
+    const b = $('resultBanner');
+    b.className = 'gw-verdict gw-verdict--' + cls;
+    b.setAttribute('role', cls === 'err' ? 'alert' : 'status');
+    b.innerHTML = `<svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="${sprite()}#i-${cls === 'ok' ? 'check-lg' : (cls === 'err' ? 'error' : 'alert')}"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">${esc(title)}</p><p class="gw-verdict__text">${html}</p></div>`;
+    b.hidden = false;
+  }
 
   async function getJson(url) {
     const res = await fetch(url);
@@ -27,38 +36,40 @@
     try { items = await getJson(`/api/events/${window.EVENT_ID}/inventory`); }
     catch (e) {
       $('itemsLoading').hidden = true;
-      box.innerHTML = '<div class="gw-empty gw-state--error" role="alert">No se pudo cargar el inventario. Revisa la conexión y recarga la página.</div>';
+      box.innerHTML = `<div class="gw-state gw-state--error gw-empty--hero" role="alert"><span class="gw-state__icon">${icon('error')}</span><p class="gw-state__title">No se pudo cargar el inventario. Revisa la conexión y recarga la página.</p></div>`;
       return;
     }
     $('itemsLoading').hidden = true;
+    $('statStock').textContent = items.filter(i => i.available > 0).length;
+    $('statOut').textContent = items.filter(i => i.available <= 0).length;
+    $('statOutBox').classList.toggle('gw-stat--err', items.some(i => i.available <= 0));
     box.innerHTML = items.length ? items.map(i => `
-      <div class="gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
-        <div><strong>${esc(i.name)}</strong> <span class="gw-ai__avail">Disponibles: <strong>${i.available}</strong> de ${i.initial_qty}${i.available <= 0 ? ' (agotado)' : ''}</span></div>
+      <div class="gw-card-row gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
+        <div><strong class="gw-card-row__title">${esc(i.name)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
         <div>${i.allow_multiple
           ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(i.available, 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
           : `<label class="gw-check"><input type="checkbox" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`}</div>
-      </div>`).join('') : '<div class="gw-empty">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</div>';
+      </div>`).join('') : `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
   }
 
   async function loadDeliveries() {
     let rows;
     try { rows = await getJson(`/api/events/${window.EVENT_ID}/inventory/deliveries`); }
     catch (e) { setDelState('No se pudieron cargar las entregas. Recarga la página.', true); return; }
+    $('statDeliveries').textContent = rows.length;
     if (!rows.length) { setDelState('Sin entregas todavía. Elige a una persona y entrega el primer ítem.', false); $('delBody').innerHTML = ''; return; }
     $('delState').hidden = true; $('delWrap').hidden = false;
-    $('delBody').innerHTML = rows.map(r => `<tr><td data-label="Hora">${new Date(r.time + 'Z').toLocaleTimeString()}</td><td data-label="Persona">${esc(r.name)} <span class="gw-hint">(${esc(r.user_id)})</span></td><td data-label="Ítem">${esc(r.item)}</td><td data-label="Cant.">${r.qty}</td></tr>`).join('');
+    $('delBody').innerHTML = rows.map(r => `<article class="gw-card-row"><div class="gw-card-row__head"><h3 class="gw-card-row__title">${esc(r.name)}</h3><span class="gw-badge gw-badge--ok">${r.qty} × ${esc(r.item)}</span></div><p class="gw-card-row__meta">${esc(r.user_id)} · ${new Date(r.time + 'Z').toLocaleTimeString()}</p></article>`).join('');
   }
   function setDelState(text, isError) {
-    const st = $('delState'); st.textContent = text; st.hidden = false; st.classList.toggle('gw-state--error', !!isError); $('delWrap').hidden = true;
+    const st = $('delState'); st.innerHTML = `<span class="gw-state__icon">${icon(isError ? 'error' : 'inbox')}</span><p class="gw-state__title">${esc(text)}</p>`; st.hidden = false; st.classList.toggle('gw-state--error', !!isError); $('delWrap').hidden = true;
   }
 
   function setPerson(u) {
     if (!u) return;
     person = u;
     const b = $('personBanner');
-    const sp = document.querySelector('.gw-icon use');
-    const href = sp ? sp.getAttribute('href').split('#')[0] : '';
-    b.innerHTML = `<svg class="gw-icon" aria-hidden="true"><use href="${href}#i-check"/></svg><div>Entregando a: <strong>${esc(u.first_name)} ${esc(u.last_name)}</strong> (${esc(u.id)})</div>`;
+    b.innerHTML = `<div class="gw-person__photo" aria-hidden="true">${esc((String(u.first_name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--ok">${icon('check')} Entregando a esta persona</span></div>`;
     b.hidden = false;
     $('suggest').innerHTML = ''; $('nameSearch').value = '';
   }
@@ -91,7 +102,6 @@
   });
 
   async function deliver() {
-    const banner = $('resultBanner');
     if (!person) { showToast('Primero elige a quién se le entrega', 'error'); return; }
     const lines = [];
     document.querySelectorAll('.item-row').forEach(row => {
@@ -105,10 +115,8 @@
       res = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliver`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: person.id, items: lines }) });
       data = await res.json().catch(() => ({}));
     } catch (e) { res = null; data = { detail: 'No se pudo entregar: sin conexión con el servidor. Inténtalo de nuevo.' }; }
-    banner.hidden = false;
-    if (!res || !res.ok) { banner.className = 'gw-alert gw-alert--warn'; banner.textContent = data.detail || 'No se pudo entregar'; return; }
-    banner.className = 'gw-alert gw-alert--ok';
-    banner.innerHTML = `Entregado a <strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>: ${data.delivered.map(d => `${d.qty} × ${esc(d.name)}`).join(', ')}. Quedan: ${data.stock.map(s => `${esc(s.name)} ${s.available}`).join(' · ')}`;
+    if (!res || !res.ok) { verdict(res ? 'warn' : 'err', res ? 'No se pudo entregar' : 'Sin conexión', esc(data.detail || 'No se pudo entregar')); return; }
+    verdict('ok', 'Entregado', `<strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>: ${data.delivered.map(d => `${d.qty} × ${esc(d.name)}`).join(', ')}. Quedan: ${data.stock.map(s => `${esc(s.name)} ${s.available}`).join(' · ')}`);
     await loadItems(); loadDeliveries();
   }
   $('deliverBtn').addEventListener('click', (e) => busy(e.currentTarget, deliver));

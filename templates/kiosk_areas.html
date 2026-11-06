@@ -65,65 +65,81 @@
     </div>
 
     <div id="mainArea" class="gw-stack-lg"{% if not event.areas_enabled %} hidden{% endif %}>
-      <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
-        <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la zona</span>
-          {% call ayuda('ay_a1', 'Elige la zona') %}Cada zona lleva su propio conteo de personas adentro. Si la zona no permite reingresos, el sistema avisa cuando alguien intenta entrar de nuevo.{% endcall %}</li>
-        <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Escanea o busca</span>
-          {% call ayuda('ay_a2', 'Escanea o busca') %}Escanea la cédula o el QR, escribe la cédula y pulsa Enter, o busca por nombre. En «Automático» el sistema decide si es entrada o salida.{% endcall %}</li>
-        <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Mira quién está dentro</span>
-          {% call ayuda('ay_a3', 'Mira quién está dentro') %}La lista de abajo muestra el último movimiento de cada persona en la zona elegida y se actualiza con cada registro.{% endcall %}</li>
-      </ol>
+      <details class="gw-form-group">
+        <summary class="gw-form-group__summary">Cómo se usa esta pantalla</summary>
+        <div class="gw-form-group__body">
+          <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+            <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la zona</span>
+              {% call ayuda('ay_a1', 'Elige la zona') %}Cada zona lleva su propio conteo de personas adentro. Si la zona no permite reingresos, el sistema avisa cuando alguien intenta entrar de nuevo.{% endcall %}</li>
+            <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Escanea o busca</span>
+              {% call ayuda('ay_a2', 'Escanea o busca') %}Escanea la cédula o el QR, escribe la cédula y pulsa Enter, o busca por nombre. En «Automático» el sistema decide si es entrada o salida.{% endcall %}</li>
+            <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Mira quién está dentro</span>
+              {% call ayuda('ay_a3', 'Mira quién está dentro') %}La lista de abajo muestra el último movimiento de cada persona en la zona elegida y se actualiza con cada registro.{% endcall %}</li>
+          </ol>
+        </div>
+      </details>
 
       <section class="gw-card gw-stack" aria-labelledby="areasMovTitle">
         <h2 class="gw-card__title" id="areasMovTitle">Registrar un movimiento</h2>
-        <div class="gw-fields-row">
-          <div class="gw-field" data-gw-tour-step="1" data-gw-tour-title="1. Elige la zona" data-gw-tour-text="Escoge la zona donde estás. Entre paréntesis ves cuántas personas hay adentro.">
-            <label class="gw-label" for="areaSelect">Zona</label>
-            <select id="areaSelect" class="gw-select"></select>
+        <div class="gw-field" data-gw-tour-step="1" data-gw-tour-title="1. Elige la zona" data-gw-tour-text="Escoge la zona donde estás. Entre paréntesis ves cuántas personas hay adentro.">
+          <label class="gw-label" for="areaSelect" id="zoneLabel">Zona</label>
+          <div class="gw-segment gw-segment--lg" id="zoneSeg" role="group" aria-labelledby="zoneLabel" hidden></div>
+          <select id="areaSelect" class="gw-select"></select>
+        </div>
+        <div class="gw-field">
+          <span class="gw-label" id="dirLabel">Movimiento</span>
+          <div class="gw-segment gw-segment--lg gw-ai__dir" role="group" aria-labelledby="dirLabel">
+            <button type="button" class="gw-segment__opt dir-btn active" data-dir="auto" aria-pressed="true">Automático</button>
+            <button type="button" class="gw-segment__opt dir-btn" data-dir="in" aria-pressed="false">{{ ic('arrow-in', 'gw-icon--sm') }} Entrada</button>
+            <button type="button" class="gw-segment__opt dir-btn" data-dir="out" aria-pressed="false">{{ ic('arrow-out', 'gw-icon--sm') }} Salida</button>
           </div>
-          <div class="gw-field">
-            <span class="gw-label" id="dirLabel">Movimiento</span>
-            <div class="gw-ai__dir" role="group" aria-labelledby="dirLabel">
-              <button type="button" class="gw-chip dir-btn active" data-dir="auto" aria-pressed="true">Automático</button>
-              <button type="button" class="gw-chip dir-btn" data-dir="in" aria-pressed="false">Entrada</button>
-              <button type="button" class="gw-chip dir-btn" data-dir="out" aria-pressed="false">Salida</button>
+        </div>
+
+        <div class="gw-search gw-search--hero" data-gw-tour-step="2" data-gw-tour-title="2. Escanea o busca" data-gw-tour-text="Escanea la cédula o el QR, o escríbela y pulsa Enter. También puedes buscar por nombre o usar la cámara.">
+          <label class="gw-sr-only" for="scanInput">Cédula, QR o lector</label>
+          <div class="gw-search__row">
+            <div class="gw-search__field">
+              {{ ic('search', 'gw-search__icon') }}
+              <input type="text" id="scanInput" class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
+            </div>
+            <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear QR con cámara" title="Escanear QR con cámara">{{ ic('scan') }}</button>
+          </div>
+        </div>
+        <div class="gw-ai__actions">
+          <button type="button" id="registerBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} <span id="registerLabel">Registrar</span></button>
+          <button type="button" id="faceBtn" class="gw-btn gw-btn--secondary gw-btn--xl" hidden>{{ ic('face') }} Facial</button>
+        </div>
+
+        <div id="banner" class="gw-verdict" role="status" aria-live="polite" hidden></div>
+
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary">Buscar por nombre</summary>
+          <div class="gw-form-group__body gw-stack">
+            <div class="gw-field">
+              <label class="gw-label" for="nameSearch">Nombre o apellido</label>
+              <input type="text" id="nameSearch" class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
+              <div class="gw-ai__suggest" id="suggest"></div>
             </div>
           </div>
-        </div>
-
-        <div class="gw-ai__scan" data-gw-tour-step="2" data-gw-tour-title="2. Escanea o busca" data-gw-tour-text="Escanea la cédula o el QR, o escríbela y pulsa Enter. También puedes buscar por nombre o usar la cámara.">
-          <div class="gw-field">
-            <label class="gw-label" for="scanInput">Cédula, QR o lector</label>
-            <input type="text" id="scanInput" class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
-          </div>
-          <button type="button" id="registerBtn" class="gw-btn gw-btn--primary">Registrar</button>
-          <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary">{{ ic('qr', 'gw-icon--sm') }} Escanear QR con cámara</button>
-          <button type="button" id="faceBtn" class="gw-btn gw-btn--secondary" hidden>{{ ic('face', 'gw-icon--sm') }} Facial</button>
-        </div>
-
-        <div class="gw-field">
-          <label class="gw-label" for="nameSearch">O busca por nombre</label>
-          <input type="text" id="nameSearch" class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
-          <div class="gw-ai__suggest" id="suggest"></div>
-        </div>
-
-        <div id="banner" class="gw-alert gw-ai__banner" role="status" aria-live="polite" hidden></div>
+        </details>
         <p class="gw-hint">Modo autoregistro: <strong id="autoregLabel"></strong>. Con «OFF» hay que confirmar cada movimiento con «Acreditar».</p>
       </section>
 
+      <div class="gw-stats-row" aria-label="Resumen de la zona">
+        <div class="gw-stat gw-stat--ok">{{ ic('users', 'gw-stat__icon') }}<span class="gw-stat__value" id="insideCount">0</span><span class="gw-stat__label">Adentro</span></div>
+        <div class="gw-stat">{{ ic('arrow-out', 'gw-stat__icon') }}<span class="gw-stat__value" id="outCount">0</span><span class="gw-stat__label">Salieron</span></div>
+        <div class="gw-stat">{{ ic('clock', 'gw-stat__icon') }}<span class="gw-stat__value" id="totalCount">0</span><span class="gw-stat__label">Con movimientos</span></div>
+      </div>
+
       <section class="gw-card gw-stack" aria-labelledby="presTitle" data-gw-tour-step="3" data-gw-tour-title="3. Mira quién está dentro" data-gw-tour-text="Aquí aparece el último movimiento de cada persona en la zona. Arriba ves cuántas hay adentro.">
         <div class="gw-row gw-row--between">
-          <h2 class="gw-card__title" id="presTitle">Personas en la zona: <span class="gw-ai__count" id="insideCount">0</span> adentro</h2>
+          <h2 class="gw-card__title" id="presTitle">Personas en la zona</h2>
           <a id="reportBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/areas-report" hidden>{{ ic('download', 'gw-icon--sm') }} Reporte de movimientos (Excel)</a>
         </div>
         <div id="presLoading" class="gw-skeleton" hidden></div>
-        <div id="presState" class="gw-empty" role="status" hidden></div>
-        <div class="gw-table-wrap" id="presWrap">
-          <table class="gw-table gw-table-cards">
-            <caption class="gw-sr-only">Personas en la zona elegida</caption>
-            <thead><tr><th scope="col">Cédula</th><th scope="col">Persona</th><th scope="col">Estado</th><th scope="col">Hora</th></tr></thead>
-            <tbody id="presBody"></tbody>
-          </table>
+        <div id="presState" class="gw-state gw-empty--hero" role="status" hidden></div>
+        <div id="presWrap">
+          <div class="gw-cards" id="presBody"></div>
         </div>
       </section>
     </div>
