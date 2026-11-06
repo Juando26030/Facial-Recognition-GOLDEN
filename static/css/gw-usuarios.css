@@ -1,0 +1,8 @@
+/* Usuarios del evento: combobox «Asignar cuenta ya existente». Solo tokens --gw-*. La lista va en el flujo (sin posición absoluta) para que ningún grupo plegable la recorte. */
+.gw-combo { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-combo__list { list-style: none; margin: 0; padding: var(--gw-sp-1); max-height: 16rem; overflow-y: auto; background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-md); }
+.gw-combo__list[hidden] { display: none; }
+.gw-combo__opt { min-height: var(--gw-tap); display: flex; align-items: center; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); cursor: pointer; color: var(--gw-text); font-size: var(--gw-fs-md); overflow-wrap: anywhere; }
+.gw-combo__opt:hover { background: var(--gw-surface-2); }
+.gw-combo__opt[aria-selected="true"] { background: var(--gw-navy); color: var(--gw-nav-text); }
+.gw-combo__empty { padding: var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }

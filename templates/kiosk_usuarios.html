@@ -16,6 +16,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-usuarios.css') }}">
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
@@ -64,7 +65,7 @@
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Agrega a alguien</span>
         {% call ayuda('ay_paso1', 'Agrega a alguien') %}Crea una cuenta nueva con su usuario (para un digitador, la cédula) y una contraseña temporal. Quedará asignada solo a este evento.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Asigna el rol</span>
-        {% call ayuda('ay_paso2', 'Asigna el rol') %}El digitador registra y acredita personas en este evento. El cliente solo consulta lo que se le comparte. El rol se elige al crear la cuenta.{% endcall %}</li>
+        {% call ayuda('ay_paso2', 'Asigna el rol') %}El digitador registra y acredita personas en este evento. Para que un cliente vea estadísticas, usa un enlace de estadísticas con vencimiento (no una cuenta).{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Quita el acceso al terminar</span>
         {% call ayuda('ay_paso3', 'Quita el acceso al terminar') %}«Quitar de este evento» solo retira el acceso aquí y la cuenta sigue existiendo. «Borrar permanente» elimina la cuenta de todo el sistema y no se puede deshacer.{% endcall %}</li>
     </ol>
@@ -95,9 +96,6 @@
                 {% if staff_role != "comercial" %}
                 <option value="digitador">Digitador (temporal)</option>
                 {% endif %}
-                {% if staff_role in ["comercial", "admin", "super_admin"] %}
-                <option value="cliente">Cliente</option>
-                {% endif %}
               </select>
             </div>
           </div>
@@ -116,12 +114,17 @@
 
     {% if staff_role in ["admin", "super_admin"] %}
     <details class="gw-group" id="grpExistente">
-      <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuenta ya existente</span><span class="gw-group__hint">Para reusar un digitador o cliente de otro evento en vez de crear uno nuevo.</span></summary>
+      <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuenta ya existente</span><span class="gw-group__hint">Para reusar un digitador de otro evento en vez de crear uno nuevo.</span></summary>
       <div class="gw-group__body">
         <form id="assignExistingForm" class="gw-stack">
           <div class="gw-field">
             <label class="gw-label" for="assignableSelect">Usuario existente</label>
-            <select class="gw-select" name="staff_id" id="assignableSelect" required></select>
+            <div class="gw-combo" id="assignableCombo">
+              <input class="gw-input gw-combo__input" type="text" id="assignableSelect" role="combobox" aria-expanded="false" aria-controls="assignableList" aria-autocomplete="list" aria-describedby="assignableHint" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe usuario, nombre o rol">
+              <input type="hidden" name="staff_id" id="assignableValue">
+              <ul class="gw-combo__list" id="assignableList" role="listbox" aria-label="Usuarios existentes" hidden></ul>
+            </div>
+            <p class="gw-hint" id="assignableHint">Escribe para filtrar y elige uno de la lista.</p>
           </div>
           <div class="gw-actions">
             <button type="submit" class="gw-btn gw-btn--secondary">Asignar a este evento</button>
