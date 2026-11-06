@@ -16,6 +16,68 @@
     palette, token,
     onTheme(fn) { try { new MutationObserver(fn).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) { /* sin observador: se queda con el tema con el que cargó */ } },
   };
+  const GWViz = window.GWViz;
+  /* Gráficos de barras legibles en celular (Fase 1.7, M5). Hasta 720 px (celular) cada categoría es una FILA: el nombre completo (hasta 3 líneas, sin rotar) arriba,
+     la barra a casi todo el ancho y la cantidad (y el porcentaje) siempre visibles al final; el alto crece con el número de categorías. El tooltip queda como extra. */
+  const NARROW_MQ = '(max-width: 720px)';
+  const mq = () => { try { return window.matchMedia(NARROW_MQ); } catch (e) { return null; } };
+  GWViz.narrow = GWViz.narrow || (() => { const m = mq(); return !!(m && m.matches); });
+  GWViz.onNarrow = GWViz.onNarrow || ((fn) => { const m = mq(); if (!m) return; if (m.addEventListener) m.addEventListener('change', fn); else if (m.addListener) m.addListener(fn); });
+  /* Parte un texto en renglones de a lo sumo `max` caracteres (por palabras) y recorta con «…» pasado `maxLines`. */
+  GWViz.wrap = GWViz.wrap || ((text, max, maxLines) => {
+    const words = String(text == null ? '' : text).split(/\s+/).filter(Boolean); const lines = []; let cur = '';
+    words.forEach((w) => { if (cur && (cur + ' ' + w).length > max) { lines.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; });
+    if (cur) lines.push(cur);
+    if (maxLines && lines.length > maxLines) { const keep = lines.slice(0, maxLines); keep[maxLines - 1] = keep[maxLines - 1].replace(/.{1}$/, '') + '…'; return keep; }
+    return lines.length ? lines : [''];
+  });
+  const ROW_BAR = 24, ROW_LINE = 18;
+  /* Plan de filas: alto del lienzo y relleno para `labels` en un ancho disponible `width` (px). */
+  GWViz.rowPlan = GWViz.rowPlan || ((labels, texts, width) => {
+    const perLine = Math.max(12, Math.floor((width - 8) / 7.8));
+    const lines = Math.max(1, Math.min(3, Math.max.apply(null, labels.map((l) => Math.ceil(String(l).length / perLine) || 1))));
+    const rowH = ROW_BAR + ROW_LINE * lines + 12;
+    const padTop = Math.max(0, ROW_LINE * lines + 4 - Math.round((rowH - ROW_BAR) / 2));
+    const padRight = Math.max.apply(null, texts.map((t) => String(t).length)) * 9 + 14;
+    return { lines, rowH, padTop, padRight, height: Math.min(1600, labels.length * rowH + padTop + 10) };
+  });
+  /* Dibuja, por barra, el nombre (arriba) y el valor (al final). Opciones en plugins.gwRows = { labels, texts, lines }. */
+  GWViz.rowsPlugin = GWViz.rowsPlugin || {
+    id: 'gwRows',
+    afterDatasetsDraw(chart, _a, o) {
+      if (!o || !o.labels) return;
+      const ctx = chart.ctx, meta = chart.getDatasetMeta(0), left = 2, maxW = chart.width - 6;
+      const fit = (t) => { const words = String(t).split(/\s+/); const out = []; let cur = '';
+        words.forEach((w) => { const probe = cur ? cur + ' ' + w : w; if (cur && ctx.measureText(probe).width > maxW) { out.push(cur); cur = w; } else cur = probe; });
+        out.push(cur); if (out.length > o.lines) { out.length = o.lines; let last = out[o.lines - 1]; while (last.length > 1 && ctx.measureText(last + '…').width > maxW) last = last.slice(0, -1); out[o.lines - 1] = last + '…'; }
+        return out; };
+      ctx.save(); ctx.fillStyle = token('--gw-text'); ctx.textBaseline = 'alphabetic';
+      meta.data.forEach((bar, i) => {
+        const top = bar.y - bar.height / 2;
+        ctx.font = '600 14px system-ui, sans-serif'; ctx.textAlign = 'left';
+        const lines = fit(o.labels[i]);
+        lines.forEach((ln, k) => ctx.fillText(ln, left, top - 6 - (lines.length - 1 - k) * ROW_LINE));
+        ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+        ctx.fillText(o.texts[i], Math.max(bar.x, chart.chartArea.left) + 8, bar.y); ctx.textBaseline = 'alphabetic';
+      });
+      ctx.restore();
+    },
+  };
+  /* Barras en filas para UNA serie. Devuelve { config, height } listo para `new Chart(canvas, config)`. */
+  GWViz.rowBars = GWViz.rowBars || ((labels, values, o) => {
+    o = o || {};
+    const total = values.reduce((a, b) => a + (Number(b) || 0), 0);
+    const texts = values.map((v) => String(v) + (o.showPct && total ? ' · ' + Math.round(100 * v / total) + '%' : ''));
+    const plan = GWViz.rowPlan(labels, texts, o.width || 330);
+    return { height: plan.height, config: {
+      type: 'bar',
+      data: { labels, datasets: [{ label: o.seriesLabel || 'Cantidad', data: values, backgroundColor: o.color || palette()[0], borderRadius: 4, barThickness: ROW_BAR }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { top: plan.padTop, right: plan.padRight, bottom: 4, left: 0 } },
+        plugins: { legend: { display: false }, gwRows: { labels, texts, lines: plan.lines }, tooltip: { titleFont: { size: 14 }, bodyFont: { size: 14 } } },
+        scales: { x: { display: false, beginAtZero: true, grid: { display: false } }, y: { display: false, grid: { display: false } } } },
+      plugins: [GWViz.rowsPlugin],
+    } };
+  });
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TONE_CLASS = { good: ' ad-kpi--good', warn: ' ad-kpi--warn', bad: ' ad-kpi--bad' };
 
@@ -88,9 +150,35 @@
     let timer = null;
     let lastData = null;
 
-    function paintChart(spec, card) {
+    /* Presentación en celular: filas (una serie, categorías), barras con nombres envueltos (varias series) o alto según la leyenda (circular). Devuelve el alto del lienzo o null. */
+    function narrowPlan(spec, card) {
+      if (!GWViz.narrow()) return null;
+      const n = spec.labels.length, w = Math.max(240, (card.clientWidth || window.innerWidth) - 34);
+      const longest = Math.max.apply(null, spec.labels.map((l) => String(l).length).concat([0]));
+      if (spec.type === 'bar' && spec.datasets.length === 1 && (spec.horizontal || n > 6 || longest > 10)) {
+        const dated = spec.labels.every((l) => /^[\d\s\-/:.hH]+$/.test(String(l)));        // fechas y horas conservan su orden
+        let idx = spec.labels.map((_, k) => k);
+        if (n > 5 && !dated) idx.sort((a, b) => (Number(spec.datasets[0].data[b]) || 0) - (Number(spec.datasets[0].data[a]) || 0));        // muchas opciones: de mayor a menor
+        return { kind: 'rows', idx, width: w };
+      }
+      if (spec.type === 'bar' && spec.horizontal) return { kind: 'hwrap', height: Math.min(1600, n * 58 + 120) };
+      if (spec.type === 'pie') return { kind: 'pie', height: Math.min(1000, 250 + n * 34) };
+      if (spec.type === 'line') return { kind: 'line', height: 280 };
+      return null;
+    }
+
+    function paintChart(spec, card, np) {
       const canvas = card.querySelector('canvas');
       if (charts[spec.id]) charts[spec.id].destroy();
+      if (np && np.kind === 'rows') {
+        const labels = np.idx.map((k) => spec.labels[k]), values = np.idx.map((k) => spec.datasets[0].data[k]);
+        const built = GWViz.rowBars(labels, values, { width: np.width, seriesLabel: spec.datasets[0].label });
+        card.querySelector('.ad-box').style.height = built.height + 'px';        // alto según el número de categorías
+        canvas.setAttribute('role', 'img');
+        canvas.setAttribute('aria-label', spec.title + '. ' + labels.slice(0, 12).map((l, k) => l + ': ' + values[k]).join('; '));
+        charts[spec.id] = new Chart(canvas, built.config);
+        return;
+      }
       const single = spec.type === 'pie';
       const colors = palette();
       const text = token('--gw-text'), muted = token('--gw-text-muted'), grid = token('--gw-border'), surface = token('--gw-surface');
@@ -111,9 +199,9 @@
         data: { labels, datasets },
         options: {
           indexAxis: spec.horizontal ? 'y' : 'x', responsive: true, maintainAspectRatio: false,
-          layout: opts.large ? { padding: { right: spec.horizontal ? 36 : 4, top: spec.horizontal ? 4 : 22 } } : {},
-          plugins: { adValueLabels: { enabled: !!opts.large && !single }, legend: { display: single || spec.datasets.length > 1, position: 'bottom', labels: { color: text, font: { size: fs } } }, tooltip: { titleFont: { size: 14 }, bodyFont: { size: 14 } } },
-          scales: single ? {} : { x: { stacked: !!spec.stacked, grid: { color: grid }, ticks: { color: muted, maxRotation: 60, autoSkip: !opts.large || !spec.horizontal, font: { size: fs } } }, y: { stacked: !!spec.stacked, beginAtZero: true, grid: { color: grid }, ticks: { color: muted, precision: 0, autoSkip: !(opts.large && spec.horizontal), font: { size: fs } } } },
+          layout: opts.large || (np && np.kind === 'hwrap') ? { padding: { right: spec.horizontal ? 36 : 4, top: spec.horizontal ? 4 : 22 } } : {},
+          plugins: { adValueLabels: { enabled: (!!opts.large || !!(np && np.kind === 'hwrap')) && !single }, legend: { display: single || spec.datasets.length > 1, position: 'bottom', labels: { color: text, font: { size: fs } } }, tooltip: { titleFont: { size: 14 }, bodyFont: { size: 14 } } },
+          scales: single ? {} : { x: { stacked: !!spec.stacked, grid: { color: grid }, ticks: { color: muted, maxRotation: np && np.kind === 'line' ? 0 : 60, maxTicksLimit: np ? 6 : undefined, autoSkip: !opts.large || !spec.horizontal, font: { size: fs } } }, y: { stacked: !!spec.stacked, beginAtZero: true, grid: { color: grid }, ticks: Object.assign({ color: muted, precision: 0, autoSkip: !(opts.large && spec.horizontal), font: { size: fs } }, np && np.kind === 'hwrap' ? { autoSkip: false, callback(v) { return GWViz.wrap(this.getLabelForValue(v), 16, 3); } } : {}) } },
         },
         plugins: [valueLabels],
       });
@@ -152,13 +240,17 @@
           card.innerHTML = '<h4 class="ad-ct"></h4><div class="ad-box"><canvas></canvas></div><div class="ad-note"></div>';
           host.appendChild(card);
         }
-        if (opts.large) {          // gráficas grandes: las barras horizontales crecen con la cantidad de opciones para que cada nombre se lea completo
+        const np = narrowPlan(spec, card);
+        const box = card.querySelector('.ad-box');
+        box.style.height = '';
+        if (np && np.height) box.style.height = np.height + 'px';
+        else if (opts.large) {          // gráficas grandes: las barras horizontales crecen con la cantidad de opciones para que cada nombre se lea completo
           const h = spec.horizontal || spec.type === 'bar' && spec.labels.length > 8 && spec.labels.some((l) => String(l).length > 10) ? Math.max(320, spec.labels.length * 40 + 90) : 360;
-          card.querySelector('.ad-box').style.height = Math.min(h, 900) + 'px';        // alto calculado con los datos: es lo único que se fija por código
+          box.style.height = Math.min(h, 900) + 'px';        // alto calculado con los datos: es lo único que se fija por código
         }
         card.querySelector('.ad-ct').textContent = spec.title;
         card.querySelector('.ad-note').textContent = spec.note || '';
-        paintChart(spec, card);
+        paintChart(spec, card, np);
       });
       q('.ad-empty').hidden = !!(data.charts.length || data.kpis.some((k) => Number(k.value) > 0));
     }
@@ -175,6 +267,7 @@
     }
     const refresh = q('.ad-refresh');
     refresh.addEventListener('click', () => { if (window.GW && window.GW.busy) window.GW.busy(refresh, load).catch(() => {}); else load(); });
+    window.GWViz.onNarrow(() => { if (lastData && document.body.contains(container)) paint(lastData); });          // cruza el límite de celular (girar el aparato): se redibuja
     window.GWViz.onTheme(() => { if (lastData && document.body.contains(container)) paint(lastData); });          // otro tema: se vuelve a dibujar con sus colores
     load();
     if (opts.refreshSeconds) {
