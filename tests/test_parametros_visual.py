@@ -147,7 +147,7 @@ def test_instant_and_pending_changes_are_told_apart_and_the_reprint_history_is_a
     reprint = TEMPLATE[TEMPLATE.index('id="reprintCard"'):TEMPLATE.index('id="sharedPrintCard"')]
     assert 'name="reprintMode" value="enabled"' in reprint and 'name="reprintMode" value="disabled"' in reprint and 'id="reprintHistory"' in reprint
     hist = TEMPLATE[TEMPLATE.index("async function loadReprintHistory"):TEMPLATE.index("// Paso guiado de biometría")]
-    assert 'class="gw-table"' in hist and "gw-badge" in hist and all(s in hist for s in ("pending:", "approved:", "denied:", "expired:", "used:"))
+    assert 'class="gw-table gw-pm-stack"' in hist and "gw-badge" in hist and all(s in hist for s in ("pending:", "approved:", "denied:", "expired:", "used:"))
 
 
 def test_the_page_renders_for_a_coordinator_with_every_section(client, factory):
