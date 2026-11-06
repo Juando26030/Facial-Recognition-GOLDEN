@@ -1,3 +1,8 @@
+{# Nuevo evento (Fase 1.5, Ola 2): asistente de 4 pasos (Datos · Fechas · Responsables · Revisar). Solo tokens --gw-* y clases .gw-*. Mismos name/id y misma API de siempre (POST /api/events). #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,107 +10,157 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nuevo Evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-nuevo-evento.css') }}">
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
-    <style>
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-    </style>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" class="small-btn">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
 </header>
 <div class="golden-content-spacer"></div>
 
-<main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 800px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
-      <span>{{ tenant_name }}</span>
-      <h2>Nuevo evento</h2>
+<main class="golden-main" id="nuevoEventoRoot" data-tenant-id="{{ tenant_id }}" data-staff-role="{{ staff_role }}" data-pure-coordinator="{{ 'true' if pure_coordinator else 'false' }}" data-staff-id="{{ staff_id if staff_id is not none else '' }}">
+  <div class="gw-container gw-nuevo" data-gw-tour="nuevo_evento" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ tenant_name }}</p>
+        <h1 class="gw-page-head__title">Nuevo evento</h1>
+        <p class="gw-page-head__sub">Se crea con la persona de prueba «PRUEBA» para ensayar la escarapela y el registro sin tocar datos reales.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="nuevo_evento">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
     </div>
 
-    <div class="golden-badge-builder">
-      <form id="newEventForm">
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required pattern="[A-Za-z0-9._\-]+" title="Letras sin tilde, números, punto, guion o guion bajo, sin espacios. Ejemplo: FERIA-2026" aria-describedby="eventCodeHelp"><small id="eventCodeHelp" style="display:block; color:#555; margin-top:4px;">Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026).</small></div>
-          <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>Fecha inicio *</label><input type="date" name="start_date" required></div>
-          <div class="badge-input-group"><label>Fecha fin *</label><input type="date" name="end_date" required></div>
-          <div class="badge-input-group"><label>Fecha montaje *</label><input type="date" name="setup_date" required></div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>Hora inicio evento *</label><input type="text" class="clock-time" name="event_time_start" required></div>
-          <div class="badge-input-group"><label>Hora fin evento *</label><input type="text" class="clock-time" name="event_time_end" required></div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="text" class="clock-time" name="setup_time_start" required></div>
-          <div class="badge-input-group"><label>Hora fin montaje *</label><input type="text" class="clock-time" name="setup_time_end" required></div>
-        </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>País *</label><input type="text" id="countryField" name="country" list="countryList" required autocomplete="off" value="Colombia"></div>
-          <div class="badge-input-group"><label>Ciudad *</label><input type="text" id="cityField" name="city" list="cityList" required autocomplete="off" value="Bogotá"></div>
+    <ol class="gw-steps" aria-label="Guía de 3 pasos">
+      <li data-gw-tour-step="1" data-gw-tour-title="1. Datos básicos" data-gw-tour-text="Código interno, nombre y lugar del evento. El código va en los enlaces y no se puede cambiar después."><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Datos básicos</span>
+        {% call ayuda('ay_datos', 'Datos básicos') %}El código interno aparece en los enlaces y en los QR del evento y no se puede cambiar después. El nombre sí se puede editar luego.{% endcall %}</li>
+      <li data-gw-tour-step="2" data-gw-tour-title="2. Fechas y horas" data-gw-tour-text="Fechas y horas del evento y del montaje."><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Fechas</span>
+        {% call ayuda('ay_fechas', 'Fechas y horas') %}Escribe las fechas del evento y del montaje, y toca cada hora para elegirla en el reloj.{% endcall %}</li>
+      <li data-gw-tour-step="3" data-gw-tour-title="3. Responsables" data-gw-tour-text="Quién coordina y qué comercial atiende el evento. Al final revisas todo y lo creas."><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Responsables</span>
+        {% call ayuda('ay_resp', 'Responsables') %}Elige al coordinador y a la comercial de la lista. Si eres coordinador, el evento queda asignado a ti.{% endcall %}</li>
+    </ol>
+
+    <form id="newEventForm" class="gw-card gw-wizard" data-gw-wizard novalidate>
+      <div class="gw-wizard__head"><h2 class="gw-card__title">Crear evento</h2><span class="gw-wizard__count" data-gw-wizard-count aria-live="polite">Paso 1 de 4</span></div>
+      <div class="gw-progress" role="progressbar" aria-label="Avance" aria-valuemin="1" aria-valuenow="1" aria-valuemax="4"><div class="gw-progress__bar" data-gw-wizard-bar></div></div>
+
+      <section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT1">
+        <h3 class="gw-nuevo__panel-title" id="neT1" tabindex="-1">Datos del evento</h3>
+        <div class="gw-fields-row gw-fields-row--2">
+          <div class="gw-field">
+            <label class="gw-label" for="neCode">Código interno <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neCode" type="text" name="event_code" required pattern="[A-Za-z0-9._\-]+" title="Letras sin tilde, números, punto, guion o guion bajo, sin espacios. Ejemplo: FERIA-2026" aria-describedby="eventCodeHelp" autocomplete="off">
+            <small class="gw-hint" id="eventCodeHelp">Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026).</small>
+          </div>
+          <div class="gw-field">
+            <label class="gw-label" for="neName">Nombre del evento <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neName" type="text" name="name" required>
+          </div>
+          <div class="gw-field">
+            <label class="gw-label" for="countryField">País <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" type="text" id="countryField" name="country" list="countryList" required autocomplete="off" value="Colombia">
+          </div>
+          <div class="gw-field">
+            <label class="gw-label" for="cityField">Ciudad <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" type="text" id="cityField" name="city" list="cityList" required autocomplete="off" value="Bogotá">
+          </div>
+          <div class="gw-field">
+            <label class="gw-label" for="neLocation">Lugar <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neLocation" type="text" name="location" required>
+          </div>
+          <div class="gw-field">
+            <label class="gw-label" for="neAddress">Dirección <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neAddress" type="text" name="address" required>
+          </div>
         </div>
         <datalist id="cityList"></datalist>
-        <div class="badge-input-row">
-          <div class="badge-input-group"><label>Lugar *</label><input type="text" name="location" required></div>
-          <div class="badge-input-group"><label>Dirección *</label><input type="text" name="address" required></div>
+      </section>
+
+      <section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT2" hidden>
+        <h3 class="gw-nuevo__panel-title" id="neT2" tabindex="-1">Fechas y horas</h3>
+        <h4 class="gw-nuevo__section">Evento</h4>
+        <div class="gw-fields-row gw-fields-row--2">
+          <div class="gw-field"><label class="gw-label" for="neStart">Fecha inicio <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input" id="neStart" type="date" name="start_date" required></div>
+          <div class="gw-field"><label class="gw-label" for="neEnd">Fecha fin <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input" id="neEnd" type="date" name="end_date" required></div>
+          <div class="gw-field"><label class="gw-label" for="neTimeStart">Hora inicio evento <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input clock-time" id="neTimeStart" type="text" name="event_time_start" required></div>
+          <div class="gw-field"><label class="gw-label" for="neTimeEnd">Hora fin evento <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input clock-time" id="neTimeEnd" type="text" name="event_time_end" required></div>
         </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group" style="min-width:100%;">
-            <label>Coordinador asignado *</label>
-            <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar..."{% if pure_coordinator %} readonly title="Como coordinador, el evento queda asignado a ti"{% endif %}>
+        <h4 class="gw-nuevo__section">Montaje</h4>
+        <div class="gw-fields-row gw-fields-row--3">
+          <div class="gw-field"><label class="gw-label" for="neSetup">Fecha montaje <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input" id="neSetup" type="date" name="setup_date" required></div>
+          <div class="gw-field"><label class="gw-label" for="neSetupStart">Hora inicio montaje <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input clock-time" id="neSetupStart" type="text" name="setup_time_start" required></div>
+          <div class="gw-field"><label class="gw-label" for="neSetupEnd">Hora fin montaje <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input clock-time" id="neSetupEnd" type="text" name="setup_time_end" required></div>
+        </div>
+      </section>
+
+      <section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT3" hidden>
+        <h3 class="gw-nuevo__panel-title" id="neT3" tabindex="-1">Responsables</h3>
+        <div class="gw-stack">
+          <div class="gw-field">
+            <label class="gw-label" for="neCoord">Coordinador asignado <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neCoord" type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar..."{% if pure_coordinator %} readonly title="Como coordinador, el evento queda asignado a ti"{% endif %}>
+            {% if pure_coordinator %}<small class="gw-hint">Como coordinador, el evento queda asignado a ti.</small>{% endif %}
           </div>
-        </div>
-        {% if not pure_coordinator %}
-        <div class="badge-input-row">
-          <div class="badge-input-group" style="min-width:100%;">
-            <label>Comercial asignada *</label>
-            <input type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
+          {% if not pure_coordinator %}
+          <div class="gw-field">
+            <label class="gw-label" for="neComm">Comercial asignada <span class="gw-req" aria-hidden="true">*</span></label>
+            <input class="gw-input" id="neComm" type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
           </div>
-        </div>
-        {% endif %}
-        <div class="badge-input-row">
-          <div class="badge-input-group" style="min-width:100%;">
-            <label>Superevento (opcional — agrupa eventos hermanos de este cliente)</label>
-            <div style="display:flex; gap:8px;">
-              <select name="super_event_id" id="superEventSelect" style="flex:1; padding:0.7rem; border:1px solid #ddd; border-radius:10px;"><option value="">— Ninguno —</option></select>
-              <button type="button" id="newSuperBtn" class="small-btn" style="padding:8px 16px; white-space:nowrap;">+ Nuevo superevento</button>
+          {% endif %}
+          <div class="gw-field">
+            <label class="gw-label" for="superEventSelect">Superevento (opcional: agrupa eventos hermanos de este cliente)</label>
+            <div class="gw-nuevo__combo">
+              <select class="gw-select" name="super_event_id" id="superEventSelect"><option value="">— Ninguno —</option></select>
+              <button type="button" id="newSuperBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Nuevo superevento</button>
             </div>
           </div>
         </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group" style="max-width:110px;">
-            <label>Color de pañoleta</label>
-            <input type="color" name="bandana_color" value="#D4AF37" style="width:100%; height:44px; padding:2px; border:1px solid #ddd; border-radius:8px; cursor:pointer;">
+      </section>
+
+      <section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT4" hidden>
+        <h3 class="gw-nuevo__panel-title" id="neT4" tabindex="-1">Revisa y crea</h3>
+        <div class="gw-fields-row gw-fields-row--2">
+          <div class="gw-field">
+            <label class="gw-label" for="neColor">Color de pañoleta</label>
+            <input class="gw-nuevo__color" id="neColor" type="color" name="bandana_color">
           </div>
-          <div class="badge-input-group"><label>Nombre del color</label><input type="text" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
+          <div class="gw-field">
+            <label class="gw-label" for="neColorName">Nombre del color</label>
+            <input class="gw-input" id="neColorName" type="text" name="bandana_color_name" placeholder="Ej. Rojo Golden">
+          </div>
         </div>
-        <div class="badge-input-row">
-          <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+        <div class="gw-field">
+          <label class="gw-label" for="neNotes">Observaciones</label>
+          <input class="gw-input" id="neNotes" type="text" name="notes">
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
-          <a href="/clientes" class="small-btn" style="padding:10px 20px;">Cancelar</a>
-          <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear evento</button>
-        </div>
-      </form>
-    </div>
+        <h4 class="gw-nuevo__section">Resumen</h4>
+        <div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>
+      </section>
+
+      <div class="gw-wizard__foot">
+        <a href="/clientes" class="gw-btn gw-btn--ghost">Cancelar</a>
+        <button type="button" class="gw-btn gw-btn--secondary" data-gw-wizard-prev hidden>Atrás</button>
+        <button type="button" class="gw-btn gw-btn--primary" id="neNext" data-gw-wizard-next data-label="Continuar" data-label-last="Crear evento">Continuar</button>
+      </div>
+    </form>
   </div>
 </main>
 
@@ -113,128 +168,6 @@
 <datalist id="coordinatorList"></datalist>
 <datalist id="commercialList"></datalist>
 
-<script>
-const TENANT_ID = "{{ tenant_id }}";
-const STAFF_ROLE = "{{ staff_role }}";
-const PURE_COORDINATOR = {{ 'true' if pure_coordinator else 'false' }};
-const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
-const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
-document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
-
-document.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
-ColorLibrary.attach(document.querySelector('[name="bandana_color"]'), document.querySelector('[name="bandana_color_name"]'));
-
-async function loadCitiesFor(country) {
-  const cityDatalist = document.getElementById("cityList");
-  if (!country) { cityDatalist.innerHTML = ""; return; }
-  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
-  const cities = res.ok ? await res.json() : [];
-  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join("");
-}
-document.getElementById("countryField").addEventListener("change", (e) => loadCitiesFor(e.target.value.trim()));
-// País/Ciudad por defecto (2026-09-17, pedido explícito): Colombia/Bogotá, editable como
-// cualquier otro campo — solo precarga el datalist de ciudades para que el valor por defecto
-// tenga sus sugerencias listas igual que si el usuario acabara de elegir el país a mano.
-loadCitiesFor(document.getElementById("countryField").value.trim());
-
-let coordinatorsByLabel = {};
-async function loadCoordinatorOptions() {
-  const res = await fetch("/api/staff/coordinators");
-  const coords = await res.json();
-  coordinatorsByLabel = {};
-  document.getElementById("coordinatorList").innerHTML = coords.map(c => {
-    const label = `${c.full_name || c.username} (${c.username})`;
-    coordinatorsByLabel[label] = c.id;
-    return `<option value="${label}">`;
-  }).join("");
-  if (PURE_COORDINATOR) {          // coordinador puro: el evento queda a su nombre
-    const self = coords.find(c => c.id === STAFF_ID);
-    if (self) document.querySelector('input[name="coordinator_label"]').value = `${self.full_name || self.username} (${self.username})`;
-  }
-}
-loadCoordinatorOptions();
-
-// Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): "por defecto aparece quien está creando el
-// evento, si es una comercial... y lo puede cambiar a otras comerciales que haya" — si quien crea
-// es comercial, se preselecciona a sí misma (pero sigue siendo editable); admin+ tiene que elegir.
-let commercialsByLabel = {};
-async function loadCommercialOptions() {
-  const res = await fetch("/api/staff/commercials");
-  const commercials = await res.json();
-  commercialsByLabel = {};
-  document.getElementById("commercialList").innerHTML = commercials.map(c => {
-    const label = `${c.full_name || c.username} (${c.username})`;
-    commercialsByLabel[label] = c.id;
-    return `<option value="${label}">`;
-  }).join("");
-  if (STAFF_ROLE === "comercial") {
-    const self = commercials.find(c => c.id === STAFF_ID);
-    if (self) {
-      const field = document.querySelector('input[name="commercial_label"]');
-      field.value = `${self.full_name || self.username} (${self.username})`;
-    }
-  }
-}
-if (!PURE_COORDINATOR) loadCommercialOptions();
-
-async function loadSuperEvents(selectedId) {
-  const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(TENANT_ID)}`);
-  const list = res.ok ? await res.json() : [];
-  const select = document.getElementById("superEventSelect");
-  select.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${s.name} (${s.events} eventos)</option>`).join("");
-  select.value = selectedId ? String(selectedId) : "";
-}
-loadSuperEvents();
-document.getElementById("newSuperBtn").addEventListener("click", async () => {
-  const name = await showPrompt("Nombre del superevento (ej. Congreso X):", { confirmLabel: "Crear" });
-  if (!name) return;
-  const res = await fetch("/api/super-events", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ tenant_id: TENANT_ID, name }) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) { showToast(data.detail || "No se pudo crear el superevento", "error"); return; }
-  await loadSuperEvents(data.id);
-  showToast("Superevento creado y seleccionado", "success");
-});
-
-document.getElementById("newEventForm").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const form = ev.target;
-  const formData = new FormData(form);
-  const payload = Object.fromEntries(formData.entries());
-  payload.tenant_id = TENANT_ID;
-  payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
-
-  const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
-  if (!coordinatorId) {
-    showToast("Selecciona un coordinador válido de la lista.", "error");
-    return;
-  }
-  payload.coordinator_staff_id = coordinatorId;
-  delete payload.coordinator_label;
-
-  if (!PURE_COORDINATOR) {
-    const commercialId = commercialsByLabel[payload.commercial_label];
-    if (!commercialId) {
-      showToast("Selecciona una comercial válida de la lista.", "error");
-      return;
-    }
-    payload.commercial_staff_id = commercialId;
-  }
-  delete payload.commercial_label;
-
-  const btn = form.querySelector('button[type="submit"]');
-  setButtonLoading(btn, true, "Creando...");
-  const res = await fetch("/api/events", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
-  });
-  if (res.ok) {
-    showToast("Evento creado", "success");
-    window.location.href = "/clientes";
-  } else {
-    const err = await res.json();
-    showToast(err.detail || "No se pudo crear el evento", "error");
-    setButtonLoading(btn, false);
-  }
-});
-</script>
+<script src="{{ url_for('static', path='js/nuevo-evento.js') }}"></script>
 </body>
 </html>
