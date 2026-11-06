@@ -120,6 +120,7 @@
   function drawTimeline(spec, canvas) {
     if (chart) { chart.destroy(); chart = null; }
     if (!window.Chart || !canvas) return;
+    var narrow = window.matchMedia && window.matchMedia('(max-width: 720px)').matches;          // celular: pocas marcas en el eje, sin rotar
     var text = css('--gw-text'), muted = css('--gw-text-muted'), grid = css('--gw-border'), gold = css('--gw-viz-2') || css('--gw-gold-1'), navy = css('--gw-viz-1') || css('--gw-link');
     chart = new window.Chart(canvas, {
       type: 'line',
@@ -128,7 +129,7 @@
         { label: 'Acumulado', data: spec.datasets[1].data, borderColor: navy, backgroundColor: navy, tension: 0.3, borderWidth: 3, pointRadius: 0, borderDash: [6, 4] }] },
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { position: 'bottom', labels: { color: text, font: { size: 14 }, boxWidth: 18 } }, tooltip: { titleFont: { size: 14 }, bodyFont: { size: 14 } } },
-        scales: { x: { ticks: { color: muted, font: { size: 13 }, maxRotation: 45, autoSkip: true }, grid: { color: grid } },
+        scales: { x: { ticks: { color: muted, font: { size: 13 }, maxRotation: narrow ? 0 : 45, maxTicksLimit: narrow ? 5 : undefined, autoSkip: true }, grid: { color: grid } },
                   y: { beginAtZero: true, ticks: { color: muted, font: { size: 13 }, precision: 0 }, grid: { color: grid } } } },
     });
   }
@@ -216,6 +217,7 @@
   if (testsBox) testsBox.addEventListener('change', load);
   new MutationObserver(function () { if (last && last.timeline) { var c = body.querySelector('.fs-chart canvas'); if (c) drawTimeline(last.timeline, c); } })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (window.matchMedia) { var narrowMq = window.matchMedia('(max-width: 720px)'), onNarrow = function () { if (last && last.timeline) { var c = body.querySelector('.fs-chart canvas'); if (c) drawTimeline(last.timeline, c); } }; if (narrowMq.addEventListener) narrowMq.addEventListener('change', onNarrow); }
   load();
   var again = function () { if (!document.hidden) load(); };
   if (window.GW && window.GW.poll) window.GW.poll(again, 60000); else setInterval(again, 60000);      // pausado mientras la pestaña no se usa (GW.idle)

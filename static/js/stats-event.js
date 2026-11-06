@@ -95,6 +95,25 @@
     return valid.indexOf(normalized) >= 0 ? normalized : valid[0];
   }
 
+  /* Alto del lienzo y presentación según el aparato (Fase 1.7, M5): en celular, o con muchas opciones / nombres largos, las barras van en FILAS (nombre completo arriba, barra ancha,
+     cantidad y porcentaje siempre visibles), de mayor a menor si es una variable de categorías; la circular crece con su leyenda. Devuelve { config, height }. */
+  function planChart(chartType, buckets, dataType, box) {
+    var narrow = viz.narrow && viz.narrow(), n = buckets.length;
+    var longest = buckets.reduce(function (m, b) { return Math.max(m, String(b.label).length); }, 0);
+    if (chartType === 'bar' && viz.rowBars && (narrow || n > 8 || longest > 18)) {
+      var list = buckets.slice();
+      if (dataType !== 'numeric' && n > 5) list.sort(function (a, b) { return b.count - a.count; });
+      var built = viz.rowBars(list.map(function (b) { return b.label; }), list.map(function (b) { return b.count; }), { width: Math.max(240, (box.parentNode && box.parentNode.clientWidth || window.innerWidth) - 34), showPct: dataType !== 'numeric', seriesLabel: 'Personas' });
+      return built;
+    }
+    var cfg = buildChartConfig(chartType, buckets);
+    var height = null;
+    if (narrow && chartType === 'pie') height = Math.min(1000, 250 + n * 34);
+    else if (narrow) height = 280;
+    if (narrow && chartType === 'line') cfg.options.scales.x.ticks = Object.assign(cfg.options.scales.x.ticks, { maxRotation: 0, maxTicksLimit: 6 });
+    return { config: cfg, height: height };
+  }
+
   function buildChartConfig(chartType, buckets) {
     var colors = viz.palette(), labels = buckets.map(function (b) { return b.label; }), data = buckets.map(function (b) { return b.count; });
     var total = data.reduce(function (a, b) { return a + b; }, 0);
@@ -123,7 +142,9 @@
     if (chartInstances[key]) chartInstances[key].destroy();
     c.canvas.setAttribute('role', 'img');
     c.canvas.setAttribute('aria-label', label + ': ' + c.result.buckets.slice(0, 12).map(function (b) { return b.label + ' ' + b.count; }).join('; '));
-    chartInstances[key] = new window.Chart(c.canvas, buildChartConfig(c.select.value, c.result.buckets));
+    var box = c.canvas.parentNode, plan = planChart(c.select.value, c.result.buckets, c.result.type, box);
+    box.style.height = plan.height ? plan.height + 'px' : '';          // alto según el número de opciones (lo único que se fija por código)
+    chartInstances[key] = new window.Chart(c.canvas, plan.config);
   }
 
   function loadVariables() {
@@ -172,6 +193,8 @@
     if (!key) return;
     busy(addBtn, function () { return addVariableChart(key, label); });
   });
+  function redrawAll() { Object.keys(cache).forEach(function (k) { var t = $('stats-card-' + k); render(k, t ? t.querySelector('.gw-chart-card__title').textContent : k); }); }
+  if (viz.onNarrow) viz.onNarrow(redrawAll);          // al girar el aparato o cruzar el límite de celular se vuelve a dibujar
   viz.onTheme(function () { Object.keys(cache).forEach(function (k) { var t = $('stats-card-' + k); render(k, t ? t.querySelector('.gw-chart-card__title').textContent : k); }); });
   loadVariables();
   updateEmptyMsg();

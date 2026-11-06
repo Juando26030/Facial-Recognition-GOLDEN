@@ -16,3 +16,18 @@
   .gw-stats-filter { flex-direction: column; align-items: stretch; }
   .gw-stats-filter .gw-btn { width: 100%; }
 }
+
+/* Gráficos legibles en celular (Fase 1.7, M5): nada se sale del ancho ni pide desplazamiento horizontal; el alto de cada lienzo lo fija el script según el número de opciones. */
+.ad-card, .gw-chart-card { min-width: 0; max-width: 100%; }
+.ad-box, .gw-chart-card__box { max-width: 100%; overflow: hidden; }
+.ad-box canvas, .gw-chart-card__box canvas { max-width: 100%; }
+@media (max-width: 720px) {
+  .ad-card { padding: var(--gw-sp-3); }
+  .ad-ct { font-size: var(--gw-fs-lg); }
+  .ad-note { font-size: var(--gw-fs-md); }
+  .gw-chart-card__head { flex-wrap: wrap; }
+  .gw-chart-card__tools { width: 100%; }
+  .gw-chart-card__tools .gw-select { flex: 1 1 auto; min-width: 0; }
+  .ad-kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
+  .ad-kpi__value { font-size: var(--gw-fs-xl); }
+}
