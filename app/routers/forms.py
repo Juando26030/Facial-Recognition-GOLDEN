@@ -852,7 +852,7 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     """Lleva un campo con cupos de las inscripciones al valor que la BASE DEL EVENTO tiene para esa persona (p. ej. la ciudad asignada). Sirve cuando alguien escribió otra ciudad
     (un pueblo, o una ciudad que no tiene cupo) y el cupo la contó donde no era. Cuerpo: `{"field": id del campo (vinculado a un campo del evento), "apply": false, "detail": false,
     "not_in_base_label": "texto"}`. Cambia inscripciones reales de personas que están en la base y cuyo valor en la base es uno de los valores de los cupos de ese campo; sin valor o con
-    un valor sin cupo no se toca. Si se da `not_in_base_label`, las inscripciones de personas que NO están en la base quedan con ese texto (dejan de contar en cualquier cupo). Las marcas de
+    un valor sin cupo no se toca. Con `keep_not_in_base` ({\"cédula\": \"valor de un cupo\"}) quienes no están en la base y se listan quedan con ESE valor (cuentan en su cupo; decisión explícita del cliente). Si se da `not_in_base_label`, las inscripciones de personas que NO están en la base quedan con ese texto (dejan de contar en cualquier cupo). Las marcas de
     «Personas ya registradas» nunca se tocan (su ciudad la dio quien cargó la lista). **Nunca deja un cupo por encima de su límite**: si alguna corrección lo haría, no aplica nada y
     lo informa (`would_exceed`, 409 al aplicar). Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
     from app import value_unify
@@ -869,6 +869,7 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     if not src_event:
         raise HTTPException(status_code=400, detail="Este formulario no toma sus datos de la base de un evento")
     label = " ".join(str(payload.get("not_in_base_label") or "").split())[:100]
+    keep_map = {str(k).strip(): v for k, v in (payload.get("keep_not_in_base") or {}).items()} if isinstance(payload.get("keep_not_in_base"), dict) else {}
     do_apply = payload.get("apply") is True
     db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
     rows = db.query(FormSubmission.id, FormSubmission.person_id, FormSubmission.data_json).filter(
@@ -904,9 +905,11 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
         old = data.get(field_id)
         if pid not in in_base:
             skipped["not_in_base"] += 1
-            if label and old != label:
+            keep = value_unify.resolve(keep_map.get(pid), canon, {}) if pid in keep_map else None
+            target = keep or label
+            if target and old != target:
                 marked += 1
-                change(sid, pid, data, old, label)
+                change(sid, pid, data, old, target)
             continue
         want = value_unify.resolve(base_value.get(pid), canon, {})
         if want is None:

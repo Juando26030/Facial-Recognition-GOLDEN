@@ -109,3 +109,17 @@ def test_align_never_pushes_a_quota_over_its_limit(client, factory, db):
     assert resp.status_code == 409 and "Cali" in resp.json()["detail"]
     db.expire_all()
     assert {json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()} == {"Bogotá"}
+
+
+def test_align_keeps_listed_people_outside_the_base_in_their_quota(client, factory, db):
+    ev, f = _form(client, factory, db)
+    _add(db, ev, f, "6", "Bogota")          # fuera de la base, decisión explícita: cuenta en Bogotá
+    _add(db, ev, f, "8", "Manizales")       # fuera de la base: queda con la etiqueta
+    db.commit()
+    url = f"/api/events/{ev.id}/forms/{f['id']}/align-to-base"
+    body = {"field": "ciudad", "not_in_base_label": "Se registró sin estar en base", "keep_not_in_base": {"6": "Bogotá", "8": "Ciudad que no es cupo"}, "apply": True}
+    assert client.post(url, json=body).json()["changed"] == 2
+    db.expire_all()
+    rows = {s.person_id: json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()}
+    assert rows == {"6": "Bogotá", "8": "Se registró sin estar en base"}
+    assert _used(client, ev, f) == {"Bogotá": 1, "Cali": 0}
