@@ -30,6 +30,7 @@
 | Estados (fondo/texto/línea) | `--gw-ok-*`, `--gw-warn-*`, `--gw-err-*`, `--gw-info-*`, `--gw-danger`, `--gw-on-danger` |
 | Tipografía (6 tamaños) | `--gw-fs-sm` 14 · `md` 16 · `lg` 18 · `xl` 22 · `2xl` 28 · `3xl` 36; `--gw-lh-tight` 1,25 · `--gw-lh-body` 1,55 |
 | Espaciado (base 4 px) | `--gw-sp-1` … `--gw-sp-8` |
+| Puerta (Fase 1.7) | `--gw-tap-lg` 64 px (objetivo táctil de puerta), `--gw-fs-door` 24 px (veredicto, cifras, vacío grande) |
 | Forma | radios `--gw-radius-sm/md/lg/pill` (8/12/20/999), sombras `--gw-shadow-sm/md/lg`, `--gw-ring` (foco), `--gw-dur` (160 ms), `--gw-content-w` |
 
 Uso del color: azul marino = identidad y acción; dorado = acento y fondo de énfasis; verde/ámbar/rojo/azul-info **solo** para estados, y siempre acompañados de ícono o texto (no depender solo del color).
@@ -72,3 +73,18 @@ Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existente
 ### Buscador del registro y píldoras de la fila (5-nov-2026)
 - Papelera del buscador: `.gw-search__row` (caja + botón) y `.gw-search__clear` (icono `#i-trash`, nombre accesible «Borrar lo escrito»; aparece solo si hay texto).
 - Píldora sólida de la fila: `.gw-recent-tag` (verde, «Recién registrado»: se acreditó a alguien de la base) y `.gw-recent-tag--new` (azul, «Recién creado»: alta manual con «Registrar nuevo»).
+
+### Piezas de puerta (Fase 1.7, Ola 0; muestrario: `guia_visual.html#puerta`)
+Para el digitador en tableta, celular o quiosco. Reglas: una acción principal por vista, objetivos de `--gw-tap-lg` (64 px), texto de 18 a 24 px, estado siempre con ícono + texto, poca densidad. Solo clases nuevas: no alteran las pantallas ya migradas.
+- `.gw-btn--xl`: solo las 1-2 acciones de la puerta (Escanear, Acreditar); el resto sigue en 44 px.
+- `.gw-search--hero` (sobre `.gw-search`): píldora de 64 px con la lupa dentro (`.gw-search__field` + `.gw-search__icon`) y botón cuadrado de escáner `.gw-search__scan` (siempre con `aria-label`).
+- `.gw-verdict` (`--ok/--warn/--err`, `--door` para pantalla grande; partes `__icon/__body/__title/__text`): veredicto de acreditar o de acceso; `role="status"`, y `role="alert"` el rojo. Reemplaza al toast para el resultado de acreditar.
+- `.gw-person` (`--ok/--warn/--err/--info`, `--big`; partes `__photo/__body/__name/__meta/__status/__actions`): tarjeta de resultado en vez de fila de tabla.
+- `.gw-stat` (`--ok/--warn/--err`; `__icon/__value/__label/__hint`) dentro de `.gw-stats-row` (3 por fila también en celular; `--2`).
+- `.gw-tile--hero`: mosaico principal del rol, doble ancho en `.gw-tiles`.
+- `.gw-segment` / `.gw-segment__opt` (`--lg`, `--fit`): elegir una opción entre pocas; seleccionado = dorado + visto (`aria-pressed`, `aria-checked` o radio dentro de `<label>`).
+- `.gw-conn` (`--warn/--err/--info`, `--lg`): conexión con palabras («En línea», «Sin conexión, guardando»), ícono y color.
+- `.gw-split` (`__main/__aside`, `--aside-first`, `__aside--sticky`): principal + lateral desde 960 px; en celular el lateral queda debajo.
+- `.gw-state.gw-empty--hero`: estado vacío grande de puerta.
+- `.gw-keypad` (`__display/__keys/__key`, `--clear` rojo, `--ok` verde): teclado numérico opcional con teclas de 72 px; no sustituye al lector.
+- Íconos nuevos del sprite: `scan`, `wifi`, `backspace`, `check-lg`, `id-card`, `clock`, `arrow-in`, `arrow-out`.

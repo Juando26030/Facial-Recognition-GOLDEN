@@ -22,7 +22,7 @@ def _tokens(block):
 
 
 LIGHT = _tokens(_block(":root, .gw-no-theme"))
-DARK = {**LIGHT, **_tokens(_block(':root[data-theme="dark"]'))}
+DARK = {**LIGHT, **_tokens(_block(':root[data-theme="dark"] {'))}
 
 
 def _hex(value):
@@ -64,6 +64,7 @@ NON_TEXT_PAIRS = [
     ("--gw-err-line", "--gw-surface", 3),                                                               # borde de un campo con error
     ("--gw-gold-1", "--gw-surface", 3),                                                                 # borde dorado al pasar sobre un mosaico
     ("--gw-nav-accent", "--gw-nav-bg", 3),
+    ("--gw-ok-line", "--gw-surface", 3), ("--gw-warn-line", "--gw-surface", 3), ("--gw-info-line", "--gw-surface", 3),   # barra de estado de .gw-person y borde de .gw-conn/.gw-stat sobre superficie
 ]
 
 
@@ -93,7 +94,7 @@ def test_the_contrast_calculator_matches_known_wcag_values():
 def test_dark_theme_redefines_every_surface_text_and_state_token():
     must = ["--gw-bg", "--gw-surface", "--gw-surface-2", "--gw-border", "--gw-border-strong", "--gw-text", "--gw-text-muted", "--gw-link", "--gw-gold-text", "--gw-focus",
             "--gw-danger", "--gw-on-danger", "--gw-secondary-bg", "--gw-secondary-text"] + [f"--gw-{s}-{p}" for s in ("ok", "warn", "err", "info") for p in ("bg", "text", "line")]
-    own = _tokens(_block(':root[data-theme="dark"]'))
+    own = _tokens(_block(':root[data-theme="dark"] {'))
     assert [t for t in must if t not in own] == []
     assert "prefers-color-scheme" not in CSS, "el tema oscuro es POR DISPOSITIVO (interruptor), no sigue al sistema operativo"
 
@@ -294,3 +295,87 @@ def test_person_form_groups_and_columns_are_in_the_base_the_guide_and_the_standa
     assert re.search(r"\.gw-form-group \*[^{]*\{ box-sizing: border-box", block)
     assert re.search(r"@media \(max-width: 480px\)[^}]*\{[^}]*\.gw-fields-row--2[^}]*grid-template-columns: minmax\(0, 1fr\)", block)
     assert "background" not in re.sub(r"/\*.*?\*/", "", block, flags=re.S), "sin fondo propio: hereda de la pantalla"
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ piezas de puerta (Fase 1.7, Ola 0)
+DOOR_BLOCK = CSS[CSS.index("Fase 1.7, Ola 0"):]
+DOOR_CLASSES = ("gw-btn--xl", "gw-search--hero", "gw-search__scan", "gw-search__field", "gw-search__icon", "gw-verdict", "gw-verdict__icon", "gw-verdict__title", "gw-verdict--ok", "gw-verdict--warn", "gw-verdict--err", "gw-verdict--door",
+                "gw-person", "gw-person__name", "gw-person__meta", "gw-person__status", "gw-person__actions", "gw-person__photo", "gw-stat", "gw-stat__value", "gw-stat__label", "gw-stats-row", "gw-tile--hero", "gw-segment", "gw-segment__opt",
+                "gw-conn", "gw-conn--warn", "gw-conn--err", "gw-split", "gw-split__main", "gw-split__aside", "gw-empty--hero", "gw-keypad", "gw-keypad__display", "gw-keypad__key", "gw-keypad__key--clear", "gw-keypad__key--ok")
+DOOR_ICONS = {"scan", "wifi", "backspace", "check-lg", "id-card", "clock", "arrow-in", "arrow-out"}
+
+
+def test_door_tokens_are_declared_and_big_enough():
+    assert LIGHT["--gw-tap-lg"] == "64px"
+    assert float(LIGHT["--gw-fs-door"].replace("rem", "")) * 16 == 24
+
+
+def test_door_components_exist_in_the_base_the_guide_and_the_standards():
+    standards = pathlib.Path("docs/ux/ESTANDARES_VISUALES.md").read_text(encoding="utf-8")
+    for cls in DOOR_CLASSES:
+        assert f".{cls}" in CSS, cls
+        assert cls in GUIDE, f"la guía muestra {cls}"
+    for cls in ("gw-btn--xl", "gw-search--hero", "gw-verdict", "gw-person", "gw-stat", "gw-stats-row", "gw-tile--hero", "gw-segment", "gw-conn", "gw-split", "gw-empty--hero", "gw-keypad", "--gw-tap-lg", "--gw-fs-door"):
+        assert cls in standards, f"los estándares mencionan {cls}"
+    assert 'id="puerta"' in GUIDE
+
+
+def test_door_block_uses_only_tokens_and_no_loose_colors_or_sizes():
+    block = re.sub(r"/\*.*?\*/", "", DOOR_BLOCK, flags=re.S)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", block), "solo tokens --gw-*"
+    assert "prefers-color-scheme" not in block
+    for m in re.finditer(r"font-size:\s*([\d.]+)(px|rem)", block):
+        raise AssertionError(f"tamaño de texto suelto: {m.group(0)}; usar --gw-fs-*")
+
+
+def test_door_touch_targets_are_64px_and_keys_72px():
+    for sel in (".gw-btn--xl", ".gw-search__scan"):
+        assert "var(--gw-tap-lg)" in _rule(sel), sel
+    assert "var(--gw-tap-lg)" in _rule(".gw-search--hero .gw-input") and "var(--gw-tap-lg)" in _rule(".gw-keypad__display")
+    key = _rule(".gw-keypad__key")
+    assert "calc(var(--gw-tap-lg) + var(--gw-sp-2))" in key and "touch-action: manipulation" in key
+    assert "var(--gw-tap)" in _rule(".gw-segment__opt") and "var(--gw-tap-lg)" in CSS[CSS.index(".gw-segment--lg .gw-segment__opt {"):]
+    assert "var(--gw-fs-door)" in _rule(".gw-verdict__title") and "var(--gw-fs-xl)" in _rule(".gw-btn--xl")
+
+
+def test_door_states_use_the_verified_state_pairs_and_never_only_color():
+    pairs = {(fg, bg) for fg, bg, _ in TEXT_PAIRS}
+    for comp, selector in (("verdict", ".gw-verdict--{s}"), ("stat", ".gw-stat--{s}"), ("conn", ".gw-conn--{s}")):
+        for state in ("ok", "warn", "err"):
+            if comp == "conn" and state == "ok":
+                continue
+            rule = _rule(selector.format(s=state))
+            assert f"background: var(--gw-{state}-bg)" in rule and f"color: var(--gw-{state}-text)" in rule and f"border-color: var(--gw-{state}-line)" in rule, (comp, state)
+            assert (f"--gw-{state}-text", f"--gw-{state}-bg") in pairs
+    assert "var(--gw-ok-bg)" in _rule(".gw-conn") and "var(--gw-ok-text)" in _rule(".gw-conn")
+    assert "var(--gw-ok-bg)" in _rule(".gw-keypad__key--ok") and "var(--gw-err-bg)" in _rule(".gw-keypad__key--clear")
+    # el segmento elegido: texto azul marino sobre el dorado (par verificado) y además un visto, no solo color
+    sel = _rule('.gw-segment__opt[aria-pressed="true"], .gw-segment__opt[aria-checked="true"], .gw-segment__opt[aria-current="true"]')
+    assert "var(--gw-gold-grad)" in sel and "var(--gw-on-gold)" in sel and '.gw-segment__opt[aria-pressed="true"]::before' in CSS
+    # la guía los muestra siempre con ícono y texto
+    for cls in ("gw-verdict__icon", "gw-stat__icon"):
+        assert re.search(rf'<svg class="gw-icon {cls}"', GUIDE), cls
+
+
+def test_door_has_reduced_motion_touch_and_forced_colors_support():
+    assert re.search(r"@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.gw-verdict \{ animation: none; \}", DOOR_BLOCK)
+    assert "@media (pointer: coarse)" in DOOR_BLOCK and "@media (forced-colors: active)" in DOOR_BLOCK
+    assert "minmax(0, 1fr)" in _rule(".gw-stats-row") and "repeat(3," in _rule(".gw-stats-row"), "tres cifras por fila, también en celular"
+    assert re.search(r"@media \(max-width: 520px\) \{ \.gw-tile--hero \{ grid-column: auto", CSS), "en una columna el mosaico hero no abre columnas nuevas"
+    assert re.search(r"@media \(min-width: 960px\)[^}]*\{[^}]*\.gw-split \{ grid-template-columns: minmax\(0, 1fr\) minmax\(18rem", DOOR_BLOCK), "dos paneles solo en escritorio"
+
+
+def test_door_icons_are_in_the_sprite_and_do_not_change_existing_rules():
+    ids = set(re.findall(r'<symbol id="i-([\w-]+)"', SPRITE))
+    assert DOOR_ICONS <= ids
+    # nada anterior cambió: el botón, el buscador y el estado base siguen con sus valores
+    assert "min-height: var(--gw-tap)" in _rule(".gw-btn") and "font-size: var(--gw-fs-xl)" in _rule(".gw-state__title")
+    assert "calc(var(--gw-tap) + var(--gw-sp-2))" in _rule(".gw-search .gw-input")
+
+
+def test_frozen_public_pages_do_not_load_the_door_pieces():
+    for name in ("form_public.html", "digital_badge.html", "certificate_public.html", "roulette_display.html"):
+        p = pathlib.Path("templates", name)
+        if p.exists():
+            text = p.read_text(encoding="utf-8")
+            assert "design-system.css" not in text and not re.search(r"gw-(verdict|person|keypad|stat|segment)\b", text), name
