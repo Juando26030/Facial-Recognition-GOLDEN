@@ -986,3 +986,10 @@
 .gw-search__field > .gw-search__clear--in:hover, .gw-clearable > .gw-search__clear--in:hover { background: var(--gw-surface-2); color: var(--gw-text); transform: translateY(-50%); }
 .gw-search__field > .gw-search__clear--in:focus-visible, .gw-clearable > .gw-search__clear--in:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-search__field > .gw-search__clear--in[hidden], .gw-clearable > .gw-search__clear--in[hidden] { display: none; }
+
+/* Fase 1.7 · objetivos táctiles de 44 px en celular (auditoría de botones): menú ☰, botón Guía de los pasos y chips de pasos */
+@media (max-width: 640px) {
+  .golden-sidebar-toggle { min-width: var(--gw-tap); min-height: var(--gw-tap); }
+  .gw-steps > li.gw-steps__guide > .gw-btn { min-height: var(--gw-tap); }
+  .gw-steps__text { overflow-wrap: break-word; }
+}
