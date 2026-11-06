@@ -79,3 +79,13 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
   .gw-pm-stack td.gw-pm-act, .gw-pm-stack td.gw-cell--actions { display: flex; flex-direction: column; align-items: stretch; }
   .gw-pm-stack td.gw-pm-act .gw-btn, .gw-pm-stack td.gw-cell--actions .gw-btn { width: 100%; margin: 0 0 var(--gw-sp-1); }
 }
+/* Escritorio: las tablas conservan su formato de tabla y no parten las palabras (el contenedor se desplaza si hace falta) */
+@media (min-width: 641px) {
+  .gw-parametros .gw-table th, .gw-parametros .gw-table td { overflow-wrap: break-word; word-break: normal; }
+  .gw-parametros .gw-table th { white-space: nowrap; }
+  .gw-parametros .gw-table--fields th { white-space: normal; }
+}
+#sharedPrintTable td:last-child { min-width: 16rem; }   /* «Imprime»: el selector muestra su texto completo */
+/* Menú «Más acciones»: se abre hacia la derecha del botón (que está a la izquierda de la tarjeta) y con ancho para no partir las frases */
+.gw-parametros .gw-actions .gw-menu__panel { left: 0; right: auto; }
+@media (min-width: 641px) { .gw-parametros .gw-actions .gw-menu__panel { min-width: 26rem; } }
