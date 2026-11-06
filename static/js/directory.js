@@ -817,6 +817,13 @@
       originSelect.innerHTML = '<option value="">Origen: todos</option>' + Object.keys(ORIGINS).map((k) => `<option value="${k}">${ORIGINS[k].label}</option>`).join('');
       originSelect.addEventListener('change', () => { pageIdx = 0; applyFilters(); });
       place(originSelect);
+      if (summaryHost && !document.getElementById('gwSummaryMore')) {            // celular: origen y «Limpiar filtros» quedan plegados tras este chip para que los contadores ocupen UNA fila (en escritorio el CSS lo oculta)
+        const more = document.createElement('button');
+        more.type = 'button'; more.id = 'gwSummaryMore'; more.className = 'gw-chip gw-summary__more'; more.textContent = 'Filtros';
+        more.setAttribute('aria-expanded', 'false'); more.setAttribute('aria-controls', 'gwDirSummary');
+        more.addEventListener('click', () => { const open = summaryHost.classList.toggle('is-open'); more.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+        summaryHost.appendChild(more);
+      }
     }
 
     function updateCounterLabel() {

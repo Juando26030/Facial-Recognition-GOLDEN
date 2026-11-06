@@ -955,13 +955,17 @@
   .gw-page .gw-card-row { padding: var(--gw-sp-3); gap: var(--gw-sp-2); }
   .gw-page .gw-cards { gap: var(--gw-sp-2); }
   .gw-page .golden-section-title { margin-bottom: var(--gw-sp-2); }
-  /* Pasos 1·2·3 + «Guía» = UNA fila de 4 chips (el 4.º lo mueve gw-ui.js) */
+  /* Pasos 1·2·3 + «Guía» = UNA fila de 4 chips píldora iguales (alto 40 px; el 4.º lo mueve gw-ui.js o lo trae la plantilla). Los títulos cortos caben en una línea; los largos pasan a 2 líneas
+     SIN partir palabras (overflow-wrap normal; si una palabra no cupiera, se recorta con «…», nunca se parte a la mitad). */
   .gw-steps { display: flex; gap: var(--gw-sp-1); margin: var(--gw-sp-1) 0 var(--gw-sp-2); }
-  .gw-steps > li { flex: 1 1 0; min-height: 2.5rem; }
-  .gw-steps > li.gw-steps__guide { flex: none; padding: 0; background: transparent; border: 0; }
-  .gw-steps__guide > .gw-btn { min-height: 2.5rem; padding: 0 var(--gw-sp-2); gap: var(--gw-sp-1); border-radius: var(--gw-radius-pill); font-size: 0; }
-  .gw-steps__guide > .gw-btn::after { content: "Guía"; font-size: var(--gw-fs-sm); }
-  .gw-steps__text { -webkit-line-clamp: 2; font-size: var(--gw-fs-sm); }
+  .gw-steps > li { flex: 1 1 0; min-width: 0; min-height: 2.5rem; gap: var(--gw-sp-1); padding: 0 var(--gw-sp-1) 0 var(--gw-sp-1); }
+  .gw-steps__n { width: 1.25rem; height: 1.25rem; font-size: var(--gw-fs-sm); }
+  .gw-steps__text { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--gw-fs-sm); line-height: 1; overflow-wrap: normal; word-break: normal; hyphens: none; text-overflow: ellipsis; }
+  .gw-steps > li.gw-steps__guide { flex: none; padding: 0; background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-pill); }
+  .gw-steps > li.gw-steps__guide:hover { background: var(--gw-surface-2); }
+  .gw-steps__guide > .gw-btn { align-self: stretch; min-height: 0; min-width: 0; padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); background: transparent; color: var(--gw-text); border: 0; border-radius: var(--gw-radius-pill); box-shadow: none; font-size: 0; white-space: nowrap; }
+  .gw-steps__guide > .gw-btn:hover { background: transparent; }
+  .gw-steps__guide > .gw-btn::after { content: "Guía"; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
   /* Menú ☰ flotante: se alinea con la cabecera de una línea (56 px) en vez de dejar un hueco */
   .gw-page .golden-sidebar-toggle { width: 2.5rem; height: 2.5rem; top: var(--gw-sp-2); }
   .gw-page .golden-content-spacer { display: none; }
@@ -969,3 +973,16 @@
   .gw-page .golden-event-strip-inner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gw-page .golden-event-strip-inner > span { display: inline; white-space: nowrap; }
 }
+
+/* ============================================================ Fase 1.7 · M8 · «Vaciar búsqueda» dentro de todo campo de búsqueda
+   gw-ui.js agrega a la derecha de cada campo de búsqueda (input type=search, inputs de .gw-search o con placeholder «Buscar…»; también los generados por JS) un botón con la papelera
+   (aria-label «Vaciar búsqueda»), visible solo cuando el campo tiene texto. Vive dentro de `.gw-search__field` o de un envoltorio `.gw-clearable`; el campo gana `.gw-input--clearable`
+   (relleno a la derecha para que el texto no pise la papelera). El Registro conserva su propia papelera .gw-search__clear junto a la caja (id searchClearBtn). */
+.gw-clearable { position: relative; display: flex; flex: 1 1 0; min-width: 0; max-width: 100%; }
+.gw-clearable > .gw-input--clearable { flex: 1 1 auto; min-width: 0; width: 100%; }
+.gw-input.gw-input--clearable { padding-right: calc(var(--gw-sp-6) + var(--gw-sp-2)); }
+.gw-input--clearable[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.gw-search__field > .gw-search__clear--in, .gw-clearable > .gw-search__clear--in { position: absolute; top: 50%; right: var(--gw-sp-2); transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; min-width: 0; min-height: 0; padding: 0 !important; background: transparent; color: var(--gw-text-muted); border: 0; border-radius: var(--gw-radius-pill); box-shadow: none; cursor: pointer; }
+.gw-search__field > .gw-search__clear--in:hover, .gw-clearable > .gw-search__clear--in:hover { background: var(--gw-surface-2); color: var(--gw-text); transform: translateY(-50%); }
+.gw-search__field > .gw-search__clear--in:focus-visible, .gw-clearable > .gw-search__clear--in:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-search__field > .gw-search__clear--in[hidden], .gw-clearable > .gw-search__clear--in[hidden] { display: none; }

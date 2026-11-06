@@ -9,6 +9,8 @@
    - Asistente:  [data-gw-wizard] con [data-gw-wizard-panel], [data-gw-wizard-next], [data-gw-wizard-prev], [data-gw-wizard-count], [data-gw-wizard-bar].
    - Celular (<= 640 px): el botón [data-gw-tour-restart] pasa a ser el 4.º chip («Guía») del `.gw-steps` de su pantalla y los subtítulos largos llevan su texto completo en title;
                  al ensanchar la ventana todo vuelve a su sitio. No cambia ids ni atributos.
+   - Vaciar búsqueda (M8): a todo campo de búsqueda (input type=search, inputs dentro de .gw-search o con placeholder «Buscar…»/«Escribe o escanea…», incluso los generados por JS) se le agrega a la derecha un botón
+                 .gw-search__clear--in con la papelera (aria-label «Vaciar búsqueda»), visible solo con texto: vacía el campo, devuelve el foco y dispara `input`. Excluye [data-gw-no-clear] y los que ya traen su papelera.
    - Buscador «¿qué quieres hacer?» (Fase 2): NO está construido; el hueco es [data-gw-search-slot] y los data-gw-keywords. */
 (function () {
   'use strict';
@@ -174,6 +176,71 @@
     }
   }
 
+
+  /* ----------------------------------------------------------------- Vaciar búsqueda (papelera dentro de todo campo de búsqueda) */
+  var CLEAR_LABEL = 'Vaciar búsqueda';
+  var SEARCH_PLACEHOLDER = /^\s*(buscar|busca|filtrar|escribe o escanea|escanea o escribe)/i;
+  var SKIP_TAGS = { TR: 1, TD: 1, TH: 1, TBODY: 1, THEAD: 1, OPTION: 1, SCRIPT: 1, STYLE: 1, SVG: 1 };
+  var iconBase = null;
+  function iconUrl() {
+    if (iconBase) return iconBase;
+    var u = window.GW_ICON_URL, use;
+    if (!u) { use = document.querySelector('use[href*="icons.svg"]'); u = use ? use.getAttribute('href') : ''; }
+    iconBase = (u || '/static/img/icons.svg').split('#')[0];
+    return iconBase;
+  }
+  function isSearchInput(el) {
+    if (!el || el.tagName !== 'INPUT' || el.hasAttribute('data-gw-clear-on') || el.hasAttribute('data-gw-no-clear') || el.readOnly) return false;
+    var t = (el.getAttribute('type') || 'text').toLowerCase();
+    if (t !== 'search' && t !== 'text') return false;
+    if (el.closest('.sp-kbd-wrap')) return false;                                       // el lector/teclado del Registro con el modo touch lleva su propio botón
+    var row = el.closest('.gw-search__row');
+    if (row && row.querySelector('.gw-search__clear:not(.gw-search__clear--in)')) return false;       // ya trae su papelera (Registro: #searchClearBtn, la maneja directory.js)
+    if (t === 'search' || el.hasAttribute('data-gw-clearable') || el.closest('.gw-search')) return true;
+    return SEARCH_PLACEHOLDER.test(el.getAttribute('placeholder') || '');
+  }
+  function syncClear(input) { if (input._gwClear) input._gwClear.hidden = !input.value; }
+  function installClear(input) {
+    if (!isSearchInput(input) || !input.parentNode) return;
+    input.setAttribute('data-gw-clear-on', '');
+    var host = input.parentNode, hadFocus = document.activeElement === input;
+    if (!(host.classList && (host.classList.contains('gw-search__field') || host.classList.contains('gw-clearable')))) {
+      var wrap = document.createElement('span'); wrap.className = 'gw-clearable';
+      host.insertBefore(wrap, input); wrap.appendChild(input); host = wrap;
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'gw-btn gw-search__clear gw-search__clear--in'; btn.setAttribute('data-gw-clear', '');
+    btn.setAttribute('aria-label', CLEAR_LABEL); btn.title = CLEAR_LABEL; btn.hidden = !input.value;
+    btn.innerHTML = '<svg class="gw-icon" aria-hidden="true"><use href="' + iconUrl() + '#i-trash"></use></svg>';
+    btn._gwInput = input; input._gwClear = btn;
+    input.classList.add('gw-input--clearable');
+    host.appendChild(btn);
+    if (hadFocus) { try { input.focus({ preventScroll: true }); } catch (e) { /* sin foco */ } }
+  }
+  function scanClear(root) {
+    if (!root || root.nodeType !== 1 || SKIP_TAGS[root.tagName]) return;
+    if (root.tagName === 'INPUT') { installClear(root); return; }
+    Array.prototype.forEach.call(root.querySelectorAll('input'), installClear);
+  }
+  function runClear(btn) {
+    var input = btn._gwInput; if (!input || input.disabled || input.readOnly) return;
+    input.value = '';
+    btn.hidden = true;
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); if ((input.getAttribute('type') || '') === 'search') input.dispatchEvent(new Event('search', { bubbles: true })); } catch (e) { /* navegadores sin Event() */ }
+    try { input.focus(); } catch (e2) { /* sin foco */ }
+  }
+  document.addEventListener('input', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); }, true);
+  document.addEventListener('change', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); }, true);
+  document.addEventListener('focusin', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); });
+  document.addEventListener('mousedown', function (e) { if (e.target && e.target.closest && e.target.closest('[data-gw-clear]')) e.preventDefault(); });          // el clic en la papelera no le quita el foco a la caja (ni cierra el teclado del celular)
+  function watchClear() {
+    scanClear(document.body);
+    if (!window.MutationObserver) return;
+    new MutationObserver(function (muts) {
+      muts.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, scanClear); });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
   /* ----------------------------------------------------------------- Eventos (delegados) */
   document.addEventListener('click', function (e) {
     var tgt = e.target; if (!tgt || !tgt.closest) return;
@@ -189,6 +256,7 @@
       if (tgt.closest('[data-gw-tour-skip]')) { tourClose(tour.key, false); return; }
       return;
     }
+    if ((el = tgt.closest('[data-gw-clear]'))) { e.preventDefault(); runClear(el); return; }
     if ((el = tgt.closest('[data-gw-tour-restart]'))) { e.preventDefault(); startTour(el.getAttribute('data-gw-tour-restart'), { force: true }); return; }
     if ((el = tgt.closest('[data-gw-help-btn]'))) {
       var root = el.closest('.gw-help'); if (!root) return;
@@ -226,6 +294,7 @@
   function init() {
     applyTheme(currentTheme());
     compactIntro();
+    watchClear();
     if (mqMobile) { if (mqMobile.addEventListener) mqMobile.addEventListener('change', compactIntro); else if (mqMobile.addListener) mqMobile.addListener(compactIntro); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-gw-wizard]'), function (w) { wizardGo(w, 0); });
     var auto = document.querySelector('[data-gw-tour][data-gw-tour-auto]');          // recorrido de primera vez: solo si la página lo pide
