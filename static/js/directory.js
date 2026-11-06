@@ -392,10 +392,8 @@
       <label class="gw-check"><input type="checkbox" id="editNewCedulaChk"> ¿Es cédula nueva?</label>
       <div id="editNewCedulaBox" hidden class="gw-card gw-registro__editnew">
         <div class="gw-rowact">
-          <button type="button" id="editMrzFileBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-upload"/></svg>Adjuntar imagen</button>
-          <button type="button" id="editMrzCamBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Usar cámara</button>
+          <button type="button" id="editMrzCamBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Escanear cédula</button>
         </div>
-        <input type="file" id="editMrzInput" accept="image/*" aria-label="Imagen del reverso de la cédula nueva" hidden>
       </div>
       <form id="editModalForm">
         ${configuredHtml}
@@ -425,7 +423,7 @@
 
     function close() { overlay.remove(); }
     {                                                                   // B3: cédula NUEVA (foto del reverso, MRZ): llena nombres, apellidos y —si se puede editar— la cédula
-      const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox'), file = box.querySelector('#editMrzInput');
+      const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox');
       chk.addEventListener('change', () => { nbox.hidden = !chk.checked; });
       const readMrz = async (blob) => {
         const fd = new FormData(); fd.append('file', blob, 'cedula.jpg');
@@ -438,8 +436,6 @@
           showToast('Cédula leída — revisa los datos y guarda', 'success');
         } catch (e) { showToast('Error de red', 'error'); }
       };
-      box.querySelector('#editMrzFileBtn').addEventListener('click', () => file.click());
-      file.addEventListener('change', () => { const f = file.files[0]; file.value = ''; if (f) readMrz(f); });
       box.querySelector('#editMrzCamBtn').addEventListener('click', () => { if (window.CameraCapture) window.CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: readMrz }); });
     }
     if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío

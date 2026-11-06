@@ -1,0 +1,33 @@
+/* Registro · pantalla de puerta (Fase 1.7, M2). Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). Se carga DESPUÉS de design-system.css y registro.css.
+
+   CAUSA DEL ATASCO AL DESPLAZAR EN EL CELULAR («no me deja tocar la pantalla para subir y bajar»): .gw-workarea__list (design-system.css) es un contenedor
+   de desplazamiento propio (overflow: auto) con `overscroll-behavior: contain`. En el celular la tabla del directorio es más ancha que la pantalla, así que el dedo cae
+   sobre ese contenedor anidado: el navegador le entrega el gesto a él y, con `contain`, no lo pasa a la página; el gesto vertical muere ahí y la persona queda «atrapada».
+   Arreglo: en pantallas angostas o táctiles la zona de trabajo NO tiene altura fija ni desplazamiento interno; desplaza SOLO la página (sin scroll anidado) y la tabla
+   se ajusta al ancho. Lo fija tests/test_registro_visual.py. */
+@media (max-width: 720px), (pointer: coarse) {
+  .gw-registro .gw-workarea { height: auto; min-height: 0; overflow: visible; }
+  .gw-registro .gw-workarea__list { flex: none; min-height: 0; max-height: none; overflow: visible; overscroll-behavior: auto; touch-action: pan-y; }
+  .gw-registro .gw-workarea__list .golden-table { width: 100%; max-width: 100%; table-layout: auto; }
+  .gw-registro .gw-workarea__list .golden-table th { position: static; }
+}
+
+/* Celular: el buscador queda arriba y compacto; lo secundario va en una sola fila de botones pequeños. */
+@media (max-width: 720px) {
+  .gw-registro .golden-section { padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-2); }
+  .gw-registro .gw-registro__head { margin-bottom: var(--gw-sp-2); gap: var(--gw-sp-2); }
+  .gw-registro .golden-section-title { margin-bottom: 0; }
+  .gw-registro .golden-section-title > span { display: none; }
+  .gw-registro .golden-section-title h2 { font-size: var(--gw-fs-lg); line-height: 1.2; margin: 0; }
+  .gw-registro .tabs { margin-bottom: var(--gw-sp-2); }
+  .gw-registro .gw-workarea__bar { gap: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3); }
+  .gw-registro .gw-workarea__bar .gw-label { font-size: var(--gw-fs-sm); margin: 0; }
+  .gw-registro .gw-workarea__bar .gw-search { gap: var(--gw-sp-1); }
+  .gw-registro .gw-workarea__bar .gw-input { min-height: var(--gw-tap); font-size: var(--gw-fs-md); }
+  .gw-registro .gw-workarea__bar .gw-search__clear { min-width: var(--gw-tap); min-height: var(--gw-tap); }
+  .gw-registro .gw-workarea__bar .gw-toolbar { gap: var(--gw-sp-2); }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions { flex-wrap: nowrap; gap: var(--gw-sp-2); }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-btn { flex: 1 1 0; min-height: var(--gw-tap); padding: 0 var(--gw-sp-3); font-size: var(--gw-fs-sm); white-space: nowrap; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn--primary { flex: 1.4 1 0; }
+  .gw-registro .gw-workarea__summary { padding: var(--gw-sp-1) var(--gw-sp-3); }
+}

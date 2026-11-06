@@ -8,6 +8,7 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/registro.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-captura.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-registro-puerta.css') }}">
     <script src="{{ url_for('static', path='js/boot-trace.js') }}"></script>
     {% if staff_role not in ['admin', 'super_admin'] %}<script>window.GW_SESSION_PING = true;</script>{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
@@ -223,16 +224,8 @@
                             {% endif %}
                         </div>
                         <div class="gw-toolbar__actions">
-                            <div class="gw-menu" id="gwScanMenu">
-                                <button type="button" id="gwScanMenuBtn" class="gw-btn gw-btn--secondary" aria-haspopup="true" aria-expanded="false" aria-controls="gwScanPanel" {% if off %}disabled{% endif %}>
-                                    <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-qr"/></svg>Escanear</button>
-                                <div class="gw-menu__panel" id="gwScanPanel" role="group" aria-label="Escanear" hidden>
-                                    <button type="button" id="scanQrBtn" class="gw-menu__item" {% if off %}disabled{% endif %}>Código QR con la cámara</button>
-                                    <button type="button" id="scanMrzBtn" class="gw-menu__item" {% if off %}disabled{% endif %}>Cédula nueva: adjuntar imagen del reverso</button>
-                                    <button type="button" id="scanMrzCameraBtn" class="gw-menu__item" {% if off %}disabled{% endif %}>Cédula nueva: foto del reverso con la cámara</button>
-                                    <input type="file" id="scanMrzInput" accept="image/*" aria-label="Imagen del reverso de la cédula nueva" hidden>
-                                </div>
-                            </div>
+                            <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary" aria-label="Escanear: código QR o cédula, con la cámara" {% if off %}disabled{% endif %}>
+                                <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-qr"/></svg>Escanear</button>
                             <button type="button" id="openRegisterModalBtn" class="gw-btn gw-btn--primary" {% if off %}disabled title="El evento no está en proceso"{% endif %}>
                                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-user-plus"/></svg>Registrar nuevo</button>
                         </div>
@@ -273,15 +266,13 @@
                     {% if event.status != "en_proceso" %}<p class="gw-alert gw-alert--err gw-text-sm" role="status">Deshabilitado: el evento no está en proceso.</p>{% endif %}
 
                     <!-- B3 (26-oct-2026): la cédula se escanea (lector o QR) en el MISMO campo de cédula/ID de abajo; con la cédula NUEVA se marca la casilla y aparecen
-                         «Adjuntar imagen» y «Usar cámara» (foto del reverso, se lee la MRZ). Si la lectura trae nombres y apellidos, llena el formulario. -->
+                         «Escanear cédula» (cámara directa: código de barras o foto del reverso, se lee la MRZ). Si la lectura trae nombres y apellidos, llena el formulario. -->
                     <label class="gw-check"><input type="checkbox" id="regNewCedulaChk"> ¿Es cédula nueva?</label>
                     <div id="regNewCedulaBox" hidden class="gw-card">
                         <div class="gw-rowact">
-                            <button type="button" id="regScanMrzBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg>Adjuntar imagen</button>
-                            <button type="button" id="regScanMrzCameraBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg>Usar cámara</button>
+                            <button type="button" id="regScanMrzCameraBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg>Escanear cédula</button>
                         </div>
-                        <p class="gw-hint">Foto del reverso de la cédula nueva: se leen la cédula, los nombres y los apellidos.</p>
-                        <input type="file" id="regScanMrzInput" accept="image/*" aria-label="Imagen del reverso de la cédula nueva" hidden>
+                        <p class="gw-hint">Se abre la cámara: lee el código de barras del reverso o, si no lo lee, toma la foto del reverso de la cédula nueva (se leen la cédula, los nombres y los apellidos).</p>
                     </div>
 
                     <!-- Todos los campos (identidad + fijos + opcionales) en UNA lista ordenada según
@@ -555,16 +546,6 @@
     /* Guía de 3 pasos: «Ver la guía paso a paso» (dentro del «?» del buscador) cierra la ayuda y la gw-ui abre el recorrido. */
     document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-gw-tour-restart="registro"]') && window.GW && window.GW.help) window.GW.help.close(); }, true);
 
-    /* Plan 8: menú «Escanear» (QR / cédula nueva): abre y cierra; los botones de adentro conservan sus ids y su lógica. */
-    (function () {
-        const btn = document.getElementById('gwScanMenuBtn'), panel = document.getElementById('gwScanPanel'); if (!btn || !panel) return;
-        const setOpen = (open) => { panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); };
-        btn.addEventListener('click', () => setOpen(panel.hidden));
-        panel.addEventListener('click', (e) => { if (e.target.closest('button')) setOpen(false); });
-        document.addEventListener('click', (e) => { if (!panel.hidden && !e.target.closest('#gwScanMenu')) setOpen(false); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) { setOpen(false); btn.focus(); } });
-    })();
-
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
         unified: {{ 'true' if search_unified else 'false' }},
@@ -590,21 +571,17 @@
         });
     }
 
-    /* Escaneo por foto de la MRZ de la cédula nueva (Sprint 2 Parte 2, 2.3) — el QR de esa cédula
-       viene encriptado por la Registraduría (ver 2.2, no se intenta decodificar), así que el
-       módulo correcto es una FOTO del reverso + OCR en el backend (zona MRZ, estándar ICAO 9303).
-       Dos formas de conseguir la foto (Sprint 2.2 Fase C): adjuntar un archivo, o tomarla con la
-       cámara del computador ahí mismo (CameraCapture, static/js/camera-capture.js) — ambas
-       terminan en el mismo processMrzPhoto(blob). */
-    /* Rueda en el botón mientras se lee la foto (GW.busy, gw-busy.js); sin el ayudante solo corre la acción. */
+    /* UN solo «Escanear» (Fase 1.7): abre DIRECTO la cámara y decide solo qué se leyó (QrCode.classify, qr.js):
+       - QR de la escarapela -> el mismo flujo de siempre (submitScannedCedula, método «qr»).
+       - Código de barras PDF417 de la cédula (si el navegador lo lee: BarcodeDetector) -> se llena el buscador con la cédula y se busca,
+         igual que con el lector físico (el Enter del campo; el lector de teclado/pistola sigue funcionando en ese mismo campo).
+       - Cédula nueva sin lectura de barras: «Foto del reverso» en la MISMA ventana de la cámara (se lee la MRZ en el servidor). Ya no se adjuntan imágenes.
+       Funciona sin conexión: BarcodeDetector es del navegador y jsQR queda guardado por el service worker. */
     const busyWork = (btn, work) => (window.GW && window.GW.busy && btn ? window.GW.busy(btn, work) : Promise.resolve().then(work));
-    const scanMrzBtn = document.getElementById('scanMrzBtn');
-    const scanMrzCameraBtn = document.getElementById('scanMrzCameraBtn');
-    const scanMrzInput = document.getElementById('scanMrzInput');
+    const scanQrBtn = document.getElementById('scanQrBtn');
 
     async function processMrzPhoto(blob) {
-        scanMrzCameraBtn.disabled = true;
-        await busyWork(scanMrzBtn, async () => {
+        await busyWork(scanQrBtn, async () => {
         try {
             const formData = new FormData();
             formData.append('file', blob, 'cedula.jpg');
@@ -619,35 +596,30 @@
             showToast('Error de red', 'error');
         }
         });
-        scanMrzCameraBtn.disabled = false;
     }
 
-    if (scanMrzBtn && scanMrzInput && canAccredit) {
-        scanMrzBtn.addEventListener('click', () => scanMrzInput.click());
-        scanMrzInput.addEventListener('change', () => {
-            const file = scanMrzInput.files[0];
-            scanMrzInput.value = '';
-            if (file) processMrzPhoto(file);
-        });
+    function fillSearchAndSearch(cedula) {
+        const box = document.getElementById('searchCedula');
+        if (!box || box.disabled) return;
+        box.value = cedula;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     }
-    /* QR (Sprint 4): no es una sección aparte — el QR entrega la cédula igual que el lector: se busca por cédula y,
-       si no está, por nombre. El lector de mano ya funciona en el campo "Buscar por cédula" (Enter); esta es la
-       cámara del dispositivo. */
-    const scanQrBtn = document.getElementById('scanQrBtn');
+
     if (scanQrBtn && canAccredit) {
         scanQrBtn.addEventListener('click', () => {
             QrScanner.open({
-                title: 'Escanear código QR',
-                onCode: (text) => {
-                    const qr = QrCode.parse(text);
-                    if (qr && window.directorySearch) window.directorySearch.submitScannedCedula(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos }, 'qr');
+                title: 'Escanear',
+                formats: ['qr_code', 'pdf417'],
+                onPhoto: processMrzPhoto,
+                onCode: (text, format) => {
+                    const r = QrCode.classify(text, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
+                    if (!r || !window.directorySearch) { showToast('No se reconoció el código: acerca la cámara al QR o al reverso de la cédula', 'error'); return; }
+                    if (r.kind === 'qr') window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos }, 'qr');
+                    else if (r.nombres || r.apellidos) window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
+                    else fillSearchAndSearch(r.cedula);
                 },
             });
-        });
-    }
-    if (scanMrzCameraBtn && canAccredit) {
-        scanMrzCameraBtn.addEventListener('click', () => {
-            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processMrzPhoto });
         });
     }
 
@@ -658,9 +630,7 @@
     const regScanCedulaInput = document.getElementById('manualIdField');           // B3: el escaneo (lector o QR) va en el MISMO campo de cédula/ID
     const regNewCedulaChk = document.getElementById('regNewCedulaChk'), regNewCedulaBox = document.getElementById('regNewCedulaBox');
     if (regNewCedulaChk && regNewCedulaBox) regNewCedulaChk.addEventListener('change', () => { regNewCedulaBox.hidden = !regNewCedulaChk.checked; });
-    const regScanMrzBtn = document.getElementById('regScanMrzBtn');
     const regScanMrzCameraBtn = document.getElementById('regScanMrzCameraBtn');
-    const regScanMrzInput = document.getElementById('regScanMrzInput');
 
     function fillRegFormFromScan(cedula, nameInfo) {
         const idField = document.querySelector('#regForm input[name="id"]');
@@ -690,8 +660,7 @@
     }
 
     async function processRegScanMrzPhoto(blob) {
-        regScanMrzCameraBtn.disabled = true;
-        await busyWork(regScanMrzBtn, async () => {
+        await busyWork(regScanMrzCameraBtn, async () => {
         try {
             const formData = new FormData();
             formData.append('file', blob, 'cedula.jpg');
@@ -706,20 +675,20 @@
             showToast('Error de red', 'error');
         }
         });
-        regScanMrzCameraBtn.disabled = false;
     }
 
-    if (regScanMrzBtn && regScanMrzInput) {
-        regScanMrzBtn.addEventListener('click', () => regScanMrzInput.click());
-        regScanMrzInput.addEventListener('change', () => {
-            const file = regScanMrzInput.files[0];
-            regScanMrzInput.value = '';
-            if (file) processRegScanMrzPhoto(file);
-        });
-    }
     if (regScanMrzCameraBtn) {
         regScanMrzCameraBtn.addEventListener('click', () => {
-            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processRegScanMrzPhoto });
+            QrScanner.open({
+                title: 'Escanear cédula',
+                formats: ['qr_code', 'pdf417'],
+                onPhoto: processRegScanMrzPhoto,
+                onCode: (text, format) => {
+                    const r = QrCode.classify(text, format, GoldenDirectory.parseOldCedulaBarcode);
+                    if (r) fillRegFormFromScan(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
+                    else showToast('No se reconoció el código: acerca la cámara al reverso de la cédula', 'error');
+                },
+            });
         });
     }
 

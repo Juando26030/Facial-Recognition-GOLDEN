@@ -64,11 +64,24 @@ def test_directory_view_has_one_primary_button_and_the_fixed_search_bar():
     assert "Registrar nuevo" in view and "Escanear" in view
 
 
-def test_scan_actions_are_grouped_and_keep_their_ids():
+def test_single_scan_button_opens_the_camera_and_nothing_attaches_images():
     view = _directory_view()
-    menu = view[view.index('id="gwScanMenu"'):view.index('id="openRegisterModalBtn"')]
-    for ident in ("scanQrBtn", "scanMrzBtn", "scanMrzCameraBtn", "scanMrzInput"):
-        assert f'id="{ident}"' in menu, ident
+    toolbar = view[view.index('id="scanQrBtn"'):view.index('id="openRegisterModalBtn"')]
+    assert view.count('id="scanQrBtn"') == 1 and "Escanear" in toolbar
+    for gone in ("gwScanMenu", "gwScanPanel", "scanMrzBtn", "scanMrzCameraBtn", "scanMrzInput", "regScanMrzBtn", "regScanMrzInput", "Adjuntar imagen"):
+        assert gone not in TPL, gone
+    assert 'type="file"' not in toolbar
+    assert "formats: ['qr_code', 'pdf417']" in TPL and "QrCode.classify" in TPL
+    assert "editMrzInput" not in pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
+
+
+def test_mobile_page_scrolls_with_the_finger_no_nested_scroll_trap():
+    css = pathlib.Path("static/css/p-registro-puerta.css").read_text(encoding="utf-8")
+    assert "p-registro-puerta.css" in TPL
+    block = css[css.index("@media (max-width: 720px), (pointer: coarse)"):]
+    block = block[:block.index("}\n}")]
+    assert "overflow: visible" in block and "overscroll-behavior: auto" in block and "height: auto" in block
+    assert "overscroll-behavior: contain" not in css
 
 
 def test_hardware_and_modes_stay_behind_the_single_gear_with_an_accessible_name():
