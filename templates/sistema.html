@@ -1,4 +1,4 @@
-{# Estado del sistema (Fase 1.5, 2026-11-05): tarjetas de semáforo con texto e ícono (no solo color), guía de 3 pasos, «?» y recorrido de primera vez.
+{# Fase 1.7: orden por importancia (funcionamiento, despliegue, otros) y, en celular, tarjetas de a 2 columnas plegables (static/js/sistema.js). Estado del sistema (Fase 1.5, 2026-11-05): tarjetas de semáforo con texto e ícono (no solo color), guía de 3 pasos, «?» y recorrido de primera vez.
    Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). Las rutas, los ids y el sondeo de siempre (cada 15 s, pausado con la pestaña oculta) no cambiaron: lo hace static/js/sistema.js. #}
 {% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
 {% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
@@ -59,12 +59,8 @@
         {% call ayuda('ay_sis3', 'Qué hacer si hay rojo') %}Las tarjetas ámbar o rojas traen una indicación concreta. Antes de desplegar, revisa la tarjeta «¿Se puede desplegar ahora?».{% endcall %}</li>
     </ol>
 
-    <section aria-label="Resumen" data-gw-tour-step="1" data-gw-tour-title="1. Mira los semáforos" data-gw-tour-text="Aquí ves el resumen: verde, atención o problema. Si algo no está en verde, aparece su nombre.">
+    <section aria-label="Resumen" data-gw-tour-step="1" data-gw-tour-title="1. Mira los semáforos" data-gw-tour-text="Arriba ves si el sistema está funcionando, con atención o con problema. Si algo no está en verde, aparece su nombre.">
       <div id="banner" class="gw-alert" role="status" aria-live="polite">{{ ic('info') }}<div><p class="gw-alert__title">Cargando…</p><p class="gw-alert__body"><span class="gw-skeleton"></span></p></div></div>
-    </section>
-
-    <section aria-label="Despliegue">
-      <div id="deploy" class="gw-sistema__card" aria-live="polite"><span class="gw-skeleton gw-sistema__skeleton"></span></div>
     </section>
 
     <p class="gw-sistema__meta"><span id="updated" role="status">—</span><span>Se actualiza solo cada 15 segundos.</span></p>
