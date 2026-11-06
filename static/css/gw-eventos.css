@@ -129,3 +129,25 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
 /* flechas del calendario: el ícono «chevron» del sprite apunta a la derecha */
 .cal-prev .gw-icon { transform: rotate(180deg); }
 .cal-chip--plain { border-left-color: var(--gw-border-strong); }
+
+/* ---------- Auditoría de botones (Fase 1.7): menú de tres puntos de la tarjeta ---------- */
+.ev-card__menu { flex: 0 0 auto; }
+.ev-card__actions .ev-card__more { display: inline-flex; align-items: center; justify-content: center; padding: 0; min-width: calc(var(--gw-tap) + var(--gw-sp-2)); }
+.ev-card__menu .gw-menu__item { white-space: nowrap; }
+/* Celular: Ingresar ocupa lo que sobre; Editar y los tres puntos mantienen su ancho y su texto sin recortes. */
+.ev-card__actions .ev-card__edit { flex: 0 0 auto; white-space: nowrap; }
+.ev-card__actions .gw-btn { justify-content: center; text-align: center; }
+@media (max-width: 640px) { .ev-card__actions .ev-card__enter { order: -1; flex: 1 1 100%; margin-left: 0; } .ev-card__actions .ev-card__edit { flex: 1 1 auto; } .ev-card__actions .ev-card__menu { flex: 0 0 auto; } }
+
+/* Librería de colores (static/js/color-library.js, estilos en línea del componente compartido): objetivos táctiles de 44 px y tarjetas sin recorte dentro de la ventana. */
+.ee-modal .cl-select, .ee-modal .cl-save, .ee-modal .cl-del { min-height: var(--gw-tap) !important; }
+.ee-modal .cl-del { min-width: var(--gw-tap); }
+.ee-modal .cl-save, .ee-modal .cl-del { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Pasos 1·2·3 + Guía en celular: dos filas de dos, con el texto en palabras enteras (el compacto compartido lo partía a mitad de palabra: «Entr / a al…»). */
+@media (max-width: 640px) {
+  .gw-ev-shell .gw-steps { flex-wrap: wrap; }
+  .gw-ev-shell .gw-steps > li:not(.gw-steps__guide) { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+  .gw-ev-shell .gw-steps__text { overflow-wrap: normal; word-break: normal; }
+  .gw-ev-shell .gw-steps__guide { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+}
