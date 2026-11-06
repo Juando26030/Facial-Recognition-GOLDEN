@@ -1,0 +1,27 @@
+/* Adjuntar base de datos (kiosk_roster.html): los textos que traen datos del usuario (nombre de archivo, eventos, columnas)
+   parten en líneas en vez de ensanchar la página; el contenido de cada paso puede encogerse dentro de su tarjeta. Solo tokens --gw-*. */
+.gw-step__body,
+.gw-step__body > *,
+#rosterResult,
+#rosterResult > *,
+#sourceEventList .gw-check > span { min-width: 0; }
+#rosterFileInfo,
+#rosterFileHelp,
+.gw-step__body .gw-hint,
+.gw-step__body .gw-check > span,
+#rosterResult .gw-alert__body,
+#rosterResult .gw-list li,
+#rosterResult .gw-table th,
+#rosterResult .gw-table td,
+#rosterResult .gw-table caption { overflow-wrap: anywhere; }
+#rosterResult .gw-table-wrap { max-width: 100%; overflow-x: auto; }
+#rosterSubmit,
+#appendSubmit { white-space: normal; text-align: center; }
+@media (max-width: 480px) {
+  #appendSubmit { width: 100%; }
+}
+/* Escritorio: el botón principal no se estira a todo el ancho de la tarjeta; queda a la izquierda con un ancho cómodo. */
+@media (min-width: 769px) {
+  #rosterSubmit { width: auto; min-width: 16rem; }
+  .gw-step__body > #rosterSubmit { justify-self: start; align-self: flex-start; }
+}
