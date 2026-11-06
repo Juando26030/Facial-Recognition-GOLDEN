@@ -33,7 +33,7 @@
   window.OptionTools = api;
 
   const el = (tag, props, ...kids) => { const e = document.createElement(tag); Object.assign(e, props || {}); kids.forEach((k) => e.append(k)); return e; };
-  const btn = (text, onclick, title) => { const b = el('button', { type: 'button', textContent: text, title: title || '' }); b.style.cssText = 'font-size:0.74rem; padding:3px 8px; border:1px solid #ccc; background:#fafafa; border-radius:8px; cursor:pointer;'; b.addEventListener('click', onclick); return b; };
+  const btn = (text, onclick, title) => { const b = el('button', { type: 'button', textContent: text, title: title || '' }); b.style.cssText = 'font-size:0.74rem; padding:3px 8px; border:1px solid #ccc; background:#fafafa; border-radius:8px; cursor:pointer;'; b.className = 'gwe-mini-btn'; b.addEventListener('click', onclick); return b; };
 
   async function fetchValues(eventId, key, scope) {
     const r = await fetch(`/api/events/${eventId}/field-values?key=${encodeURIComponent(key)}&scope=${scope}`, { credentials: 'same-origin' });
@@ -102,7 +102,7 @@
       get().forEach((o, i) => {
         const chip = el('span', {}, el('span', { textContent: o + ' ' }));
         chip.style.cssText = 'display:inline-flex; align-items:center; gap:2px; background:#eef0f8; border-radius:12px; padding:2px 4px 2px 8px; font-size:.78rem;';
-        const mini = (t, fn, title) => { const b = btn(t, fn, title); b.style.cssText = 'border:none; background:transparent; cursor:pointer; font-size:.78rem; padding:0 3px;'; return b; };
+        const mini = (t, fn, title) => { const b = btn(t, fn, title); b.style.cssText = 'border:none; background:transparent; cursor:pointer; font-size:.78rem; padding:0 3px;'; b.className = 'gwe-chip-btn'; return b; };
         chip.append(mini('↑', () => set(move(get(), i, -1)), 'Subir'), mini('↓', () => set(move(get(), i, 1)), 'Bajar'), mini('✕', () => set(get().filter((_, k) => k !== i)), 'Quitar'));
         tags.append(chip);
       });
