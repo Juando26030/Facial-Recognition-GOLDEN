@@ -20,3 +20,18 @@
 }
 @media (max-width: 640px) { .gw-docs-zip .gw-btn { width: 100%; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); text-align: center; line-height: var(--gw-lh-tight); } }
 #docList .gw-card-row__actions { margin-top: auto; }
+/* Fase 1.7 (auditoría de botones, solo Legalizaciones): cifras y guía sin cortes en celular. */
+.gw-leg-stats .gw-stat__value { overflow-wrap: normal; white-space: nowrap; }
+@media (max-width: 640px) {
+  .gw-leg-stats { grid-template-columns: minmax(0, 1fr); }       /* el total en millones no cabe en media columna: una cifra por fila */
+  .gw-leg-stats .gw-stat__value { overflow-wrap: anywhere; white-space: normal; }
+  .gw-steps.gw-leg-steps { flex-direction: column; align-items: stretch; }   /* pasos a lo ancho: el título completo, sin «…» */
+  .gw-steps.gw-leg-steps > li { flex: none; min-height: var(--gw-tap); padding-right: var(--gw-sp-3); }
+  .gw-steps.gw-leg-steps > li.gw-steps__guide { align-self: flex-start; padding: 0; }
+  .gw-steps.gw-leg-steps .gw-steps__guide > .gw-btn { min-height: var(--gw-tap); }
+  .gw-steps.gw-leg-steps > li:nth-child(n) .gw-popover { left: 0; width: 100%; }
+  .gw-steps.gw-leg-steps .gw-steps__text { display: block; -webkit-line-clamp: unset; overflow: visible; }
+}
+@media (min-width: 641px) {
+  #expList .gw-card-row__actions .gw-btn { flex: 0 0 auto; }      /* en escritorio «Eliminar» tiene su tamaño, no el ancho de toda la tarjeta */
+}
