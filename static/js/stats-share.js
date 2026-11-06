@@ -16,7 +16,7 @@
 
   var title = el('h3', 'gw-subtitle', scope === 'form' ? 'Compartir estadísticas de este formulario' : 'Compartir estadísticas del evento');
   var hint = el('p', 'gw-hint', 'Crea un enlace que muestra solo las estadísticas. Quien lo abre no necesita usuario ni contraseña, no puede descargar nada ni ver personas, y el enlace vence solo.');
-  var row = el('div', null); row.style.cssText = 'display:flex; gap:var(--gw-sp-3); flex-wrap:wrap; align-items:flex-end;';
+  var row = el('div', 'gw-share__row');
   var daysWrap = el('div', 'gw-field'); var daysLabel = el('label', 'gw-label', 'Vence en'); daysLabel.htmlFor = 'statsShareDays';
   var days = el('select', 'gw-select'); days.id = 'statsShareDays';
   DAYS.forEach(function (d) { var o = el('option', null, d[1]); o.value = d[0]; if (d[0] === 7) o.selected = true; days.appendChild(o); });
@@ -24,10 +24,10 @@
   var labelWrap = el('div', 'gw-field'); var labelLabel = el('label', 'gw-label', 'Para quién (opcional)'); labelLabel.htmlFor = 'statsShareLabel';
   var label = el('input', 'gw-input'); label.id = 'statsShareLabel'; label.type = 'text'; label.maxLength = 80; label.placeholder = 'Ej. Cliente, reunión del lunes';
   labelWrap.append(labelLabel, label);
-  var create = el('button', 'gw-btn', 'Crear enlace'); create.type = 'button';
+  var create = el('button', 'gw-btn gw-btn--secondary', 'Crear enlace'); create.type = 'button';
   row.append(daysWrap, labelWrap, create);
-  var result = el('div', null); result.setAttribute('aria-live', 'polite'); result.style.marginTop = 'var(--gw-sp-3)';
-  var listBox = el('div', null); listBox.style.marginTop = 'var(--gw-sp-4)';
+  var result = el('div', 'gw-share__result'); result.setAttribute('aria-live', 'polite');
+  var listBox = el('div', 'gw-share__list');
   root.append(title, hint, row, result, listBox);
 
   function api(method, url, body) {
@@ -39,8 +39,8 @@
     result.textContent = '';
     var box = el('div', 'gw-alert gw-alert--ok'); box.setAttribute('role', 'status');
     box.appendChild(el('strong', null, 'Enlace listo. Cópialo ahora: por seguridad no se vuelve a mostrar.'));
-    var line = el('div', null); line.style.cssText = 'display:flex; gap:var(--gw-sp-2); flex-wrap:wrap; margin-top:var(--gw-sp-2);';
-    var input = el('input', 'gw-input'); input.type = 'text'; input.readOnly = true; input.value = d.url; input.setAttribute('aria-label', 'Enlace de solo lectura'); input.style.flex = '1 1 18rem';
+    var line = el('div', 'gw-share__line');
+    var input = el('input', 'gw-input'); input.type = 'text'; input.readOnly = true; input.value = d.url; input.setAttribute('aria-label', 'Enlace de solo lectura');
     var btn = el('button', 'gw-btn gw-btn--secondary', 'Copiar enlace'); btn.type = 'button';
     btn.addEventListener('click', function () { copy(d.url).then(function (ok) { if (ok) toast('Enlace copiado', 'success'); else { input.focus(); input.select(); toast('Selecciona el enlace y cópialo', 'info'); } }); });
     line.append(input, btn);
@@ -54,16 +54,16 @@
     var mine = links.filter(function (l) { return l.scope === scope && (scope === 'event' || String(l.form_id) === String(formId)); });
     if (!mine.length) { listBox.appendChild(el('p', 'gw-hint', 'No hay enlaces vigentes.')); return; }
     listBox.appendChild(el('h4', 'gw-label', 'Enlaces vigentes'));
-    var table = el('table', 'gw-table'); var thead = el('thead'); var hr = el('tr');
+    var table = el('table', 'gw-table gw-table-cards'); var thead = el('thead'); var hr = el('tr');
     ['Para quién', 'Vence', 'Último uso', ''].forEach(function (h) { var th = el('th', null, h); th.scope = 'col'; hr.appendChild(th); });
     thead.appendChild(hr); table.appendChild(thead);
     var tb = el('tbody');
     mine.forEach(function (l) {
       var tr = el('tr');
-      tr.appendChild(el('td', null, l.label || '—'));
-      tr.appendChild(el('td', null, l.expires_local));
-      tr.appendChild(el('td', null, l.last_seen_at ? new Date(l.last_seen_at).toLocaleString('es-CO') : 'Sin abrir'));
-      var td = el('td'); var b = el('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Cancelar enlace'); b.type = 'button'; b.dataset.id = l.id; td.appendChild(b); tr.appendChild(td);
+      var c1 = el('td', null, l.label || '—'); c1.dataset.label = 'Para quién'; tr.appendChild(c1);
+      var c2 = el('td', null, l.expires_local); c2.dataset.label = 'Vence'; tr.appendChild(c2);
+      var c3 = el('td', null, l.last_seen_at ? new Date(l.last_seen_at).toLocaleString('es-CO') : 'Sin abrir'); c3.dataset.label = 'Último uso'; tr.appendChild(c3);
+      var td = el('td', 'gw-table-cards__actions'); var b = el('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Cancelar enlace'); b.setAttribute('aria-label', 'Cancelar el enlace de ' + (l.label || 'sin nombre')); b.type = 'button'; b.dataset.id = l.id; td.appendChild(b); tr.appendChild(td);
       tb.appendChild(tr);
     });
     table.appendChild(tb); listBox.appendChild(table);
@@ -74,14 +74,15 @@
   }
 
   create.addEventListener('click', function () {
-    create.disabled = true;
     var body = { scope: scope, days: parseInt(days.value, 10), label: label.value };
     if (scope === 'form') body.form_id = formId;
-    api('POST', base, body).then(function (r) {
-      create.disabled = false;
-      if (!r.ok) { toast((r.data && r.data.detail) || 'No se pudo crear el enlace. Intenta de nuevo.', 'error'); return; }
-      showCreated(r.data); label.value = ''; load();
-    }).catch(function () { create.disabled = false; toast('Sin conexión. Intenta de nuevo.', 'error'); });
+    var work = function () {
+      return api('POST', base, body).then(function (r) {
+        if (!r.ok) { toast((r.data && r.data.detail) || 'No se pudo crear el enlace. Intenta de nuevo.', 'error'); return; }
+        showCreated(r.data); label.value = ''; load();
+      });
+    };
+    (window.GW && window.GW.busy ? window.GW.busy(create, work) : work()).catch(function () { toast('Sin conexión. Intenta de nuevo.', 'error'); });
   });
 
   listBox.addEventListener('click', function (e) {
