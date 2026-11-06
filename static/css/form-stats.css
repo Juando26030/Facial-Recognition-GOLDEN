@@ -1,12 +1,12 @@
 /* Estadísticas de un formulario (templates/form_stats.html + static/js/form-stats.js). Solo composición: colores, tipografía y componentes vienen de design-system.css (tokens --gw-*, tema claro u oscuro). */
 .fs-top { background: var(--gw-nav-bg); color: var(--gw-nav-text); border-bottom: 3px solid var(--gw-gold-1); }
-.fs-top__inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); max-width: 1280px; margin: 0 auto; padding: var(--gw-sp-2) var(--gw-sp-4); }
+.fs-top__inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-2) var(--gw-sp-4); }
 .fs-top__brand { display: inline-flex; align-items: center; gap: var(--gw-sp-3); margin-right: auto; font-weight: var(--gw-fw-bold); }
 .fs-top__brand img { width: 40px; height: 40px; border-radius: 50%; background: #fff; }
 .fs-top__who { font-size: var(--gw-fs-sm); }
 .fs-top .gw-theme-toggle, .fs-top .gw-btn--secondary { background: transparent; color: var(--gw-nav-text); border-color: var(--gw-nav-text); }
 .fs-top a.gw-btn { color: var(--gw-nav-text); }
-.fs-main { max-width: 1280px; margin: 0 auto; padding: var(--gw-sp-5) var(--gw-sp-4) var(--gw-sp-8); display: flex; flex-direction: column; gap: var(--gw-sp-6); }
+.fs-main { max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-5) var(--gw-sp-4) var(--gw-sp-8); display: flex; flex-direction: column; gap: var(--gw-sp-6); }
 .fs-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--gw-sp-3); }
 .fs-head h1 { margin: 0; }
 .fs-head__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }

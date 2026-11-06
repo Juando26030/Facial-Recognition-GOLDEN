@@ -77,7 +77,7 @@
   --gw-fs-door: 1.5rem;               /* 24 px: texto de puerta (veredicto, cifras, estado vacío grande) */
   --gw-ring: 0 0 0 3px var(--gw-surface), 0 0 0 6px var(--gw-focus);   /* anillo de foco de dos capas: se ve sobre cualquier fondo */
   --gw-dur: 160ms;
-  --gw-content-w: 1120px;
+  --gw-content-w: 1760px;       /* Fase 1.7: en escritorio se usa casi todo el ancho; solo en ultraancha se centra */
   /* íconos con color propio por tipo (>= 3:1 sobre blanco) */
   --gw-ic-blue: #1d4ed8;
   --gw-ic-green: #15803d;

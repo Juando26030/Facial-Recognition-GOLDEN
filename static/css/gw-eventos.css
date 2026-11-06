@@ -61,10 +61,10 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .ev-card__enter { order: -1; margin-left: 0; flex-basis: 100%; }
 }
 .ev-list { display: grid; gap: var(--gw-sp-5); }
-.gw-ev-shell { max-width: 1000px; }
+.gw-ev-shell { max-width: var(--gw-content-w); }
 
 /* ---------- Calendario ---------- */
-.cal-shell { max-width: 1400px; }
+.cal-shell { max-width: var(--gw-content-w); }
 .cal-toolbar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: center; justify-content: space-between; margin-bottom: var(--gw-sp-4); }
 .cal-nav { display: flex; align-items: center; gap: var(--gw-sp-2); flex-wrap: wrap; }
 .cal-nav__label { min-width: 12rem; text-align: center; text-transform: capitalize; font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); }
