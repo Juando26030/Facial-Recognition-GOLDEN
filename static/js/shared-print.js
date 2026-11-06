@@ -84,7 +84,7 @@
     '#spQueuePanel{position:fixed;inset:auto 12px 12px 12px;max-height:60vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}',
     '#spPrefsPanel{position:fixed;inset:auto 12px 12px 12px;max-height:80vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:1rem}',
     '#spPrefsPanel label{display:flex;gap:10px;align-items:center;min-height:44px}#spPrefsPanel input[type=checkbox],#spPrefsPanel input[type=radio]{width:24px;height:24px}#spPrefsPanel input[type=number]{width:90px;min-height:40px;font-size:1rem}',
-    '#spQueuePanel table{width:100%;border-collapse:collapse;font-size:0.95rem}#spQueuePanel td,#spQueuePanel th{padding:6px;border-bottom:1px solid #eee;text-align:left}',
+    '#spQueuePanel table{width:100%;border-collapse:collapse;font-size:0.95rem}#spQueuePanel td,#spQueuePanel th{padding:6px;overflow-wrap:anywhere;border-bottom:1px solid #eee;text-align:left}',
     /* Registro touch: lo esencial, grande y a un dedo */
     'body.touch-mode{font-size:18px}',
     'body.touch-mode input[type=text],body.touch-mode input[type=search]{min-height:56px;font-size:1.25rem !important}',

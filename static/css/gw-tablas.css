@@ -1,0 +1,16 @@
+/* Tablas que caben en el ancho (Ronda 2): sin desplazamiento horizontal en escritorio. Solo tokens --gw-*.
+   Se carga desde _gw_head.html DESPUÉS de design-system.css. El contenedor .gw-table-wrap conserva su overflow-x solo como red de seguridad. */
+.gw-table { table-layout: auto; max-width: 100%; }
+.gw-table th, .gw-table td { padding: var(--gw-sp-2) var(--gw-sp-3); min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.gw-table th { white-space: normal; vertical-align: bottom; }                       /* el encabezado ajusta en vez de ensanchar */
+.gw-table td .gw-btn { max-width: 100%; }
+.gw-table td.gw-cell--actions, .gw-table td.gw-rowact { white-space: normal; }
+.gw-table td.gw-cell--actions .gw-btn, .gw-table td.gw-rowact .gw-btn { margin: 0 var(--gw-sp-1) var(--gw-sp-1) 0; }
+/* tabla de campos de Parámetros: ya no obliga a 920 px; anchos por columna y el texto largo ajusta */
+.gw-table--fields { min-width: 0; table-layout: fixed; }
+.gw-table--fields th:nth-child(1), .gw-table--fields td:nth-child(1) { width: 3rem; }
+.gw-table--fields th:nth-child(3), .gw-table--fields td:nth-child(3) { width: 6rem; }
+.gw-table--fields th:nth-child(4), .gw-table--fields td:nth-child(4) { width: 9rem; }
+.gw-table--fields th:nth-child(6), .gw-table--fields td:nth-child(6), .gw-table--fields th:nth-child(7), .gw-table--fields td:nth-child(7) { width: 6.5rem; }
+.gw-table--fields th:nth-child(8), .gw-table--fields td:nth-child(8) { width: 3.5rem; }
+.gw-table--fields .gw-input, .gw-table--fields .gw-select, .gw-table--fields .gw-textarea { width: 100%; min-width: 0; box-sizing: border-box; }

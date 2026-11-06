@@ -240,3 +240,17 @@ html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[da
 .gw-registro .scan-cand img { background: var(--gw-surface-2); }
 .gw-registro .scan-cand .who { font-size: var(--gw-fs-sm); }
 .gw-registro .scan-cand .gw-btn { flex: none; }
+
+/* ================= Ronda 2 · el directorio cabe en el ancho sin desplazarse de lado. Solo disposición (mismos ids, atributos y clases); no afecta al modo «Registro touch». ================= */
+body.gw-registro:not(.touch-mode) .golden-table { width: 100%; max-width: 100%; table-layout: auto; }
+body.gw-registro:not(.touch-mode) .golden-table th { white-space: normal; }                                           /* el encabezado también ajusta */
+body.gw-registro:not(.touch-mode) .golden-table td { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }  /* nombres y empresas largos pasan a otra línea de la misma celda */
+body.gw-registro:not(.touch-mode) .golden-table td[data-field="id"] { white-space: nowrap; overflow-wrap: normal; }    /* la cédula no se parte */
+body.gw-registro:not(.touch-mode) .golden-table td.action-cell { width: 1%; }                                          /* la columna de acciones toma lo justo */
+body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] { min-width: 6rem; }
+body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-origin { display: block; width: fit-content; margin: var(--gw-sp-1) 0 0; }   /* el origen va debajo del estado, no a su lado */
+/* escritorio justo (< 1280 px): las acciones quedan solo con ícono (nombre accesible y tooltip siguen) para que la fila quepa */
+@media (max-width: 1279px) {
+  body.gw-registro:not(.touch-mode) .action-cell .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body.gw-registro:not(.touch-mode) .action-cell .gw-btn { min-width: var(--gw-tap); padding: 0 var(--gw-sp-2); }
+}
