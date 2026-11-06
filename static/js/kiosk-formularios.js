@@ -31,16 +31,17 @@
         <a class="gw-btn gw-btn--primary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
         <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}/estadisticas">${icon('chart')} Estadísticas</a>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}">${icon('link')} Copiar enlace</button>
-      </div>
-      <details class="gw-form-group gw-forms-more">
-        <summary class="gw-form-group__summary">Más acciones</summary>
-        <div class="gw-form-group__body gw-card-row__actions">
-          <a class="gw-btn gw-btn--ghost gw-btn--sm" href="${esc(f.test_url)}" target="_blank" rel="noopener">${icon('eye')} Probar</a>
-          <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-dup="${f.id}">Duplicar</button>
-          ${canTransfer ? `<a class="gw-btn gw-btn--ghost gw-btn--sm" href="${api}/forms/${f.id}/export" data-export>${icon('download')} Exportar formulario</a>` : ''}
-          <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}">${icon('trash')} Eliminar</button>
+        <div class="gw-menu gw-forms-kebab">
+          <button type="button" class="gw-btn gw-btn--secondary gw-forms-kebab__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(f.name)}" title="Más acciones">${icon('more')}</button>
+          <div class="gw-menu__panel" role="group" hidden>
+            <a class="gw-menu__item" href="${esc(f.test_url)}" target="_blank" rel="noopener">${icon('eye')} Probar</a>
+            <button type="button" class="gw-menu__item" data-dup="${f.id}">${icon('form')} Duplicar</button>
+            ${canTransfer ? `<a class="gw-menu__item" href="${api}/forms/${f.id}/export" data-export>${icon('download')} Exportar formulario</a>` : ''}
+            <hr class="gw-menu__sep">
+            <button type="button" class="gw-menu__item gw-menu__item--danger" data-del="${f.id}" data-name="${esc(f.name)}">${icon('trash')} Eliminar</button>
+          </div>
         </div>
-      </details>
+      </div>
     </article>`;
   }
 
@@ -55,7 +56,25 @@
     } finally { box.setAttribute('aria-busy', 'false'); }
   }
 
+  // Menú «tres puntos» de cada tarjeta (Probar · Duplicar · Exportar · Eliminar)
+  let openMenu = null;
+  function closeMenu() { if (!openMenu) return; openMenu.panel.hidden = true; openMenu.btn.setAttribute('aria-expanded', 'false'); openMenu = null; }
+  document.addEventListener('click', (e) => { if (openMenu && !e.target.closest('.gw-menu')) closeMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && openMenu) { const b = openMenu.btn; closeMenu(); b.focus(); } });
+  function toggleMenu(btn) {
+    const wrap = btn.closest('.gw-menu'), panel = wrap.querySelector('.gw-menu__panel');
+    const was = openMenu && openMenu.panel === panel; closeMenu();
+    if (was) return;
+    panel.hidden = false; btn.setAttribute('aria-expanded', 'true'); openMenu = { panel, btn };
+    const r = btn.getBoundingClientRect();
+    wrap.classList.toggle('gw-menu--up', r.bottom + panel.offsetHeight > window.innerHeight && r.top > panel.offsetHeight);
+    const first = panel.querySelector('.gw-menu__item'); if (first) first.focus();
+  }
+
   $('body').addEventListener('click', async (e) => {
+    const kebab = e.target.closest('[data-menu]');
+    if (kebab) { toggleMenu(kebab); return; }
+    if (e.target.closest('.gw-menu__item')) closeMenu();
     if (e.target.closest('[data-retry]')) { load(); return; }
     const copy = e.target.closest('[data-copy]');
     if (copy) {

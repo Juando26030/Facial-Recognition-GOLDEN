@@ -1,7 +1,40 @@
 /* Formularios web (lista) · Fase 1.7: acción principal grande y cifras dentro de la tarjeta. Solo tokens --gw-*. */
 .gw-forms-main { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
 .gw-forms-main[hidden] { display: none; }
-.gw-forms-more { margin-top: 0; }
-.gw-forms-more .gw-card-row__actions { padding-bottom: var(--gw-sp-3); }
 .gw-card-row .gw-stats-row .gw-stat { padding: var(--gw-sp-3); border-width: 1px; box-shadow: none; }
 .gw-card-row .gw-stats-row .gw-stat__value { font-size: var(--gw-fs-2xl); }
+
+/* Auditoría de botones: contenido centrado y nada que se salga de su caja */
+.gw-card-row__head > .gw-badge { flex: none; justify-content: center; max-width: 100%; white-space: nowrap; }
+.gw-card-row__meta { overflow-wrap: anywhere; }
+.gw-stat { min-width: 0; overflow-wrap: anywhere; }
+.gw-card-row__actions { align-items: stretch; }
+.gw-card-row__actions > .gw-btn { min-width: 0; }
+.gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { flex: 1 1 8rem; }
+.gw-card-row .gw-btn { white-space: normal; overflow-wrap: anywhere; }
+
+/* Botón «tres puntos» con el menú de acciones poco usadas (Probar, Duplicar, Exportar, Eliminar) */
+.gw-forms-kebab { flex: none; display: flex; }
+.gw-forms-kebab__btn { flex: none; width: var(--gw-tap); height: 100%; min-height: var(--gw-tap); padding: 0; }
+.gw-forms-kebab .gw-menu__panel { min-width: min(15rem, calc(100vw - 2 * var(--gw-sp-4))); }
+.gw-forms-kebab .gw-menu__item { color: inherit; text-decoration: none; white-space: normal; }
+.gw-forms-kebab .gw-menu__item--danger { color: var(--gw-err-text); }
+
+/* Importar: archivo y botón alineados y sin desbordar */
+#importCard .gw-fields-row { align-items: end; }
+#importCard .gw-input[type="file"] { max-width: 100%; }
+#importCard .gw-btn { min-width: 0; max-width: 100%; white-space: normal; }
+@media (max-width: 640px) { #importCard .gw-btn { width: 100%; } }
+
+/* Pasos 1·2·3 en celular: solo el número centrado (el texto sigue para lectores de pantalla y la ayuda explica cada paso); evita «Crea / r» partido por letras */
+@media (max-width: 480px) {
+  .gw-steps > li:not(.gw-steps__guide) { justify-content: center; padding: var(--gw-sp-1); }
+  .gw-steps > li:not(.gw-steps__guide) .gw-steps__text { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
+
+/* Escritorio: la acción principal no se estira a todo el ancho y Importar queda junto al archivo, con separación */
+@media (min-width: 641px) {
+  .gw-forms-main { width: auto; align-self: flex-start; min-width: 16rem; }
+  #importCard .gw-fields-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--gw-sp-4); }
+  #importCard .gw-field { margin-bottom: 0; }
+}
