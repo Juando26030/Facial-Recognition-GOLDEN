@@ -863,7 +863,22 @@
       return tr;
     }
 
+    /* CAUSA REAL del «me quedo atrapado al deslizar sobre las personas» (celular): el sondeo (pollRefresh, cada pocos segundos) trae cambios de otros equipos y drawRows() hacía
+       tbody.replaceChildren(...) — QUITA y vuelve a poner las filas mientras el dedo está sobre una. El navegador cancela el gesto (touchcancel) cuando el elemento tocado sale del
+       documento: el dedo deja de desplazar la página y solo queda el clic; fuera de las filas sí desliza. Arreglo: no se redibuja la lista mientras hay un dedo abajo o la página
+       acaba de moverse; se redibuja al soltar (una sola vez), y si las filas son las mismas, en el mismo orden, no se toca el DOM. Lo fija tests/test_registro_visual.py. */
+    let touching = false, lastScrollAt = 0, deferredDraw = null;
+    const gestureBusy = () => touching || (Date.now() - lastScrollAt < 400);
+    const redrawSoon = () => { if (deferredDraw) return; deferredDraw = setTimeout(() => { deferredDraw = null; drawRows(); }, 450); };
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('touchstart', () => { touching = true; }, { passive: true });
+      document.addEventListener('touchend', () => { touching = false; }, { passive: true });
+      document.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
+      if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('scroll', () => { lastScrollAt = Date.now(); }, { passive: true });
+    }
+
     function drawRows() {
+      if (gestureBusy()) { redrawSoon(); return; }
       const tbody = document.getElementById(opts.tbodyId);
       // El «Acreditar» puntual (FOUND_PENDING) vive en una fila reutilizada: como antes, se va al volver a dibujar.
       tbody.querySelectorAll('.btn-accredit-pending').forEach(b => b.remove());
@@ -907,7 +922,8 @@
       }
       if (localMode) rows.unshift(localNoteRow());
       if (total > size) rows.push(pagerRow(total, size, pages));
-      tbody.replaceChildren(...rows);
+      const same = tbody.children.length === rows.length && rows.every((r, i) => tbody.children[i] === r);
+      if (!same) tbody.replaceChildren(...rows);
     }
 
     function goToPage(i, pages) { pageIdx = Math.max(0, Math.min(i, pages - 1)); drawRows(); }
