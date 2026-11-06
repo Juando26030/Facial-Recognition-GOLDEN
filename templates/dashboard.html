@@ -3,79 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel | GoldenWeb 2.0</title>
+    <title>Inicio | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inicio.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <style>
-        .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
-        .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
-        .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
-        .tenant-head .meta { font-size: 0.8rem; color:#666; }
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
-    </style>
+    <script src="{{ url_for('static', path='js/dashboard.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
 </head>
-<body>
+<body class="gw-page gw-shell">
 <!-- Sin menú lateral: digitador/cliente son cuentas temporales sin panel (Sprint 2.3, 2026-09-16)
      — este template ya solo renderiza para ellos, coordinador+ se redirige a /clientes desde "/". -->
+<a class="gw-skip" href="#contenido">Ir al contenido</a>
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <a href="/configuracion" title="Configuración (Apariencia)" style="text-decoration:none; font-size:1.1rem;">⚙️</a>
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" class="small-btn">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <a href="/configuracion" class="gw-btn gw-btn--ghost gw-btn--sm" aria-label="Configuración (Apariencia)" title="Configuración (Apariencia)">
+        <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg>
+      </a>
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
 </header>
 <div class="golden-content-spacer"></div>
 
-<main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:2rem;">
-      <span>TUS EVENTOS</span>
-      <h2>Eventos autorizados</h2>
+<main class="golden-main" id="contenido">
+  <div class="gw-container gw-stack-lg">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Tus eventos</p>
+        <h1 class="gw-page-head__title">Eventos autorizados</h1>
+        <p class="gw-page-head__sub">1. Busca tu evento. 2. Mira su estado. 3. Pulsa «Entrar».</p>
+      </div>
     </div>
-    <div id="myEventsList"></div>
+    <div class="gw-field" id="eventSearchBox" hidden>
+      <label class="gw-label" for="eventSearch">Buscar evento</label>
+      <input class="gw-input" type="search" id="eventSearch" placeholder="Nombre, ciudad o lugar" autocomplete="off" spellcheck="false">
+      <p class="gw-hint" id="eventSearchInfo" role="status" aria-live="polite"></p>
+    </div>
+    <div id="myEventsList" aria-busy="true">
+      <p class="gw-hint">Cargando tus eventos...</p>
+    </div>
   </div>
 </main>
-
-<script>
-const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
-
-async function loadMyEvents() {
-  const res = await fetch("/api/my-events");
-  const { events, has_any_authorization } = await res.json();
-  const el = document.getElementById("myEventsList");
-  if (events.length === 0) {
-    // has_any_authorization (2026-09-16, ronda 2): distingue "no te han asignado a nada" de
-    // "sí te asignaron, pero ese evento todavía no está En Proceso" — antes el mismo mensaje
-    // ambiguo cubría los dos casos y generaba confusión (reportado por QA).
-    el.innerHTML = has_any_authorization
-      ? '<p style="color:#666;">Ya tienes evento(s) asignado(s), pero ninguno está "En Proceso" todavía — pide a un coordinador que lo active cuando corresponda.</p>'
-      : '<p style="color:#666;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
-    return;
-  }
-  el.innerHTML = events.map(e => `
-    <div class="tenant-card"><div class="tenant-head" style="cursor:default;">
-      <div>
-        <h3>${esc(e.name)}</h3>
-        <div class="meta">${esc(e.location || "")} ${e.city ? "· " + esc(e.city) : ""} · ${fmtDate(e.start_date)}</div>
-      </div>
-      <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
-    </div></div>
-  `).join("");
-}
-
-loadMyEvents();
-</script>
 </body>
 </html>
