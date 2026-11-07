@@ -5,7 +5,7 @@
 (function (root) {
   'use strict';
   var ZONES = ['top', 'left', 'right', 'bottom'];
-  var LIMITS = { active: 80, sections: 6, zoneItems: 12, options: 50, invTypes: 20, title: 60, sectionTitle: 40 };
+  var LIMITS = { active: 80, sections: 6, zoneItems: 12, options: 50, invTypes: 20, invRefs: 30, optionLen: 60, title: 60, sectionTitle: 40 };
   var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
   var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
@@ -177,6 +177,31 @@
     list.push({ key: k, label: 'Tipo ' + (list.length + 1), refs: [] });
     return true;
   }
+  /* Clave estable del tipo a partir de su nombre: minúsculas sin tildes, solo [a-z0-9_], empieza con letra, máx. 24 (misma regla que el servidor). */
+  function slugKey(label, taken) {
+    var b = String(label || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!/^[a-z]/.test(b)) b = 't' + b;
+    b = b.slice(0, 24).replace(/_+$/, '') || 'tipo';
+    var k = b, n = 2;
+    while (taken[k]) { var suf = '_' + n++; k = b.slice(0, 24 - suf.length) + suf; }
+    return k;
+  }
+  /* «Agregar varios»: una línea de texto = un tipo (se escribe X, Enter, Y, Enter, Z…). Ignora líneas vacías y nombres repetidos. Devuelve cuántos agregó. */
+  function addInventoryTypesFromText(m, key, text) {
+    var f = field(m, key); if (!f || f.type !== 'inventory') return 0;
+    var list = f.config.inventory_types = f.config.inventory_types || [];
+    if (list.length === 1 && list[0].key === 'tipo1' && list[0].label === 'Tipo 1' && !(list[0].refs || []).length) list.length = 0;          // el tipo de ejemplo sin tocar se reemplaza
+    var taken = {}, names = {}, added = 0;
+    list.forEach(function (t) { taken[t.key] = 1; names[String(t.label).trim().toLowerCase()] = 1; });
+    String(text || '').split(/\r?\n/).forEach(function (l) {
+      var label = l.trim().slice(0, LIMITS.title);
+      if (!label || names[label.toLowerCase()] || list.length >= LIMITS.invTypes) return;
+      var k = slugKey(label, taken); taken[k] = 1; names[label.toLowerCase()] = 1;
+      list.push({ key: k, label: label, refs: [] }); added++;
+    });
+    if (!list.length) list.push({ key: 'tipo1', label: 'Tipo 1', refs: [] });
+    return added;
+  }
   function removeInventoryType(m, key, typeKey) {
     var f = field(m, key); if (!f || f.type !== 'inventory') return false;
     if (f.config.inventory_types.length <= 1) return false;
@@ -205,7 +230,16 @@
       if (f.type === 'inventory') {
         var ts = (f.config && f.config.inventory_types) || [];
         if (!ts.length) out.push(w + ': agrega al menos un tipo de inventario');
-        ts.forEach(function (t) { if (!String(t.label || '').trim()) out.push(w + ': hay un tipo de inventario sin nombre'); });
+        var seenL = {};
+        ts.forEach(function (t) {
+          var lb = String(t.label || '').trim();
+          if (!lb) out.push(w + ': hay un tipo de inventario sin nombre');
+          else if (seenL[lb.toLowerCase()]) out.push(w + ': el tipo «' + lb + '» está repetido');
+          seenL[lb.toLowerCase()] = 1;
+          if (/[<>]/.test(lb) || (t.refs || []).some(function (r) { return /[<>]/.test(r); })) out.push(w + ': los tipos y sus referencias no pueden incluir «<» ni «>»');
+          if ((t.refs || []).length > LIMITS.invRefs) out.push(w + ': «' + (lb || 'tipo') + '» admite hasta ' + LIMITS.invRefs + ' referencias');
+          if ((t.refs || []).some(function (r) { return r.length > LIMITS.optionLen; })) out.push(w + ': una referencia de «' + (lb || 'tipo') + '» pasa de ' + LIMITS.optionLen + ' caracteres');
+        });
       }
       if (f.type === 'number' && f.config.min != null && f.config.max != null && Number(f.config.min) > Number(f.config.max)) out.push(w + ': el mínimo no puede ser mayor que el máximo');
     });
@@ -233,7 +267,7 @@
   var model = { fromServer: fromServer, toPayload: toPayload, field: field, active: active, retired: retired, unplaced: unplaced, calUnplaced: calUnplaced, sectionIndexOf: sectionIndexOf, zoneOf: zoneOf, isLocked: isLocked, isCustom: isCustom,
     newKey: newKey, typeLabel: typeLabel, defaultsFor: defaultsFor, addField: addField, place: place, unplace: unplace, moveBy: moveBy, addSection: addSection, removeSection: removeSection, moveSection: moveSection,
     setRequired: setRequired, retire: retire, restore: restore, calPlace: calPlace, calUnplace: calUnplace, calMoveBy: calMoveBy, calSetLabel: calSetLabel, parseLines: parseLines,
-    addInventoryType: addInventoryType, removeInventoryType: removeInventoryType, validate: validate, sampleEvent: sampleEvent, ZONES: ZONES, LIMITS: LIMITS };
+    addInventoryType: addInventoryType, addInventoryTypesFromText: addInventoryTypesFromText, removeInventoryType: removeInventoryType, validate: validate, sampleEvent: sampleEvent, ZONES: ZONES, LIMITS: LIMITS };
 
   /* ------------------------------------------------------------------------------------------------ pantalla */
   function mount(host, opts) {
@@ -300,10 +334,12 @@
       if (f.type === 'city' && custom) html += lab('tp_ck', 'Depende del país', '<select class="gw-select" id="tp_ck" data-tpl-prop="country_key"><option value="">— Ninguno (texto libre) —</option>' + model.active(m).filter(function (x) { return x.type === 'country'; }).map(function (x) { return '<option value="' + esc(x.key) + '"' + (c.country_key === x.key ? ' selected' : '') + '>' + esc(x.title) + '</option>'; }).join('') + '</select>', 'Las ciudades sugeridas son las del país elegido; siempre se puede escribir otra.');
       if (f.type === 'address_map') html += '<div class="gw-alert">' + ic('info') + '<div class="gw-alert__body">Guarda la dirección escrita y, cuando exista el mapa, el punto marcado. El mapa se activa en una entrega posterior.</div></div>';
       if (f.type === 'inventory') {
-        html += '<h3 class="gw-tpl-h2">Tipos de inventario</h3><p class="gw-hint">Cada línea del evento elige un tipo, una cantidad y (si tiene) una referencia de la lista.</p>' +
+        html += '<h3 class="gw-tpl-h2">Tipos de inventario</h3><p class="gw-hint">Al diseñar el evento se eligen los tipos que pidió el cliente (por ejemplo computadores, impresoras, digitadores) y por cada uno se escribe la cantidad y una referencia. Si un tipo tiene referencias, se elige de esa lista; si no, se escribe a mano.</p>' +
+          '<div class="gw-field"><label class="gw-label" for="tp_invbulk">Agregar varios tipos (uno por línea)</label><textarea class="gw-textarea" id="tp_invbulk" rows="3" placeholder="Computadores&#10;Impresoras&#10;Digitadores" data-tpl-invbulk></textarea>' +
+          '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-tpl-act="inv-bulk">' + ic('plus', 'gw-icon--sm') + ' Agregar estos tipos</button></div>' +
           (c.inventory_types || []).map(function (t, i) {
             return '<div class="gw-tpl-inv" data-inv="' + esc(t.key) + '"><div class="gw-field"><label class="gw-label" for="ti_l' + i + '">Nombre del tipo</label><input class="gw-input" id="ti_l' + i + '" type="text" maxlength="60" value="' + esc(t.label) + '" data-tpl-inv-label="' + esc(t.key) + '"></div>' +
-              '<div class="gw-field"><label class="gw-label" for="ti_r' + i + '">Referencias (una por línea, opcional)</label><textarea class="gw-textarea" id="ti_r' + i + '" rows="3" data-tpl-inv-refs="' + esc(t.key) + '">' + esc((t.refs || []).join('\n')) + '</textarea></div>' +
+              '<div class="gw-field"><label class="gw-label" for="ti_r' + i + '">Referencias de «' + esc(t.label) + '» (una por línea; vacío = se escribe a mano)</label><textarea class="gw-textarea" id="ti_r' + i + '" rows="3" data-tpl-inv-refs="' + esc(t.key) + '">' + esc((t.refs || []).join('\n')) + '</textarea></div>' +
               '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-tpl-act="inv-del" data-inv="' + esc(t.key) + '"' + ((c.inventory_types || []).length <= 1 ? ' disabled' : '') + '>' + ic('trash', 'gw-icon--sm') + ' Quitar este tipo</button></div>';
           }).join('') + '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-tpl-act="inv-add">' + ic('plus', 'gw-icon--sm') + ' Agregar tipo de inventario</button>';
       }
@@ -379,6 +415,7 @@
         case 'sec-up': case 'sec-down': if (moveSection(m, el.getAttribute('data-sec'), name === 'sec-up' ? -1 : 1)) rerender(); break;
         case 'retire': { var f = model.field(m, key); root.showConfirm('¿Retirar «' + esc(f.title) + '»? Sale de las dos vistas, pero lo que ya se guardó en los eventos se conserva.', { confirmLabel: 'Retirar' }).then(function (ok) { if (ok) { retire(m, key); sel = null; rerender(); } }); break; }
         case 'inv-add': if (sel && addInventoryType(m, sel)) rerender(); break;
+        case 'inv-bulk': { var ta = host.querySelector('[data-tpl-invbulk]'), n = sel ? addInventoryTypesFromText(m, sel, ta ? ta.value : '') : 0; if (n) { toast(n === 1 ? 'Se agregó 1 tipo' : 'Se agregaron ' + n + ' tipos', 'success'); rerender(); } else toast('Escribe al menos un tipo nuevo (uno por línea)', 'error'); break; }
         case 'inv-del': if (sel && removeInventoryType(m, sel, el.getAttribute('data-inv'))) rerender(); break;
         case 'cal-add': { if (!calPlace(m, key, selZone)) { toast('Esa zona ya tiene el máximo de campos (' + LIMITS.zoneItems + ')', 'error'); break; } calSel = key; rerender(); break; }
         case 'cal-up': case 'cal-down': { if (calMoveBy(m, key, name === 'cal-up' ? -1 : 1)) { calSel = key; rerender(); focusCard(key, 'tplCanvasB'); } break; }

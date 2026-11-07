@@ -309,6 +309,7 @@
       });
     }
     Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="country"]'), function (c) { cityDeps(host, c.dataset.evfKey, c.value, opts); });
+    if (root.GWInventory) Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="inventory"]'), function (el) { root.GWInventory.enhance(el, opts); });          // static/js/gw-inventory.js
   }
 
   var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, esc: esc, inventoryRow: inventoryRow };

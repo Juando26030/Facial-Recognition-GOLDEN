@@ -65,7 +65,7 @@
         (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
-    EF.afterMount(form, { loadCities: citiesFor });
+    EF.afterMount(form, { loadCities: citiesFor, fields: fields });
     EF.bind(form, { fields: fields, loadCities: citiesFor });
     applyDefaults();
     addSuperEventButton();

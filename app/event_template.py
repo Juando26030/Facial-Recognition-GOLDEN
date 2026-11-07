@@ -13,6 +13,8 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from app import event_inventory
+
 SCOPE_GLOBAL = "global"
 
 
@@ -32,8 +34,8 @@ MAX_SECTION_TITLE = 40
 MAX_ZONE_ITEMS = 12
 MAX_INVENTORY_TYPES = 20
 MAX_INVENTORY_REFS = 30
-MAX_INVENTORY_LINES = 100
-MAX_INVENTORY_QTY = 1_000_000
+MAX_INVENTORY_LINES = event_inventory.MAX_LINES
+MAX_INVENTORY_QTY = event_inventory.MAX_QTY
 MAX_COLORS = 8
 MAX_EXTRA_BYTES = 20_000          # tope del JSON de valores personalizados de UN evento
 MAX_PAYLOAD_BYTES = 400_000       # tope del cuerpo de PUT (lo revisa el router)
@@ -281,7 +283,7 @@ def _clean_inventory_types(raw) -> list:
         raise TemplateError("El inventario necesita al menos un tipo (por ejemplo «Pañoletas»)")
     if len(raw) > MAX_INVENTORY_TYPES:
         raise TemplateError(f"El inventario admite hasta {MAX_INVENTORY_TYPES} tipos")
-    out, seen = [], set()
+    out, seen, seen_labels = [], set(), set()
     for t in raw:
         if not isinstance(t, dict):
             raise TemplateError("Tipo de inventario inválido")
@@ -292,6 +294,9 @@ def _clean_inventory_types(raw) -> list:
         if key in seen:
             raise TemplateError("Hay dos tipos de inventario con la misma clave")
         seen.add(key)
+        if label.lower() in seen_labels:
+            raise TemplateError(f"Hay dos tipos de inventario llamados «{label}»")
+        seen_labels.add(label.lower())
         refs = _clean_options(t.get("refs") or [], "Las referencias", MAX_INVENTORY_REFS, allow_empty_list=True)
         out.append({"key": key, "label": label, "refs": refs})
     return out
@@ -578,25 +583,10 @@ def clean_value(field: dict, raw):
             out.append({"name": _text(c.get("name"), w, 60, allow_empty=True), "hex": str(c["hex"]).lower()})
         return out or None
     if t == "inventory":
-        if not isinstance(raw, list):
-            raise TemplateError(f"{w} debe ser una lista de líneas")
-        if len(raw) > MAX_INVENTORY_LINES:
-            raise TemplateError(f"{w} admite hasta {MAX_INVENTORY_LINES} líneas")
-        types = {t_["key"]: t_ for t_ in (cfg.get("inventory_types") or [])}
-        out = []
-        for line in raw:
-            if not isinstance(line, dict) or line.get("type") not in types:
-                raise TemplateError(f"{w}: tipo de inventario desconocido")
-            qty = _int(line.get("qty"), f"{w}: la cantidad", 0, MAX_INVENTORY_QTY)
-            ref = line.get("ref")
-            refs = types[line["type"]]["refs"]
-            if refs:
-                if ref not in refs:
-                    raise TemplateError(f"{w}: elige la referencia de «{types[line['type']]['label']}» de la lista")
-            else:
-                ref = None
-            out.append({"type": line["type"], "qty": qty, "ref": ref})
-        return out or None
+        try:
+            return event_inventory.clean_lines(raw, cfg.get("inventory_types") or [], w)
+        except event_inventory.InventoryError as exc:
+            raise TemplateError(str(exc))
     raise TemplateError(f"{w}: tipo de campo no soportado")
 
 
