@@ -63,9 +63,9 @@ def _read(token: Optional[str], form: WebForm) -> dict:
 
 
 # ------------------------------------------------------------------ resolución
-def _load(db: Session, event_id: int, slug: str) -> WebForm:
+def _load(db: Session, event_id: int, slug: str, allow_archived: bool = False) -> WebForm:
     form = db.query(WebForm).filter(WebForm.event_id == event_id, WebForm.slug == slug).first()
-    if not form:
+    if not form or (form.archived_at is not None and not allow_archived):          # Fase 3: un formulario archivado está cerrado al público (404 como «finalizado»); sus respuestas y pagos se conservan
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     return form
 

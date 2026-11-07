@@ -202,6 +202,10 @@ def test_deleting_the_form_cuts_the_access(client, factory, db):
     ev, form = _setup(client, factory)
     login(client, "adm1")
     acc = _create_access(client, ev, form)
+    factory.staff("super_admin", "sup1")
+    client.post("/logout")
+    login(client, "sup1")
+    assert client.post(f"/api/events/{ev.id}/forms/{form['id']}/archive").status_code == 200
     assert client.delete(f"/api/events/{ev.id}/forms/{form['id']}").status_code == 200
     db.expire_all()
     assert db.query(FormClientUser).count() == 0 and db.query(StaffUser).filter_by(username=acc["username"]).one().is_active is False

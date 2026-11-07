@@ -150,7 +150,7 @@ def rates(event_id: int, slug: str, request: Request, k: Optional[str] = None, d
 def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     """El navegador avisa que el widget se cerró (con el id de la transacción, si la hay). No se le cree: el estado real
     se consulta a Wompi por ese id y solo cuenta si la referencia y el monto coinciden con los de este pago."""
-    form = fp._load(db, event_id, slug)
+    form = fp._load(db, event_id, slug, allow_archived=True)
     fp._access(db, form, data.get("k"))
     fp._limit(db, request, "form_pay", form, 120)
     pay = _pay_from_token(db, form, data.get("pt"))
@@ -166,7 +166,7 @@ def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session 
 @router.get("/f/{event_id}/{slug}/pay/status")
 def pay_status(event_id: int, slug: str, request: Request, pt: Optional[str] = None, k: Optional[str] = None, db: Session = Depends(get_db)):
     """Para esperar la confirmación (p. ej. PSE tarda): el navegador consulta hasta que sea aprobado o rechazado."""
-    form = fp._load(db, event_id, slug)
+    form = fp._load(db, event_id, slug, allow_archived=True)
     fp._access(db, form, k)
     fp._limit(db, request, "form_pay_status", form, 600)
     return _result(db, form, _pay_from_token(db, form, pt))

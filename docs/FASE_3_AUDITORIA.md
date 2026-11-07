@@ -49,3 +49,23 @@ Migración `0090_event_archive` (columnas `events.archived_at` y `events.archive
 
 ## Siguientes oleadas
 usuarios del personal, personas, formularios, áreas, inventario, premios; L7 automático; cierre de seguridad (Strix + ZAP en staging, CSP, ENFORCE_STAFF_TENANT).
+usuarios del personal, eventos (botón archivar + restaurar), personas, formularios, áreas, inventario, premios; L7 automático; cierre de seguridad (Strix + ZAP en staging, CSP, ENFORCE_STAFF_TENANT).
+
+## Oleada personas y formularios (migración `0091_people_forms_archive`)
+Auditoría de borrados que existían: `DELETE /api/users/{id}` (coordinador+, borraba a la persona del evento y, si no estaba en otro, la fila `User` y su foto), `DELETE /api/events/{e}/forms/{f}` (coordinador+, borraba el formulario con inscripciones; solo frenaba con pagos aprobados/reembolsados) y `DELETE .../submissions/{id}` (coordinador+). Quedan sin tocar: `DELETE /api/attendees/{id}/purge-data`, la revocación y `app/privacy.py` (derecho del titular), y `audit_consent_logs` (inmutable).
+
+| Acción | digitador | coordinador | comercial | admin | super_admin |
+|---|---|---|---|---|---|
+| Archivar / restaurar persona de un evento | - | - | - | sí | sí |
+| Ver personas archivadas (`GET /users?archived=true`) | - | - | - | sí | sí |
+| Borrar persona definitivo (`DELETE /users/{id}`) | - | - | - | - | sí (inscripción ya archivada) |
+| Archivar / restaurar formulario | - | - | - | sí | sí |
+| Ver formularios archivados (`?include_archived=true`) | - | - | - | sí | sí |
+| Borrar formulario definitivo | - | - | - | - | sí (archivado y sin inscripciones ni pagos) |
+| Borrar UNA inscripción de formulario | - | - | - | sí (antes coordinador) | sí |
+
+- **Persona:** `event_attendees.archived_at/archived_by_id`. Archivar oculta a la persona del directorio de ESE evento (lista, total, incremental); no toca `users`, consentimientos, biometría ni registros de acceso. Quien solo tiene accesos (sin precarga) obtiene su inscripción al archivarla. Las estadísticas y la copia sin red no la excluyen (solo es ocultar del directorio).
+- **Formulario:** `web_forms.archived_at/archived_by_id`. Archivar lo saca de la lista, lo cierra al público (404 como «finalizado»: ni página, ni estado, ni cotización, ni envíos), pasa «activo» a «cerrado» y apaga el calendario para que al restaurar NO se reabra solo, y no se puede editar ni cambiar su estado hasta restaurarlo. Se conservan inscripciones, archivos y pagos; el webhook de Wompi y la confirmación/estado de un pago ya iniciado siguen funcionando. El borrado definitivo exige archivado y cero inscripciones (las marcas «ya registrado» de la base no cuentan) y cero pagos. Borrar el evento completo sigue su camino de siempre.
+- **Registro (`audit_actions`):** `attendee` (id de la inscripción y «evento N»; nunca cédula ni nombre), `form` (id y nombre del formulario) y `form_submission` (ids). Acciones `archive`, `restore`, `delete`.
+- **UI:** directorio: «Archivar de este evento» (admin+, en «Más» y en «Editar») y chip «Ver archivados» con Restaurar (y «Eliminar definitivamente» para super_admin); formularios: «Archivar» en la tarjeta, casilla «Ver archivados» con Restaurar y, para super_admin, «Eliminar definitivamente».
+- **Pendiente de decidir:** la ruta `DELETE /users/{id}/logs` (histórica, admin+, sin uso) no se tocó; las personas archivadas aún podrían acreditarse por cédula en la puerta (solo se ocultan del directorio).

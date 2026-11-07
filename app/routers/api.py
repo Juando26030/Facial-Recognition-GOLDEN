@@ -2,6 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
+from app import audit_actions
 import re
 import json
 from typing import List, Optional
@@ -480,14 +481,24 @@ def _masked_directory_id(tenant_id: str, user_id: str) -> str:
     return f"***{str(user_id)[-3:]}-{tag}"
 
 
-def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None, mask: bool = False) -> list:
+def _filter_archived(db: Session, query, event_id: int, archived: Optional[bool]):
+    """Directorio de un evento: oculta (False), muestra solo (True) o no distingue (None) a quien tiene su inscripción archivada en ESTE evento."""
+    if archived is None:
+        return query
+    archived_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id, EventAttendee.archived_at.isnot(None))
+    return query.filter(User.id.in_(archived_ids)) if archived else query.filter(~User.id.in_(archived_ids))
+
+
+def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None, mask: bool = False, archived: Optional[bool] = False) -> list:
     """Filas del directorio (roster precargado + quien se presento). Un asistente no reconocido como registrado queda «No registrado»; «Actualizado» es una
     edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada.
+    `archived` (Fase 3): False = sin las inscripciones archivadas (lo normal); True = SOLO las archivadas («Ver archivados», admin+); None = todas.
     `mask=True` (rol `cliente`, E4): sin cédula completa, correo, teléfono, fecha de nacimiento, contacto digital ni campos opcionales; solo nombre, entidad, categorías y estado."""
     event_id = event.id
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id)
     query = db.query(User).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids)))
+    query = _filter_archived(db, query, event_id, archived)
     if changed_since is not None:          # incremental: solo quien tuvo un registro o entro al evento despues del cursor
         since_log, since_att = changed_since
         touched = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id, AccessLog.id > since_log).union(
@@ -543,10 +554,11 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
 
 @router.get("/users")
 def get_all_users(
-    event_id: int, request: Request, limit: Optional[int] = None, offset: int = 0,
+    event_id: int, request: Request, limit: Optional[int] = None, offset: int = 0, archived: bool = False,
     db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff),
 ):
-    """Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
+    """Fase 3: `archived=true` devuelve SOLO las inscripciones archivadas del evento («Ver archivados»); es de admin+. Por defecto el directorio no las incluye.
+    Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
     cliente incluidos) — get_event_for_staff abajo hace el chequeo real de autorizacion.
     El directorio es de ESTE evento: roster precargado (EventAttendee) unido con quien de hecho
     se presento (AccessLog filtrado por event_id).
@@ -554,15 +566,17 @@ def get_all_users(
     Fase 0 de escalabilidad: (1) `ETag` + `If-None-Match`: si nada cambio se responde 304 sin construir la lista; (2) `limit`/`offset` opcionales para
     paginar (sin ellos devuelve todo, como siempre; con ellos, ordenado por cedula y con el total en `X-Total-Count`); (3) la respuesta va comprimida (gzip)."""
     event = get_event_for_staff(event_id, db, staff)
+    if archived and staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede ver las personas archivadas")
     headers = {"Cache-Control": "private, no-cache"}
     masked = staff.role == "cliente"          # E4: el cliente recibe otra versión del directorio: no comparte la huella (ni la caché del navegador) con el personal
-    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}")}"'
+    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}:{int(archived)}")}"'
     headers["ETag"] = etag
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
-    rows = _directory_rows(db, event, limit=limit, offset=max(0, offset), mask=masked)
+    rows = _directory_rows(db, event, limit=limit, offset=max(0, offset), mask=masked, archived=archived)
     if limit is not None:
-        headers["X-Total-Count"] = str(_directory_total(db, event))
+        headers["X-Total-Count"] = str(_directory_total(db, event, archived))
     return JSONResponse(rows, headers=headers)
 
 
@@ -572,10 +586,11 @@ def event_flags(event: Event) -> dict:
     return {"auto_print": bool(event.auto_print_badge), "auto_register": bool(event.auto_register)}
 
 
-def _directory_total(db: Session, event: Event) -> int:
+def _directory_total(db: Session, event: Event, archived: Optional[bool] = False) -> int:
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
-    return db.query(func.count(User.id)).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).scalar() or 0
+    query = db.query(func.count(User.id)).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids)))
+    return _filter_archived(db, query, event.id, archived).scalar() or 0
 
 
 @router.get("/users/changes")
@@ -774,7 +789,7 @@ def recognize_person(event_id: int = Form(...), match_token: str = Form(...), in
     event, ranked = _recognition_from_token(db, event_id, match_token, staff)
     if not 0 <= index < len(ranked):
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
-    rows = _directory_rows(db, event, only_ids=[ranked[index][0]])
+    rows = _directory_rows(db, event, only_ids=[ranked[index][0]], archived=None)
     if not rows:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     return _private_json(rows[0])
@@ -1582,12 +1597,55 @@ def delete_user_logs(
     return {"message": "Registros eliminados. Estado regresado a No Registrado."}
 
 
+def _attendee_or_404(db: Session, event: Event, user_id: str, create: bool = False) -> EventAttendee:
+    user = _person_of_event(db, event, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    row = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    if row is None and create:          # quien solo tiene registros de acceso (sin precarga): se crea su inscripción para poder archivarla
+        row = EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin=None)
+        db.add(row)
+        db.flush()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    return row
+
+
+@router.post("/users/{user_id}/archive")
+def archive_person(user_id: str, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Fase 3: archivar la inscripción de la persona a ESTE evento = ocultarla del directorio (se restaura). No borra nada ni toca consentimientos, audit_consent_logs ni su biometría
+    (esos tienen su propia vía: `purge-data` y la retención). El registro de la acción guarda solo el id de la inscripción, nunca cédula ni nombre."""
+    event = get_event_for_staff(event_id, db, staff)
+    att = _attendee_or_404(db, event, user_id, create=True)
+    if att.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La persona ya está archivada")
+    att.archived_at = utcnow()
+    att.archived_by_id = staff.id
+    audit_actions.record(db, staff, "archive", "attendee", att.id, None, f"evento {event.id}")
+    db.commit()
+    return {"message": "Persona archivada: ya no aparece en el directorio de este evento", "archived": True}
+
+
+@router.post("/users/{user_id}/restore")
+def restore_person(user_id: str, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    event = get_event_for_staff(event_id, db, staff)
+    att = _attendee_or_404(db, event, user_id)
+    if att.archived_at is None:
+        raise HTTPException(status_code=400, detail="La persona no está archivada")
+    att.archived_at = None
+    att.archived_by_id = None
+    audit_actions.record(db, staff, "restore", "attendee", att.id, None, f"evento {event.id}")
+    db.commit()
+    return {"message": "Persona restaurada en el directorio", "archived": False}
+
+
 @router.delete("/users/{user_id}")
 def delete_user_from_event(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role("super_admin")),
 ):
-    """Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar"
+    """Fase 3: borrado DEFINITIVO, solo super_admin y solo de una inscripción ya archivada (lo normal es archivar); queda en `audit_actions` (sin cédula ni nombre). Las rutas de privacidad
+    (`purge-data`, revocación) NO pasan por aquí: son por derecho del titular. Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar"
     debía borrar de verdad, no solo resetear el estado). Scoped al evento — no confundir con el
     viejo `.../logs` de arriba, que por bug afectaba TODO el tenant. Si tras sacarla de este
     evento la persona no queda en NINGÚN otro evento del mismo tenant (mismo User se reusa entre
@@ -1597,6 +1655,10 @@ def delete_user_from_event(
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
+    own = db.query(EventAttendee).filter_by(event_id=event_id, user_id=user_id).first()
+    if own is None or own.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva a la persona; el borrado definitivo solo aplica a personas archivadas")
+    audit_actions.record(db, staff, "delete", "attendee", own.id, None, f"evento {event_id}")
 
     # 26-oct-2026 (A2): TODO lo de la persona en este evento, sin dejar huérfanos. Antes quedaban el historial de impresión (print_logs, con llave hacia la persona: al borrarla del todo
     # el servidor fallaba), los trabajos de impresión compartida, movimientos de áreas, entregas de inventario, envíos de enlaces y el historial de cambios. Lo legal (aceptación de la

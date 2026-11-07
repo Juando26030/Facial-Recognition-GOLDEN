@@ -138,7 +138,9 @@ def test_stale_room_hint_never_oversells_and_a_freed_slot_is_seen_at_once(client
     assert r.status_code == 409 and db.query(FormSubmission).filter_by(form_id=f["id"], status="confirmed").count() == 1      # la base (con bloqueo) manda
     assert formsvc._held_cache.get(f["id"]) == 1                                       # y deja marcado «lleno» para los siguientes
     from tests.conftest import login
-    login(client, "coord1")
+    factory.staff("admin", "adm9")          # Fase 3: borrar una inscripción es de admin+
+    client.post("/logout")
+    login(client, "adm9")
     sub_id = db.query(FormSubmission).filter_by(form_id=f["id"]).one().id
     assert client.delete(f"/api/events/{ev.id}/forms/{f['id']}/submissions/{sub_id}").status_code == 200        # se libera el cupo…
     client.post("/logout")
