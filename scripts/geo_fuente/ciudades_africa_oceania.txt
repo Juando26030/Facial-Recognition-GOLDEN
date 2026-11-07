@@ -1,0 +1,68 @@
+EG: El Cairo; Alejandría; Guiza; Shubra el Jeima; Puerto Said; Suez; Luxor; Asuán; Mansura; Tanta; Ismailia; Hurghada; Sharm el Sheij
+LY: Trípoli; Bengasi; Misurata; Sabha; Tobruk
+TN: Túnez; Sfax; Susa; Kairuán; Bizerta; Gabès
+DZ: Argel; Orán; Constantina; Annaba; Blida; Batna; Setif; Tlemcen
+MA: Rabat; Casablanca; Fez; Marrakech; Tánger; Agadir; Mequinez; Uchda; Tetuán; Salé; El Aaiún
+MR: Nuakchot; Nuadibú
+SN: Dakar; Touba; Thiès; Saint-Louis; Ziguinchor
+GM: Banjul; Serekunda
+ML: Bamako; Sikasso; Mopti; Tombuctú
+BF: Uagadugú; Bobo-Dioulasso
+NE: Niamey; Zinder; Maradi
+NG: Lagos; Kano; Ibadán; Abuya; Port Harcourt; Benin City; Kaduna; Maiduguri; Enugu; Jos; Abeokuta
+GH: Acra; Kumasi; Tamale; Sekondi-Takoradi; Cape Coast
+CI: Abiyán; Yamusukro; Bouaké; San Pedro
+LR: Monrovia; Gbarnga
+SL: Freetown; Bo; Kenema
+GN: Conakri; Kankan; Nzérékoré
+GW: Bisáu; Bafatá
+CV: Praia; Mindelo
+TG: Lomé; Sokodé; Kara
+BJ: Porto Novo; Cotonú; Parakou
+CM: Yaundé; Duala; Garua; Bamenda
+TD: Yamena; Moundou; Sarh
+CF: Bangui; Bimbo; Berbérati
+GQ: Malabo; Bata
+GA: Libreville; Port-Gentil; Franceville
+CG: Brazzaville; Pointe-Noire
+CD: Kinshasa; Lubumbashi; Mbuji-Mayi; Kisangani; Goma; Bukavu
+ST: Santo Tomé
+AO: Luanda; Huambo; Lobito; Benguela; Lubango
+ET: Adís Abeba; Dire Daua; Mekelle; Gondar; Bahir Dar
+ER: Asmara; Massawa
+DJ: Yibuti; Ali Sabieh
+SO: Mogadiscio; Hargeisa; Berbera; Kismayo
+SD: Jartum; Omdurmán; Puerto Sudán; Kassala
+SS: Yuba; Malakal; Wau
+KE: Nairobi; Mombasa; Kisumu; Nakuru; Eldoret
+UG: Kampala; Gulu; Mbarara; Jinja
+TZ: Dodoma; Dar es Salaam; Mwanza; Arusha; Zanzíbar; Mbeya
+RW: Kigali; Butare; Gisenyi
+BI: Gitega; Buyumbura
+MZ: Maputo; Beira; Nampula; Matola
+MW: Lilongüe; Blantyre; Mzuzu
+ZM: Lusaka; Kitwe; Ndola; Livingstone
+ZW: Harare; Bulawayo; Mutare; Gweru
+BW: Gaborone; Francistown
+NA: Windhoek; Walvis Bay; Swakopmund
+ZA: Pretoria; Johannesburgo; Ciudad del Cabo; Durban; Puerto Elizabeth; Bloemfontein; Soweto; East London; Pietermaritzburg
+LS: Maseru; Teyateyaneng
+SZ: Mbabane; Manzini
+MG: Antananarivo; Toamasina; Antsirabe; Mahajanga
+MU: Port Louis; Curepipe
+SC: Victoria
+KM: Moroni; Mutsamudu
+AU: Sídney; Melbourne; Brisbane; Perth; Adelaida; Canberra; Gold Coast; Newcastle; Wollongong; Hobart; Geelong; Cairns; Darwin; Townsville; Alice Springs
+NZ: Auckland; Wellington; Christchurch; Hamilton; Dunedin; Tauranga; Queenstown
+PG: Port Moresby; Lae
+FJ: Suva; Nadi; Lautoka
+SB: Honiara
+VU: Port Vila
+WS: Apia
+TO: Nukualofa
+KI: Tarawa Sur
+FM: Palikir; Weno
+MH: Majuro
+PW: Ngerulmud; Koror
+NR: Yaren
+TV: Funafuti
