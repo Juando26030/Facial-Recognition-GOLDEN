@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import security, sessions
+from app import audit_actions, security, sessions
 from app.inputcheck import text_validator, username_validator
 from app.auth import assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
+from app.timeutil import utcnow
 
 router = APIRouter()
 
@@ -47,6 +48,7 @@ def _serialize(s: StaffUser) -> dict:
     return {
         "id": s.id, "username": s.username, "full_name": s.full_name,
         "role": s.role, "secondary_role": s.secondary_role, "is_active": s.is_active, "phone": s.phone, "email": s.email,
+        "archived": s.archived_at is not None, "archived_at": s.archived_at.isoformat() if s.archived_at else None,
     }
 
 
@@ -85,7 +87,7 @@ def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(
     'coordinador' como rol PRIMARIO o SECUNDARIO (Fase 15: doble rol coordinador+comercial)."""
     coords = db.query(StaffUser).filter(
         or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
-        StaffUser.is_active == True,
+        StaffUser.is_active == True, StaffUser.archived_at.is_(None),
     ).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
 
@@ -97,7 +99,7 @@ def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(r
     quien tenga 'comercial' como rol PRIMARIO o SECUNDARIO (Fase 15)."""
     commercials = db.query(StaffUser).filter(
         or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
-        StaffUser.is_active == True,
+        StaffUser.is_active == True, StaffUser.archived_at.is_(None),
     ).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in commercials]
 
@@ -108,7 +110,7 @@ def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depe
     en /admin/staff — independiente del filtro de ROLES_CREATABLE_BY_ADMIN de /staff (que oculta
     digitador/cliente de la tabla general a propósito, pero aquí sí hacen falta)."""
     query = db.query(StaffUser).filter(
-        StaffUser.role.in_(("digitador", "cliente")), StaffUser.is_active == True
+        StaffUser.role.in_(("digitador", "cliente")), StaffUser.is_active == True, StaffUser.archived_at.is_(None)
     )
     if staff_tenant_enforced(staff):          # P4: limitado a su cliente, solo las cuentas de su cliente
         query = query.filter(StaffUser.tenant_id == staff.tenant_id)
@@ -116,8 +118,10 @@ def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depe
 
 
 @router.get("/staff")
-def list_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def list_staff(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Por defecto SOLO las cuentas no archivadas. `include_archived=true` (admin+, pantalla «Ver archivados») devuelve las archivadas."""
     query = db.query(StaffUser)
+    query = query.filter(StaffUser.archived_at.isnot(None) if include_archived else StaffUser.archived_at.is_(None))
     if staff.role != "super_admin":
         query = query.filter(StaffUser.role.in_(ROLES_CREATABLE_BY_ADMIN))
     if staff_tenant_enforced(staff):          # P4: limitado a su cliente, solo las cuentas de su cliente
@@ -316,35 +320,90 @@ def activate_staff(
     _assert_can_manage(db, staff, target)
     if target.role in ("admin", "super_admin") and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="No autorizado")
+    if target.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La cuenta está archivada: restáurala primero")
     target.is_active = True
     db.commit()
     return {"message": f"{target.username} reactivado"}
 
 
+def _audit_name(target: StaffUser) -> Optional[str]:
+    """Nombre para el registro de acciones: el usuario, salvo el digitador (su usuario es la cédula: dato personal)."""
+    return None if target.role == "digitador" else target.username
+
+
+def _target_for_lifecycle(db: Session, staff: StaffUser, staff_id: int) -> StaffUser:
+    """Cuenta sobre la que se archiva / restaura: alcance (`_assert_can_manage`), nunca la propia y solo roles que quien actúa administra
+    (los mismos que puede borrar). Un super_admin solo lo archiva otro super_admin (ver `archive_staff`)."""
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    _assert_can_manage(db, staff, target)
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="No puedes archivar ni restaurar tu propia cuenta")
+    if target.role == "super_admin":
+        if staff.role != "super_admin":
+            raise HTTPException(status_code=403, detail="No autorizado")
+    elif target.role not in _manageable_roles(staff):
+        raise HTTPException(status_code=403, detail=f"No puedes administrar cuentas de rol '{target.role}'")
+    return target
+
+
+@router.post("/staff/{staff_id}/archive")
+def archive_staff(staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Archivar = la cuenta deja de existir para el día a día: no inicia sesión (se desactiva y se cierra su sesión), no sale en la lista ni en los selectores de asignación.
+    No borra nada (sus eventos, impresiones y registros siguen) y un administrador la restaura. No se archiva a uno mismo, al último Super Admin ni a quien sea
+    coordinador/comercial de un evento «En Proceso»."""
+    target = _target_for_lifecycle(db, staff, staff_id)
+    if target.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La cuenta ya está archivada")
+    if target.role == "super_admin":
+        others = db.query(StaffUser.id).filter(StaffUser.role == "super_admin", StaffUser.id != target.id, StaffUser.is_active == True, StaffUser.archived_at.is_(None)).first()  # noqa: E712
+        if not others:
+            raise HTTPException(status_code=400, detail="No se puede archivar al último Super Admin")
+    if db.query(Event.id).filter(Event.status == "en_proceso", or_(Event.coordinator_staff_id == target.id, Event.commercial_staff_id == target.id)).first():
+        raise HTTPException(status_code=400, detail="No se puede archivar: es coordinador o comercial de un evento en proceso")
+    target.archived_at = utcnow()
+    target.archived_by_id = staff.id
+    target.is_active = False
+    sessions.revoke_all(target)             # la sesión abierta cae en la siguiente petición
+    audit_actions.record(db, staff, "archive", "staff_user", target.id, _audit_name(target), f"rol: {target.role}")
+    db.commit()
+    return _serialize(target)
+
+
+@router.post("/staff/{staff_id}/restore")
+def restore_staff(staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Vuelve a mostrar la cuenta. Queda DESACTIVADA a propósito: para que pueda ingresar de nuevo un administrador la reactiva (decisión explícita, no un efecto lateral)."""
+    target = _target_for_lifecycle(db, staff, staff_id)
+    if target.archived_at is None:
+        raise HTTPException(status_code=400, detail="La cuenta no está archivada")
+    target.archived_at = None
+    target.archived_by_id = None
+    audit_actions.record(db, staff, "restore", "staff_user", target.id, _audit_name(target), f"rol: {target.role}")
+    db.commit()
+    return _serialize(target)
+
+
 @router.delete("/staff/{staff_id}")
 def delete_staff(
-    staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))
 ):
-    """Borrado PERMANENTE (no desactivación) — cada rol solo puede borrar lo que tiene
-    directamente debajo en DELETABLE_ROLES_BY (Fase 15: la unión de lo que permite CADA uno de sus
-    roles efectivos, por si tiene doble rol coordinador+comercial en cualquier orden). No borra
-    Eventos ni AccessLogs asociados (son datos de negocio reales, no cuentas de staff): las
-    referencias a este staff se desvinculan (quedan en NULL) en vez de arrastrar un borrado en
-    cascada."""
-    deletable_roles = set()
-    for r in effective_roles(staff):
-        deletable_roles |= set(DELETABLE_ROLES_BY.get(r, ()))
-    if not deletable_roles:
-        raise HTTPException(status_code=403, detail="No autorizado")
-
+    """Borrado DEFINITIVO (Fase 3): solo super_admin, solo de una cuenta ya ARCHIVADA y sin eventos asignados (ni como coordinador/comercial ni autorizada), y queda registrado.
+    No borra Eventos ni AccessLogs asociados (son datos de negocio reales): las referencias a esta cuenta se desvinculan (quedan en NULL). Lo normal es archivar."""
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if target.id == staff.id:
         raise HTTPException(status_code=400, detail="No puedes borrar tu propia cuenta")
-    if target.role not in deletable_roles:
+    if target.role not in DELETABLE_ROLES_BY["super_admin"]:
         raise HTTPException(status_code=403, detail=f"No puedes borrar cuentas de rol '{target.role}'")
-    _assert_can_manage(db, staff, target)          # P1: nada de borrar la cuenta de puerta de un evento ajeno
+    _assert_can_manage(db, staff, target)
+    if target.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva la cuenta; el borrado definitivo solo aplica a cuentas archivadas")
+    if db.query(Event.id).filter(or_(Event.coordinator_staff_id == target.id, Event.commercial_staff_id == target.id)).first() \
+            or db.query(EventStaffAuthorization.id).filter(EventStaffAuthorization.staff_user_id == target.id).first():
+        raise HTTPException(status_code=400, detail="No se puede borrar: la cuenta tiene eventos asignados")
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == target.id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == target.id).update({"authorized_by_id": None})
@@ -355,10 +414,13 @@ def delete_staff(
 
     from app import staff_refs
     username = target.username
+    audit_name, target_id, role = _audit_name(target), target.id, target.role
     outcome = staff_refs.delete_or_deactivate(db, target)      # D3: suelta TODAS las referencias (impresiones, áreas, inventario, cargas, formularios…); si una no se puede soltar, desactiva
+    if outcome == "deleted":
+        audit_actions.record(db, staff, "delete", "staff_user", target_id, audit_name, f"rol: {role}")
     db.commit()
     if outcome == "deactivated":
-        return {"message": f"{username} tiene registros que no se pueden desvincular: se desactivó en lugar de borrarse", "deactivated": True}
+        return {"message": f"{username} tiene registros que no se pueden desvincular: sigue archivada y desactivada en lugar de borrarse", "deactivated": True}
     return {"message": f"{username} eliminado permanentemente de la base de datos"}
 
 

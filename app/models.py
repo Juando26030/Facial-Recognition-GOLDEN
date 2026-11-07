@@ -213,11 +213,13 @@ class StaffUser(Base):
     login_req_at = Column(DateTime, nullable=True)
     login_req_status = Column(String(12), nullable=True)
     session_epoch = Column(Integer, default=0, server_default='0', nullable=False)
+    archived_at = Column(DateTime, nullable=True)  # 0089 (Fase 3): NULL = normal; con fecha = archivada (no inicia sesión, no sale en listas ni selectores; se restaura). Ver app/routers/staff.py
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
-    tenant = relationship("Tenant")
-    created_by = relationship("StaffUser", remote_side=[id])
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])          # explícitas desde 0088/0089: hay más de una llave entre staff_users y tenants / staff_users y sí misma
+    created_by = relationship("StaffUser", remote_side=[id], foreign_keys=[created_by_id])
 
 
 class Event(Base):

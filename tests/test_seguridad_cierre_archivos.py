@@ -216,11 +216,16 @@ def test_borrado_en_bloque_suelta_impresiones_y_cargas(client, factory, db):
 
 def test_borrar_permanente_tambien_suelta_todo(client, factory, db):
     from app.models import PrintLog, StaffUser
-    factory.staff("admin", "adm1")
+    factory.staff("super_admin", "adm1")
     ev = factory.event("en_proceso")
     dig, _ = _digitador_con_historial(factory, db, ev)
     dig_id = dig.id
     login(client, "adm1")
+    assert client.delete(f"/api/staff/{dig_id}").status_code == 400          # Fase 3: primero se archiva
+    from app.models import EventStaffAuthorization
+    db.query(EventStaffAuthorization).filter_by(staff_user_id=dig_id).delete()          # y sin eventos asignados
+    db.commit()
+    assert client.post(f"/api/staff/{dig_id}/archive").status_code == 200
     r = client.delete(f"/api/staff/{dig_id}")
     assert r.status_code == 200, r.text
     db.expire_all()
