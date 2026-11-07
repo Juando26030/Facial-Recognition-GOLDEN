@@ -16,3 +16,12 @@ Reemplaza el §7 del plan maestro (`29_PLAN_MAESTRO…`) para lo que falta. Deci
 
 ## Relación con otras fases
 Los puntos 3–6 adelantan lo que el plan tenía en la Fase 5 (ficha configurable, asistente de creación, inventario por cantidad). Al cerrar la Fase 2 se actualiza la Fase 5 para no duplicar.
+
+## Respuestas del 7-nov-2026 (10:17)
+- **Mapa:** gratis (OpenStreetMap con búsqueda de direcciones); Google Maps queda para después si hace falta.
+- **Eventos existentes:** NO se migran todavía. Primero se construye la plantilla; cuando Claude ya la lea y entienda qué va en cada campo, se hace la migración de los eventos actuales.
+- **Campos base:** código, nombre y cliente siempre obligatorios y no quitables; la obligatoriedad del resto la decide el admin.
+- **Calendario, quién:** super_admin, admin, comercial y coordinador. Digitador (no existe digitador fijo por ahora) y cliente no lo ven.
+- **Calendario, flujo:** clic en un evento abre un cuadrito superpuesto con las mismas acciones de la fila de Eventos/Clientes (Editar, Exportar, Cambiar estado, Ingresar); clic fuera lo cierra. Mismos permisos de siempre: la acción que el rol no puede (p. ej. Eliminar) no aparece.
+- **Países y ciudades:** lista fija dentro de la plataforma, sin servicios externos.
+- **Orden de entregas:** (1) calendario con los datos actuales y el cuadrito de acciones; (2) plantilla de creación y de calendario; (3) crear evento desde Eventos con selector de cliente; (4) mapa e inventario; después, migración de eventos existentes.
