@@ -528,6 +528,8 @@ document.addEventListener("DOMContentLoaded", () => {
             for (const key of ['id', 'first_name', 'last_name', 'role', 'entity', 'phone', 'email', 'opt_1', 'certificate', 'digital_contact']) { const v = formData.get(key); if (v != null && String(v).trim() !== '') f[key] = String(v).trim(); }
             for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
             if (!f.id || !f.first_name) { showToast('Escribe la cédula y los nombres.', 'error'); return; }
+            const lastCfg = (window.FIELD_CONFIGS || []).find((c) => c.key === 'last_name');
+            if (lastCfg && lastCfg.required && !f.last_name) { showToast(`Escribe ${lastCfg.label ? 'el campo «' + lastCfg.label + '»' : 'el apellido'}: es obligatorio en este evento.`, 'error'); return; }
             const pf = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;          // formulario de persona: la alta lleva la versión del formulario con que se hizo
             if (pf) PersonForm.applyCase(f, pf);
             const photo = formData.get('file');

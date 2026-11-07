@@ -328,10 +328,11 @@
     const extras = user.extra_fields || {};
 
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-    function fieldRow(label, name, value, type) {
+    function fieldRow(label, name, value, type, required) {
+      const req = required !== false;          // nombres y cédula siempre; el apellido solo si el evento lo exige (app/lastname.py)
       return `<div class="gw-field gw-registro__editfield">
-        <label class="gw-label">${esc(label)}<span class="gw-req" aria-hidden="true"> *</span></label>
-        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" class="gw-input" required>
+        <label class="gw-label">${esc(label)}${req ? '<span class="gw-req" aria-hidden="true"> *</span>' : ''}</label>
+        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" class="gw-input"${req ? ' required' : ''}>
       </div>`;
     }
     function cedulaRow(label) {
@@ -369,7 +370,7 @@
         <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" class="gw-input">
         <p class="gw-hint">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
       </div>`;
-      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
+      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key], 'text', cfg.key === 'last_name' ? !!cfg.required : true);
       return configuredFieldRow(cfg);
     })())).join('');
     const isRegistered = user.status !== 'No registrado';

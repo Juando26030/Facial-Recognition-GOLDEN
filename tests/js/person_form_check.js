@@ -29,10 +29,11 @@ assert.deepStrictEqual(person, { id: 'ab12', first_name: 'ANA MARÍA', last_name
 const untouched = { first_name: 'ana', email: 'A@B.CO' };
 assert.deepStrictEqual(PF.applyCase(untouched, null), { first_name: 'ana', email: 'A@B.CO' }, 'sin definición no se toca nada');
 
-// ---- obligatorios: cédula y nombres siempre; apellidos nunca; el resto, lo que diga la definición
+// ---- obligatorios: cédula y nombres siempre; el apellido y el resto, lo que diga la definición (el apellido lo resuelve el evento: app/lastname.py)
 const d = def({ fields: { ...def().fields, last_name: { required: true }, role: { required: true }, id: { required: false } } });
 assert.strictEqual(PF.requiredOf(d, 'id'), true); assert.strictEqual(PF.requiredOf(d, 'first_name'), true);
-assert.strictEqual(PF.requiredOf(d, 'last_name'), false, 'los apellidos no se exigen');
+assert.strictEqual(PF.requiredOf(d, 'last_name'), true, 'el apellido se exige si el evento lo exige');
+assert.strictEqual(PF.requiredOf(def(), 'last_name'), false, 'sin dato en la definición, el apellido es opcional');
 assert.strictEqual(PF.requiredOf(d, 'role'), true); assert.strictEqual(PF.requiredOf(d, 'entity'), false);
 
 // ---- la definición más nueva gana (página en caché vs. copia del dispositivo)
@@ -61,7 +62,7 @@ assert.strictEqual(PF.pick(null, null), null);
   const byKey = Object.fromEntries(model.items.map((i) => [i.key, i]));
   assert.strictEqual(byKey.last_name.joined, true, 'apellidos va junto a nombres'); assert.strictEqual(byKey.first_name.joined, false);
   assert.strictEqual(byKey.id.required, true); assert.strictEqual(byKey.id.canRequire, false, 'la cédula siempre es obligatoria: no se cambia');
-  assert.strictEqual(byKey.last_name.canRequire, false, 'los apellidos nunca se exigen');
+  assert.strictEqual(byKey.last_name.canRequire, false, 'el apellido lo decide el evento (Parámetros), no el diseñador');
   assert.strictEqual(byKey.phone.canCase, false, 'teléfono: sin «Texto al escribir»'); assert.strictEqual(byKey.email.canCase, false); assert.strictEqual(byKey.opcional_2.canCase, false, 'lista: sin «Texto al escribir»');
   assert.strictEqual(byKey.opcional_1.canCase, true); assert.strictEqual(byKey.first_name.text_case, 'upper');
   const body = D.fromModel(model);

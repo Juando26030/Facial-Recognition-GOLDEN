@@ -4,7 +4,7 @@
    Los campos salen de Parámetros › Campos; aquí solo se decide DÓNDE va cada uno y cómo se escribe. Lo obligatorio se guarda en los parámetros del evento (una sola fuente de verdad). Funciones puras (toModel / fromModel / move) probadas en Node; la pantalla
    (mount) solo usa clases .gw-* y toast.js. */
 (function (root) {
-  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['last_name', 'categories', 'birth_date'];
+  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['categories', 'birth_date'], EVENT_DECIDES = ['last_name'];          // el apellido lo decide el evento (Parámetros › Apellido obligatorio; app/lastname.py): aquí solo se ve
   const FIXED_TEXT = ['first_name', 'last_name', 'role', 'entity', 'opt_1'];
   const MAX_PER_ROW = 4;
   const canCase = (cfg) => ['text_short', 'text_long'].includes(cfg.field_type) && (FIXED_TEXT.includes(cfg.key) || /^opcional_\d+$/.test(cfg.key));
@@ -26,12 +26,12 @@
         items.push({
           key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets.some((s) => s.id === row.sheet) ? row.sheet : sheets[0].id, joined: i > 0,
           required: ALWAYS_REQUIRED.includes(key) ? true : (NEVER_REQUIRED.includes(key) ? false : !!(f.required != null ? f.required : cfg.required)),
-          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key), canCase: canCase(cfg), text_case: f.text_case || '',
+          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(cfg), text_case: f.text_case || '',
           showField: simpleCond(cond) ? cond.field : '', showValue: simpleCond(cond) ? String(cond.value == null ? '' : cond.value) : '', rawShowIf: cond && !simpleCond(cond) ? cond : null,
         });
       });
     });
-    cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
+    cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key) && !EVENT_DECIDES.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
     return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets) };
   }
 
@@ -314,7 +314,7 @@
       rq.addEventListener('change', () => { it.required = rq.checked; if (rq.checked) { it.showField = ''; it.showValue = ''; it.rawShowIf = null; } changed(); });
       const rl = el('label', 'gw-check gw-pf-props__check'); rl.append(rq, doc.createTextNode(' Obligatorio'));
       host.appendChild(rl);
-      if (!it.canRequire) host.appendChild(el('p', 'gw-hint', ALWAYS_REQUIRED.includes(it.key) ? 'Este dato siempre es obligatorio.' : 'Este dato nunca se exige.'));
+      if (!it.canRequire) host.appendChild(el('p', 'gw-hint', ALWAYS_REQUIRED.includes(it.key) ? 'Este dato siempre es obligatorio.' : (EVENT_DECIDES.includes(it.key) ? 'Se decide en Parámetros › Registro y pantalla › «Apellido obligatorio».' : 'Este dato nunca se exige.')));
 
       const fc = el('div', 'gw-field'); fc.appendChild(el('label', 'gw-label', 'Texto al escribir', { for: 'pfCase' }));
       if (it.canCase) {
@@ -453,7 +453,7 @@
       const rest = cfgs.map((c) => c.key).filter((k) => !top.includes(k));
       const sheets = [{ id: 'datos', title: 'Datos principales', open: true }];
       if (rest.length) sheets.push({ id: 'mas', title: 'Más datos', open: false });
-      const mk = (key, sheet, joined) => { const c = cfgs.find((x) => x.key === key); return { key, label: c.label, type: c.field_type || 'text_short', sheet, joined, required: ALWAYS_REQUIRED.includes(key) || !!c.required, canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key), canCase: canCase(c), text_case: '', showField: '', showValue: '', rawShowIf: null }; };
+      const mk = (key, sheet, joined) => { const c = cfgs.find((x) => x.key === key); return { key, label: c.label, type: c.field_type || 'text_short', sheet, joined, required: ALWAYS_REQUIRED.includes(key) || !!c.required, canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(c), text_case: '', showField: '', showValue: '', rawShowIf: null }; };
       const items = [];
       top.forEach((k, i) => items.push(mk(k, 'datos', k === 'last_name' && top[i - 1] === 'first_name')));
       rest.forEach((k, i) => items.push(mk(k, 'mas', i % 2 === 1)));
