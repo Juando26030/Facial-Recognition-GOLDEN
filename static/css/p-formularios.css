@@ -70,3 +70,7 @@
   #body .gw-card-row__actions { gap: var(--gw-sp-1); }
   #body .gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
+@media (min-width: 901px) and (max-width: 1599px) {
+  /* Sin espacio: Estadísticas, Copiar enlace y Eliminar quedan con ícono y color (el texto sigue en title/aria-label) */
+  #body .gw-forms-lbl { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}

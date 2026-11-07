@@ -28,17 +28,16 @@
         <div class="gw-stat"><span class="gw-stat__value">${esc(cupo)}</span><span class="gw-stat__label">Cupo</span></div>
       </div>
       <div class="gw-card-row__actions">
-        <a class="gw-btn gw-btn--primary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
-        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}/estadisticas">${icon('chart')} Estadísticas</a>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}">${icon('link')} Copiar enlace</button>
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}/estadisticas" title="Estadísticas">${icon('chart')} <span class="gw-forms-lbl">Estadísticas</span></a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}" title="Copiar enlace">${icon('link')} <span class="gw-forms-lbl">Copiar enlace</span></button>
+        <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}" title="Eliminar" aria-label="Eliminar ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Eliminar</span></button>
         <div class="gw-menu gw-forms-kebab">
           <button type="button" class="gw-btn gw-btn--secondary gw-forms-kebab__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(f.name)}" title="Más acciones">${icon('more')}</button>
           <div class="gw-menu__panel" role="group" hidden>
             <a class="gw-menu__item" href="${esc(f.test_url)}" target="_blank" rel="noopener">${icon('eye')} Probar</a>
             <button type="button" class="gw-menu__item" data-dup="${f.id}">${icon('form')} Duplicar</button>
             ${canTransfer ? `<a class="gw-menu__item" href="${api}/forms/${f.id}/export" data-export>${icon('download')} Exportar formulario</a>` : ''}
-            <hr class="gw-menu__sep">
-            <button type="button" class="gw-menu__item gw-menu__item--danger" data-del="${f.id}" data-name="${esc(f.name)}">${icon('trash')} Eliminar</button>
           </div>
         </div>
       </div>

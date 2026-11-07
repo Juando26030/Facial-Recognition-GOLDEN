@@ -294,3 +294,10 @@ table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wr
   .gwe-wrap .gwe-flex-1.gwe-minw-180px { min-width: 0; flex: 1 1 100%; }
   .gwe-w-90px { width: auto; flex: 1 1 6rem; }
 }
+
+/* Escritorio: los grupos de Configuración (estado, cupos, servicios...) van uno al lado del otro; cada uno se abre dentro de su columna. */
+@media (min-width: 1100px) {
+  .gw-editor-form #pane-config.active { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-4); align-items: start; }
+  .gw-editor-form #pane-config.active > :not(.gw-group) { grid-column: 1 / -1; }
+  .gw-editor-form #pane-config.active > .gw-group { margin-bottom: 0; min-width: 0; }
+}
