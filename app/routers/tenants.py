@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Event, StaffUser, Tenant
 from app.auth import require_role
+from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 
 router = APIRouter()
 
@@ -48,7 +49,10 @@ def _serialize(t: Tenant) -> dict:
 
 @router.get("/tenants")
 def list_tenants(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    return [_serialize(t) for t in db.query(Tenant).order_by(Tenant.name).all()]
+    query = db.query(Tenant)
+    if staff_tenant_enforced(staff):          # P5: limitado a su cliente, solo ve el suyo
+        query = query.filter(Tenant.id == staff.tenant_id)
+    return [_serialize(t) for t in query.order_by(Tenant.name).all()]
 
 
 @router.post("/tenants")
@@ -82,6 +86,7 @@ def update_tenant(
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    assert_same_tenant(staff, tenant.id, "Cliente no encontrado")          # P5: no edita otro cliente
     for field, value in data.dict(exclude_unset=True).items():
         setattr(tenant, field, value)
     db.commit()
@@ -95,6 +100,7 @@ def delete_tenant(
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    assert_same_tenant(staff, tenant.id, "Cliente no encontrado")
     if db.query(Event).filter(Event.tenant_id == tenant_id).first():
         raise HTTPException(status_code=400, detail="No se puede borrar: el cliente tiene eventos asociados")
     db.delete(tenant)

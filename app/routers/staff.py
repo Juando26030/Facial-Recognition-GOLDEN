@@ -10,7 +10,8 @@ from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
 from app import security
 from app.inputcheck import text_validator, username_validator
-from app.auth import effective_roles, hash_password, require_role
+from app.auth import assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
+from app.tenant_scope import staff_tenant_enforced
 
 router = APIRouter()
 
@@ -54,6 +55,29 @@ def _serialize(s: StaffUser) -> dict:
 DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 
+def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None:
+    """Cierre de seguridad P1/P4 (6-nov-2026): además del rol, quien administra una cuenta debe poder alcanzarla.
+    - Limitado a su cliente (ENFORCE_STAFF_TENANT): solo cuentas de su mismo cliente.
+    - Sin admin/super_admin (el coordinador con los digitadores): si la cuenta está asignada a eventos, al menos uno debe ser accesible para quien actúa
+      (tenant y pertenencia, ENFORCE_STAFF_EVENT_SCOPE). Así un coordinador no se queda con (ni borra) la cuenta de puerta de un evento ajeno.
+    404 (no 403) para no confirmar que la cuenta existe. Con los dos interruptores apagados no cambia nada."""
+    if staff_tenant_enforced(actor) and target.tenant_id != actor.tenant_id:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    if {"admin", "super_admin"} & effective_roles(actor):
+        return
+    event_ids = [eid for (eid,) in db.query(EventStaffAuthorization.event_id).filter(EventStaffAuthorization.staff_user_id == target.id)]
+    if not event_ids:
+        return
+    for event in db.query(Event).filter(Event.id.in_(event_ids)):
+        try:
+            assert_event_tenant(event, actor)
+            assert_event_scope(event, actor, db)
+            return
+        except HTTPException:
+            continue
+    raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+
 @router.get("/staff/coordinators")
 def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
@@ -83,10 +107,12 @@ def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depe
     """digitador + cliente activos, para el desplegable de 'autorizar/reautorizar para un evento'
     en /admin/staff — independiente del filtro de ROLES_CREATABLE_BY_ADMIN de /staff (que oculta
     digitador/cliente de la tabla general a propósito, pero aquí sí hacen falta)."""
-    staff_list = db.query(StaffUser).filter(
+    query = db.query(StaffUser).filter(
         StaffUser.role.in_(("digitador", "cliente")), StaffUser.is_active == True
-    ).all()
-    return [_serialize(s) for s in staff_list]
+    )
+    if staff_tenant_enforced(staff):          # P4: limitado a su cliente, solo las cuentas de su cliente
+        query = query.filter(StaffUser.tenant_id == staff.tenant_id)
+    return [_serialize(s) for s in query.all()]
 
 
 @router.get("/staff")
@@ -94,6 +120,8 @@ def list_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require
     query = db.query(StaffUser)
     if staff.role != "super_admin":
         query = query.filter(StaffUser.role.in_(ROLES_CREATABLE_BY_ADMIN))
+    if staff_tenant_enforced(staff):          # P4: limitado a su cliente, solo las cuentas de su cliente
+        query = query.filter(StaffUser.tenant_id == staff.tenant_id)
     return [_serialize(s) for s in query.order_by(StaffUser.created_at.desc()).all()]
 
 
@@ -174,6 +202,7 @@ def assign_secondary_role(
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    _assert_can_manage(db, staff, target)          # P4: solo cuentas de su cliente
 
     secondary = data.get("secondary_role")
     if secondary is None:
@@ -211,6 +240,7 @@ def change_staff_role(
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    _assert_can_manage(db, staff, target)
     new_role = data.get("role")
     if new_role not in ("coordinador", "comercial", "admin"):
         raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial o admin")
@@ -241,6 +271,7 @@ def reset_staff_password(
         raise HTTPException(status_code=400, detail="Para cambiar tu propia contraseña usa \"Cambiar contraseña\"")
     if target.role not in _manageable_roles(staff):
         raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
+    _assert_can_manage(db, staff, target)          # P1: el coordinador solo con digitadores de eventos a los que tiene acceso
     if data.get("use_username") and target.role == "digitador":
         new_password, must_change = target.username, False         # digitador temporal (6-nov-2026): vuelve a entrar con su cédula como contraseña; sin política de contraseña segura
     else:
@@ -262,6 +293,7 @@ def deactivate_staff(
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    _assert_can_manage(db, staff, target)
     if target.role == "super_admin":
         raise HTTPException(status_code=403, detail="Un Super Admin no se puede desactivar")
     if target.id == staff.id:
@@ -280,6 +312,7 @@ def activate_staff(
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    _assert_can_manage(db, staff, target)
     if target.role in ("admin", "super_admin") and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="No autorizado")
     target.is_active = True
@@ -310,6 +343,7 @@ def delete_staff(
         raise HTTPException(status_code=400, detail="No puedes borrar tu propia cuenta")
     if target.role not in deletable_roles:
         raise HTTPException(status_code=403, detail=f"No puedes borrar cuentas de rol '{target.role}'")
+    _assert_can_manage(db, staff, target)          # P1: nada de borrar la cuenta de puerta de un evento ajeno
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == target.id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == target.id).update({"authorized_by_id": None})

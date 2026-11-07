@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.inputcheck import check_username, text_validator, username_validator
+from app.tenant_scope import assert_same_tenant
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
@@ -328,6 +329,7 @@ def create_event(
     es opcional para él (la columna admite NULL). Comercial, doble rol y admin+ siguen igual."""
     if not db.query(Tenant).filter(Tenant.id == data.tenant_id).first():
         raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
+    assert_same_tenant(staff, data.tenant_id, "Cliente (tenant) no encontrado")          # P5: limitado a su cliente, solo crea eventos de su cliente
     pure_coordinator = not ({"comercial", "admin", "super_admin"} & effective_roles(staff))
     if pure_coordinator and data.coordinator_staff_id != staff.id:
         raise HTTPException(status_code=403, detail="Un coordinador solo puede crear eventos asignados a sí mismo")
@@ -426,6 +428,14 @@ def update_event(
             )
     if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
+    if data.coordinator_staff_id is not None and data.coordinator_staff_id != event.coordinator_staff_id:      # P8: misma validación que al crear (0C, N3)
+        coord = db.query(StaffUser).filter(
+            StaffUser.id == data.coordinator_staff_id,
+            or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
+            StaffUser.is_active == True,
+        ).first()
+        if not coord:
+            raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
     if data.commercial_staff_id is not None:
         # Reasignar la comercial es decisión de comercial+ — un coordinador "puro" puede editar el
         # resto del evento (fechas, estado, etc.) pero no a quién pertenece comercialmente. Un
@@ -544,6 +554,7 @@ def assign_existing_staff(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if target.role == "cliente":
         raise HTTPException(status_code=400, detail="Ya no se asignan cuentas de cliente a un evento. Para compartir las estadísticas usa un enlace con vencimiento.")
+    assert_same_tenant(staff, target.tenant_id, "Usuario no encontrado")          # P5: limitado a su cliente, solo asigna cuentas de su cliente
     existing = db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first()
     if existing:
         return {"message": "Ya estaba autorizado para este evento"}
@@ -712,6 +723,7 @@ def revoke_event_staff(
 ):
     """Revoca el acceso de un digitador/cliente a ESTE evento y SOLO a este (E-N1, 0C). Su cuenta, su sesión y sus autorizaciones en otros eventos no se tocan (desactivar la cuenta es otra acción: /staff/{id}/deactivate).
     Se quitan además los restos por evento: su equipo de impresión registrado aquí, su ruta de impresión y las rutas de otros que imprimían en su equipo."""
+    _can_manage_temp(staff)          # P7: igual que crear, importar y borrar en bloque, una comercial pura no administra digitadores
     event = get_event_for_staff(event_id, db, staff)          # 0C (N2)
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
@@ -820,6 +832,11 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
 @router.get("/events/{event_id}/status-changes")
 def list_status_changes(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     """Historial de retrocesos del evento y cuántos ingresos se sincronizaron sin hora válida (`doubtful`) para poder revisarlos. Sin datos personales."""
+    event = db.query(Event).filter(Event.id == event_id).first()          # P5: mismo control de cliente y pertenencia que «Devolver a Creado»
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
     rows = db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).order_by(EventStatusChange.at.desc(), EventStatusChange.id.desc()).all()
     doubtful = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.doubtful_reason.isnot(None), AccessLog.user_id != testperson.TEST_ID).scalar() or 0
     flagged = db.query(SystemEvent.kind, SystemEvent.detail).filter(SystemEvent.ref == str(event_id), SystemEvent.kind.in_(list(status_changes.CONSENT_FLAGS.values()))).order_by(SystemEvent.id).all()

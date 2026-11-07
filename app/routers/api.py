@@ -931,9 +931,12 @@ ROSTER_MAP_TTL, ROSTER_MAP_MIN_REBUILD, ROSTER_MAP_MAX_EVENTS = 60.0, 5.0, 20
 def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
     """Como `get_event_for_staff`, pero un digitador autorizado también puede sincronizar un evento FINALIZADO hasta 7 días después (los ingresos guardados sin red no se pierden por
     haber terminado el evento mientras el quiosco estaba desconectado)."""
+    from app.auth import assert_event_scope, assert_event_tenant
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)               # P3 (cierre de seguridad, 6-nov-2026): mismo aislamiento por cliente y pertenencia que get_event_for_staff
+    assert_event_scope(event, staff, db)
     if staff.role in ("digitador", "cliente"):
         if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
             raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
@@ -1340,13 +1343,42 @@ def _clean_user_fields(data: dict) -> dict:
     return out
 
 
+def _person_of_event(db: Session, event: Event, user_id: str) -> Optional[User]:
+    """La persona `user_id` SOLO si es de ESTE evento (inscrita o con algún registro aquí), igual que el directorio y la bandeja sin red (P6, 6-nov-2026):
+    la cédula sola no basta para editar o acreditar a alguien de otro evento del mismo cliente (los datos de `User` se comparten entre sus eventos)."""
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if user is None:
+        return None
+    if db.query(EventAttendee.id).filter_by(event_id=event.id, user_id=user.id).first() or db.query(AccessLog.id).filter_by(event_id=event.id, user_id=user.id).first():
+        return user
+    return None
+
+
+def _clean_extra_fields(raw) -> dict:
+    """`extra_fields` del «Editar»: solo claves `opcional_N` (las demás se ignoran) y valores de texto/número o vacío (otro tipo es un error 400); nada se guarda tal cual (P6)."""
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Los campos opcionales no son válidos")
+    out = {}
+    for key, value in raw.items():
+        key = str(key)
+        if not re.fullmatch(r"opcional_\d+", key):
+            continue          # otra clave (p. ej. un campo fijo que la pantalla no tenía en la fila) no va a los opcionales: se ignora, como en la bandeja sin red
+        if value is None:
+            out[key] = ""
+        elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            out[key] = str(value)[:500]
+        else:
+            raise HTTPException(status_code=400, detail="El valor de un campo opcional no es válido")
+    return out
+
+
 @router.patch("/users/{user_id}")
 def update_user(
     user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
     event = get_event_for_staff(event_id, db, staff)
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    user = _person_of_event(db, event, user_id)
     if user:
         personform.apply_case(data, personform.active(db, event))          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» y correo en minúsculas
         # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
@@ -1381,7 +1413,7 @@ def update_user(
         extra_fields = data.pop("extra_fields", None)
         if extra_fields is not None:
             merged = user.get_extras()
-            merged.update(extra_fields)
+            merged.update(_clean_extra_fields(extra_fields))
             user.set_extras(merged)
         # Sprint 2.4 Fase 7 (2026-09-16, pedido explícito: "que no se pueda repetir para nadie el
         # id"): 'id'/'tenant_id' son la llave primaria compuesta de User, referenciada por FK
@@ -1590,7 +1622,7 @@ def update_registration_status(
     llegado) sin que quede "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés,
     corregir un registro hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
     event = get_event_for_staff(event_id, db, staff)
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    user = _person_of_event(db, event, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role
+from app.tenant_scope import assert_same_tenant
 from app.database import get_db
 from app.models import AccessLog, Event, StaffUser, SuperEvent, User
 
@@ -16,6 +17,7 @@ router = APIRouter()
 
 @router.get("/super-events")
 def list_super_events(tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    assert_same_tenant(staff, tenant_id, "Cliente no encontrado")          # P5: solo los supereventos de su cliente
     rows = db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id).order_by(SuperEvent.name).all()
     return [{"id": s.id, "name": s.name, "tenant_id": s.tenant_id, "events": len(s.events)} for s in rows]
 
@@ -26,6 +28,7 @@ def create_super_event(data: dict, db: Session = Depends(get_db), staff: StaffUs
     tenant_id = str(data.get("tenant_id") or "").strip()
     if not name or not tenant_id:
         raise HTTPException(status_code=400, detail="El superevento necesita un nombre y un cliente")
+    assert_same_tenant(staff, tenant_id, "Cliente no encontrado")
     if db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id, SuperEvent.name == name).first():
         raise HTTPException(status_code=400, detail="Ya existe un superevento con ese nombre para este cliente")
     sup = SuperEvent(tenant_id=tenant_id, name=name, created_by_id=staff.id, created_at=utcnow())

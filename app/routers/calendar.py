@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth import require_role
+from app.auth import require_role, scope_events_query
 from app.database import get_db
 from app.models import CalendarNote, Event, StaffUser
 from app.routers.events import _serialize
@@ -53,6 +53,7 @@ def calendar_events(
         Event.start_date <= end,
         (Event.end_date >= start) | (Event.end_date.is_(None)),
     )
+    query = scope_events_query(query, staff)          # P5: el mismo recorte por cliente y pertenencia que /api/events y /api/events/search
     if commercial_staff_id is not None:
         query = query.filter(Event.commercial_staff_id == commercial_staff_id)
     if coordinator_staff_id is not None:
