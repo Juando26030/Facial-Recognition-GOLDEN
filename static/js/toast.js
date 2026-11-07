@@ -188,7 +188,7 @@
     const name = data ? `${data.first_name || ""} ${data.last_name || ""}`.trim() : "";
     const timesText = times ? ` (ya lo hizo ${times} ${times === 1 ? "vez" : "veces"})` : "";
     return window.showConfirm(
-      `${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
+      `${name ? `<strong>${window.escapeHtml(name)}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
       `¿Seguro que deseas registrarla de nuevo? Hazlo solo si fue un error o realmente necesitas repetir el ingreso.`,
       { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
     );

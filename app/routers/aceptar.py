@@ -314,7 +314,7 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
     device = DEVICE[ch]
     if decision == "reject" or (t["adult_checkbox"] and not adult):
         consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=False, adult=bool(adult), reason="rejection", device=device)
-        if not consent.has_any_acceptance(db, event.tenant_id, uid):
+        if date_ok and not consent.has_any_acceptance(db, event.tenant_id, uid):      # X5: como en la rama de menores, quien solo sabe una cédula no borra la foto de otra persona
             privacy.purge_person(db, event.tenant_id, uid)
         db.commit()
         return {"status": "rejected", "message": "Listo: ingresarás con tu cédula o QR, sin restricción alguna."}

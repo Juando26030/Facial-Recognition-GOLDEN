@@ -14,7 +14,7 @@ from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from app import formlib, jobs, minors, privacy
-from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
+from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, RateLimitEvent, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
 from app.ttlcache import TTLCache
@@ -64,7 +64,8 @@ PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera
 MARK_SOURCES = ("carga_base", "lista", "lista_cupo")      # origen de las marcas «ya registrado»: carga de la base del evento | lista cargada desde el formulario | esa misma lista con «ocupar cupo» (fila confirmada)
 PREREGISTERED = "preregistered"       # FormSubmission.status de «ya registrado en el formulario» (columna de la carga de la base): bloquea la repetición pero NO ocupa cupo, ni cuenta en listas, reportes ni carga
 ALREADY_MSG = "Ya estás inscrito. No necesitas volver a inscribirte."
-PENDING_HOLD = timedelta(minutes=30)  # una inscripción esperando pago aparta su cupo este tiempo
+PENDING_HOLD = timedelta(minutes=15)  # una inscripción esperando pago aparta su cupo este tiempo (X6: antes 30 min; menos tiempo para acaparar cupos sin pagar)
+PENDING_IP_KIND = "form_pending_ip"   # X6: marca en `rate_limit_events` (key «<form_id>:<submission_id>», ip) de cada inscripción que queda esperando pago
 PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
 PENDING_PAY_WINDOW = timedelta(days=3)   # C5: mientras su pago siga «pendiente» dentro de esta ventana (la misma de la conciliación con Wompi) la inscripción NO se borra
 
@@ -223,7 +224,7 @@ def _quota_counts_in_memory(db: Session, form: WebForm, rules: list, hold) -> di
 
 
 def quota_counts(db: Session, form: WebForm, rules: list, persist: bool = True) -> dict:
-    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas. Una sola consulta.
+    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (PENDING_HOLD), sin pruebas. Una sola consulta.
     `persist=False` (formulario público): si faltan llaves cuenta en memoria y NO escribe nada."""
     if not rules:
         return {}
@@ -266,8 +267,46 @@ def quota_public(db: Session, form: WebForm) -> dict:
     return {"left": left, "full": full}
 
 
+def pending_max_per_ip() -> int:
+    """X6: cuántas inscripciones «esperando pago» simultáneas admite UNA IP en UN formulario (0 = sin tope). Se multiplica por PUBLIC_LIMIT_FACTOR, el mismo
+    ajuste de los demás límites públicos para el wifi compartido de un evento."""
+    try:
+        base = int(os.getenv("FORM_PENDING_MAX_PER_IP", "3"))
+        factor = float(os.getenv("PUBLIC_LIMIT_FACTOR", "1"))
+    except ValueError:
+        base, factor = 3, 1.0
+    return 0 if base <= 0 else max(1, int(base * factor))
+
+
+def pending_from_ip(db: Session, form: WebForm, ip: str, sid: Optional[str] = None, person_id: Optional[str] = None) -> int:
+    """X6: inscripciones de ESTE formulario creadas desde `ip` que siguen esperando pago dentro de PENDING_HOLD. No cuentan las de la misma sesión o la misma
+    cédula (un reintento de pago descarta el intento anterior). Solo lecturas simples: compatible con el pooler de Neon y sin pedir el bloqueo del formulario."""
+    rows = db.query(RateLimitEvent.key).filter(
+        RateLimitEvent.kind == PENDING_IP_KIND, RateLimitEvent.ip == ip, RateLimitEvent.created_at > utcnow() - PENDING_HOLD,
+        RateLimitEvent.key.like(f"{form.id}:%")).limit(500).all()
+    ids = []
+    for (key,) in rows:
+        tail = str(key).split(":", 1)[-1]
+        if tail.isdigit():
+            ids.append(int(tail))
+    if not ids:
+        return 0
+    q = db.query(func.count(FormSubmission.id)).filter(FormSubmission.id.in_(ids), FormSubmission.form_id == form.id, FormSubmission.status == PENDING)
+    if sid:
+        q = q.filter(or_(FormSubmission.sid.is_(None), FormSubmission.sid != sid))
+    if person_id:
+        q = q.filter(or_(FormSubmission.person_id.is_(None), FormSubmission.person_id != person_id))
+    return int(q.scalar() or 0)
+
+
+def mark_pending_ip(db: Session, form: WebForm, sub: FormSubmission, ip: Optional[str]) -> None:
+    """X6: anota (en la MISMA transacción de la inscripción) desde qué IP quedó esperando pago. Sin IP confiable (infraestructura de Google) no se anota."""
+    if ip:
+        db.add(RateLimitEvent(kind=PENDING_IP_KIND, key=f"{form.id}:{sub.id}", ip=ip))
+
+
 def held_count(db: Session, form: WebForm) -> int:
-    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min). UNA sola consulta (antes eran dos)."""
+    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta PENDING_HOLD). UNA sola consulta (antes eran dos)."""
     from sqlalchemy import select
     confirmed = select(func.count()).select_from(FormSubmission).where(
         FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed").scalar_subquery()  # noqa: E712
@@ -710,22 +749,30 @@ def wants_digital_badge(db: Session, form: WebForm) -> bool:
     return bool(event and event.digital_badge_enabled)
 
 
-def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmission, person_id: str, upsert_attendee) -> None:
+def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmission, person_id: str, upsert_attendee, is_new: bool = True) -> None:
     """Asocia el correo de la inscripción a la escarapela virtual de la persona y se la envía (una sola vez). Nunca lanza: la inscripción
-    ya quedó cargada y un fallo de correo no debe deshacerla; el resultado queda en el registro del envío (`digital_sent_at`)."""
+    ya quedó cargada y un fallo de correo no debe deshacerla; el resultado queda en el registro del envío (`digital_sent_at`).
+    Seguridad (X1): si la persona YA estaba en la base (`is_new=False`), quien llena el formulario público solo conoce una cédula: el correo escrito ahí NO
+    reemplaza el contacto registrado; la escarapela (que lleva el QR de ingreso) se envía solo al contacto que ya estaba (el de la escarapela o el correo de la
+    persona) y, si no hay ninguno, no se envía."""
     from app import digital_badge
     try:
-        design = get_design(form)
-        fid = badge_email_field(design)
-        email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
-        contact = digital_badge.normalize_contact(email)
+        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
+        user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+        if is_new:
+            design = get_design(form)
+            fid = badge_email_field(design)
+            email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
+            contact = digital_badge.normalize_contact(email)
+        else:
+            contact = (att.digital_contact if att else None) or digital_badge.normalize_contact(str((user.email if user else "") or "").strip())
         if not contact:
             return
-        upsert_attendee(db, event.id, person_id, event.tenant_id, digital_contact=contact)
-        db.flush()
-        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
+        if not (att and att.digital_contact):          # existente: solo se COMPLETA el vacío con su propio correo registrado; nunca se reemplaza
+            upsert_attendee(db, event.id, person_id, event.tenant_id, digital_contact=contact)
+            db.flush()
+            att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
         if att and not att.digital_sent_at:
-            user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
             digital_badge.send_digital_badge(db, event, att, (user.first_name if user else "") or "", "", (user.last_name if user else "") or "")
     except Exception:       # noqa: BLE001 — ver docstring
         log.error("no se pudo enviar la escarapela virtual de la inscripción %s", sub.id, exc_info=True)
@@ -746,6 +793,11 @@ def _send_accept_link(db: Session, event: Event, sub: FormSubmission, person_id:
         log.error("no se pudo enviar el enlace de autorización de la inscripción %s", sub.id, exc_info=True)
 
 
+# Datos de una persona YA registrada que el formulario público nunca reemplaza (solo completa si están vacíos): correo (enlace de aceptación), teléfono (notificaciones)
+# y los que se muestran al operador y en la escarapela (X2).
+PUBLIC_FORM_PROTECTED_KEYS = frozenset({"email", "phone", "first_name", "last_name", "role", "entity"})
+
+
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
     """Carga UNA inscripción a la base del evento como «No registrado» (Usuario + asistente del evento). Devuelve un
     mensaje de error si no se pudo (p. ej. no trae cédula) o None. No toca AccessLog: no queda registrado."""
@@ -763,10 +815,12 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
         user = User(id=person_id, tenant_id=event.tenant_id)
         db.add(user)
     # 0C (A4/C3/C-N2): quien llena el formulario público solo conoce una cédula; el correo, el teléfono y la fecha de nacimiento que ya están en la base NO se sobrescriben desde ahí:
-    # solo se completan los vacíos (el nombre, rol y entidad sí se actualizan, como siempre). Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
+    # solo se completan los vacíos. Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
+    # X2 (defensa en profundidad): nombre, apellido, rol y entidad de una persona que YA existe tampoco se reemplazan desde el formulario público (solo se completan si
+    # estaban vacíos): un nombre inventado terminaría en las pantallas del operador y en la escarapela de otra persona.
     for key, attr in (("first_name", "first_name"), ("last_name", "last_name"), ("role", "role"), ("entity", "entity"),
                       ("phone", "phone"), ("email", "email"), ("opt_1", "opt_1")):
-        protected = key in ("email", "phone")      # el correo recibe el enlace de aceptación y el teléfono las notificaciones: nunca se reemplazan desde un formulario público
+        protected = key in PUBLIC_FORM_PROTECTED_KEYS
         if kv.get(key) and (is_new or not protected or not getattr(user, attr)):
             setattr(user, attr, str(kv[key]))
     birth = minors.parse_birth(kv.get("birth_date"))
@@ -783,7 +837,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     db.flush()          # autoflush=False: sin esto, el segundo upsert (correo de la escarapela) no vería la fila y la duplicaría
     sub.fed = True
     if not sub.is_test and wants_digital_badge(db, form):
-        _send_digital_badge(db, form, event, sub, person_id, upsert_attendee)
+        _send_digital_badge(db, form, event, sub, person_id, upsert_attendee, is_new=is_new)
     if not sub.is_test and event.aceptar_enabled and event.accept_link_email and event.facial_enabled and not event.biometrics_locked:
         _send_accept_link(db, event, sub, person_id)
     return None
