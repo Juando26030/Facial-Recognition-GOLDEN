@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import security, status_changes, warmup
+from app import audit_actions, security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import audit_actions, event_archive, event_rules, formsvc
@@ -313,9 +313,15 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 @router.get("/colors")
-def list_saved_colors(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento)."""
-    return [{"id": c.id, "name": c.name, "hex": c.hex} for c in db.query(SavedColor).order_by(SavedColor.name)]
+def list_saved_colors(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento). Por defecto sin los archivados; `include_archived=true` es de admin+."""
+    query = db.query(SavedColor)
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los colores archivados")
+    else:
+        query = query.filter(SavedColor.archived_at.is_(None))
+    return [{"id": c.id, "name": c.name, "hex": c.hex, "archived": c.archived_at is not None} for c in query.order_by(SavedColor.name)]
 
 
 @router.post("/colors")
@@ -329,6 +335,8 @@ def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
         raise HTTPException(status_code=400, detail="El color debe ser un hex como #C0392B")
     color = db.query(SavedColor).filter(func.lower(SavedColor.name) == name.lower()).first()
     if color:
+        if color.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Ese color está archivado: restáuralo para usarlo")
         color.hex = hex_value.lower()
     else:
         color = SavedColor(name=name, hex=hex_value.lower(), created_by_id=staff.id)
@@ -337,11 +345,43 @@ def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
     return {"id": color.id, "name": color.name, "hex": color.hex}
 
 
-@router.delete("/colors/{color_id}")
-def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def _color_or_404(db: Session, color_id: int) -> SavedColor:
     color = db.query(SavedColor).filter(SavedColor.id == color_id).first()
     if not color:
         raise HTTPException(status_code=404, detail="Color no encontrado")
+    return color
+
+
+@router.post("/colors/{color_id}/archive")
+def archive_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Archivar = quitarlo de la lista de colores guardados. Los eventos que ya lo usan guardan su propia copia: no cambian. Un administrador lo restaura."""
+    color = _color_or_404(db, color_id)
+    if color.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El color ya está archivado")
+    color.archived_at, color.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "saved_color", color.id, color.name)
+    db.commit()
+    return {"id": color.id, "name": color.name, "hex": color.hex, "archived": True}
+
+
+@router.post("/colors/{color_id}/restore")
+def restore_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    color = _color_or_404(db, color_id)
+    if color.archived_at is None:
+        raise HTTPException(status_code=400, detail="El color no está archivado")
+    color.archived_at, color.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "saved_color", color.id, color.name)
+    db.commit()
+    return {"id": color.id, "name": color.name, "hex": color.hex, "archived": False}
+
+
+@router.delete("/colors/{color_id}")
+def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """Borrado DEFINITIVO: solo super_admin y de un color ya archivado (no hay otras dependencias: los eventos guardan su copia)."""
+    color = _color_or_404(db, color_id)
+    if color.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el color; el borrado definitivo solo aplica a colores archivados")
+    audit_actions.record(db, staff, "delete", "saved_color", color.id, color.name)
     db.delete(color)
     db.commit()
     return {"message": "Color eliminado de la librería"}

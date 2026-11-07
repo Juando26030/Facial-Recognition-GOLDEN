@@ -19,8 +19,8 @@ from openpyxl.styles import Font, PatternFill
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import get_event_for_staff, require_event_in_progress, require_role_excluding
-from app import faces, heavy
+from app.auth import get_event_for_staff, require_event_in_progress, require_role, require_role_excluding
+from app import audit_actions, faces, heavy
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
@@ -31,6 +31,17 @@ router = APIRouter()
 
 CONFIG_ROLE = require_role_excluding("coordinador", ("comercial",))  # define zonas/ítems y baja reportes
 OPERATE_ROLE = require_role_excluding("digitador", ("comercial",))  # registra movimientos / entregas
+ARCHIVE_ROLE = require_role("admin")          # Fase 3: archivar y restaurar zonas / ítems = admin+
+HARD_DELETE_ROLE = require_role("super_admin")  # borrado definitivo: solo super_admin, de algo ya archivado y sin historial
+
+
+def _only_active(query, model, include_archived: bool, staff: StaffUser):
+    """Por defecto SOLO los activos; `include_archived=true` es de admin+ (pantalla «Ver archivados»)."""
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los archivados")
+        return query
+    return query.filter(model.archived_at.is_(None))
 
 
 def delete_event_modules(db: Session, event_id: int) -> None:
@@ -76,20 +87,24 @@ def _area_json(db: Session, a: EventArea) -> dict:
     return {
         "id": a.id, "name": a.name, "allow_reentry": a.allow_reentry,
         "inside": sum(1 for d in last_by_user.values() if d == "in"), "visited": len(last_by_user),
+        "archived": a.archived_at is not None,
     }
 
 
-def _get_area(db: Session, event, area_id: int) -> EventArea:
+def _get_area(db: Session, event, area_id: int, *, active_only: bool = False) -> EventArea:
     area = db.query(EventArea).filter(EventArea.id == area_id, EventArea.event_id == event.id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Zona no encontrada")
+    if active_only and area.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La zona está archivada: restáurala para usarla")
     return area
 
 
 @router.get("/events/{event_id}/areas")
-def list_areas(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def list_areas(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
-    return [_area_json(db, a) for a in db.query(EventArea).filter(EventArea.event_id == event.id).order_by(EventArea.id)]
+    query = _only_active(db.query(EventArea).filter(EventArea.event_id == event.id), EventArea, include_archived, staff)
+    return [_area_json(db, a) for a in query.order_by(EventArea.id)]
 
 
 @router.post("/events/{event_id}/areas")
@@ -99,7 +114,7 @@ def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff:
     if not name:
         raise HTTPException(status_code=400, detail="La zona necesita un nombre")
     if db.query(EventArea).filter(EventArea.event_id == event.id, func.lower(EventArea.name) == name.lower()).first():
-        raise HTTPException(status_code=400, detail="Ya existe una zona con ese nombre en este evento")
+        raise HTTPException(status_code=400, detail="Ya existe una zona con ese nombre en este evento (si no la ves, está archivada: restáurala)")
     area = EventArea(event_id=event.id, name=name, allow_reentry=bool(data.get("allow_reentry", True)), created_at=utcnow())
     db.add(area)
     db.commit()
@@ -108,7 +123,7 @@ def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff:
 
 @router.patch("/events/{event_id}/areas/{area_id}")
 def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
-    area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
+    area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id, active_only=True)
     if "name" in data and str(data["name"]).strip():
         area.name = str(data["name"]).strip()
     if "allow_reentry" in data:
@@ -117,13 +132,41 @@ def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(g
     return _area_json(db, area)
 
 
-@router.delete("/events/{event_id}/areas/{area_id}")
-def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+@router.post("/events/{event_id}/areas/{area_id}/archive")
+def archive_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    """Archivar = ocultar la zona (ya no se elige ni recibe movimientos). Los movimientos registrados y el reporte se conservan; un administrador la restaura."""
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
-    db.query(AreaMovement).filter(AreaMovement.area_id == area.id).delete()
+    if area.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La zona ya está archivada")
+    area.archived_at, area.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "event_area", area.id, area.name, f"evento {area.event_id}")
+    db.commit()
+    return _area_json(db, area)
+
+
+@router.post("/events/{event_id}/areas/{area_id}/restore")
+def restore_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
+    if area.archived_at is None:
+        raise HTTPException(status_code=400, detail="La zona no está archivada")
+    area.archived_at, area.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "event_area", area.id, area.name, f"evento {area.event_id}")
+    db.commit()
+    return _area_json(db, area)
+
+
+@router.delete("/events/{event_id}/areas/{area_id}")
+def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(HARD_DELETE_ROLE)):
+    """Borrado DEFINITIVO: solo super_admin, de una zona ya archivada y SIN movimientos (con historial solo se archiva)."""
+    area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
+    if area.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva la zona; el borrado definitivo solo aplica a zonas archivadas")
+    if db.query(AreaMovement).filter(AreaMovement.area_id == area.id).first():
+        raise HTTPException(status_code=400, detail="La zona tiene movimientos registrados: se conserva archivada (el historial no se borra)")
+    audit_actions.record(db, staff, "delete", "event_area", area.id, area.name, f"evento {area.event_id}")
     db.delete(area)
     db.commit()
-    return {"message": "Zona eliminada (con sus movimientos)"}
+    return {"message": "Zona eliminada"}
 
 
 def _apply_movement(db: Session, event, area: EventArea, user: User, direction: str, confirm: bool, method: str, staff: StaffUser) -> dict:
@@ -166,7 +209,7 @@ def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends
     """Entrada/salida por cédula o QR (el QR trae el ID). `direction`: in | out | auto (alterna)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
-    area = _get_area(db, event, area_id)
+    area = _get_area(db, event, area_id, active_only=True)
     user = _find_person(db, event, str(data.get("cedula") or ""))
     return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), "qr" if data.get("method") == "qr" else "cedula", staff)
 
@@ -179,7 +222,7 @@ def area_movement_face(
     """Entrada/salida por reconocimiento facial (solo eventos con biometría)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
-    area = _get_area(db, event, area_id)
+    area = _get_area(db, event, area_id, active_only=True)
     try:
         status, uid = faces.identify(db, event, file.file.read())
     except faces.Busy:
@@ -259,14 +302,16 @@ def _delivered_by_item(db: Session, event_id: int) -> dict:
 def _item_json(item: InventoryItem, delivered: int) -> dict:
     return {
         "id": item.id, "name": item.name, "initial_qty": item.initial_qty, "allow_multiple": item.allow_multiple,
-        "delivered": delivered, "available": item.initial_qty - delivered,
+        "delivered": delivered, "available": item.initial_qty - delivered, "archived": item.archived_at is not None,
     }
 
 
-def _get_item(db: Session, event, item_id: int) -> InventoryItem:
+def _get_item(db: Session, event, item_id: int, *, active_only: bool = False) -> InventoryItem:
     item = db.query(InventoryItem).filter(InventoryItem.id == item_id, InventoryItem.event_id == event.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
+    if active_only and item.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El ítem está archivado: restáuralo para usarlo")
     return item
 
 
@@ -281,10 +326,11 @@ def _qty(value, minimum: int = 0) -> int:
 
 
 @router.get("/events/{event_id}/inventory")
-def list_inventory(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def list_inventory(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     delivered = _delivered_by_item(db, event.id)
-    return [_item_json(i, delivered.get(i.id, 0)) for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id).order_by(InventoryItem.id)]
+    query = _only_active(db.query(InventoryItem).filter(InventoryItem.event_id == event.id), InventoryItem, include_archived, staff)
+    return [_item_json(i, delivered.get(i.id, 0)) for i in query.order_by(InventoryItem.id)]
 
 
 @router.post("/events/{event_id}/inventory")
@@ -294,7 +340,7 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
     if not name:
         raise HTTPException(status_code=400, detail="El ítem necesita un nombre")
     if db.query(InventoryItem).filter(InventoryItem.event_id == event.id, func.lower(InventoryItem.name) == name.lower()).first():
-        raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento")
+        raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento (si no lo ves, está archivado: restáuralo)")
     item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")), created_at=utcnow())
     db.add(item)
     db.commit()
@@ -304,7 +350,7 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
 @router.patch("/events/{event_id}/inventory/{item_id}")
 def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
-    item = _get_item(db, event, item_id)
+    item = _get_item(db, event, item_id, active_only=True)
     delivered = _delivered_by_item(db, event.id).get(item.id, 0)
     if "name" in data and str(data["name"]).strip():
         item.name = str(data["name"]).strip()
@@ -319,12 +365,39 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
     return _item_json(item, delivered)
 
 
+@router.post("/events/{event_id}/inventory/{item_id}/archive")
+def archive_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    """Archivar = ocultar el ítem (ya no se entrega). Las entregas hechas y el reporte se conservan; un administrador lo restaura."""
+    item = _get_item(db, get_event_for_staff(event_id, db, staff), item_id)
+    if item.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El ítem ya está archivado")
+    item.archived_at, item.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "inventory_item", item.id, item.name, f"evento {item.event_id}")
+    db.commit()
+    return _item_json(item, _delivered_by_item(db, item.event_id).get(item.id, 0))
+
+
+@router.post("/events/{event_id}/inventory/{item_id}/restore")
+def restore_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    item = _get_item(db, get_event_for_staff(event_id, db, staff), item_id)
+    if item.archived_at is None:
+        raise HTTPException(status_code=400, detail="El ítem no está archivado")
+    item.archived_at, item.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "inventory_item", item.id, item.name, f"evento {item.event_id}")
+    db.commit()
+    return _item_json(item, _delivered_by_item(db, item.event_id).get(item.id, 0))
+
+
 @router.delete("/events/{event_id}/inventory/{item_id}")
-def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(HARD_DELETE_ROLE)):
+    """Borrado DEFINITIVO: solo super_admin, de un ítem ya archivado y SIN entregas (con entregas solo se archiva)."""
     event = get_event_for_staff(event_id, db, staff)
     item = _get_item(db, event, item_id)
-    if _delivered_by_item(db, event.id).get(item.id, 0):
-        raise HTTPException(status_code=400, detail="Este ítem ya tiene entregas registradas — no se puede borrar (ajusta su cantidad si hace falta)")
+    if item.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el ítem; el borrado definitivo solo aplica a ítems archivados")
+    if db.query(InventoryDelivery).filter(InventoryDelivery.item_id == item.id).first():
+        raise HTTPException(status_code=400, detail="Este ítem ya tiene entregas registradas: se conserva archivado (el historial no se borra)")
+    audit_actions.record(db, staff, "delete", "inventory_item", item.id, item.name, f"evento {item.event_id}")
     db.delete(item)
     db.commit()
     return {"message": "Ítem eliminado"}
@@ -353,6 +426,8 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         item = items.get(item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Uno de los ítems no existe en este evento")
+        if item.archived_at is not None:
+            raise HTTPException(status_code=400, detail=f"«{item.name}» está archivado: restáuralo para entregarlo")
         if qty > 1 and not item.allow_multiple:
             raise HTTPException(status_code=400, detail=f"«{item.name}» solo se entrega de a 1 unidad por vez")
         available = item.initial_qty - delivered.get(item_id, 0)

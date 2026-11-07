@@ -487,6 +487,8 @@ class SavedBadgeTemplate(Base):
     elements_json = Column(Text)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     tenant = relationship("Tenant")
 
@@ -752,6 +754,8 @@ class SavedColor(Base):
     hex = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class EventDocument(Base):
@@ -809,6 +813,8 @@ class EventArea(Base):
     name = Column(String, nullable=False)
     allow_reentry = Column(Boolean, default=True, server_default='true', nullable=False)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class AreaMovement(Base):
@@ -836,6 +842,8 @@ class InventoryItem(Base):
     initial_qty = Column(Integer, nullable=False, default=0)
     allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class InventoryDelivery(Base):
