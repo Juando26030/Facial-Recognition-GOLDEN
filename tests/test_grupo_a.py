@@ -125,5 +125,5 @@ def test_touch_mode_shows_three_searches_numeric_keyboard_and_reader_only_option
     assert "const MOBILE = platform === 'Android' || platform === 'iOS';" in sp and "MOBILE && !usb.ok" in sp
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert 'class="gw-modal-head gw-registro__modalhead"' in reg and "position: sticky" in pathlib.Path("static/css/registro.css").read_text(encoding="utf-8")      # Plan 8: el encabezado fijo pasó a clase
-    assert 'class="gw-modal-head" style="position:sticky' in pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
+    assert "gw-modal-head" in pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")          # el encabezado fijo del modal ya lo da la hoja (sin estilo en línea)
     assert "gw_recent_" in pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")

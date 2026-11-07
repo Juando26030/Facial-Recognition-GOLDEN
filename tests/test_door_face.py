@@ -254,7 +254,7 @@ def test_with_auto_print_the_face_entry_opens_the_badge_like_the_document_entry(
 def test_the_door_screen_checks_the_server_actively_and_is_white(client, station):
     page = client.get(f"/kiosk/{station.id}/rostro").text
     assert "/health?t=" in page and "AbortController" in page and "setInterval(ping" in page and "setUp(false)" in page
-    assert "background: #fff" in page
+    assert "css/gw-rostro.css" in page and 'class="gw-page gw-rostro"' in page          # fondo blanco por la hoja de la puerta (tokens --gw-*), ya no en línea
 
 
 def test_registro_has_a_switch_to_open_the_door_screen_only_when_enabled(client, db, station):

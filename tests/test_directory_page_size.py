@@ -26,7 +26,7 @@ def test_allowed_values_are_saved_and_reach_the_page_and_the_parameters_screen(c
     db.expire_all()
     assert db.get(Event, ev.id).directory_page_size == int(value)
     assert f"window.DIRECTORY_PAGE_SIZE = {int(value)};" in client.get(f"/kiosk/{ev.id}/registro").text
-    assert f'<option value="{int(value)}" selected>' in client.get(f"/kiosk/{ev.id}/parametros").text
+    assert f"{int(value)} filas" in client.get(f"/kiosk/{ev.id}/parametros").text          # Parámetros muestra el valor del evento en el resumen de «Registro y pantalla»
 
 
 @pytest.mark.parametrize("value", [0, 5, 37, 500, -20, "abc", None, 20.5])

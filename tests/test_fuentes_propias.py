@@ -72,7 +72,8 @@ def test_every_selector_offers_the_same_hosted_families_and_agrandir_stays_apart
     assert "GoldenFontPicker.mount" in editor and "GoldenFonts.resolve" in editor and "js/font-picker.js" in editor and "js/fonts-propias.js" in editor
     for page, marker in (("kiosk_formulario_editor", "GoldenFonts.choices"), ("kiosk_ruleta_visual", "GoldenFonts.choices")):
         text = pathlib.Path(f"templates/{page}.html").read_text(encoding="utf-8")
-        assert marker in text and "js/fonts-propias.js" in text and "css/fonts-propias.css" in text, page
+        head = pathlib.Path("templates/_gw_head.html").read_text(encoding="utf-8") if "_gw_head.html" in text else ""      # la hoja global puede llegar por la cabecera común
+        assert marker in text and "js/fonts-propias.js" in text and ("css/fonts-propias.css" in text or "css/fonts-propias.css" in head), page
     for page in ("form_public", "badge_print", "certificate_public", "digital_badge", "kiosk_certificados", "roulette_display"):
         assert "css/fonts-propias.css" in pathlib.Path(f"templates/{page}.html").read_text(encoding="utf-8"), page
     for path in ("css/fonts-propias.css", "js/fonts-propias.js", "fonts/roboto-latin-400-normal.woff2", "fonts/bebas-neue-latin-400-normal.woff2"):

@@ -697,7 +697,8 @@ def test_buttons_are_painted_only_for_super_admin_and_the_wizard_script_is_valid
         client.get("/logout")
     login(client, "root")
     clientes, eventos = client.get("/clientes").text, client.get("/eventos").text
-    assert 'data-import-event data-tenant-id="${esc(t.id)}"' in clientes and 'data-export-event="${e.id}"' in clientes                       # por cliente: importar; por evento: exportar
+    gwc = open("static/js/gw-clientes.js", encoding="utf-8").read()          # desde la Fase 1.8 la fila de Clientes la pinta gw-clientes.js
+    assert 'data-import-event' in gwc and 'data-export-event' in gwc and "js/event-transfer.js" in clientes                       # por cliente: importar; por evento: exportar
     assert 'data-export-event="${e.id}"' in eventos and "data-import-event" in eventos
     js = client.get("/static/js/event-transfer.js")
     assert js.status_code == 200 and "/api/event-transfer/export/start" in js.text and "onclick" not in js.text                              # sin onclick inline

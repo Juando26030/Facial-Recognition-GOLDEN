@@ -23,7 +23,8 @@ class PlegablesEditorTests(unittest.TestCase):
         self.assertIn("quotaOpen", TPL)
 
     def test_css_solo_tokens(self):
-        self.assertNotIn("#", CSS.replace("/*", "").split("*/")[-1])
+        import re
+        self.assertIsNone(re.search(r"#[0-9a-fA-F]{3,8}\b(?![\w-])", re.sub(r"/\*.*?\*/", "", CSS, flags=re.S).replace("#qRules", "")))      # sin colores sueltos en hex; el selector #qRules no es un color
         self.assertIn("var(--gw-", CSS)
         self.assertIn("p-plegables.css", TPL)
 

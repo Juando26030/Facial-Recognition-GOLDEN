@@ -109,6 +109,6 @@ def test_no_technical_jargon_is_visible_in_parameters_or_the_roster_card(client,
     visible = re.sub(r"<script.*?</script>|<!--.*?-->|<[^>]+>", " ", page, flags=re.S)
     for word in (".env.example", "data/outbox", "SMTP", "Twilio", "encoding", "página /aceptar", f"/kiosk/{ev.id}/rostro"):
         assert word not in visible, word
-    menu = client.get(f"/kiosk/{ev.id}").text
+    menu = re.sub(r"<!--.*?-->", "", client.get(f"/kiosk/{ev.id}").text, flags=re.S)          # un comentario HTML no se ve en pantalla
     assert "marca la casilla de reconocimiento facial" not in menu and "Carga masiva desde Excel/CSV</div>" in menu
     assert "Paso 0" not in visible

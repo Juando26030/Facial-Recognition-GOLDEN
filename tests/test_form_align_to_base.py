@@ -86,7 +86,7 @@ def test_align_relabels_people_outside_the_base_and_frees_their_quota(client, fa
     label = "Se registró sin estar en base"
     r = client.post(url, json={"field": "ciudad", "not_in_base_label": label}).json()
     assert r["changed"] == 3 and r["moved_to_base"] == 1 and r["marked_not_in_base"] == 2 and r["applied"] is False
-    assert {q["quota"]: q["change"] for q in r["quota_change"]} == {"Bogotá": -1, "Cali": 1}
+    assert {q["quota"]: q["change"] for q in r["quota_change"]} == {"Bogotá": -2, "Cali": 1}          # Bogotá pierde a 1 (pasa a Cali) y a 6 (no está en la base); coincide con lo que queda usado abajo
     assert client.post(url, json={"field": "ciudad", "not_in_base_label": label, "apply": True}).json()["changed"] == 3
     db.expire_all()
     rows = {s.person_id: json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()}

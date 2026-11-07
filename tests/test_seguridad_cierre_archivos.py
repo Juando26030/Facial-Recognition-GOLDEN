@@ -203,12 +203,13 @@ def test_borrado_en_bloque_suelta_impresiones_y_cargas(client, factory, db):
     factory.staff("admin", "adm1")
     ev = factory.event("en_proceso")
     dig, job_id = _digitador_con_historial(factory, db, ev)
+    dig_id = dig.id          # el id se lee ANTES: después del borrado la fila ya no existe y releerla da ObjectDeletedError
     login(client, "adm1")
     r = client.post(f"/api/events/{ev.id}/staff-users/purge-temporary")
     assert r.status_code == 200, r.text
     assert r.json()["deleted"] == 1
     db.expire_all()
-    assert db.query(StaffUser).filter_by(id=dig.id).first() is None
+    assert db.query(StaffUser).filter_by(id=dig_id).first() is None
     assert db.query(PrintLog).filter_by(event_id=ev.id).one().printed_by_staff_id is None          # la impresión se conserva, sin «quién»
     assert db.get(BulkJob, job_id).staff_user_id is None
 
@@ -218,11 +219,12 @@ def test_borrar_permanente_tambien_suelta_todo(client, factory, db):
     factory.staff("admin", "adm1")
     ev = factory.event("en_proceso")
     dig, _ = _digitador_con_historial(factory, db, ev)
+    dig_id = dig.id
     login(client, "adm1")
-    r = client.delete(f"/api/staff/{dig.id}")
+    r = client.delete(f"/api/staff/{dig_id}")
     assert r.status_code == 200, r.text
     db.expire_all()
-    assert db.query(StaffUser).filter_by(id=dig.id).first() is None
+    assert db.query(StaffUser).filter_by(id=dig_id).first() is None
     assert db.query(PrintLog).filter_by(event_id=ev.id).one().printed_by_staff_id is None
 
 

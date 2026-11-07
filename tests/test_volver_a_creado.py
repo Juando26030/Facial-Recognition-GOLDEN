@@ -277,7 +277,9 @@ def test_the_events_screens_offer_the_button_only_to_admin_and_super_admin(clien
     login(client, "quien")
     for path in ("/eventos", "/clientes"):
         page = client.get(path).text
-        assert "js/revert-event.js" in page and "data-revert-event" in page                       # el código del botón está en la página; quién lo ve lo decide el rol (abajo)
+        assert "js/revert-event.js" in page                                                       # el código del botón está en la página; quién lo ve lo decide el rol (abajo)
+        # el botón lo pinta la plantilla de Eventos o, en Clientes desde la Fase 1.8, gw-clientes.js
+        assert "data-revert-event" in page or "data-revert-event" in open("static/js/gw-clientes.js", encoding="utf-8").read()
     page = client.get("/eventos").text
     assert ('const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin"' in page) and (f'const STAFF_ROLE = "{role}"' in page)
     js = open("static/js/revert-event.js", encoding="utf-8").read()

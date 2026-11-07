@@ -225,9 +225,9 @@ def test_the_stats_page_shows_the_timing_section_only_to_admins(client, factory)
     ev = factory.event("en_proceso", coordinator=coord)
     login(client, "coord9")
     page = client.get(f"/kiosk/{ev.id}/estadisticas")
-    assert page.status_code == 200 and "timing-report" not in page.text
+    assert page.status_code == 200 and "timingReport" not in page.text
     login(client, "root")
-    assert "timing-report" in client.get(f"/kiosk/{ev.id}/estadisticas").text
+    assert "timingReport" in client.get(f"/kiosk/{ev.id}/estadisticas").text          # la sección de tiempos (el informe lo pide stats-event.js)
 
 
 def test_the_kiosk_page_loads_the_timer_before_the_directory_script(client, factory):

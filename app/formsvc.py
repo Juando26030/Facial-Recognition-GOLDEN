@@ -749,7 +749,7 @@ def wants_digital_badge(db: Session, form: WebForm) -> bool:
     return bool(event and event.digital_badge_enabled)
 
 
-def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmission, person_id: str, upsert_attendee, is_new: bool = True) -> None:
+def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmission, person_id: str, upsert_attendee, is_new: bool = True, prior_email: str = "") -> None:
     """Asocia el correo de la inscripción a la escarapela virtual de la persona y se la envía (una sola vez). Nunca lanza: la inscripción
     ya quedó cargada y un fallo de correo no debe deshacerla; el resultado queda en el registro del envío (`digital_sent_at`).
     Seguridad (X1): si la persona YA estaba en la base (`is_new=False`), quien llena el formulario público solo conoce una cédula: el correo escrito ahí NO
@@ -765,7 +765,8 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
             email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
             contact = digital_badge.normalize_contact(email)
         else:
-            contact = (att.digital_contact if att else None) or digital_badge.normalize_contact(str((user.email if user else "") or "").strip())
+            # `prior_email` es el correo que la persona YA tenía antes de esta inscripción: el que acaba de completar el formulario público (si estaba vacío) no cuenta.
+            contact = (att.digital_contact if att else None) or digital_badge.normalize_contact(str(prior_email or "").strip())
         if not contact:
             return
         if not (att and att.digital_contact):          # existente: solo se COMPLETA el vacío con su propio correo registrado; nunca se reemplaza
@@ -811,6 +812,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
         return "Esta persona solicitó la supresión de sus datos: no se cargó a la base del evento"
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     is_new = user is None
+    prior_email = "" if is_new else str(user.email or "")      # X1: el correo que ya estaba registrado ANTES de esta inscripción
     if is_new:
         user = User(id=person_id, tenant_id=event.tenant_id)
         db.add(user)
@@ -837,7 +839,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     db.flush()          # autoflush=False: sin esto, el segundo upsert (correo de la escarapela) no vería la fila y la duplicaría
     sub.fed = True
     if not sub.is_test and wants_digital_badge(db, form):
-        _send_digital_badge(db, form, event, sub, person_id, upsert_attendee, is_new=is_new)
+        _send_digital_badge(db, form, event, sub, person_id, upsert_attendee, is_new=is_new, prior_email=prior_email)
     if not sub.is_test and event.aceptar_enabled and event.accept_link_email and event.facial_enabled and not event.biometrics_locked:
         _send_accept_link(db, event, sub, person_id)
     return None

@@ -509,7 +509,7 @@ def test_feed_keeps_existing_data_and_extra_fields_go_to_optionals(client, facto
     _open(client, ev, f)
     _submit(client, ev, f, {ids["id"]: "1001", ids["first_name"]: "Ana", ids["last_name"]: "Nueva", ids["email"]: "ana@example.com", ids["opcional_1"]: "M"})
     user, _, _ = _person_in_base(db, ev, "1001")
-    assert user.last_name == "Nueva" and user.phone == "3001112222" and user.get_extras() == {"opcional_1": "M"}   # actualiza lo que llega, no borra lo demás
+    assert user.last_name == "Vieja" and user.phone == "3001112222" and user.get_extras() == {"opcional_1": "M"}   # X2: el apellido de quien ya existe no se pisa desde el formulario público; lo opcional sí se completa y nada se borra
 
 
 # ------------------------------- reporte, respuestas y analítica de uso -------------------------------
