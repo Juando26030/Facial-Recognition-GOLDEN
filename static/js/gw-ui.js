@@ -244,6 +244,60 @@
     }).observe(document.body, { childList: true, subtree: true });
   }
 
+  /* ----------------------------------------------------------------- Obligatorio: asterisco naranja en TODA pantalla del personal (6-nov-2026)
+     Todo campo con `required` lleva en su etiqueta un asterisco naranja (.gw-req); un « *» escrito a mano al final de una etiqueta se convierte en ese mismo asterisco. Si `required` se quita después
+     (p. ej. la base del Excel pasa a ser opcional), el asterisco que puso este código se quita. Etiquetas con data-gw-noreq no se tocan. Las páginas públicas no cargan este archivo: allí no hay asteriscos. */
+  var REQ_SKIP_TYPES = { hidden: 1, submit: 1, button: 1, reset: 1, image: 1 };
+  function cssEsc(v) { return (window.CSS && CSS.escape) ? CSS.escape(v) : String(v).replace(/["\\]/g, '\\$&'); }
+  function labelOf(ctl) {
+    var lab = null;
+    if (ctl.id) lab = document.querySelector('label[for="' + cssEsc(ctl.id) + '"]');
+    if (!lab) lab = ctl.closest('label');
+    if (!lab) { var box = ctl.closest('.gw-field, .badge-input-group, .gw-registro__editfield, [data-field-key]'); if (box) lab = box.querySelector('label'); }
+    return lab;
+  }
+  function hasStar(lab) { return !!lab.querySelector('.gw-req'); }
+  function addStar(lab, auto) {
+    if (!lab || lab.hasAttribute('data-gw-noreq') || hasStar(lab)) return;
+    var last = lab.lastChild;
+    while (last && last.nodeType === 3 && !last.nodeValue.trim()) { lab.removeChild(last); last = lab.lastChild; }
+    if (last && last.nodeType === 3) last.nodeValue = last.nodeValue.replace(/\s*\*\s*$/, '');
+    var sp = document.createElement('span'); sp.className = 'gw-req'; sp.setAttribute('aria-hidden', 'true'); sp.textContent = ' *';
+    if (auto) sp.setAttribute('data-gw-auto', '');
+    lab.appendChild(sp);
+  }
+  function handStars(root) {            // « *» escrito a mano al final de una etiqueta (sin control `required` que lo respalde) → el mismo asterisco naranja
+    var labs = root.tagName === 'LABEL' ? [root] : Array.prototype.slice.call(root.querySelectorAll('label'));
+    labs.forEach(function (lab) {
+      if (lab.hasAttribute('data-gw-noreq') || hasStar(lab)) return;
+      var last = lab.lastChild;
+      if (last && last.nodeType === 3 && /\s\*\s*$/.test(last.nodeValue)) addStar(lab, false);
+    });
+  }
+  function reqControl(ctl) {
+    if (!ctl || ctl.tagName === 'LABEL' || !/^(INPUT|SELECT|TEXTAREA)$/.test(ctl.tagName)) return;
+    if (REQ_SKIP_TYPES[(ctl.getAttribute('type') || '').toLowerCase()]) return;
+    var lab = labelOf(ctl); if (!lab) return;
+    if (ctl.hasAttribute('required')) addStar(lab, true);
+    else { var st = lab.querySelector('.gw-req[data-gw-auto]'); if (st) st.remove(); }
+  }
+  function scanReq(root) {
+    if (!root || root.nodeType !== 1 || SKIP_TAGS[root.tagName]) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(root.tagName)) { reqControl(root); return; }
+    handStars(root);
+    Array.prototype.forEach.call(root.querySelectorAll('input[required], select[required], textarea[required]'), reqControl);
+  }
+  function watchReq() {
+    scanReq(document.body);
+    if (!window.MutationObserver) return;
+    new MutationObserver(function (muts) {
+      muts.forEach(function (m) {
+        if (m.type === 'attributes') { reqControl(m.target); return; }
+        Array.prototype.forEach.call(m.addedNodes, scanReq);
+      });
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['required'] });
+  }
+
   /* ----------------------------------------------------------------- Eventos (delegados) */
   document.addEventListener('click', function (e) {
     var tgt = e.target; if (!tgt || !tgt.closest) return;
@@ -298,6 +352,7 @@
     applyTheme(currentTheme());
     compactIntro();
     watchClear();
+    watchReq();
     if (mqMobile) { if (mqMobile.addEventListener) mqMobile.addEventListener('change', compactIntro); else if (mqMobile.addListener) mqMobile.addListener(compactIntro); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-gw-wizard]'), function (w) { wizardGo(w, 0); });
     var auto = document.querySelector('[data-gw-tour][data-gw-tour-auto]');          // recorrido de primera vez: solo si la página lo pide

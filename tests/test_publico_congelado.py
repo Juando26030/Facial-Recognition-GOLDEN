@@ -20,7 +20,8 @@ FROZEN = {
     "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
     "templates/roulette_display.html": "434b88d72802742d43742a11dac347a273bdd4f0c687d4bb71b91264276b3917",
     "templates/badge_print.html": "9e48e3062df12c53bb46c747f49a21ba0168af4f2343928f48b64c7530c49655",
-    "static/js/form-render.js": "6b849946cf0272f220eda3215fc26d3ccd870c8c20da21b1e58300ede442a2de",
+    # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
+    "static/js/form-render.js": "b0bc5aa27855f132e3c289ed2a84a413e4e3ed415dc19ef72df40a27df1b3c06",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
     "static/js/direct-upload.js": "9b22353dca8650e6b924aca2114aeba2eec713b875c8a996631affd5e3f500f3",
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",

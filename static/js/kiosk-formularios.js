@@ -24,7 +24,7 @@
       </div>
       <p class="gw-card-row__meta">/${esc(f.slug)}${f.use_schedule ? ' · por calendario' : ''}</p>
       <div class="gw-stats-row gw-stats-row--2">
-        <div class="gw-stat"><span class="gw-stat__value">${esc(f.submissions)}</span><span class="gw-stat__label">Inscripciones</span>${extra.length ? `<span class="gw-stat__hint">${esc(extra.join(' · '))}</span>` : ''}</div>
+        <div class="gw-stat"><span class="gw-stat__value">${esc(f.submissions)}</span><span class="gw-stat__label">Inscripciones</span>${extra.length ? `<span class="gw-stat__hint" title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</span>` : ''}</div>
         <div class="gw-stat"><span class="gw-stat__value">${esc(cupo)}</span><span class="gw-stat__label">Cupo</span></div>
       </div>
       <div class="gw-card-row__actions">

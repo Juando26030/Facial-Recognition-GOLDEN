@@ -330,8 +330,8 @@
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
     function fieldRow(label, name, value, type) {
       return `<div class="gw-field gw-registro__editfield">
-        <label class="gw-label">${esc(label)} *</label>
-        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" class="gw-input">
+        <label class="gw-label">${esc(label)}<span class="gw-req" aria-hidden="true"> *</span></label>
+        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" class="gw-input" required>
       </div>`;
     }
     function cedulaRow(label) {
@@ -350,7 +350,7 @@
     function configuredFieldRow(cfg, valueOverride) {
       const control = window.FieldRender.renderControl(cfg, valueOverride !== undefined ? valueOverride : configuredValueOf(cfg.key, cfg));
       return `<div class="gw-field gw-registro__editfield">
-        <label class="gw-label">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
+        <label class="gw-label">${esc(cfg.label)}${cfg.required ? '<span class="gw-req" aria-hidden="true"> *</span>' : ''}</label>
         ${control}
       </div>`;
     }

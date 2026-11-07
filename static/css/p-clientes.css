@@ -23,8 +23,6 @@
   .p-cli__more { flex: 0 0 auto; }
   .p-cli__status { grid-column: auto; }
   .p-cli__more { grid-column: auto; }
-  .p-cli__morelbl { display: none; }
-  .p-cli__more .p-cli__morebtn { width: var(--gw-tap); padding-left: 0; padding-right: 0; }
   .p-cli__more .gw-menu__panel { left: auto; right: 0; min-width: 13rem; }
 }
 /* Crear cliente: en celular el botón ocupa todo el ancho; textos largos de la tarjeta parten en líneas. */
@@ -49,7 +47,7 @@
 
 /* Escritorio (≥ 901 px): los eventos de cada cuenta son filas delgadas de UNA línea, con columnas alineadas (Fase 1.7, ancho).
    Bajo 901 px sigue la tarjeta de siempre (celular sin cambios). */
-.p-cli__cols, .p-cli__rep--dot { display: none; }
+.p-cli__cols, .p-cli__rep--dot { display: none; }          /* el aviso del informe se ve completo («Informe pendiente») en celular y en computador */
 @media (min-width: 901px) {
   .gw-tenant__body { --cli-cols: minmax(0, 2.4fr) minmax(0, 2fr) 6.5rem minmax(0, 1.5fr) max-content; }
   /* cuenta: nombre y «Ver eventos» a la izquierda, «Nuevo evento» a la derecha, en la misma línea */
@@ -67,9 +65,8 @@
   .gw-event-card .gw-card-row__title { order: 1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; margin: 0; font-size: var(--gw-fs-md); line-height: var(--gw-lh-tight); overflow-wrap: break-word; }
   .gw-event-card .p-cli__name { display: inline; }
   .gw-event-card .p-cli__rep { display: inline-block; vertical-align: middle; margin-right: var(--gw-sp-1); }
+  .gw-event-card .p-cli__rep--dot { display: none; }
   .gw-event-card .gw-event-code { font-size: var(--gw-fs-sm); }
-  .gw-event-card .p-cli__rep--full { display: none; }
-  .gw-event-card .p-cli__rep--dot { display: inline-flex; flex: 0 0 auto; }
   .gw-event-card .p-cli__loc { order: 2; } .gw-event-card .p-cli__date { order: 3; } .gw-event-card .p-cli__coord { order: 4; }
   .gw-event-card .p-cli__loc, .gw-event-card .p-cli__coord { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); font-size: var(--gw-fs-sm); color: var(--gw-text); }
   .gw-event-card .p-cli__date { min-width: 0; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text); }
@@ -94,12 +91,10 @@
   .gw-event-card .gw-card-row__head .gw-badge { display: inline-flex; order: 5; justify-self: start; }
 }
 
-/* «Ingresar» dorado (primario) como en el resto de la plataforma; «Editar» conserva su lápiz y su contorno. */
-@media (min-width: 901px) {
-  .gw-event-card .p-cli__acts > a.p-cli__act { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: transparent; box-shadow: var(--gw-shadow-sm); font-weight: var(--gw-fw-bold); }
-  .gw-event-card .p-cli__acts > a.p-cli__act .gw-icon { color: var(--gw-on-gold); }
-  .gw-event-card .p-cli__acts > a.p-cli__act:hover { box-shadow: var(--gw-shadow-md); filter: brightness(1.05); }
-}
+/* «Ingresar» dorado (primario) como en el resto de la plataforma, en celular Y en computador; «Editar» conserva su lápiz y su contorno. */
+.gw-event-card .p-cli__acts > a.p-cli__act { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: transparent; box-shadow: var(--gw-shadow-sm); font-weight: var(--gw-fw-bold); }
+.gw-event-card .p-cli__acts > a.p-cli__act .gw-icon { color: var(--gw-on-gold); }
+.gw-event-card .p-cli__acts > a.p-cli__act:hover { box-shadow: var(--gw-shadow-md); filter: brightness(1.05); }
 
 /* Eventos (menú lateral) usa esta misma fila: en la columna de personas, comercial y coordinador van cada uno en su línea. */
 .p-cli__coord .ev-who { display: block; }

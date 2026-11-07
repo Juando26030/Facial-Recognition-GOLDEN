@@ -41,7 +41,11 @@
 
   function markRequired(node, key, required) {
     const label = node.querySelector('label');
-    if (label && label.children.length === 0) label.textContent = label.textContent.replace(/\s*\*\s*$/, '') + (required ? ' *' : '');
+    if (label && Array.from(label.children).every((c) => c.classList.contains('gw-req'))) {          // asterisco naranja (.gw-req) en TODO obligatorio; sin él cuando no lo es
+      Array.from(label.querySelectorAll('.gw-req')).forEach((c) => c.remove());
+      label.textContent = label.textContent.replace(/\s*\*\s*$/, '');
+      if (required) { const star = label.ownerDocument.createElement('span'); star.className = 'gw-req'; star.setAttribute('aria-hidden', 'true'); star.textContent = ' *'; label.appendChild(star); }
+    }
     node.querySelectorAll('input, select, textarea').forEach((c) => {
       if (c.name !== key || ['checkbox', 'radio', 'file', 'hidden', 'submit', 'button'].includes(c.type)) return;
       if (c.getAttribute('data-pf-hidden')) return;           // oculto por una condición: no se exige

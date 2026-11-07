@@ -20,6 +20,11 @@
 .fs-kpi__label { display: flex; align-items: center; gap: var(--gw-sp-2); }
 .fs-kpi__icon { flex: none; width: 1.6rem; height: 1.6rem; color: var(--gw-gold-text); }
 .fs-kpi__icon--sheet { color: var(--gw-ok-line); }
+.fs-kpi__icon--hand { color: var(--gw-info-line); }
+.fs-kpi__icon--flag-start { color: var(--gw-ico-lime); }
+.fs-kpi__icon--flag-end { color: var(--gw-ico-yellow); }
+.fs-kpi__icon--peak { color: var(--gw-ico-teal); }
+.fs-kpi__icon--gauge { color: var(--gw-ico-forest); }
 .fs-kpi__value { font-size: clamp(2.25rem, 8vw, 3.25rem); line-height: 1.05; font-weight: var(--gw-fw-bold); color: var(--gw-text); overflow-wrap: anywhere; }
 .fs-kpi__value--text { font-size: var(--gw-fs-2xl); }
 .fs-kpi__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }

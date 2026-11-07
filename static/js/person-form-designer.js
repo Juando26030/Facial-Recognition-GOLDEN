@@ -359,7 +359,7 @@
           const rw = el('div', `gw-fields-row gw-fields-row--${r.keys.length}`);
           r.keys.forEach((k) => {
             const it = byKey[k]; if (!it) return;
-            const f = el('div', 'gw-field'), lb = el('label', 'gw-label'); lb.textContent = it.label + (it.required ? ' *' : '');
+            const f = el('div', 'gw-field'), lb = el('label', 'gw-label', it.label); if (it.required) lb.appendChild(el('span', 'gw-req', ' *', { 'aria-hidden': 'true' }));
             let ctl;
             if (it.type === 'text_long') ctl = el('textarea', 'gw-textarea', null, { rows: '2' });
             else if (['select', 'radio', 'categories'].includes(it.type)) { ctl = el('select', 'gw-select'); ctl.appendChild(el('option', null, 'Selecciona…')); }

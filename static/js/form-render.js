@@ -13,6 +13,7 @@
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   // Mensaje del cupo lleno: el de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Espejo de formlib.quota_full_message.
+  const OPTIONAL = ' <span class="fr-opt" style="font-weight:400; opacity:.7;">(opcional)</span>';       // cara al público no hay asteriscos: lo no obligatorio lleva «(opcional)» (6-nov-2026, orden de Juan David)
   const QUOTA_DEFAULT_MESSAGE = 'Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.';
   const QUOTA_CLOSED_MESSAGE = 'Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.';   // máximo 0 = cerrado temporalmente
   const quotaFullMessage = (message, label, closed) => (String(message == null ? '' : message).trim() || (closed ? QUOTA_CLOSED_MESSAGE : QUOTA_DEFAULT_MESSAGE)).split('{cupo}').join(String(label == null ? '' : label));
@@ -317,12 +318,13 @@
       if (box) applyFilter(box);
     });
 
-    // Nombre visible de un elemento (con su asterisco de obligatorio y el aviso de la escarapela virtual); lo usan fieldHtml y el repintado de variantes.
+    // Cara al público NO hay asteriscos (decisión de Juan David, 6-nov-2026): lo que no es obligatorio lleva «(opcional)» y lo obligatorio no lleva marca; si se envía vacío, el aviso dice «Tienes que llenar este campo».
+    // Nombre visible de un elemento (con «(opcional)» si no es obligatorio y el aviso de la escarapela virtual); lo usan fieldHtml y el repintado de variantes.
     function ttlHtml(g) {
       if (g.type === 'payment') return g.label || g.display_label ? lab(g) : 'Pago';
       if (g.type === 'companions') return lab(g);
       const note = opts.badgeEmailField && opts.badgeEmailField === g.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
-      return `${lab(g)}${g.required ? ' <span style="color:#c0392b">*</span>' : ''}${g.type === 'checkbox' ? '' : note}`;
+      return `${lab(g)}${g.required ? '' : OPTIONAL}${g.type === 'checkbox' ? '' : note}`;
     }
     function fieldHtml(f, pre, ro, assetUrl) {
       const vv = variantsOf(f), tAttr = vv.display_label ? ' data-ttl' : '';
@@ -374,7 +376,7 @@
       const d = (compData[f.id] = compData[f.id] || []);
       host.innerHTML = Array.from({ length: n }, (_, i) => `<div class="fr-comp-group"><div class="fr-comp-title">Acompañante ${i + 1}</div>${(f.person_fields || []).map((pf) => {
         const type = { email: 'email', phone: 'tel', number: 'number' }[pf.type] || 'text';
-        return `<label class="fr-l" style="font-weight:600;">${esc(pf.label)}${pf.required ? ' <span style="color:#c0392b">*</span>' : ''}</label><input type="${type}" data-comp="${esc(f.id)}" data-i="${i}" data-sid="${esc(pf.id)}" value="${esc((d[i] || {})[pf.id] || '')}" autocomplete="off" ${type === 'number' ? 'step="any"' : ''}>`;
+        return `<label class="fr-l" style="font-weight:600;">${esc(pf.label)}${pf.required ? '' : OPTIONAL}</label><input type="${type}" data-comp="${esc(f.id)}" data-i="${i}" data-sid="${esc(pf.id)}" value="${esc((d[i] || {})[pf.id] || '')}" autocomplete="off" ${type === 'number' ? 'step="any"' : ''}>`;
       }).join('')}</div>`).join('');
     }
     function syncComp(target) {
@@ -388,7 +390,7 @@
         for (const pf of f.person_fields || []) {
           const v = String(list[i][pf.id] || '').trim();
           const who = `Acompañante ${i + 1}: «${pf.label}»`;
-          if (!v) { if (pf.required) return `${who} es obligatorio`; continue; }
+          if (!v) { if (pf.required) return `${who}: tienes que llenar este campo`; continue; }
           if (pf.type === 'email' && !EMAIL.test(v)) return `${who}: escribe un correo con formato válido`;
           if (pf.type === 'number' && isNaN(Number(v.replace(',', '.')))) return `${who}: debe ser un número`;
         }
@@ -534,7 +536,7 @@
         if (f.type === 'companions') { const msg = checkComp(f, raw[fid]); if (msg) errors[fid] = msg; return; }
         const v = raw[fid];
         const empty = f.type === 'multiselect' ? v.length === 0 : (f.type === 'checkbox' ? v !== 'true' : v === '');
-        if (f.required && empty) errors[fid] = f.type === 'checkbox' ? 'Debes marcar esta casilla' : (f.type === 'file' ? 'Adjunta el archivo' : 'Este campo es obligatorio');
+        if (f.required && empty) errors[fid] = f.type === 'checkbox' ? 'Debes marcar esta casilla' : (f.type === 'file' ? 'Adjunta el archivo' : 'Tienes que llenar este campo');
         else if (!empty && f.type === 'email' && !EMAIL.test(v)) errors[fid] = 'Escribe un correo con formato válido';
         else if (!empty && f.type === 'number' && !/^-?\d+([.,]\d+)?$/.test(String(v).trim())) errors[fid] = 'Debe ser un número (solo dígitos)';
         else if (!empty && f.type === 'phone' && !/^[+\d][\d\s().-]{5,19}$/.test(String(v).trim())) errors[fid] = 'Escribe un teléfono válido';

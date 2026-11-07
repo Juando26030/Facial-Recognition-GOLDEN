@@ -45,6 +45,8 @@
   --gw-warn-bg: #fff3d4;     --gw-warn-text: #6e4300;     --gw-warn-line: #b36b00;
   --gw-err-bg: #fdebed;      --gw-err-text: #9a1b29;      --gw-err-line: #c4283a;
   --gw-info-bg: #e7eeff;     --gw-info-text: #1b3580;     --gw-info-line: #3156c9;
+  /* colores de iconos de datos (cifras de Estadísticas) y marca de «obligatorio» (6-nov-2026): tres verdes bien distintos, amarillo y naranja */
+  --gw-ico-lime: #5c9a00;    --gw-ico-teal: #0a8f7a;      --gw-ico-forest: #14532d;    --gw-ico-yellow: #c99700;    --gw-req: #d45500;
 
   /* --- Barra lateral / de navegación (azul marino en los dos temas) --- */
   --gw-nav-bg: #141c4d;
@@ -114,6 +116,7 @@
   --gw-warn-bg: #3b2a05;     --gw-warn-text: #ffd98a;     --gw-warn-line: #e0a22d;
   --gw-err-bg: #40111a;      --gw-err-text: #ffb0b9;      --gw-err-line: #ff6f80;
   --gw-info-bg: #15295e;     --gw-info-text: #b3c9ff;     --gw-info-line: #6f97ff;
+  --gw-ico-lime: #a3e635;    --gw-ico-teal: #2dd4bf;      --gw-ico-forest: #bbf7d0;    --gw-ico-yellow: #ffd24a;    --gw-req: #ff8c42;
 
   --gw-nav-bg: #080b22;
 
@@ -224,7 +227,7 @@
 /* ============================================================ Formularios: etiqueta arriba, ayuda corta, error que dice qué hacer */
 .gw-field { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
 .gw-label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
-.gw-label .gw-req { color: var(--gw-err-text); }
+.gw-req { color: var(--gw-req); font-weight: var(--gw-fw-bold); }          /* el asterisco de «obligatorio»: naranja en TODAS las pantallas del personal (las páginas públicas no llevan asterisco) */
 .gw-input, .gw-select, .gw-textarea { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); transition: border-color var(--gw-dur), box-shadow var(--gw-dur); }
 .gw-textarea { min-height: 96px; resize: vertical; }
 .gw-input::placeholder { color: var(--gw-text-muted); opacity: 1; }

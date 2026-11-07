@@ -96,7 +96,11 @@
       .ad-kpi__label { display: flex; align-items: center; gap: var(--gw-sp-2); }
       .ad-kpi__icon { flex: none; width: 1.6rem; height: 1.6rem; color: var(--gw-gold-text); }
       .ad-kpi__icon--sheet { color: var(--gw-ok-line); }
-      .ad-kpi__icon--hand { color: var(--gw-warn-line); }
+      .ad-kpi__icon--hand { color: var(--gw-info-line); }
+      .ad-kpi__icon--flag-start { color: var(--gw-ico-lime); }
+      .ad-kpi__icon--flag-end { color: var(--gw-ico-yellow); }
+      .ad-kpi__icon--peak { color: var(--gw-ico-teal); }
+      .ad-kpi__icon--gauge { color: var(--gw-ico-forest); }
       .ad-kpi__value { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); overflow-wrap: anywhere; }
       .ad-kpi__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
       .ad-kpi--good .ad-kpi__value { color: var(--gw-ok-text); }
