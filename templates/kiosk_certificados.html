@@ -51,7 +51,7 @@
 </div>
 <script>window.EVENT_ID = {{ event.id }}; window.EVENT_CODE = "{{ event.event_code }}"; window.EVENT_FINALIZED = {{ "true" if event.status == "finalizado" else "false" }}; window.CERT_ENABLED = {{ "true" if event.certificates_enabled else "false" }};</script>
 
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   <div class="gw-container gw-container--narrow gw-stack-lg gw-cert" data-gw-tour="certificados"{% if event.certificates_enabled %} data-gw-tour-auto{% endif %}>
     <div class="gw-page-head">
       <div class="gw-page-head__text">

@@ -62,7 +62,7 @@
 </div>
 <script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";
 window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.gwIcon = function (n) { return '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>'; };</script>
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   <div class="gw-container gwe-wrap" data-gw-tour="editor-formulario" data-gw-tour-auto>
 
     <div class="gw-page-head">

@@ -1009,12 +1009,13 @@
 .gw-search__clear--proxy { display: none !important; }
 
 /* Bloques plegables de configuración (static/js/gw-ui.js: foldInit). Se pliega con la clase, sin mover nodos. */
-.gw-fold__head h4 { cursor: pointer; }
+.gw-fold__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-fold__ttl { cursor: pointer; }
 .gw-fold__btn { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--gw-tap); min-height: var(--gw-tap); border: 0; border-radius: var(--gw-radius-sm); background: transparent; color: var(--gw-text); cursor: pointer; }
 .gw-fold__btn:hover { background: var(--gw-surface-2); }
 .gw-fold__btn .gw-icon { transition: transform .15s; transform: rotate(90deg); }
 .gw-is-folded > .gw-fold__head .gw-fold__btn .gw-icon { transform: rotate(0deg); }
-.gw-group__item.gw-is-folded > :not(.gw-item-head) { display: none !important; }
-.gw-group__item.gw-is-folded > .gw-item-head { margin-bottom: 0; }
+.gw-is-folded > :not(.gw-fold__head) { display: none !important; }
+.gw-is-folded > .gw-fold__head { margin-bottom: 0; }
 .gw-fold__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); justify-content: flex-end; margin: var(--gw-sp-2) 0; }
 @media (prefers-reduced-motion: reduce) { .gw-fold__btn .gw-icon { transition: none; } }

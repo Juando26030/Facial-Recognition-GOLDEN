@@ -52,7 +52,7 @@ button.gw-ruleta-item:focus-visible { outline: 3px solid var(--gw-focus); outlin
 
 /* Apariencia */
 .gw-ruleta-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-5); align-items: start; }
-@media (min-width: 1000px) { .gw-ruleta-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .gw-ruleta-split__preview { position: sticky; top: var(--gw-sp-4); } }
+@media (min-width: 1000px) { .gw-ruleta-split__preview { position: static; } }
 .gw-ruleta-colors { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-1); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
 .gw-ruleta-palette { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }
 .gw-ruleta-swatch { display: inline-flex; align-items: center; gap: var(--gw-sp-1); }

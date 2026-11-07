@@ -63,7 +63,7 @@
 {% endif %}
 <script>window.EVENT_ID = {{ event.id }}; window.STATS_BASE = {{ (stats_base or ("/api/events/" ~ event.id)) | tojson }};</script>
 
-<main class="golden-main" id="gwStatsMain">
+<main class="golden-main" data-gw-fold id="gwStatsMain">
   <div class="gw-stats"{% if tour_on %} data-gw-tour="estadisticas" data-gw-tour-auto{% endif %}>
     {% if public_view %}<div class="gw-alert gw-alert--info" role="note">{{ ic('info') }}<div><strong>{{ public_view.title }}</strong> · Vista de solo lectura. Este enlace vence el {{ public_view.until }}.</div></div>{% endif %}
 

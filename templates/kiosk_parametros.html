@@ -53,7 +53,7 @@
 <script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};
 window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.gwIcon = function (n) { return '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>'; };</script>
 
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   <div class="golden-container gw-parametros__wrap" data-gw-tour="parametros" data-gw-tour-auto>
     <div class="gw-row gw-row--between">
       <div>

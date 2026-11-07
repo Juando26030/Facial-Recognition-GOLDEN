@@ -134,6 +134,7 @@
       return { el: el, n: parseInt(el.getAttribute('data-gw-tour-step'), 10) || 0, title: el.getAttribute('data-gw-tour-title') || '', text: el.getAttribute('data-gw-tour-text') || '' };
     }).filter(function (s) { return visible(s.el); }).sort(function (a, b) { return a.n - b.n; });
     if (!steps.length || (!opts.force && tourSeen(key))) return;
+    foldOpenAll();                                          // la guía señala cosas dentro de bloques: todo desplegado
     var root = mk('div', 'gw-tour'), spot = mk('div', 'gw-tour__spot'), card = mk('div', 'gw-tour__card');
     card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-labelledby', 'gwTourTitle'); card.setAttribute('aria-describedby', 'gwTourText');
     var count = mk('p', 'gw-tour__count'), title = mk('h2', 'gw-tour__title'), text = mk('p', 'gw-tour__text'), foot = mk('div', 'gw-tour__foot');
@@ -156,40 +157,70 @@
     tourShow(t, 0);
   }
 
-  /* ----------------------------------------------------------------- Bloques plegables (pantallas de configuración)
-     Todo `.gw-group__item` cuyo primer hijo es `.gw-item-head` se puede plegar/desplegar (botón con chevron o clic en el título). Se pliega con una CLASE (`gw-is-folded`) y CSS:
-     no se mueve ni envuelve ningún nodo, así que ids, selectores y los campos pendientes de guardar siguen igual. El estado se recuerda en este dispositivo (localStorage). */
+  /* ----------------------------------------------------------------- Bloques plegables
+     Se pueden plegar: (1) todo `.gw-group__item` cuyo primer hijo es `.gw-item-head` (Parámetros, Configuración, Ruleta); (2) dentro de `main[data-gw-fold]` (opciones del evento): `<details>` (nativos) y
+     `<section aria-labelledby>` con título. Los de tipo (1) y las secciones se pliegan con una CLASE (`gw-is-folded`) y CSS: no se mueve ni envuelve ningún nodo, así que ids, selectores y campos
+     pendientes de guardar siguen igual. «Plegar todo / Desplegar todo» sale en cada pestaña o, si no hay pestañas, una vez en la pantalla. El estado se recuerda en este dispositivo. */
   function foldKey(item, i) { return 'gw_fold_' + location.pathname + '#' + (item.id || ('i' + i)); }
+  function foldTitle(item) { var h = item.querySelector(':scope > .gw-fold__head .gw-fold__ttl, :scope > .gw-fold__head'); return ((h && h.textContent) || 'bloque').replace(/\s+/g, ' ').trim().slice(0, 60); }
   function foldSet(item, folded) {
+    if (item.tagName === 'DETAILS') { item.open = !folded; return; }
     item.classList.toggle('gw-is-folded', folded);
-    var b = item.querySelector(':scope > .gw-item-head > [data-gw-fold-btn]');
-    if (b) { b.setAttribute('aria-expanded', folded ? 'false' : 'true'); b.setAttribute('aria-label', (folded ? 'Desplegar «' : 'Plegar «') + ((item.querySelector(':scope > .gw-item-head h4') || {}).textContent || 'bloque') + '»'); }
+    var b = item.querySelector(':scope > .gw-fold__head > [data-gw-fold-btn]');
+    if (b) { b.setAttribute('aria-expanded', folded ? 'false' : 'true'); b.setAttribute('aria-label', (folded ? 'Desplegar «' : 'Plegar «') + foldTitle(item) + '»'); }
+  }
+  function foldMake(item, head, i) {
+    var btn = mk('button', 'gw-fold__btn'); btn.type = 'button'; btn.setAttribute('data-gw-fold-btn', '');
+    btn.innerHTML = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="/static/img/icons.svg#i-chevron"></use></svg>';
+    var ttl = head.matches('h2,h3,h4') ? head : head.querySelector('h2,h3,h4'); if (ttl) ttl.classList.add('gw-fold__ttl');
+    head.appendChild(btn); head.classList.add('gw-fold__head'); item.setAttribute('data-gw-foldable', '');
+    item.setAttribute('data-gw-fold-key', foldKey(item, i));
+    foldSet(item, store(true, foldKey(item, i)) === '1');
+  }
+  function foldItems(scope) {                                  // todo lo plegable dentro de `scope`: bloques, secciones con título y <details>
+    return Array.prototype.filter.call(scope.querySelectorAll('[data-gw-foldable], details'), function (el) { return !el.closest('[hidden]') || el.tagName === 'DETAILS'; });
   }
   function foldInit() {
-    var panels = document.querySelectorAll('.gw-tabpanel, .gw-config__wrap, main');
-    var seen = [];
     Array.prototype.forEach.call(document.querySelectorAll('.gw-group__item'), function (item, i) {
       var head = item.firstElementChild;
       if (!head || !head.classList.contains('gw-item-head') || item.children.length < 2 || item.hasAttribute('data-gw-nofold')) return;
-      var btn = mk('button', 'gw-fold__btn'); btn.type = 'button'; btn.setAttribute('data-gw-fold-btn', '');
-      btn.innerHTML = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="/static/img/icons.svg#i-chevron"></use></svg>';
-      head.appendChild(btn); head.classList.add('gw-fold__head'); item.setAttribute('data-gw-foldable', '');
-      item.setAttribute('data-gw-fold-key', foldKey(item, i));
-      foldSet(item, store(true, foldKey(item, i)) === '1');
+      foldMake(item, head, i);
     });
-    void panels; void seen;
-    Array.prototype.forEach.call(document.querySelectorAll('.gw-tabpanel'), function (panel) {
-      if (panel.querySelectorAll('[data-gw-foldable]').length < 2) return;
+    var page = document.querySelector('main[data-gw-fold]');
+    if (page) {
+      Array.prototype.forEach.call(page.querySelectorAll('section[aria-labelledby]'), function (sec, i) {
+        if (sec.hasAttribute('data-gw-foldable') || sec.getAttribute('role') === 'tabpanel' || sec.hasAttribute('data-gw-nofold') || sec.closest('[data-gw-foldable]')) return;
+        var h = document.getElementById(sec.getAttribute('aria-labelledby'));
+        if (!h || !sec.contains(h) || h.classList.contains('gw-sr-only') || sec.children.length < 2) return;
+        var head = h; while (head.parentElement && head.parentElement !== sec) head = head.parentElement;
+        if (head.parentElement !== sec) return;
+        foldMake(sec, head, 100 + i);
+      });
+    }
+    var scopes = Array.prototype.slice.call(document.querySelectorAll('.gw-tabpanel, .pane, [role="tabpanel"]'));
+    if (page) scopes.push(page);
+    scopes.forEach(function (scope) {
+      var own = foldItems(scope).filter(function (el) {                  // en `main` solo lo que no está dentro de una pestaña (cada pestaña tiene su barra)
+        return scope !== page || !el.closest('.gw-tabpanel, .pane, [role="tabpanel"]');
+      });
+      if (own.length < 2 || scope.querySelector(':scope > .gw-fold__bar')) return;
       var bar = mk('div', 'gw-fold__bar'), a = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Plegar todo'), z = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Desplegar todo');
-      a.type = z.type = 'button'; a.setAttribute('data-gw-fold-all', '1'); z.setAttribute('data-gw-fold-all', '0');
+      a.type = z.type = 'button'; a.setAttribute('data-gw-fold-all', '1'); z.setAttribute('data-gw-fold-all', '0'); bar._scope = scope; bar._own = own;
       bar.appendChild(a); bar.appendChild(z);
-      var lead = panel.querySelector(':scope > .gw-tabpanel__head');
-      if (lead && lead.nextSibling) panel.insertBefore(bar, lead.nextSibling); else panel.insertBefore(bar, panel.firstChild);
+      var first = own[0], anchor = first; while (anchor.parentElement && anchor.parentElement !== scope) anchor = anchor.parentElement;
+      if (anchor.parentElement === scope) scope.insertBefore(bar, anchor); else scope.insertBefore(bar, scope.firstChild);
     });
   }
   function foldToggle(item) {
     var f = !item.classList.contains('gw-is-folded');
     foldSet(item, f); store(false, item.getAttribute('data-gw-fold-key'), f ? '1' : '0');
+  }
+  function foldAll(bar, folded, remember) {
+    (bar._own || []).forEach(function (it) { foldSet(it, folded); if (remember && it.getAttribute('data-gw-fold-key')) store(false, it.getAttribute('data-gw-fold-key'), folded ? '1' : '0'); });
+  }
+  function foldOpenAll() {                                     // las guías necesitan ver todo: se despliega sin cambiar lo recordado
+    Array.prototype.forEach.call(document.querySelectorAll('[data-gw-foldable].gw-is-folded'), function (it) { it.classList.remove('gw-is-folded'); });
+    Array.prototype.forEach.call(document.querySelectorAll('main[data-gw-fold] details'), function (d) { d.open = true; });
   }
 
   /* ----------------------------------------------------------------- Introducción compacta en celular */
@@ -360,12 +391,8 @@
     }
     if ((el = tgt.closest('[data-gw-clear]'))) { e.preventDefault(); runClear(el); return; }
     if ((el = tgt.closest('[data-gw-fold-btn]'))) { foldToggle(el.closest('[data-gw-foldable]')); return; }
-    if ((el = tgt.closest('.gw-fold__head h4'))) { foldToggle(el.closest('[data-gw-foldable]')); return; }
-    if ((el = tgt.closest('[data-gw-fold-all]'))) {
-      var fold = el.getAttribute('data-gw-fold-all') === '1', pnl = el.closest('.gw-tabpanel');
-      Array.prototype.forEach.call(pnl.querySelectorAll('[data-gw-foldable]'), function (it) { foldSet(it, fold); store(false, it.getAttribute('data-gw-fold-key'), fold ? '1' : '0'); });
-      return;
-    }
+    if ((el = tgt.closest('.gw-fold__ttl'))) { var fi = el.closest('[data-gw-foldable]'); if (fi && !tgt.closest('.gw-help, a, button, input, select, label')) foldToggle(fi); return; }
+    if ((el = tgt.closest('[data-gw-fold-all]'))) { var fb = el.closest('.gw-fold__bar'); if (fb) foldAll(fb, el.getAttribute('data-gw-fold-all') === '1', true); return; }
     if (tgt.matches && tgt.matches('[data-gw-tour-off]')) { setToursOff(tgt.checked); return; }
     if ((el = tgt.closest('[data-gw-tour-restart]'))) { e.preventDefault(); startTour(el.getAttribute('data-gw-tour-restart'), { force: true }); return; }
     if ((el = tgt.closest('[data-gw-help-btn]'))) {

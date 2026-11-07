@@ -87,7 +87,7 @@
     el.innerHTML = '<div class="gw-event-list">' + head + events.map((e) => `
       <div class="gw-card-row gw-event-card">
         <div class="gw-card-row__head">
-          <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}">${window.reportBulbHtml ? `<span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span>` : ''} <span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code">(${esc(e.event_code)})</span>` : ''}</span>
+          <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}">${window.reportBulbHtml ? `<span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span>` : ''} <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code">(${esc(e.event_code)})</span>` : ''}</span></span>
           <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
         </div>
         <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.location, e.city].filter(Boolean).join(' · '))}">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date">${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="Coordinador: ${esc(e.coordinator_name) || '-'}"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || '-'}</span></p>

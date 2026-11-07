@@ -36,6 +36,31 @@ def test_los_bloques_de_configuracion_se_pliegan_sin_mover_nodos():
     assert "function foldInit" in js and "data-gw-fold-btn" in js and "data-gw-fold-all" in js and "foldInit();" in js
     assert "wrapChild" not in js and "appendChild(item" not in js                         # solo clase gw-is-folded: ids y selectores no cambian
     css = read("static/css/design-system.css")
-    assert ".gw-group__item.gw-is-folded > :not(.gw-item-head) { display: none !important; }" in css
+    assert ".gw-is-folded > :not(.gw-fold__head) { display: none !important; }" in css
     # «Formulario de persona» ahora tiene cabecera plegable como «Campos de la persona»
     assert '<div class="gw-item-head"><h4 id="personFormTitle">Formulario de persona</h4></div>' in read("templates/kiosk_parametros.html")
+
+
+def test_fase_1_11_todo_en_una_columna_y_plegar_todo_en_las_opciones_del_evento():
+    # nada de secciones lado a lado en configuración (Parámetros, Configuración, editor de formularios, ruleta)
+    assert ".gw-parametros .gw-tabpanel { display: grid" not in read("static/css/parametros.css")
+    assert ".gw-config__wrap .gw-tabpanel { display: grid" not in read("static/css/p-configuracion.css")
+    assert "#pane-config.active { display: grid" not in read("static/css/gw-editor-form.css")
+    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .gw-ruleta-split__preview" not in read("static/css/gw-ruleta.css")
+    # «Plegar todo / Desplegar todo» en cada opción del evento (menos Registro)
+    for t in ("kiosk_estadisticas", "kiosk_roster", "kiosk_formularios", "kiosk_ruleta", "kiosk_usuarios", "kiosk_documentos", "kiosk_legalizaciones", "kiosk_areas", "kiosk_inventario",
+              "kiosk_certificados", "badge_editor", "kiosk_formulario_editor", "kiosk_parametros"):
+        assert '<main class="golden-main" data-gw-fold' in read(f"templates/{t}.html"), t
+    assert "data-gw-fold" not in read("templates/kiosk_registro.html")
+    js = read("static/js/gw-ui.js")
+    assert "main[data-gw-fold]" in js and "function foldOpenAll" in js and "foldOpenAll();" in js          # las guías abren todo antes de señalar
+
+
+def test_fase_1_11_cedula_con_asterisco_y_lista_de_eventos():
+    d = read("static/js/directory.js")
+    assert 'for="editModalCedulaField">${esc(label)}<span class="gw-req"' in d
+    for rel in ("static/js/gw-clientes.js", "templates/eventos.html"):
+        assert 'class="p-cli__nm"' in read(rel), rel
+    css = read("static/css/p-clientes.css")
+    assert ".gw-event-card .p-cli__nm {" in css and ".gw-event-card .p-cli__rep { flex: 0 0 6.75rem" in css
+    assert ".p-cli__coord .ev-who .p-cli__pfx { display: inline;" in css                                    # «Comercial: …» / «Coordinador: …»

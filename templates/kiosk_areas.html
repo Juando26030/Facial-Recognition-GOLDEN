@@ -47,7 +47,7 @@
 </div>
 <script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if event.auto_register else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
 
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-ar" data-gw-tour="areas"{% if event.areas_enabled %} data-gw-tour-auto{% endif %}>
     <div class="gw-page-head">
       <div class="gw-page-head__text">

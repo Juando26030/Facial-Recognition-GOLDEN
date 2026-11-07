@@ -336,7 +336,7 @@
     }
     function cedulaRow(label) {
       return `<div class="gw-field gw-registro__editfield">
-          <label class="gw-label" for="editModalCedulaField">${esc(label)}</label>
+          <label class="gw-label" for="editModalCedulaField">${esc(label)}<span class="gw-req" aria-hidden="true"> *</span></label>
           <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} class="gw-input">
           ${isAdmin ? '<p class="gw-hint">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
         </div>`;

@@ -47,7 +47,7 @@
 </div>
 <script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }};</script>
 
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-inv" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
