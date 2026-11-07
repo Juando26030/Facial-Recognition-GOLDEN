@@ -25,3 +25,46 @@ Los puntos 3–6 adelantan lo que el plan tenía en la Fase 5 (ficha configurabl
 - **Calendario, flujo:** clic en un evento abre un cuadrito superpuesto con las mismas acciones de la fila de Eventos/Clientes (Editar, Exportar, Cambiar estado, Ingresar); clic fuera lo cierra. Mismos permisos de siempre: la acción que el rol no puede (p. ej. Eliminar) no aparece.
 - **Países y ciudades:** lista fija dentro de la plataforma, sin servicios externos.
 - **Orden de entregas:** (1) calendario con los datos actuales y el cuadrito de acciones; (2) plantilla de creación y de calendario; (3) crear evento desde Eventos con selector de cliente; (4) mapa e inventario; después, migración de eventos existentes.
+
+## Plantilla de evento: modelo y contratos
+
+Entrega 2 de la Fase 2. Rama `f2/plantilla-evento`, migración `0087_event_templates`. Una sola plantilla GLOBAL (`scope='global'`, `tenant_id` nullable para plantillas por cliente más adelante) que gobierna dos vistas: qué pide «Nuevo evento» y qué sale en la tarjeta del calendario.
+
+### Modelo de datos
+- `event_templates`: `scope` (único), `tenant_id` (nulo), `fields_json`, `creation_layout_json`, `calendar_layout_json`, `version`, `updated_at`, `updated_by_id`. Sin fila = plantilla de fábrica (versión 0), que reproduce EXACTAMENTE el «Nuevo evento» de antes.
+- `event_template_revisions`: copia de cada guardado (quién y cuándo; se conservan 50).
+- `events.extra_json`: valores de los campos PERSONALIZADOS (`{"c_ab12": valor}`). Las columnas base siguen en sus columnas; los interruptores escriben las MISMAS columnas que Parámetros del evento (una sola fuente).
+- Campo: `{key, type, title, required, retired, config}`. Claves personalizadas `^c_[a-z0-9]{1,24}$`; campos ligados a columnas (`client, event_code, name, country, city, location, address, start_date, end_date, event_time_*, setup_*, coordinator_staff_id, commercial_staff_id, super_event_id, bandana, notes`) y `sw_<interruptor>`. Siempre obligatorios y no removibles: `client`, `event_code`, `name`.
+- Tipos creables: `text_short, text_long, select, money, number, commercial, coordinator, date, time, datetime, country, city, address_map, contact, bandana_colors, inventory`. Dirección con mapa e inventario guardan hoy `{texto,lat,lng}` y la lista de tipos/cantidades/referencia; el widget llega en la entrega 4.
+- `creation_layout`: `{sections: [{id, title, keys: [...]}]}` (máx. 6 secciones). `calendar_layout`: `{top|left|right|bottom: [{key, label}]}` (máx. 12 por zona).
+- Retirar un campo (`retired: true`) conserva su definición y los valores guardados en cada evento («campo retirado»); nunca se borra dato.
+- Interruptores (misma columna que Parámetros): `facial_enabled`, `aceptar_enabled` y `face_door_enabled` (piden facial), `inventory_enabled`, `areas_enabled`, `certificates_enabled`, `digital_badge_enabled` (al crear también nace el campo obligatorio `digital_contact`, igual que Parámetros), `auto_print_badge`, `auto_register`, `shared_print_enabled`. La ruleta no tiene interruptor en Parámetros, por eso no se ofrece.
+
+### API
+- `GET /api/event-template` (coordinador+): `{fields, creation_layout, calendar_layout, version, updated_at, updated_by, is_default, catalog, people}`. `people` = comerciales y coordinadores activos `{id, name}`.
+- `PUT /api/event-template` (admin+): cuerpo con la plantilla y `version` que se estaba editando; 409 si otro administrador guardó antes (mensaje claro, no pisa nada); 400 con el motivo en español; 413 si pasa de 400 000 bytes. Los campos personalizados que falten en el cuerpo se retiran, no se borran.
+- `GET /api/event-template/revisions` (admin+).
+- Página `GET /configuracion/plantilla-evento` (admin+), enlazada desde la pestaña «Plantilla de eventos» de Configuración.
+- `POST /api/events` conserva la ruta, el usuario «PRUEBA» y los permisos; acepta los interruptores y `extra`, y valida con la plantilla vigente (coordinador puro: él mismo como coordinador y comercial exenta). `PATCH` acepta `extra` (null borra; los retirados no se editan). `_serialize` agrega `extra`, `switches` y `bandana_colors`.
+
+### Contrato `layout` para `renderCalendarCard(event, layout)`
+```js
+const tpl = await (await fetch('/api/event-template')).json();
+const layout = EventFields.calendarLayout(tpl);        // {top,left,right,bottom: [{key, type, title, label}]}
+const card = EventFields.cardModel(event, layout);     // {top,left,right,bottom: [{key,type,title,label,text}]}
+```
+`event` es un elemento de `/api/events` (con `extra`, `switches`, `bandana_colors`). Los campos sin valor, retirados o desconocidos se omiten; todo texto sale escapado. Sin plantilla propia se usa la de fábrica (top: nombre y código; izquierda: ciudad y fechas; derecha: horas y coordinador; abajo: lugar y comercial). Los eventos sin valores extra funcionan igual.
+
+### Contrato para el selector de cliente
+`static/js/nuevo-evento.js` lee el cliente de `#nuevoEventoRoot[data-tenant-id]` al enviar; el campo `client` es un input de solo lectura. Emite `gw:newevent-rendered` en `document` tras pintar.
+
+### Ganchos para otras entregas
+Los controles llevan `data-evf-key`/`data-evf-part` y `data-evf-enhance="country|city|map|combobox|colors|inventory"` (`EventFields.afterMount`): GWGeo (países y ciudades), gw-combobox, mapa OpenStreetMap, biblioteca de colores (`/api/colors`) e inventario se enchufan ahí sin tocar el renderizador.
+
+### Pendiente
+- Entrega 4: widgets de mapa (OSM) e inventario completo; selector de países/ciudades con GWGeo.
+- Migrar eventos existentes a la plantilla: NO se hizo (no hace falta; todo funciona sin valores extra). Decisión de Juan David.
+- Pantalla de edición de un evento con los campos de la plantilla (la API `PATCH extra` ya existe).
+- Ruleta como interruptor: requiere primero un interruptor en Parámetros.
+- Al fusionar: este archivo es add/add con `docs/cierre-fase-1`; quedarse con el de ellos y agregar esta sección.
+- Pruebas con base (`tests/test_event_template.py`) y de DOM (jsdom) no se corrieron en el entorno del agente; correr `python -m pytest -q tests/test_event_template.py tests/test_visual_global.py` en Cloud Shell.
