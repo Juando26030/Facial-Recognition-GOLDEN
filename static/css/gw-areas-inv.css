@@ -76,3 +76,6 @@
   .gw-ar #presBody .gw-person__meta { margin-top: 0; font-size: var(--gw-fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gw-ar #presBody .gw-person__status { grid-column: auto; min-width: 7rem; }
 }
+
+/* Listas de a UNA por fila también en celular y tableta (los botones pueden ir a todo el ancho). */
+.gw-ar #presBody { grid-template-columns: minmax(0, 1fr); }
