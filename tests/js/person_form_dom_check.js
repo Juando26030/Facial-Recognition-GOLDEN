@@ -23,7 +23,7 @@ const def = (patch) => ({
   enabled: true, form_version: 2, form_sig: 's2',
   sheets: [{ id: 'datos', title: 'Datos principales', open: true }, { id: 'mas', title: 'Más datos', open: false }],
   rows: [{ sheet: 'datos', items: ['id'] }, { sheet: 'datos', items: ['first_name', 'last_name'] }, { sheet: 'mas', items: ['role', 'entity'] }, { sheet: 'mas', items: ['phone', 'email', 'opcional_1'] }],
-  fields: { id: { required: true }, first_name: { required: true, text_case: 'upper' }, last_name: { required: true, text_case: 'upper' }, role: { required: false }, entity: { required: false, text_case: 'lower' },
+  fields: { id: { required: true }, first_name: { required: true, text_case: 'upper' }, last_name: { required: false, text_case: 'upper' }, role: { required: false }, entity: { required: false, text_case: 'lower' },
     phone: { required: false, text_case: 'upper' }, email: { required: false }, opcional_1: { required: false, text_case: 'upper' } },
   ...(patch || {}),
 });
@@ -48,7 +48,7 @@ const keysIn = (node) => Array.from(node.querySelectorAll('[data-field-key]')).m
 
   // ---- obligatorios
   const req = (k) => c.querySelector(`[name="${k}"]`).hasAttribute('required');
-  assert.ok(req('id') && req('first_name')); assert.strictEqual(req('last_name'), false, 'los apellidos nunca se exigen');
+  assert.ok(req('id') && req('first_name')); assert.strictEqual(req('last_name'), false, 'el evento no exige el apellido: no se marca obligatorio');
   assert.strictEqual(c.querySelector('[data-field-key="last_name"] label').textContent, 'Apellidos'); assert.strictEqual(c.querySelector('[data-field-key="id"] label').textContent, 'Cédula *');
   assert.strictEqual(c.querySelector('[data-field-key="role"] label').textContent, 'Cargo');
 

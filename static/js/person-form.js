@@ -2,14 +2,14 @@
    - La DISPOSICIÓN (grupos = `sheets`, filas con hasta 4 columnas = `rows`, `show_if`) viene en la definición. Los CAMPOS no se dibujan aquí: ya están en la página (el alta, que trae el servidor) o los arma
      el modal de Editar (directory.js); `mount` solo MUEVE esos nodos (`[data-field-key]`) a sus grupos y filas, así no se pierde ningún `name`, `id` ni oyente de los demás scripts.
    - «Texto al escribir» (MAYÚSCULAS / minúsculas) se aplica MIENTRAS se escribe (nunca a cédula, teléfono ni fecha: solo a los campos que la definición marca) y el servidor lo repite al guardar.
-   - Obligatorios a la vista: lo obligatorio se marca con `*` y `required`; un grupo cerrado se abre solo si tiene un campo inválido. Apellidos nunca se exigen.
+   - Obligatorios a la vista: lo obligatorio se marca con `*` y `required`; un grupo cerrado se abre solo si tiene un campo inválido. El apellido se exige solo si el evento lo exige (def.fields.last_name.required).
    - `show_if` usa FormRender.computeVisible (static/js/form-render.js, el mismo motor del formulario web): un campo oculto no se envía y no se exige.
    - VERSIONADA: la definición trae `form_version` y `form_sig`; `pick` elige la más nueva entre la que vino con la página y la guardada en IndexedDB (contingency.js), para que alta y edición sin red usen
      la última que el dispositivo conoció. La bandeja (outbox.js) manda esa versión con cada alta o edición. Sin definición, este archivo no hace nada. */
 (function (root) {
   const CASE = { upper: (s) => s.toUpperCase(), lower: (s) => s.toLowerCase() };
   const TEXT_INPUT_TYPES = ['text', 'search', ''];
-  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['last_name'];
+  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = [];          // el apellido ya no es siempre opcional: lo decide el evento (app/lastname.py) y llega en def.fields.last_name.required
 
   const convert = (value, mode) => (typeof value === 'string' && CASE[mode] ? CASE[mode](value) : value);
   const NEVER_CASE = ['id', 'phone', 'email', 'birth_date'];          // nunca se convierten (cédula, teléfono, correo —siempre minúsculas en el servidor— y fecha), aunque una definición lo pidiera

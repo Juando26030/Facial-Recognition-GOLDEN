@@ -28,7 +28,8 @@ MAX_FIELDS, MAX_SHEETS, MAX_ROW_ITEMS = 700, 12, 4
 TEXT_FIELD_TYPES = ("text_short", "text_long")
 FIXED_TEXT_KEYS = ("first_name", "last_name", "role", "entity", "opt_1")       # fijos que admiten mayúsculas/minúsculas (si su tipo es texto)
 ALWAYS_REQUIRED = ("id", "first_name")           # cédula y nombres: siempre obligatorios
-NEVER_REQUIRED = ("last_name", "categories", "birth_date")      # el apellido puede ir vacío (viene junto con los nombres, como en la carga flexible)
+NEVER_REQUIRED = ("categories", "birth_date")
+EVENT_DECIDES = ("last_name",)      # el apellido es obligatorio según la base cargada o lo elegido en Parámetros (app/lastname.py); llega ya resuelto en `cfg["required"]`, el diseño no lo cambia
 CASE_MODES = ("", roster_text.UPPER, roster_text.LOWER)
 DEFAULT_OPEN_SHEET, DEFAULT_MORE_SHEET, DEFAULT_OTHER_SHEET = "datos", "mas", "otros"
 MORE_COUNT = 7        # cuántos campos van en «Más datos»; el resto, en «Otros datos»
@@ -52,7 +53,7 @@ def case_capable(cfg: dict) -> bool:
 
 
 def required_editable(cfg: dict) -> bool:
-    return cfg.get("key") not in ALWAYS_REQUIRED and cfg.get("key") not in NEVER_REQUIRED
+    return cfg.get("key") not in ALWAYS_REQUIRED and cfg.get("key") not in NEVER_REQUIRED and cfg.get("key") not in EVENT_DECIDES
 
 
 def _signature(configs: list) -> str:
@@ -95,6 +96,8 @@ def _required_now(key: str, cfg: dict, field_in: dict) -> bool:
         return True
     if key in NEVER_REQUIRED:
         return False
+    if key in EVENT_DECIDES:
+        return bool(cfg.get("required"))
     return bool(field_in["required"]) if "required" in field_in else bool(cfg.get("required"))
 
 
@@ -123,7 +126,7 @@ def sanitize(raw: dict, configs: list) -> dict:
             continue
         f = f if isinstance(f, dict) else {}
         out = {}
-        if "required" in f and key not in ALWAYS_REQUIRED and key not in NEVER_REQUIRED:
+        if "required" in f and key not in ALWAYS_REQUIRED and key not in NEVER_REQUIRED and key not in EVENT_DECIDES:
             out["required"] = bool(f["required"])
         mode = roster_text.parse_mode(f.get("text_case"))
         if mode is None:

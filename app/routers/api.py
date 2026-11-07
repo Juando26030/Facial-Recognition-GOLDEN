@@ -29,7 +29,7 @@ from app import testperson
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
-from app import roster_dups, roster_text, personform
+from app import roster_dups, roster_text, personform, lastname
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -68,7 +68,7 @@ def _missing_required_fields(field_configs: list, values: dict) -> list:
     alcance). Un campo booleano "obligatorio" exige estar marcado (true), no solo presente."""
     missing = []
     for cfg in field_configs:
-        if not cfg["required"]:
+        if not cfg["required"] or cfg["key"] == "last_name":          # el apellido se comprueba aparte (`lastname.missing_message`): no viaja en `values`
             continue
         value = values.get(cfg["key"])
         if cfg["field_type"] == "boolean":
@@ -81,6 +81,16 @@ def _missing_required_fields(field_configs: list, values: dict) -> list:
         if not ok:
             missing.append(cfg["label"])
     return missing
+
+
+def _last_name_error(field_configs: list, last_name) -> Optional[str]:
+    """Fase 2 (app/lastname.py): el error en español si el apellido es obligatorio en este evento (por la base cargada o por lo elegido en Parámetros) y viene vacío; None si no."""
+    required = any(c["key"] == "last_name" and c.get("required") for c in field_configs)
+    return lastname.missing_message(required, last_name)
+
+
+def _last_name_label(field_configs: list) -> str:
+    return next((c["label"] for c in field_configs if c["key"] == "last_name"), "Apellidos")
 
 
 def _invalid_email_fields(field_configs: list, values: dict) -> list:
@@ -1108,6 +1118,9 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
         kind = "Existente"
     else:
         missing = _missing_required_fields(field_configs, values)
+        last_error = _last_name_error(field_configs, last)
+        if last_error:
+            missing = missing + [_last_name_label(field_configs)]
         if missing and pf and stale:          # el obligatorio es más nuevo que la copia del dispositivo: se guarda igual y se avisa (nunca se pierde la alta)
             warnings.append(f"Faltan campos que ahora son obligatorios: {', '.join(missing)}. Complétalos en Editar")
         elif missing:
@@ -1192,6 +1205,8 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     if bad:
         return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
     missing = _missing_required_fields(field_configs, final)
+    if _last_name_error(field_configs, changes.get("last_name") or user.last_name):
+        missing = missing + [_last_name_label(field_configs)]
     if missing and pf and stale:
         warnings.append(f"Faltan campos que ahora son obligatorios: {', '.join(missing)}. Complétalos en Editar")
     elif missing:
@@ -1463,6 +1478,9 @@ def update_user(
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+        last_error = None if testperson.is_test(user.id) else _last_name_error(field_configs, user.last_name)
+        if last_error:
+            raise HTTPException(status_code=400, detail=last_error)
         bad_emails = [] if testperson.is_test(user.id) else _invalid_email_fields(field_configs, final_values)
         if bad_emails:
             raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
@@ -1770,6 +1788,9 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+    last_error = _last_name_error(field_configs, last_name)
+    if last_error:
+        raise HTTPException(status_code=400, detail=last_error)
     bad_emails = _invalid_email_fields(field_configs, final_values)
     if bad_emails:
         raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
@@ -2204,6 +2225,12 @@ def _bulk_register_impl(
                     "se toman como vengan; si no tienes el formato, descarga la plantilla de carga de asistentes."
                 ),
             )
+
+        # Fase 2: ¿esta base usa apellido por separado? (columna de apellidos con valores en ≥ 50 % de las personas). Se guarda en los ajustes del evento (lo manual de Parámetros manda sobre esto).
+        # No en la vista previa ni en «solo agregar» (la base del evento ya está definida) ni al traer personas de otro evento (sin archivo).
+        if not append_only and not (step and step.get("preview")):
+            lastname.record_detection(db, event, lastname.detect(rows, header_columns))
+            db.commit()
 
         # «No eliminar repetidos» (app/roster_dups.py): el serial se decide AQUÍ, una vez, por el orden del archivo (y de los lotes anteriores: `dup_offsets`); los pasos reciben las filas ya con su serial.
         dup_notes = []

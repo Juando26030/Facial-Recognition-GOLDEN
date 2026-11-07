@@ -98,6 +98,19 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <p class="gw-hint">Apagada: solo coordinador y administradores ven el engranaje.</p>
           </div>
 
+          <!-- Fase 2: ¿el apellido es obligatorio? Se detecta solo al cargar la base (app/lastname.py); lo que se elija aquí manda sobre lo automático. -->
+          {% set ln = last_name_state %}
+          <div class="gw-group__item" data-psave="lastname">
+            <div class="gw-item-head"><h4>Apellido obligatorio</h4>{% call ayuda('ay_lastname', 'Apellido obligatorio') %}Al cargar la base, el sistema mira si usaste la columna de apellidos: si la mayoría de las personas (la mitad o más) trae apellido, lo pide como obligatorio al registrar y editar; si pusiste nombre y apellido juntos en la columna de nombres, lo deja opcional. Aquí puedes cambiarlo a mano: «Obligatorio» u «Opcional» mandan sobre lo automático; «Automático» vuelve a lo que detectó la base. Aplica a «Registrar nuevo», a «Editar» y al registro sin conexión.{% endcall %}</div>
+            <fieldset class="gw-fieldset" id="lastNameMode">
+              <legend class="gw-label">Cómo se decide</legend>
+              <label class="gw-choice"><input type="radio" name="lastNameMode" value="auto" {% if ln.manual is none %}checked{% endif %}> <span class="gw-choice__text">Automático (según la base cargada)<span>{% if ln.auto is none %}Todavía no hay una base cargada: el apellido queda opcional.{% elif ln.auto %}La base trae apellido en {{ ln.with_last }} de {{ ln.total }} personas: será obligatorio.{% else %}La base casi no trae apellido separado ({{ ln.with_last }} de {{ ln.total }} personas): será opcional.{% endif %}</span></span></label>
+              <label class="gw-choice"><input type="radio" name="lastNameMode" value="required" {% if ln.manual is true %}checked{% endif %}> <span class="gw-choice__text">Obligatorio<span>Nombres y apellidos por separado: ambos se exigen.</span></span></label>
+              <label class="gw-choice"><input type="radio" name="lastNameMode" value="optional" {% if ln.manual is false %}checked{% endif %}> <span class="gw-choice__text">Opcional<span>Todo el nombre puede ir en «Nombres».</span></span></label>
+            </fieldset>
+            <p class="gw-hint">Hoy: <strong id="lastNameNow">{{ 'obligatorio' if ln.required else 'opcional' }}</strong> ({{ 'elegido a mano' if ln.source == 'manual' else ('detectado en la base' if ln.source == 'auto' else 'sin base cargada') }}).</p>
+          </div>
+
           <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
           <div class="gw-group__item" data-psave="idle">
             <div class="gw-item-head"><h4>Cierre de sesión por inactividad</h4>{% call ayuda('ay_idle', 'Cierre por inactividad') %}De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, desplazamiento): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.{% endcall %}</div>
@@ -752,6 +765,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     GWParams.register({ key: 'reggear', label: 'Configuración del registro', order: 12, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/registro-gear-digitadores`, { enabled: document.getElementById('regGearDig').checked }), 'No se pudo guardar la opción del engranaje');
     } });
+    GWParams.register({ key: 'lastname', label: 'Apellido obligatorio', order: 13, reload: true, save: async () => {
+        const mode = (document.querySelector('input[name="lastNameMode"]:checked') || {}).value || 'auto';
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/last-name-required`, { mode }), 'No se pudo guardar si el apellido es obligatorio');
+    } });
     GWParams.register({ key: 'idle', label: 'Cierre por inactividad', order: 10, save: async () => {
         const raw = document.getElementById('idleMinutes').value.trim();
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/idle-minutes`, { value: raw === '' ? null : Number(raw) }), 'No se pudo guardar el tiempo de inactividad');
@@ -962,7 +979,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         tr.innerHTML = `
             <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
             <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
-            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
             <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>

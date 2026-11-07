@@ -286,7 +286,7 @@
                             <input type="date" name="{{ cfg.key }}" id="regBirth" class="gw-input gw-registro__date">
                             <p class="gw-hint">Con ella se sabe si es menor de 18 años: un menor no pasa por el reconocimiento facial (solo cédula o QR).{% if event.facial_enabled %} Obligatoria si se sube foto.{% endif %}</p>
                             {% elif cfg.locked %}
-                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" %} required{% endif %}>
+                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" or cfg.required %} required{% endif %}>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}

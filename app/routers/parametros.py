@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, idle, publicurl, registro_gear
+from app import biometric_setup, idle, lastname, publicurl, registro_gear
 from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -104,13 +104,17 @@ def field_configs_for_event(db: Session, event: Event) -> list:
     Viene ORDENADA (ítem 4): por `sort_order` si alguien reordenó; los campos sin posición guardada
     (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto."""
     rows = {r.field_key: r for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event.id)}
+    last_required = lastname.is_required(db, event.id)          # Fase 2: el apellido es obligatorio si la base lo usa (automático) o si se eligió a mano
     ordered = []
     for idx, (key, label) in enumerate(_configurable_fields(event)):
         row = rows.get(key)
         if row is not None and row.field_type == DELETED_TYPE:       # B2: campo borrado en este evento (no aparece en ningún lado)
             continue
         position = row.sort_order if row and row.sort_order is not None else 1000 + idx
-        ordered.append((position, _serialize(key, label, row, event.get_categories())))
+        cfg = _serialize(key, label, row, event.get_categories())
+        if key == "last_name":
+            cfg["required"] = last_required
+        ordered.append((position, cfg))
     return [cfg for _, cfg in sorted(ordered, key=lambda pair: pair[0])]
 
 
@@ -251,6 +255,30 @@ def set_registro_gear_digitadores(
     registro_gear.set_digitadores_enabled(db, event.id, value)
     db.commit()
     return {"enabled": value}
+
+
+@router.get("/events/{event_id}/last-name-required")
+def get_last_name_required(
+    event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    event = get_event_for_staff(event_id, db, staff)
+    return lastname.state(db, event.id)
+
+
+@router.put("/events/{event_id}/last-name-required")
+def set_last_name_required(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Fase 2: «Apellido obligatorio». `mode`: «auto» (según la base cargada), «required» u «optional» (lo manual manda sobre lo automático)."""
+    event = get_event_for_staff(event_id, db, staff)
+    mode = data.get("mode")
+    if mode not in ("auto", "required", "optional"):
+        raise HTTPException(status_code=400, detail="Elige «Automático», «Obligatorio» u «Opcional»")
+    result = lastname.set_manual(db, event, {"auto": None, "required": True, "optional": False}[mode])
+    db.commit()
+    return result
 
 
 @router.put("/events/{event_id}/idle-minutes")
