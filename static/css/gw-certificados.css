@@ -45,3 +45,5 @@
   .gw-cert > #linkCard { grid-column: 2; }
   .gw-cert.gw-stack-lg > * + * { margin-top: 0; }
 }
+
+.gw-cert__names { grid-template-columns: minmax(0, 1fr); }

@@ -56,3 +56,6 @@
   .gw-inv #delBody .gw-card-row__head > .gw-badge { grid-column: 3; grid-row: 1; justify-self: end; white-space: nowrap; max-width: 24rem; overflow: hidden; text-overflow: ellipsis; }
   .gw-inv .gw-ai__foot .gw-btn { min-width: 12rem; }
 }
+
+/* Listas de a UNA por fila también en celular y tableta. */
+.gw-inv #itemsList, .gw-inv #delBody { grid-template-columns: minmax(0, 1fr); }
