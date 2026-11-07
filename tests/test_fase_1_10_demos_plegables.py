@@ -91,3 +91,8 @@ def test_fase_1_13_refrescar_deja_la_pestana_y_la_barra_de_guardado_alerta():
     css = read("static/css/design-system.css")
     assert '.gw-savebar[data-state="dirty"] { background: var(--gw-warn-bg)' in css and ".gw-savebar__alert" in css
     assert "gw-savebar__alert" in ps and "gw-savebar__alert" in ed and "'alert'" in ps
+
+
+def test_fase_1_14_la_pestana_guardada_se_muestra_sin_esperar_la_carga():
+    ed = read("templates/kiosk_formulario_editor.html")
+    assert "function showSavedTabNow()" in ed and ed.index("showSavedTabNow()") < ed.index("(async function init()")          # antes de cualquier await
