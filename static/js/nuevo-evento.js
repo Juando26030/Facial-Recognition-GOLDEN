@@ -65,13 +65,13 @@
         (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
-    EF.afterMount(form, { loadCities: citiesFor });
+    const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
     EF.bind(form, { fields: fields, loadCities: citiesFor });
-    applyDefaults();
+    applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();
     nextBtn.disabled = false;
     if (window.GW && GW.wizard) GW.wizard.go(form, 0);
-    document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl } }));
+    document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl, enhanced: mounted } }));
   }
   const control = (key, part) => form.querySelector('[data-evf-key="' + key + '"][data-evf-part="' + (part || 'v') + '"]');
   function setIfEmpty(key, value) { const c = control(key); if (c && !c.value) c.value = value; }

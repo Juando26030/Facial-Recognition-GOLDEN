@@ -2,7 +2,16 @@
    Archivo AISLADO: no toca el DOM ni la red; solo convierte un evento en HTML. Otro agente construirá el diseñador de plantilla («Vista de calendario»)
    que producirá el `layout`; mientras tanto se usa DEFAULT_LAYOUT.
 
-   CONTRATO — renderCalendarCard(event, layout) -> string (HTML ya escapado, listo para ponerse dentro de un <button> o <div>)
+   CONTRATO ÚNICO (Fase 2, enlace): el `layout` que pinta la tarjeta es el que produce la PLANTILLA DE EVENTO:
+       const tpl = await (await fetch('/api/event-template')).json();
+       const layout = EventFields.calendarLayout(tpl);      // {zones:{top,left,right,bottom}, fields:{clave:campo}, ctx, version}
+       renderCalendarCard(event, layout)                    // event = elemento de /api/events/calendar (trae `extra`, `switches`)
+   Con ese layout el modelo lo arma EventFields.cardModel (static/js/event-field-render.js; campos base Y personalizados: texto, dinero COP, fechas, comercial, coordinador, país/ciudad, contacto,
+   pañoletas, interruptores como insignias «Sí/No», inventario resumido) y aquí solo se DIBUJA: top = encabezado a todo el ancho (el primero grande), left/right = dos columnas, bottom = franja inferior.
+   Los campos retirados o sin valor no se pintan; todo texto sale escapado. La forma antigua `{fields:[{key,zone,label}]}` (FIELD_CATALOG, más abajo) queda SOLO como respaldo: es lo que se usa cuando
+   la plantilla no se pudo cargar (layout null) para que el calendario nunca se quede sin tarjeta.
+
+   Forma de respaldo — renderCalendarCard(event, layout) -> string (HTML ya escapado, listo para ponerse dentro de un <button> o <div>)
 
    event   El mismo objeto que entrega GET /api/events/calendar (app/routers/events.py `_serialize`): id, event_code, name, tenant_name, location, city, address,
            country, status, start_date / end_date / setup_date (ISO aaaa-mm-dd), event_time_start / event_time_end, setup_time_start / setup_time_end,
@@ -18,10 +27,10 @@
            <span class="cal-card__bottom">…</span> </span>   (solo clases .cal-card* de static/css/p-calendario.css; sin estilos en línea).
    Un día con un solo evento deja espacio: la tarjeta puede ser larga, por eso ninguna zona recorta texto. */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.renderCalendarCard = api.renderCalendarCard; root.CalendarCard = api; }
-})(typeof window !== 'undefined' ? window : this, function () {
+})(typeof window !== 'undefined' ? window : this, function (root) {
   'use strict';
 
   var STATUS_LABELS = { creado: 'Creado', en_proceso: 'En Proceso', finalizado: 'Finalizado' };
@@ -85,8 +94,45 @@
       '<span class="cal-card__v">' + esc(value) + '</span></span>';
   }
 
+  /* Resuelve EventFields (navegador: global; node: el módulo hermano). */
+  function fieldsApi() {
+    if (root && root.EventFields) return root.EventFields;
+    try { return require('./event-field-render.js'); } catch (e) { return null; }
+  }
+
+  function itemHtml(it, strong) {
+    var cls = 'cal-card__f' + (strong ? ' cal-card__f--strong' : '') + (it.type === 'text_long' ? ' cal-card__f--long' : '');
+    var value = it.type === 'switch'
+      ? '<span class="gw-badge ' + (it.text === 'Sí' ? 'gw-badge--ok' : '') + ' cal-card__badge">' + esc(it.text) + '</span>'
+      : '<span class="cal-card__v">' + esc(it.text) + '</span>';
+    return '<span class="' + cls + '" data-field="' + esc(it.key) + '">' +
+      (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') + value + '</span>';
+  }
+  /* Dibuja el modelo de EventFields.cardModel: {top,left,right,bottom: [{key,type,title,label,text}]}. `extraTop` = HTML ya escapado que se agrega al encabezado (p. ej. el estado). */
+  function renderCardModel(model, extraTop) {
+    var m = model || {};
+    function zone(z) { return (m[z] || []).map(function (it, i) { return itemHtml(it, z === 'top' && i === 0); }).join(''); }
+    var top = zone('top') + (extraTop || ''), left = zone('left'), right = zone('right'), bottom = zone('bottom');
+    var cols = (left ? '<span class="cal-card__col cal-card__col--left">' + left + '</span>' : '') +
+      (right ? '<span class="cal-card__col cal-card__col--right">' + right + '</span>' : '');
+    return '<span class="cal-card cal-card--tpl">' + (top ? '<span class="cal-card__top">' + top + '</span>' : '') +
+      (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') + (bottom ? '<span class="cal-card__bottom">' + bottom + '</span>' : '') + '</span>';
+  }
+  /* El estado no es un campo de la plantilla, pero en el calendario siempre se necesita: va como insignia al final del encabezado. */
+  function statusBadge(ev) {
+    var t = ev.state_name || STATUS_LABELS[ev.status] || '';
+    return t ? '<span class="gw-badge cal-card__status" data-field="status">' + esc(t) + '</span>' : '';
+  }
+
   function renderCalendarCard(event, layout) {
     var ev = event || {};
+    if (layout && layout.zones && layout.fields && !Array.isArray(layout.fields)) {
+      var api = fieldsApi();
+      if (api && typeof api.cardModel === 'function') {
+        try { return renderCardModel(api.cardModel(ev, layout), statusBadge(ev)); } catch (e) { /* plantilla rara: cae al respaldo */ }
+      }
+      layout = null;
+    }
     var fields = (validLayout(layout) ? layout : DEFAULT_LAYOUT).fields;
     var out = { left: '', right: '', bottom: '' };
     fields.forEach(function (spec) {
@@ -100,5 +146,5 @@
       (out.bottom ? '<span class="cal-card__bottom">' + out.bottom + '</span>' : '') + '</span>';
   }
 
-  return { renderCalendarCard: renderCalendarCard, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
+  return { renderCalendarCard: renderCalendarCard, renderCardModel: renderCardModel, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
 });

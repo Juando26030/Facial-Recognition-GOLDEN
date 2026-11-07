@@ -73,7 +73,7 @@ assert.strictEqual(EF.formatValue(F('switch'), true), 'Sí');
 assert.strictEqual(EF.formatValue(F('commercial'), 3, { people: { commercial: [{ id: 3, name: 'Ana' }] } }), 'Ana');
 assert.strictEqual(EF.formatValue(F('contact'), { name: 'Ana', phone: '300' }), 'Ana · 300');
 assert.strictEqual(EF.formatValue(F('bandana_colors'), [{ name: 'Rojo', hex: '#fff000' }, { name: '', hex: '#000000' }]), 'Rojo, #000000');
-assert.strictEqual(EF.formatValue(F('inventory', { config: { inventory_types: [{ key: 'pa', label: 'Pañoletas', refs: ['Roja'] }] } }), [{ type: 'pa', qty: 10, ref: 'Roja' }]), '10 Pañoletas (Roja)');
+assert.strictEqual(EF.formatValue(F('inventory', { config: { inventory_types: [{ key: 'pa', label: 'Pañoletas', refs: ['Roja'] }] } }), [{ type: 'pa', qty: 10, ref: 'Roja' }]), 'Pañoletas ×10 (Roja)');
 assert.strictEqual(EF.formatValue(F('text_short'), ''), '');
 
 // 7) Contrato del calendario: layout + evento sin valores extra (eventos viejos) y con ellos

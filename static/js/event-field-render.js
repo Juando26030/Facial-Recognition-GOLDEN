@@ -9,6 +9,8 @@
      EventFields.displayValue(field, event, ctx)   -> texto del valor de un evento ('' si no tiene).
      EventFields.calendarLayout(templateResponse, extra) -> el `layout` que recibe renderCalendarCard(event, layout).
      EventFields.cardModel(event, layout)          -> {top|left|right|bottom: [{key,type,title,label,text}]} solo con los campos que tienen valor.
+     EventFields.afterMount(host, {geoUrl, loadCities}) -> relojes, librería de colores, país/ciudad con GWGeo+combobox y enganches de mapa/inventario; devuelve una promesa.
+     EventFields.geoPair(paisInput, ciudadInput, geoUrl) -> promesa {set(país, ciudad)} para campos fijos (Editar evento).
    `ctx` (todo opcional): countries[], people{commercial:[{id,name}],coordinator:[{id,name}]}, superEvents[{id,name}], tenantName, readonly{clave:true}, hidden{clave:true}, idPrefix.
    Ganchos para otros agentes (no cambian el contrato): data-evf-enhance="country|city|map|combobox|inventory" en el contenedor del campo. */
 (function (root) {
@@ -64,7 +66,7 @@
       case 'bandana_colors': return value.map(function (c) { return c.name || c.hex; }).join(', ');
       case 'inventory': {
         var types = {}; ((field.config || {}).inventory_types || []).forEach(function (t) { types[t.key] = t.label; });
-        return value.map(function (l) { return l.qty + ' ' + (types[l.type] || l.type) + (l.ref ? ' (' + l.ref + ')' : ''); }).join(', ');
+        return value.map(function (l) { return (types[l.type] || l.type) + ' ×' + (l.qty == null ? 0 : l.qty) + (l.ref ? ' (' + l.ref + ')' : ''); }).join(', ');
       }
       default: return String(value);
     }
@@ -280,7 +282,76 @@
       if (sel.dataset && sel.dataset.evfEnhance === 'country') cityDeps(host, sel.dataset.evfKey, sel.value, opts);
     });
   }
+  /* ---------------------------------------------------------------------------------------------------- país y ciudad (GWGeo + GWCombobox)
+     País = todos los países con búsqueda al escribir; ciudad = las del país elegido, y si no está en la lista se queda el texto que se escribió (texto libre).
+     Lo que se guarda SIEMPRE es el texto (nombre del país / de la ciudad), igual que antes en `country`/`city`. Sin GWGeo/GWCombobox o si falla la carga de geo.json, queda el campo de texto con
+     sugerencias del servidor (datalist + /api/cities), como antes. */
+  var geoState = { promise: null, ok: null };
+  function loadGeo(url) {
+    if (geoState.promise) return geoState.promise;
+    if (!root.GWGeo || !root.GWCombobox || !url) { geoState.ok = false; return Promise.resolve(false); }          // sin url no se memoiza: otra llamada puede traerla
+    geoState.promise = Promise.resolve(root.GWGeo.load(url)).then(function () { geoState.ok = true; return true; }, function () { geoState.ok = false; geoState.promise = null; return false; });
+    return geoState.promise;
+  }
+  function codeOf(text) { var c = String(text || '').trim() ? root.GWGeo.findCountry(text) : null; return c ? c.value : ''; }
+  function citiesFor(text) { var code = codeOf(text); return code ? root.GWGeo.citiesOf(code) : []; }
+  /* Engancha el combobox SIN avisar de cambios por el valor que ya traía el campo (así «Hay cambios sin guardar» no salta solo). */
+  function comboAttach(input, cfg, resolve) {
+    var v = input.value; input.value = '';
+    var cb = root.GWCombobox.attach(input, cfg);
+    if (v) cb.setValue(resolve ? resolve(v) : v, true);
+    return cb;
+  }
+  function dropDatalist(input) {
+    var id = input.getAttribute('list'); input.removeAttribute('list');
+    var dl = id && input.ownerDocument ? input.ownerDocument.getElementById(id) : null;
+    if (dl && dl.parentNode === input.parentNode) dl.parentNode.removeChild(dl);
+  }
+  function enhanceCountry(input) {
+    if (input.dataset.evfGeo) return input._gwCombobox;
+    input.dataset.evfGeo = '1'; dropDatalist(input);
+    return comboAttach(input, { allowFreeText: true, limit: 300, placeholder: 'Escribe para buscar el país', options: root.GWGeo.searchCountries('', 300) }, function (t) { return codeOf(t) || t; });
+  }
+  function enhanceCity(input, countryInput) {
+    if (input.dataset.evfGeo) return input._gwCombobox;
+    input.dataset.evfGeo = '1'; dropDatalist(input);
+    var cb = comboAttach(input, { allowFreeText: true, limit: 80, placeholder: 'Escribe para buscar o usa otra ciudad', options: countryInput ? citiesFor(countryInput.value) : [] });
+    var st = input._evfGeo = { last: countryInput ? codeOf(countryInput.value) : '', cb: cb };
+    if (countryInput) {
+      var refresh = function (ev) {
+        var text = countryInput.value, code = codeOf(text);
+        if (!code && String(text).trim() && !(ev && ev.type === 'focusout')) return;          // a medio escribir el país: se conservan las ciudades hasta que quede definido
+        if (code === st.last) return;
+        st.last = code; cb.setOptions(code ? root.GWGeo.citiesOf(code) : []);                 // el país cambió: ciudades nuevas; una ciudad de la lista que ya no aplica se suelta, un texto libre se conserva
+      };
+      countryInput.addEventListener('gw:combobox-change', refresh);
+      countryInput.addEventListener('focusout', refresh);
+    }
+    return cb;
+  }
+  /* Para pantallas con campos fijos (Editar evento): enlaza un par país/ciudad. Devuelve una promesa con {set(país, ciudad)} que sirve antes y después de que cargue la lista. */
+  function geoPair(countryInput, cityInput, geoUrl) {
+    var api = {
+      ready: false,
+      set: function (country, city) {
+        if (!api.ready) { if (countryInput) countryInput.value = country || ''; if (cityInput) cityInput.value = city || ''; return; }
+        if (countryInput && countryInput._gwCombobox) countryInput._gwCombobox.setValue(codeOf(country) || country || '', true);
+        if (cityInput && cityInput._gwCombobox) {
+          var st = cityInput._evfGeo; if (st) st.last = codeOf(country);
+          cityInput._gwCombobox.setOptions(citiesFor(country)); cityInput._gwCombobox.setValue(city || '', true);
+        }
+      }
+    };
+    return loadGeo(geoUrl).then(function (ok) {
+      if (!ok) return api;
+      if (countryInput) enhanceCountry(countryInput);
+      if (cityInput) enhanceCity(cityInput, countryInput);
+      api.ready = true;
+      return api;
+    });
+  }
   function cityDeps(host, countryKey, country, opts) {
+    if (geoState.ok !== false) return;          // con GWGeo activo (o cargando) las ciudades las resuelve el combobox; esto es solo el respaldo del servidor
     var cities = host.querySelectorAll('[data-evf-enhance="city"][data-evf-country="' + countryKey + '"]');
     Array.prototype.forEach.call(cities, function (input) {
       var dl = host.querySelector('#' + (input.getAttribute('list') || '__'));
@@ -291,7 +362,7 @@
       }).catch(function () { dl.innerHTML = ''; });
     });
   }
-  /* Después de pintar: relojes, librería de colores y ciudades del país inicial. */
+  /* Después de pintar: relojes, librería de colores (en cada color del campo), enganches de mapa/inventario y país/ciudad (GWGeo). Devuelve una promesa (true si se usó GWGeo). */
   function afterMount(host, opts) {
     opts = opts || {};
     if (typeof root.attachClockPicker === 'function') {
@@ -302,16 +373,28 @@
       });
     }
     if (root.ColorLibrary && typeof root.ColorLibrary.attach === 'function') {
-      Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="colors"]'), function (box) {
-        var first = box.querySelector('[data-evf-slot="0"]');
-        if (!first || first.dataset.evfLib) return; first.dataset.evfLib = '1';
-        root.ColorLibrary.attach(first.querySelector('input[type="color"]'), first.querySelector('input[type="text"]'));
+      Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="colors"] [data-evf-slot]'), function (slot) {          // la misma librería de colores guardados que el formulario, en cada color del campo
+        if (slot.dataset.evfLib) return; slot.dataset.evfLib = '1';
+        root.ColorLibrary.attach(slot.querySelector('input[type="color"]'), slot.querySelector('input[type="text"]'));
+        var use = slot.querySelector('input[type="checkbox"]'), next = slot.nextElementSibling, pick = next && next.querySelector ? next.querySelector('.cl-select') : null;
+        if (use && pick) pick.addEventListener('change', function () { if (pick.value) use.checked = true; });          // elegir un color guardado activa ese color
       });
     }
-    Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="country"]'), function (c) { cityDeps(host, c.dataset.evfKey, c.value, opts); });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="map"]'), function (el) { if (root.GWMap) root.GWMap.enhance(el, opts); });                 // enganche del widget de mapa (gw-map.js)
+    Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="inventory"]'), function (el) { if (root.GWInventory) root.GWInventory.enhance(el, opts); });   // enganche del widget de inventario (gw-inventory.js)
+    var countries = host.querySelectorAll('[data-evf-enhance="country"]'), cities = host.querySelectorAll('[data-evf-enhance="city"]');
+    return loadGeo(opts.geoUrl).then(function (ok) {
+      if (!ok) { Array.prototype.forEach.call(countries, function (c) { cityDeps(host, c.dataset.evfKey, c.value, opts); }); return false; }
+      Array.prototype.forEach.call(countries, enhanceCountry);
+      Array.prototype.forEach.call(cities, function (c) {
+        var ck = c.dataset.evfCountry, ci = ck ? host.querySelector('[data-evf-key="' + ck + '"][data-evf-part="v"]') : null;
+        enhanceCity(c, ci);
+      });
+      return true;
+    });
   }
 
-  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, esc: esc, inventoryRow: inventoryRow };
+  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, geoPair: geoPair, loadGeo: loadGeo, _geo: { codeOf: codeOf, citiesFor: citiesFor, state: geoState }, esc: esc, inventoryRow: inventoryRow };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.EventFields = api;
 })(typeof window !== 'undefined' ? window : globalThis);
