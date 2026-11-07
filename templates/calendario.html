@@ -17,6 +17,10 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-calendario.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
+    {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
+    <script src="{{ url_for('static', path='js/calendar-card.js') }}"></script>
+    <script src="{{ url_for('static', path='js/event-actions.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
 </head>
@@ -54,14 +58,14 @@
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira el mes</span>
-        {% call ayuda('ay_cal1', 'Mira el mes') %}Usa las flechas para cambiar de periodo y «Hoy» para volver. Mes, Semana y Día cambian cuánto ves. Toca un evento para abrirlo y editarlo.{% endcall %}</li>
+        {% call ayuda('ay_cal1', 'Mira el mes') %}Usa las flechas para cambiar de periodo y «Hoy» para volver. Mes, Semana y Día cambian cuánto ves. Toca un evento para ver sus acciones: ingresar, editar, cambiar el estado y más.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Filtra</span>
         {% call ayuda('ay_cal2', 'Filtra') %}{% if staff_role == "comercial" %}«Mis eventos» muestra solo los tuyos.{% elif has_filters %}Filtra por comercial o por coordinador.{% else %}Verás todos los eventos que te corresponden.{% endif %} El punto junto al nombre indica si el informe final ya se envió.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Crea un recordatorio</span>
         {% call ayuda('ay_cal3', 'Crea un recordatorio') %}Cada recordatorio tiene fecha y mensaje. Si no eliges destinatarios, lo ve todo el equipo con acceso al Calendario.{% endcall %}</li>
     </ol>
 
-    <div class="cal-toolbar" data-gw-tour-step="1" data-gw-tour-title="1. Mira el mes" data-gw-tour-text="Cambia de periodo con las flechas, vuelve con «Hoy» y elige Mes, Semana o Día. Toca un evento para editarlo.">
+    <div class="cal-toolbar" data-gw-tour-step="1" data-gw-tour-title="1. Mira el mes" data-gw-tour-text="Cambia de periodo con las flechas, vuelve con «Hoy» y elige Mes, Semana o Día. Toca un evento para ver sus acciones.">
       <div class="cal-nav">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-prev" id="prevBtn" aria-label="Periodo anterior">{{ ic('chevron') }}</button>
         <h2 class="cal-nav__label" id="rangeLabel" aria-live="polite"></h2>
@@ -258,16 +262,15 @@ function applyChipColors(root) {
   });
 }
 
+// Plantilla de la tarjeta grande (vista Día). null = la de siempre (DEFAULT_LAYOUT de calendar-card.js); el diseñador de plantilla de la Fase 2 la dará por aquí.
+let CARD_LAYOUT = null;
+
 function eventChip(e, big) {
   const colorAttr = e.bandana_color ? ` data-bandana="${esc(e.bandana_color)}"` : '';
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
-  const body = big
-    ? `<span class="cal-chip__line"><strong>${esc(e.name)}</strong></span>
-       <span class="cal-chip__line">${esc(e.tenant_name || '')} · ${esc(e.location || '')} · ${esc(e.event_time_start || '')}–${esc(e.event_time_end || '')}</span>
-       <span class="cal-chip__line">Comercial: ${esc(e.commercial_name) || '—'} · Coordinador: ${esc(e.coordinator_name) || '—'}${e.bandana_color_name ? ' · Pañoleta: ' + esc(e.bandana_color_name) : ''}</span>`
-    : esc(e.name);
+  const body = big ? renderCalendarCard(e, CARD_LAYOUT) : esc(e.name);
   return `<div class="cal-chip${big ? ' cal-chip--big' : ''}"${colorAttr}>
-      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-label="Editar evento ${esc(e.name)}">${body}</button>
+      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${body}</button>
       ${reportBulbHtml(e, true)}
     </div>`;
 }
@@ -357,7 +360,7 @@ function renderDay() {
 calBody.addEventListener('click', async (ev) => {
   if (ev.target.closest('[data-retry-cal]')) { loadAndRender(); return; }
   const evBtn = ev.target.closest('[data-event-id]');
-  if (evBtn) { openEventModal(evBtn.dataset.eventId); return; }
+  if (evBtn) { openEventActions(evBtn); return; }
   const addBtn = ev.target.closest('[data-add-note]');
   if (addBtn) { openNoteModal(addBtn.dataset.addNote, addBtn); return; }
   const delBtn = ev.target.closest('[data-note-del]');
@@ -502,10 +505,13 @@ document.getElementById('noteModalSave').addEventListener('click', async (e) => 
   });
 });
 
-/* --- Editar evento: modal compartido (_event_edit_modal.html) --- */
-function openEventModal(eventId) {
-  const ev = eventsCache.find(e => String(e.id) === String(eventId));
-  if (ev) openEventEditModal(ev, loadAndRender);
+/* --- Cuadrito de acciones del evento (static/js/event-actions.js): las mismas acciones y permisos de la lista de Eventos; «Editar» abre el modal compartido (_event_edit_modal.html) --- */
+const eventActions = EventActions.create({ role: STAFF_ROLE, icon, onChanged: loadAndRender });
+function openEventActions(btn) {
+  const ev = eventsCache.find(e => String(e.id) === String(btn.dataset.eventId));
+  if (!ev) return;
+  if (eventActions.isOpen() && btn.getAttribute('aria-expanded') === 'true') { eventActions.close(true); return; }
+  eventActions.open(btn, ev);
 }
 
 loadAndRender();
