@@ -15,6 +15,9 @@
   const PURE_COORDINATOR = root.dataset.pureCoordinator === 'true';
   const STAFF_ID = root.dataset.staffId ? parseInt(root.dataset.staffId, 10) : null;
   const tenantId = () => root.dataset.tenantId;
+  const PICK_TENANT = root.dataset.pickTenant === 'true';          // entrada desde la pestaña Eventos (/eventos/nuevo): el cliente se elige en el campo «Cliente»
+  const AFTER_URL = root.dataset.afterUrl || '/clientes';
+  let tenantBox = null;
   const COUNTRIES = ['Colombia', 'México', 'Argentina', 'Chile', 'Perú', 'Ecuador', 'Venezuela', 'Bolivia', 'Paraguay', 'Uruguay', 'Brasil', 'Panamá', 'Costa Rica', 'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua', 'República Dominicana', 'Cuba', 'Puerto Rico', 'España', 'Estados Unidos', 'Canadá', 'Francia', 'Alemania', 'Italia', 'Reino Unido', 'Portugal', 'Países Bajos', 'Bélgica', 'Suiza', 'China', 'Japón', 'Corea del Sur', 'India', 'Australia'];
   const CODE_RE = /^[A-Za-z0-9._-]+$/;
   const CODE_HELP = 'El código del evento solo puede tener letras sin tilde, números, punto (.), guion (-) y guion bajo (_), sin espacios. Ejemplo: FERIA-2026.';
@@ -37,6 +40,7 @@
     } catch (e) { return []; }
   }
   async function superEventList() {
+    if (!tenantId()) return [];                      // sin cliente elegido todavía
     try {
       const res = await fetch('/api/super-events?tenant_id=' + encodeURIComponent(tenantId()));
       return res.ok ? await res.json() : [];
@@ -95,6 +99,7 @@
     select.value = selectedId ? String(selectedId) : '';
   }
   async function createSuperEvent(btn) {
+    if (!tenantId()) { GW.wizard.go(form, 0); focusPanelTitle(); showToast('Primero elige el cliente del evento.', 'error'); return; }
     const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
     if (!name) return;
     await busy(btn, async () => {
@@ -116,7 +121,16 @@
     const keys = Array.prototype.map.call(panel.querySelectorAll('[data-evf-field]'), (n) => n.getAttribute('data-evf-field'));
     for (const key of keys) {
       const f = fields[key];
-      if (!f || f.type === 'client') continue;
+        if (f && f.type === 'client') {
+        if (PICK_TENANT && !tenantId()) {                      // el cliente debe ser uno de la lista, no cualquier texto
+          const inp = panel.querySelector('[data-evf-field="client"] input');
+          if (inp) { inp.setAttribute('aria-invalid', 'true'); inp.focus(); }
+          showToast('Elige un cliente de la lista.', 'error');
+          return false;
+        }
+        continue;
+      }
+      if (!f) continue;
       const holder = panel.querySelector('[data-evf-field="' + key + '"]');
       const first = holder.querySelector('input, select, textarea');
       const v = readKey(key);
@@ -169,7 +183,7 @@
 
   // ---- Resumen del último paso (todo escapado).
   function summaryText(f, key) {
-    if (f.type === 'client') return (root.dataset.tenantName || '').trim() || '—';
+    if (f.type === 'client') return (PICK_TENANT ? (control('client') && control('client').value || '') : (root.dataset.tenantName || '')).trim() || '—';
     if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event') {
       const c = control(key); const o = c && c.options && c.options[c.selectedIndex];
       return c && c.value && o ? o.textContent.replace(/ \(\d+ eventos\)$/, '') : '—';
@@ -222,7 +236,7 @@
       } catch (e) { showToast('Sin conexión: no se pudo crear el evento. Revisa tu red e inténtalo de nuevo.', 'error'); return; }
       if (res.ok) {
         showToast('Evento creado', 'success');
-        window.location.href = '/clientes';
+        window.location.href = AFTER_URL;
         return;
       }
       const err = await res.json().catch(() => ({}));
@@ -232,6 +246,25 @@
   form.addEventListener('gw:wizard-finish', submitEvent);
   form.addEventListener('submit', (e) => { e.preventDefault(); });
   form.addEventListener('input', (e) => { if (e.target.getAttribute && e.target.getAttribute('aria-invalid')) e.target.removeAttribute('aria-invalid'); });
+
+  // Entrada desde Eventos: la lista de clientes es la de siempre (GET /api/tenants, ya limitada a lo que el rol puede ver). Un solo cliente visible = ya viene elegido.
+  async function setupTenantPicker() {
+    const input = control('client');
+    if (!input || !window.GWCombobox) return;
+    tenantBox = GWCombobox.attach(input, { options: [] });
+    input.addEventListener('gw:combobox-change', (e) => {
+      root.dataset.tenantId = String(e.detail.value || '');
+      root.dataset.tenantName = (e.detail.label || input.value || '').trim();
+      loadSuperEvents();
+    });
+    try {
+      const res = await fetch('/api/tenants');
+      if (!res.ok) throw new Error('tenants');
+      const tenants = await res.json();
+      tenantBox.setOptions(tenants.map((t) => ({ value: t.id, label: t.name, hint: t.client_code || '' })));
+      if (tenants.length === 1) tenantBox.setValue(tenants[0].id);
+    } catch (e) { showToast('No se pudo cargar la lista de clientes. Recarga la página.', 'error'); }
+  }
 
   // ---- Arranque: leer la plantilla.
   async function init() {
@@ -247,9 +280,10 @@
     }
     fields = {};
     tpl.fields.forEach((f) => { if (!f.retired) fields[f.key] = f; });
-    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], tenantName: root.dataset.tenantName || '' };
+    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], tenantName: root.dataset.tenantName || '', pickTenant: PICK_TENANT };
     loading.hidden = true;
     build();
+    if (PICK_TENANT) setupTenantPicker();
   }
   document.getElementById('neRetry').addEventListener('click', init);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

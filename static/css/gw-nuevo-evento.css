@@ -41,3 +41,4 @@
   .gw-nuevo .gw-wizard__panel > .gw-stack > .gw-field:last-child { grid-column: 1 / -1; }
   .gw-nuevo__summary { grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); }
 }
+.gw-nuevo__tenant { grid-column: 1 / -1; }

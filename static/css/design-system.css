@@ -1025,3 +1025,17 @@
 .gw-savebar .gw-savebar__alert { display: inline-flex; align-items: center; gap: var(--gw-sp-2); font-weight: var(--gw-fw-bold); }
 .gw-savebar .gw-savebar__alert .gw-icon { width: 1.75rem; height: 1.75rem; color: var(--gw-err-line); }
 .gw-savebar .gw-savebar__idle { display: inline-flex; align-items: center; gap: var(--gw-sp-2); color: var(--gw-text-muted); }
+
+/* ============================================================ Lista desplegable con buscador (static/js/gw-combobox.js): cliente, país, ciudad…
+   El campo es un .gw-input; la lista se abre debajo, con opciones de 44 px (también en celular) y la marcada con el teclado resaltada con borde + fondo (no solo color). */
+.gw-combobox { position: relative; width: 100%; }
+.gw-combobox > .gw-input { padding-right: calc(var(--gw-sp-3) + 1.75rem); }
+.gw-combobox::after { content: ""; position: absolute; right: var(--gw-sp-4); top: calc(var(--gw-tap) / 2 - 0.2rem); width: 0.5rem; height: 0.5rem; border-right: 2px solid var(--gw-text-muted); border-bottom: 2px solid var(--gw-text-muted); transform: rotate(45deg); pointer-events: none; }
+.gw-combobox__list { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; margin: var(--gw-sp-1) 0 0; padding: var(--gw-sp-1); list-style: none; max-height: min(18rem, 50vh); overflow-y: auto; overscroll-behavior: contain; background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+.gw-combobox__list[hidden] { display: none; }
+.gw-combobox__opt { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); border: 2px solid transparent; cursor: pointer; font-size: var(--gw-fs-md); overflow-wrap: anywhere; }
+.gw-combobox__opt:hover { background: var(--gw-surface-2); }
+.gw-combobox__opt.is-active, .gw-combobox__opt[aria-selected="true"] { background: var(--gw-surface-2); border-color: var(--gw-text); }
+.gw-combobox__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-combobox__empty { display: flex; align-items: center; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+@media (forced-colors: active) { .gw-combobox__opt.is-active { outline: 2px solid Highlight; } }

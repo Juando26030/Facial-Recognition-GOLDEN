@@ -207,7 +207,9 @@
           '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-evf-act="inv-add" data-evf-for="' + esc(field.key) + '">Agregar línea</button></div>';
       }
       case 'switch': return '<label class="gw-check"><input type="checkbox"' + id + attrs(field, 'v') + (value ? ' checked' : '') + '> <span class="gw-choice__text">' + esc(field.title) + '</span></label>';
-      case 'client': return '<input class="gw-input"' + id + ' type="text" readonly value="' + esc((ctx && ctx.tenantName) || '') + '" data-evf-key="client" data-evf-part="v">';
+      case 'client':
+        if (ctx && ctx.pickTenant) return '<input class="gw-input"' + id + ' type="text" data-gw-combobox autocomplete="off" required placeholder="Elige o escribe el nombre del cliente" data-evf-key="client" data-evf-part="v">';
+        return '<input class="gw-input"' + id + ' type="text" readonly value="' + esc((ctx && ctx.tenantName) || '') + '" data-evf-key="client" data-evf-part="v">';
       default: return '';
     }
   }
