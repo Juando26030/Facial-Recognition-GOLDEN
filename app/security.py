@@ -129,9 +129,24 @@ def limit_ip(request: Request) -> Optional[str]:
         with _lock:
             _google_hits.append(now)
         return None
+    ip = bucket_ip(ip)
     fp = hashlib.sha1((request.headers.get("user-agent", "") + "|" + request.headers.get("accept-language", "")).encode(), usedforsecurity=False).hexdigest()[:10]
     with _lock:
         _events.append((now, ip, fp))
+    return ip
+
+
+def bucket_ip(ip: str) -> str:
+    """S3: una conexión IPv6 trae un /64 entero (2^64 direcciones): contar por dirección exacta dejaba saltar los límites rotando direcciones. Las IPv6 se agrupan por su /64
+    («2001:db8:1:2::/64»); una IPv4 (o IPv4 dentro de IPv6, «::ffff:1.2.3.4») queda tal cual. Un texto que no es IP se devuelve igual."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
     return ip
 
 
@@ -209,7 +224,10 @@ def login_minutes_locked(db: Session, username: str, ip: Optional[str]) -> int:
     key = (username or "").lower()
     locks = []
     pair = [RateLimitEvent.key == key] + ([RateLimitEvent.ip == ip] if ip else [])
-    for conds, limit in ((pair, LOGIN_MAX_FAILS), ([RateLimitEvent.key == key], LOGIN_MAX_FAILS_PER_USER), ([RateLimitEvent.ip == ip] if ip else None, LOGIN_MAX_FAILS_PER_IP)):
+    # S3: el tope global por usuario NO frena a una IP desde la que esa cuenta ya entró bien en las últimas 24 h: así un tercero que manda 40 fallos no deja fuera al dueño
+    # (sigue el tope por par usuario+IP, que es lo que frena a quien prueba desde esa misma IP).
+    global_user = None if known_ip(db, key, ip) else [RateLimitEvent.key == key]
+    for conds, limit in ((pair, LOGIN_MAX_FAILS), (global_user, LOGIN_MAX_FAILS_PER_USER), ([RateLimitEvent.ip == ip] if ip else None, LOGIN_MAX_FAILS_PER_IP)):
         if conds is None:
             continue
         left = _window_unlock(db, "login_fail", conds, limit, LOGIN_WINDOW)
@@ -218,6 +236,22 @@ def login_minutes_locked(db: Session, username: str, ip: Optional[str]) -> int:
     if not locks:
         return 0
     return max(1, math.ceil(max(locks).total_seconds() / 60))
+
+
+KNOWN_IP_WINDOW = timedelta(hours=24)       # las filas de rate_limit_events se borran pasado un día (record_event)
+
+
+def known_ip(db: Session, username: str, ip: Optional[str]) -> bool:
+    """¿La cuenta entró bien desde esta IP (o su /64) en las últimas 24 h? Lo anota `record_login_ok` al ingresar."""
+    if not ip or not username:
+        return False
+    return db.query(RateLimitEvent.id).filter(RateLimitEvent.kind == "login_ok", RateLimitEvent.key == username.lower(), RateLimitEvent.ip == ip,
+                                              RateLimitEvent.created_at > utcnow() - KNOWN_IP_WINDOW).first() is not None
+
+
+def record_login_ok(db: Session, username: str, ip: Optional[str]) -> None:
+    if ip:
+        record_event(db, "login_ok", username, ip)
 
 
 def enforce_public_limit(db: Session, request: Request, kind: str, key: str, max_hits: int, window: timedelta) -> None:

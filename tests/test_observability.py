@@ -127,7 +127,7 @@ def test_readyz_ok_lists_each_component(client):
     r = client.get("/readyz")
     assert r.status_code == 200 and r.json()["status"] == "ready"
     assert set(r.json()["checks"]) == {"database", "storage", "biometrics_model"}                 # en modo «all» también se comprueba el modelo
-    assert r.json()["checks"]["database"]["ok"] and "latency_ms" in r.json()["checks"]["database"]
+    assert r.json()["checks"]["database"]["ok"] and r.json()["checks"]["database"] == {"ok": True}      # S10: sin latencias ni motivos en la respuesta pública
 
 
 def test_readyz_says_which_component_fails_and_why(client, monkeypatch):
@@ -137,17 +137,18 @@ def test_readyz_says_which_component_fails_and_why(client, monkeypatch):
     monkeypatch.setattr(ops, "ping_database", down)
     r = client.get("/readyz")
     assert r.status_code == 503 and r.json()["status"] == "unavailable"
-    assert "la base no respondió" in r.json()["failing"]["database"] and r.json()["checks"]["storage"]["ok"]
+    assert r.json()["failing"] == ["database"] and r.json()["checks"]["storage"]["ok"]
+    assert "la base no respondió" not in r.text                     # S10: el motivo va al log, no a la respuesta pública
     monkeypatch.undo()
 
     monkeypatch.setattr("app.ops.get_storage", lambda: type("S", (), {"ping": lambda self: (_ for _ in ()).throw(OSError("disco lleno"))})())
     r = client.get("/readyz")
-    assert r.status_code == 503 and "disco lleno" in r.json()["failing"]["storage"]
+    assert r.status_code == 503 and r.json()["failing"] == ["storage"] and "disco lleno" not in r.text
     monkeypatch.undo()
 
     monkeypatch.setattr(ops, "model_ready", lambda: (_ for _ in ()).throw(ImportError("falta el modelo")))
     r = client.get("/readyz")
-    assert r.status_code == 503 and "falta el modelo" in r.json()["failing"]["biometrics_model"]
+    assert r.status_code == 503 and r.json()["failing"] == ["biometrics_model"] and "falta el modelo" not in r.text
 
 
 def test_readyz_only_checks_the_model_where_biometrics_runs(client, monkeypatch):

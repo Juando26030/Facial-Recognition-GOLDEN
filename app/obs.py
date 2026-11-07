@@ -30,7 +30,7 @@ _FLOAT_VECTOR = re.compile(r"\[\s*-?\d+\.\d+(\s*,\s*-?\d+\.\d+){7,}\s*\]")      
 _LONG_NUMBER = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{5,}\d(?![\w])")            # cédulas, teléfonos
 _TOKEN = re.compile(r"(?<![\w-])[A-Za-z0-9_-]{28,}(?![\w-])")                    # tokens de enlaces, hashes, llaves
 _SENSITIVE_QUERY = re.compile(r"([?&](?:t|i|k|d|code|token|key|access_token|password)=)[^&\s]*", re.I)
-_PATH_TOKEN = re.compile(r"(/(?:b|c|r|reimpresion|api/ver|ver/[ef])/)[^/\s?]+")
+_PATH_TOKEN = re.compile(r"(/(?:b|c|r|reimpresion|restablecer|api/ver|ver/[ef])/)[^/\s?]+")      # S8: también el enlace de restablecer contraseña
 _PATH_ID = re.compile(r"(?<=/)\d{5,}(?=/|\?|$)")
 
 

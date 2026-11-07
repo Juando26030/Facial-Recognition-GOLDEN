@@ -338,7 +338,7 @@
      se reclama en ese momento y se imprime con la ventana de impresión de siempre (la escarapela con su plantilla), y se confirma. Nunca se pierde ni se reimprime solo. */
   let polling = false;
   async function claimNext(manual) {
-    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}${manual ? '&manual=1' : ''}`, { cache: 'no-store' }, 8000);
+    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}${manual ? '&manual=1' : ''}`, { cache: 'no-store', headers: { 'X-Gw-Fetch': '1' } }, 8000);
     return res.ok ? (await res.json()).job : null;
   }
   async function runJob(job, viaWindow) {
@@ -372,7 +372,7 @@
      sin impresora USB, se abre UNA sola ventana con una hoja por escarapela. El resultado de cada trabajo se confirma DESPUÉS de que la ventana termina y la persona lo confirma; si cierra o
      cancela, los trabajos vuelven a la cola (nunca se pierden ni se reimprimen solos). Con impresora USB se imprime una tras otra sin ventana, como siempre. */
   async function claimBatch() {
-    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}&manual=1&batch=50`, { cache: 'no-store' }, 10000);
+    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}&manual=1&batch=50`, { cache: 'no-store', headers: { 'X-Gw-Fetch': '1' } }, 10000);
     return res.ok ? ((await res.json()).jobs || []) : [];
   }
   async function postJson(url, body) {

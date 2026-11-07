@@ -32,6 +32,7 @@ from app import personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
+from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
 
@@ -40,8 +41,11 @@ log = logging.getLogger("golden.app")
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 SECRET_KEY = os.getenv("SECRET_KEY")
-if IS_PRODUCTION and not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY no está definida. Requerida en producción para firmar la sesión.")
+from app import secretcheck  # noqa: E402
+
+_secret_problem = secretcheck.problem(os.getenv("ENVIRONMENT", "development"), SECRET_KEY)      # S11: fuera de desarrollo, nada de clave vacía, de ejemplo o corta
+if _secret_problem:
+    raise RuntimeError(_secret_problem)
 
 
 class StaticFilesNoCacheInDev(StaticFiles):
@@ -271,6 +275,7 @@ def _include(router, prefix: str = "") -> None:
     app.include_router(router, prefix=prefix)
 
 _include(auth_router.router)
+_include(login_approval_router.router)      # S1: ingreso de digitadores autorizado por el coordinador y desbloqueo de cuentas (app/login_control.py)
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
 _include(event_states.router, prefix="/api")

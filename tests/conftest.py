@@ -29,6 +29,7 @@ os.environ["BULK_STEPS_ALLOW_CLEAR"] = "1"          # la carga por pasos exige l
 os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
 os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo
+os.environ["DIGITADOR_LOGIN_CONTROL"] = "0"   # S1: las pruebas antiguas inician sesión como digitador sin la autorización del coordinador; tests/test_seguridad_cierre_sesion.py la enciende
 os.environ["PUBLIC_BASE_URL"] = "http://test.local"  # fijo y determinista (NO se quita: un simple pop() se reintroducía solo desde el .env
 # local en cuanto algún módulo de la app —p. ej. app/database.py— volvía a llamar load_dotenv(), que con override=False rellena
 # cualquier variable AUSENTE; así, quien tuviera un PUBLIC_BASE_URL real en su .env veía pasar las pruebas de la escarapela

@@ -149,7 +149,9 @@ def test_the_station_can_come_back_when_it_stopped_sending_signals_and_logout_fr
     db.add(PrintDevice(event_id=ev.id, staff_user_id=p.id, device_id="pc", last_seen_at=utcnow() - timedelta(minutes=5), printer_connected=True)); db.commit()
     assert login(second, "puesto").status_code == 302                                              # sin señal hace 5 min: ya no está «en uso»
     second.post("/logout")
-    assert db.query(StaffUser).filter_by(username="puesto").one().session_token is None             # cerrar sesión libera la cuenta
+    from app import sessions
+    assert db.query(StaffUser).filter_by(username="puesto").one().session_token.startswith(sessions.FREE_PREFIX)    # cerrar sesión libera la cuenta (S2: con un token «libre», no NULL)
+    assert login(client, "puesto").status_code == 302                                              # y otro equipo entra sin esperar
 
 
 def test_the_impression_does_not_depend_on_the_session_of_another_device(client, second, env, db):

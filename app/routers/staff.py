@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import security
+from app import security, sessions
 from app.inputcheck import text_validator, username_validator
 from app.auth import assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
@@ -281,6 +281,7 @@ def reset_staff_password(
             raise HTTPException(status_code=400, detail=problem)
     target.password_hash = hash_password(new_password)
     target.must_change_password = must_change
+    sessions.revoke_all(target)             # S2: las sesiones abiertas con la contraseña anterior dejan de valer
     db.commit()
     security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
     return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")}

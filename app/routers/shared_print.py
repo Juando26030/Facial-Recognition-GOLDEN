@@ -14,7 +14,7 @@ import os
 from datetime import timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -302,10 +302,20 @@ def my_jobs(event_id: int, scope: str = "mine", db: Session = Depends(get_db), s
 
 
 # ------------------------------------------------------------------------------------------------ Y: recibir e imprimir
+def _require_page_fetch(request: Request) -> None:
+    mode = (request.headers.get("sec-fetch-mode") or "").lower()
+    site = (request.headers.get("sec-fetch-site") or "").lower()
+    if mode == "navigate" or site == "cross-site":
+        raise HTTPException(status_code=403, detail="Esta acción solo se puede hacer desde la pantalla de impresión")
+
+
 @router.get("/events/{event_id}/print-jobs-next")
-def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = False, batch: int = 0, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+def next_job(event_id: int, request: Request, device_id: Optional[str] = None, manual: bool = False, batch: int = 0, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """El siguiente trabajo para el equipo de este usuario: se RESERVA de forma atómica (queued → sent). Un trabajo reservado no se vuelve a entregar.
-    `batch` (solo con `manual`, el toque de «Imprimir pendientes»): reserva hasta BATCH_MAX trabajos de una vez, con el mismo arrendamiento largo, para imprimirlos en UNA ventana."""
+    `batch` (solo con `manual`, el toque de «Imprimir pendientes»): reserva hasta BATCH_MAX trabajos de una vez, con el mismo arrendamiento largo, para imprimirlos en UNA ventana.
+    S9: es un GET que cambia estado, así que solo lo atiende un `fetch` de la propia página: una navegación (enlace desde otro sitio: la cookie Lax sí viaja) o una petición
+    de otro sitio se rechazan con 403 (cabeceras Sec-Fetch-* que pone el navegador; la página manda además `X-Gw-Fetch: 1`)."""
+    _require_page_fetch(request)
     event = _enabled_event(event_id, db, staff)
     now = utcnow()
     if batch:
