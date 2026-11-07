@@ -259,6 +259,32 @@
     }
   }
 
+  /* ---------------------------------------------------------------------------------------------------- edición de un evento (campos personalizados)
+     customFields(tpl): los campos personalizados ACTIVOS (clave c_…, sin interruptores ni cliente) en el orden de «Nuevo evento»; los base siguen en su sitio de la pantalla.
+     diffExtra(fields, original, read): arma el `extra` del PATCH con SOLO lo que cambió ({clave: valor|null}); valida cada cambio. Un obligatorio que el evento viejo nunca tuvo no bloquea; vaciar uno que sí tenía, sí.
+     Devuelve {extra} o {error, key}. */
+  function customFields(tpl) {
+    var byKey = {}, ordered = [];
+    ((tpl && tpl.fields) || []).forEach(function (f) { if (/^c_/.test(f.key) && !f.retired && f.type !== 'switch' && f.type !== 'client') byKey[f.key] = f; });
+    (((tpl && tpl.creation_layout) || {}).sections || []).forEach(function (s) { (s.keys || []).forEach(function (k) { if (byKey[k]) { ordered.push(byKey[k]); delete byKey[k]; } }); });
+    return ordered.concat(Object.keys(byKey).map(function (k) { return byKey[k]; }));
+  }
+  function sameValue(a, b) {
+    if (a != null && typeof a !== 'object' && b != null && typeof b !== 'object') return String(a) === String(b);
+    return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+  }
+  function diffExtra(fields, original, read) {
+    var extra = {}, before = original || {};
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i], v = read(f), b = before[f.key] == null ? null : before[f.key];
+      if (sameValue(v, b)) continue;
+      var msg = validateValue(f, v);
+      if (msg) return { error: msg, key: f.key };
+      extra[f.key] = v;
+    }
+    return { extra: extra };
+  }
+
   /* ---------------------------------------------------------------------------------------------------- comportamiento (solo navegador) */
   function bind(host, opts) {
     opts = opts || {};
@@ -394,7 +420,7 @@
     });
   }
 
-  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, geoPair: geoPair, loadGeo: loadGeo, _geo: { codeOf: codeOf, citiesFor: citiesFor, state: geoState }, esc: esc, inventoryRow: inventoryRow };
+  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, geoPair: geoPair, loadGeo: loadGeo, customFields: customFields, diffExtra: diffExtra, sameValue: sameValue, _geo: { codeOf: codeOf, citiesFor: citiesFor, state: geoState }, esc: esc, inventoryRow: inventoryRow };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.EventFields = api;
 })(typeof window !== 'undefined' ? window : globalThis);

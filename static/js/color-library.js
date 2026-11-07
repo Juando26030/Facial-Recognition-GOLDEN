@@ -46,7 +46,7 @@
     box.querySelector('.cl-del').addEventListener('click', async () => {
       if (!select.value) { showToast('Elige primero un color de la lista', 'error'); return; }
       const c = colors.find((x) => String(x.id) === select.value);
-      if (!confirm(`¿Quitar «${c ? c.name : 'este color'}» de la librería? Los eventos que ya lo usan no cambian.`)) return;
+      if (!(await showConfirm(`¿Quitar «${c ? c.name : 'este color'}» de la librería? Los eventos que ya lo usan no cambian.`, { variant: 'warning', confirmLabel: 'Sí, quitar' }))) return;
       const res = await fetch(`/api/colors/${select.value}`, { method: 'DELETE' });
       if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo quitar', 'error'); return; }
       await reload();
