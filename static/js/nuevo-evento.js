@@ -6,7 +6,11 @@
   const form = document.getElementById('newEventForm');
   if (!root || !form) return;
 
-  const TENANT_ID = root.dataset.tenantId;
+  let TENANT_ID = root.dataset.tenantId;
+  const PICK_TENANT = root.dataset.pickTenant === 'true';          // entrada desde la pestaña Eventos: el cliente se elige en el primer campo
+  const AFTER_URL = root.dataset.afterUrl || '/clientes';
+  const tenantInput = PICK_TENANT ? document.getElementById('neTenant') : null;
+  const tenantBox = tenantInput && window.GWCombobox ? GWCombobox.attach(tenantInput, { options: [] }) : null;
   const STAFF_ROLE = root.dataset.staffRole;
   const PURE_COORDINATOR = root.dataset.pureCoordinator === 'true';
   const STAFF_ID = root.dataset.staffId ? parseInt(root.dataset.staffId, 10) : null;
@@ -82,6 +86,7 @@
   async function loadSuperEvents(selectedId) {
     const select = document.getElementById('superEventSelect');
     let list = [];
+    if (!TENANT_ID) { select.innerHTML = '<option value="">— Ninguno —</option>'; select.value = ''; return; }      // sin cliente elegido todavía
     try {
       const res = await fetch('/api/super-events?tenant_id=' + encodeURIComponent(TENANT_ID));
       list = res.ok ? await res.json() : [];
@@ -91,7 +96,24 @@
   }
   loadSuperEvents();
 
+  // Entrada desde Eventos: la lista de clientes es la misma de siempre (GET /api/tenants), ya limitada a lo que el rol puede ver.
+  async function loadTenantOptions() {
+    if (!tenantBox) return;
+    try {
+      const res = await fetch('/api/tenants');
+      if (!res.ok) throw new Error('tenants');
+      const tenants = await res.json();
+      tenantBox.setOptions(tenants.map((t) => ({ value: t.id, label: t.name, hint: t.client_code || '' })));
+      if (tenants.length === 1) tenantBox.setValue(tenants[0].id);          // un solo cliente visible: ya viene elegido
+    } catch (e) { showToast('No se pudo cargar la lista de clientes. Recarga la página.', 'error'); }
+  }
+  if (tenantInput) {
+    tenantInput.addEventListener('gw:combobox-change', (e) => { TENANT_ID = String(e.detail.value || ''); loadSuperEvents(); });
+    loadTenantOptions();
+  }
+
   async function createSuperEvent(btn) {
+    if (!TENANT_ID) { GW.wizard.go(form, 0); focusPanelTitle(); showToast('Primero elige el cliente del evento.', 'error'); return; }
     const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
     if (!name) return;
     await busy(btn, async () => {
@@ -107,6 +129,12 @@
   function validatePanel(panel) {
     const inputs = Array.prototype.slice.call(panel.querySelectorAll('input[name], select[name]'));
     for (const el of inputs) {
+      if (el === tenantInput && !TENANT_ID) {                // el cliente debe ser uno de la lista, no cualquier texto
+        el.setAttribute('aria-invalid', 'true');
+        el.focus();
+        showToast('Elige un cliente de la lista.', 'error');
+        return false;
+      }
       const empty = el.required && !String(el.value).trim();
       if (empty) {
         el.setAttribute('aria-invalid', 'true');
@@ -166,7 +194,7 @@
     const color = (field('bandana_color').value || '').trim();
     const colorName = labelOf('bandana_color_name');
     const groups = [
-      { step: 0, title: 'Datos', rows: [['Código', labelOf('event_code')], ['Nombre', labelOf('name')], ['País y ciudad', labelOf('country') + ', ' + labelOf('city')], ['Lugar', labelOf('location')], ['Dirección', labelOf('address')]] },
+      { step: 0, title: 'Datos', rows: (PICK_TENANT ? [['Cliente', labelOf('tenant_label')]] : []).concat([['Código', labelOf('event_code')], ['Nombre', labelOf('name')], ['País y ciudad', labelOf('country') + ', ' + labelOf('city')], ['Lugar', labelOf('location')], ['Dirección', labelOf('address')]]) },
       { step: 1, title: 'Fechas', rows: [['Evento', labelOf('start_date') + ' a ' + labelOf('end_date') + ', ' + labelOf('event_time_start') + ' a ' + labelOf('event_time_end')], ['Montaje', labelOf('setup_date') + ', ' + labelOf('setup_time_start') + ' a ' + labelOf('setup_time_end')]] },
       { step: 2, title: 'Responsables', rows: [['Coordinador', labelOf('coordinator_label')]].concat(PURE_COORDINATOR ? [] : [['Comercial', labelOf('commercial_label')]]).concat([['Superevento', superLabel]]) },
     ];
@@ -192,6 +220,7 @@
     if (!validateUpTo(panels().length - 1)) return;
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.tenant_id = TENANT_ID;
+    delete payload.tenant_label;
     payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
 
     const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
@@ -214,7 +243,7 @@
       } catch (e) { showToast('Sin conexión: no se pudo crear el evento. Revisa tu red e inténtalo de nuevo.', 'error'); return; }
       if (res.ok) {
         showToast('Evento creado', 'success');
-        window.location.href = '/clientes';
+        window.location.href = AFTER_URL;
         return;
       }
       const err = await res.json().catch(() => ({}));

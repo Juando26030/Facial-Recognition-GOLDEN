@@ -49,6 +49,7 @@
         <p class="gw-page-head__sub">Busca un evento, mira en qué estado está y entra a trabajarlo.</p>
       </div>
       <div class="gw-page-head__actions">
+        <a href="/eventos/nuevo" class="gw-btn gw-btn--primary" data-new-event>{{ ic('plus', 'gw-icon--sm') }} Nuevo evento</a>
         {% if staff_role == "super_admin" %}
         <button type="button" class="gw-btn gw-btn--secondary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">{{ ic('upload', 'gw-icon--sm') }} Importar evento</button>
         {% endif %}

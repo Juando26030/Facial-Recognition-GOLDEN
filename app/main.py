@@ -413,6 +413,23 @@ def clientes_page(request: Request):
     })
 
 
+def _nuevo_evento_response(request: Request, tenant: Optional[Tenant], sidebar_active: str, back_url: str):
+    """Misma pantalla y mismo formulario para las dos entradas (Clientes -> «Nuevo evento» y pestaña Eventos -> «Nuevo evento»).
+    Con `tenant` el cliente ya viene asignado (no se pide); con None la pantalla muestra el primer campo «Cliente» (lista con buscador)."""
+    _roles = {request.session.get("staff_role")} | {request.session.get("staff_secondary_role")}
+    return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
+        "pure_coordinator": not ({"comercial", "admin", "super_admin"} & _roles),
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "staff_id": request.session.get("staff_user_id"),
+        "sidebar_active": sidebar_active,
+        "tenant_id": tenant.id if tenant else "",
+        "tenant_name": tenant.name if tenant else "",
+        "pick_tenant": tenant is None,
+        "back_url": back_url,
+    })
+
+
 @app.get("/clientes/{tenant_id}/nuevo-evento")
 def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(get_db)):
     """Sprint 2.4 Fase 1 (2026-09-16, pedido explícito): "Crear evento" pasa a ser una pantalla
@@ -425,16 +442,18 @@ def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(ge
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         return RedirectResponse("/clientes", status_code=302)
-    _roles = {request.session.get("staff_role")} | {request.session.get("staff_secondary_role")}
-    return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
-        "pure_coordinator": not ({"comercial", "admin", "super_admin"} & _roles),
-        "staff_name": request.session.get("staff_name"),
-        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
-        "staff_id": request.session.get("staff_user_id"),
-        "sidebar_active": "clientes",
-        "tenant_id": tenant.id,
-        "tenant_name": tenant.name,
-    })
+    return _nuevo_evento_response(request, tenant, "clientes", "/clientes")
+
+
+@app.get("/eventos/nuevo")
+def nuevo_evento_desde_eventos_page(request: Request):
+    """Fase 2 (7-nov-2026): crear evento también desde la pestaña Eventos. Es el MISMO formulario que /clientes/{id}/nuevo-evento,
+    con el campo «Cliente» (lista con buscador) como primer dato. Mismos permisos que la otra entrada y que POST /api/events;
+    la lista de clientes sale de GET /api/tenants, que ya limita lo que cada rol puede ver."""
+    redirect = _require_page_role(request, "coordinador")
+    if redirect:
+        return redirect
+    return _nuevo_evento_response(request, None, "eventos", "/eventos")
 
 
 @app.get("/eventos")
