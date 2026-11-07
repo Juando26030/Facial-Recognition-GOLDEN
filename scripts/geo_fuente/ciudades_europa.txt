@@ -1,0 +1,46 @@
+ES: Madrid; Barcelona; Valencia; Sevilla; Zaragoza; Málaga; Murcia; Palma de Mallorca; Las Palmas de Gran Canaria; Bilbao; Alicante; Córdoba; Valladolid; Vigo; Gijón; Hospitalet de Llobregat; Vitoria-Gasteiz; La Coruña; Granada; Elche; Oviedo; Badalona; Cartagena; Terrassa; Jerez de la Frontera; Sabadell; Móstoles; Santa Cruz de Tenerife; Pamplona; Almería; Alcalá de Henares; Fuenlabrada; San Sebastián; Leganés; Getafe; Burgos; Albacete; Santander; Castellón de la Plana; Logroño; Badajoz; Salamanca; Huelva; Marbella; León; Tarragona; Cádiz; Lérida; Jaén; Ourense; Girona; Lugo; Toledo; Santiago de Compostela; Mérida; Ibiza; Benidorm; Torrejón de Ardoz; Alcorcón; Pozuelo de Alarcón; Majadahonda
+PT: Lisboa; Oporto; Vila Nova de Gaia; Amadora; Braga; Setúbal; Coímbra; Funchal; Almada; Agualva-Cacém; Queluz; Aveiro; Faro; Évora; Viseu; Leiria; Guimarães; Ponta Delgada
+FR: París; Marsella; Lyon; Toulouse; Niza; Nantes; Estrasburgo; Montpellier; Burdeos; Lille; Rennes; Reims; Le Havre; Saint-Étienne; Tolón; Grenoble; Dijon; Angers; Nimes; Cannes; Clermont-Ferrand; Le Mans; Aix-en-Provence; Brest; Tours; Limoges; Amiens; Perpiñán; Metz; Ruan; Orleans; Mulhouse; Caen; Nancy; Aviñón; Ajaccio
+DE: Berlín; Hamburgo; Múnich; Colonia; Fráncfort del Meno; Stuttgart; Düsseldorf; Leipzig; Dortmund; Essen; Bremen; Dresde; Hannover; Núremberg; Duisburgo; Bochum; Wuppertal; Bielefeld; Bonn; Münster; Karlsruhe; Mannheim; Augsburgo; Wiesbaden; Gelsenkirchen; Mönchengladbach; Brunswick; Kiel; Chemnitz; Aquisgrán; Halle; Magdeburgo; Friburgo de Brisgovia; Krefeld; Maguncia; Lübeck; Erfurt; Rostock; Kassel; Heidelberg; Potsdam; Ulm; Ratisbona; Wolfsburgo; Sarrebruck; Schwerin
+IT: Roma; Milán; Nápoles; Turín; Palermo; Génova; Bolonia; Florencia; Bari; Catania; Venecia; Verona; Mesina; Padua; Trieste; Tarento; Brescia; Parma; Módena; Reggio de Calabria; Reggio Emilia; Perugia; Livorno; Rávena; Cagliari; Foggia; Rímini; Salerno; Ferrara; Sassari; Siracusa; Pescara; Bérgamo; Vicenza; Trento; Bolzano; Ancona; Pisa; Lecce; Como; Aosta; Campobasso; Potenza; Catanzaro
+GB: Londres; Birmingham; Mánchester; Glasgow; Liverpool; Leeds; Sheffield; Edimburgo; Bristol; Cardiff; Leicester; Coventry; Bradford; Belfast; Nottingham; Kingston upon Hull; Newcastle upon Tyne; Stoke-on-Trent; Southampton; Derby; Portsmouth; Brighton; Plymouth; Aberdeen; Reading; Northampton; Luton; Wolverhampton; Swansea; Dundee; Oxford; Cambridge; York; Norwich; Exeter; Inverness; Bath; Canterbury; Londonderry
+IE: Dublín; Cork; Limerick; Galway; Waterford; Drogheda; Dundalk; Swords; Kilkenny; Sligo
+NL: Ámsterdam; Róterdam; La Haya; Utrecht; Eindhoven; Groninga; Tilburgo; Almere; Breda; Nimega; Arnhem; Haarlem; Enschede; Apeldoorn; Maastricht; Leiden; Delft
+BE: Bruselas; Amberes; Gante; Charleroi; Lieja; Brujas; Namur; Lovaina; Mons; Malinas; Ostende
+LU: Luxemburgo; Esch-sur-Alzette; Differdange
+CH: Zúrich; Ginebra; Basilea; Lausana; Berna; Winterthur; Lucerna; San Galo; Lugano; Biel; Thun; Friburgo; Neuchâtel; Coira
+AT: Viena; Graz; Linz; Salzburgo; Innsbruck; Klagenfurt; Villach; Wels; Sankt Pölten; Bregenz
+LI: Vaduz; Schaan
+MC: Mónaco; Monte Carlo
+AD: Andorra la Vieja; Escaldes-Engordany
+SM: San Marino; Serravalle
+VA: Ciudad del Vaticano
+MT: La Valeta; Birkirkara; Sliema; Mosta
+DK: Copenhague; Aarhus; Odense; Aalborg; Esbjerg; Roskilde; Kolding
+SE: Estocolmo; Gotemburgo; Malmö; Upsala; Västerås; Örebro; Linköping; Helsingborg; Jönköping; Norrköping; Lund; Umeå; Kiruna
+NO: Oslo; Bergen; Trondheim; Stavanger; Drammen; Fredrikstad; Kristiansand; Tromsø; Ålesund
+FI: Helsinki; Espoo; Tampere; Vantaa; Oulu; Turku; Jyväskylä; Lahti; Kuopio; Rovaniemi
+IS: Reikiavik; Kópavogur; Hafnarfjörður; Akureyri
+EE: Tallin; Tartu; Narva; Pärnu
+LV: Riga; Daugavpils; Liepāja; Jelgava; Jūrmala
+LT: Vilna; Kaunas; Klaipėda; Šiauliai; Panevėžys
+PL: Varsovia; Cracovia; Lodz; Breslavia; Poznań; Gdansk; Szczecin; Bydgoszcz; Lublin; Katowice; Białystok; Gdynia; Częstochowa; Radom; Toruń; Rzeszów; Kielce; Olsztyn; Opole; Zielona Góra
+CZ: Praga; Brno; Ostrava; Pilsen; Liberec; Olomouc; České Budějovice; Hradec Králové; Ústí nad Labem; Pardubice; Karlovy Vary
+SK: Bratislava; Košice; Prešov; Žilina; Nitra; Banská Bystrica; Trnava
+HU: Budapest; Debrecen; Szeged; Miskolc; Pécs; Győr; Nyíregyháza; Kecskemét; Székesfehérvár; Szombathely
+RO: Bucarest; Cluj-Napoca; Timișoara; Iași; Constanza; Craiova; Brașov; Galați; Ploiești; Oradea; Brăila; Arad; Pitești; Sibiu; Bacău; Târgu Mureș; Baia Mare; Suceava
+BG: Sofía; Plovdiv; Varna; Burgas; Ruse; Stara Zagora; Pleven; Sliven
+GR: Atenas; Salónica; Patras; Heraclión; Larisa; Volos; Rodas; Ioánina; Kavala; Corfú; Calcis; La Canea
+HR: Zagreb; Split; Rijeka; Osijek; Zadar; Pula; Dubrovnik; Slavonski Brod
+SI: Liubliana; Maribor; Celje; Kranj; Koper
+BA: Sarajevo; Banja Luka; Tuzla; Zenica; Mostar
+RS: Belgrado; Novi Sad; Niš; Kragujevac; Subotica
+ME: Podgorica; Nikšić; Budva; Kotor
+MK: Skopie; Bitola; Kumanovo; Ohrid
+AL: Tirana; Durrës; Vlorë; Shkodër; Elbasan; Korçë
+XK: Pristina; Prizren; Peja; Mitrovica
+MD: Chisináu; Tiráspol; Bălți
+UA: Kiev; Járkov; Odesa; Dnipró; Leópolis; Zaporiyia; Kriví Rih; Nikoláiev; Vínnitsa; Poltava; Chernígov; Cherkasy; Zhytómyr; Ivano-Frankivsk; Lutsk; Uzhhorod; Chernivtsi
+BY: Minsk; Gómel; Mogilev; Vitebsk; Grodno; Brest
+RU: Moscú; San Petersburgo; Novosibirsk; Ekaterimburgo; Kazán; Nizhni Nóvgorod; Cheliábinsk; Samara; Omsk; Rostov del Don; Ufá; Krasnoyarsk; Vorónezh; Perm; Volgogrado; Krasnodar; Sarátov; Tiumén; Tolyatti; Izhevsk; Barnaúl; Vladivostok; Irkutsk; Jabárovsk; Kaliningrado; Murmansk; Sochi; Yakutsk
+CY: Nicosia; Limasol; Lárnaca; Pafos

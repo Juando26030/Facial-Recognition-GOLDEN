@@ -1,0 +1,50 @@
+CN: Pekín; Shanghái; Cantón; Shenzhen; Chengdú; Tianjin; Chongqing; Wuhan; Hangzhou; Nankín; Xi'an; Shenyang; Harbin; Zhengzhou; Qingdao; Jinan; Changsha; Dalian; Kunming; Fuzhou; Hefei; Nanchang; Ningbo; Suzhou; Wuxi; Xiamen; Urumqi; Lhasa; Taiyuan; Shijiazhuang; Changchun; Guiyang; Nanning; Lanzhou; Hohhot; Yinchuan; Haikou; Dongguan; Foshan
+JP: Tokio; Yokohama; Osaka; Nagoya; Sapporo; Fukuoka; Kobe; Kioto; Kawasaki; Saitama; Hiroshima; Sendai; Chiba; Kitakyūshū; Niigata; Hamamatsu; Kumamoto; Okayama; Shizuoka; Kagoshima; Nara; Naha; Nagasaki; Kanazawa; Matsuyama
+KR: Seúl; Busan; Incheon; Daegu; Daejeon; Gwangju; Suwon; Ulsan; Changwon; Seongnam; Goyang; Jeju
+KP: Pionyang; Hamhung; Chongjin; Nampho
+TW: Taipéi; Kaohsiung; Taichung; Tainan; Taoyuan; Hsinchu
+HK: Hong Kong; Kowloon
+MO: Macao
+MN: Ulán Bator; Erdenet; Darhan
+IN: Nueva Delhi; Bombay; Mumbai; Delhi; Bangalore; Hyderabad; Ahmedabad; Chennai; Calcuta; Surat; Pune; Jaipur; Lucknow; Kanpur; Nagpur; Indore; Bhopal; Visakhapatnam; Patna; Vadodara; Ludhiana; Agra; Nashik; Faridabad; Meerut; Rajkot; Varanasi; Srinagar; Amritsar; Chandigarh; Coimbatore; Kochi; Thiruvananthapuram; Guwahati; Bhubaneshwar; Ranchi; Raipur; Goa; Mysore; Madurai; Jodhpur; Dehradun; Shimla
+PK: Karachi; Lahore; Faisalabad; Rawalpindi; Islamabad; Multan; Hyderabad; Peshawar; Quetta; Gujranwala; Sialkot
+BD: Dacca; Chittagong; Khulna; Rajshahi; Sylhet; Barisal; Rangpur
+LK: Colombo; Sri Jayawardenepura Kotte; Kandy; Galle; Jaffna
+NP: Katmandú; Pokhara; Lalitpur; Biratnagar; Bharatpur
+BT: Timbu; Phuntsholing; Paro
+MV: Malé; Addu
+AF: Kabul; Kandahar; Herat; Mazar-e Sharif; Jalalabad
+IR: Teherán; Mashhad; Isfahán; Karaj; Shiraz; Tabriz; Qom; Ahvaz; Kermanshah; Urmía
+IQ: Bagdad; Basora; Mosul; Erbil; Kirkuk; Nayaf; Kerbala; Suleimaniya
+SY: Damasco; Alepo; Homs; Latakia; Hama
+LB: Beirut; Trípoli; Sidón; Tiro; Zahlé
+JO: Amán; Zarqa; Irbid; Aqaba
+IL: Jerusalén; Tel Aviv; Haifa; Rishon LeZion; Petaj Tikva; Ashdod; Netanya; Beerseba; Eilat
+PS: Ramala; Gaza; Hebrón; Nablus; Belén; Jericó
+SA: Riad; Yeda; La Meca; Medina; Dammam; Taif; Tabuk; Abha; Jubail
+AE: Abu Dabi; Dubái; Sharjah; Ajmán; Al Ain; Ras Al Khaimah; Fujairah
+QA: Doha; Al Rayyan; Al Wakrah
+KW: Kuwait; Hawalli; Salmiya
+BH: Manama; Muharraq; Riffa
+OM: Mascate; Salalah; Sohar; Nizwa
+YE: Saná; Adén; Taiz; Al Hudaydah
+TR: Ankara; Estambul; Esmirna; Bursa; Adana; Gaziantep; Konya; Antalya; Kayseri; Mersin; Diyarbakır; Samsun; Trabzon; Eskişehir; Bodrum
+GE: Tiflis; Batumi; Kutaisi; Rustavi
+AM: Ereván; Gyumri; Vanadzor
+AZ: Bakú; Gandja; Sumqayit
+KZ: Astaná; Almatý; Shymkent; Karagandá; Aktobe; Aktau; Pavlodar
+UZ: Taskent; Samarcanda; Bujará; Namangán; Andiyán; Nukus
+TM: Asjabad; Turkmenabat; Dashoguz
+KG: Biskek; Osh; Jalal-Abad
+TJ: Dusambé; Juyand; Kulob
+TH: Bangkok; Chiang Mai; Pattaya; Phuket; Nonthaburi; Nakhon Ratchasima; Hat Yai; Udon Thani; Khon Kaen; Chiang Rai; Krabi; Ayutthaya
+VN: Hanói; Ciudad Ho Chi Minh; Da Nang; Haiphong; Can Tho; Hue; Nha Trang; Vung Tau
+LA: Vientián; Luang Prabang; Savannakhet; Pakse
+KH: Nom Pen; Siem Riep; Battambang; Sihanoukville
+MM: Naipyidó; Rangún; Mandalay; Mawlamyine; Bago
+MY: Kuala Lumpur; George Town; Ipoh; Johor Bahru; Shah Alam; Kota Kinabalu; Kuching; Malaca; Putrajaya; Petaling Jaya
+SG: Singapur
+BN: Bandar Seri Begawan
+ID: Yakarta; Surabaya; Bandung; Medan; Bekasi; Tangerang; Depok; Semarang; Palembang; Makasar; Batam; Bogor; Pekanbaru; Denpasar; Balikpapan; Yogyakarta; Manado; Pontianak; Banda Aceh; Malang
+PH: Manila; Ciudad Quezón; Davao; Cebú; Zamboanga; Taguig; Antipolo; Pasig; Cagayán de Oro; Makati; Baguio; Iloílo; Bacolod; General Santos
+TL: Dili; Baucau

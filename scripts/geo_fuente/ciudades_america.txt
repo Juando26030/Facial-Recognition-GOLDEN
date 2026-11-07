@@ -1,0 +1,37 @@
+MX: Ciudad de México; Guadalajara; Monterrey; Puebla; Tijuana; León; Ciudad Juárez; Zapopan; Mérida; San Luis Potosí; Aguascalientes; Hermosillo; Saltillo; Mexicali; Culiacán; Querétaro; Chihuahua; Morelia; Toluca; Cancún; Veracruz; Villahermosa; Tampico; Acapulco; Cuernavaca; Oaxaca; Tuxtla Gutiérrez; Durango; Torreón; Reynosa; Matamoros; Nuevo Laredo; Tepic; Pachuca; Xalapa; Mazatlán; La Paz; Campeche; Colima; Tlaxcala; Zacatecas; Chetumal; Playa del Carmen; Puerto Vallarta; Los Cabos; Ensenada
+AR: Buenos Aires; Córdoba; Rosario; Mendoza; La Plata; San Miguel de Tucumán; Mar del Plata; Salta; Santa Fe; San Juan; Resistencia; Neuquén; Santiago del Estero; Corrientes; Posadas; Bahía Blanca; Paraná; Formosa; San Luis; La Rioja; Catamarca; Río Cuarto; Comodoro Rivadavia; San Salvador de Jujuy; Ushuaia; Río Gallegos; Rawson; Viedma; Santa Rosa; San Carlos de Bariloche; Tandil
+CL: Santiago; Valparaíso; Viña del Mar; Concepción; La Serena; Antofagasta; Temuco; Rancagua; Talca; Arica; Iquique; Puerto Montt; Coquimbo; Osorno; Valdivia; Punta Arenas; Copiapó; Calama; Chillán; Los Ángeles; Curicó; Quilpué; Puente Alto
+PE: Lima; Arequipa; Trujillo; Chiclayo; Piura; Iquitos; Cusco; Huancayo; Chimbote; Pucallpa; Tacna; Ica; Juliaca; Sullana; Ayacucho; Cajamarca; Puno; Huánuco; Tarapoto; Tumbes; Callao; Huaraz; Moquegua; Puerto Maldonado
+EC: Quito; Guayaquil; Cuenca; Santo Domingo; Machala; Durán; Manta; Portoviejo; Ambato; Riobamba; Loja; Esmeraldas; Ibarra; Quevedo; Milagro; Latacunga; Babahoyo; Tulcán; Puyo; Macas; Tena; Azogues; Salinas
+VE: Caracas; Maracaibo; Valencia; Barquisimeto; Maracay; Ciudad Guayana; Barcelona; Maturín; Cumaná; Ciudad Bolívar; San Cristóbal; Mérida; Cabimas; Punto Fijo; Los Teques; Puerto La Cruz; Guarenas; Coro; Barinas; Valera; Porlamar; La Guaira; San Fernando de Apure; Guanare; Acarigua
+BO: La Paz; Santa Cruz de la Sierra; Cochabamba; Sucre; El Alto; Oruro; Tarija; Potosí; Sacaba; Montero; Trinidad; Cobija; Quillacollo; Riberalta; Yacuiba; Villazón
+PY: Asunción; Ciudad del Este; San Lorenzo; Luque; Capiatá; Lambaré; Fernando de la Mora; Encarnación; Pedro Juan Caballero; Concepción; Villarrica; Coronel Oviedo; Caaguazú; Pilar; Villa Hayes; Salto del Guairá
+UY: Montevideo; Salto; Paysandú; Ciudad de la Costa; Las Piedras; Rivera; Maldonado; Punta del Este; Tacuarembó; Melo; Mercedes; Artigas; Minas; San José de Mayo; Durazno; Colonia del Sacramento; Florida; Rocha; Treinta y Tres; Fray Bentos
+BR: Brasilia; São Paulo; Río de Janeiro; Salvador; Fortaleza; Belo Horizonte; Manaos; Curitiba; Recife; Goiânia; Belém; Porto Alegre; Guarulhos; Campinas; São Luís; São Gonçalo; Maceió; Duque de Caxias; Natal; Teresina; Campo Grande; São Bernardo do Campo; Nova Iguaçu; João Pessoa; Santo André; Osasco; Jaboatão dos Guararapes; Ribeirão Preto; Uberlândia; Contagem; Sorocaba; Aracaju; Feira de Santana; Cuiabá; Joinville; Juiz de Fora; Londrina; Aparecida de Goiânia; Niterói; Florianópolis; Santos; Vitória; Macapá; Porto Velho; Boa Vista; Rio Branco; Palmas; Foz do Iguaçu
+PA: Ciudad de Panamá; San Miguelito; Colón; David; La Chorrera; Santiago; Chitré; Penonomé; Las Tablas; Arraiján; Changuinola; Bocas del Toro; Boquete; Panamá Oeste; Vacamonte
+CR: San José; Alajuela; Cartago; Heredia; Liberia; Puntarenas; Limón; San Isidro de El General; Desamparados; Escazú; Santa Ana; Curridabat; Tibás; Moravia; Quesada; Nicoya; Golfito; Jacó; Turrialba
+GT: Ciudad de Guatemala; Mixco; Villa Nueva; Quetzaltenango; Escuintla; Cobán; Chinautla; Huehuetenango; Chimaltenango; Jalapa; Puerto Barrios; Antigua Guatemala; Flores; Retalhuleu; Zacapa; Mazatenango; Santa Lucía Cotzumalguapa; Jutiapa; Chiquimula
+HN: Tegucigalpa; San Pedro Sula; Choloma; La Ceiba; El Progreso; Choluteca; Comayagua; Puerto Cortés; Danlí; Siguatepeque; Juticalpa; Tela; Santa Rosa de Copán; Roatán
+SV: San Salvador; Soyapango; Santa Ana; San Miguel; Mejicanos; Santa Tecla; Apopa; Delgado; Sonsonate; Usulután; Ahuachapán; La Unión; Zacatecoluca; Chalatenango; Cojutepeque
+NI: Managua; León; Masaya; Chinandega; Matagalpa; Estelí; Granada; Jinotega; Bluefields; Tipitapa; Juigalpa; Rivas; Ocotal; Puerto Cabezas
+CU: La Habana; Santiago de Cuba; Camagüey; Holguín; Guantánamo; Santa Clara; Bayamo; Las Tunas; Cienfuegos; Pinar del Río; Matanzas; Ciego de Ávila; Sancti Spíritus; Manzanillo; Cárdenas; Varadero; Trinidad
+DO: Santo Domingo; Santiago de los Caballeros; Santo Domingo Este; Santo Domingo Oeste; San Pedro de Macorís; La Romana; San Cristóbal; Puerto Plata; La Vega; San Francisco de Macorís; Higüey; Punta Cana; Barahona; Moca; Baní; Bonao
+HT: Puerto Príncipe; Cabo Haitiano; Delmas; Pétion-Ville; Carrefour; Gonaïves; Les Cayes; Jacmel
+JM: Kingston; Montego Bay; Spanish Town; Portmore; May Pen; Mandeville; Ocho Ríos; Negril
+TT: Puerto España; San Fernando; Chaguanas; Arima; Point Fortin; Scarborough
+BS: Nassau; Freeport
+BB: Bridgetown
+BZ: Belmopán; Ciudad de Belice; San Ignacio; Orange Walk; Dangriga; Punta Gorda
+GY: Georgetown; Linden; New Amsterdam
+SR: Paramaribo; Lelydorp; Nieuw Nickerie; Moengo
+AG: Saint John's; All Saints
+DM: Roseau; Portsmouth
+GD: Saint George's; Gouyave
+KN: Basseterre; Charlestown
+LC: Castries; Vieux Fort
+VC: Kingstown; Georgetown
+PR: San Juan; Bayamón; Carolina; Ponce; Caguas; Guaynabo; Arecibo; Mayagüez; Trujillo Alto; Fajardo; Humacao; Aguadilla
+AW: Oranjestad; San Nicolás
+CW: Willemstad
+US: Nueva York; Los Ángeles; Chicago; Houston; Phoenix; Filadelfia; San Antonio; San Diego; Dallas; San José; Austin; Jacksonville; Fort Worth; Columbus; Charlotte; San Francisco; Indianápolis; Seattle; Denver; Washington D. C.; Boston; El Paso; Nashville; Detroit; Oklahoma City; Portland; Las Vegas; Memphis; Louisville; Baltimore; Milwaukee; Albuquerque; Tucson; Fresno; Sacramento; Kansas City; Atlanta; Miami; Orlando; Tampa; Fort Lauderdale; Omaha; Raleigh; Minneapolis; Cleveland; Nueva Orleans; Honolulu; Anchorage; Pittsburgh; Cincinnati; San Luis; Salt Lake City; Newark; Hialeah; Doral; Boca Ratón; Houston; Brooklyn; Queens
+CA: Toronto; Montreal; Vancouver; Calgary; Edmonton; Ottawa; Winnipeg; Quebec; Hamilton; Kitchener; London; Victoria; Halifax; Oshawa; Windsor; Saskatoon; Regina; San Juan de Terranova; Mississauga; Brampton; Surrey; Laval; Gatineau; Fredericton; Charlottetown; Whitehorse; Yellowknife; Iqaluit

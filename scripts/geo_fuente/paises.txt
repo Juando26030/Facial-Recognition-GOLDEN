@@ -1,0 +1,202 @@
+AF|Afganistán|Afghanistan
+AL|Albania|Albania
+DE|Alemania|Germany
+AD|Andorra|Andorra
+AO|Angola|Angola
+AG|Antigua y Barbuda|Antigua and Barbuda
+SA|Arabia Saudita|Saudi Arabia
+DZ|Argelia|Algeria
+AR|Argentina|Argentina
+AM|Armenia|Armenia
+AU|Australia|Australia
+AT|Austria|Austria
+AZ|Azerbaiyán|Azerbaijan
+BS|Bahamas|Bahamas
+BD|Bangladés|Bangladesh
+BB|Barbados|Barbados
+BH|Baréin|Bahrain
+BE|Bélgica|Belgium
+BZ|Belice|Belize
+BJ|Benín|Benin
+BY|Bielorrusia|Belarus
+MM|Birmania (Myanmar)|Myanmar
+BO|Bolivia|Bolivia
+BA|Bosnia y Herzegovina|Bosnia and Herzegovina
+BW|Botsuana|Botswana
+BR|Brasil|Brazil
+BN|Brunéi|Brunei
+BG|Bulgaria|Bulgaria
+BF|Burkina Faso|Burkina Faso
+BI|Burundi|Burundi
+BT|Bután|Bhutan
+CV|Cabo Verde|Cape Verde
+KH|Camboya|Cambodia
+CM|Camerún|Cameroon
+CA|Canadá|Canada
+QA|Catar|Qatar
+TD|Chad|Chad
+CL|Chile|Chile
+CN|China|China
+CY|Chipre|Cyprus
+VA|Ciudad del Vaticano|Vatican City
+CO|Colombia|Colombia
+KM|Comoras|Comoros
+CG|Congo|Republic of the Congo
+KP|Corea del Norte|North Korea
+KR|Corea del Sur|South Korea
+CI|Costa de Marfil|Ivory Coast
+CR|Costa Rica|Costa Rica
+HR|Croacia|Croatia
+CU|Cuba|Cuba
+DK|Dinamarca|Denmark
+DM|Dominica|Dominica
+EC|Ecuador|Ecuador
+EG|Egipto|Egypt
+SV|El Salvador|El Salvador
+AE|Emiratos Árabes Unidos|United Arab Emirates
+ER|Eritrea|Eritrea
+SK|Eslovaquia|Slovakia
+SI|Eslovenia|Slovenia
+ES|España|Spain
+US|Estados Unidos|United States
+EE|Estonia|Estonia
+SZ|Esuatini|Eswatini
+ET|Etiopía|Ethiopia
+PH|Filipinas|Philippines
+FI|Finlandia|Finland
+FJ|Fiyi|Fiji
+FR|Francia|France
+GA|Gabón|Gabon
+GM|Gambia|Gambia
+GE|Georgia|Georgia
+GH|Ghana|Ghana
+GD|Granada|Grenada
+GR|Grecia|Greece
+GT|Guatemala|Guatemala
+GN|Guinea|Guinea
+GQ|Guinea Ecuatorial|Equatorial Guinea
+GW|Guinea-Bisáu|Guinea-Bissau
+GY|Guyana|Guyana
+HT|Haití|Haiti
+HN|Honduras|Honduras
+HU|Hungría|Hungary
+IN|India|India
+ID|Indonesia|Indonesia
+IQ|Irak|Iraq
+IR|Irán|Iran
+IE|Irlanda|Ireland
+IS|Islandia|Iceland
+MH|Islas Marshall|Marshall Islands
+SB|Islas Salomón|Solomon Islands
+IL|Israel|Israel
+IT|Italia|Italy
+JM|Jamaica|Jamaica
+JP|Japón|Japan
+JO|Jordania|Jordan
+KZ|Kazajistán|Kazakhstan
+KE|Kenia|Kenya
+KG|Kirguistán|Kyrgyzstan
+KI|Kiribati|Kiribati
+KW|Kuwait|Kuwait
+LS|Lesoto|Lesotho
+LV|Letonia|Latvia
+LB|Líbano|Lebanon
+LR|Liberia|Liberia
+LY|Libia|Libya
+LI|Liechtenstein|Liechtenstein
+LT|Lituania|Lithuania
+LU|Luxemburgo|Luxembourg
+MK|Macedonia del Norte|North Macedonia
+MG|Madagascar|Madagascar
+MY|Malasia|Malaysia
+MW|Malaui|Malawi
+MV|Maldivas|Maldives
+ML|Malí|Mali
+MT|Malta|Malta
+MA|Marruecos|Morocco
+MU|Mauricio|Mauritius
+MR|Mauritania|Mauritania
+MX|México|Mexico
+FM|Micronesia|Micronesia
+MD|Moldavia|Moldova
+MC|Mónaco|Monaco
+MN|Mongolia|Mongolia
+ME|Montenegro|Montenegro
+MZ|Mozambique|Mozambique
+NA|Namibia|Namibia
+NR|Nauru|Nauru
+NP|Nepal|Nepal
+NI|Nicaragua|Nicaragua
+NE|Níger|Niger
+NG|Nigeria|Nigeria
+NO|Noruega|Norway
+NZ|Nueva Zelanda|New Zealand
+OM|Omán|Oman
+NL|Países Bajos|Netherlands
+PK|Pakistán|Pakistan
+PW|Palaos|Palau
+PS|Palestina|Palestine
+PA|Panamá|Panama
+PG|Papúa Nueva Guinea|Papua New Guinea
+PY|Paraguay|Paraguay
+PE|Perú|Peru
+PL|Polonia|Poland
+PT|Portugal|Portugal
+GB|Reino Unido|United Kingdom
+CF|República Centroafricana|Central African Republic
+CZ|República Checa|Czech Republic
+CD|República Democrática del Congo|Democratic Republic of the Congo
+DO|República Dominicana|Dominican Republic
+RW|Ruanda|Rwanda
+RO|Rumanía|Romania
+RU|Rusia|Russia
+WS|Samoa|Samoa
+KN|San Cristóbal y Nieves|Saint Kitts and Nevis
+SM|San Marino|San Marino
+VC|San Vicente y las Granadinas|Saint Vincent and the Grenadines
+LC|Santa Lucía|Saint Lucia
+ST|Santo Tomé y Príncipe|Sao Tome and Principe
+SN|Senegal|Senegal
+RS|Serbia|Serbia
+SC|Seychelles|Seychelles
+SL|Sierra Leona|Sierra Leone
+SG|Singapur|Singapore
+SY|Siria|Syria
+SO|Somalia|Somalia
+LK|Sri Lanka|Sri Lanka
+ZA|Sudáfrica|South Africa
+SD|Sudán|Sudan
+SS|Sudán del Sur|South Sudan
+SE|Suecia|Sweden
+CH|Suiza|Switzerland
+SR|Surinam|Suriname
+TH|Tailandia|Thailand
+TZ|Tanzania|Tanzania
+TJ|Tayikistán|Tajikistan
+TL|Timor Oriental|East Timor
+TG|Togo|Togo
+TO|Tonga|Tonga
+TT|Trinidad y Tobago|Trinidad and Tobago
+TN|Túnez|Tunisia
+TM|Turkmenistán|Turkmenistan
+TR|Turquía|Turkey
+TV|Tuvalu|Tuvalu
+UA|Ucrania|Ukraine
+UG|Uganda|Uganda
+UY|Uruguay|Uruguay
+UZ|Uzbekistán|Uzbekistan
+VU|Vanuatu|Vanuatu
+VE|Venezuela|Venezuela
+VN|Vietnam|Vietnam
+YE|Yemen|Yemen
+DJ|Yibuti|Djibouti
+ZM|Zambia|Zambia
+ZW|Zimbabue|Zimbabwe
+XK|Kosovo|Kosovo
+TW|Taiwán|Taiwan
+PR|Puerto Rico|Puerto Rico
+HK|Hong Kong|Hong Kong
+MO|Macao|Macau
+AW|Aruba|Aruba
+CW|Curazao|Curacao
+LA|Laos|Laos
