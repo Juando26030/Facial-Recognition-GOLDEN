@@ -204,6 +204,13 @@ class StaffUser(Base):
     print_station = Column(Boolean, default=False, server_default='false', nullable=False)  # 0072: «Puesto de impresión» (cuenta protegida: un segundo inicio de sesión se rechaza; app/sessions.py)
     tours_auto_off = Column(Boolean, default=False, server_default='false', nullable=False)  # 0085: «deshabilitar demos automáticas» (por cuenta, no por dispositivo; se copia a la sesión al ingresar)
     session_token = Column(String(40), nullable=True)  # 0072: sesión vigente de la cuenta (NULL = ninguna registrada: una sesión anterior al cambio sigue válida)
+    # 0086 (app/login_control.py): bloqueo del digitador tras 3 fallos, solicitud de ingreso que autoriza el coordinador (solo el HASH del token) y época de sesión (app/sessions.py)
+    failed_logins = Column(Integer, default=0, server_default='0', nullable=False)
+    locked_at = Column(DateTime, nullable=True)
+    login_req_hash = Column(String(64), nullable=True)
+    login_req_at = Column(DateTime, nullable=True)
+    login_req_status = Column(String(12), nullable=True)
+    session_epoch = Column(Integer, default=0, server_default='0', nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 

@@ -10,6 +10,7 @@
   POST /api/ops/simulate-crash   SOLO staging con CHAOS_ENABLED=1 (simulacro «matar instancia» de docs/15); en cualquier otro caso responde 404.
   GET /sistema             la pantalla (admin+)."""
 import hmac
+import logging
 import os
 import signal
 from typing import Optional
@@ -19,11 +20,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app import appmode, ops
+from app.obs import mask_pii
 from app.auth import get_current_staff, require_role
 from app.database import get_db
 
 router = APIRouter()
 pages = APIRouter()
+log = logging.getLogger("golden.ops")
 
 
 @router.get("/health")
@@ -35,9 +38,13 @@ async def healthz() -> dict:
 @router.get("/ready")
 @router.get("/readyz")
 def readyz() -> JSONResponse:
+    """S10: la respuesta es PÚBLICA, así que solo dice qué componente está bien o mal; el motivo (texto de la excepción: host de la base, bucket…) va solo al log,
+    enmascarado. El detalle completo sigue en «Estado del sistema» (admin+)."""
     checks = ops.readiness(require_model=appmode.loads_model())
-    failing = {name: c["reason"] for name, c in checks.items() if not c["ok"]}
-    body = {"status": "unavailable" if failing else "ready", "checks": checks}
+    failing = sorted(name for name, c in checks.items() if not c["ok"])
+    for name in failing:
+        log.warning("readyz: %s no está listo: %s", name, mask_pii(checks[name].get("reason", "")))
+    body = {"status": "unavailable" if failing else "ready", "checks": {name: {"ok": bool(c["ok"])} for name, c in checks.items()}}
     if failing:
         body["failing"] = failing
     return JSONResponse(body, status_code=503 if failing else 200)

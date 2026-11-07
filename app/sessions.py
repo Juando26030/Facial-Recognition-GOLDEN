@@ -111,6 +111,8 @@ def _issue(db: Session, request, staff: StaffUser, replaced: bool):
 
 def is_replaced(db: Session, request, staff: StaffUser) -> bool:
     """¿Esta sesión ya no es la vigente de su cuenta? Sin `sid` (sesión anterior al cambio) o sin token registrado: vigente."""
+    if int(request.session.get("ep") or 0) != int(getattr(staff, "session_epoch", 0) or 0):
+        return True                     # S2: la contraseña cambió o se restableció después de crear esta cookie (época vieja): deja de valer en TODOS los roles
     sid = request.session.get("sid")
     token = staff.session_token
     if not sid or not token or sid == token:
@@ -124,6 +126,28 @@ def is_replaced(db: Session, request, staff: StaffUser) -> bool:
         _seen_closed.add(key)
         audit(db, staff.id, request, "cerrada")
     return True
+
+
+def logout_token() -> str:
+    """Token que deja el cierre de sesión (S2): como el de `force_release`, no coincide con ningún `sid` ni cuenta como «en uso». Antes se dejaba NULL y eso volvía
+    a dar por buenas TODAS las cookies viejas de la cuenta, también las ya reemplazadas."""
+    return FREE_PREFIX + secrets.token_hex(8)
+
+
+def revoke_all(staff: StaffUser) -> None:
+    """S2: invalida TODAS las sesiones de la cuenta (restablecimiento de contraseña por enlace o por un admin). Sube la época y libera el token. El que llama confirma."""
+    staff.session_epoch = int(staff.session_epoch or 0) + 1
+    if staff.session_token:
+        staff.session_token = logout_token()
+
+
+def revoke_others(request, staff: StaffUser) -> None:
+    """S2: la persona cambió su propia contraseña: se invalidan las DEMÁS sesiones de la cuenta y la actual sigue (época y `sid` nuevos en su cookie). El que llama confirma."""
+    staff.session_epoch = int(staff.session_epoch or 0) + 1
+    request.session["ep"] = staff.session_epoch
+    if staff.session_token and request.session.get("sid") == staff.session_token:
+        staff.session_token = secrets.token_hex(16)
+        request.session["sid"] = staff.session_token
 
 
 def force_release(db: Session, staff: StaffUser, request) -> None:

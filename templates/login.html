@@ -46,7 +46,7 @@
                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-error"/></svg>
                 <div>
                     <div class="gw-alert__title">{{ error }}</div>
-                    <div class="gw-alert__body">Revisa que el usuario y la contraseña estén bien escritos e inténtalo otra vez.</div>
+                    <div class="gw-alert__body">{{ error_body or "Revisa que el usuario y la contraseña estén bien escritos e inténtalo otra vez." }}</div>
                 </div>
             </div>
             {% endif %}

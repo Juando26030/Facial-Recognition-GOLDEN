@@ -1,0 +1,40 @@
+{# S1: el digitador escribió bien su usuario y contraseña; falta que el coordinador lo permita desde «Usuarios del evento». La página pregunta cada pocos segundos
+   (static/js/ingreso-espera.js) hasta que lo permitan, no lo permitan o venza (5 minutos). Solo tokens --gw-* y clases .gw-* (más el marco de p-acceso.css del login). #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Esperando autorización | GoldenWeb 2.0</title>
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-acceso.css') }}">
+    <script src="{{ url_for('static', path='js/ingreso-espera.js') }}" defer></script>
+</head>
+<body class="gw-page">
+{% include "_env_badge.html" %}
+<div class="login">
+    <div class="login__top">{% include "_gw_theme_toggle.html" %}</div>
+    <main class="login__main">
+        <div class="gw-card gw-card--raised login__card gw-stack" id="ingresoEspera" data-poll-seconds="{{ poll_seconds }}" data-ttl-seconds="{{ ttl_seconds }}">
+            <div class="login__brand">
+                <img class="login__logo" src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Eventos y Logística" width="96" height="96">
+                <h1 class="gw-title">GoldenWeb <span>2.0</span></h1>
+            </div>
+            <h2 class="gw-subtitle">Ingreso en espera</h2>
+            <div class="gw-alert gw-alert--warn" id="ingresoAviso" role="status" aria-live="polite">
+                <span class="gw-spinner" id="ingresoRueda" aria-hidden="true"></span>
+                <div>
+                    <div class="gw-alert__title" id="ingresoTitulo">{{ wait_msg }}</div>
+                    <div class="gw-alert__body" id="ingresoDetalle">Pídele al coordinador del evento que abra «Usuarios del evento» y toque «Permitir». No cierres esta página.</div>
+                </div>
+            </div>
+            <div class="gw-actions">
+                <div id="ingresoCancelarBox"><button type="button" class="gw-btn gw-btn--secondary gw-btn--block" id="ingresoCancelar">Cancelar y volver</button></div>
+                <div id="ingresoVolver" hidden><a class="gw-btn gw-btn--primary gw-btn--block" href="/login">Volver a ingresar</a></div>
+            </div>
+        </div>
+    </main>
+{% include "_legal_footer.html" %}
+</div>
+</body>
+</html>

@@ -21,7 +21,17 @@
     function cardHtml(u) {
         const rol = ROLES[u.role] || u.role;
         const nombre = u.full_name || 'Sin nombre';
-        const estado = u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>';
+        const st = loginState[u.id] || {};
+        const estado = (u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>')
+            + (st.locked ? ' <span class="gw-badge gw-badge--err">Bloqueada</span>' : '')
+            + (st.login_pending ? ' <span class="gw-badge gw-badge--warn">Está intentando ingresar</span>' : '');
+        // S1: ingreso autorizado por el coordinador y desbloqueo (app/routers/login_approval.py). Solo lo ve quien administra las cuentas temporales de este evento.
+        const loginBtns = !canManage || u.role !== 'digitador' ? '' : (st.login_pending
+            ? `<button type="button" class="gw-btn gw-btn--primary" data-act="allow" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Permitir</span></button>`
+              + `<button type="button" class="gw-btn gw-btn--danger-outline" data-act="deny" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>No permitir</span></button>`
+            : '') + (st.locked
+            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="unlock" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Desbloquear</span></button>`
+            : '');
         const reset = u.role === 'digitador'
             ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Restablecer contraseña</span></button>` : '';
         return `<article class="gw-card-row gw-usr__row">
@@ -31,6 +41,7 @@
             </div>
             <p class="gw-card-row__meta gw-usr__c-name" title="${esc(u.full_name || '')}">${esc(nombre)}</p>
             <div class="gw-card-row__actions gw-usr__actions gw-usr__c-act">
+                ${loginBtns}
                 ${reset}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
@@ -40,6 +51,32 @@
     }
 
     let allUsers = [], pageIdx = 0;
+    let loginState = {}, loginStateKey = '', canManage = false, prevPending = new Set();
+    const LOGIN_STATE_MS = 10000;
+
+    // Bloqueos e intentos de ingreso: se piden al cargar y cada ~10 s SOLO mientras la página está abierta y visible (document.visibilityState).
+    async function loadLoginState() {
+        try {
+            const res = await fetch(`/api/events/${eventId}/staff-users/login-state`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const d = await res.json();
+            const map = {};
+            (d.accounts || []).forEach((a) => { map[a.id] = a; });
+            const key = JSON.stringify([d.can_manage, (d.accounts || []).map((a) => [a.id, a.locked, a.login_pending])]);
+            canManage = !!d.can_manage;
+            loginState = map;
+            if (key !== loginStateKey) {
+                const firstPending = (d.accounts || []).some((a) => a.login_pending && !prevPending.has(a.id));
+                prevPending = new Set((d.accounts || []).filter((a) => a.login_pending).map((a) => a.id));
+                loginStateKey = key;
+                const menuOpen = listEl.querySelector('.gw-menu__panel:not([hidden])');
+                if (!menuOpen) drawUsers();
+                if (firstPending && canManage) showToast('Alguien de este evento está intentando ingresar: revisa la lista para permitirlo o no.', 'info');
+            }
+        } catch (e) { /* sin red un momento: se vuelve a intentar en el siguiente turno */ }
+    }
+    setInterval(() => { if (document.visibilityState === 'visible') loadLoginState(); }, LOGIN_STATE_MS);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadLoginState(); });
     const PAGER_KEY = 'usuarios';
     const pagerEl = document.getElementById('tempUsersPager');
     const purgeBtn = document.getElementById('purgeTempBtn');
@@ -68,6 +105,7 @@
             allUsers = await res.json();
             setStatus('');
             drawUsers();
+            loadLoginState();
         } catch (e) {
             listEl.innerHTML = '';
             if (pagerEl) pagerEl.replaceChildren();
@@ -192,6 +230,26 @@
         });
     }
 
+    async function decideLogin(btn, staffId, username, allow) {
+        await busy(btn, async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/login-request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow }) });
+            const d = await res.json().catch(() => ({}));
+            if (res.ok) showToast(allow ? `Ingreso de ${username} autorizado` : `Ingreso de ${username} no autorizado`, 'success');
+            else showToast(typeof d.detail === 'string' ? d.detail : 'No se pudo responder la solicitud', 'error');
+            await loadLoginState();
+        });
+    }
+
+    async function unlockAccount(btn, staffId, username) {
+        if (!(await showConfirm(`¿Desbloquear la cuenta de "${window.escapeHtml(username)}"? Podrá volver a intentar ingresar (y tú tendrás que permitir el ingreso).`, { confirmLabel: 'Desbloquear' }))) return;
+        await busy(btn, async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/unlock`, { method: 'POST' });
+            const d = await res.json().catch(() => ({}));
+            showToast(res.ok ? (d.message || 'Cuenta desbloqueada') : (typeof d.detail === 'string' ? d.detail : 'No se pudo desbloquear'), res.ok ? 'success' : 'error');
+            await loadLoginState();
+        });
+    }
+
     async function deleteTempUser(btn, staffId, username) {
         if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Se perderán su acceso a este y a todos los eventos y su contraseña. Esto no es quitarlo del evento: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
         await busy(btn, async () => {
@@ -288,7 +346,10 @@
         const run = act === 'reload' ? loadTempUsers()
             : act === 'revoke' ? revokeTempUser(btn, id)
             : act === 'reset' ? resetTempPassword(btn, id, user)
-            : act === 'delete' ? deleteTempUser(btn, id, user) : null;
+            : act === 'delete' ? deleteTempUser(btn, id, user)
+            : act === 'allow' ? decideLogin(btn, id, user, true)
+            : act === 'deny' ? decideLogin(btn, id, user, false)
+            : act === 'unlock' ? unlockAccount(btn, id, user) : null;
         if (run && run.catch) run.catch(() => showToast('No se pudo completar la acción. Revisa la conexión.', 'error'));
     });
 

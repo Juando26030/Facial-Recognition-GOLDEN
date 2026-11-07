@@ -150,7 +150,8 @@ def test_reset_password_clears_login_lock(client, factory, outbox):
 def test_forgot_password_request_is_rate_limited(client, factory, outbox):
     factory.staff("coordinador", "ana", email="ana@example.com")
     codes = [client.post("/olvide-contrasena", data={"username": "ana"}).status_code for _ in range(7)]
-    assert 429 in codes
+    assert set(codes) == {200}                  # S3: la respuesta es siempre la genérica, también con el límite lleno
+    assert len(outbox) == 5                     # pero pasado el límite ya no sale correo
 
 
 # ------------------------------- cambiar contraseña y must_change -------------------------------
