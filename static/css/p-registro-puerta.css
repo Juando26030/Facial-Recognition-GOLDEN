@@ -354,3 +354,13 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-act__t,
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-act__t { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
 }
+
+/* ---- Botones de cada persona: se distinguen por COLOR e ÍCONO (escritorio y celular). Acreditar VERDE (tokens ok), Imprimir y Editar con ícono de color, «⋯» solo ícono ---- */
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row:not(:disabled),
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending:not(:disabled) { background: var(--gw-ok-text); color: var(--gw-ok-bg); border-color: var(--gw-ok-text); }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row:not(:disabled):hover,
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending:not(:disabled):hover { background: var(--gw-ok-line); border-color: var(--gw-ok-line); color: var(--gw-ok-bg); }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row .gw-icon,
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending .gw-icon { color: inherit; }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-icon { color: var(--gw-gold-text); }
+html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-icon { color: var(--gw-info-line); }
