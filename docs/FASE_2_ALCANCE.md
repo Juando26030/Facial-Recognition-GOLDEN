@@ -44,3 +44,18 @@ Los puntos 3–6 adelantan lo que el plan tenía en la Fase 5 (ficha configurabl
 2. `python scripts/build_geo_data.py` (regenera `static/data/geo.json`; no necesita red).
 3. `python -m pytest -q tests/test_geo_data.py` y `node tests/js/gw_geo_check.js`.
 4. Commit de la fuente y del JSON juntos.
+
+## Contrato de la tarjeta del calendario
+(Entrega 1 de la Fase 2, rama `f2/calendario`.) El calendario separa **qué se muestra** de **cómo se dibuja**, para que el diseñador de plantilla («Vista de calendario») solo tenga que producir un `layout`.
+
+- **Función:** `renderCalendarCard(event, layout)` en `static/js/calendar-card.js` (archivo aislado, sin DOM ni red; devuelve HTML ya escapado). El contrato completo está en el comentario al inicio de la función; aquí el resumen.
+- **`event`:** el mismo objeto que entrega `GET /api/events/calendar` (`_serialize` de `app/routers/events.py`).
+- **`layout`:** `{ "fields": [ { "key": "...", "zone": "left|right|bottom", "label": true|false|"título propio" }, ... ] }`. El orden del arreglo es el orden dentro de cada zona. `null` o forma inválida → `DEFAULT_LAYOUT`.
+- **Claves de campo hoy** (`FIELD_CATALOG`): `name, event_code, tenant_name, place, address, country, dates, setup_date, times, setup_times, status, commercial_name, coordinator_name, bandana_color_name, notes`. Una clave desconocida se ignora sin error; un campo sin valor en ese evento no se pinta (ni su título). Cuando existan campos nuevos de la plantilla (§4 de este documento) se agregan al catálogo con su `value(event)`.
+- **Por defecto:** izquierda = nombre, código, cliente, lugar; derecha = fechas, horario, estado; abajo = comercial, coordinador, pañoleta.
+- **Dónde se usa:** la tarjeta grande de la vista **Día** (`eventChip(e, true)` en `templates/calendario.html`, variable `CARD_LAYOUT`, hoy `null`). Mes y Semana siguen mostrando solo el nombre del evento.
+- **Cómo lo conectará el diseñador:** que la página cargue el `layout` guardado y lo asigne a `CARD_LAYOUT` antes de `loadAndRender()`.
+- **Pruebas:** `tests/js/calendar_card_check.js`.
+
+### Cuadrito de acciones del evento (calendario)
+Al tocar un evento se abre un cuadrito anclado (hoja inferior en celular) con las acciones de la lista de Eventos/Clientes y sus mismos permisos: Ingresar y Editar (todos), Cambiar estado (todos; «En proceso → Creado» pasa por «Devolver a Creado», solo admin/super_admin), Exportar (solo super_admin), Eliminar (admin/super_admin). Código: `static/js/event-actions.js` (`EventActions.actionsFor` es la regla de permisos, probada en `tests/js/event_actions_check.js`). Acceso a `/calendario`: coordinador, comercial, admin y super_admin (mínimo «coordinador»; digitador y cliente no).

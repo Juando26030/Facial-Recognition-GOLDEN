@@ -103,3 +103,31 @@
   .cal-chip--big .cal-chip__line, .cal-chip--big .cal-chip__line + .cal-chip__line { margin-top: 0; font-size: var(--gw-fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cal-day .gw-empty { max-width: none; }
 }
+
+/* ---------- Tarjeta del evento (vista Día): dos columnas y una franja de equipo abajo; ver static/js/calendar-card.js ---------- */
+.cal-card { display: block; }
+.cal-card__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-1) var(--gw-sp-4); }
+.cal-card__col { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; }
+.cal-card__f { display: block; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); }
+.cal-card__f--strong { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
+.cal-card__k { font-weight: var(--gw-fw-bold); }
+.cal-card__k::after { content: ":"; }
+.cal-card__bottom { display: flex; flex-wrap: wrap; gap: var(--gw-sp-1) var(--gw-sp-4); margin-top: var(--gw-sp-2); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border-strong); }
+@media (max-width: 40rem) { .cal-card__cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Cuadrito de acciones del evento (static/js/event-actions.js): anclado al evento; en celular, hoja inferior ---------- */
+.cal-pop-scrim { position: fixed; inset: 0; z-index: 1600; background: transparent; }
+.cal-pop-scrim[hidden] { display: none; }
+.cal-pop { position: fixed; z-index: 1610; right: auto; top: 0; left: 0; width: min(22rem, calc(100vw - 2 * var(--gw-sp-4))); max-height: calc(100vh - 2 * var(--gw-sp-4)); overflow-y: auto; }
+.cal-pop[hidden] { display: none; }
+.cal-pop__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-2); }
+.cal-pop__titles { min-width: 0; overflow-wrap: anywhere; }
+.cal-pop__meta { font-size: var(--gw-fs-sm); }
+.cal-pop__list { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.cal-pop__row { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-3); }
+.cal-pop__row .gw-select { min-height: var(--gw-tap); }
+.cal-pop .cal-pop__close { width: 100%; min-height: var(--gw-tap); }
+@media (max-width: 40rem) {
+  .cal-pop-scrim { background: var(--gw-overlay); }
+  .cal-pop { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 85vh; border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; padding-bottom: calc(var(--gw-sp-4) + env(safe-area-inset-bottom, 0px)); }
+}
