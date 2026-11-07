@@ -1,0 +1,14 @@
+/* Campos de la plantilla de evento (static/js/event-field-render.js): lo que necesitan además de design-system.css. Únicamente tokens --gw-*. */
+.gw-evf { min-width: 0; margin-bottom: var(--gw-sp-3); }
+.gw-evf .gw-fields-row { gap: var(--gw-sp-2) var(--gw-sp-4); }
+.gw-evf__money { display: flex; align-items: stretch; gap: var(--gw-sp-2); }
+.gw-evf__money .gw-input { flex: 1 1 auto; min-width: 0; }
+.gw-evf__unit { display: inline-flex; align-items: center; padding: 0 var(--gw-sp-3); background: var(--gw-surface-2); color: var(--gw-text-muted); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); font-weight: var(--gw-fw-bold); }
+.gw-evf__swatch { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-1); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
+.gw-evf__swatch:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-evf__color { margin-bottom: var(--gw-sp-2); }
+.gw-evf__invrow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1.2fr) auto; gap: var(--gw-sp-2); align-items: center; margin-bottom: var(--gw-sp-2); }
+@media (max-width: 640px) { .gw-evf__invrow { grid-template-columns: minmax(0, 1fr); padding: var(--gw-sp-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); } }
+.gw-evf-card { display: grid; gap: var(--gw-sp-1); }
+.gw-evf-card__label { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-fields-row > .gw-evf--wide { grid-column: 1 / -1; }

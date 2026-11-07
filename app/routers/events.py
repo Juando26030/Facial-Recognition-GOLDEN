@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from datetime import date
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -18,6 +18,8 @@ from app import security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
+from app import event_template as event_tpl
+from app import event_template_svc
 from app import testperson
 from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
@@ -68,28 +70,41 @@ EVENT_CODE_LOCKED = ("El código del evento no se puede cambiar una vez creado: 
 
 class EventIn(BaseModel):
     _t = text_validator("name", "location", "address", "country", "city")
-    """Todos los campos operativos son obligatorios al crear un evento — 'notes' es la única
-    excepción real (es explícitamente un campo de observaciones, opcional por naturaleza)."""
+    """Qué es obligatorio lo decide la PLANTILLA DE EVENTO (Configuración › Diseñar plantilla para eventos, app/event_template.py), no este modelo: la plantilla de fábrica pide lo mismo que antes
+    (todo menos observaciones, pañoleta y superevento). Solo `tenant_id`, `event_code` y `name` son obligatorios siempre. Los interruptores (nombre de su columna) y `extra` (campos
+    personalizados de la plantilla, claves `c_…`) son opcionales."""
     tenant_id: str
     event_code: str
     name: str
-    location: str
-    address: str
-    country: str
-    city: str
-    start_date: date
-    end_date: date
-    setup_date: date
-    event_time_start: str
-    event_time_end: str
-    setup_time_start: str
-    setup_time_end: str
-    coordinator_staff_id: int
-    commercial_staff_id: Optional[int] = None  # Sprint 2.4 Fase 5: si no viene, se resuelve en create_event (self si el creador es comercial, obligatorio elegir si es admin+)
+    location: Optional[str] = None
+    address: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    setup_date: Optional[date] = None
+    event_time_start: Optional[str] = None
+    event_time_end: Optional[str] = None
+    setup_time_start: Optional[str] = None
+    setup_time_end: Optional[str] = None
+    coordinator_staff_id: Optional[int] = None
+    commercial_staff_id: Optional[int] = None  # Sprint 2.4 Fase 5: si no viene, se resuelve en create_event (self si el creador es comercial; si la plantilla lo exige, obligatorio elegir si es admin+)
     bandana_color: Optional[str] = None  # Sprint 2.4 Fase 12: "Color de pañoleta", hex #rrggbb
     bandana_color_name: Optional[str] = None  # nombre libre para ese color (ej. "Rojo Golden")
     super_event_id: Optional[int] = None  # superevento al que pertenece (2026-09-23: también se elige al CREAR el evento)
     notes: Optional[str] = None
+    # Interruptores: la MISMA columna que cambia «Parámetros del evento» (una sola fuente de datos). Sin valor = no se toca (queda apagado, como siempre).
+    facial_enabled: Optional[bool] = None
+    aceptar_enabled: Optional[bool] = None
+    face_door_enabled: Optional[bool] = None
+    inventory_enabled: Optional[bool] = None
+    areas_enabled: Optional[bool] = None
+    certificates_enabled: Optional[bool] = None
+    digital_badge_enabled: Optional[bool] = None
+    auto_print_badge: Optional[bool] = None
+    auto_register: Optional[bool] = None
+    shared_print_enabled: Optional[bool] = None
+    extra: Optional[Dict[str, Any]] = None      # campos personalizados de la plantilla {clave: valor}
 
 
 class EventUpdate(BaseModel):
@@ -117,6 +132,7 @@ class EventUpdate(BaseModel):
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
+    extra: Optional[Dict[str, Any]] = None      # Fase 2: valores de campos personalizados de la plantilla que se cambian (un valor null borra ese valor); los demás no se tocan
 
 
 def _serialize(e: Event) -> dict:
@@ -143,6 +159,9 @@ def _serialize(e: Event) -> dict:
         "auto_register": e.auto_register,
         "super_event_id": e.super_event_id,
         "super_event_name": e.super_event.name if e.super_event else None,
+        "extra": e.get_extra(),      # Fase 2: valores de los campos personalizados de la plantilla (los retirados también); {} en los eventos anteriores
+        "switches": {k: bool(getattr(e, k, False)) for k in event_tpl.SWITCH_KEYS},      # Fase 2: los interruptores de la plantilla (mismas columnas que Parámetros)
+        "bandana_colors": [{"name": e.bandana_color_name or "", "hex": e.bandana_color}] if e.bandana_color else [],
         "report_uploaded": bool(e.report_pdf_path),  # ítem 6: bombillo verde/naranja
         "report_uploaded_at": e.report_uploaded_at.isoformat() if e.report_uploaded_at else None,
     }
@@ -331,6 +350,8 @@ def create_event(
         raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
     assert_same_tenant(staff, data.tenant_id, "Cliente (tenant) no encontrado")          # P5: limitado a su cliente, solo crea eventos de su cliente
     pure_coordinator = not ({"comercial", "admin", "super_admin"} & effective_roles(staff))
+    if pure_coordinator and data.coordinator_staff_id is None:
+        data.coordinator_staff_id = staff.id          # el coordinador «puro» siempre queda como coordinador de lo que crea (aunque la plantilla no le muestre ese campo)
     if pure_coordinator and data.coordinator_staff_id != staff.id:
         raise HTTPException(status_code=403, detail="Un coordinador solo puede crear eventos asignados a sí mismo")
     if db.query(Event).filter(Event.event_code == data.event_code).first():
@@ -342,6 +363,15 @@ def create_event(
         raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código «{data.event_code}» escrito con otras mayúsculas o minúsculas: elige otro código.")
     _validate_event_dates(data.start_date, data.end_date, data.setup_date)
 
+    # Fase 2: lo obligatorio y los campos extra los decide la PLANTILLA DE EVENTO (la de fábrica pide lo mismo que antes). La comercial que crea se asigna a sí misma y el coordinador «puro» queda
+    # como coordinador: esas dos reglas del servidor no se exigen en el formulario.
+    waive = set()
+    if pure_coordinator or "comercial" in effective_roles(staff):
+        waive.add("commercial_staff_id")
+    prepared = event_template_svc.prepare_creation(db, data.dict(), data.extra, waive=waive)
+    commercial_required = any(f["key"] == "commercial_staff_id" and f["required"] and any(f["key"] in sec["keys"] for sec in prepared["template"]["creation_layout"]["sections"])
+                              for f in prepared["template"]["fields"])
+
     # Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): "por defecto se asigne una comercial que
     # es quien crea el evento, a menos de que... lo puede cambiar a otras comerciales... o los
     # administradores eligen una comercial". Si quien crea es comercial y no manda un id, se
@@ -350,8 +380,8 @@ def create_event(
     if commercial_id is None:
         if "comercial" in effective_roles(staff):
             commercial_id = staff.id
-        elif pure_coordinator:
-            commercial_id = None          # coordinador puro: la comercial es opcional (columna nullable)
+        elif pure_coordinator or not commercial_required:
+            commercial_id = None          # coordinador puro, o la plantilla no la exige: la comercial es opcional (columna nullable)
         else:
             raise HTTPException(status_code=400, detail="Debes asignar una comercial para este evento")
     else:
@@ -379,14 +409,18 @@ def create_event(
         if not sup or sup.tenant_id != data.tenant_id:
             raise HTTPException(status_code=400, detail="El superevento debe existir y ser del mismo cliente que el evento")
 
-    event_data = data.dict()
+    event_data = data.dict(exclude={"extra", *event_tpl.SWITCH_KEYS})
     event_data["commercial_staff_id"] = commercial_id
+    event_data.update(prepared["columns"])          # pañoleta normalizada e interruptores: las MISMAS columnas que cambia «Parámetros del evento»
     initial = event_rules.default_state(db, event_data.get("status") or "creado")
     if initial is not None:
         event_data["state_id"] = initial.id
     event = Event(**event_data, created_by_id=staff.id)
+    if prepared["extra"]:
+        event.set_extra(prepared["extra"])
     db.add(event)
     db.flush()
+    event_template_svc.after_create(db, event)
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     db.commit()
     db.refresh(event)
@@ -460,8 +494,11 @@ def update_event(
     effective_setup = data.setup_date if data.setup_date is not None else event.setup_date
     _validate_event_dates(effective_start, effective_end, effective_setup)
 
-    for field, value in data.dict(exclude_unset=True).items():
+    extra_patch = event_template_svc.merge_extra(db, event.get_extra(), data.extra) if data.extra is not None else None      # valida ANTES de tocar nada
+    for field, value in data.dict(exclude_unset=True, exclude={"extra"}).items():
         setattr(event, field, value)
+    if extra_patch is not None:
+        event.set_extra(extra_patch)
     if new_state is not None:
         event.state_id = new_state.id
     db.commit()

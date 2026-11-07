@@ -19,7 +19,7 @@ def test_new_event_from_eventos_asks_for_the_client(client, factory):
     factory.staff("admin", "adm1")
     login(client, "adm1")
     page = client.get("/eventos/nuevo").text
-    assert 'data-pick-tenant="true"' in page and 'id="neTenant"' in page and "data-gw-combobox" in page
+    assert 'data-pick-tenant="true"' in page and "js/gw-combobox.js" in page
     assert 'data-tenant-id=""' in page and 'href="/eventos"' in page
     assert "gw-combobox.js" in page
 
@@ -83,8 +83,11 @@ def test_creating_an_event_still_adds_the_test_person(client, factory, db):
 def test_template_and_js_wire_the_client_selector():
     html = (ROOT / "templates/nuevo_evento.html").read_text(encoding="utf-8")
     js = (ROOT / "static/js/nuevo-evento.js").read_text(encoding="utf-8")
-    assert "{% if pick_tenant %}" in html and 'name="tenant_label"' in html and "js/gw-combobox.js" in html
-    assert "/api/tenants" in js and "delete payload.tenant_label" in js and "payload.tenant_id = TENANT_ID" in js
+    renderer = (ROOT / "static/js/event-field-render.js").read_text(encoding="utf-8")
+    # el campo «Cliente» lo pinta la plantilla dinámica: combobox cuando pick_tenant, solo lectura si el cliente ya viene de la ruta
+    assert "data-pick-tenant" in html and "{% if pick_tenant %}" in html and "js/gw-combobox.js" in html and "data-after-url" in html
+    assert "data-gw-combobox" in renderer and "ctx.pickTenant" in renderer
+    assert "/api/tenants" in js and "GWCombobox.attach" in js and "Primero elige el cliente del evento" in js
     assert "AFTER_URL" in js
 
 
