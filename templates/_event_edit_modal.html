@@ -6,6 +6,8 @@
 {% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-event-fields.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/gw-map.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory.css') }}">
 
 <div class="gw-modal-backdrop" id="eventModalOverlay">
   <div class="gw-modal ee-modal" role="dialog" aria-modal="true" aria-labelledby="eeTitle">
@@ -133,6 +135,8 @@
 <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-combobox.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-geo.js') }}"></script>
+<script src="{{ url_for('static', path='js/gw-map.js') }}"></script>
+<script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script>
 (function () {
