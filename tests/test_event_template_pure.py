@@ -272,3 +272,16 @@ def test_js_fixture_matches_the_factory_template():
     d = et.default_template()
     assert fx["fields"] == d["fields"] and fx["creation_layout"] == d["creation_layout"] and fx["calendar_layout"] == d["calendar_layout"]
     assert fx["catalog"] == json.loads(json.dumps(et.catalog()))
+
+
+def test_renamed_factory_title_reaches_saved_templates():
+    """«Impresión compartida y por USB» ya no existe: una plantilla guardada con ese título muestra el nuevo; un título propio del administrador se respeta."""
+    t = _tpl()
+    sw = next(f for f in t["fields"] if f["key"] == "sw_shared_print_enabled")
+    assert sw["title"] == "Impresión compartida"
+    old = copy.deepcopy(t)
+    next(f for f in old["fields"] if f["key"] == "sw_shared_print_enabled")["title"] = "Impresión compartida y por USB"
+    assert next(f for f in et.merge_missing_base(old)["fields"] if f["key"] == "sw_shared_print_enabled")["title"] == "Impresión compartida"
+    own = copy.deepcopy(t)
+    next(f for f in own["fields"] if f["key"] == "sw_shared_print_enabled")["title"] = "Imprimir entre varios"
+    assert next(f for f in et.merge_missing_base(own)["fields"] if f["key"] == "sw_shared_print_enabled")["title"] == "Imprimir entre varios"

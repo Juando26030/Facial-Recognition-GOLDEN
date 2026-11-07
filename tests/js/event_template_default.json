@@ -167,7 +167,7 @@
     "help": "Varias personas imprimen en una misma impresora.",
     "key": "shared_print_enabled",
     "requires": null,
-    "title": "Impresión compartida y por USB"
+    "title": "Impresión compartida"
    }
   ],
   "types": [
@@ -655,7 +655,7 @@
    "options": [],
    "required": false,
    "retired": false,
-   "title": "Impresión compartida y por USB",
+   "title": "Impresión compartida",
    "type": "switch"
   }
  ],

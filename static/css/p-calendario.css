@@ -108,7 +108,7 @@
    Fondo claro de la superficie (nunca el color de la pañoleta); el color va en un recuadro grande. Cada dato: título pequeño arriba y valor debajo;
    el texto largo pasa a la línea siguiente, sin puntos suspensivos y sin barras: la celda crece. Columnas según el ANCHO DE LA TARJETA (container query), no de la pantalla. */
 #calBody .cal-chip { container-type: inline-size; align-items: flex-start; background: var(--gw-surface); border: 1px solid var(--gw-border); border-left: 4px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); color: var(--gw-text); }
-#calBody .cal-chip__main { white-space: normal; overflow: visible; text-overflow: clip; display: block; overflow-wrap: anywhere; padding: var(--gw-sp-2) var(--gw-sp-3); line-height: 1.35; }
+#calBody .cal-chip__main { white-space: normal; overflow: visible; text-overflow: clip; display: block; overflow-wrap: break-word; padding: var(--gw-sp-2) var(--gw-sp-3); line-height: 1.35; }
 #calBody .cal-chip--big .cal-chip__main { padding: var(--gw-sp-3) var(--gw-sp-4); }
 #calBody .cal-chip .gw-bulb { margin: var(--gw-sp-2) 0 0; flex: 0 0 auto; }
 #calBody .cal-card { display: block; }
@@ -119,7 +119,7 @@
 #calBody .cal-card__top { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; flex: 1 1 auto; }
 #calBody .cal-card__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2) var(--gw-sp-5); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border); }
 #calBody .cal-card__col { display: flex; flex-direction: column; gap: var(--gw-sp-2); min-width: 0; }
-#calBody .cal-card__f { display: block; min-width: 0; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); }
+#calBody .cal-card__f { display: block; min-width: 0; overflow-wrap: break-word; hyphens: auto; font-size: var(--gw-fs-sm); }
 #calBody .cal-card__f--strong { font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
 #calBody .cal-card__f--long { white-space: pre-line; }
 #calBody .cal-card__k { display: block; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.02em; }
@@ -145,6 +145,12 @@
 #calBody .cal-mini { display: block; min-width: 0; }
 #calBody .cal-mini .cal-card__swatches { display: flex; gap: 2px; margin-bottom: var(--gw-sp-1); }
 #calBody .cal-mini .cal-card__sw { flex: 1 1 0; width: auto; min-width: 0; height: 0.5rem; border-width: 1px; border-radius: 999px; }
-#calBody .cal-mini__name { display: block; overflow-wrap: anywhere; white-space: normal; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); line-height: 1.3; }
+#calBody .cal-mini__name { display: block; overflow-wrap: break-word; white-space: normal; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); line-height: 1.3; }
 #calBody .cal-mini__code { display: block; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .cal-fold { white-space: nowrap; }
+/* Interruptores (Sí/No): píldora «ícono + nombre: respuesta». Verde con ✓ cuando está activo; gris con ✕ cuando no. Varias seguidas se apilan con aire. */
+#calBody .cal-card__sw-row { display: flex; align-items: flex-start; gap: var(--gw-sp-2); padding: var(--gw-sp-1) var(--gw-sp-2); border-radius: var(--gw-radius-md); border: 1px solid var(--gw-border); background: var(--gw-surface-2); color: var(--gw-text-muted); line-height: 1.3; }
+#calBody .cal-card__sw-row--on { background: var(--gw-ok-bg); border-color: var(--gw-ok-line); color: var(--gw-ok-text); }
+#calBody .cal-card__sw-ic { flex: 0 0 auto; font-weight: var(--gw-fw-bold); line-height: 1.3; }
+#calBody .cal-card__sw-tx { min-width: 0; overflow-wrap: break-word; hyphens: auto; }
+#calBody .cal-card__sw-st { font-weight: var(--gw-fw-bold); }

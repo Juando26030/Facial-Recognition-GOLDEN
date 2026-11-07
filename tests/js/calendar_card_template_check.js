@@ -41,8 +41,8 @@ assert(h.includes('11/11/2026') && h.includes('$ 2.500.000') && h.includes('Méx
 assert(h.includes('Luz Mar') && h.includes('Pedro') && h.includes('20/11/2026 18:30'));
 assert(h.includes('Computadores ×2 (Portátil), Pañoletas ×40'), 'inventario resumido');
 assert(h.includes('Rojo, #111111'));
-// interruptores: insignias Sí/No
-assert(/gw-badge gw-badge--ok cal-card__badge">Sí</.test(h) && />No<\/span>/.test(h));
+// interruptores: píldora «ícono + nombre: respuesta» (el Sí/No viaja junto al nombre, nunca suelto)
+assert(/cal-card__sw-row--on[^>]*>.*?✓.*?: <strong class="cal-card__sw-st">Sí</.test(h) && /cal-card__sw-row--off[^>]*>.*?✕.*?: <strong class="cal-card__sw-st">No</.test(h));
 // retirados, inexistentes y vacíos (notes sin valor) no se pintan
 assert(!h.includes('dato antiguo') && !h.includes('Viejo') && !h.includes('Observaciones') && !h.includes('sin_campo'));
 // texto largo conserva saltos

@@ -90,11 +90,22 @@ SWITCHES = [
     {"key": "digital_badge_enabled", "title": "Escarapela digital", "help": "Escarapela enviada por correo.", "requires": None},
     {"key": "auto_print_badge", "title": "Imprimir la escarapela sola", "help": "Al registrar a alguien se imprime la escarapela sin tocar el botón.", "requires": None},
     {"key": "auto_register", "title": "Modo autoregistro", "help": "Un acierto en la puerta acredita a la persona de una vez, sin confirmar.", "requires": None},
-    {"key": "shared_print_enabled", "title": "Impresión compartida y por USB", "help": "Varias personas imprimen en una misma impresora.", "requires": None},
+    {"key": "shared_print_enabled", "title": "Impresión compartida", "help": "Varias personas imprimen en una misma impresora.", "requires": None},
 ]
 SWITCH_KEYS = tuple(s["key"] for s in SWITCHES)
 SWITCH_BY_KEY = {s["key"]: s for s in SWITCHES}
 # Nota: la «Ruleta» no tiene interruptor en Parámetros del evento (siempre está disponible), así que no se ofrece aquí para no inventar una segunda fuente de datos.
+
+
+# Títulos anteriores de campos de fábrica que se renombraron (2026-11-07: «Impresión compartida y por USB» → «Impresión compartida»).
+LEGACY_TITLES = {"sw_shared_print_enabled": ("Impresión compartida y por USB",)}
+
+
+def default_title_for(field_key: str) -> str:
+    for s in SWITCHES:
+        if switch_field_key(s["key"]) == field_key:
+            return s["title"]
+    return field_key
 
 
 def switch_field_key(switch: str) -> str:
@@ -323,6 +334,9 @@ def _clean_options(raw, what: str, max_items: int, allow_empty_list: bool = Fals
 def merge_missing_base(tpl: dict) -> dict:
     """Plantilla guardada + los campos base/interruptores que el código haya agregado después (quedan fuera de las vistas hasta que el administrador los ponga)."""
     out = copy.deepcopy(tpl)
+    for f in out["fields"]:      # renombres de fábrica: una plantilla guardada con el título anterior toma el nuevo (el administrador sigue pudiendo cambiarlo a otro)
+        if f.get("title") in LEGACY_TITLES.get(f.get("key"), ()):
+            f["title"] = default_title_for(f["key"])
     have = {f["key"] for f in out["fields"]}
     for f in default_template()["fields"]:
         if f["key"] not in have:

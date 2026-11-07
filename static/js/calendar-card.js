@@ -101,12 +101,15 @@
   }
 
   function itemHtml(it, strong) {
+    if (it.type === 'switch') {          // interruptor: píldora con ícono donde el nombre y la respuesta van JUNTOS («✓ Impresión compartida: Sí»), para que un Sí/No nunca parezca de otro campo
+      var on = it.text === 'Sí';
+      return '<span class="cal-card__f cal-card__sw-row cal-card__sw-row--' + (on ? 'on' : 'off') + '" data-field="' + esc(it.key) + '">' +
+        '<span class="cal-card__sw-ic" aria-hidden="true">' + (on ? '✓' : '✕') + '</span>' +
+        '<span class="cal-card__sw-tx">' + esc(it.title) + ': <strong class="cal-card__sw-st">' + esc(it.text) + '</strong></span></span>';
+    }
     var cls = 'cal-card__f' + (strong ? ' cal-card__f--strong' : '') + (it.type === 'text_long' ? ' cal-card__f--long' : '');
-    var value = it.type === 'switch'
-      ? '<span class="gw-badge ' + (it.text === 'Sí' ? 'gw-badge--ok' : '') + ' cal-card__badge">' + esc(it.text) + '</span>'
-      : '<span class="cal-card__v">' + esc(it.text) + '</span>';
     return '<span class="' + cls + '" data-field="' + esc(it.key) + '">' +
-      (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') + value + '</span>';
+      (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') + '<span class="cal-card__v">' + esc(it.text) + '</span></span>';
   }
   /* Dibuja el modelo de EventFields.cardModel: {top,left,right,bottom: [{key,type,title,label,text}]}. `extraTop` = HTML ya escapado que se agrega al encabezado (p. ej. el estado). */
   function renderCardModel(model, extraTop, root_ev) {
