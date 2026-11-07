@@ -1,4 +1,4 @@
-# Ramas borradas en la limpieza de cierre de la Fase 1 (6-nov-2026), con autorización de Juan David. Todas estaban CONTENIDAS en sec/cierre-fase-1 (ningún commit se pierde). Se conservaron migra/fase1-2 (staging/WIF), candidato/produccion-28oct y -29oct (runbooks), main, las de PR abiertas y las que tienen commits propios.
+# Ramas borradas en la limpieza de cierre de la Fase 1 (6-nov-2026), con autorización de Juan David: 84 ramas, borradas desde GitHub. Estaban contenidas en main o en ux/fase-1-7-ancho (que se conserva): ningún commit se pierde. Se conservaron migra/fase1-2 (staging/WIF), candidato/produccion-25oct/28oct/29oct (runbooks), main, las de PR abiertas (ux/fase-1-7-ancho, ux/fase-1-7-w-eventos, feat/visual-parametros) y las ux/fase-1-7-w-* (tienen trabajo propio).
 # Recuperar una: git push origin <sha>:refs/heads/<nombre>
 candidato/formularios-p1 3ab6f68c7ddc88c71731c7e05b9c85e76d510ab1
 docs/etapa-0a 12fcac5eab55c42b6edbb01ccc62b13446da0252
@@ -83,10 +83,4 @@ ux/fase-1-7-q-parametros 496a9a39cd65ff4fc51fb1c18fa88129796c79c9
 ux/fase-1-7-q-roster e162f68b3649261decefee145cd38e432288042a
 ux/fase-1-7-q-ruleta d5ac736f19350bcb52c97772d75c1dd6f791e347
 ux/fase-1-7-q-usuarios 264c15be92f22e72a9aaa8bf1d38d655027343b4
-ux/fase-1-7-w-eventos c9f5112d80c7e80d22d506ce3e91267797cc460e
-ux/fase-1-7-w-formularios 70d43c9eac8233a2e0e82921aa04b14d5f4a6b0f
-ux/fase-1-7-w-operacion c6b481d4630b0179cb9568585ee76b20f7c55427
-ux/fase-1-7-w-panel d1ebb1fa7df36dc354ddd781e683317e30526792
-ux/fase-1-7-w-registro edd0b8ce9534852b29c0db934795f91bf2234a52
-ux/fase-1-7-w-usuarios 4e387a4c26255ec84468d4716dfb1d60e08de86c
 ux/fix-cert-stage 0e597456837b2203c5815b4de872793c06f06697
