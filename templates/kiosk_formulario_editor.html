@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-respuestas.css') }}">
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
@@ -277,8 +278,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </div>
         <div class="gwr-tools">
           <div class="gw-search__row gwr-search">
-            <input type="search" class="gw-input" id="ansSearch" placeholder="Buscar por cédula o nombre" aria-label="Buscar inscripciones por cédula o nombre" autocomplete="off" maxlength="80">
-            <button type="button" class="gw-btn gw-btn--secondary gw-search__clear" id="ansSearchClear" aria-label="Vaciar búsqueda" hidden>{{ ic('trash', 'gw-icon--sm') }}</button>
+            <input type="search" class="gw-input" id="ansSearch" data-gw-clear-btn="ansSearchClear" placeholder="Buscar por cédula o nombre" aria-label="Buscar inscripciones por cédula o nombre" autocomplete="off" maxlength="80">
+            <button type="button" class="gw-btn gw-btn--secondary gw-search__clear gw-search__clear--proxy" id="ansSearchClear" aria-label="Vaciar búsqueda" hidden>{{ ic('trash', 'gw-icon--sm') }}</button>
           </div>
           <label class="gwr-quota" id="ansQuotaWrap" hidden><span class="gw-sr-only">Filtrar por cupo</span>
             <select class="gw-select" id="ansQuota" aria-label="Filtrar por cupo"></select></label>
@@ -290,7 +291,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <span class="gw-hint" id="ansPageInfo" aria-live="polite"></span>
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="ansNext">Siguiente &rsaquo;</button>
           <label class="gwr-size"><span>Por página:</span>
-            <select class="gw-select" id="ansSize" aria-label="Inscripciones por página"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+            <select class="gw-select" id="ansSize" aria-label="Inscripciones por página"><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
         </nav>
       </section></div>
 
@@ -1607,7 +1608,7 @@ function fitTable(table) {   // las tablas se ajustan al ancho de la pantalla: c
     if (!td.title && td.textContent.trim() && !td.querySelector('button')) td.title = td.textContent.trim();
   }));
 }
-const ans = { page: 1, size: 50, q: '', quota: '', seq: 0, timer: null, quotaSig: '' };   // estado de la tabla de respuestas (la paginación, el buscador y el cupo los resuelve el servidor)
+const ans = { page: 1, size: Math.min(100, (window.GW && GW.pageSize ? GW.pageSize('respuestas') : 20)), q: '', quota: '', seq: 0, timer: null, quotaSig: '' };   // estado de la tabla de respuestas (la paginación, el buscador y el cupo los resuelve el servidor)
 function ansRenderQuotas(list) {
   const wrap = $('ansQuotaWrap'), sel = $('ansQuota');
   wrap.hidden = !list.length;
@@ -1639,10 +1640,10 @@ async function loadAnswers() {
   $('ansPager').hidden = d.total_all <= 20 && d.pages <= 1;
   $('ansPageInfo').textContent = `Página ${d.page} de ${d.pages}`;
   $('ansPrev').disabled = d.page <= 1; $('ansNext').disabled = d.page >= d.pages;
-  $('ansHead').innerHTML = `<tr><th class="gwe-col-id">#</th><th class="gwe-col-date">Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th class="gwe-col-amt">Pagado</th>' : ''}<th class="gwe-col-src">Origen</th><th class="gwe-col-fed">En la base</th><th class="gwe-col-act"><span class="gw-sr-only">Acciones</span></th></tr>`;
+  $('ansHead').innerHTML = `<tr><th class="gwe-col-id">#</th><th class="gwe-col-date">Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th class="gwe-col-amt">Pagado</th>' : ''}<th class="gwe-col-src">Origen</th><th class="gwe-col-fed" title="Si la persona ya estaba en la base del evento antes de inscribirse">Ya estaba en la base</th><th class="gwe-col-act"><span class="gw-sr-only">Acciones</span></th></tr>`;
   $('ansBody').closest('table').classList.toggle('gwe-many', d.columns.length > 7);   // con muchas columnas la tabla pasa a tarjetas (nada de desplazamiento lateral)
   $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
-    const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
+    const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.known ? 'Sí' : 'No (nueva)'}</td>
     <td class="gwe-cell-wrap gw-table-cards__actions"><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">${filtered ? 'Ninguna inscripción coincide con la búsqueda.' : 'Todavía no hay inscripciones.'}</td></tr>`;
   fitTable($('ansBody').closest('table'));
 }
@@ -1660,7 +1661,7 @@ $('ansSearch').addEventListener('input', () => {
 });
 $('ansSearchClear').addEventListener('click', () => { clearTimeout(ans.timer); $('ansSearch').value = ''; $('ansSearchClear').hidden = true; ans.q = ''; ansReset(); $('ansSearch').focus(); });
 $('ansQuota').addEventListener('change', () => { ans.quota = $('ansQuota').value; ansReset(); });
-$('ansSize').addEventListener('change', () => { ans.size = Number($('ansSize').value) || 50; ansReset(); });
+$('ansSize').addEventListener('change', () => { ans.size = Number($('ansSize').value) || 20; if (window.GW && GW.setPageSize) GW.setPageSize('respuestas', ans.size); ansReset(); });
 $('ansPrev').addEventListener('click', () => { if (ans.page > 1) { ans.page -= 1; loadAnswers(); } });
 $('ansNext').addEventListener('click', () => { ans.page += 1; loadAnswers(); });
 $('ansTests').addEventListener('change', ansReset);

@@ -23,7 +23,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
@@ -116,13 +116,13 @@
         <div class="gw-stack">
           <div class="gw-field">
             <label class="gw-label" for="neCoord">Coordinador asignado <span class="gw-req" aria-hidden="true">*</span></label>
-            <input class="gw-input" id="neCoord" type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar..."{% if pure_coordinator %} readonly title="Como coordinador, el evento queda asignado a ti"{% endif %}>
+            <input class="gw-input" id="neCoord" data-gw-clearable type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar..."{% if pure_coordinator %} readonly title="Como coordinador, el evento queda asignado a ti"{% endif %}>
             {% if pure_coordinator %}<small class="gw-hint">Como coordinador, el evento queda asignado a ti.</small>{% endif %}
           </div>
           {% if not pure_coordinator %}
           <div class="gw-field">
             <label class="gw-label" for="neComm">Comercial asignada <span class="gw-req" aria-hidden="true">*</span></label>
-            <input class="gw-input" id="neComm" type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
+            <input class="gw-input" id="neComm" data-gw-clearable type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
           </div>
           {% endif %}
           <div class="gw-field">

@@ -25,7 +25,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
@@ -110,7 +110,7 @@
         <textarea class="gw-textarea" id="noteTextField" rows="3" placeholder="Ej. Llamar al cliente para confirmar transporte"></textarea></div>
       <div class="gw-field note-combo">
         <label class="gw-label" for="noteTargetSearch">Destinatarios (opcional)</label>
-        <input class="gw-input" type="text" id="noteTargetSearch" placeholder="Buscar usuario por nombre…" autocomplete="off" aria-controls="noteTargetDropdown" aria-expanded="false">
+        <input class="gw-input" type="text" id="noteTargetSearch" data-gw-clearable placeholder="Buscar usuario por nombre…" autocomplete="off" aria-controls="noteTargetDropdown" aria-expanded="false">
         <div class="note-combo__list" id="noteTargetDropdown" role="group" aria-label="Usuarios sugeridos" hidden></div>
         <p class="gw-hint">Si no eliges a nadie, lo ve todo el equipo con acceso al Calendario.</p>
         <div class="note-chips" id="noteTargetChips" aria-label="Destinatarios elegidos"></div>

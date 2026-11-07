@@ -153,9 +153,9 @@
                 <div class="gw-workarea__bar">
                     {% if search_unified %}{% set busq_disabled = false %}{% set busq_hero = true %}{% include "_gw_buscador.html" %}{% else %}
                     <div class="gw-toolbar">
-                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchCedula">Buscar por {{ field_labels.id|lower }}</label><input class="gw-input" type="text" id="searchCedula" placeholder="{{ field_labels.id }}" autocomplete="off" inputmode="numeric"></div>
-                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchNombre">Buscar por nombre</label><input class="gw-input" type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off"></div>
-                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchEntidad">Buscar por {{ field_labels.entity|lower }}</label><input class="gw-input" type="text" id="searchEntidad" placeholder="{{ field_labels.entity }}" autocomplete="off"></div>
+                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchCedula">Buscar por {{ field_labels.id|lower }}</label><input class="gw-input" type="text" id="searchCedula" data-gw-clearable placeholder="{{ field_labels.id }}" autocomplete="off" inputmode="numeric"></div>
+                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchNombre">Buscar por nombre</label><input class="gw-input" type="text" id="searchNombre" data-gw-clearable placeholder="Nombre o apellido" autocomplete="off"></div>
+                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchEntidad">Buscar por {{ field_labels.entity|lower }}</label><input class="gw-input" type="text" id="searchEntidad" data-gw-clearable placeholder="{{ field_labels.entity }}" autocomplete="off"></div>
                     </div>
                     {% endif %}
                 </div>
@@ -191,7 +191,7 @@
                     <div id="bioIdent" class="gw-card gw-registro__bio">
                         <label class="gw-label" for="bioCedula"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-lock"/></svg> Reconocimiento facial voluntario: identifica primero a la persona</label>
                         <div class="gw-rowact">
-                            <input class="gw-input gw-registro__grow" type="text" id="bioCedula" autocomplete="off" inputmode="numeric" placeholder="Cédula o lector de QR">
+                            <input class="gw-input gw-registro__grow" type="text" id="bioCedula" data-gw-clearable autocomplete="off" inputmode="numeric" placeholder="Cédula o lector de QR">
                             <button type="button" id="bioIdentBtn" class="gw-btn gw-btn--primary">Continuar</button>
                         </div>
                         <p id="bioIdentMsg" class="gw-hint" role="status" aria-live="polite"></p>
@@ -238,7 +238,7 @@
                         <div class="gw-toolbar__grow">
                             {% if search_unified %}{% set busq_disabled = off %}{% set busq_hero = true %}{% include "_gw_buscador.html" %}{% else %}
                             <label class="gw-label" for="searchCedula">Buscar por {{ field_labels.id|lower }}</label>
-                            <input class="gw-input" type="text" id="searchCedula" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric" autofocus {% if off %}disabled{% endif %}>
+                            <input class="gw-input" type="text" id="searchCedula" data-gw-clearable placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric" autofocus {% if off %}disabled{% endif %}>
                             {% endif %}
                         </div>
                         <div class="gw-toolbar__actions">
@@ -250,8 +250,8 @@
                     </div>
                     {% if not search_unified %}
                     <div class="gw-toolbar">
-                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchNombre">Buscar por nombre</label><input class="gw-input" type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off"></div>
-                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchEntidad">Buscar por {{ field_labels.entity|lower }}</label><input class="gw-input" type="text" id="searchEntidad" placeholder="{{ field_labels.entity }}" autocomplete="off"></div>
+                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchNombre">Buscar por nombre</label><input class="gw-input" type="text" id="searchNombre" data-gw-clearable placeholder="Nombre o apellido" autocomplete="off"></div>
+                        <div class="gw-toolbar__grow"><label class="gw-label" for="searchEntidad">Buscar por {{ field_labels.entity|lower }}</label><input class="gw-input" type="text" id="searchEntidad" data-gw-clearable placeholder="{{ field_labels.entity }}" autocomplete="off"></div>
                     </div>
                     {% endif %}
                     {# Veredicto de la última acción (acreditado / ya registrado / no está en la lista): lo llena static/js/registro-veredicto.js; oculto hasta que haya algo que decir. #}
@@ -401,6 +401,7 @@
 <script src="{{ url_for('static', path='js/timing.js') }}"></script>
 {% if search_unified %}<script src="{{ url_for('static', path='js/search-core.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/registro-veredicto.js') }}"></script>
+<script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>

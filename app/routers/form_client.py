@@ -40,7 +40,7 @@ def _form_for_manager(db: Session, event_id: int, form_id: int, staff: StaffUser
 @router.get("/events/{event_id}/forms/{form_id}/stats")
 def form_stats_staff(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     _, form = _form_for_manager(db, event_id, form_id, staff)
-    return JSONResponse(form_stats.build(db, form, include_tests), headers=NO_STORE)
+    return JSONResponse(form_stats.build(db, form, include_tests, with_origin=True), headers=NO_STORE)
 
 
 @router.get("/events/{event_id}/forms/{form_id}/client-access")

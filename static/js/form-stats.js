@@ -145,6 +145,11 @@
 
     var s = d.summary, kp = el('div', 'fs-kpis');
     kp.appendChild(kpi('Inscritos', s.registered, s.companions != null ? 'más ' + nf.format(s.companions) + ' acompañantes: ' + nf.format(s.people_total) + ' personas' : 'inscripciones confirmadas', 'ok'));
+    if (d.origin) {      // solo el personal: el servidor no lo manda al cliente ni al enlace público
+      kp.appendChild(kpi('Ya estaban en la base', d.origin.known, 'personas que el evento ya tenía cargadas'));
+      kp.appendChild(kpi('Personas nuevas', d.origin.new, 'se inscribieron sin estar en la base', d.origin.new ? 'warn' : ''));
+      if (d.origin.unknown) kp.appendChild(kpi('Sin cédula', d.origin.unknown, 'no se puede saber si estaban en la base'));
+    }
     if (d.capacity) {
       kp.appendChild(kpi('Cupos usados', d.capacity.used + ' / ' + d.capacity.total, d.capacity.pct + '% del cupo total', tone(d.capacity.pct, d.capacity.full)));
       kp.appendChild(kpi('Cupos faltantes', d.capacity.left, d.capacity.full ? 'el cupo está lleno' : 'disponibles ahora', d.capacity.full ? 'err' : ''));

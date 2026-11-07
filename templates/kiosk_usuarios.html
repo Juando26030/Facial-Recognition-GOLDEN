@@ -20,7 +20,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-usuarios.css') }}">
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
 </head>
 <body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
@@ -65,17 +66,17 @@
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Agrega a alguien</span>
-        {% call ayuda('ay_paso1', 'Agrega a alguien') %}Crea una cuenta nueva con su usuario (para un digitador, la cédula) y una contraseña temporal. Quedará asignada solo a este evento.{% endcall %}</li>
+        {% call ayuda('ay_paso1', 'Agrega a alguien') %}Crea una cuenta nueva con la cédula y el nombre. El usuario y la contraseña serán la cédula. También puedes subir un Excel con varias personas. Quedará asignada a este evento.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Asigna el rol</span>
         {% call ayuda('ay_paso2', 'Asigna el rol') %}El digitador registra y acredita personas en este evento. Para que un cliente vea estadísticas, usa un enlace de estadísticas con vencimiento (no una cuenta).{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Quita el acceso al terminar</span>
         {% call ayuda('ay_paso3', 'Quita el acceso al terminar') %}«Quitar de este evento» solo retira el acceso aquí y la cuenta sigue existiendo. «Borrar permanente» elimina la cuenta de todo el sistema y no se puede deshacer.{% endcall %}</li>
     </ol>
 
-    <details class="gw-group" id="grpNueva" open data-gw-tour-step="1" data-gw-tour-title="1. Agrega a alguien" data-gw-tour-text="Llena el usuario, la contraseña temporal y el rol. La persona elegirá su propia contraseña al ingresar.">
+    <details class="gw-group" id="grpNueva" open data-gw-tour-step="1" data-gw-tour-title="1. Agrega a alguien" data-gw-tour-text="Llena la cédula y el nombre. La cédula es también la contraseña.">
       <summary class="gw-group__sum"><span class="gw-group__title">Nueva cuenta para este evento</span><span class="gw-group__hint">Crea y asigna en un solo paso.</span></summary>
       <div class="gw-group__body">
-        <form id="tempUserForm" class="gw-stack" data-gw-pwcheck data-gw-strict="1">
+        <form id="tempUserForm" class="gw-stack">
           <div class="gw-fields-row gw-fields-row--2">
             <div class="gw-field">
               <label class="gw-label" for="uUsername">Usuario (para digitador, la cédula)</label>
@@ -88,17 +89,13 @@
           </div>
           <div class="gw-fields-row gw-fields-row--2">
             <div class="gw-field">
-              <label class="gw-label" for="uPassword">Contraseña temporal</label>
-              <input class="gw-input" type="password" id="uPassword" name="password" required autocomplete="new-password" data-gw-eye data-gw-new>
-              <div data-gw-rules></div>
-            </div>
-            <div class="gw-field">
               <label class="gw-label" for="eventRoleSelect">Rol</label>
               <select class="gw-select" name="role" id="eventRoleSelect" required>
                 {% if staff_role != "comercial" %}
                 <option value="digitador">Digitador (temporal)</option>
                 {% endif %}
               </select>
+              <p class="gw-hint">La contraseña de la cuenta es la misma cédula: no hay que escribirla.</p>
             </div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">
@@ -114,15 +111,17 @@
       </div>
     </details>
 
-    {% if staff_role in ["admin", "super_admin"] %}
+    {% if staff_role != "comercial" %}
     <details class="gw-group" id="grpExistente">
-      <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuenta ya existente</span><span class="gw-group__hint">Para reusar un digitador de otro evento en vez de crear uno nuevo.</span></summary>
-      <div class="gw-group__body">
+      <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuentas ya existentes</span><span class="gw-group__hint">Dos formas: buscar una por una o cargar un Excel.</span></summary>
+      <div class="gw-group__body gw-stack">
+        {% if staff_role in ["admin", "super_admin"] %}
         <form id="assignExistingForm" class="gw-stack">
+          <h3 class="gw-sub">Buscar una por una</h3>
           <div class="gw-field">
             <label class="gw-label" for="assignableSelect">Usuario existente</label>
             <div class="gw-combo" id="assignableCombo">
-              <input class="gw-input gw-combo__input" type="text" id="assignableSelect" role="combobox" aria-expanded="false" aria-controls="assignableList" aria-autocomplete="list" aria-describedby="assignableHint" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe usuario, nombre o rol">
+              <input class="gw-input gw-combo__input" type="text" id="assignableSelect" data-gw-clearable role="combobox" aria-expanded="false" aria-controls="assignableList" aria-autocomplete="list" aria-describedby="assignableHint" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Escribe usuario, nombre o rol">
               <input type="hidden" name="staff_id" id="assignableValue">
               <ul class="gw-combo__list" id="assignableList" role="listbox" aria-label="Usuarios existentes" hidden></ul>
             </div>
@@ -132,17 +131,35 @@
             <button type="submit" class="gw-btn gw-btn--secondary">Asignar a este evento</button>
           </div>
         </form>
+        {% endif %}
+        <form id="importStaffForm" class="gw-stack">
+          <h3 class="gw-sub">Cargar un Excel</h3>
+          <p class="gw-hint">Sube un Excel con Identificación, Nombres y Apellidos. Las cédulas nuevas se crean (usuario y contraseña = la cédula) y todas quedan asignadas a este evento; si la cédula ya tenía cuenta, solo se asigna.</p>
+          <div class="gw-field">
+            <label class="gw-label" for="importStaffFile">Archivo de Excel (.xlsx)</label>
+            <input class="gw-input" type="file" id="importStaffFile" accept=".xlsx" required>
+          </div>
+          <div class="gw-actions">
+            <a class="gw-btn gw-btn--ghost" id="importStaffTemplate" href="/api/events/{{ event.id }}/staff-users/template" download>{{ ic('download', 'gw-icon--sm') }} Descargar la plantilla</a>
+            <button type="submit" class="gw-btn gw-btn--secondary">{{ ic('upload', 'gw-icon--sm') }} Subir y asignar</button>
+          </div>
+          <div id="importStaffResult" role="status" aria-live="polite" class="gw-msg"></div>
+        </form>
       </div>
     </details>
     {% endif %}
 
     <section class="gw-stack" aria-labelledby="tituloCuentas" data-gw-tour-step="2" data-gw-tour-title="2. Cuentas y roles" data-gw-tour-text="Aquí ves cada cuenta con su rol y su estado. Las acciones de cada una están en su misma tarjeta.">
-      <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
+      <div class="gw-usr__listhead">
+        <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
+        {% if staff_role != "comercial" %}<button type="button" class="gw-btn gw-btn--danger gw-btn--xl" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Eliminar los usuarios temporales de este evento</button>{% endif %}
+      </div>
       <div id="tempUsersStatus" role="status" aria-live="polite" class="gw-msg"></div>
       <div id="tempUsersList" class="gw-cards gw-rows gw-usr__list" aria-busy="true" data-gw-tour-step="3" data-gw-tour-title="3. Quita el acceso al terminar" data-gw-tour-text="«Quitar de este evento» retira el acceso aquí. «Borrar permanente» elimina la cuenta de todo el sistema.">
         <div class="gw-card-row" aria-hidden="true"><span class="gw-skeleton"></span><span class="gw-skeleton"></span></div>
         <div class="gw-card-row" aria-hidden="true"><span class="gw-skeleton"></span><span class="gw-skeleton"></span></div>
       </div>
+      <div id="tempUsersPager"></div>
     </section>
   </div>
 </main>

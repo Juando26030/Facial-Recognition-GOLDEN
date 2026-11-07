@@ -124,3 +124,24 @@ def put_single_session(data: dict, db: Session = Depends(get_db), staff: StaffUs
     sessions.set_single_session(db, bool(data.get("enabled")))
     log.info("«Sesión única» %s por el usuario %s", "activada" if data.get("enabled") else "desactivada", staff.id)
     return get_single_session(db, staff)
+
+
+@router.get("/settings/golden-logo-height")
+def get_golden_logo_height(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    from app import logosize
+    return {"height": logosize.get(db), "min": logosize.MIN_H, "max": logosize.MAX_H}
+
+
+@router.put("/settings/golden-logo-height")
+def put_golden_logo_height(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """Alto del logo de Golden para TODO el sistema (6-nov-2026): solo el super administrador."""
+    from app import logosize
+    try:
+        wanted = int(data.get("height"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="El alto del logo debe ser un número entre 30 y 80")
+    if not logosize.MIN_H <= wanted <= logosize.MAX_H:
+        raise HTTPException(status_code=400, detail="El alto del logo debe ser un número entre 30 y 80")
+    h = logosize.set_height(db, wanted)
+    log.info("alto del logo de Golden fijado en %s px por el usuario %s", h, staff.id)
+    return {"height": h, "min": logosize.MIN_H, "max": logosize.MAX_H}

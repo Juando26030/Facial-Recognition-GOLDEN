@@ -68,8 +68,8 @@
   .gw-event-card .p-cli__name { display: inline; }
   .gw-event-card .p-cli__rep { display: inline-block; vertical-align: middle; margin-right: var(--gw-sp-1); }
   .gw-event-card .gw-event-code { font-size: var(--gw-fs-sm); }
-  .p-cli__rep--full { display: none; }
-  .p-cli__rep--dot { display: inline-flex; flex: 0 0 auto; }
+  .gw-event-card .p-cli__rep--full { display: none; }
+  .gw-event-card .p-cli__rep--dot { display: inline-flex; flex: 0 0 auto; }
   .gw-event-card .p-cli__loc { order: 2; } .gw-event-card .p-cli__date { order: 3; } .gw-event-card .p-cli__coord { order: 4; }
   .gw-event-card .p-cli__loc, .gw-event-card .p-cli__coord { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); font-size: var(--gw-fs-sm); color: var(--gw-text); }
   .gw-event-card .p-cli__date { min-width: 0; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text); }
@@ -100,3 +100,6 @@
   .gw-event-card .p-cli__acts > a.p-cli__act .gw-icon { color: var(--gw-on-gold); }
   .gw-event-card .p-cli__acts > a.p-cli__act:hover { box-shadow: var(--gw-shadow-md); filter: brightness(1.05); }
 }
+
+/* Eventos (menú lateral) usa esta misma fila: en la columna de personas, comercial y coordinador van cada uno en su línea. */
+.p-cli__coord .ev-who { display: block; }

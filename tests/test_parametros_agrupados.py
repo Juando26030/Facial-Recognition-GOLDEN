@@ -13,7 +13,7 @@ SAVE_JS = pathlib.Path("static/js/params-save.js").read_text(encoding="utf-8")
 
 GROUPS = ["registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]
 # clave del guardado global -> (id del botón por bloque que sigue en el DOM, oculto, o None si el bloque no tenía botón propio)
-BLOCKS = {"page": None, "idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "pc": "pcSave", "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
+BLOCKS = {"idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "pc": "pcSave", "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
           "mail": "mailSave", "mod_areas": None, "mod_inventory": None, "logo": None, "categories": "saveCategoriesBtn", "fields": "saveParamsBtn", "stations": None}
 
 
@@ -37,11 +37,11 @@ def test_every_block_registers_its_save_in_the_global_save_with_the_existing_end
     for key in BLOCKS:
         assert f"key: '{key}'" in TEMPLATE or (key.startswith("mod_") and "key: 'mod_' + mod" in TEMPLATE), key
     # mismas rutas de siempre (sin API nueva)
-    for route in ("directory-page-size", "idle-minutes", "biometric-setup", "badge-bio-photo", "precalculo-autorizado", "certificates-enabled", "digital-badge-enabled",
+    for route in ("idle-minutes", "biometric-setup", "badge-bio-photo", "precalculo-autorizado", "certificates-enabled", "digital-badge-enabled",
                   "/categories", "/modules", "/logo", "field-configs/", "digital-email", "shared-print", "print-settings", "print-stations/"):
         assert route in TEMPLATE, route
     order = [int(n) for n in re.findall(r"key: '[\w]+', label: '[^']+', order: (\d+)", TEMPLATE)]
-    assert 5 in order and 100 in order
+    assert 100 in order
 
 
 def test_the_buttons_of_each_block_stay_in_the_dom_hidden_and_call_the_same_save():
@@ -95,7 +95,7 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     login(client, "root")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert page.count('role="tabpanel"') == 8 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
-    for ident in ("directoryPageSize", "idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "pcSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
+    for ident in ("idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "pcSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
                   "printSettingsCard", "psSave", "psReset", "digitalEnabled", "privacyCard", "prTabla", "areasEnabled", "inventoryEnabled", "logoFile", "categoriesBox",
                   "saveCategoriesBtn", "paramsTableBody", "saveParamsBtn", "addOptionalFieldBtn"):
         assert f'id="{ident}"' in page, ident

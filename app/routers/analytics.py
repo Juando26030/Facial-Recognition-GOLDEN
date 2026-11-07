@@ -12,12 +12,14 @@ from app.database import get_db
 from app import testperson
 from app.models import AccessLog, Event, EventAttendee, StaffUser, User
 from app.reports import REGISTRATION_METHOD_LABELS
+from app.routers.stats import is_staff_view
 from app.timeutil import to_local
 
 router = APIRouter()
 
 
-def registro_dashboard(db: Session, event: Event) -> dict:
+def registro_dashboard(db: Session, event: Event, with_origin: bool = False) -> dict:
+    """`with_origin`: solo para el personal (admin, coordinador, comercial): agrega de dónde salió la gente de la base (Excel / digitados a mano / formulario). El cliente y los enlaces públicos nunca lo reciben."""
     attendees = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id != testperson.TEST_ID)}
     logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id != testperson.TEST_ID).order_by(AccessLog.timestamp).all()
     first = {}
@@ -35,6 +37,8 @@ def registro_dashboard(db: Session, event: Event) -> dict:
         an.kpi("Registrados", done, an.pct(done, total) + " de la base", "good"),
         an.kpi("Pendientes", pending, "aún no han llegado", "warn" if pending else "good"),
     ]
+    if with_origin:
+        kpis += _origin_kpis(attendees, ids, logs)
     if times:
         kpis.append(an.kpi("Primer registro", an.fmt_local(min(times)), "hora local"))
         kpis.append(an.kpi("Último registro", an.fmt_local(max(times)), "hora local"))
@@ -68,10 +72,27 @@ def registro_dashboard(db: Session, event: Event) -> dict:
     return an.dashboard("Registro del evento", kpis, [c for c in charts if c])
 
 
+def _origin_kpis(attendees: dict, ids: set, logs: list) -> list:
+    """De dónde salió cada persona de la base: la carga del Excel, las dadas de alta a mano (nuevas) o las que llegaron por el formulario web. Mismas reglas que «Origen de carga» del reporte."""
+    new_by_hand = {lg.user_id for lg in logs if lg.record_type == "Nuevo"}
+    count = {"base": 0, "manual": 0, "autoregistro": 0, "otro": 0}
+    for uid in ids:
+        att = attendees.get(uid)
+        origin = att.origin if att is not None and att.origin else ("manual" if uid in new_by_hand else None)
+        count[origin if origin in count else "otro"] += 1
+    total = len(ids)
+    out = [an.kpi("Vienen del Excel (base)", count["base"], an.pct(count["base"], total) + " de la base"),
+           an.kpi("Nuevos digitados a mano", count["manual"], an.pct(count["manual"], total) + " de la base"),
+           an.kpi("Llegaron por formulario", count["autoregistro"], an.pct(count["autoregistro"], total) + " de la base")]
+    if count["otro"]:
+        out.append(an.kpi("Origen desconocido", count["otro"], "cargas anteriores a este dato"))
+    return out
+
+
 @router.get("/events/{event_id}/analytics/registro")
 def analytics_registro(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
-    return registro_dashboard(db, event)
+    return registro_dashboard(db, event, with_origin=is_staff_view(staff))
 
 
 @router.get("/events/{event_id}/timing-report")

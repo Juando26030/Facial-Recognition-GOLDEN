@@ -241,12 +241,15 @@ def reset_staff_password(
         raise HTTPException(status_code=400, detail="Para cambiar tu propia contraseña usa \"Cambiar contraseña\"")
     if target.role not in _manageable_roles(staff):
         raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
-    new_password = str(data.get("new_password") or "")
-    problem = security.password_problem(new_password, target.username, strict=True)         # 0C (C11): la fija un administrador
-    if problem:
-        raise HTTPException(status_code=400, detail=problem)
+    if data.get("use_username") and target.role == "digitador":
+        new_password, must_change = target.username, False         # digitador temporal (6-nov-2026): vuelve a entrar con su cédula como contraseña; sin política de contraseña segura
+    else:
+        new_password, must_change = str(data.get("new_password") or ""), bool(data.get("must_change", True))
+        problem = security.password_problem(new_password, target.username, strict=True)         # 0C (C11): la fija un administrador
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
     target.password_hash = hash_password(new_password)
-    target.must_change_password = bool(data.get("must_change", True))
+    target.must_change_password = must_change
     db.commit()
     security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
     return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")}

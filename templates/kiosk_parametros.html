@@ -91,17 +91,6 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         <section class="gw-tabpanel" role="tabpanel" id="grp_registro" data-group="registro" aria-labelledby="tab_registro">
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Registro y pantalla</h2><p class="gw-tabpanel__lead">Cómo se ve y se comporta el registro en la puerta.</p></div>
 
-          <div class="gw-group__item" data-psave="page">
-            <div class="gw-item-head"><h4>Filas por página</h4>{% call ayuda('ay_filas', 'Filas por página') %}Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior», «Siguiente» e «Ir a la página» llegan a cualquier fila.{% endcall %}</div>
-            <div class="gw-field">
-              <label class="gw-label" for="directoryPageSize">Filas de la tabla de registros</label>
-              <select class="gw-select" id="directoryPageSize">
-                {% for n in (10, 20, 50, 100, 200) %}<option value="{{ n }}" {% if (event.directory_page_size or 50) == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
-              </select>
-              <p class="gw-hint">Con 50 o menos la tabla carga más rápido en celulares.</p>
-            </div>
-          </div>
-
           <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
           <div class="gw-group__item" data-psave="reggear">
             <div class="gw-item-head"><h4>Configuración del registro</h4>{% call ayuda('ay_gear', 'Engranaje del registro') %}Apagada por defecto: en la pantalla de Registro, el coordinador y los administradores siempre ven el engranaje (impresora, autoregistro e impresión automática); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.{% endcall %}</div>
@@ -129,7 +118,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-choice"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> <span class="gw-choice__text">Sin logo</span></label>
               <label class="gw-choice"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> <span class="gw-choice__text">Logo propio</span></label>
             </fieldset>
-            <div id="logoSize" data-psave="logo" class="gw-form-grid" {% if event.logo_mode != 'custom' %}hidden{% endif %}>
+            <div id="logoSize" data-psave="logo" class="gw-form-grid" {% if event.logo_mode == 'hidden' %}hidden{% endif %}>
               <div class="gw-field"><label class="gw-label" for="logoH">Alto del logo: <span id="logoHv">{{ event.logo_height }}</span> px</label>
                 <input type="range" id="logoH" min="30" max="80" step="5" value="{{ event.logo_height }}"></div>
               <fieldset class="gw-fieldset"><legend class="gw-label">Cómo se acomoda</legend>
@@ -760,9 +749,6 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             try { const d = await post(`${api}/test`, { ...current(), to: document.getElementById('mailTo').value }); say(d.sent ? d.detail : 'No se envió: ' + d.detail, !d.sent); } catch (e) { say(e.message, true); }
         });
     })();
-    GWParams.register({ key: 'page', label: 'Filas por página', order: 5, save: async () => {
-        await must(await jsonPut(`/api/events/${window.EVENT_ID}/directory-page-size`, { value: Number(document.getElementById('directoryPageSize').value) }), 'No se pudo guardar las filas por página');
-    } });
     GWParams.register({ key: 'reggear', label: 'Configuración del registro', order: 12, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/registro-gear-digitadores`, { enabled: document.getElementById('regGearDig').checked }), 'No se pudo guardar la opción del engranaje');
     } });
@@ -918,7 +904,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     const logoH0 = logoH ? logoH.value : null;
     if (logoH) logoH.addEventListener('input', () => { document.getElementById('logoHv').textContent = logoH.value; });
     document.querySelectorAll('input[name="logoMode"]').forEach((radio) => radio.addEventListener('change', () => {
-        document.getElementById('logoSize').hidden = radio.value !== 'custom';
+        document.getElementById('logoSize').hidden = radio.value === 'hidden';          // el tamaño vale para el logo que se muestre (el de Golden o el propio); sin logo no hay nada que medir
     }));
     GWParams.register({ key: 'logo', label: 'Logo del evento', order: 70, reload: true, save: async () => {
         const url = `/api/events/${window.EVENT_ID}/logo`;

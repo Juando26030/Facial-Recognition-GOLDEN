@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-clientes.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
@@ -25,7 +27,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
@@ -95,7 +97,7 @@
 
     <section aria-labelledby="evListTitle" aria-busy="false" id="eventsWrap" class="ev-wrap">
       <h2 class="gw-sr-only" id="evListTitle">Lista de eventos</h2>
-      <div id="eventsList" class="ev-list" data-gw-tour-step="2" data-gw-tour-title="2. Entra al evento" data-gw-tour-text="Cada tarjeta trae sus acciones: Ingresar para trabajar el evento y Editar para cambiar sus datos."></div>
+      <div id="eventsList" class="ev-list gw-tenant__body" data-gw-tour-step="2" data-gw-tour-title="2. Entra al evento" data-gw-tour-text="Cada tarjeta trae sus acciones: Ingresar para trabajar el evento y Editar para cambiar sus datos."></div>
       <p class="gw-hint" data-gw-tour-step="3" data-gw-tour-title="3. Cambia su estado" data-gw-tour-text="Elige el estado en la tarjeta. Pasar a Finalizado pide confirmación y explica las consecuencias.">El estado se cambia en la misma tarjeta, con confirmación.</p>
     </section>
   </div>
@@ -122,15 +124,14 @@ function fmtRangeShort(e) {
   if (isNaN(a) || isNaN(b) || a.getFullYear() !== b.getFullYear()) return fmtRange(e);
   return `${a.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" })} – ${fmtDate(e.end_date)}`;
 }
-function metaRow(name, html, cls, tip) { return `<p class="ev-card__row ${cls || ""}"${tip ? ` title="${esc(tip)}"` : ""}>${icon(name, "gw-icon--sm")}<span>${html}</span></p>`; }
 
-// Acciones poco usadas (devolver, exportar): un solo botón de tres puntos con menú (data-* y handlers intactos).
+// Acciones poco usadas (devolver, exportar): un solo botón de tres puntos con menú (data-* y handlers intactos). Mismo botón y misma posición que en la lista de eventos de Clientes.
 function moreMenu(e) {
   const items = [];
   if (CAN_REVERT && e.status === "en_proceso") items.push(`<button type="button" class="gw-menu__item" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>`);
   if (STAFF_ROLE === "super_admin") items.push(`<button type="button" class="gw-menu__item" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>`);
   if (!items.length) return "";
-  return `<div class="gw-menu ev-card__menu"><button type="button" class="gw-btn gw-btn--secondary ev-card__more" data-ev-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon("more")}</button><div class="gw-menu__panel" role="group" hidden>${items.join("")}</div></div>`;
+  return `<div class="gw-menu p-cli__more ev-card__menu"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__morebtn ev-card__more" data-ev-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon("more")}<span class="p-cli__morelbl">Más acciones</span></button><div class="gw-menu__panel" role="group" hidden>${items.join("")}</div></div>`;
 }
 function closeEvMenus(except) {
   document.querySelectorAll(".ev-card__menu").forEach((m) => {
@@ -150,38 +151,28 @@ document.addEventListener("click", (ev) => {
 });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { const o = document.querySelector(".ev-card__more[aria-expanded='true']"); closeEvMenus(null); if (o) o.focus(); } });
 
+// La fila de cada evento es la MISMA de la lista de eventos de un cliente (Clientes): mismas clases (gw-event-card, p-cli__*), mismos botones y mismo CSS (p-clientes.css).
+// Aquí la columna de lugar lleva además el cliente, porque esta lista mezcla varios.
 function eventCard(e) {
-  const place = [e.city, e.country].filter(Boolean).map(esc).join(", ");
-  const sup = e.super_event_name ? `Superevento: ${e.super_event_name}` : "";
+  const where = [e.location, e.city].filter(Boolean).join(" · ");
+  const sup = e.super_event_name ? ` · Superevento: ${e.super_event_name}` : "";
+  const who = `Comercial: ${e.commercial_name || "—"} · Coordinador: ${e.coordinator_name || "—"}`;
   return `
-    <article class="gw-card-row ev-card" aria-label="${esc(e.name)}">
-      <div class="gw-card-row__head ev-card__head">
-        <h3 class="gw-card-row__title ev-card__title" title="${esc(e.name)}${e.event_code ? " (" + esc(e.event_code) + ")" : ""}"><span class="ev-card__name">${esc(e.name)}</span> ${e.event_code ? `<span class="ev-card__code">(${esc(e.event_code)})</span>` : ""}</h3>
-        <span class="gw-badge ev-card__state ${STATUS_BADGE[e.status] || ""}">${icon(STATUS_ICON[e.status] || "info", "gw-icon--sm")} ${esc(STATUS_LABELS[e.status] || e.status)}</span>
+    <div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
+      <div class="gw-card-row__head">
+        <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? " (" + esc(e.event_code) + ")" : ""}"><span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span> <span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code">(${esc(e.event_code)})</span>` : ""}</span>
+        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
       </div>
-      <div class="ev-card__meta">
-        ${metaRow("building", `<strong>${esc(e.tenant_name)}</strong>${e.city ? " · " + esc(e.city) : ""}${e.country ? `<span class="ev-card__country">, ${esc(e.country)}</span>` : ""}`, "ev-card__client", [e.tenant_name, [e.city, e.country].filter(Boolean).join(", "), sup].filter(Boolean).join(" · "))}
-        ${metaRow("calendar", `<span class="ev-dt ev-dt--full">${fmtRange(e)}</span><span class="ev-dt ev-dt--short">${fmtRangeShort(e)}</span>`, "ev-card__dates", fmtRange(e))}
-        ${metaRow("users", `<span class="ev-card__who"><span class="ev-card__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-card__psep"> · </span><span class="ev-card__who"><span class="ev-card__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span>`, "ev-card__people", `Comercial: ${e.commercial_name || "—"} · Coordinador: ${e.coordinator_name || "—"}`)}
-        ${sup ? metaRow("link", esc(sup), "ev-card__super") : ""}
-        <p class="ev-card__row ev-card__row--plain ev-card__report"><span class="ev-rep ev-rep--full">${reportBulbHtml(e)}</span><span class="ev-rep ev-rep--dot">${reportBulbHtml(e, true)}</span></p>
-      </div>
-      <div class="ev-card__tools">
-      <div class="ev-card__bar">
-        <div class="gw-field"><label class="gw-label" for="st_${e.id}">Cambiar estado</label>
-          <select class="gw-select" id="st_${e.id}" data-status-select data-event-id="${e.id}">
-            ${Object.entries(STATUS_LABELS).map(([value, label]) =>
-              `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
-            ).join("")}
-          </select></div>
-      </div>
-      <div class="gw-card-row__actions ev-card__actions">
-        <a class="gw-btn gw-btn--primary gw-btn--xl ev-card__enter" href="/kiosk/${e.id}">Ingresar ${icon("chevron", "gw-icon--sm")}</a>
-        <button type="button" class="gw-btn gw-btn--secondary ev-card__edit" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
+      <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.tenant_name, where].filter(Boolean).join(" · ") + sup)}"><strong>${esc(e.tenant_name)}</strong>${where ? " · " + esc(where) : ""}</span><span class="p-cli__sep"> · </span><span class="p-cli__date">${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="${esc(who)}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span></span></p>
+      <div class="gw-card-row__actions p-cli__acts">
+        <a class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" href="/kiosk/${e.id}">${icon("home", "gw-icon--sm")} Ingresar</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
+        <select class="gw-select gw-select--auto p-cli__status" data-status-select data-event-id="${e.id}" aria-label="Estado de ${esc(e.name)}">
+          ${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`).join("")}
+        </select>
         ${moreMenu(e)}
       </div>
-      </div>
-    </article>
+    </div>
   `;
 }
 
@@ -198,7 +189,7 @@ const coordinatorFilter = document.getElementById("coordinatorFilter");
 const eventsList = document.getElementById("eventsList");
 const eventsWrap = document.getElementById("eventsWrap");
 // Encabezado de columnas (solo escritorio; lo muestra gw-eventos.css) dentro de la misma rejilla que las filas.
-const EV_COLS_HTML = '<div class="ev-cols" aria-hidden="true"><span class="ev-cols__c1">Evento</span><span class="ev-cols__c2">Cliente · lugar</span><span class="ev-cols__c3">Fechas</span><span class="ev-cols__c4" title="Comercial y coordinador">Comercial / coordinador</span><span class="ev-cols__c5">Estado</span><span class="ev-cols__c6">Informe</span><span class="ev-cols__c7">Acciones</span></div>';
+const EV_COLS_HTML = '<div class="p-cli__cols" aria-hidden="true"><span class="p-cli__c1">Evento</span><span class="p-cli__c2">Cliente · lugar</span><span class="p-cli__c3">Fecha</span><span class="p-cli__c4">Comercial / coordinador</span><span class="p-cli__c5">Estado</span><span class="p-cli__c6">Acciones</span></div>';
 searchBox.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); });
 statusFilter.addEventListener("change", runSearch);
 if (mineFilter) mineFilter.addEventListener("change", runSearch);
@@ -245,7 +236,7 @@ async function runSearch() {
     if (!res.ok) throw new Error("http " + res.status);
     const events = await res.json();
     eventsCache = events;
-    if (events.length) eventsList.innerHTML = EV_COLS_HTML + events.map(eventCard).join("");
+    if (events.length) eventsList.innerHTML = '<div class="gw-event-list">' + EV_COLS_HTML + events.map(eventCard).join("") + "</div>";
     else {
       const filtered = q || status || params.has("commercial_staff_id") || params.has("coordinator_staff_id");
       eventsList.innerHTML = `<div class="gw-empty" role="status">${icon("calendar", "gw-icon--lg")}<p><strong>${filtered ? "Ningún evento coincide con los filtros." : "Todavía no hay eventos."}</strong></p><p>${filtered ? "Cambia o quita algún filtro para ver más." : "Los eventos se crean desde la ficha de cada cliente, en Clientes - Cuentas."}</p></div>`;

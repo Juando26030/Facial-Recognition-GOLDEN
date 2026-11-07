@@ -64,6 +64,26 @@
     showToast('Apariencia restablecida', 'success');
   });
 
+  /* ---------------------------------------------------------------- Tamaño del logo de Golden (6-nov-2026, solo super admin): vale para todos → PUT /api/settings/golden-logo-height */
+  const logoRange = document.getElementById('goldenLogoH');
+  if (logoRange) {
+    const out = document.getElementById('goldenLogoHv');
+    logoRange.addEventListener('input', () => { out.textContent = logoRange.value; });
+    fetch('/api/settings/golden-logo-height', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      logoRange.value = d.height; out.textContent = d.height;
+      GWParams.markClean('logosize');
+    }).catch(() => {});
+    GWParams.register({
+      key: 'logosize', label: 'Tamaño del logo de Golden', order: 15,
+      save: async () => {
+        const res = await fetch('/api/settings/golden-logo-height', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ height: Number(logoRange.value) }) });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'No se pudo guardar el tamaño del logo'); }
+        document.querySelectorAll('.golden-logo img').forEach((img) => { if (img.getAttribute('style') && img.getAttribute('style').indexOf('--gw-logo-h') >= 0) img.style.setProperty('--gw-logo-h', logoRange.value + 'px'); });
+      },
+    });
+  }
+
   /* ---------------------------------------------------------------- Sesión única (26-oct-2026, solo admin): app/routers/print_stations.py → app/sessions.py */
   const chk = document.getElementById('singleSessionChk');
   if (!chk) return;

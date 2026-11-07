@@ -74,6 +74,46 @@ def real_submissions(db: Session, form: WebForm):
     return db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed")  # noqa: E712
 
 
+def sub_person_id(design: dict, sub: FormSubmission) -> str:
+    """La cédula de una inscripción: la guardada al enviar o, si el formulario no la guardó aparte, la del campo vinculado a «Cédula»."""
+    if sub.person_id and str(sub.person_id).strip():
+        return str(sub.person_id).strip()
+    try:
+        return str(key_values(design, json.loads(sub.data_json or "{}")).get("id") or "").strip()
+    except (ValueError, TypeError):
+        return ""
+
+
+def known_before(db: Session, form: WebForm, subs) -> set:
+    """Ids de las inscripciones de `subs` cuya persona YA estaba en la base antes de inscribirse (el pedido del 6-nov-2026: el Excel de inscritos decía «No» a todos
+    porque la columna medía otra cosa: si la inscripción ya se había PASADO a la base). Está «en la base» si su cédula figura en la fuente del formulario (la lista subida solo para
+    él, o la base del evento propio o de otro evento del cliente) o si es una persona del evento que NO nació del propio formulario (origen distinto de «autoregistro»).
+    Las que el formulario mismo dio de alta (origen «autoregistro») son nuevas. Sin cédula en la inscripción no se puede saber: no cuentan como «en la base»."""
+    design = get_design(form)
+    pid_of = {s.id: sub_person_id(design, s) for s in subs}
+    pids = {p for p in pid_of.values() if p}
+    if not pids:
+        return set()
+    found = set()
+    ids = list(pids)
+    src = get_settings(form)["prefill"]["source"]
+    if src == "upload":
+        for i in range(0, len(ids), 500):
+            found |= {r[0] for r in db.query(FormPerson.person_id).filter(FormPerson.form_id == form.id, FormPerson.person_id.in_(ids[i:i + 500]))}
+    else:
+        eid = source_event_id(form)
+        own = db.query(Event).filter(Event.id == form.event_id).first()
+        other = db.query(Event).filter(Event.id == eid).first() if eid else None
+        if other is not None and own is not None and other.tenant_id == own.tenant_id:
+            for i in range(0, len(ids), 500):
+                found |= {r[0] for r in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == other.id, EventAttendee.user_id.in_(ids[i:i + 500]),
+                                                                              or_(EventAttendee.origin != "autoregistro", EventAttendee.origin == None))}  # noqa: E711
+    for i in range(0, len(ids), 500):
+        found |= {r[0] for r in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == form.event_id, EventAttendee.user_id.in_(ids[i:i + 500]),
+                                                                      or_(EventAttendee.origin != "autoregistro", EventAttendee.origin == None))}  # noqa: E711
+    return {sid for sid, p in pid_of.items() if p and p in found}
+
+
 CODE_MESSAGES = {"invalid": "Ese código no es válido", "exhausted": "Ese código ya se agotó", "not_applicable": "Ese código no aplica con lo que respondiste"}
 
 

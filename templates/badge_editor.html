@@ -1058,12 +1058,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       if (b.dataset.case === 'as_is') delete el.text_case; else el.text_case = b.dataset.case;          // «Como está» no guarda nada: igual que una plantilla vieja
       renderCanvas(); renderPropsPanel();
     });
-    document.getElementById('p_case_all').addEventListener('click', () => {
-      const mode = el.text_case || 'as_is';
+    document.getElementById('p_case_all').addEventListener('click', async () => {
+      /* «Aplicar a todos los textos» copia TODO el aspecto de este texto (fuente, tamaño, color, peso, alineación y mayúsculas/minúsculas) a los demás textos fijos y variables (pedido del 6-nov-2026: antes solo copiaba mayúsculas). Posición, tamaño de la caja y contenido no se tocan. */
       const texts = template.elements.filter((x) => x.type === 'text_static' || x.type === 'text_variable');
-      texts.forEach((x) => { if (mode === 'as_is') delete x.text_case; else x.text_case = mode; });
+      const others = texts.filter((x) => x !== el).length;
+      if (others && !(await showConfirm(`Se copiará el aspecto de este texto (fuente, tamaño, color, peso, alineación y mayúsculas) a ${others} texto(s) más. La posición y el contenido de cada uno no cambian.`, { confirmLabel: 'Aplicar a todos' }))) return;
+      const look = { font_family: el.font_family, font_size: el.font_size, font_color: el.font_color, font_weight: el.font_weight, align: el.align };
+      const mode = el.text_case || 'as_is';
+      texts.forEach((x) => {
+        Object.keys(look).forEach((k) => { if (look[k] !== undefined) x[k] = look[k]; });
+        if (mode === 'as_is') delete x.text_case; else x.text_case = mode;
+      });
       renderCanvas(); renderPropsPanel();
-      showToast(`${texts.length} texto(s): «${TEXT_CASE_OPTIONS.find((o) => o[0] === mode)[2]}»`, 'success');
+      showToast(`Aspecto aplicado a ${texts.length} texto(s)`, 'success');
     });
   }
 

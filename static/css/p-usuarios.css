@@ -63,3 +63,10 @@
 .gw-btn--ok { background: var(--gw-surface); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
 .gw-btn--ok:hover { background: var(--gw-ok-bg); }
 .gw-btn--ok .gw-icon { color: inherit; }
+
+/* Usuarios del evento (6-nov-2026): título de la lista con el botón rojo grande «Eliminar los usuarios temporales»; resultado de la carga por Excel con saltos de línea. */
+.gw-usr__listhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); }
+.gw-usr__listhead .gw-sub { margin: 0; }
+.gw-usr__listhead .gw-btn[hidden] { display: none; }
+@media (max-width: 40rem) { .gw-usr__listhead .gw-btn { width: 100%; white-space: normal; } }
+.gw-msg--lines { white-space: pre-line; }

@@ -3,10 +3,10 @@ import unicodedata
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from app.inputcheck import text_validator, username_validator
+from app.inputcheck import check_username, text_validator, username_validator
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
@@ -40,7 +40,7 @@ def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinad
 
 class EventStaffIn(BaseModel):
     username: str  # cédula, para digitador
-    password: str
+    password: Optional[str] = None      # 6-nov-2026: el digitador temporal entra con su cédula como usuario Y contraseña; solo se manda una si alguien quiere otra distinta (esa sí pasa la política estricta)
     full_name: Optional[str] = None
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
@@ -506,9 +506,11 @@ def create_event_staff(
     assert_event_scope(event, staff, db)
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
-    problem = security.password_problem(data.password, data.username, strict=True)         # 0C (C11): contraseña de una cuenta creada por un administrador
-    if problem:
-        raise HTTPException(status_code=400, detail=problem)
+    password = (data.password or "").strip() or data.username        # decisión de Juan David (6-nov-2026): la cuenta temporal de digitador usa su cédula como contraseña; no aplica la política de contraseña segura
+    if password != data.username:
+        problem = security.password_problem(password, data.username, strict=True)         # 0C (C11): una contraseña DISTINTA de la cédula, puesta por un administrador, sí cumple la política estricta
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
     # 'digitador'/'cliente' son las dos excepciones del teléfono obligatorio+único (Sprint 2.4
     # Fase 4) — acá sigue siendo opcional, pero si se manda uno, igual debe ser único.
     phone = (data.phone or "").strip() or None
@@ -516,7 +518,7 @@ def create_event_staff(
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
 
     new_user = StaffUser(
-        username=data.username, password_hash=hash_password(data.password),
+        username=data.username, password_hash=hash_password(password),
         full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
         phone=phone,
     )
@@ -548,6 +550,159 @@ def assign_existing_staff(
     db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
     db.commit()
     return _serialize_staff(target)
+
+
+# ---------------------------------------------------------------- Usuarios temporales: Excel y borrado en bloque (6-nov-2026)
+STAFF_IMPORT_MAX_ROWS = 500
+STAFF_IMPORT_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _can_manage_temp(staff: StaffUser) -> None:
+    if effective_roles(staff).issubset({"comercial"}):
+        raise HTTPException(status_code=403, detail="Un comercial no puede administrar cuentas digitador")
+
+
+@router.get("/events/{event_id}/staff-users/template")
+def staff_users_template(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Plantilla de Excel para asignar digitadores al evento: Identificación, Nombres y Apellidos."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from app import heavy
+    _can_manage_temp(staff)
+    get_event_for_staff(event_id, db, staff)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Usuarios"
+    ws.append(["Identificación", "Nombres", "Apellidos"])
+    for c in ws[1]:
+        c.font = Font(color="FFFFFF", bold=True)
+        c.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
+        c.alignment = Alignment(horizontal="center")
+    ws.append(["1012345678", "María Camila", "Pérez Gómez"])
+    ws.append(["80123456", "Juan Carlos", "Rojas Díaz"])
+    for col, w in (("A", 20), ("B", 28), ("C", 28)):
+        ws.column_dimensions[col].width = w
+    note = wb.create_sheet("Instrucciones")
+    for line in ("Una persona por fila. Borra las dos filas de ejemplo antes de subir el archivo.",
+                 "Identificación: la cédula. Será el usuario y también la contraseña de la cuenta.",
+                 "Si la cédula ya tiene cuenta, solo se asigna a este evento. Si no, se crea y se asigna.",
+                 f"Máximo {STAFF_IMPORT_MAX_ROWS} personas por archivo."):
+        note.append([line])
+    note.column_dimensions["A"].width = 100
+    return heavy.workbook_response(wb, "Plantilla_usuarios_evento.xlsx")
+
+
+@router.post("/events/{event_id}/staff-users/import")
+def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Asigna digitadores a este evento desde un Excel (Identificación, Nombres, Apellidos). Cédula nueva → crea la cuenta (usuario y contraseña = cédula) y la asigna; cédula que ya tenía
+    cuenta de digitador del mismo cliente → solo la asigna. Una cédula que ya es otra cosa (otro rol u otro cliente) no se toca y se informa. Devuelve cantidades y los motivos por fila (sin contraseñas)."""
+    import io
+    import re as _re
+    from openpyxl import load_workbook
+    _can_manage_temp(staff)
+    event = get_event_for_staff(event_id, db, staff)
+    content = file.file.read(STAFF_IMPORT_MAX_BYTES + 1)
+    if len(content) > STAFF_IMPORT_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="El archivo es muy grande (máximo 2 MB)")
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        rows = list(wb.worksheets[0].iter_rows(values_only=True))
+    except Exception:       # noqa: BLE001 — archivo ilegible: mensaje claro, sin detalles internos
+        raise HTTPException(status_code=400, detail="No se pudo leer el archivo. Usa la plantilla en formato .xlsx")
+    if not rows:
+        raise HTTPException(status_code=400, detail="El archivo está vacío")
+
+    def norm(v):
+        return "".join(ch for ch in unicodedata.normalize("NFD", str(v or "").strip().lower()) if unicodedata.category(ch) != "Mn")
+    header = [norm(c) for c in rows[0]]
+    def col(*names):
+        for i, h in enumerate(header):
+            if h in names:
+                return i
+        return None
+    c_id = col("identificacion", "cedula", "id", "documento", "usuario")
+    c_first = col("nombres", "nombre")
+    c_last = col("apellidos", "apellido")
+    if c_id is None:
+        raise HTTPException(status_code=400, detail="Falta la columna «Identificación». Descarga la plantilla y úsala tal cual")
+    data_rows = [r for r in rows[1:] if any(v not in (None, "") for v in r)]
+    if len(data_rows) > STAFF_IMPORT_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"Máximo {STAFF_IMPORT_MAX_ROWS} personas por archivo (trae {len(data_rows)})")
+
+    created, assigned_existing, already, problems, seen = 0, 0, 0, [], set()
+    for n, r in enumerate(data_rows, start=2):
+        def cell(i):
+            return str(r[i]).strip() if i is not None and i < len(r) and r[i] is not None else ""
+        raw_id = r[c_id] if c_id < len(r) else None
+        ident = (str(int(raw_id)) if isinstance(raw_id, float) and raw_id == int(raw_id) else str(raw_id or "")).strip()
+        ident = _re.sub(r"[\s.]", "", ident)
+        full_name = " ".join(x for x in (cell(c_first), cell(c_last)) if x) or None
+        if not ident:
+            problems.append({"row": n, "detail": "Sin identificación"})
+            continue
+        try:
+            check_username(ident)
+        except ValueError:
+            problems.append({"row": n, "detail": "La identificación solo admite letras, números y . _ @ - (3 a 64 caracteres)"})
+            continue
+        if ident in seen:
+            problems.append({"row": n, "detail": "Identificación repetida en el archivo"})
+            continue
+        seen.add(ident)
+        target = db.query(StaffUser).filter(StaffUser.username == ident).first()
+        is_new = target is None
+        if is_new:
+            target = StaffUser(username=ident, password_hash=hash_password(ident), full_name=full_name, role="digitador", tenant_id=event.tenant_id, created_by_id=staff.id)
+            db.add(target)
+            db.flush()          # autoflush=False: hace falta el id antes de la autorización
+        elif target.role != "digitador" or (target.tenant_id != event.tenant_id and not (effective_roles(staff) & {"admin", "super_admin"})):
+            problems.append({"row": n, "detail": "Esa identificación ya es una cuenta que no se puede asignar aquí"})
+            continue
+        elif db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first():
+            already += 1
+            continue
+        db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
+        if is_new:
+            created += 1
+        else:
+            assigned_existing += 1
+    db.commit()
+    return {"created": created, "assigned_existing": assigned_existing, "already": already, "problems": problems[:100], "problems_total": len(problems)}
+
+
+@router.post("/events/{event_id}/staff-users/purge-temporary")
+def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Borra de una vez TODAS las cuentas digitador asignadas a este evento (lo mismo que «Borrar permanente», una por una). Una cuenta que además está asignada a OTRO evento no se borra:
+    solo se quita de este (para no dejar sin acceso a un evento ajeno); el resultado dice cuántas de cada tipo."""
+    _can_manage_temp(staff)
+    event = get_event_for_staff(event_id, db, staff)
+    ids = [r[0] for r in db.query(EventStaffAuthorization.staff_user_id).join(StaffUser, StaffUser.id == EventStaffAuthorization.staff_user_id)
+           .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador")]
+    deleted, only_unassigned = 0, 0
+    for sid in ids:
+        if sid == staff.id:
+            continue
+        elsewhere = db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == sid, EventStaffAuthorization.event_id != event.id).count()
+        if elsewhere:
+            db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=sid).delete()
+            db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=sid).delete()
+            db.query(PrintRoute).filter_by(event_id=event.id, staff_user_id=sid).delete()
+            db.query(PrintRoute).filter_by(event_id=event.id, printer_staff_id=sid).update({"printer_staff_id": None})
+            only_unassigned += 1
+            continue
+        db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == sid).delete()
+        db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == sid).update({"authorized_by_id": None})
+        db.query(PrintDevice).filter_by(staff_user_id=sid).delete()
+        db.query(PrintRoute).filter_by(staff_user_id=sid).delete()
+        db.query(PrintRoute).filter_by(printer_staff_id=sid).update({"printer_staff_id": None})
+        db.query(Event).filter(Event.coordinator_staff_id == sid).update({"coordinator_staff_id": None})
+        db.query(Event).filter(Event.created_by_id == sid).update({"created_by_id": None})
+        db.query(AccessLog).filter(AccessLog.registered_by_staff_id == sid).update({"registered_by_staff_id": None})
+        db.query(StaffUser).filter(StaffUser.created_by_id == sid).update({"created_by_id": None})
+        db.query(StaffUser).filter(StaffUser.id == sid).delete()
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted, "only_unassigned": only_unassigned}
 
 
 @router.delete("/events/{event_id}/staff-users/{staff_id}")

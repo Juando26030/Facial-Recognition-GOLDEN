@@ -93,7 +93,7 @@ def _distributions(design: dict, subs: list) -> list:
     return out
 
 
-def build(db: Session, form: WebForm, include_tests: bool = False) -> dict:
+def build(db: Session, form: WebForm, include_tests: bool = False, with_origin: bool = False) -> dict:
     design = formsvc.get_design(form)
     event: Optional[Event] = db.query(Event).filter(Event.id == form.event_id).first()
     q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
@@ -118,6 +118,11 @@ def build(db: Session, form: WebForm, include_tests: bool = False) -> dict:
         capacity = {"total": form.capacity, "used": used, "left": max(0, form.capacity - used), "pct": min(100, _pct(used, form.capacity)), "full": used >= form.capacity}
 
     state = formsvc.public_state(db, form)
+    origin = None
+    if with_origin:           # solo el personal: cuántas inscripciones eran gente que YA estaba en la base y cuántas son nuevas (el cliente y el enlace público no lo reciben)
+        known = formsvc.known_before(db, form, rows)
+        has_id = sum(1 for r in rows if formsvc.sub_person_id(design, r))
+        origin = {"known": len(known), "new": has_id - len(known), "unknown": n - has_id}
     timeline = an.time_series("timeline", "Inscripciones en el tiempo", [r.created_at for r in rows], label="Inscripciones")
     return {
         "form": {"id": form.id, "name": form.name, "state": state, "state_label": _STATUS_LABELS.get(state, state)},
@@ -126,6 +131,7 @@ def build(db: Session, form: WebForm, include_tests: bool = False) -> dict:
         "includes_tests": include_tests,
         "summary": {"registered": n, "companions": companions, "people_total": n + (companions or 0), "visits": visits,
                     "conversion_pct": _pct(n, visits) if visits else None, "last_at": an.fmt_local(rows[-1].created_at) if rows else None},
+        "origin": origin,
         "capacity": capacity,
         "quotas": _quotas(db, form, design),
         "distributions": _distributions(design, values),

@@ -39,18 +39,38 @@
         </article>`;
     }
 
+    let allUsers = [], pageIdx = 0;
+    const PAGER_KEY = 'usuarios';
+    const pagerEl = document.getElementById('tempUsersPager');
+    const purgeBtn = document.getElementById('purgeTempBtn');
+
+    function drawUsers() {
+        if (!allUsers.length) {
+            listEl.innerHTML = '<div class="gw-empty" role="note"><p>Todavía no hay cuentas asignadas a este evento.</p><p class="gw-hint">Crea la primera con «Nueva cuenta para este evento» o sube un Excel.</p></div>';
+            if (pagerEl) pagerEl.replaceChildren();
+            if (purgeBtn) purgeBtn.hidden = true;
+            return;
+        }
+        const pg = window.GW && window.GW.pageSlice ? window.GW.pageSlice(PAGER_KEY, allUsers, pageIdx) : { items: allUsers, page: 0 };
+        pageIdx = pg.page;
+        listEl.innerHTML = '<div class="gw-rows__head gw-usr__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre</span><span>Rol</span><span>Estado</span><span>Acciones</span></div>' + pg.items.map(cardHtml).join('');
+        if (pagerEl && window.GW && window.GW.pagerBar) {
+            pagerEl.replaceChildren(window.GW.pagerBar({ key: PAGER_KEY, total: allUsers.length, page: pageIdx, onPage: (i) => { pageIdx = i; drawUsers(); }, onSize: () => { pageIdx = 0; drawUsers(); } }));
+        }
+        if (purgeBtn) purgeBtn.hidden = !allUsers.some((u) => u.role === 'digitador');
+    }
+
     async function loadTempUsers() {
         listEl.setAttribute('aria-busy', 'true');
         try {
             const res = await fetch(`/api/events/${eventId}/staff-users`);
             if (!res.ok) throw new Error('http ' + res.status);
-            const list = await res.json();
+            allUsers = await res.json();
             setStatus('');
-            listEl.innerHTML = list.length
-                ? '<div class="gw-rows__head gw-usr__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre</span><span>Rol</span><span>Estado</span><span>Acciones</span></div>' + list.map(cardHtml).join('')
-                : '<div class="gw-empty" role="note"><p>Todavía no hay cuentas asignadas a este evento.</p><p class="gw-hint">Crea la primera con «Nueva cuenta para este evento».</p></div>';
+            drawUsers();
         } catch (e) {
             listEl.innerHTML = '';
+            if (pagerEl) pagerEl.replaceChildren();
             setStatus('No se pudieron cargar las cuentas. Revisa la conexión y vuelve a intentar.', true);
             const retry = document.createElement('button');
             retry.type = 'button'; retry.className = 'gw-btn gw-btn--secondary gw-btn--sm'; retry.setAttribute('data-act', 'reload'); retry.textContent = 'Reintentar';
@@ -164,10 +184,9 @@
     }
 
     async function resetTempPassword(btn, staffId, username) {
-        const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 10 caracteres, con letras y números). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: 'Restablecer' });
-        if (pwd === null) return;
+        if (!(await showConfirm(`La contraseña de "${window.escapeHtml(username)}" volverá a ser su cédula (el mismo usuario). ¿Restablecer?`, { confirmLabel: 'Restablecer' }))) return;
         await busy(btn, async () => {
-            const res = await fetch(`/api/staff/${staffId}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: pwd, must_change: true }) });
+            const res = await fetch(`/api/staff/${staffId}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ use_username: true }) });
             const data = await res.json().catch(() => ({}));
             showToast(res.ok ? (data.message || 'Contraseña restablecida') : (data.detail || 'No se pudo restablecer'), res.ok ? 'success' : 'error');
         });
@@ -179,6 +198,53 @@
             const res = await fetch(`/api/staff/${staffId}`, { method: 'DELETE' });
             if (res.ok) { loadTempUsers(); showToast('Cuenta eliminada', 'success'); }
             else { const err = await res.json().catch(() => ({})); showToast(err.detail || 'No se pudo borrar', 'error'); }
+        });
+    }
+
+    // Eliminar de una vez todos los usuarios temporales (digitadores) de este evento: es «Borrar permanente» para todos, así que pide confirmar con el número exacto.
+    if (purgeBtn) {
+        purgeBtn.addEventListener('click', () => {
+            const n = allUsers.filter((u) => u.role === 'digitador').length;
+            return busy(purgeBtn, async () => {
+                const ok = await showConfirm(`Se van a eliminar PERMANENTEMENTE las ${n} cuentas de digitador de este evento (no solo quitarlas del evento). Pierden el acceso aquí y se borran del sistema; no se puede deshacer. Si alguna también está en otro evento, a esa solo se le quita este evento. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
+                if (!ok) return;
+                const res = await fetch(`/api/events/${eventId}/staff-users/purge-temporary`, { method: 'POST' });
+                const d = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    pageIdx = 0;
+                    loadTempUsers();
+                    showToast(`${d.deleted} cuenta(s) eliminada(s)` + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
+                } else showToast(d.detail || 'No se pudieron eliminar las cuentas', 'error');
+            }).catch(() => showToast('No se pudo completar la acción. Revisa la conexión.', 'error'));
+        });
+    }
+
+    // Asignar por Excel (Identificación, Nombres, Apellidos): crea las que no existen (usuario y contraseña = cédula) y asigna todas a este evento.
+    const importForm = document.getElementById('importStaffForm');
+    if (importForm) {
+        importForm.addEventListener('submit', (ev) => {
+            ev.preventDefault();
+            const fileInput = document.getElementById('importStaffFile');
+            const out = document.getElementById('importStaffResult');
+            const btn = importForm.querySelector('button[type="submit"]');
+            if (!fileInput.files.length) { showToast('Elige el archivo de Excel', 'error'); return null; }
+            const fd = new FormData();
+            fd.append('file', fileInput.files[0]);
+            return busy(btn, async () => {
+                const res = await fetch(`/api/events/${eventId}/staff-users/import`, { method: 'POST', body: fd });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok) { out.textContent = typeof d.detail === 'string' ? d.detail : 'No se pudo cargar el archivo'; out.classList.add('gw-msg--err'); showToast(out.textContent, 'error'); return; }
+                out.classList.remove('gw-msg--err');
+                const lines = [`Creadas y asignadas: ${d.created} · Ya existían y se asignaron: ${d.assigned_existing} · Ya estaban en este evento: ${d.already}` + (d.problems_total ? ` · Con problema: ${d.problems_total}` : '')];
+                (d.problems || []).slice(0, 5).forEach((p) => lines.push(`Fila ${p.row}: ${p.detail}`));
+                if (d.problems_total > 5) lines.push(`… y ${d.problems_total - 5} más.`);
+                out.textContent = lines.join('\n');
+                out.classList.add('gw-msg--lines');
+                fileInput.value = '';
+                pageIdx = 0;
+                loadTempUsers();
+                showToast(`${d.created + d.assigned_existing} cuenta(s) asignadas a este evento`, d.problems_total ? 'info' : 'success');
+            }).catch(() => showToast('No se pudo cargar el archivo. Revisa la conexión.', 'error'));
         });
     }
 

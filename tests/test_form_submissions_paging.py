@@ -24,8 +24,8 @@ DESIGN = _design(_basic_fields())
 # ------------------------------------------------------------------ puras
 def test_page_size_accepts_20_50_100_and_clamps_the_rest():
     assert [formlib.answers_page_size(x) for x in (20, "50", 100)] == [20, 50, 100]
-    assert formlib.answers_page_size(None) == 50 and formlib.answers_page_size("abc") == 50 and formlib.answers_page_size(0) == 50 and formlib.answers_page_size(-5) == 50
-    assert formlib.answers_page_size(30) == 50
+    assert formlib.answers_page_size(None) == 20 and formlib.answers_page_size("abc") == 20 and formlib.answers_page_size(0) == 20 and formlib.answers_page_size(-5) == 20      # 6-nov-2026: 20 por defecto
+    assert formlib.answers_page_size(30) == 20
     assert formlib.answers_page_size(101) == 100 and formlib.answers_page_size(5000) == 100
 
 
@@ -140,12 +140,12 @@ def test_server_pages_newest_first_without_the_old_2000_cap(client, factory, db)
     ev, f = _form(client, factory)
     _seed(db, ev, f, 120)
     d = _get(client, ev, f)
-    assert (d["total"], d["total_all"], d["page"], d["page_size"], d["pages"], len(d["rows"])) == (120, 120, 1, 50, 3, 50)
+    assert (d["total"], d["total_all"], d["page"], d["page_size"], d["pages"], len(d["rows"])) == (120, 120, 1, 20, 6, 20)
     ids = [r["id"] for r in d["rows"]]
     assert ids == sorted(ids, reverse=True)
     d3 = _get(client, ev, f, page=3)
     assert len(d3["rows"]) == 20 and d3["rows"][-1]["id"] < ids[-1]
-    assert len(_get(client, ev, f, page_size=999)["rows"]) == 100 and _get(client, ev, f, page=50)["page"] == 3
+    assert len(_get(client, ev, f, page_size=999)["rows"]) == 100 and _get(client, ev, f, page=50)["page"] == 6
 
 
 def test_search_by_cedula_and_name_and_quota_filter(client, factory, db):

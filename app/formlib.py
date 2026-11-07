@@ -1161,7 +1161,7 @@ def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
 
 # ------------------------------------------------------------------ tabla de respuestas: paginación y búsqueda (pura, sin base)
 ANSWERS_PAGE_SIZES = (20, 50, 100)
-ANSWERS_DEFAULT_PAGE_SIZE = 50
+ANSWERS_DEFAULT_PAGE_SIZE = 20
 ANSWERS_MAX_QUERY = 80
 
 

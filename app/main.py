@@ -230,12 +230,24 @@ def event_logo_url(event):
     return default_logo_url()
 
 
+def golden_logo_attrs():
+    """Atributo style del logo de Golden en el encabezado: el alto global que fija el super administrador en Configuración → Apariencia (30–80 px; 50 por defecto)."""
+    from markupsafe import Markup
+    from app import logosize
+    return Markup(f'style="--gw-logo-h:{logosize.get()}px;"')  # nosec B704 - un entero acotado 30-80; es una variable CSS: en celular manda la regla propia del encabezado
+
+
 def event_logo_attrs(event):
-    """Atributos del <img> del logo propio: alto elegido (30–80 px; el header mide 80) y, en modo «banner», que rellene el ancho disponible
-    del header (recortando lo que sobre). El logo de Golden por defecto no se toca."""
+    """Atributos del <img> del logo del encabezado: con logo propio, el alto elegido para ESE evento (30–80 px; el header mide 80) y, en modo «banner», que rellene el ancho disponible
+    del header (recortando lo que sobre); con el logo de Golden, el alto global de Configuración → Apariencia."""
     from markupsafe import Markup
     if getattr(event, "logo_mode", "default") != "custom" or not event.logo_path:
-        return Markup("")
+        if getattr(event, "logo_mode", "default") == "hidden":
+            return Markup("")
+        own = int(getattr(event, "logo_height", None) or 50)
+        if own != 50:           # el evento fijó SU tamaño (50 es el de fábrica): vale para este evento aunque muestre el logo de Golden; si no, el global de Configuración
+            return Markup(f'style="--gw-logo-h:{max(30, min(80, own))}px;"')  # nosec B704 - entero acotado 30-80
+        return golden_logo_attrs()
     height = max(30, min(80, int(getattr(event, "logo_height", None) or 50)))
     if getattr(event, "logo_fit", "logo") == "banner":
         return Markup(f'style="height:{height}px; width:100%; object-fit:cover;" data-banner="1"')  # nosec B704 - height es un entero acotado 30-80
@@ -246,6 +258,7 @@ templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Ev
 templates.env.globals["event_logo_url"] = event_logo_url
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
+templates.env.globals["golden_logo_attrs"] = golden_logo_attrs
 templates.env.globals["print_settings_json"] = print_settings.settings_json       # valores de impresión del evento con el significado actual (sin lo de versiones viejas)
 
 

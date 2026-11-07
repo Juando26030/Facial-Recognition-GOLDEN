@@ -864,7 +864,8 @@
        - se dibuja UNA página de `pageSize()` filas (parámetro del evento: 10, 20, 50, 100 o 200), con «Anterior / Siguiente» e «Ir a la página» para llegar a cualquier fila;
        - al escribir se espera SEARCH_DELAY_MS después de la última tecla antes de filtrar (la letra aparece al instante). */
     const PAGE_SIZES = [10, 20, 50, 100, 200];
-    const pageSize = () => { const v = Number(opts.pageSize || window.DIRECTORY_PAGE_SIZE); return PAGE_SIZES.includes(v) ? v : 200; };        // sin parámetro (páginas viejas): 200, como antes
+    /* Filas por página (6-nov-2026): 20 por defecto y cada computador elige las suyas con el selector del pie de la tabla (static/js/gw-pager.js); ya no es un parámetro del evento. */
+    const pageSize = () => (window.GW && window.GW.pageSize ? window.GW.pageSize('registro') : (() => { const v = Number(opts.pageSize || window.DIRECTORY_PAGE_SIZE); return PAGE_SIZES.includes(v) ? v : 200; })());          // sin gw-pager.js (páginas viejas): como antes
     const SEARCH_DELAY_MS = 250;
     const searchKeys = new WeakMap();
     const rowCache = new WeakMap();
@@ -945,7 +946,7 @@
         });
       }
       if (localMode) rows.unshift(localNoteRow());
-      if (total > size) rows.push(pagerRow(total, size, pages));
+      if (total > PAGE_SIZES[0]) rows.push(pagerRow(total, size, pages));          // con 10 filas o menos no hay nada que paginar ni elegir
       const same = tbody.children.length === rows.length && rows.every((r, i) => tbody.children[i] === r);
       if (!same) tbody.replaceChildren(...rows);
     }
@@ -970,6 +971,7 @@
       input.className = 'gw-input gw-registro__goto';
       td.appendChild(input);
       btn('Ir', () => { const n = parseInt(input.value, 10); if (n >= 1) goToPage(n - 1, pages); }, false);
+      if (window.GW && window.GW.pageSizeSelect) td.appendChild(window.GW.pageSizeSelect('registro', () => { pageIdx = 0; drawRows(); }));
       tr.appendChild(td);
       return tr;
     }

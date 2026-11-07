@@ -9,13 +9,18 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import get_event_for_staff, require_role_or_client
+from app.auth import effective_roles, get_event_for_staff, require_role_or_client
 from app.database import get_db
 from app import testperson
 from app.models import AccessLog, EventAttendee, StaffUser, User
 from app.routers.parametros import field_configs_for_event
 
 router = APIRouter()
+
+
+def is_staff_view(staff: StaffUser) -> bool:
+    """El personal (coordinador, comercial, admin, super admin) ve de dónde salió la gente de la base; el cliente no."""
+    return bool(effective_roles(staff) & {"coordinador", "comercial", "admin", "super_admin"})
 
 # Variables fijas ofrecidas siempre (además de los opcional_N configurados del evento). Se
 # excluyen a propósito id/first_name/last_name/phone/email: son identificadores, prácticamente
@@ -74,9 +79,9 @@ def _value_of(db: Session, event_id: int, user: User, variable: str):
     return getattr(user, variable, None)
 
 
-def variables_for(db: Session, event) -> list:
+def variables_for(db: Session, event, staff_view: bool = False) -> list:
     """Variables que ofrece el evento para graficar (las usa la pantalla del personal y el enlace de solo lectura)."""
-    variables = list(_FIXED_VARIABLES)
+    variables = [v for v in _FIXED_VARIABLES if staff_view or v[0] != "origin"]      # «Origen de carga» (Excel / nuevos a mano / formulario) es solo del personal: ni el cliente ni los enlaces públicos lo ven
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         variables.append((key, label))
@@ -101,12 +106,12 @@ def list_stats_variables(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    return variables_for(db, event)
+    return variables_for(db, event, staff_view=is_staff_view(staff))
 
 
-def data_for(db: Session, event, variable: str) -> dict:
+def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dict:
     """Conteos agregados de UNA variable del evento (sin nombres ni cédulas); los usa la pantalla del personal y el enlace de solo lectura."""
-    valid_keys = {k for k, _ in _FIXED_VARIABLES} | set(event.get_optional_labels().keys())
+    valid_keys = {k for k, _ in _FIXED_VARIABLES if staff_view or k != "origin"} | set(event.get_optional_labels().keys())
     if variable not in valid_keys:
         raise HTTPException(status_code=400, detail="Variable no válida para este evento")
 
@@ -160,4 +165,4 @@ def get_stats_data(
     staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    return data_for(db, event, variable)
+    return data_for(db, event, variable, staff_view=is_staff_view(staff))

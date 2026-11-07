@@ -836,9 +836,10 @@ def list_submissions(event_id: int, form_id: int, include_tests: bool = True, pa
         ids = hits[pg["offset"]:pg["offset"] + pg["page_size"]]
         rows = base.filter(FormSubmission.id.in_(ids)).order_by(FormSubmission.id.desc()).all() if ids else []
     paid = _approved_by_submission(db, form, [s.id for s in rows])
+    known = formsvc.known_before(db, form, rows)
     return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)],
             "total": total, "total_all": total_all, "page": pg["page"], "page_size": pg["page_size"], "pages": pg["pages"], "quotas": quotas, "rows": [
-        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "source": s.source or "",
+        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "known": s.id in known, "source": s.source or "",
          "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
 
 
@@ -1023,12 +1024,13 @@ def report(event_id: int, form_id: int, include_tests: bool = False, request: Re
     subs = q.order_by(FormSubmission.id).all()
     has_pay = bool(formlib.payment_field(design))
     paid = _approved_by_submission(db, form) if has_pay else {}
+    known = formsvc.known_before(db, form, subs)
     wb = Workbook()
     ws = wb.active
     ws.title = "Inscripciones"
     ws.append([f"{form.name} — {event.name} ({event.event_code})"])
     ws["A1"].font = Font(bold=True, size=13, color="0A0E2E")
-    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)", "Comisión Wompi estimada (COP)", "Neto estimado de comisión (COP)"] if has_pay else [])
+    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "Persona en la base antes de inscribirse", "Cargada a la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)", "Comisión Wompi estimada (COP)", "Neto estimado de comisión (COP)"] if has_pay else [])
     ws.append(headers)
     for c in ws[2]:
         c.font = Font(color="FFFFFF", bold=True)
@@ -1037,7 +1039,7 @@ def report(event_id: int, form_id: int, include_tests: bool = False, request: Re
     for n, s in enumerate(subs, start=1):
         data = json.loads(s.data_json)
         local = to_local(s.created_at)
-        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + [s.source or "Directo", "Sí" if s.is_test else "No", "Sí" if s.fed else "No"] + (_pay_cells(paid.get(s.id)) if has_pay else []))
+        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + [s.source or "Directo", "Sí" if s.is_test else "No", ("Sí" if s.id in known else "No (nueva)") if formsvc.sub_person_id(design, s) else "Sin cédula", "Sí" if s.fed else "No"] + (_pay_cells(paid.get(s.id)) if has_pay else []))
     ws.auto_filter.ref = f"A2:{get_column_letter(len(headers))}{max(ws.max_row, 2)}"
     for i in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 24 if i > 3 else 10
@@ -1266,6 +1268,11 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False, net_
         total_c = sum(len(json.loads(x.data_json).get(cf) or []) for x in subs)
         kpis.append(an.kpi("Acompañantes", total_c, f"personas en total (inscritos + acompañantes): {len(subs) + total_c}"))
     if subs:
+        known = formsvc.known_before(db, form, subs)
+        has_id = sum(1 for x in subs if formsvc.sub_person_id(design, x))
+        if has_id:
+            kpis.insert(1, an.kpi("Ya estaban en la base", len(known), an.pct(len(known), len(subs)) + " de las inscripciones"))
+            kpis.insert(2, an.kpi("Personas nuevas", has_id - len(known), "no estaban en la base del evento", "warn" if has_id - len(known) else ""))
         kpis.append(an.kpi("Última inscripción", an.fmt_local(subs[-1].created_at), "hora local"))
 
     charts = [an.time_series("timeline", "Inscripciones en el tiempo", [s.created_at for s in subs], label="Inscripciones"),

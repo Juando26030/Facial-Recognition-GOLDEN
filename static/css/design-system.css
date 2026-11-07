@@ -993,3 +993,19 @@
   .gw-steps > li.gw-steps__guide > .gw-btn { min-height: var(--gw-tap); }
   .gw-steps__text { overflow-wrap: break-word; }
 }
+
+/* Paginación compartida (static/js/gw-pager.js): info a la izquierda, botones y «Por página» a la derecha; en celular se apilan sin salirse. */
+.gw-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2) var(--gw-sp-3); padding: var(--gw-sp-3) 0; }
+.gw-pager__info { flex: 1 1 14rem; min-width: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-pager__size { display: inline-flex; align-items: center; gap: var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); white-space: nowrap; }
+.gw-pager__size .gw-select { width: auto; min-width: 5rem; }
+
+/* Papelera dentro de los buscadores (static/js/gw-clear.js): encima del borde, a la derecha del campo; no ocupa lugar ni cambia el tamaño del campo. */
+.gw-clearbtn { position: absolute; z-index: 2; display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: var(--gw-radius-md); background: transparent; color: var(--gw-text-muted); cursor: pointer; font: inherit; font-size: var(--gw-fs-lg); line-height: 1; }
+.gw-clearbtn:hover { background: var(--gw-surface-2); color: var(--gw-err-text); }
+.gw-clearbtn:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 1px; }
+.gw-clearbtn[hidden] { display: none; }
+.gw-has-clearbtn { padding-right: 2.75rem; }
+.gw-has-clearbtn::-webkit-search-cancel-button { display: none; }
+/* Los botones de vaciar que estaban FUERA del campo (Registro, Respuestas) pasan a la papelera de dentro del campo; el botón sigue ahí (oculto) porque guarda la lógica de cada pantalla. */
+.gw-search__clear--proxy { display: none !important; }
