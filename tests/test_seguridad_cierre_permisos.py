@@ -93,9 +93,9 @@ def test_p1_coordinator_cannot_take_or_delete_a_door_account_of_an_event_out_of_
     factory.authorize(other, digi_other)
     login(client, "coordA")
     assert client.put(f"/api/staff/{digi_other.id}/password", json={"use_username": True}).status_code == 404
-    assert client.delete(f"/api/staff/{digi_other.id}").status_code == 404
+    assert client.post(f"/api/staff/{digi_other.id}/archive").status_code == 403          # Fase 3: archivar / borrar definitivo son de admin+ / super_admin
+    assert client.delete(f"/api/staff/{digi_other.id}").status_code == 403
     assert client.put(f"/api/staff/{digi_mine.id}/password", json={"use_username": True}).status_code == 200          # el suyo sí
-    assert client.delete(f"/api/staff/{digi_mine.id}").status_code == 200
 
 
 def test_p1_without_the_switches_nothing_changes(client, factory):

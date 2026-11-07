@@ -9,6 +9,7 @@
   const ICONS = root.dataset.icons || '';
   const listEl = document.getElementById('staffBody');
   const isAdminPlus = staffRole === 'admin' || staffRole === 'super_admin';
+  let showArchived = false;          // «Ver archivados» (admin+): Fase 3, archivar en vez de borrar
 
   if (staffRole === 'super_admin') document.getElementById('roleSelect').insertAdjacentHTML('beforeend', '<option value="admin">Admin</option>');
 
@@ -32,7 +33,7 @@
   async function loadStaff() {
     listEl.setAttribute('aria-busy', 'true');
     try {
-      const res = await fetch('/api/staff');
+      const res = await fetch('/api/staff' + (showArchived && isAdminPlus ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http');
       render(await res.json());
     } catch (e) {
@@ -42,6 +43,13 @@
   }
 
   function actionsHtml(s) {
+    if (s.archived) {
+      if (!isAdminPlus || s.username === staffUsername) return '<p class="gw-hint">Cuenta archivada.</p>';
+      const a = `data-id="${esc(s.id)}" data-username="${esc(s.username)}"`;
+      let html = `<button type="button" class="gw-btn gw-btn--primary" data-staff-action="restore" ${a}>${icon('undo', 'gw-icon--sm')}<span>Restaurar</span></button>`;
+      if (staffRole === 'super_admin' && s.role !== 'super_admin') html += ` <button type="button" class="gw-btn gw-btn--danger-outline" data-staff-action="delete" ${a}>${icon('trash', 'gw-icon--sm')}<span>Eliminar definitivamente</span></button>`;
+      return html;
+    }
     if (s.role === 'super_admin' || s.username === staffUsername) return '<p class="gw-hint">Sin acciones disponibles para esta cuenta.</p>';
     const otherRole = DUAL_ROLE_PAIR[s.role];
     const attrs = (action, extra) => `data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}`;
@@ -58,14 +66,16 @@
         : item('secondary', `También ${esc(roleLabel(otherRole))}`, 'plus', `data-value="${esc(otherRole)}"`));
     }
     if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol', 'user-plus', `data-current="${esc(s.role)}"`));
-    if (DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Borrar permanente', 'trash', '', true));
+    if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('archive', 'Archivar cuenta', 'lock', ''));          // el borrado definitivo vive en «Ver archivados» (solo super_admin)
     if (more.length) parts.push(`<div class="gw-menu gw-staff__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-staff-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(s.username)}">${icon('more')}</button><div class="gw-menu__panel" role="menu" hidden>${more.join('')}</div></div>`);
     return parts.join('');
   }
 
   function render(list) {
     if (!list.length) {
-      listEl.innerHTML = '<div class="gw-empty" role="status"><p><strong>Todavía no hay cuentas de staff</strong></p><p>Abre «Nueva cuenta» arriba para crear la primera.</p></div>';
+      listEl.innerHTML = showArchived
+        ? '<div class="gw-empty" role="status"><p><strong>No hay cuentas archivadas</strong></p><p>Cuando archives una, aparecerá aquí para poder restaurarla.</p></div>'
+        : '<div class="gw-empty" role="status"><p><strong>Todavía no hay cuentas de staff</strong></p><p>Abre «Nueva cuenta» arriba para crear la primera.</p></div>';
       return;
     }
     listEl.innerHTML = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>' + list.map((s) => {
@@ -74,7 +84,7 @@
       <article class="gw-card-row gw-staff__row">
         <div class="gw-card-row__head gw-staff__head">
           <h3 class="gw-card-row__title gw-staff__who gw-staff__c-user" title="${esc(s.username)}">${esc(s.username)}</h3>
-          <span class="gw-staff__c-state gw-badge ${s.is_active ? 'gw-badge--ok' : 'gw-badge--err'}">${icon(s.is_active ? 'check' : 'error')}${s.is_active ? 'Activo' : 'Inactivo'}</span>
+          <span class="gw-staff__c-state gw-badge ${s.archived ? '' : (s.is_active ? 'gw-badge--ok' : 'gw-badge--err')}">${icon(s.is_active && !s.archived ? 'check' : 'error')}${s.archived ? 'Archivada' : (s.is_active ? 'Activo' : 'Inactivo')}</span>
         </div>
         <p class="gw-card-row__meta gw-staff__c-name" title="${esc(s.full_name || '')}">${esc(s.full_name || 'Sin nombre')}</p>
         <p class="gw-card-row__meta gw-staff__mail gw-staff__c-mail"><span class="gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}</span>
@@ -155,11 +165,26 @@
     });
   }
 
+  async function archiveStaff(btn) {
+    if (!(await showConfirm(`¿Archivar la cuenta "${escapeHtml(btn.dataset.username)}"?<br><br>No podrá iniciar sesión y dejará de aparecer en las listas. <strong>No se borra nada</strong>: un administrador puede restaurarla cuando quiera.`, { confirmLabel: 'Archivar' }))) return;
+    await busy(btn, async () => {
+      const res = await fetch(`/api/staff/${btn.dataset.id}/archive`, { method: 'POST' });
+      if (res.ok) { loadStaff(); showToast('Cuenta archivada', 'success'); } else showToast(await apiError(res, 'No se pudo archivar'), 'error');
+    });
+  }
+
+  async function restoreStaff(btn) {
+    await busy(btn, async () => {
+      const res = await fetch(`/api/staff/${btn.dataset.id}/restore`, { method: 'POST' });
+      if (res.ok) { loadStaff(); showToast('Cuenta restaurada. Sigue desactivada: reactívala para que pueda ingresar.', 'success'); } else showToast(await apiError(res, 'No se pudo restaurar'), 'error');
+    });
+  }
+
   async function deleteStaff(btn) {
-    if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"? Se perderán su acceso, su rol y su contraseña. Esto no es desactivar: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
+    if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"?<br><br>Solo se puede si no tiene eventos asignados. Esta acción es permanente, no se puede deshacer y queda registrada.`, { confirmLabel: 'Eliminar definitivamente' }))) return;
     await busy(btn, async () => {
       const res = await fetch(`/api/staff/${btn.dataset.id}`, { method: 'DELETE' });
-      if (res.ok) { loadStaff(); showToast('Cuenta eliminada', 'success'); } else showToast(await apiError(res, 'No se pudo borrar'), 'error');
+      if (res.ok) { loadStaff(); showToast('Cuenta eliminada', 'success'); } else showToast(await apiError(res, 'No se pudo eliminar'), 'error');
     });
   }
 
@@ -207,6 +232,8 @@
     else if (action === 'reset') resetPassword(btn);
     else if (action === 'deactivate') toggleStaff(btn, false);
     else if (action === 'activate') toggleStaff(btn, true);
+    else if (action === 'archive') archiveStaff(btn);
+    else if (action === 'restore') restoreStaff(btn);
     else if (action === 'delete') deleteStaff(btn);
   });
 
@@ -229,6 +256,9 @@
       }
     });
   });
+
+  const archToggle = document.getElementById('showArchivedStaff');
+  if (archToggle) archToggle.addEventListener('change', () => { showArchived = archToggle.checked; loadStaff(); });
 
   loadStaff();
 })();
