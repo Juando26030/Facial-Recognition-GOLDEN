@@ -92,6 +92,8 @@ class EventAttendee(Base):
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
     last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
+    archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = visible en el directorio; con fecha = inscripción archivada (oculta por defecto, se restaura). No toca consentimientos ni audit_consent_logs
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (
@@ -530,6 +532,8 @@ class WebForm(Base):
     settings_json = Column(Text, nullable=True)
     test_key = Column(String, nullable=False)     # clave del enlace de pruebas (?k=...)
     fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
+    archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas y cerrado al público; conserva respuestas y pagos)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

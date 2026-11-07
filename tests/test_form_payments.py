@@ -439,6 +439,10 @@ def test_full_card_refund_voids_at_wompi_cancels_the_registration_and_frees_the_
     assert _submit(client, ev, form, other, sid="b").status_code == 200        # el cupo quedó libre
     login(client, "adm1")
     assert _refund(client, ev, form, pay, reason="otra vez").status_code == 400  # ya no está «aprobado»: no se reembolsa dos veces
+    factory.staff("super_admin", "sup1")
+    client.post("/logout")
+    login(client, "sup1")
+    assert client.post(f"/api/events/{ev.id}/forms/{form['id']}/archive").status_code == 200
     assert client.delete(f"/api/events/{ev.id}/forms/{form['id']}").status_code == 409   # pagos reembolsados también son registro financiero
 
 

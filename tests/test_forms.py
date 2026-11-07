@@ -90,6 +90,12 @@ def test_create_edit_duplicate_and_delete(client, factory):
     dup = client.post(f"/api/events/{ev.id}/forms/{f['id']}/duplicate").json()
     assert dup["name"] == "Feria 2026 (copia)" and dup["manual_status"] == "pruebas"
     assert len(client.get(f"/api/events/{ev.id}/forms").json()) == 3
+    assert client.delete(f"/api/events/{ev.id}/forms/{dup['id']}").status_code == 403                # Fase 3: borrar de verdad es solo super_admin…
+    factory.staff("super_admin", "sup1")
+    client.post("/logout")
+    login(client, "sup1")
+    assert client.delete(f"/api/events/{ev.id}/forms/{dup['id']}").status_code == 400              # …y de un formulario ya archivado
+    assert client.post(f"/api/events/{ev.id}/forms/{dup['id']}/archive").status_code == 200
     assert client.delete(f"/api/events/{ev.id}/forms/{dup['id']}").status_code == 200
     assert client.get(f"/api/events/{ev.id}/forms/{dup['id']}").status_code == 404
 

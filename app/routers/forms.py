@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
+from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -40,6 +40,11 @@ def _get_form(db: Session, event: Event, form_id: int) -> WebForm:
     if not form:
         raise HTTPException(status_code=404, detail="Formulario no encontrado")
     return form
+
+
+def _not_archived(form: WebForm) -> None:
+    if form.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El formulario está archivado: restáuralo para modificarlo")
 
 
 def _base_url(request: Request) -> str:
@@ -88,7 +93,8 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
     real = formsvc.real_submissions(db, form).count()
     tests = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == True, FormSubmission.status == "confirmed").count()  # noqa: E712
     return {
-        "id": form.id, "name": form.name, "slug": form.slug, "manual_status": form.manual_status, "use_schedule": form.use_schedule,
+        "id": form.id, "archived": form.archived_at is not None, "archived_at": form.archived_at.isoformat() if form.archived_at else None,
+        "name": form.name, "slug": form.slug, "manual_status": form.manual_status, "use_schedule": form.use_schedule,
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
         "submissions": real, "test_submissions": tests,
         "preregistered": (marks := formsvc.mark_counts(db, form))["block"], "registered_hold": marks["hold"],      # «ya registradas»: solo bloquean | además ocupan cupo (ya van dentro de `submissions`) "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
@@ -106,11 +112,17 @@ def _detail(db: Session, form: WebForm, request: Request) -> dict:
 
 # ------------------------------------------------------------------ CRUD
 @router.get("/events/{event_id}/forms")
-def list_forms(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_forms(event_id: int, request: Request, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Fase 3: por defecto SOLO los formularios no archivados; `include_archived=true` (admin+) devuelve los archivados («Ver archivados»)."""
     event = get_event_for_staff(event_id, db, staff)
-    forms = db.query(WebForm).filter(WebForm.event_id == event.id).order_by(WebForm.id.desc()).all()
+    if include_archived and staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede ver los formularios archivados")
+    q = db.query(WebForm).filter(WebForm.event_id == event.id)
+    q = q.filter(WebForm.archived_at.isnot(None)) if include_archived else q.filter(WebForm.archived_at.is_(None))
+    forms = q.order_by(WebForm.id.desc()).all()
     for f in forms:
-        _maybe_feed_on_close(db, f)
+        if f.archived_at is None:
+            _maybe_feed_on_close(db, f)
     return [_summary(db, f, request) for f in forms]
 
 
@@ -158,6 +170,7 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     """Guarda nombre, dirección (slug), diseño y/o configuración. El diseño se valida completo en el servidor."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    _not_archived(form)
     quota_before = formsvc.quota_sig_map(form)
     if "name" in data:
         name = str(data["name"]).strip()[:120]
@@ -368,14 +381,54 @@ def clear_registered(event_id: int, form_id: int, db: Session = Depends(get_db),
     return {"removed": n, "message": f"Se quitaron {n} marcas de «ya registrado»."}
 
 
-@router.delete("/events/{event_id}/forms/{form_id}")
-def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+@router.post("/events/{event_id}/forms/{form_id}/archive")
+def archive_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Fase 3: archivar = ocultar de las listas y cerrar al público (no recibe envíos). Conserva inscripciones, archivos y pagos: el contrato exige poder entregar esa base. Si estaba activo
+    pasa a «cerrado» (y sin calendario) para que al restaurarlo NO se reabra solo; un administrador lo vuelve a abrir cuando quiera."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    if form.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El formulario ya está archivado")
+    if form.manual_status == "activo" or form.use_schedule:
+        form.manual_status, form.use_schedule = ("cerrado" if form.manual_status == "activo" else form.manual_status), False
+    form.archived_at = utcnow()
+    form.archived_by_id = staff.id
+    audit_actions.record(db, staff, "archive", "form", form.id, form.name, f"evento {event.id}")
+    db.commit()
+    formsvc.invalidate_public_cache()
+    formsvc.invalidate_held()
+    return {"message": "Formulario archivado: ya no recibe envíos. Las respuestas y los pagos se conservan.", "archived": True}
+
+
+@router.post("/events/{event_id}/forms/{form_id}/restore")
+def restore_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    if form.archived_at is None:
+        raise HTTPException(status_code=400, detail="El formulario no está archivado")
+    form.archived_at = None
+    form.archived_by_id = None
+    audit_actions.record(db, staff, "restore", "form", form.id, form.name, f"evento {event.id}")
+    db.commit()
+    formsvc.invalidate_public_cache()
+    return {"message": "Formulario restaurado (queda cerrado; ábrelo cuando quieras)", "archived": False}
+
+
+@router.delete("/events/{event_id}/forms/{form_id}")
+def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """Borrado DEFINITIVO: solo super_admin, solo de un formulario ya archivado y SIN inscripciones ni pagos (las marcas «ya registrado» de la base no cuentan); queda en `audit_actions`.
+    Un formulario con respuestas o pagos no se borra nunca por aquí: se archiva."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    if form.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el formulario; el borrado definitivo solo aplica a formularios archivados")
+    if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.status != formsvc.PREREGISTERED).first() or db.query(FormPayment.id).filter(FormPayment.form_id == form.id).first():
+        raise HTTPException(status_code=409, detail="El formulario tiene inscripciones o pagos: se conservan (contrato). Déjalo archivado.")
+    audit_actions.record(db, staff, "delete", "form", form.id, form.name, f"evento {event.id}")
     delete_form_rows(db, form)
     db.commit()
     formsvc.invalidate_public_cache()
-    return {"message": "Formulario eliminado con sus inscripciones"}
+    return {"message": "Formulario eliminado"}
 
 
 def delete_form_rows(db: Session, form: WebForm) -> None:
@@ -416,6 +469,7 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    _not_archived(form)
     was_active = form.manual_status == "activo"
     if "manual_status" in data:
         if data["manual_status"] not in formlib.STATUSES:
@@ -988,12 +1042,16 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/submissions/{submission_id}")
-def delete_submission(event_id: int, form_id: int, submission_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def delete_submission(event_id: int, form_id: int, submission_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Fase 3: borrar UNA inscripción es de admin+ (antes coordinador) y queda en `audit_actions` (id de la inscripción y del formulario, sin datos de la persona). Un formulario archivado conserva
+    todas sus respuestas: no se borran desde aquí."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     sub = db.query(FormSubmission).filter_by(id=submission_id, form_id=form.id).first()
     if not sub:
         raise HTTPException(status_code=404, detail="Inscripción no encontrada")
+    _not_archived(form)
+    audit_actions.record(db, staff, "delete", "form_submission", sub.id, None, f"formulario {form.id}, evento {event.id}")
     for v in json.loads(sub.data_json).values():
         if isinstance(v, dict) and v.get("stored"):
             get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))

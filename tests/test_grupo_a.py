@@ -8,7 +8,7 @@ from tests.conftest import login
 
 
 def _ev(factory, db, **kw):
-    factory.staff("admin", "root")
+    factory.staff("super_admin", "root")          # Fase 3: borrar de verdad a una persona es solo de super_admin y de una inscripción archivada
     ev = factory.event("en_proceso", **kw)
     factory.person(ev, "1001", "Cristian", "Prueba")
     factory.person(ev, "1002", "Beto", "Prueba")
@@ -34,6 +34,7 @@ def test_removing_a_person_with_print_history_and_jobs_leaves_nothing_behind(cli
     db.add(PrintJob(event_id=ev.id, attendee_id=att.id, request_id="r-a2", status="printed", created_at=utcnow()))
     db.add(PersonChange(tenant_id=ev.tenant_id, event_id=ev.id, user_id="1001", kind="registration_status", old_value="No registrado", new_value="Registrado"))
     db.commit()
+    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 200
     r = client.delete(f"/api/users/1001?event_id={ev.id}")
     assert r.status_code == 200 and r.json()["fully_deleted"] is True                              # antes: error del servidor (el historial de impresión apuntaba a la persona)
     db.expire_all()
@@ -49,6 +50,7 @@ def test_a_person_in_another_event_keeps_the_user_and_the_other_event_untouched(
     login(client, "root")
     _checkin(client, ev, "1001")
     db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=other.id, printed_at=utcnow())); db.commit()
+    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 200
     r = client.delete(f"/api/users/1001?event_id={ev.id}")
     assert r.status_code == 200 and r.json()["fully_deleted"] is False
     assert db.query(PrintLog).filter_by(event_id=other.id, user_id="1001").count() == 1 and db.query(EventAttendee).filter_by(event_id=other.id).count() == 1
