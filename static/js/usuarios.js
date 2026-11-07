@@ -75,7 +75,8 @@
             }
         } catch (e) { /* sin red un momento: se vuelve a intentar en el siguiente turno */ }
     }
-    setInterval(() => { if (document.visibilityState === 'visible') loadLoginState(); }, LOGIN_STATE_MS);
+    const tickLoginState = () => { if (document.visibilityState === 'visible') loadLoginState(); };
+    if (window.GW && window.GW.poll) window.GW.poll(tickLoginState, LOGIN_STATE_MS); else setInterval(tickLoginState, LOGIN_STATE_MS);      // sin uso 60 s no consulta la base (toast.js, GW.idle)
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadLoginState(); });
     const PAGER_KEY = 'usuarios';
     const pagerEl = document.getElementById('tempUsersPager');
