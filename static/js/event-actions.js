@@ -66,7 +66,7 @@
             '</select></div>';
         }
         var inner = icon(a.icon, 'gw-icon--sm') + ' ' + esc(a.label);
-        if (a.href) return '<a class="gw-menu__item" href="' + esc(a.href) + '">' + inner + '</a>';
+        if (a.href) return '<a class="gw-btn gw-btn--primary cal-pop__enter" href="' + esc(a.href) + '">' + inner + '</a>';          // «Ingresar» dorado, igual que en Eventos y Clientes
         var attr = { edit: 'data-pop-edit', revert: 'data-revert-event="' + esc(ev.id) + '"', export: 'data-export-event="' + esc(ev.id) + '" data-event-name="' + esc(ev.name) + '"', 'delete': 'data-pop-delete' }[a.id];
         return '<button type="button" class="gw-menu__item' + (a.danger ? ' gw-menu__item--danger' : '') + '" ' + attr + '>' + inner + '</button>';
       });

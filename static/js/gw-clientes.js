@@ -92,7 +92,7 @@
         </div>
         <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.location, e.city].filter(Boolean).join(' · '))}">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="Comercial: ${esc(e.commercial_name) || '-'} · Coordinador: ${esc(e.coordinator_name) || '-'}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || '-'}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || '-'}</span></span></p>
         <div class="gw-card-row__actions p-cli__acts">
-          <a class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
+          <a class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
           <select class="gw-select gw-select--auto p-cli__status" data-status-select data-event-id="${esc(e.id)}" aria-label="Estado de ${esc(e.name)}">
             ${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${value === e.status ? 'selected' : ''}>${label}</option>`).join('')}

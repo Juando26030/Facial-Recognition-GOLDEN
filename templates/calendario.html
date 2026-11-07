@@ -60,7 +60,7 @@
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira el mes</span>
         {% call ayuda('ay_cal1', 'Mira el mes') %}Usa las flechas para cambiar de periodo y «Hoy» para volver. Mes, Semana y Día cambian cuánto ves. Toca un evento para ver sus acciones: ingresar, editar, cambiar el estado y más.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Filtra</span>
-        {% call ayuda('ay_cal2', 'Filtra') %}{% if staff_role == "comercial" %}«Mis eventos» muestra solo los tuyos.{% elif has_filters %}Filtra por comercial o por coordinador.{% else %}Verás todos los eventos que te corresponden.{% endif %} El punto junto al nombre indica si el informe final ya se envió.{% endcall %}</li>
+        {% call ayuda('ay_cal2', 'Filtra') %}{% if staff_role == "comercial" %}«Mis eventos» muestra solo los tuyos; el estado del evento también se puede filtrar.{% elif has_filters %}Filtra por comercial, por coordinador o por estado del evento (Creado, En proceso, Finalizado).{% else %}Verás todos los eventos que te corresponden y puedes filtrarlos por estado.{% endif %} El punto junto al nombre indica si el informe final ya se envió.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Crea un recordatorio</span>
         {% call ayuda('ay_cal3', 'Crea un recordatorio') %}Cada recordatorio tiene fecha y mensaje. Si no eliges destinatarios, lo ve todo el equipo con acceso al Calendario.{% endcall %}</li>
     </ol>
@@ -80,9 +80,8 @@
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-fold" id="foldBtn" aria-pressed="false" title="Pliega los eventos a una línea (color, nombre y código) o los despliega con toda su información">Plegar eventos</button>
     </div>
 
-    {% if has_filters %}
     <div class="cal-filters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Muestra solo los eventos de una persona del equipo.">
-      {% if staff_role == "comercial" %}
+      {% if has_filters %}{% if staff_role == "comercial" %}
       <div class="gw-field"><label class="gw-label" for="mineFilter">Mostrar</label>
         <select id="mineFilter" class="gw-select">
           <option value="mine">Mis eventos</option>
@@ -93,9 +92,15 @@
         <select id="commercialFilter" class="gw-select"><option value="">Todas las comerciales</option></select></div>
       <div class="gw-field"><label class="gw-label" for="coordinatorFilter">Coordinador</label>
         <select id="coordinatorFilter" class="gw-select"><option value="">Todos los coordinadores</option></select></div>
-      {% endif %}
+      {% endif %}{% endif %}
+      <div class="gw-field"><label class="gw-label" for="statusFilter">Estado del evento</label>
+        <select id="statusFilter" class="gw-select">
+          <option value="">Todos los estados</option>
+          <option value="creado">Creado</option>
+          <option value="en_proceso">En proceso</option>
+          <option value="finalizado">Finalizado</option>
+        </select></div>
     </div>
-    {% endif %}
 
     <div id="calBody" aria-busy="false"></div>
   </div>
@@ -166,6 +171,7 @@ const calBody = document.getElementById('calBody');
 const mineFilter = document.getElementById('mineFilter');
 const commercialFilter = document.getElementById('commercialFilter');
 const coordinatorFilter = document.getElementById('coordinatorFilter');
+const statusFilter = document.getElementById('statusFilter');
 
 const foldBtn = document.getElementById('foldBtn');
 function updateFoldButton() {
@@ -200,6 +206,7 @@ function navigate(dir) {
 if (mineFilter) mineFilter.addEventListener('change', loadAndRender);
 if (commercialFilter) commercialFilter.addEventListener('change', loadAndRender);
 if (coordinatorFilter) coordinatorFilter.addEventListener('change', loadAndRender);
+if (statusFilter) statusFilter.addEventListener('change', render);          // el estado se filtra aquí mismo (ya vienen todos los del periodo): no hace falta volver a pedirlos
 
 async function loadAdminFilterOptions() {
   try {
@@ -259,7 +266,8 @@ async function loadAndRender() {
 }
 
 function eventsForDay(iso) {
-  return eventsCache.filter(e => e.start_date && iso >= e.start_date && iso <= (e.end_date || e.start_date));
+  const st = statusFilter ? statusFilter.value : '';
+  return eventsCache.filter(e => e.start_date && iso >= e.start_date && iso <= (e.end_date || e.start_date) && (!st || e.status === st));
 }
 function notesForDay(iso) {
   return notesCache.filter(n => n.date === iso);

@@ -154,3 +154,6 @@
 #calBody .cal-card__sw-ic { flex: 0 0 auto; font-weight: var(--gw-fw-bold); line-height: 1.3; }
 #calBody .cal-card__sw-tx { min-width: 0; overflow-wrap: break-word; hyphens: auto; }
 #calBody .cal-card__sw-st { font-weight: var(--gw-fw-bold); }
+
+/* «Ingresar» en el cuadro de acciones del evento: botón dorado a todo el ancho, como en Eventos y Clientes - Cuentas */
+.cal-pop__enter { width: 100%; justify-content: flex-start; gap: var(--gw-sp-3); text-align: left; }
