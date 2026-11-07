@@ -172,13 +172,16 @@ def test_borrar_el_evento_deja_el_rostro_en_cola_de_borrado(client, factory, db)
     from app import privacy
     from app.models import User
     from app.timeutil import utcnow
-    factory.staff("admin", "adm1")
+    factory.staff("super_admin", "adm1")
     ev = factory.event("en_proceso")
     u = factory.person(ev, "7003")
     u.face_encoding, u.face_captured_at = "[[0.1]]", utcnow() - timedelta(days=10)
     db.commit()
     assert privacy.purge_expired(db, dry_run=True)["people"] == 0            # evento abierto: se conserva
     login(client, "adm1")
+    ev.status = "finalizado"
+    db.commit()
+    assert client.post(f"/api/events/{ev.id}/archive").status_code == 200            # Fase 3: borrado definitivo = super_admin + evento archivado
     assert client.delete(f"/api/events/{ev.id}").status_code == 200
     assert privacy.purge_expired(db)["people"] == 1
     db.expire_all()

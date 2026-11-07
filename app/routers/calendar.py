@@ -53,6 +53,7 @@ def calendar_events(
         Event.start_date <= end,
         (Event.end_date >= start) | (Event.end_date.is_(None)),
     )
+    query = query.filter(Event.archived_at.is_(None))          # Fase 3: los archivados no salen en el calendario
     query = scope_events_query(query, staff)          # P5: el mismo recorte por cliente y pertenencia que /api/events y /api/events/search
     if commercial_staff_id is not None:
         query = query.filter(Event.commercial_staff_id == commercial_staff_id)

@@ -2,9 +2,9 @@
 Scheduler (cabe en las 3 gratuitas): cada hora al minuto 05, hora de Bogotá, corre `hourly`.
 
   hourly         respaldo de la base (cada hora) · a las OPS_DAILY_HOUR (3) también el diario · a las OPS_PURGE_HOUR (4) la purga biométrica
-                 · revisión de respaldos · cola de trabajos pendiente · precalentamiento. Cada paso va aislado: si uno falla los demás
+                 · revisión de respaldos · cola de trabajos pendiente · archivado de eventos a los 90 días (L7) · precalentamiento. Cada paso va aislado: si uno falla los demás
                  corren igual, y el Job termina con código 1 (la alerta de Cloud Monitoring avisa de ejecuciones fallidas).
-  backup | backup-daily | purge | check-backups | sweep | warmup      cada paso suelto, para correrlo a mano:
+  backup | backup-daily | purge | archive-events | check-backups | sweep | warmup      cada paso suelto, para correrlo a mano:
                  gcloud run jobs execute golden-ops-<entorno> --region <región> --args=-m,app.ops_runner,backup
 
 Respaldos: `pg_dump` 18 con el DUEÑO (DIRECT_DATABASE_URL), `--no-owner --no-privileges` (se restaura en cualquier Postgres; en Neon con
@@ -201,6 +201,19 @@ def warmup() -> str:
     return f"{'; '.join(changes) or 'sin cambios'} · {json.dumps(p['why'])}"
 
 
+def archive_events() -> str:
+    """L7 (Fase 3): archiva los eventos finalizados con 90 días o más desde su cierre (app/event_archive.py). Idempotente, NUNCA borra, registra en audit_actions con actor NULL (sistema). Solo conteos en el resultado.
+    Si algún evento falla el paso FALLA (alerta) y se reintenta la hora siguiente."""
+    from app import event_archive
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        r = event_archive.auto_archive_due(db)
+    log.info("archivado automático de eventos: %s", json.dumps(r))
+    if r["errors"]:
+        raise RuntimeError(f"el archivado automático tuvo {r['errors']} error(es) (se reintenta en la próxima corrida): {json.dumps(r)}")
+    return json.dumps(r)
+
+
 def purge_reports() -> str:
     """Borra los reportes Excel de Estadísticas que ya vencieron (duran una hora; ver app/report_jobs.py) y los paquetes de exportar evento de más de 24 h (app/event_transfer_jobs.py)."""
     from app.database import SessionLocal
@@ -218,7 +231,7 @@ def hourly(now=None) -> dict:
         steps.append(("backup-daily", lambda: backup_db("daily", now=now)))
     if now.hour == int(os.getenv("OPS_PURGE_HOUR", "4")):
         steps.append(("purge", purge))
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
+    steps += [("check-backups", check_backups), ("sweep", sweep), ("archive-events", archive_events), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:
@@ -354,7 +367,7 @@ def retry_face_jobs() -> str:
 
 
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
+         "archive-events": archive_events, "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
 
 
 def main(task: str) -> int:

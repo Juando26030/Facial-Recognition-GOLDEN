@@ -565,9 +565,13 @@ def test_deleting_an_event_removes_its_forms_and_files(client, factory, db):
     _open(client, ev, f)
     _submit(client, ev, f, _person_values())
     client.post("/logout")
-    factory.staff("admin", "root")
+    factory.staff("super_admin", "root")
     login(client, "root")
-    assert client.delete(f"/api/events/{ev.id}").status_code == 200
+    assert client.post(f"/api/events/{ev.id}/archive").status_code == 400            # Fase 3: solo se archiva un evento finalizado…
+    ev.status = "finalizado"
+    db.commit()
+    assert client.post(f"/api/events/{ev.id}/archive").status_code == 200
+    assert client.delete(f"/api/events/{ev.id}").status_code == 200            # …y el borrado definitivo es de super_admin y de un archivado
     assert db.query(WebForm).count() == 0 and db.query(FormSubmission).count() == 0
 
 

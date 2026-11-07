@@ -31,6 +31,8 @@ DEFAULTS_BY_BASE = {
                    "areas": True, "inventory_control": True, "certificates": True},
 }
 BASE_STATUSES = tuple(DEFAULTS_BY_BASE)
+# Reglas que se apagan en un evento ARCHIVADO (Fase 3): nadie registra, entra como cliente/digitador ni usa ruleta o registro touch. Certificados, áreas e inventario (consulta) y los datos quedan como estaban.
+ARCHIVED_OFF = ("client_access", "client_stats_download", "temp_digitadores_enter", "registration", "roulette", "touch_registration")
 
 
 # Mensajes de «Adjuntar Base de Datos» cuando el evento no admite la carga (los usa el servidor Y la pantalla: una sola regla, para que no vuelvan a divergir).
@@ -58,6 +60,8 @@ def effective_rules(event: Event, state: Optional[EventState] = None) -> dict:
     rules = dict(DEFAULTS_BY_BASE.get(event.status, DEFAULTS_BY_BASE["creado"]))
     if state is not None:
         rules.update({k: bool(v) for k, v in state.get_rules().items() if k in RULES})
+    if getattr(event, "archived_at", None) is not None:          # Fase 3: un evento archivado queda de solo lectura, diga lo que diga su estado configurable
+        rules.update({k: False for k in ARCHIVED_OFF})
     return rules
 
 

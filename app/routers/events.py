@@ -17,7 +17,7 @@ import logging
 from app import security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
-from app import event_rules
+from app import audit_actions, event_archive, event_rules, formsvc
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import testperson
@@ -154,6 +154,7 @@ def _serialize(e: Event) -> dict:
         "bandana_color": e.bandana_color,
         "bandana_color_name": e.bandana_color_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
+        "archived": e.archived_at is not None, "archived_at": e.archived_at.isoformat() if e.archived_at else None, "archived_auto": e.archived_at is not None and e.archived_by_id is None,
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
@@ -181,7 +182,7 @@ def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_curr
     más probable es justamente ese mensaje ambiguo. Este campo nuevo deja que el frontend
     distinga "no tienes ninguna asignación" de "tienes asignación(es) pero ningún evento está en
     proceso todavía" sin cambiar la forma de `events` (sigue siendo la lista de siempre)."""
-    query = db.query(Event).filter(Event.status == "en_proceso")
+    query = event_archive.active_only(db.query(Event).filter(Event.status == "en_proceso"))
     has_any_authorization = True
     if staff.role in ("digitador", "cliente"):
         has_any_authorization = db.query(EventStaffAuthorization).filter(
@@ -246,10 +247,19 @@ def _matches_by_word_prefix(haystack: str, query: str) -> bool:
     return all(any(hw.startswith(qw) for hw in haystack_words) for qw in query_words)
 
 
+def _archive_filter(query, staff: StaffUser, include_archived: bool):
+    """Fase 3: por defecto SOLO los eventos activos (los archivados no salen en listas, calendario ni selectores). `include_archived=true` es de admin+ («Ver archivados»)."""
+    if not include_archived:
+        return event_archive.active_only(query)
+    if staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede ver los eventos archivados")
+    return query
+
+
 @router.get("/events/search")
 def search_events(
     q: str = "", status: Optional[str] = None,
-    commercial_staff_id: Optional[int] = None, coordinator_staff_id: Optional[int] = None,
+    commercial_staff_id: Optional[int] = None, coordinator_staff_id: Optional[int] = None, include_archived: bool = False,
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Búsqueda libre entre todos los clientes/eventos: por código, nombre, país o ciudad del
@@ -262,7 +272,7 @@ def search_events(
     pertenencia — una comercial usa `commercial_staff_id=<su propio id>` para "Mis eventos"
     (omitiéndolo ve "Todos"); admin+ los usa para filtrar por cualquier comercial o coordinador
     asignado, ambos combinables entre sí y con `q`/`status`."""
-    all_events = scope_events_query(db.query(Event), staff).order_by(Event.created_at.desc()).all()
+    all_events = _archive_filter(scope_events_query(db.query(Event), staff), staff, include_archived).order_by(Event.created_at.desc()).all()
     matches = []
     for e in all_events:
         if status and e.status != status:
@@ -283,10 +293,10 @@ def search_events(
 
 @router.get("/events")
 def list_events(
-    tenant_id: Optional[str] = None, db: Session = Depends(get_db),
+    tenant_id: Optional[str] = None, include_archived: bool = False, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
-    query = scope_events_query(db.query(Event), staff)
+    query = _archive_filter(scope_events_query(db.query(Event), staff), staff, include_archived)
     if tenant_id:
         query = query.filter(Event.tenant_id == tenant_id)
     return [_serialize(e) for e in query.order_by(Event.created_at.desc()).all()]
@@ -440,6 +450,8 @@ def update_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
     assert_event_scope(event, staff, db)
+    if event.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo para editarlo")
     new_state = None
     if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
         new_state = db.get(EventState, data.state_id)
@@ -793,10 +805,10 @@ def revoke_event_staff(
 
 @router.delete("/events/{event_id}")
 def delete_event(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))
 ):
-    """Borrado permanente — solo admin+ (coordinador+ avanza el estado del evento vía PATCH status,
-    ver EVENT_STATUSES en models.py: creado -> en_proceso -> finalizado).
+    """Borrado DEFINITIVO — solo super_admin y solo de un evento ya ARCHIVADO (Fase 3, 7-nov-2026: lo normal es archivar; coordinador+ avanza el estado del evento vía PATCH status,
+    ver EVENT_STATUSES en models.py: creado -> en_proceso -> finalizado). Queda registrado en audit_actions (quién, cuándo, id y nombre; sin datos personales).
     Antes de borrar el Event hay que soltar lo que le apunta por FK: las EventStaffAuthorization de
     este evento no tienen sentido sin él (se borran), los AccessLog ya generados son historial
     real (se conservan, solo se les quita la referencia al evento), y los EventAttendee tampoco
@@ -810,6 +822,9 @@ def delete_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
     assert_event_scope(event, staff, db)
+    if event.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el evento; el borrado definitivo solo aplica a eventos archivados")
+    audit_actions.record(db, staff, "delete", "event", event.id, event.name, f"cliente {event.tenant_id}")
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
@@ -831,6 +846,42 @@ def delete_event(
     db.delete(event)
     db.commit()
     return {"message": "Evento eliminado permanentemente"}
+
+
+# ------------------------------------------------------------------ archivar / restaurar (Fase 3, oleada 2)
+def _event_for_admin(db: Session, staff: StaffUser, event_id: int) -> Event:
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
+    return event
+
+
+@router.post("/events/{event_id}/archive")
+def archive_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Archivar = ocultar de las listas y dejar el evento de solo lectura (sin registro ni formularios públicos). Solo eventos FINALIZADOS. No borra nada; un administrador lo restaura."""
+    event = _event_for_admin(db, staff, event_id)
+    reason = event_archive.block_reason(event)
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
+    event_archive.archive(db, event, staff)
+    db.commit()
+    formsvc.invalidate_public_cache()
+    return _serialize(event)
+
+
+@router.post("/events/{event_id}/restore")
+def restore_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Restaura un evento archivado. Si lo archivó el Job a los 90 días (L7), solo lo restaura un super_admin. Los formularios públicos siguen cerrados (se reabren a mano)."""
+    event = _event_for_admin(db, staff, event_id)
+    if event.archived_at is None:
+        raise HTTPException(status_code=400, detail="El evento no está archivado")
+    if event.archived_by_id is None and staff.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Este evento se archivó solo a los 90 días de cerrado: solo un super administrador puede restaurarlo")
+    event_archive.restore(db, event, staff)
+    db.commit()
+    return _serialize(event)
 
 
 # ------------------------------------------------------------------ devolver un evento «en curso» a «creado» (pedido B, 1-nov-2026)

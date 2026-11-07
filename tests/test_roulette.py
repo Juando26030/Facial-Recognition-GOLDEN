@@ -233,8 +233,11 @@ def test_deleting_an_event_removes_its_roulette_data(client, factory, db):
     _save(client, ev, mode="single_fixed", winners=["1001"])
     _run(client, ev)
     client.post("/logout")
-    factory.staff("admin", "root")
+    factory.staff("super_admin", "root")
     login(client, "root")
+    ev.status = "finalizado"
+    db.commit()
+    assert client.post(f"/api/events/{ev.id}/archive").status_code == 200            # Fase 3: borrado definitivo = super_admin + evento archivado
     assert client.delete(f"/api/events/{ev.id}").status_code == 200
     assert db.query(RouletteDraw).count() == 0 and db.query(RouletteConfig).count() == 0
 
