@@ -29,7 +29,7 @@ types.forEach((t) => {
 assert.ok(html('pay').includes('<u>Tu pago</u>') && html('pay').includes('<b>sobre el pago</b>'));
 assert.ok(html('comp').includes('<i>Con quién vienes</i>'));
 // sin nombre de presentación: EXACTAMENTE el de siempre (escapado), y la ayuda vieja igual
-assert.ok(html('old').includes('>Nombre &lt;18</label>') && html('old').includes('<div class="fr-help">ayuda &lt;18</div>'));
+assert.ok(html('old').includes('>Nombre &lt;18') && html('old').includes('(opcional)') && html('old').includes('<div class="fr-help">ayuda &lt;18</div>'));
 // el nombre plano sigue siendo el dato: la lógica del formulario lo usa tal cual
 assert.strictEqual(design.fields.text_short.label, 'Plano text_short');
 console.log('form_display_label_check OK');

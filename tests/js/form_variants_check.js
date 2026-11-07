@@ -38,7 +38,7 @@ pick('Bogotá');
 assert.ok(row('t').textContent.includes('Sede Bogotá')); assert.ok(row('old').textContent.includes('formato P2'));
 assert.ok(q('img').innerHTML.includes('acme/bogota.png') && row('img').style.display === '');
 const lab = q('n').querySelector('[data-ttl]');
-assert.ok(lab.innerHTML.includes('<b>Tu nombre en Bogotá</b>') && lab.innerHTML.includes('*'), 'nombre con formato y su asterisco');
+assert.ok(lab.innerHTML.includes('<b>Tu nombre en Bogotá</b>') && !lab.innerHTML.includes('*'), 'nombre con formato y sin asterisco (cara al público no hay asteriscos, 6-nov-2026)');
 assert.ok(q('n').querySelector('[data-hv]').innerHTML.includes('<i>ayuda Bogotá</i>'));
 assert.strictEqual(q('n').querySelector('input').placeholder, 'Ana de Bogotá');
 assert.strictEqual(q('n').querySelector('input').value, 'Lo que ya escribí', 'cambiar de variante no borra lo escrito');

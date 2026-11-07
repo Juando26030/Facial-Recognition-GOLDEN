@@ -38,7 +38,7 @@ const pick = (v) => { const s = doc.querySelector('select[name=c]'); s.value = v
 assert.strictEqual(warn.style.display, 'none');
 pick('VIP');
 assert.strictEqual(warn.style.display, 'flex'); assert.ok(warn.textContent.includes('Ya no hay VIP.'));
-assert.ok(parseFloat(warn.style.fontSize) >= 1.1 && warn.style.fontWeight === '700', 'aviso grande y en negrita');
+assert.ok(parseFloat(warn.style.fontSize) >= 1.1 && warn.style.fontWeight === '500', 'aviso grande (1,12 rem) y con peso 500, como lo envía el formulario');
 pick('General');
 assert.ok(warn.textContent.includes('Ya se llenaron los cupos de General.'));
 assert.strictEqual(f.validate(), false, 'con el cupo lleno no se envía');
