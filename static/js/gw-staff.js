@@ -51,7 +51,7 @@
     const more = [];
     // A la vista lo de todos los días (restablecer contraseña, desactivar/reactivar); lo poco usado y lo irreversible va en el menú «Más acciones».
     if (DELETABLE_ROLES.includes(s.role)) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));
-    parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check'));
+    parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check', 'gw-btn--ok'));
     if (isAdminPlus && otherRole) {
       more.push(s.secondary_role
         ? item('secondary', `Quitar «${esc(roleLabel(otherRole))}»`, 'close', 'data-value=""')

@@ -23,7 +23,7 @@
         const nombre = u.full_name || 'Sin nombre';
         const estado = u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>';
         const reset = u.role === 'digitador'
-            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Restablecer contraseña</button>` : '';
+            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Restablecer contraseña</span></button>` : '';
         return `<article class="gw-card-row gw-usr__row">
             <div class="gw-card-row__head gw-usr__head">
                 <span class="gw-card-row__title gw-usr__c-user" title="${esc(u.username)}">${esc(u.username)}</span>
@@ -32,7 +32,7 @@
             <p class="gw-card-row__meta gw-usr__c-name" title="${esc(u.full_name || '')}">${esc(nombre)}</p>
             <div class="gw-card-row__actions gw-usr__actions gw-usr__c-act">
                 ${reset}
-                <button type="button" class="gw-btn gw-btn--secondary" data-act="revoke" data-id="${esc(u.id)}">Quitar de este evento</button>
+                <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
                     <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>Borrar permanente</span></button></div></div>
             </div>
