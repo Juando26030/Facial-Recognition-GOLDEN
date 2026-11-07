@@ -54,7 +54,7 @@ Los puntos 3–6 adelantan lo que el plan tenía en la Fase 5 (ficha configurabl
 - **Claves de campo hoy** (`FIELD_CATALOG`): `name, event_code, tenant_name, place, address, country, dates, setup_date, times, setup_times, status, commercial_name, coordinator_name, bandana_color_name, notes`. Una clave desconocida se ignora sin error; un campo sin valor en ese evento no se pinta (ni su título). Cuando existan campos nuevos de la plantilla (§4 de este documento) se agregan al catálogo con su `value(event)`.
 - **Por defecto:** izquierda = nombre, código, cliente, lugar; derecha = fechas, horario, estado; abajo = comercial, coordinador, pañoleta.
 - **Dónde se usa:** la tarjeta grande de la vista **Día** (`eventChip(e, true)` en `templates/calendario.html`, variable `CARD_LAYOUT`, hoy `null`). Mes y Semana siguen mostrando solo el nombre del evento.
-- **Cómo lo conectará el diseñador:** que la página cargue el `layout` guardado y lo asigne a `CARD_LAYOUT` antes de `loadAndRender()`.
+- **Cómo lo conectará el diseñador:** que la página cargue el `layout` guardado y lo asigne a `CARD_LAYOUT` antes de `loadAndRender()`. **(Hecho en el enlace: ver «Enlace de las piezas» al final; el contrato es UNO solo.)**
 - **Pruebas:** `tests/js/calendar_card_check.js`.
 
 ### Cuadrito de acciones del evento (calendario)
@@ -102,3 +102,12 @@ Los controles llevan `data-evf-key`/`data-evf-part` y `data-evf-enhance="country
 - Ruleta como interruptor: requiere primero un interruptor en Parámetros.
 - Al fusionar: este archivo es add/add con `docs/cierre-fase-1`; quedarse con el de ellos y agregar esta sección.
 - Pruebas con base (`tests/test_event_template.py`) y de DOM (jsdom) no se corrieron en el entorno del agente; correr `python -m pytest -q tests/test_event_template.py tests/test_visual_global.py` en Cloud Shell.
+
+## Enlace de las piezas (rama `f2/enlace`)
+- **Un solo contrato de tarjeta.** `renderCalendarCard(event, layout)` recibe el layout de la plantilla (`EventFields.calendarLayout(tpl)`: zonas `top/left/right/bottom`) y dibuja el modelo de `EventFields.cardModel` (campos base y personalizados: texto, dinero COP, fechas, comercial/coordinador, país/ciudad, contacto, pañoletas, interruptores como insignias «Sí/No», inventario «Tipo ×N»). `top` = encabezado (el primero grande), `left`/`right` = columnas, `bottom` = franja. El estado del evento siempre sale como insignia al final del encabezado (no es campo de plantilla). El formato antiguo `{fields:[{key,zone}]}` (FIELD_CATALOG) queda SOLO de respaldo cuando la plantilla no carga.
+- **Calendario:** una petición a `/api/event-template` por carga de página (caché en memoria, 6 s máximo, reintento espaciado 60 s); solo se espera en la vista Día. Si falla, tarjeta de siempre. `/api/events/calendar` ya trae `extra`, `switches`, `bandana_colors` (`_serialize`).
+- **País y ciudad:** `EventFields.afterMount(host, {geoUrl})` engancha `GWGeo` + `GWCombobox`: país = todos los países con búsqueda; ciudad = las del país elegido con texto libre; cambiar el país recalcula (una ciudad de la lista que ya no aplica se suelta, un texto libre se conserva). Se guarda el TEXTO en `country`/`city`. Sin la lista (falla de carga) queda el datalist + `/api/cities` de siempre. Campos fijos: `EventFields.geoPair(paisInput, ciudadInput, geoUrl)`.
+- **Colores de pañoleta:** el campo de la plantilla usa `ColorLibrary` (`/api/colors`) en cada color; elegir uno guardado rellena color y nombre y activa ese color.
+- **Editar evento:** `_event_edit_modal.html` agrega «Información adicional del evento» con los campos personalizados activos (orden de «Nuevo evento»); el PATCH manda `extra` solo con lo que cambió (`EventFields.diffExtra`). Un obligatorio que un evento viejo nunca tuvo no bloquea; vaciar uno que sí tenía, sí. La comercial personalizada solo la edita comercial+ (igual que el campo base). Los interruptores se siguen cambiando en Parámetros (PATCH no los acepta).
+- **Enganches de otros widgets** en `afterMount`: `if (root.GWMap) GWMap.enhance(el, opts)` y `if (root.GWInventory) GWInventory.enhance(el, opts)` ya están puestos.
+- **Pruebas:** `tests/js/calendar_card_template_check.js`, `event_fields_geo_check.js`, `event_edit_extra_check.js`, `tests/test_enlace_fase2.py`.
