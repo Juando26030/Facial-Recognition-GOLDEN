@@ -415,6 +415,8 @@ def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = 
 def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
+    if event.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El evento está archivado: sus formularios no reciben inscripciones. Restaura el evento para reabrirlos")
     form = _get_form(db, event, form_id)
     was_active = form.manual_status == "activo"
     if "manual_status" in data:

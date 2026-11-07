@@ -61,6 +61,7 @@
             <label class="gw-label" for="evSearch${esc(t.id)}">Buscar evento de este cliente/cuenta</label>
             <input type="search" class="gw-input" id="evSearch${esc(t.id)}" data-events-search placeholder="Buscar evento de este cliente/cuenta..." autocomplete="off">
           </div>
+          ${isAdmin ? '<label class="gw-check"><input type="checkbox" data-show-archived-events> Ver eventos archivados</label>' : ''}
           <div data-events-container aria-live="polite"></div>
         </div>
       </article>`).join('');
@@ -101,7 +102,8 @@
     const el = card.querySelector('[data-events-container]');
     if (!tenantEventsCache.has(card)) el.innerHTML = '<div class="gw-skeleton gw-adm-skeleton" aria-hidden="true"></div><span class="gw-sr-only">Cargando eventos…</span>';
     try {
-      const res = await fetch('/api/events?tenant_id=' + encodeURIComponent(tenantId));
+      const withArchived = isAdmin && card.querySelector('[data-show-archived-events]')?.checked;          // «Ver eventos archivados» (admin+)
+      const res = await fetch('/api/events?tenant_id=' + encodeURIComponent(tenantId) + (withArchived ? '&include_archived=true' : ''));
       if (!res.ok) throw new Error('http');
       const events = await res.json();
       tenantEventsCache.set(card, events);
@@ -121,26 +123,39 @@
       <div class="gw-card-row gw-event-card">
         <div class="gw-card-row__head">
           <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}">${window.reportBulbHtml ? `<span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span>` : ''} <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ''}</span></span>
-          <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
+          <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ''}
         </div>
         <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.location, e.city].filter(Boolean).join(' · '))}">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="Comercial: ${esc(e.commercial_name) || '-'} · Coordinador: ${esc(e.coordinator_name) || '-'}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || '-'}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || '-'}</span></span></p>
         <div class="gw-card-row__actions p-cli__acts">
           <a class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
+          ${e.archived ? '' : `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
           <select class="gw-select gw-select--auto p-cli__status" data-status-select data-event-id="${esc(e.id)}" aria-label="Estado de ${esc(e.name)}">
             ${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${value === e.status ? 'selected' : ''}>${label}</option>`).join('')}
-          </select>
+          </select>`}
           ${isAdmin ? `<div class="gw-menu p-cli__more">
             <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__morebtn" data-menu-toggle aria-expanded="false" aria-haspopup="true" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon('more')}<span class="p-cli__morelbl">Más acciones</span></button>
             <div class="gw-menu__panel" role="group" hidden>
               ${e.status === 'en_proceso' ? `<button type="button" class="gw-menu__item" data-revert-event="${esc(e.id)}" title="Devolver el evento a Creado (no se borra nada)">${icon('undo', 'gw-icon--sm')} Devolver a Creado</button>` : ''}
               ${isSuper ? `<button type="button" class="gw-menu__item" data-export-event="${esc(e.id)}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon('download', 'gw-icon--sm')} Exportar</button>` : ''}
-              <hr class="gw-menu__sep">
-              <button type="button" class="gw-menu__item gw-menu__item--danger" data-delete-event="${esc(e.id)}" data-event-name="${esc(e.name)}" data-event-status="${esc(e.status)}">${icon('trash', 'gw-icon--sm')} Eliminar</button>
+              ${eventArchiveItems(e)}
             </div>
           </div>` : ''}
         </div>
       </div>`).join('') + '</div>';
+  }
+
+  // Archivar (finalizados, admin+) · Restaurar (admin+; si lo archivó el Job a los 90 días, solo super_admin) · Eliminar definitivamente (super_admin, solo archivados).
+  function eventArchiveItems(e) {
+    const name = esc(e.name);
+    if (!e.archived) {
+      return e.status === 'finalizado'
+        ? `<hr class="gw-menu__sep"><button type="button" class="gw-menu__item" data-archive-event="${esc(e.id)}" data-event-name="${name}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon('lock', 'gw-icon--sm')} Archivar evento</button>`
+        : '';
+    }
+    let items = '<hr class="gw-menu__sep">';
+    if (!e.archived_auto || isSuper) items += `<button type="button" class="gw-menu__item" data-restore-event="${esc(e.id)}" data-event-name="${name}">${icon('undo', 'gw-icon--sm')} Restaurar evento</button>`;
+    if (isSuper) items += `<button type="button" class="gw-menu__item gw-menu__item--danger" data-delete-event="${esc(e.id)}" data-event-name="${name}" data-event-status="${esc(e.status)}">${icon('trash', 'gw-icon--sm')} Eliminar definitivamente</button>`;
+    return items;
   }
 
   /* ---------------------------------------------------------------- Acciones */
@@ -152,17 +167,18 @@
 
   async function deleteEvent(eventId, name, status, btn) {
     const confirmed = await showConfirm(
-      `¿Está seguro que quiere eliminar el evento "${escapeHtml(name)}"?<br><br>` +
-      `Recuerde que este evento está en estado <strong>${escapeHtml(STATUS_LABELS[status] || status)}</strong>. ` +
-      'Esta acción es permanente y no se puede deshacer.',
-      { confirmLabel: 'Eliminar evento' }
+      `¿Eliminar DEFINITIVAMENTE el evento archivado "${escapeHtml(name)}"?<br><br>` +
+      'Se borran sus personas, registros, formularios y archivos. Esta acción es permanente, no se puede deshacer y queda registrada.',
+      { confirmLabel: 'Eliminar definitivamente' }
     );
     if (!confirmed) return;
     const card = btn.closest('.tenant-card');
     await busy(btn, async () => {
       const res = await fetch('/api/events/' + encodeURIComponent(eventId), { method: 'DELETE' });
       loadEventsForTenant(card.dataset.tenantId, card);
-      showToast(res.ok ? 'Evento eliminado' : 'No se pudo eliminar el evento', res.ok ? 'success' : 'error');
+      let detail = '';
+      if (!res.ok) { try { detail = (await res.json()).detail || ''; } catch (err) { detail = ''; } }
+      showToast(res.ok ? 'Evento eliminado' : (detail || 'No se pudo eliminar el evento'), res.ok ? 'success' : 'error');
     });
   }
 
@@ -237,6 +253,19 @@
       await busy(purge, async () => { const r = await tenantCall('/api/tenants/' + encodeURIComponent(purge.dataset.purgeTenant), 'DELETE'); showToast(r.ok ? 'Cliente eliminado' : (r.detail || 'No se pudo eliminar'), r.ok ? 'success' : 'error'); if (r.ok) loadTenants(); });
       return;
     }
+    const archEv = e.target.closest('[data-archive-event]');
+    if (archEv) {
+      if (!await showConfirm('¿Archivar el evento "' + escapeHtml(archEv.dataset.eventName) + '"?<br><br>Se oculta de las listas, queda de solo lectura y sus formularios públicos dejan de recibir inscripciones. <strong>No se borra nada</strong>: un administrador puede restaurarlo.', { confirmLabel: 'Archivar' })) return;
+      const card = archEv.closest('.tenant-card');
+      await busy(archEv, async () => { const r = await tenantCall('/api/events/' + encodeURIComponent(archEv.dataset.archiveEvent) + '/archive', 'POST'); showToast(r.ok ? 'Evento archivado' : (r.detail || 'No se pudo archivar'), r.ok ? 'success' : 'error'); if (r.ok) loadEventsForTenant(card.dataset.tenantId, card); });
+      return;
+    }
+    const restEv = e.target.closest('[data-restore-event]');
+    if (restEv) {
+      const card = restEv.closest('.tenant-card');
+      await busy(restEv, async () => { const r = await tenantCall('/api/events/' + encodeURIComponent(restEv.dataset.restoreEvent) + '/restore', 'POST'); showToast(r.ok ? 'Evento restaurado' : (r.detail || 'No se pudo restaurar'), r.ok ? 'success' : 'error'); if (r.ok) loadEventsForTenant(card.dataset.tenantId, card); });
+      return;
+    }
     const deleteBtn = e.target.closest('[data-delete-event]');
     if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
     const revertBtn = e.target.closest('[data-revert-event]');
@@ -270,6 +299,8 @@
   });
 
   listEl.addEventListener('change', async (e) => {
+    const showArch = e.target.closest('[data-show-archived-events]');
+    if (showArch) { const card = showArch.closest('.tenant-card'); loadEventsForTenant(card.dataset.tenantId, card); return; }
     const select = e.target.closest('[data-status-select]');
     if (!select) return;
     const card = select.closest('.tenant-card');

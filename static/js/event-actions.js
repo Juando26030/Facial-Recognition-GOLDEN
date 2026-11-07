@@ -29,7 +29,7 @@
     ];
     if (isAdmin && ev.status === 'en_proceso') acts.push({ id: 'revert', label: 'Devolver a Creado', icon: 'undo' });
     if (role === 'super_admin') acts.push({ id: 'export', label: 'Exportar', icon: 'download' });
-    if (isAdmin) acts.push({ id: 'delete', label: 'Eliminar', icon: 'trash', danger: true });
+    if (isAdmin && ev.status === 'finalizado') acts.push({ id: 'archive', label: 'Archivar evento', icon: 'lock' });          // Fase 3: eliminar ya no es directo; se archiva y, archivado, el super administrador lo elimina desde Clientes
     return acts;
   }
 
@@ -67,7 +67,7 @@
         }
         var inner = icon(a.icon, 'gw-icon--sm') + ' ' + esc(a.label);
         if (a.href) return '<a class="gw-btn gw-btn--primary cal-pop__enter" href="' + esc(a.href) + '">' + inner + '</a>';          // «Ingresar» dorado, igual que en Eventos y Clientes
-        var attr = { edit: 'data-pop-edit', revert: 'data-revert-event="' + esc(ev.id) + '"', export: 'data-export-event="' + esc(ev.id) + '" data-event-name="' + esc(ev.name) + '"', 'delete': 'data-pop-delete' }[a.id];
+        var attr = { edit: 'data-pop-edit', revert: 'data-revert-event="' + esc(ev.id) + '"', export: 'data-export-event="' + esc(ev.id) + '" data-event-name="' + esc(ev.name) + '"', archive: 'data-pop-archive' }[a.id];
         return '<button type="button" class="gw-menu__item' + (a.danger ? ' gw-menu__item--danger' : '') + '" ' + attr + '>' + inner + '</button>';
       });
       var meta = [ev.tenant_name, ev.event_code ? 'Código ' + ev.event_code : ''].filter(Boolean).join(' · ');
@@ -154,15 +154,17 @@
         root.GW.busy(rev, async function () { if (await root.revertEventToCreated(rev.dataset.revertEvent)) changed(); });
         return;
       }
-      var del = e.target.closest('[data-pop-delete]');
-      if (del) {
-        root.GW.busy(del, async function () {
+      var arch = e.target.closest('[data-pop-archive]');
+      if (arch) {
+        root.GW.busy(arch, async function () {
           var ok = await root.showConfirm(
-            '¿Está seguro que quiere eliminar el evento "' + esc(ev.name) + '"?<br><br>Recuerde que este evento está en estado <strong>' + esc(STATUS_LABELS[ev.status] || ev.status) +
-            '</strong>. Esta acción es permanente y no se puede deshacer.', { confirmLabel: 'Eliminar evento' });
+            '¿Archivar el evento "' + esc(ev.name) + '"?<br><br>Se oculta de las listas, queda de solo lectura y sus formularios públicos dejan de recibir inscripciones. <strong>No se borra nada</strong>: un administrador puede restaurarlo.',
+            { confirmLabel: 'Archivar' });
           if (!ok) return;
-          var res = await fetch('/api/events/' + encodeURIComponent(ev.id), { method: 'DELETE' });
-          root.showToast(res.ok ? 'Evento eliminado' : 'No se pudo eliminar el evento', res.ok ? 'success' : 'error');
+          var res = await fetch('/api/events/' + encodeURIComponent(ev.id) + '/archive', { method: 'POST' });
+          var detail = '';
+          if (!res.ok) { try { detail = (await res.json()).detail || ''; } catch (err) { detail = ''; } }
+          root.showToast(res.ok ? 'Evento archivado' : (detail || 'No se pudo archivar el evento'), res.ok ? 'success' : 'error');
           if (res.ok) changed();
         });
       }

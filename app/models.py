@@ -263,6 +263,8 @@ class Event(Base):
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
     finalized_at = Column(DateTime, nullable=True)     # cuándo pasó a «finalizado» (lo estampa el listener de abajo; NULL si no lo está): desde aquí corren los BIOMETRIC_RETENTION_DAYS_AFTER_EVENT días
     biometrics_purged_at = Column(DateTime, nullable=True)     # última vez que se borraron los datos biométricos de este evento (privacidad)
     digital_email_subject = Column(String, nullable=True)  # plantilla propia del correo de la escarapela virtual (NULL = la de siempre)

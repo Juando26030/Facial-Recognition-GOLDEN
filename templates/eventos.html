@@ -92,6 +92,7 @@
           <select id="coordinatorFilter" class="gw-select">
             <option value="">Todos los coordinadores</option>
           </select></div>
+        <div class="gw-field"><label class="gw-check"><input type="checkbox" id="showArchivedEvents"> Ver archivados</label></div>
         {% endif %}
       </div>
     </section>
@@ -130,6 +131,8 @@ function fmtRangeShort(e) {
 function moreMenu(e) {
   const items = [];
   if (CAN_REVERT && e.status === "en_proceso") items.push(`<button type="button" class="gw-menu__item" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>`);
+  if (CAN_REVERT && !e.archived && e.status === "finalizado") items.push(`<button type="button" class="gw-menu__item" data-archive-event="${e.id}" data-event-name="${esc(e.name)}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon("lock", "gw-icon--sm")} Archivar evento</button>`);
+  if (CAN_REVERT && e.archived && (!e.archived_auto || STAFF_ROLE === "super_admin")) items.push(`<button type="button" class="gw-menu__item" data-restore-event="${e.id}" data-event-name="${esc(e.name)}">${icon("undo", "gw-icon--sm")} Restaurar evento</button>`);
   if (STAFF_ROLE === "super_admin") items.push(`<button type="button" class="gw-menu__item" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>`);
   if (!items.length) return "";
   return `<div class="gw-menu p-cli__more ev-card__menu"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__morebtn ev-card__more" data-ev-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon("more")}<span class="p-cli__morelbl">Más acciones</span></button><div class="gw-menu__panel" role="group" hidden>${items.join("")}</div></div>`;
@@ -162,15 +165,15 @@ function eventCard(e) {
     <div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
       <div class="gw-card-row__head">
         <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? " (" + esc(e.event_code) + ")" : ""}"><span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span> <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ""}</span></span>
-        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
+        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ""}
       </div>
       <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.tenant_name, where].filter(Boolean).join(" · ") + sup)}"><strong>${esc(e.tenant_name)}</strong>${where ? " · " + esc(where) : ""}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="${esc(who)}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span></span></p>
       <div class="gw-card-row__actions p-cli__acts">
         <a class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" href="/kiosk/${e.id}">${icon("home", "gw-icon--sm")} Ingresar</a>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
+        ${e.archived ? "" : `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
         <select class="gw-select gw-select--auto p-cli__status" data-status-select data-event-id="${e.id}" aria-label="Estado de ${esc(e.name)}">
           ${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`).join("")}
-        </select>
+        </select>`}
         ${moreMenu(e)}
       </div>
     </div>
@@ -187,6 +190,7 @@ const statusFilter = document.getElementById("statusFilter");
 const mineFilter = document.getElementById("mineFilter");
 const commercialFilter = document.getElementById("commercialFilter");
 const coordinatorFilter = document.getElementById("coordinatorFilter");
+const showArchivedEvents = document.getElementById("showArchivedEvents");
 const eventsList = document.getElementById("eventsList");
 const eventsWrap = document.getElementById("eventsWrap");
 // Encabezado de columnas (solo escritorio; lo muestra gw-eventos.css) dentro de la misma rejilla que las filas.
@@ -196,6 +200,7 @@ statusFilter.addEventListener("change", runSearch);
 if (mineFilter) mineFilter.addEventListener("change", runSearch);
 if (commercialFilter) commercialFilter.addEventListener("change", runSearch);
 if (coordinatorFilter) coordinatorFilter.addEventListener("change", runSearch);
+if (showArchivedEvents) showArchivedEvents.addEventListener("change", runSearch);
 
 // Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): admin+ filtra por cualquier comercial o
 // coordinador asignado; comercial filtra por pertenencia propia ("Mis eventos"/"Todos").
@@ -231,6 +236,7 @@ async function runSearch() {
   if (mineFilter && mineFilter.value === "mine" && STAFF_ID) params.set("commercial_staff_id", STAFF_ID);
   if (commercialFilter && commercialFilter.value) params.set("commercial_staff_id", commercialFilter.value);
   if (coordinatorFilter && coordinatorFilter.value) params.set("coordinator_staff_id", coordinatorFilter.value);
+  if (showArchivedEvents && showArchivedEvents.checked) params.set("include_archived", "true");
   showLoading();
   try {
     const res = await fetch(`/api/events/search?${params.toString()}`);
@@ -249,6 +255,13 @@ async function runSearch() {
   }
 }
 
+async function archiveCall(eventId, action) {
+  const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/${action}`, { method: "POST" });
+  let detail = "";
+  if (!res.ok) { try { detail = (await res.json()).detail || ""; } catch (err) { detail = ""; } }
+  return { ok: res.ok, detail };
+}
+
 // "Editar evento": la misma vista que Calendario y la ficha de Cliente/Cuenta (_event_edit_modal.html).
 let eventsCache = [];
 eventsList.addEventListener("click", async (e) => {
@@ -258,6 +271,17 @@ eventsList.addEventListener("click", async (e) => {
   if (btn) {
     const ev = eventsCache.find(x => String(x.id) === btn.dataset.editEvent);
     if (ev) openEventEditModal(ev, runSearch);
+    return;
+  }
+  const arch = e.target.closest("[data-archive-event]");
+  if (arch) {
+    if (!await showConfirm(`¿Archivar el evento "${esc(arch.dataset.eventName)}"?<br><br>Se oculta de las listas, queda de solo lectura y sus formularios públicos dejan de recibir inscripciones. <strong>No se borra nada</strong>: un administrador puede restaurarlo.`, { confirmLabel: "Archivar" })) return;
+    await GW.busy(arch, async () => { const r = await archiveCall(arch.dataset.archiveEvent, "archive"); showToast(r.ok ? "Evento archivado" : (r.detail || "No se pudo archivar"), r.ok ? "success" : "error"); if (r.ok) runSearch(); });
+    return;
+  }
+  const rst = e.target.closest("[data-restore-event]");
+  if (rst) {
+    await GW.busy(rst, async () => { const r = await archiveCall(rst.dataset.restoreEvent, "restore"); showToast(r.ok ? "Evento restaurado" : (r.detail || "No se pudo restaurar"), r.ok ? "success" : "error"); if (r.ok) runSearch(); });
     return;
   }
   const rev = e.target.closest("[data-revert-event]");
