@@ -139,6 +139,13 @@
   #calBody .cal-card__f--strong { font-size: var(--gw-fs-lg); }
 }
 @container (min-width: 60rem) { #calBody .cal-card__cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Tarjeta ANGOSTA (mes en laptop de ~1366 px: 7 columnas de ~100 px): menos relleno y letra de detalle más pequeña, para que el nombre quepa sin partirse a la mitad */
+@container (max-width: 11rem) {
+  #calBody .cal-chip__main { padding: var(--gw-sp-1) var(--gw-sp-2); }
+  #calBody .cal-card__f--strong { font-size: var(--gw-fs-sm); line-height: 1.25; }
+  #calBody .cal-card__f, #calBody .cal-card__k { font-size: 0.72rem; line-height: 1.25; }
+  #calBody .cal-card__sw { min-width: 0; height: 1rem; }
+}
 
 /* Calendario plegado: una línea de color arriba y debajo el nombre COMPLETO (baja de línea si hace falta) y el código; el detalle completo sigue en el cuadro de acciones y en el tooltip */
 #calBody .cal-chip--folded .cal-chip__main { padding: var(--gw-sp-1) var(--gw-sp-2); }

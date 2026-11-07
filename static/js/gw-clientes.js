@@ -56,7 +56,7 @@
         ${canCreate && !t.archived ? `<a href="/clientes/${esc(t.id)}/nuevo-evento" class="gw-btn gw-btn--primary gw-btn--xl p-cli__new">${icon('plus')} Nuevo evento</a>` : ''}
         <div class="gw-tenant__body" id="tenantBody${esc(t.id)}" data-tenant-body hidden>
           ${tenantAdminHtml(t)}
-          ${isSuper && !t.archived ? `<div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button></div>` : ''}
+          
           <div class="gw-field">
             <label class="gw-label" for="evSearch${esc(t.id)}">Buscar evento de este cliente/cuenta</label>
             <input type="search" class="gw-input" id="evSearch${esc(t.id)}" data-events-search placeholder="Buscar evento de este cliente/cuenta..." autocomplete="off">
@@ -87,6 +87,7 @@
         : `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive-tenant="${id}" data-tenant-name="${esc(t.name)}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon('lock', 'gw-icon--sm')} Archivar cliente</button>`;
       if (isSuper && t.archived) actions += ` <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-purge-tenant="${id}" data-tenant-name="${esc(t.name)}">${icon('trash', 'gw-icon--sm')} Eliminar definitivamente</button>`;
     }
+    if (isSuper && !t.archived) actions += ` <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button>`;          // Importar evento comparte fila con Archivar cliente
     return editForm + (actions ? `<div class="gw-card-row__actions">${actions}</div>` : '');
   }
 
