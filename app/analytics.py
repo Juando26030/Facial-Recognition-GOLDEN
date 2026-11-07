@@ -21,8 +21,9 @@ _TIME_BUCKETS_MIN = (5, 15, 30, 60, 180, 360, 1440)   # ancho de cubeta (min) qu
 _MAX_POINTS = 60
 
 
-def kpi(label: str, value, hint: str = "", tone: str = "") -> dict:
-    return {"label": label, "value": value, "hint": hint, "tone": tone}
+def kpi(label: str, value, hint: str = "", tone: str = "", icon: str = "") -> dict:
+    """`icon` = nombre del sprite static/img/icons.svg (sin «i-»); la pantalla lo dibuja junto a la cifra."""
+    return {"label": label, "value": value, "hint": hint, "tone": tone, "icon": icon}
 
 
 def chart(chart_id: str, title: str, kind: str, labels: list, datasets: list, stacked=False, horizontal=False, note="") -> dict:

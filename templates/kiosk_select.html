@@ -88,7 +88,7 @@
     {% endif %}
 
     {# Lo de todos los días, arriba y grande. Las demás herramientas van en «Más herramientas». Los permisos son los mismos de siempre:
-       'comercial' no ve Adjuntar base, Escarapelas, Parámetros, Áreas, Inventario ni Certificados; 'digitador' solo ve Registro, Áreas, Inventario, Estadísticas y Usuarios. #}
+       'comercial' no ve Adjuntar base, Escarapelas, Parámetros, Áreas, Inventario ni Certificados; 'digitador' solo ve Registro, Áreas, Inventario y Usuarios. #}
     <section class="gw-tile-group" aria-labelledby="gwTitMain">
       <h2 class="gw-tile-group__title" id="gwTitMain">Lo de todos los días</h2>
       <div class="gw-tiles">
@@ -100,7 +100,9 @@
         {% if event.inventory_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
         {% endif %}
+        {% if staff_role != "digitador" %}{# el digitador no tiene acceso a /estadisticas (main.py: exclude_roles): no se le dibuja una puerta cerrada #}
         {{ tile("/kiosk/%s/estadisticas" % event.id, "chart", "Estadísticas", "Exporta el reporte y consulta gráficos del evento") }}
+        {% endif %}
       </div>
     </section>
 

@@ -70,11 +70,13 @@ def test_logos_tamano_global_y_por_evento():
 
 
 def test_papelera_en_todos_los_buscadores_dentro_del_campo():
-    js, css = read("static/js/gw-clear.js"), read("static/css/design-system.css")
-    assert "gw-clearbtn" in js and 'input[type="search"]' in js
-    assert re.search(r"\.gw-clearbtn \{ position: absolute;", css)
-    assert "gw-clear.js" in read("templates/_gw_head.html")
-    assert "gw-clear.js" not in read("templates/form_public.html")          # las páginas públicas siguen congeladas
+    """Una sola papelera por campo (la de gw-ui.js): antes convivía con otra de gw-clear.js y al escribir se veían dos."""
+    js, css = read("static/js/gw-ui.js"), read("static/css/design-system.css")
+    assert not (ROOT / "static/js/gw-clear.js").exists() and "gw-clear.js" not in read("templates/_gw_head.html")
+    assert "gw-clearbtn" not in css and "gw-clearbtn" not in js
+    assert "data-gw-clear-btn" in js and "gw-search__clear--proxy" in js
+    assert re.search(r"\.gw-search__clear--in \.gw-icon \{ width: 1\.5rem", css)
+    assert "right: var(--gw-sp-4)" in css
     for rel, ident in (("templates/kiosk_registro.html", "searchNombre"), ("templates/_gw_buscador.html", "searchCedula"), ("templates/kiosk_areas.html", "nameSearch"),
                        ("templates/kiosk_ruleta.html", "pickerSearch"), ("templates/calendario.html", "noteTargetSearch")):
         assert re.search(rf'id="{ident}"[^>]*data-gw-clearable', read(rel)), (rel, ident)

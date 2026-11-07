@@ -17,6 +17,9 @@
 .fs-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--gw-sp-4); }
 .fs-kpi { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-5); }
 .fs-kpi__label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: .04em; text-transform: uppercase; color: var(--gw-text-muted); }
+.fs-kpi__label { display: flex; align-items: center; gap: var(--gw-sp-2); }
+.fs-kpi__icon { flex: none; width: 1.6rem; height: 1.6rem; color: var(--gw-gold-text); }
+.fs-kpi__icon--sheet { color: var(--gw-ok-line); }
 .fs-kpi__value { font-size: clamp(2.25rem, 8vw, 3.25rem); line-height: 1.05; font-weight: var(--gw-fw-bold); color: var(--gw-text); overflow-wrap: anywhere; }
 .fs-kpi__value--text { font-size: var(--gw-fs-2xl); }
 .fs-kpi__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }

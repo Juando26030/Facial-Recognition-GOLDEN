@@ -20,9 +20,19 @@
   }
   function tone(pct, full) { return full || pct >= 100 ? 'err' : (pct >= 80 ? 'warn' : ''); }
 
-  function kpi(label, value, hint, toneName) {
+  var ICONS_URL = (window.GW_ICONS_URL || '/static/img/icons.svg');
+  function icon(name) {
+    var ns = 'http://www.w3.org/2000/svg', s = document.createElementNS(ns, 'svg'), u = document.createElementNS(ns, 'use');
+    s.setAttribute('class', 'gw-icon fs-kpi__icon fs-kpi__icon--' + name); s.setAttribute('aria-hidden', 'true');
+    u.setAttribute('href', ICONS_URL + '#i-' + name); s.appendChild(u);
+    return s;
+  }
+  function kpi(label, value, hint, toneName, iconName) {
     var c = el('div', 'gw-card fs-kpi' + (toneName ? ' fs-kpi--' + toneName : ''));
-    c.appendChild(el('div', 'fs-kpi__label', label));
+    var lb = el('div', 'fs-kpi__label');
+    if (iconName) lb.appendChild(icon(iconName));
+    lb.appendChild(document.createTextNode(label));
+    c.appendChild(lb);
     var isText = typeof value === 'string' && value.length > 9;
     c.appendChild(el('div', 'fs-kpi__value' + (isText ? ' fs-kpi__value--text' : ''), typeof value === 'number' ? nf.format(value) : value));
     if (hint) c.appendChild(el('div', 'fs-kpi__hint', hint));
@@ -144,20 +154,20 @@
     updated.textContent = 'Actualizado ' + new Date(d.generated_at).toLocaleTimeString('es-CO') + (d.includes_tests ? ' · incluye pruebas' : '');
 
     var s = d.summary, kp = el('div', 'fs-kpis');
-    kp.appendChild(kpi('Inscritos', s.registered, s.companions != null ? 'más ' + nf.format(s.companions) + ' acompañantes: ' + nf.format(s.people_total) + ' personas' : 'inscripciones confirmadas', 'ok'));
+    kp.appendChild(kpi('Inscritos', s.registered, s.companions != null ? 'más ' + nf.format(s.companions) + ' acompañantes: ' + nf.format(s.people_total) + ' personas' : 'inscripciones confirmadas', 'ok', 'users'));
     if (d.origin) {      // solo el personal: el servidor no lo manda al cliente ni al enlace público
-      kp.appendChild(kpi('Ya estaban en la base', d.origin.known, 'personas que el evento ya tenía cargadas'));
-      kp.appendChild(kpi('Personas nuevas', d.origin.new, 'se inscribieron sin estar en la base', d.origin.new ? 'warn' : ''));
-      if (d.origin.unknown) kp.appendChild(kpi('Sin cédula', d.origin.unknown, 'no se puede saber si estaban en la base'));
+      kp.appendChild(kpi('Ya estaban en la base', d.origin.known, 'personas que el evento ya tenía cargadas', '', 'sheet'));
+      kp.appendChild(kpi('Personas nuevas', d.origin.new, 'se inscribieron sin estar en la base', d.origin.new ? 'warn' : '', 'user-plus'));
+      if (d.origin.unknown) kp.appendChild(kpi('Sin cédula', d.origin.unknown, 'no se puede saber si estaban en la base', '', 'id-card'));
     }
     if (d.capacity) {
-      kp.appendChild(kpi('Cupos usados', d.capacity.used + ' / ' + d.capacity.total, d.capacity.pct + '% del cupo total', tone(d.capacity.pct, d.capacity.full)));
-      kp.appendChild(kpi('Cupos faltantes', d.capacity.left, d.capacity.full ? 'el cupo está lleno' : 'disponibles ahora', d.capacity.full ? 'err' : ''));
+      kp.appendChild(kpi('Cupos usados', d.capacity.used + ' / ' + d.capacity.total, d.capacity.pct + '% del cupo total', tone(d.capacity.pct, d.capacity.full), 'users'));
+      kp.appendChild(kpi('Cupos faltantes', d.capacity.left, d.capacity.full ? 'el cupo está lleno' : 'disponibles ahora', d.capacity.full ? 'err' : '', 'clock'));
     } else {
-      kp.appendChild(kpi('Cupo', 'Sin límite', 'este formulario no tiene cupo total'));
+      kp.appendChild(kpi('Cupo', 'Sin límite', 'este formulario no tiene cupo total', '', 'lock'));
     }
-    if (s.visits) kp.appendChild(kpi('Visitas', s.visits, s.conversion_pct != null ? s.conversion_pct + '% se inscribió' : 'personas que abrieron el formulario'));
-    if (s.last_at) kp.appendChild(kpi('Última inscripción', s.last_at, 'hora local'));
+    if (s.visits) kp.appendChild(kpi('Visitas', s.visits, s.conversion_pct != null ? s.conversion_pct + '% se inscribió' : 'personas que abrieron el formulario', '', 'eye'));
+    if (s.last_at) kp.appendChild(kpi('Última inscripción', s.last_at, 'hora local', '', 'flag-end'));
     body.appendChild(kp);
 
     if (d.capacity || d.quotas.length) {

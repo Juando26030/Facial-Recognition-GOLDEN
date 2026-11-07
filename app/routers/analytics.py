@@ -40,12 +40,12 @@ def registro_dashboard(db: Session, event: Event, with_origin: bool = False) -> 
     if with_origin:
         kpis += _origin_kpis(attendees, ids, logs)
     if times:
-        kpis.append(an.kpi("Primer registro", an.fmt_local(min(times)), "hora local"))
-        kpis.append(an.kpi("Último registro", an.fmt_local(max(times)), "hora local"))
-        kpis.append(an.kpi("Hora pico", an.peak_hour(times) or "—", "más registros en una hora"))
+        kpis.append(an.kpi("Primer registro", an.fmt_local(min(times)), "hora local", icon="flag-start"))
+        kpis.append(an.kpi("Último registro", an.fmt_local(max(times)), "hora local", icon="flag-end"))
+        kpis.append(an.kpi("Hora pico", an.peak_hour(times) or "—", "más registros en una hora", icon="peak"))
         hours = max(1 / 60, (max(times) - min(times)).total_seconds() / 3600)
         if len(times) > 1:
-            kpis.append(an.kpi("Ritmo promedio", f"{len(times) / hours:.0f} / hora", "entre el primer y el último registro"))
+            kpis.append(an.kpi("Ritmo promedio", f"{len(times) / hours:.0f} / hora", "entre el primer y el último registro", icon="gauge"))
 
     charts = [
         an.time_series("timeline", "Registros en el tiempo", times),
@@ -81,11 +81,11 @@ def _origin_kpis(attendees: dict, ids: set, logs: list) -> list:
         origin = att.origin if att is not None and att.origin else ("manual" if uid in new_by_hand else None)
         count[origin if origin in count else "otro"] += 1
     total = len(ids)
-    out = [an.kpi("Vienen del Excel (base)", count["base"], an.pct(count["base"], total) + " de la base"),
-           an.kpi("Nuevos digitados a mano", count["manual"], an.pct(count["manual"], total) + " de la base"),
-           an.kpi("Llegaron por formulario", count["autoregistro"], an.pct(count["autoregistro"], total) + " de la base")]
+    out = [an.kpi("Vienen del Excel (base)", count["base"], an.pct(count["base"], total) + " de la base", icon="sheet"),
+           an.kpi("Nuevos digitados a mano", count["manual"], an.pct(count["manual"], total) + " de la base", icon="hand"),
+           an.kpi("Llegaron por formulario", count["autoregistro"], an.pct(count["autoregistro"], total) + " de la base", icon="form")]
     if count["otro"]:
-        out.append(an.kpi("Origen desconocido", count["otro"], "cargas anteriores a este dato"))
+        out.append(an.kpi("Origen desconocido", count["otro"], "cargas anteriores a este dato", icon="help"))
     return out
 
 

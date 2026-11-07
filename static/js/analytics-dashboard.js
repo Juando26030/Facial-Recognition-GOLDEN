@@ -93,6 +93,10 @@
       .ad-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-4); }
       .ad-kpi { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
       .ad-kpi__label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); letter-spacing: .04em; text-transform: uppercase; }
+      .ad-kpi__label { display: flex; align-items: center; gap: var(--gw-sp-2); }
+      .ad-kpi__icon { flex: none; width: 1.6rem; height: 1.6rem; color: var(--gw-gold-text); }
+      .ad-kpi__icon--sheet { color: var(--gw-ok-line); }
+      .ad-kpi__icon--hand { color: var(--gw-warn-line); }
       .ad-kpi__value { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); overflow-wrap: anywhere; }
       .ad-kpi__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
       .ad-kpi--good .ad-kpi__value { color: var(--gw-ok-text); }
@@ -216,7 +220,7 @@
       q('.ad-kpis').className = 'ad-kpis ad-kpis--stats';
       q('.ad-kpis').innerHTML = `<div class="gw-stats-row${big.length === 2 ? ' gw-stats-row--2' : ''}">` + big.map((k, i) => `<div class="gw-stat${cls[k.tone] || ''}">${icon(ICONS[i])}
         <div class="gw-stat__value">${esc(k.value)}</div><div class="gw-stat__label">${esc(k.label)}</div><div class="gw-stat__hint">${esc(k.hint)}</div></div>`).join('') + '</div>'
-        + (rest.length ? '<div class="ad-kpis">' + rest.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}"><div class="ad-kpi__label">${esc(k.label)}</div><div class="ad-kpi__value">${esc(k.value)}</div><div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('') + '</div>' : '');
+        + (rest.length ? '<div class="ad-kpis">' + rest.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}"><div class="ad-kpi__label">${k.icon ? `<svg class="gw-icon ad-kpi__icon ad-kpi__icon--${esc(k.icon)}" aria-hidden="true"><use href="${esc(opts.icons || '')}#i-${esc(k.icon)}"/></svg>` : ''}${esc(k.label)}</div><div class="ad-kpi__value">${esc(k.value)}</div><div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('') + '</div>' : '');
     }
 
     function paint(data) {

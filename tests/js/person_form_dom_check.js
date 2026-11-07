@@ -107,11 +107,19 @@ const keysIn = (node) => Array.from(node.querySelectorAll('[data-field-key]')).m
   const ed = w.document.getElementById('ed');
   D.mount(ed, { eventId: 7, fetch: fetchFake, toast: (m, k) => toasts.push([m, k]) });
   await new Promise((r) => setTimeout(r, 30));
-  assert.strictEqual(ed.querySelectorAll('tbody tr').length, 6, 'una fila por cada campo del evento');
-  assert.ok(ed.querySelector('select[aria-label^="Texto al escribir de Nombres"]'), 'Nombres admite «Texto al escribir»'); assert.strictEqual(ed.querySelector('select[aria-label^="Texto al escribir de Teléfono"]'), null, 'Teléfono no');
-  assert.strictEqual(ed.querySelector('input[aria-label="Cédula obligatorio"]').disabled, true, 'la cédula siempre es obligatoria'); assert.strictEqual(ed.querySelector('input[aria-label="Apellidos obligatorio"]').disabled, true);
-  const roleReq = ed.querySelector('input[aria-label="Cargo obligatorio"]'); roleReq.checked = true; fire(w, roleReq, 'change');
-  const caseSel = ed.querySelector('select[aria-label^="Texto al escribir de Nombres"]'); caseSel.value = 'upper'; fire(w, caseSel, 'change');
+  assert.strictEqual(ed.querySelectorAll('.gw-pf-card').length, 6, 'una tarjeta por cada campo del evento');
+  assert.strictEqual(ed.querySelectorAll('.gw-pf-row--2').length, 1, 'nombres y apellidos comparten fila');
+  const pick = (key) => { ed.querySelector(`.gw-pf-card[data-key="${key}"]`).click(); };
+  pick('first_name');
+  assert.ok(ed.querySelector('select[aria-label^="Texto al escribir de Nombres"]'), 'Nombres admite «Texto al escribir»');
+  pick('phone'); assert.strictEqual(ed.querySelector('select[aria-label^="Texto al escribir de Teléfono"]'), null, 'Teléfono no');
+  pick('id'); assert.strictEqual(ed.querySelector('input[aria-label="Cédula obligatorio"]').disabled, true, 'la cédula siempre es obligatoria');
+  pick('last_name'); assert.strictEqual(ed.querySelector('input[aria-label="Apellidos obligatorio"]').disabled, true);
+  pick('role'); const roleReq = ed.querySelector('input[aria-label="Cargo obligatorio"]'); roleReq.checked = true; fire(w, roleReq, 'change');
+  pick('first_name'); const caseSel = ed.querySelector('select[aria-label^="Texto al escribir de Nombres"]'); caseSel.value = 'upper'; fire(w, caseSel, 'change');
+  // arrastrar: soltar «Teléfono» en la franja entre filas del grupo «mas» lo deja en una fila nueva; la vista previa abre y cierra
+  ed.querySelector('#pfPreview').click(); assert.ok(w.document.querySelector('.gw-pf-preview details.gw-form-group'), 'la vista previa dibuja los grupos'); w.document.querySelector('#pfPreviewClose').click();
+  assert.strictEqual(w.document.querySelector('.gw-pf-preview'), null, 'cerrar la vista previa la quita');
   ed.querySelector('#pfEnabled').checked = true; fire(w, ed.querySelector('#pfEnabled'), 'change');
   ed.querySelector('#pfSave').click();
   await new Promise((r) => setTimeout(r, 30));

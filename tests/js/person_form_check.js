@@ -84,6 +84,24 @@ assert.strictEqual(PF.pick(null, null), null);
   const adv = { match: 'any', rules: [{ field: 'phone', op: 'filled' }, { field: 'role', op: 'contains', value: 'x' }] };
   const m2 = D.toModel({ ...view, definition: def({ fields: { ...def().fields, opcional_2: { required: false, show_if: adv } } }) });
   assert.deepStrictEqual(D.fromModel(m2).fields.opcional_2.show_if, adv);
+  // lienzo: filas, soltar al lado de otra tarjeta (máx. 4), soltar entre filas, teclado, separar y cambiar de grupo
+  const mm = D.toModel({ ...view, definition: def() });
+  const keysOf = (m) => D.rowsOf(m).map((r) => r.sheet + ':' + r.keys.join('+'));
+  assert.deepStrictEqual(keysOf(mm), ['datos:id', 'datos:first_name+last_name', 'mas:role+entity+phone+email', 'mas:opcional_1+opcional_2']);
+  assert.strictEqual(D.dropAt(mm, 'opcional_1', { beside: 'id', side: 'right' }), 'ok'); assert.deepStrictEqual(keysOf(mm).slice(0, 3), ['datos:id+opcional_1', 'datos:first_name+last_name', 'mas:role+entity+phone+email']);
+  assert.strictEqual(D.dropAt(mm, 'opcional_2', { beside: 'role', side: 'left' }), 'full', 'una fila admite 4: el quinto no entra');
+  assert.strictEqual(D.dropAt(mm, 'opcional_2', { beside: 'opcional_2', side: 'left' }), 'noop');
+  assert.strictEqual(D.dropAt(mm, 'phone', { sheet: 'datos', index: 1 }), 'ok'); assert.deepStrictEqual(keysOf(mm), ['datos:id+opcional_1', 'datos:phone', 'datos:first_name+last_name', 'mas:role+entity+email', 'mas:opcional_2']);
+  assert.strictEqual(D.dropAt(mm, 'email', { sheet: 'datos', index: 99 }), 'ok'); assert.strictEqual(keysOf(mm)[3], 'datos:email', 'un índice grande deja la fila al final del grupo');
+  assert.strictEqual(D.dropAt(mm, 'id', { sheet: 'mas', index: 0 }), 'ok'); assert.strictEqual(keysOf(mm).find((r) => r.endsWith(':id')), 'mas:id', 'se puede mover a otro grupo');
+  const masRows = D.rowsOf(mm).filter((r) => r.sheet === 'mas'), own = masRows.findIndex((r) => r.keys.join() === 'opcional_2');
+  assert.ok(own >= 0); assert.strictEqual(D.dropAt(mm, 'opcional_2', { sheet: 'mas', index: own }), 'noop', 'soltar en el mismo lugar no cambia nada');
+  assert.strictEqual(D.moveKey(mm, 'first_name', 'right'), true); assert.ok(keysOf(mm).includes('datos:last_name+first_name'));
+  assert.strictEqual(D.moveKey(mm, 'first_name', 'right'), false, 'en el borde no se mueve');
+  assert.strictEqual(D.moveKey(mm, 'first_name', 'down'), true, 'con varios en la fila, abajo lo saca a una fila nueva'); assert.ok(keysOf(mm).includes('datos:first_name'));
+  assert.strictEqual(D.separate(mm, 'role'), true); assert.strictEqual(D.separate(mm, 'role'), false, 'ya está solo');
+  assert.strictEqual(D.sendToSheet(mm, 'first_name', 'mas'), true); assert.strictEqual(mm.items.find((i) => i.key === 'first_name').sheet, 'mas'); assert.strictEqual(D.sendToSheet(mm, 'first_name', 'mas'), false);
+  assert.strictEqual(D.fromModel(mm).rows.reduce((n, r) => n + r.items.length, 0), 9, 'ningún campo se pierde al mover');
   // grupos
   const g = D.addSheet(model, 'Extras'); assert.strictEqual(model.sheets.length, 3); assert.ok(/^[A-Za-z0-9_]{1,40}$/.test(g.id));
   model.items.find((i) => i.key === 'opcional_1').sheet = g.id;

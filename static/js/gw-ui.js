@@ -195,7 +195,7 @@
     if (t !== 'search' && t !== 'text') return false;
     if (el.closest('.sp-kbd-wrap')) return false;                                       // el lector/teclado del Registro con el modo touch lleva su propio botón
     var row = el.closest('.gw-search__row');
-    if (row && row.querySelector('.gw-search__clear:not(.gw-search__clear--in)')) return false;       // ya trae su papelera (Registro: #searchClearBtn, la maneja directory.js)
+    if (row && row.querySelector('.gw-search__clear:not(.gw-search__clear--in):not(.gw-search__clear--proxy)')) return false;       // ya trae su papelera visible; las «proxy» (Registro: #searchClearBtn, Respuestas) están ocultas y guardan la lógica de la pantalla
     if (t === 'search' || el.hasAttribute('data-gw-clearable') || el.closest('.gw-search')) return true;
     return SEARCH_PLACEHOLDER.test(el.getAttribute('placeholder') || '');
   }
@@ -224,6 +224,8 @@
   }
   function runClear(btn) {
     var input = btn._gwInput; if (!input || input.disabled || input.readOnly) return;
+    var own = document.getElementById(input.getAttribute('data-gw-clear-btn') || '');          // botón oculto de la pantalla que hace más que vaciar (vuelve a buscar, reinicia filtros…)
+    if (own) { own.click(); btn.hidden = !input.value; try { input.focus(); } catch (e0) { /* sin foco */ } return; }
     input.value = '';
     btn.hidden = true;
     try { input.dispatchEvent(new Event('input', { bubbles: true })); if ((input.getAttribute('type') || '') === 'search') input.dispatchEvent(new Event('search', { bubbles: true })); } catch (e) { /* navegadores sin Event() */ }
@@ -232,6 +234,7 @@
   document.addEventListener('input', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); }, true);
   document.addEventListener('change', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); }, true);
   document.addEventListener('focusin', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); });
+  document.addEventListener('pointerover', function (e) { if (e.target && e.target._gwClear) syncClear(e.target); }, true);          // otro código vacía el campo sin avisar (p. ej. al acreditar): se revisa al pasar el ratón
   document.addEventListener('mousedown', function (e) { if (e.target && e.target.closest && e.target.closest('[data-gw-clear]')) e.preventDefault(); });          // el clic en la papelera no le quita el foco a la caja (ni cierra el teclado del celular)
   function watchClear() {
     scanClear(document.body);
