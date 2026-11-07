@@ -65,7 +65,7 @@
         (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
-    const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
+    const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl, fields: fields });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
     EF.bind(form, { fields: fields, loadCities: citiesFor });
     applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();

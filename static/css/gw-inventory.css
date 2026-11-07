@@ -1,0 +1,20 @@
+/* Widget «campo de inventario» (static/js/gw-inventory.js). Únicamente tokens --gw-* y clases .gw-* del diseño. */
+.gw-inv { display: grid; gap: var(--gw-sp-3); min-width: 0; }
+.gw-inv__types { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-inv__chip { cursor: pointer; }
+.gw-inv__chip[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: var(--gw-gold-2); }
+.gw-inv__chip:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-inv__n { display: inline-block; min-width: 1.5em; padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); text-align: center; }
+.gw-inv__empty { margin: 0; padding: var(--gw-sp-3); border: 1px dashed var(--gw-border-strong); border-radius: var(--gw-radius-md); }
+.gw-inv__group { min-width: 0; margin: 0; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); }
+.gw-inv__legend { padding: 0 var(--gw-sp-2); font-weight: var(--gw-fw-bold); }
+.gw-inv__line { display: grid; grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.6fr) auto; gap: var(--gw-sp-2) var(--gw-sp-3); align-items: end; margin-bottom: var(--gw-sp-3); }
+.gw-inv__line .gw-field { margin: 0; min-width: 0; }
+.gw-inv__line .gw-input, .gw-inv__line .gw-select, .gw-inv__del { min-height: var(--gw-tap); }
+.gw-inv__err { grid-column: 1 / -1; margin: 0; color: var(--gw-danger); font-weight: var(--gw-fw-bold); }
+.gw-inv__err[hidden], .gw-inv__summary[hidden] { display: none; }
+.gw-inv__summary { margin: 0; padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-info-bg); }
+@media (max-width: 640px) {
+  .gw-inv__line { grid-template-columns: minmax(0, 1fr); padding-bottom: var(--gw-sp-3); border-bottom: 1px solid var(--gw-border); }
+  .gw-inv__del { justify-self: start; }
+}

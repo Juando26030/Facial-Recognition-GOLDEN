@@ -201,7 +201,7 @@ def test_clean_value_by_type():
     _raises(cv, "bandana_colors", [{"name": "x", "hex": "rojo"}], max=2)
     _raises(cv, "bandana_colors", [{"hex": "#000000"}, {"hex": "#111111"}], max=1)
     inv = {"inventory_types": [{"key": "pa", "label": "Pañoletas", "refs": ["Roja"]}, {"key": "cu", "label": "Cuerdas", "refs": []}]}
-    assert cv("inventory", [{"type": "pa", "qty": "5", "ref": "Roja"}, {"type": "cu", "qty": 2, "ref": "x"}], **inv) == [{"type": "pa", "qty": 5, "ref": "Roja"}, {"type": "cu", "qty": 2, "ref": None}]
+    assert cv("inventory", [{"type": "pa", "qty": "5", "ref": "Roja"}, {"type": "cu", "qty": 2, "ref": " Dell "}], **inv) == [{"type": "pa", "qty": 5, "ref": "Roja"}, {"type": "cu", "qty": 2, "ref": "Dell"}]          # sin lista de referencias = texto libre
     _raises(cv, "inventory", [{"type": "zz", "qty": 1}], **inv)
     _raises(cv, "inventory", [{"type": "pa", "qty": 1, "ref": "Verde"}], **inv)
     _raises(cv, "inventory", [{"type": "pa", "qty": -1, "ref": "Roja"}], **inv)
