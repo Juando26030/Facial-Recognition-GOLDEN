@@ -8,7 +8,8 @@ Retención automática (política de Golden, 2026-09-29; debe coincidir con la P
     `BIOMETRIC_RETENTION_DAYS_AFTER_EVENT` (7) días finalizados (`events.finalized_at`; reabrir un evento reinicia su reloj). Si sigue en un evento
     abierto o finalizado hace menos de 7 días, se conserva y la regla se aplica cuando cierre ese otro evento.
   * Tope: `BIOMETRIC_MAX_DAYS` (180) días desde la captura (`users.face_captured_at`) aunque algún evento siga abierto (eventos que nunca se finalizan).
-  * Una persona sin ningún evento (huérfana) solo se borra por el tope.
+  * Una persona sin ningún evento (huérfana: se borró el evento o la sacaron de él) se borra a los `BIOMETRIC_RETENTION_DAYS_AFTER_EVENT` (7) días de la
+    captura (I2, 6-nov-2026: antes solo por el tope de 180 días, aunque ya no hubiera ningún evento que justificara tener su rostro).
   * (2026-10-06, auditora) «Sigue en otro evento abierto» solo cuenta en los eventos donde la persona tiene una aceptación vigente en `audit_consent_logs`; si nunca aceptó en ninguno, cuentan todos
     los suyos. El tope de 180 días no cambia.
 Borrado manual: el admin puede borrar lo biométrico de un evento (`purge_event`); ahí solo se respeta a quien está en OTRO evento abierto CON reconocimiento
@@ -121,14 +122,16 @@ holding AS (
   WHERE EXISTS (SELECT 1 FROM acc WHERE acc.tenant_id = u.tenant_id AND acc.user_id = u.id AND acc.event_id = a.event_id)
      OR NOT EXISTS (SELECT 1 FROM acc WHERE acc.tenant_id = u.tenant_id AND acc.user_id = u.id))
 SELECT u.tenant_id, u.id,
-       (EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
+       ((NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id) AND u.face_captured_at <= :after_cut)
+        OR (EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
         AND NOT EXISTS (SELECT 1 FROM holding h JOIN events e ON e.id = h.event_id
                         WHERE h.user_id = u.id AND h.tenant_id = u.tenant_id
-                          AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut))) AS by_event
+                          AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut)))) AS by_event
 FROM users u
 WHERE (u.face_encoding IS NOT NULL OR u.biometric_consent_at IS NOT NULL OR u.face_captured_at IS NOT NULL)
   AND (u.tenant_id, u.id) > (:last_tenant, :last_id)
-  AND ((EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
+  AND ((NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id) AND u.face_captured_at <= :after_cut)
+       OR (EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
         AND NOT EXISTS (SELECT 1 FROM holding h JOIN events e ON e.id = h.event_id
                         WHERE h.user_id = u.id AND h.tenant_id = u.tenant_id
                           AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut)))

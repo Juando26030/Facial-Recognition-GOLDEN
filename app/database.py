@@ -56,6 +56,7 @@ engine = create_engine(
     pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
     pool_pre_ping=True,            # una conexión que el servidor/pooler ya cerró se reemplaza sola al sacarla del pool
     pool_use_lifo=True,
+    hide_parameters=True,          # I3 (6-nov-2026): los errores de la base NO llevan los valores (nombres, cédulas, correos) a logs, tablas ni pantallas
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

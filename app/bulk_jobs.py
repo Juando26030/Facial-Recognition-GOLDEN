@@ -114,7 +114,7 @@ def run(job_id: str, work) -> None:
     except Exception as e:  # noqa: BLE001 — cualquier fallo se le muestra al usuario, no se pierde en el hilo
         log.error("la carga %s falló", job_id, exc_info=True)
         db.rollback()
-        _finish(job_id, error_status=500, error_detail=f"Error inesperado: {e}")
+        _finish(job_id, error_status=500, error_detail=f"Error inesperado ({type(e).__name__}). Vuelve a intentarlo; si se repite, avisa a soporte con el código de la carga {job_id[:8]}.")      # I3: nunca el texto de la excepción (trae SQL y datos de las filas)
     finally:
         _active.discard(job_id)
         reporter.close()

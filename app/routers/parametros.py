@@ -170,9 +170,14 @@ def upload_event_logo(
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in LOGO_EXT:
         raise HTTPException(status_code=400, detail=f"Formato no permitido — usa uno de: {', '.join(sorted(LOGO_EXT))}")
-    content = file.file.read()
+    content = file.file.read(3_000_001)
     if not content or len(content) > 3_000_000:
         raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 3 MB")
+    from app import safe_limits
+    try:
+        safe_limits.check_design_image(content, ext, max_bytes=3_000_000)      # I6: tamaño, píxeles y formato real (no solo la extensión)
+    except safe_limits.LimitError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
     key = key_of(event.tenant_id, "event_logos", f"{uuid.uuid4().hex}{ext}")
     get_storage().put(key, content)
     if event.logo_path:

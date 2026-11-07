@@ -96,7 +96,7 @@ def test_a_file_with_more_rows_than_the_limit_is_refused_with_a_clear_message_an
     ev = factory.event("creado")
     login(client, "coord1")
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id)}, files={"roster_file": ("p.xlsx", G.xlsx_bytes(_rows(51)), "application/octet-stream")})
-    assert r.status_code == 400 and "máximo" in r.json()["detail"] and "50" in r.json()["detail"] and "51" in r.json()["detail"]
+    assert r.status_code == 400 and "máximo" in r.json()["detail"] and "50" in r.json()["detail"]      # I1: se corta al pasar el tope (ya no se lee el archivo entero para contar)
     assert db.query(User).filter_by(tenant_id=ev.tenant_id).count() == 0
 
 
