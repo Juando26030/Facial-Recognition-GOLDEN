@@ -140,12 +140,11 @@
 }
 @container (min-width: 60rem) { #calBody .cal-card__cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-/* Con tarjetas completas, siete columnas necesitan ancho: si el calendario mide menos de 84 rem (~1340 px) el Mes y la Semana pasan a lista (un día debajo de otro, con la tarjeta a dos o tres columnas), igual que en el celular. Se decide por el ANCHO DEL CALENDARIO, no de la pantalla. */
-#calBody { container: calbody / inline-size; }
-@container calbody (max-width: 84rem) {
-  #calBody .cal-grid { grid-template-columns: minmax(0, 1fr); }
-  #calBody .cal-daylabel { display: none; }
-  #calBody .cal-cell, #calBody .cal-cell--long { min-height: 0; }
-  #calBody .cal-cell--empty.cal-cell--other, #calBody .cal-cell--empty:not(.cal-cell--today):not(.cal-cell--week) { display: none; }
-  #calBody .cal-dow { display: inline; }
-}
+/* Calendario plegado: una línea por evento (recuadro de color + nombre + código); el detalle completo sigue en el cuadro de acciones y en el tooltip */
+#calBody .cal-chip--folded .cal-chip__main { padding: var(--gw-sp-1) var(--gw-sp-2); }
+#calBody .cal-mini { display: flex; align-items: center; gap: var(--gw-sp-2); min-width: 0; }
+#calBody .cal-mini .cal-card__swatches { flex: 0 0 auto; }
+#calBody .cal-mini .cal-card__sw { flex: 0 0 auto; width: 1.5rem; min-width: 0; height: 1.5rem; border-width: 1px; border-radius: var(--gw-radius-sm); }
+#calBody .cal-mini__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
+#calBody .cal-mini__code { flex: 0 0 auto; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.cal-fold { white-space: nowrap; }

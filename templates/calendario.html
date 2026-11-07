@@ -77,6 +77,7 @@
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-view="week" aria-pressed="false">Semana</button>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-view="day" aria-pressed="false">Día</button>
       </div>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-fold" id="foldBtn" aria-pressed="false" title="Pliega los eventos a una línea (color, nombre y código) o los despliega con toda su información">Plegar eventos</button>
     </div>
 
     {% if has_filters %}
@@ -148,6 +149,9 @@ function isSameDay(a, b) { return toISO(a) === toISO(b); }
 function todayDate() { const t = new Date(); t.setHours(0,0,0,0); return t; }
 
 let currentView = 'month';
+// Plegar / desplegar (pedido de Juan David, 2026-11-07): por defecto DESPLEGADO (toda la información de la plantilla). Plegado = una línea con color de pañoleta, nombre y código. Se recuerda en este navegador.
+let eventsFolded = false;
+try { eventsFolded = localStorage.getItem('gw.cal.folded') === '1'; } catch (e) { /* sin almacenamiento: queda desplegado */ }
 let refDate = todayDate();
 try {                                                  // refrescar deja la vista (mes/semana/día) y la fecha en la que estabas: #vista=week&fecha=2026-11-06
   const hp = new URLSearchParams((location.hash || '').slice(1));
@@ -163,6 +167,18 @@ const mineFilter = document.getElementById('mineFilter');
 const commercialFilter = document.getElementById('commercialFilter');
 const coordinatorFilter = document.getElementById('coordinatorFilter');
 
+const foldBtn = document.getElementById('foldBtn');
+function updateFoldButton() {
+  foldBtn.setAttribute('aria-pressed', eventsFolded ? 'true' : 'false');
+  foldBtn.textContent = eventsFolded ? 'Desplegar eventos' : 'Plegar eventos';
+}
+foldBtn.addEventListener('click', () => {
+  eventsFolded = !eventsFolded;
+  try { localStorage.setItem('gw.cal.folded', eventsFolded ? '1' : '0'); } catch (e) { /* sin almacenamiento */ }
+  updateFoldButton();
+  render();
+});
+updateFoldButton();
 document.querySelectorAll('.cal-views [data-view]').forEach(btn => {
   btn.addEventListener('click', () => { currentView = btn.dataset.view; updateViewButtons(); loadAndRender(); });
 });
@@ -280,11 +296,12 @@ function loadCardLayout() {
   return cardLayoutPromise;
 }
 
-// Mes, Semana y Día dibujan LA MISMA tarjeta (la de la plantilla de evento); cambia solo el ancho disponible y por eso las columnas se deciden dentro de la tarjeta.
+// Mes, Semana y Día dibujan LA MISMA tarjeta (la de la plantilla de evento) o, si el calendario está plegado, la línea resumida (color, nombre y código).
 function eventChip(e, mode) {
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
-  return `<div class="cal-chip cal-chip--big cal-chip--${mode}">
-      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${renderCalendarCard(e, CARD_LAYOUT)}</button>
+  const body = eventsFolded ? renderCalendarMini(e) : renderCalendarCard(e, CARD_LAYOUT);
+  return `<div class="cal-chip cal-chip--big cal-chip--${mode}${eventsFolded ? ' cal-chip--folded' : ''}">
+      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${body}</button>
       ${reportBulbHtml(e, true)}
     </div>`;
 }

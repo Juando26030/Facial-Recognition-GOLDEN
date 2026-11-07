@@ -29,7 +29,7 @@
 (function (root, factory) {
   var api = factory(root);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else { root.renderCalendarCard = api.renderCalendarCard; root.CalendarCard = api; }
+  else { root.renderCalendarCard = api.renderCalendarCard; root.renderCalendarMini = api.renderCalendarMini; root.CalendarCard = api; }
 })(typeof window !== 'undefined' ? window : this, function (root) {
   'use strict';
 
@@ -134,6 +134,13 @@
     return t ? '<span class="gw-badge cal-card__status" data-field="status">' + esc(t) + '</span>' : '';
   }
 
+  /* Línea resumida (calendario plegado): recuadro(s) de color de pañoleta + nombre + código. Todo escapado. */
+  function renderCalendarMini(event) {
+    var ev = event || {};
+    return '<span class="cal-mini">' + swatchesHtml(ev) + '<span class="cal-mini__name">' + esc(ev.name) + '</span>' +
+      (ev.event_code ? '<span class="cal-mini__code">' + esc(ev.event_code) + '</span>' : '') + '</span>';
+  }
+
   function renderCalendarCard(event, layout) {
     var ev = event || {};
     if (layout && layout.zones && layout.fields && !Array.isArray(layout.fields)) {
@@ -156,5 +163,5 @@
       (out.bottom ? '<span class="cal-card__bottom">' + out.bottom + '</span>' : '') + '</span>';
   }
 
-  return { renderCalendarCard: renderCalendarCard, renderCardModel: renderCardModel, swatchesHtml: swatchesHtml, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
+  return { renderCalendarCard: renderCalendarCard, renderCalendarMini: renderCalendarMini, renderCardModel: renderCardModel, swatchesHtml: swatchesHtml, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
 });
