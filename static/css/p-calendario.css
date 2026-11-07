@@ -99,7 +99,7 @@
 @media (min-width: 901px) {
   .cal-day { max-width: none; gap: var(--gw-sp-2); }
   .cal-day__title { margin-bottom: var(--gw-sp-1); }
-  .cal-chip--big .cal-chip__main { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 4fr) minmax(0, 4fr); align-items: center; column-gap: var(--gw-sp-5); padding: var(--gw-sp-2) var(--gw-sp-4); min-height: var(--gw-tap); }
+  .cal-chip--big .cal-chip__main { display: block; padding: var(--gw-sp-3) var(--gw-sp-4); min-height: var(--gw-tap); }          /* la tarjeta de la plantilla trae sus propias columnas */
   .cal-chip--big .cal-chip__line, .cal-chip--big .cal-chip__line + .cal-chip__line { margin-top: 0; font-size: var(--gw-fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cal-day .gw-empty { max-width: none; }
 }
@@ -135,3 +135,15 @@
   .cal-pop-scrim { background: var(--gw-overlay); }
   .cal-pop { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 85vh; border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; padding-bottom: calc(var(--gw-sp-4) + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ---- Resumen en el Mes (nombre + cliente · ciudad) y tarjeta dentro de la celda de la Semana ---- */
+.cal-chip--sum .cal-chip__main { display: flex; flex-direction: column; justify-content: center; line-height: 1.25; padding-block: var(--gw-sp-1); }
+.cal-chip__name, .cal-chip__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-chip__name { font-weight: var(--gw-fw-bold); }
+.cal-chip__sub { font-size: var(--gw-fs-sm); opacity: 0.85; }
+.cal-chip--week { align-items: flex-start; }
+.cal-chip--week .cal-card__cols { grid-template-columns: minmax(0, 1fr); }
+.cal-chip--week .cal-card__f--strong { font-size: var(--gw-fs-md); }
+/* Dentro de la tarjeta cada dato va en su línea: título arriba/al lado con aire y valor aparte (nada pegado) */
+.cal-card__k { margin-inline-end: var(--gw-sp-1); }
+.cal-card__f { padding-block: 1px; }

@@ -229,7 +229,7 @@ async function loadAndRender() {
     const [evRes, noteRes] = await Promise.all([
       fetch(`/api/events/calendar?${params.toString()}`),
       fetch(`/api/calendar/notes?start=${toISO(start)}&end=${toISO(end)}`),
-      currentView === 'day' ? loadCardLayout() : null,          // la plantilla solo hace falta para la tarjeta grande del día; Mes y Semana no la esperan
+      loadCardLayout(),          // la plantilla del evento (Vista calendario) dibuja la tarjeta en Día, Semana y el resumen del Mes
     ]);
     if (!evRes.ok && !noteRes.ok) throw new Error('http');
     eventsCache = evRes.ok ? await evRes.json() : [];
@@ -287,11 +287,14 @@ function loadCardLayout() {
   return cardLayoutPromise;
 }
 
-function eventChip(e, big) {
+// mode: 'day' y 'week' = tarjeta completa de la plantilla; 'month' = resumen (nombre + cliente · ciudad), porque la celda es angosta.
+function eventChip(e, mode) {
+  const big = mode === 'day' || mode === 'week';
   const colorAttr = e.bandana_color ? ` data-bandana="${esc(e.bandana_color)}"` : '';
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
-  const body = big ? renderCalendarCard(e, CARD_LAYOUT) : esc(e.name);
-  return `<div class="cal-chip${big ? ' cal-chip--big' : ''}"${colorAttr}>
+  const sub = [e.tenant_name, e.city].filter(Boolean).join(' · ');
+  const body = big ? renderCalendarCard(e, CARD_LAYOUT) : `<span class="cal-chip__name">${esc(e.name)}</span>${sub ? `<span class="cal-chip__sub">${esc(sub)}</span>` : ''}`;
+  return `<div class="cal-chip${big ? ' cal-chip--big' : ' cal-chip--sum'}${mode === 'week' ? ' cal-chip--week' : ''}"${colorAttr}>
       <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${body}</button>
       ${reportBulbHtml(e, true)}
     </div>`;
@@ -312,7 +315,7 @@ function dayCellContent(d, iso, extraClass) {
   return `
     <div class="cal-cell ${extraClass}${empty}" data-date="${iso}">
       <div class="cal-daynum"><span class="cal-dow">${DAY_LABELS[(d.getDay() + 6) % 7]}</span> ${d.getDate()}</div>
-      <div class="cal-cell__body">${evs.map(e => eventChip(e, false)).join('')}${notes.map(n => noteChip(n, false)).join('')}</div>
+      <div class="cal-cell__body">${evs.map(e => eventChip(e, extraClass.includes('cal-cell--week') ? 'week' : 'month')).join('')}${notes.map(n => noteChip(n, false)).join('')}</div>
       <button type="button" class="cal-add" data-add-note="${iso}">+ recordatorio</button>
     </div>
   `;
@@ -371,7 +374,7 @@ function renderDay() {
   if (!evs.length && !notes.length) {
     html += `<div class="gw-empty" role="status">${icon('calendar', 'gw-icon--lg')}<p><strong>Sin eventos ni recordatorios este día.</strong></p><p>Puedes agregar un recordatorio para esta fecha.</p></div>`;
   }
-  html += evs.map(e => eventChip(e, true)).join('');
+  html += evs.map(e => eventChip(e, 'day')).join('');
   html += notes.map(n => noteChip(n, true)).join('');
   html += `<div><button type="button" class="gw-btn gw-btn--secondary" data-add-note="${iso}">${icon('plus', 'gw-icon--sm')} Agregar recordatorio</button></div>`;
   html += '</div>';
