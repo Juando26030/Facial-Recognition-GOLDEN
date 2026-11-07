@@ -1,0 +1,21 @@
+/* Dirección con mapa (static/js/gw-map.js). Únicamente tokens --gw-*; Leaflet pone sus propios estilos con leaflet.css. */
+.gw-map { display: grid; gap: var(--gw-sp-2); min-width: 0; }
+.gw-map__tools { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-map__tools .gw-btn { min-height: var(--gw-tap); }
+.gw-map__status, .gw-map__attr, .gw-map__coorderr { margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-map__status--warn { color: var(--gw-warn-text); background: var(--gw-warn-bg); border-left: 6px solid var(--gw-warn-line); padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); }
+.gw-map__results { margin: 0; padding: 0; list-style: none; border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); max-height: 16rem; overflow-y: auto; }
+.gw-map__results[hidden], .gw-map__canvas[hidden], .gw-map__attr[hidden] { display: none; }
+.gw-map__item + .gw-map__item { border-top: 1px solid var(--gw-border); }
+.gw-map__opt { display: block; width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); text-align: left; font: inherit; color: var(--gw-text); background: transparent; border: 0; cursor: pointer; }
+.gw-map__opt:hover { background: var(--gw-surface-2); }
+.gw-map__opt:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: -3px; background: var(--gw-surface-2); text-decoration: underline; }
+.gw-map__canvas { height: 18rem; width: 100%; border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); overflow: hidden; z-index: 0; position: relative; }
+.gw-map__canvas:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+
+.gw-map__coords > summary { min-height: var(--gw-tap); display: flex; align-items: center; cursor: pointer; font-weight: var(--gw-fw-bold); color: var(--gw-link); }
+.gw-map__coords > summary:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-map__coordgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-3); }
+.gw-map__coorderr { margin-top: var(--gw-sp-1); color: var(--gw-danger); }
+.gw-map__coorderr:empty { display: none; }
+@media (max-width: 640px) { .gw-map__coordgrid { grid-template-columns: minmax(0, 1fr); } .gw-map__canvas { height: 15rem; } .gw-map__tools .gw-btn { flex: 1 1 auto; } }

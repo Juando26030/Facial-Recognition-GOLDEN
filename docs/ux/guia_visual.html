@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="../../static/css/agrandir.css">
 <link rel="stylesheet" href="../../static/css/fonts-propias.css">
 <link rel="stylesheet" href="../../static/css/design-system.css">
+<link rel="stylesheet" href="../../static/css/gw-map.css">
 <script>try { if (localStorage.getItem('gw_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
 <script src="../../static/js/gw-ui.js" defer></script>
 <style>
@@ -32,6 +33,7 @@
   h3.gw-subtitle { margin: var(--gw-sp-5) 0 var(--gw-sp-3); }
 </style>
 <script src="../../static/js/gw-combobox.js"></script>
+<script src="../../static/js/gw-map.js"></script>
 </head>
 <body class="gw-page">
 <svg data-sprite xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
@@ -107,6 +109,7 @@
       <li><a class="gw-nav__link" href="#pestanas">Pestañas</a></li>
       <li><a class="gw-nav__link" href="#puerta">Puerta</a></li>
       <li><a class="gw-nav__link" href="#combobox">Lista con buscador</a></li>
+      <li><a class="gw-nav__link" href="#mapa">Dirección con mapa</a></li>
       <li><a class="gw-nav__link" href="#iconos">Íconos</a></li>
     </ul>
     <div class="gw-nav__search" data-gw-search-slot hidden></div>
@@ -572,6 +575,18 @@ Piezas: .gw-steps (guía de 3 pasos) · .gw-setting (control + «?») · .gw-cho
   <pre class="g-code">&lt;input class="gw-input" data-gw-combobox data-allow-free-text data-options='[{"value":"co","label":"Colombia"}]'&gt;</pre>
 </section>
 
+<section class="g-sec" id="mapa">
+  <h2 class="gw-title">Dirección con mapa (Fase 2)</h2>
+  <p class="gw-lead">Campo <code class="g-code">address_map</code>: escribir la dirección y pulsar «Buscar» (OpenStreetMap), o marcar el punto en el mapa, o escribir las coordenadas. <code class="g-code">static/js/gw-map.js</code> + <code class="g-code">static/css/gw-map.css</code>. Atribución «© OpenStreetMap» siempre visible; si el mapa no carga, el campo sigue siendo texto.</p>
+  <div class="gw-field" data-evf-enhance="map">
+    <label class="gw-label" for="gMapTxt">Dirección del evento</label>
+    <input class="gw-input" id="gMapTxt" type="text" maxlength="200" data-evf-key="demo" data-evf-part="text" value="Corferias, Bogotá" autocomplete="off">
+    <input type="hidden" data-evf-key="demo" data-evf-part="lat" value="4.6300"><input type="hidden" data-evf-key="demo" data-evf-part="lng" value="-74.0950">
+  </div>
+  <pre class="g-code">&lt;div data-evf-enhance="map"&gt; &lt;input data-evf-part="text"&gt; &lt;input type="hidden" data-evf-part="lat"&gt; &lt;input type="hidden" data-evf-part="lng"&gt; &lt;/div&gt;
+GWMap.enhance(el, { countryCode: 'co' })   // evento gw:map-change {text, lat, lng}</pre>
+</section>
+
 <section class="g-sec" id="iconos">
   <h2 class="gw-title">Íconos</h2>
   <p class="gw-lead">Sprite propio en <code class="g-code">static/img/icons.svg</code> (sin librerías). Siempre con texto al lado y <code class="g-code">aria-hidden="true"</code>. Uso: <code class="g-code">&lt;svg class="gw-icon" aria-hidden="true"&gt;&lt;use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/&gt;&lt;/svg&gt;</code>.</p>
@@ -608,5 +623,6 @@ Piezas: .gw-steps (guía de 3 pasos) · .gw-setting (control + «?») · .gw-cho
     });
   })();
 </script>
+<script>if (window.GWMap && GWMap.enhanceAll) GWMap.enhanceAll(document, { countryCode: "co" });</script>
 </body>
 </html>
