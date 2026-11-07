@@ -318,9 +318,12 @@ def delete_staff(
     db.query(AccessLog).filter(AccessLog.registered_by_staff_id == target.id).update({"registered_by_staff_id": None})
     db.query(StaffUser).filter(StaffUser.created_by_id == target.id).update({"created_by_id": None})
 
+    from app import staff_refs
     username = target.username
-    db.delete(target)
+    outcome = staff_refs.delete_or_deactivate(db, target)      # D3: suelta TODAS las referencias (impresiones, áreas, inventario, cargas, formularios…); si una no se puede soltar, desactiva
     db.commit()
+    if outcome == "deactivated":
+        return {"message": f"{username} tiene registros que no se pueden desvincular: se desactivó en lugar de borrarse", "deactivated": True}
     return {"message": f"{username} eliminado permanentemente de la base de datos"}
 
 

@@ -133,7 +133,7 @@ def start(db: Session, event: Event, staff: StaffUser, args: dict, cleanup) -> d
         db.rollback()
         cleanup(None)
         job = db.get(BulkJob, job_id)
-        _fail(job, 500, f"Error inesperado: {e}")
+        _fail(job, 500, f"Error inesperado ({type(e).__name__}). Vuelve a intentarlo; si se repite, avisa a soporte con el código de la carga {job_id[:8]}.")      # I3: nunca el texto de la excepción (trae SQL y datos de las filas)
         db.commit()
         return serialize_job(job)
     cleanup(res)

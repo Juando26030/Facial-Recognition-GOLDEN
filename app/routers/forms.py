@@ -749,9 +749,14 @@ def upload_image(event_id: int, file: UploadFile = File(...), db: Session = Depe
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=400, detail="Usa una imagen PNG, JPG, WEBP o GIF")
-    content = file.file.read()
+    content = file.file.read(8_000_001)
     if len(content) > 8_000_000:
         raise HTTPException(status_code=400, detail="La imagen pesa más de 8 MB")
+    from app import safe_limits
+    try:
+        safe_limits.check_design_image(content, ext)      # I6: tamaño, píxeles y formato real (no solo la extensión)
+    except safe_limits.LimitError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
     name = f"{secrets.token_hex(16)}{ext}"
     get_storage().put(badge_asset_key(event.tenant_id, name), content)
     return {"storage_path": f"{event.tenant_id}/{name}"}

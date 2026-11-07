@@ -267,8 +267,14 @@ def upload_badge_image(
     if ext not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=400, detail=f"Formato no soportado ({ext or 'sin extensión'}) — usa PNG, JPG, WEBP o GIF")
 
+    content = file.file.read(8_000_001)
+    from app import safe_limits
+    try:
+        safe_limits.check_design_image(content, ext)      # I6: tamaño, píxeles y formato real (no solo la extensión)
+    except safe_limits.LimitError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
     filename = f"{uuid.uuid4().hex}{ext}"
-    get_storage().put(badge_asset_key(event.tenant_id, filename), file.file.read())
+    get_storage().put(badge_asset_key(event.tenant_id, filename), content)
 
     return {"storage_path": f"{event.tenant_id}/{filename}"}
 

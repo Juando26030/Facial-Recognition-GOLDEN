@@ -13,7 +13,6 @@ import hashlib
 import hmac
 import time
 import logging
-from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Request
@@ -130,15 +129,14 @@ def _read_roster_rows(filename: str, content: bytes):
     la celda exacta (ej. "B7") de un error, sea el archivo .xlsx o .csv."""
     filename = (filename or "").lower()
     if filename.endswith(".xlsx"):
-        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        ws = wb.active
-        rows_iter = ws.iter_rows(values_only=True)
-        headers = _unique_headers([str(h).strip().lower() if h is not None else "" for h in next(rows_iter, [])])
+        try:      # I1 (6-nov-2026): topes reales ANTES de leer (zip, columnas, filas); la dimensión que declara la hoja no se cree
+            sheet = safe_limits.xlsx_rows(content, ROSTER_MAX_ROWS, ROSTER_MAX_COLS)
+        except safe_limits.LimitError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message)
+        headers = _unique_headers([str(h).strip().lower() if h is not None else "" for h in (sheet[0] if sheet else [])])
         header_columns = {h: get_column_letter(i + 1) for i, h in enumerate(headers) if h}
         rows = []
-        for row in rows_iter:
-            if row is None or all(cell is None for cell in row):
-                continue
+        for row in sheet[1:]:
             rows.append({
                 headers[i]: _cell_text(cell)
                 for i, cell in enumerate(row) if i < len(headers) and headers[i]
@@ -331,6 +329,19 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
 
 
 ROSTER_MAX_ROWS = int(os.getenv("ROSTER_MAX_ROWS", "20000"))      # filas por archivo de la carga masiva
+ROSTER_MAX_COLS = roster_columns.MAX_OPTIONAL_FIELDS + 100      # columnas que se leen de un .xlsx (los opcionales + las fijas); más allá se ignoran (I1)
+def _row_error_reason(exc: Exception) -> str:
+    """Motivo corto y sin datos de por qué no se guardó una fila (I3, 6-nov-2026): el texto de una excepción de la base trae el SQL y los valores de la fila."""
+    from sqlalchemy.exc import DataError, IntegrityError
+    if isinstance(exc, DataError):
+        return "un valor no es válido o es demasiado largo para su columna"
+    if isinstance(exc, IntegrityError):
+        return "choca con un dato que ya existe (registro repetido)"
+    if isinstance(exc, SQLAlchemyError):
+        return "error de base de datos"
+    return "error inesperado"
+
+
 class _RetryRowByRow(SQLAlchemyError):
     """Una fila falló dentro de un lote (sin SAVEPOINT propio): el lote se deshace y se repite fila por fila."""
 
@@ -2537,7 +2548,8 @@ def _bulk_register_impl(
                             if not isolate:                 # sin SAVEPOINT por fila no se puede deshacer SOLO esta fila: se deshace el lote y se repite fila por fila
                                 raise _RetryRowByRow() from e
                             where = info["id_cell"] or f"fila {row_num}"
-                            errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
+                            log.warning("carga masiva: la fila %s del evento %s no se pudo guardar (%s)", row_num, event.id, type(e).__name__)
+                            errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {_row_error_reason(e)}")      # I3: nunca el texto de la excepción (trae el SQL y los datos)
 
                     if not isolate:
                         db.flush()
