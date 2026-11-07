@@ -58,3 +58,8 @@
   .gw-staff__c-user { grid-column: 1; grid-row: 1; } .gw-staff__c-name { grid-column: 2; grid-row: 1; } .gw-staff__c-mail { grid-column: 3; grid-row: 1; }
   .gw-staff__c-role { grid-column: 4; grid-row: 1; } .gw-staff__c-state { grid-column: 5; grid-row: 1; } .gw-staff__c-act { grid-column: 6; grid-row: 1; }
 }
+
+/* Reactivar: verde (acción positiva), con su ícono; Desactivar/Quitar/Borrar van en rojo (gw-btn--danger-outline). */
+.gw-btn--ok { background: var(--gw-surface); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-btn--ok:hover { background: var(--gw-ok-bg); }
+.gw-btn--ok .gw-icon { color: inherit; }
