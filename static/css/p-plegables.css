@@ -14,3 +14,8 @@
 .gwp-fold__body { min-width: 0; overflow-wrap: anywhere; }
 .gwp-fold__body > * { min-width: 0; max-width: 100%; }
 .gwp-fold__sum > .gw-badge { white-space: normal; }
+/* Escritorio: los cupos plegados se reparten en 2-3 columnas (cada uno se abre dentro de su columna). */
+@media (min-width: 901px) {
+  #qRules { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr)); gap: var(--gw-sp-2); align-items: start; }
+  #qRules > .gwp-fold { margin-bottom: 0; }
+}

@@ -80,3 +80,12 @@ button.gw-ruleta-item:focus-visible { outline: 3px solid var(--gw-focus); outlin
   .gw-ruleta-link .gw-btn { flex: 1 1 auto; }
   .gw-ruleta .gw-actions .gw-btn { flex: 1 1 auto; }
 }
+
+/* Fase 1.7 (ancho): en escritorio las listas de candidatos y elegidos son más altas (filas delgadas de una línea, sin partir el nombre) y los modos se reparten en todo el ancho. */
+@media (min-width: 901px) {
+  .gw-ruleta-list { max-height: 26rem; }
+  .gw-ruleta-item { min-height: 2.5rem; padding-top: var(--gw-sp-1); padding-bottom: var(--gw-sp-1); }
+  .gw-ruleta-item__who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-ruleta-modes { grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+  .gw-ruleta-run { width: auto; min-width: 20rem; }
+}

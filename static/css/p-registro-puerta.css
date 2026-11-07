@@ -282,3 +282,75 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); }
 }
+
+/* ================= Escritorio (>= 901 px): la persona es UNA fila delgada de una sola línea, como una tabla (pedido de Juan David, 2026-11-06) =================
+   Celular y tableta angosta (<= 900 px) siguen con la tarjeta de M8/M10 sin cambios. Las filas siguen siendo <tr>/<td> (directory.js); aquí se ponen en línea y con columnas alineadas:
+   nombre | apellido | cédula | tipo | empresa | estado | origen | «Recién registrado» (solo si hay alguien reciente) | Acreditar · Imprimir · Editar · «⋯».
+   Alto de la fila: botones de 2.5rem (40) + 2 x 4 de relleno + 2 de borde = 50, más 4 de separación: entran ~ 12 personas por pantalla. */
+@media (min-width: 901px) {
+  body.gw-registro .gw-reg__list { padding: var(--gw-sp-2) var(--gw-sp-3); }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado,
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado {
+    flex-wrap: nowrap; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-3); min-height: 3.125rem; border-left-width: 4px; border-radius: var(--gw-radius-md); box-shadow: none;
+  }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado::after,
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado::after { display: none; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td { font-size: var(--gw-fs-md); line-height: var(--gw-lh-tight); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+  /* nombre y apellido: columnas que se reparten el ancho */
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { flex: 1.1 1 0; min-width: 0; max-width: none; font-size: var(--gw-fs-md); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name] { order: 1; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 2; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id] { order: 3; flex: 0 0 6.75rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id]::before { content: none; }          /* sin «C.C.»: la columna ya es la cédula (ahorra ancho) */
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 4; flex: 0.7 1 0; min-width: 0; font-size: var(--gw-fs-sm); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 5; flex: 1 1 0; min-width: 0; font-size: var(--gw-fs-sm); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { order: 6; flex: 0 0 7.75rem; padding: 0 var(--gw-sp-2); text-align: center; overflow: hidden; text-overflow: ellipsis; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] { order: 7; flex: 0 0 7rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] .gw-origin { display: block; overflow: hidden; text-overflow: ellipsis; }
+  /* «Recién registrado»: su columna solo existe mientras haya alguien reciente en la lista (así todas las filas quedan alineadas) */
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=recent] { order: 8; flex: 0 0 0; width: 0; display: none; }
+  html body.gw-registro .gw-reg__list .golden-table tbody:has(tr[data-recent]) td[data-field=recent] { display: block; flex: 0 0 8.75rem; width: auto; margin-left: 0; overflow: visible; }
+  /* el motivo de la búsqueda (solo con consulta) es lo único que baja a una segunda línea */
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado:has(td[data-field=reason] .gw-reason),
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado:has(td[data-field=reason] .gw-reason) { flex-wrap: wrap; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 10; flex: 1 1 100%; white-space: normal; }
+  /* acciones a la derecha, en línea */
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 9; flex: 0 0 auto; margin: 0 0 0 auto; gap: var(--gw-sp-2); overflow: visible; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn,
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn { min-height: 2.5rem !important; height: 2.5rem; min-width: 2.5rem; padding: 0 var(--gw-sp-3) !important; font-size: var(--gw-fs-md) !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { flex: 0 0 9rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] { width: 2.5rem; padding: 0 !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'],
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab { width: 2.5rem; padding: 0 !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn .gw-icon { width: 1.25rem; height: 1.25rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab .gw-icon { width: 1.5rem; height: 1.5rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.directory-more td,
+  html body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { white-space: normal; }
+
+  /* ---- modales de Registrar nuevo y Editar: anchos y en columnas, no un hilo en el centro ---- */
+  body.gw-registro .gw-registro__modal { max-width: min(72rem, 100%); }
+  body.gw-registro .gw-registro__editbox { max-width: min(72rem, 100%); }
+  body.gw-registro #dynamicFieldsContainer,
+  body.gw-registro #editModalForm { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 var(--gw-sp-4); align-items: start; }
+  body.gw-registro #dynamicFieldsContainer > .gw-form-group,
+  body.gw-registro #dynamicFieldsContainer > .gw-fields-row,
+  body.gw-registro #dynamicFieldsContainer > .gw-field:has(textarea, canvas, .gw-alert, .gw-check, fieldset),
+  body.gw-registro #dynamicFieldsContainer > .gw-alert,
+  body.gw-registro #editModalForm > .gw-form-group,
+  body.gw-registro #editModalForm > .gw-fields-row,
+  body.gw-registro #editModalForm > .gw-field:has(textarea, canvas, .gw-alert, .gw-check, fieldset),
+  body.gw-registro #editModalForm > .gw-alert { grid-column: 1 / -1; }
+  body.gw-registro #regExtras .gw-form-group__body { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 var(--gw-sp-4); }
+}
+/* con pantalla de 1500 px o más sobra lugar: Imprimir y Editar vuelven a decir su nombre */
+@media (min-width: 1500px) {
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'],
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] { width: auto; padding: 0 var(--gw-sp-3) !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-act__t,
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-act__t { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}

@@ -13,3 +13,16 @@
   .gwr-pager .gw-hint { order: -1; flex: 1 1 100%; text-align: center; }
   .gwr-size { flex: 1 1 100%; justify-content: center; }
 }
+/* Escritorio: la pestaña Respuestas usa todo el ancho; el buscador crece y cada inscripción es UNA fila (con muchas columnas la tabla se desplaza en horizontal en vez de pasar a tarjetas). */
+@media (min-width: 901px) {
+  .gwr-search { max-width: 40rem; }
+  .gwe-table-wrap:has(table.gwe-many) { overflow-x: auto; }
+  table.gwe-fit.gwe-many { display: table; width: 100%; table-layout: auto; }
+  table.gwe-fit.gwe-many thead { display: table-header-group; }
+  table.gwe-fit.gwe-many tbody { display: table-row-group; padding: 0; }
+  table.gwe-fit.gwe-many tr { display: table-row; padding: 0; background: transparent; border: 0; box-shadow: none; }
+  table.gwe-fit.gwe-many thead th { white-space: nowrap; }
+  table.gwe-fit.gwe-many td { display: table-cell; padding: var(--gw-sp-2); border-bottom: 1px solid var(--gw-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
+  table.gwe-fit.gwe-many td[data-label]::before { content: none; }
+  table.gwe-fit.gwe-many td.gw-table-cards__actions { display: table-cell; padding-top: var(--gw-sp-2); }
+}

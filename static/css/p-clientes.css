@@ -51,7 +51,7 @@
    Bajo 901 px sigue la tarjeta de siempre (celular sin cambios). */
 .p-cli__cols, .p-cli__rep--dot { display: none; }
 @media (min-width: 901px) {
-  .gw-tenant__body { --cli-cols: minmax(0, 3fr) minmax(0, 1.4fr) 6.5rem minmax(0, 1.4fr) max-content; }
+  .gw-tenant__body { --cli-cols: minmax(0, 2.4fr) minmax(0, 1.4fr) 6.5rem minmax(0, 1.4fr) max-content; }
   /* cuenta: nombre y «Ver eventos» a la izquierda, «Nuevo evento» a la derecha, en la misma línea */
   .gw-cards--tenants .tenant-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--gw-sp-4); row-gap: var(--gw-sp-3); padding: var(--gw-sp-4) var(--gw-sp-5); }
   .gw-cards--tenants .tenant-card > .gw-tenant__head { grid-column: 1; min-height: var(--gw-tap); }
@@ -65,28 +65,30 @@
   .gw-event-list .gw-event-card { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; gap: 0 var(--gw-sp-3); padding: var(--gw-sp-2) var(--gw-sp-4); }
   .gw-event-list .gw-event-card .gw-card-row__head, .gw-event-list .gw-event-card .p-cli__meta { display: contents; }
   .gw-event-card .gw-card-row__title { order: 1; display: flex; align-items: center; gap: var(--gw-sp-2); min-width: 0; margin: 0; font-size: var(--gw-fs-md); }
-  .gw-event-card .p-cli__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-event-card .p-cli__name { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); }
   .gw-event-card .gw-event-code { flex: 0 0 auto; font-size: var(--gw-fs-sm); }
   .p-cli__rep--full { display: none; }
   .p-cli__rep--dot { display: inline-flex; flex: 0 0 auto; }
   .gw-event-card .p-cli__loc { order: 2; } .gw-event-card .p-cli__date { order: 3; } .gw-event-card .p-cli__coord { order: 4; }
-  .gw-event-card .p-cli__loc, .gw-event-card .p-cli__date, .gw-event-card .p-cli__coord { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text); }
+  .gw-event-card .p-cli__loc, .gw-event-card .p-cli__coord { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); font-size: var(--gw-fs-sm); color: var(--gw-text); }
+  .gw-event-card .p-cli__date { min-width: 0; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text); }
   .p-cli__sep, .p-cli__pfx { display: none; }
   .gw-event-card .gw-card-row__head .gw-badge { display: none; order: 5; }
   /* a la derecha, en una línea: Editar · ⋯ · estado · Ingresar (mismo orden que Eventos) */
   .gw-event-card .p-cli__acts { order: 6; display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: var(--gw-sp-2); min-width: 0; margin: 0; }
   .gw-event-card .p-cli__acts > [data-edit-event] { order: 1; }
   .gw-event-card .p-cli__acts > .p-cli__more { order: 2; }
-  .gw-event-card .p-cli__acts > .p-cli__status { order: 3; flex: 0 0 8.5rem; width: 8.5rem; }
+  .gw-event-card .p-cli__acts > .p-cli__status { order: 3; flex: 0 0 6.75rem; width: 6.75rem; }
   .gw-event-card .p-cli__acts > a.p-cli__act { order: 4; }
   .gw-event-card .p-cli__acts .p-cli__act { flex: 0 0 auto; font-size: var(--gw-fs-md); }
+  .gw-event-card .p-cli__acts .p-cli__act:not(.p-cli__more):not(.p-cli__status) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
 /* 901-1759 px: botones solo con texto (cabe más dato en las columnas). */
 @media (min-width: 901px) and (max-width: 1759px) {
   .gw-event-card .p-cli__acts .p-cli__act .gw-icon { display: none; }
 }
 @media (min-width: 1760px) {
-  .gw-tenant__body { --cli-cols: minmax(0, 3fr) minmax(0, 1.4fr) 6.5rem minmax(0, 1.4fr) 8rem max-content; }
+  .gw-tenant__body { --cli-cols: minmax(0, 2.4fr) minmax(0, 1.4fr) 6.5rem minmax(0, 1.4fr) max-content max-content; }
   .p-cli__c5 { display: block; }
   .gw-event-card .gw-card-row__head .gw-badge { display: inline-flex; order: 5; justify-self: start; }
 }

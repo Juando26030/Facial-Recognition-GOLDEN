@@ -25,3 +25,14 @@
   #rosterSubmit { width: auto; min-width: 16rem; }
   .gw-step__body > #rosterSubmit { justify-self: start; align-self: flex-start; }
 }
+/* Escritorio: la pantalla usa el ancho completo y los tres pasos van lado a lado (uno solo por fila en pantallas angostas). */
+@media (min-width: 1100px) {
+  .gw-container.gw-container--narrow.gw-roster-wide { max-width: var(--gw-content-w); }
+  .gw-roster-wide #rosterForm .gw-fieldset { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 0.8fr); gap: var(--gw-sp-4); align-items: start; }
+  .gw-roster-wide #rosterForm .gw-fieldset > * + * { margin-top: 0; }
+  .gw-roster-wide #rosterForm .gw-fieldset > .gw-alert { grid-column: 1 / -1; }
+  .gw-roster-wide .gw-step__body > #rosterSubmit { width: 100%; min-width: 0; }
+}
+@media (min-width: 769px) and (max-width: 1099px) {
+  .gw-container.gw-container--narrow.gw-roster-wide { max-width: var(--gw-content-w); }
+}

@@ -77,3 +77,14 @@
   .fs-top .gw-btn { max-width: 100%; white-space: normal; text-align: center; }
 }
 #fs-root > .gw-steps { margin-top: var(--gw-sp-4); }
+
+/* ---- Escritorio (>= 901 px): ancho máximo (Fase 1.7-W). Todas las cifras en UNA fila (antes «Última inscripción» quedaba sola en la segunda); el celular no cambia. ---- */
+@media (min-width: 901px) {
+  .fs-kpis { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--gw-sp-3); }
+  .fs-kpi { padding: var(--gw-sp-4); }
+  .fs-kpi__value { font-size: clamp(2rem, 3vw, 3rem); }
+  .fs-kpi__value--text { font-size: var(--gw-fs-xl); }
+  .fs-quotas { grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+  .fs-dists { grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); }
+  .fs-chart { height: 340px; }
+}
