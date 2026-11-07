@@ -430,7 +430,13 @@ function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendi
   if (!bar) return;
   bar.hidden = !(tab === 'design' || tab === 'config');
   bar.dataset.state = pend ? 'dirty' : 'idle';
-  $('saveStatus').textContent = !pend ? 'Sin cambios por guardar' : `Hay cambios sin guardar en ${parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0]}`;
+  const ico = (n) => `<svg class="gw-icon" aria-hidden="true"><use href="${(bar.dataset.icons || '').replace(/"/g, '')}#i-${n}"></use></svg>`;
+  const st = $('saveStatus');   // alerta clara cuando hay algo por guardar (barra de color + signo de alerta); tranquila cuando no
+  st.replaceChildren();
+  const line = document.createElement('span'); line.className = pend ? 'gw-savebar__alert' : 'gw-savebar__idle';
+  line.innerHTML = ico(pend ? 'alert' : 'check');
+  line.appendChild(document.createTextNode(!pend ? 'Sin cambios por guardar' : `Hay cambios sin guardar en ${parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0]}`));
+  st.appendChild(line);
   $('saveBtn').textContent = tab === 'config' ? 'Guardar configuración' : 'Guardar diseño';
 }
 window.addEventListener('beforeunload', (e) => { if (pendingParts().length) { e.preventDefault(); e.returnValue = ''; } });
@@ -1356,6 +1362,7 @@ $('tabs').addEventListener('click', (e) => {
   document.querySelectorAll('#tabs button').forEach((x) => { x.setAttribute('aria-selected', String(x === b)); x.tabIndex = x === b ? 0 : -1; });
   document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + b.dataset.tab));
   paintSaveBar();
+  try { history.replaceState(null, '', '#' + b.dataset.tab); } catch (err) { /* sin historial: no pasa nada */ }        // al refrescar vuelve a ESTA pestaña
   if (b.dataset.tab === 'payments') loadPayments(); if (b.dataset.tab === 'answers') loadAnswers(); if (b.dataset.tab === 'analytics') mountAnalytics(); if (b.dataset.tab === 'invites') loadInvites();
 });
 
@@ -1790,6 +1797,8 @@ $('invSend').addEventListener('click', async () => {
   eventFields = await j(`/api/events/${EV}/form-event-fields`);
   try { ID_DOCS = await j("/api/form-id-docs"); } catch (e) { ID_DOCS = []; }
   paintHeader(); renderTheme(); renderAll(); paintConfig(); paintSaveBar();
+  const wantTab = (location.hash || '').slice(1), wantBtn = wantTab && document.querySelector('#tabs button[data-tab="' + wantTab.replace(/[^a-z]/g, '') + '"]:not([hidden])');
+  if (wantBtn) wantBtn.click();                       // refrescar deja la pestaña en la que estabas
   // origen "otro evento": se ofrece cada evento anterior del mismo cliente
   try {
     const events = (await j(`/api/events?tenant_id=${encodeURIComponent(window.TENANT_ID)}`)).filter((e) => e.id !== EV);

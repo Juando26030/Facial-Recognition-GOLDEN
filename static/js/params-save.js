@@ -130,7 +130,13 @@
             const ico = { dirty: 'alert', saved: 'check', error: 'error' }[s.state];
             if (ico && ICONS) badge.insertAdjacentHTML('afterbegin', iconHtml(ico));
             badge.appendChild(doc.createTextNode({ dirty: 'Cambios sin guardar', saving: 'Guardando…', saved: 'Guardado', error: 'No todo se guardó' }[s.state] || 'Sin cambios pendientes'));
-            statusEl.replaceChildren(badge);
+            if (s.state === 'dirty') {                      // alerta clara: barra de color, signo de alerta rojo y texto en negrita
+                const alert = doc.createElement('span');
+                alert.className = 'gw-savebar__alert';
+                if (ICONS) alert.insertAdjacentHTML('afterbegin', iconHtml('alert'));
+                alert.appendChild(doc.createTextNode('Cambios sin guardar'));
+                statusEl.replaceChildren(alert);
+            } else statusEl.replaceChildren(badge);
             if (s.state === 'dirty' && s.labels.length) { const t = doc.createElement('span'); t.className = 'gw-text-sm gw-muted'; t.textContent = 'En: ' + s.labels.join(', '); statusEl.appendChild(t); }
             failEl.replaceChildren();
             if (s.state === 'error') {

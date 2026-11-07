@@ -145,6 +145,11 @@ function todayDate() { const t = new Date(); t.setHours(0,0,0,0); return t; }
 
 let currentView = 'month';
 let refDate = todayDate();
+try {                                                  // refrescar deja la vista (mes/semana/día) y la fecha en la que estabas: #vista=week&fecha=2026-11-06
+  const hp = new URLSearchParams((location.hash || '').slice(1));
+  if (['month', 'week', 'day'].includes(hp.get('vista'))) currentView = hp.get('vista');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(hp.get('fecha') || '')) refDate = fromISO(hp.get('fecha'));
+} catch (e) { /* sin hash: vista de siempre */ }
 let eventsCache = [];
 let notesCache = [];
 
@@ -207,6 +212,7 @@ function currentRange() {
 }
 
 async function loadAndRender() {
+  try { history.replaceState(null, '', '#vista=' + currentView + '&fecha=' + toISO(refDate)); } catch (e) { /* sin historial */ }
   const { start, end } = currentRange();
   const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
   if (mineFilter && mineFilter.value === 'mine' && STAFF_ID) params.set('commercial_staff_id', STAFF_ID);

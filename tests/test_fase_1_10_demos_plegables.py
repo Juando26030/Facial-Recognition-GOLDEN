@@ -78,3 +78,16 @@ def test_fase_1_12_celular_ordenado_y_barra_de_plegar_en_el_mismo_sitio():
     assert "h !== scope && scope.contains(h)" in js                                                                        # las pestañas inactivas también llevan su barra
     assert ":scope > h2.gw-card__title" in js                                                                              # tarjetas con título directo
     assert "justify-content: flex-start; width: 100%" in read("static/css/design-system.css")
+
+
+def test_fase_1_13_refrescar_deja_la_pestana_y_la_barra_de_guardado_alerta():
+    ed = read("templates/kiosk_formulario_editor.html")
+    assert "history.replaceState(null, '', '#' + b.dataset.tab)" in ed and "if (wantBtn) wantBtn.click();" in ed          # editor de formularios
+    assert "history.replaceState(null, '', '#' + tab.dataset.tab)" in read("static/js/app.js")                           # Registro
+    cal = read("templates/calendario.html")
+    assert "'#vista=' + currentView" in cal and "hp.get('fecha')" in cal                                                   # Calendario: vista y fecha
+    ps = read("static/js/params-save.js")
+    assert "localStorage.setItem(STORE" in ps and "'gw_tab_' + rootEl.dataset.tabsKey" in ps                              # Parámetros, Configuración, Ruleta, Diseñador: ya recordaban su pestaña
+    css = read("static/css/design-system.css")
+    assert '.gw-savebar[data-state="dirty"] { background: var(--gw-warn-bg)' in css and ".gw-savebar__alert" in css
+    assert "gw-savebar__alert" in ps and "gw-savebar__alert" in ed and "'alert'" in ps

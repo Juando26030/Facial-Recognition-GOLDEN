@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
+            try { history.replaceState(null, '', '#' + tab.dataset.tab); } catch (err) { /* sin historial */ }          // al refrescar vuelve a esta pestaña
 
             if (tab.dataset.tab === 'directorio') {
                 loadLiveDirectory();
@@ -29,6 +30,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.directorySearch) return window.directorySearch.reload();
         return GoldenDirectory.load('directoryTableBody');
     }
+
+    const wantHash = (location.hash || '').slice(1), wantTab = wantHash && document.querySelector('.tab[data-tab="' + wantHash.replace(/[^a-z]/g, '') + '"]');
+    if (wantTab && !wantTab.classList.contains('active')) wantTab.click();          // refrescar deja la pestaña en la que estabas
 
     // Si "directorio" ya viene activo al cargar la página (ej. rol cliente, que no tiene
     // pestaña de escáner), no hay clic que dispare la carga — hay que hacerlo aquí.

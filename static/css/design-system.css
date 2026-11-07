@@ -1019,3 +1019,9 @@
 .gw-is-folded > .gw-fold__head { margin-bottom: 0; }
 .gw-fold__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); justify-content: flex-start; width: 100%; grid-column: 1 / -1; flex: 0 0 100%; margin: var(--gw-sp-3) 0; }
 @media (prefers-reduced-motion: reduce) { .gw-fold__btn .gw-icon { transition: none; } }
+
+/* Barra de guardado: «hay algo por guardar» se nota (barra de color + signo de alerta rojo); sin cambios, tranquila. */
+.gw-savebar[data-state="dirty"] { background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 2px solid var(--gw-warn-line); }
+.gw-savebar .gw-savebar__alert { display: inline-flex; align-items: center; gap: var(--gw-sp-2); font-weight: var(--gw-fw-bold); }
+.gw-savebar .gw-savebar__alert .gw-icon { width: 1.75rem; height: 1.75rem; color: var(--gw-err-line); }
+.gw-savebar .gw-savebar__idle { display: inline-flex; align-items: center; gap: var(--gw-sp-2); color: var(--gw-text-muted); }
