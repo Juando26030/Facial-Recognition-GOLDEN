@@ -45,6 +45,19 @@
 .gw-tenant__head .gw-card-row__title, .gw-tenant__head .gw-card-row__meta { display: block; }
 @media (min-width: 40rem) { .gw-tenant__body > .gw-card-row__actions .gw-btn { flex: 0 0 auto; } }
 
+/* Celular y tableta (< 901 px): la tarjeta del evento ordenada en líneas con título. Estado y «Más acciones» van uno al lado del otro, igual que Ingresar y Editar. */
+@media (max-width: 900px) {
+  .gw-event-card .gw-card-row__head { flex-direction: column; align-items: flex-start; gap: var(--gw-sp-2); }
+  .gw-event-card .gw-card-row__title { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gw-sp-1); min-width: 0; max-width: 100%; }
+  .gw-event-card .p-cli__nm { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+  .gw-event-card .gw-event-code { font-size: var(--gw-fs-sm); }
+  .gw-event-card .p-cli__paren, .gw-event-card .p-cli__sep { display: none; }
+  .gw-event-card .p-cli__meta { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+  .gw-event-card .p-cli__pfx { font-weight: var(--gw-fw-bold); }
+  .p-cli__acts .p-cli__status, .p-cli__more { grid-column: auto; }
+  .p-cli__acts .p-cli__status:last-child { grid-column: 1 / -1; }
+}
+
 /* Escritorio (≥ 901 px): los eventos de cada cuenta son filas delgadas de UNA línea, con columnas alineadas (Fase 1.7, ancho).
    Bajo 901 px sigue la tarjeta de siempre (celular sin cambios). */
 .p-cli__cols, .p-cli__rep--dot { display: none; }          /* el aviso del informe se ve completo («Informe pendiente») en celular y en computador */

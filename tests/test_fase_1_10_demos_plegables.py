@@ -64,3 +64,17 @@ def test_fase_1_11_cedula_con_asterisco_y_lista_de_eventos():
     css = read("static/css/p-clientes.css")
     assert ".gw-event-card .p-cli__nm {" in css and ".gw-event-card .p-cli__rep { flex: 0 0 6.75rem" in css
     assert ".p-cli__coord .ev-who .p-cli__pfx { display: inline;" in css                                    # «Comercial: …» / «Coordinador: …»
+
+
+def test_fase_1_12_celular_ordenado_y_barra_de_plegar_en_el_mismo_sitio():
+    css = read("static/css/p-clientes.css")
+    assert "@media (max-width: 900px) {" in css and ".p-cli__acts .p-cli__status, .p-cli__more { grid-column: auto; }" in css      # estado y «Más acciones» lado a lado
+    for rel in ("static/js/gw-clientes.js", "templates/eventos.html"):
+        t = read(rel)
+        assert "Comercial: </span>" in t and "Coordinador: </span>" in t and "Fecha: </span>" in t and "Código: </span>" in t, rel
+    assert "commercial_name" in read("static/js/gw-clientes.js")
+    js = read("static/js/gw-ui.js")
+    assert "outsideDetails(page, '.gw-steps')" in js and "ref.parentNode.insertBefore(bar, ref.nextSibling)" in js          # debajo del título y de la guía de pasos
+    assert "h !== scope && scope.contains(h)" in js                                                                        # las pestañas inactivas también llevan su barra
+    assert ":scope > h2.gw-card__title" in js                                                                              # tarjetas con título directo
+    assert "justify-content: flex-start; width: 100%" in read("static/css/design-system.css")

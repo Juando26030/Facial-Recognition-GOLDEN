@@ -178,7 +178,10 @@
     foldSet(item, store(true, foldKey(item, i)) === '1');
   }
   function foldItems(scope) {                                  // todo lo plegable dentro de `scope`: bloques, secciones con título y <details>
-    return Array.prototype.filter.call(scope.querySelectorAll('[data-gw-foldable], details'), function (el) { return !el.closest('[hidden]') || el.tagName === 'DETAILS'; });
+    return Array.prototype.filter.call(scope.querySelectorAll('[data-gw-foldable], details'), function (el) { var h = el.closest('[hidden]'); return !(h && h !== scope && scope.contains(h)) || el.tagName === 'DETAILS'; });    // oculto = dentro de `scope` (no la pestaña inactiva en sí)
+  }
+  function outsideDetails(root, sel) {                         // primer elemento que NO está dentro de una guía desplegable
+    return Array.prototype.filter.call(root.querySelectorAll(sel), function (e) { return !e.closest('details, .gw-form-group__body, .gw-group__body'); })[0] || null;
   }
   function foldInit() {
     Array.prototype.forEach.call(document.querySelectorAll('.gw-group__item'), function (item, i) {
@@ -197,18 +200,26 @@
         foldMake(sec, head, 100 + i);
       });
     }
+    if (page) {                                                  // tarjetas con título directo (p. ej. «Subir un documento»): también se pliegan
+      Array.prototype.forEach.call(page.querySelectorAll('.gw-card'), function (card, i) {
+        if (card.hasAttribute('data-gw-foldable') || card.hasAttribute('data-gw-nofold') || card.closest('[data-gw-foldable], details') || card.children.length < 2) return;
+        var h = card.querySelector(':scope > h2.gw-card__title, :scope > h3.gw-card__title');
+        if (h) foldMake(card, h, 200 + i);
+      });
+    }
     var scopes = Array.prototype.slice.call(document.querySelectorAll('.gw-tabpanel, .pane, [role="tabpanel"]'));
     if (page) scopes.push(page);
     scopes.forEach(function (scope) {
       var own = foldItems(scope).filter(function (el) {                  // en `main` solo lo que no está dentro de una pestaña (cada pestaña tiene su barra)
         return scope !== page || !el.closest('.gw-tabpanel, .pane, [role="tabpanel"]');
       });
-      if (own.length < 2 || scope.querySelector(':scope > .gw-fold__bar')) return;
-      var bar = mk('div', 'gw-fold__bar'), a = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Plegar todo'), z = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Desplegar todo');
+      if (own.length < 2 || (scope !== page && own[0].parentNode.querySelector(':scope > .gw-fold__bar'))) return;
+      var bar = mk('div', 'gw-fold__bar'), a = mk('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Plegar todo'), z = mk('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Desplegar todo');
       a.type = z.type = 'button'; a.setAttribute('data-gw-fold-all', '1'); z.setAttribute('data-gw-fold-all', '0'); bar._scope = scope; bar._own = own;
       bar.appendChild(a); bar.appendChild(z);
-      var first = own[0], anchor = first; while (anchor.parentElement && anchor.parentElement !== scope) anchor = anchor.parentElement;
-      if (anchor.parentElement === scope) scope.insertBefore(bar, anchor); else scope.insertBefore(bar, scope.firstChild);
+      var first = own[0];                                   // la barra va justo ENCIMA de lo primero que se pliega: misma posición en todas las pantallas
+      var ref = scope === page ? (outsideDetails(page, '.gw-steps') || outsideDetails(page, '.gw-page-head')) : null;     // en la pantalla: justo debajo del título y la guía de pasos
+      if (ref && ref.parentNode) ref.parentNode.insertBefore(bar, ref.nextSibling); else first.parentNode.insertBefore(bar, first);
     });
   }
   function foldToggle(item) {
