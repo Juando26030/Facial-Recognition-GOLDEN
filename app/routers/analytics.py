@@ -18,7 +18,7 @@ from app.timeutil import to_local
 router = APIRouter()
 
 
-def registro_dashboard(db: Session, event: Event, with_origin: bool = False) -> dict:
+def registro_dashboard(db: Session, event: Event, with_origin: bool = False, with_operators: bool = False) -> dict:
     """`with_origin`: solo para el personal (admin, coordinador, comercial): agrega de dónde salió la gente de la base (Excel / digitados a mano / formulario). El cliente y los enlaces públicos nunca lo reciben."""
     attendees = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id != testperson.TEST_ID)}
     logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id != testperson.TEST_ID).order_by(AccessLog.timestamp).all()
@@ -65,9 +65,11 @@ def registro_dashboard(db: Session, event: Event, with_origin: bool = False) -> 
     charts.append(an.progress_by_group("by_category", "Avance por categoría", by_cat, horizontal=False))
     charts.append(an.progress_by_group("by_entity", "Avance por entidad (las 10 con más gente)", by_entity))
 
-    staff_ids = {lg.registered_by_staff_id for lg in first.values() if lg.registered_by_staff_id}
+    # «Registros por operador» (P9, 6-nov-2026): solo para el personal (`with_operators`); el cliente y el enlace público no lo reciben. Sin nombre se muestra «Digitador N»,
+    # nunca el usuario: el del digitador es su cédula.
+    staff_ids = {lg.registered_by_staff_id for lg in first.values() if lg.registered_by_staff_id} if with_operators else set()
     if staff_ids:
-        names = {s.id: (s.full_name or s.username) for s in db.query(StaffUser).filter(StaffUser.id.in_(staff_ids))}
+        names = {s.id: ((s.full_name or "").strip() or f"Digitador {n}") for n, s in enumerate(db.query(StaffUser).filter(StaffUser.id.in_(staff_ids)).order_by(StaffUser.id), start=1)}
         charts.append(an.counter_chart("by_operator", "Registros por operador", [names.get(lg.registered_by_staff_id, "—") for lg in first.values() if lg.registered_by_staff_id], top=10, label="Registros"))
     return an.dashboard("Registro del evento", kpis, [c for c in charts if c])
 
@@ -92,7 +94,8 @@ def _origin_kpis(attendees: dict, ids: set, logs: list) -> list:
 @router.get("/events/{event_id}/analytics/registro")
 def analytics_registro(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
-    return registro_dashboard(db, event, with_origin=is_staff_view(staff))
+    staff_view = is_staff_view(staff)
+    return registro_dashboard(db, event, with_origin=staff_view, with_operators=staff_view)
 
 
 @router.get("/events/{event_id}/timing-report")
