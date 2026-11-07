@@ -14,3 +14,7 @@ restore_test_*.log
 .env.restore
 .env.live
 node_modules/
+
+# Datos estáticos de la plataforma (países y ciudades): sí se versionan
+!static/data/
+!static/data/geo.json
