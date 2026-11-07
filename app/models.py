@@ -34,6 +34,8 @@ class Tenant(Base):
     contact_name = Column(String)
     contact_phone = Column(String)
     contact_email = Column(String)
+    archived_at = Column(DateTime, nullable=True)  # 0088 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas, se restaura; nada se borra). Ver app/routers/tenants.py
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
@@ -1179,3 +1181,18 @@ class StatsLink(Base):
     revoked_at = Column(DateTime, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
 
+
+
+class AuditAction(Base):
+    """Registro de acciones administrativas (Fase 3, 0088): quién archivó, restauró o borró qué y cuándo. Solo se INSERTA. Sin datos personales: id y nombre de la entidad (p. ej. la
+    empresa cliente), nunca contactos, cédulas ni rostros."""
+    __tablename__ = 'audit_actions'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    actor_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    actor_role = Column(String(20), nullable=True)
+    action = Column(String(40), nullable=False)          # archive | restore | delete | edit …
+    entity = Column(String(40), nullable=False)          # tenant | event | …
+    entity_id = Column(String(64), nullable=False)
+    entity_name = Column(String(200), nullable=True)
+    detail = Column(String(500), nullable=True)

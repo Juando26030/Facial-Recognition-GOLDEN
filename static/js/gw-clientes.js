@@ -8,6 +8,8 @@
   const ICONS = root.dataset.icons || '';
   const isAdmin = role === 'admin' || role === 'super_admin';
   const isSuper = role === 'super_admin';
+  const canEdit = ['comercial', 'admin', 'super_admin'].includes(role);          // Fase 3: crea y edita comercial+; archiva admin+; borrado definitivo solo super_admin
+  let showArchived = false;                                                      // «Ver archivados» (admin+)
   // 4-nov-2026 (decisión del dueño): el coordinador también crea EVENTOS (en su cliente); crear CLIENTES sigue siendo comercial+ (el grupo de crear cliente no se pinta para el coordinador).
   const canCreate = true;
   const STATUS_LABELS = { creado: 'Creado', en_proceso: 'En Proceso', finalizado: 'Finalizado' };
@@ -30,7 +32,7 @@
   async function loadTenants() {
     listEl.setAttribute('aria-busy', 'true');
     try {
-      const res = await fetch('/api/tenants');
+      const res = await fetch('/api/tenants' + (showArchived && isAdmin ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http');
       allTenants = await res.json();
       renderTenants(allTenants);
@@ -40,20 +42,21 @@
   }
 
   function renderTenants(list) {
-    if (!allTenants.length) { listEl.innerHTML = emptyBox('Todavía no hay clientes', role === 'coordinador' ? 'Cuando un administrador cree una cuenta, aparecerá aquí.' : 'Crea el primero con «Nuevo cliente/cuenta».'); return; }
+    if (!allTenants.length) { listEl.innerHTML = showArchived ? emptyBox('No hay clientes archivados', 'Cuando archives uno, aparecerá aquí para poder restaurarlo.') : emptyBox('Todavía no hay clientes', role === 'coordinador' ? 'Cuando un administrador cree una cuenta, aparecerá aquí.' : 'Crea el primero con «Nuevo cliente/cuenta».'); return; }
     if (!list.length) { listEl.innerHTML = emptyBox('Sin resultados', 'Ningún cliente coincide con la búsqueda. Prueba con otra parte del nombre.'); return; }
     listEl.innerHTML = list.map((t) => `
       <article class="gw-card-row tenant-card" data-tenant-id="${esc(t.id)}">
         <button type="button" class="gw-tenant__head" data-action="toggle-tenant" aria-expanded="false" aria-controls="tenantBody${esc(t.id)}">
           <span>
-            <span class="gw-card-row__title">${esc(t.name)} <span class="gw-tenant__code">#${esc(t.client_code)}</span></span>
+            <span class="gw-card-row__title">${esc(t.name)} <span class="gw-tenant__code">#${esc(t.client_code)}</span>${t.archived ? ' <span class="gw-badge">Archivado</span>' : ''}</span>
             <span class="gw-card-row__meta">${esc(t.contact_name) || 'Sin contacto'}${t.contact_phone ? ' · ' + esc(t.contact_phone) : ''}</span>
           </span>
           <span class="gw-tenant__toggle">Ver eventos ${icon('chevron', 'gw-icon--sm')}</span>
         </button>
-        ${canCreate ? `<a href="/clientes/${esc(t.id)}/nuevo-evento" class="gw-btn gw-btn--primary gw-btn--xl p-cli__new">${icon('plus')} Nuevo evento</a>` : ''}
+        ${canCreate && !t.archived ? `<a href="/clientes/${esc(t.id)}/nuevo-evento" class="gw-btn gw-btn--primary gw-btn--xl p-cli__new">${icon('plus')} Nuevo evento</a>` : ''}
         <div class="gw-tenant__body" id="tenantBody${esc(t.id)}" data-tenant-body hidden>
-          ${isSuper ? `<div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button></div>` : ''}
+          ${tenantAdminHtml(t)}
+          ${isSuper && !t.archived ? `<div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button></div>` : ''}
           <div class="gw-field">
             <label class="gw-label" for="evSearch${esc(t.id)}">Buscar evento de este cliente/cuenta</label>
             <input type="search" class="gw-input" id="evSearch${esc(t.id)}" data-events-search placeholder="Buscar evento de este cliente/cuenta..." autocomplete="off">
@@ -61,6 +64,36 @@
           <div data-events-container aria-live="polite"></div>
         </div>
       </article>`).join('');
+  }
+
+  // Datos del cliente (comercial+) y archivar / restaurar / borrar definitivo (admin+ / super_admin). Todo por delegación de eventos.
+  function tenantAdminHtml(t) {
+    const id = esc(t.id);
+    const editForm = canEdit && !t.archived ? `<details class="gw-group"><summary class="gw-group__sum">${icon('edit', 'gw-icon--sm')} Editar datos del cliente</summary><div class="gw-group__body">
+      <form class="gw-stack" data-edit-tenant="${id}">
+        <div class="gw-field"><label class="gw-label" for="etName${id}">Nombre del cliente/cuenta</label><input class="gw-input" id="etName${id}" name="name" required value="${esc(t.name)}"></div>
+        <div class="gw-fields-row gw-fields-row--3">
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCn${id}">Contacto - Nombre</label><input class="gw-input" id="etCn${id}" name="contact_name" value="${esc(t.contact_name)}"></div>
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCp${id}">Contacto - Teléfono</label><input class="gw-input" id="etCp${id}" name="contact_phone" inputmode="tel" value="${esc(t.contact_phone)}"></div>
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCe${id}">Contacto - Correo</label><input class="gw-input" id="etCe${id}" name="contact_email" type="email" value="${esc(t.contact_email)}"></div>
+        </div>
+        <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary gw-btn--sm">Guardar cambios</button></div>
+      </form></div></details>` : '';
+    let actions = '';
+    if (isAdmin) {
+      actions = t.archived
+        ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-restore-tenant="${id}" data-tenant-name="${esc(t.name)}">${icon('undo', 'gw-icon--sm')} Restaurar</button>`
+        : `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive-tenant="${id}" data-tenant-name="${esc(t.name)}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon('lock', 'gw-icon--sm')} Archivar cliente</button>`;
+      if (isSuper && t.archived) actions += ` <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-purge-tenant="${id}" data-tenant-name="${esc(t.name)}">${icon('trash', 'gw-icon--sm')} Eliminar definitivamente</button>`;
+    }
+    return editForm + (actions ? `<div class="gw-card-row__actions">${actions}</div>` : '');
+  }
+
+  async function tenantCall(url, method, body) {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    let detail = '';
+    if (!res.ok) { try { detail = (await res.json()).detail || ''; } catch (e) { detail = ''; } }
+    return { ok: res.ok, detail };
   }
 
   /* ---------------------------------------------------------------- Eventos de un cliente */
@@ -187,6 +220,23 @@
       if (ev) openEventEditModal(ev, () => loadEventsForTenant(card.dataset.tenantId, card));
       return;
     }
+    const arch = e.target.closest('[data-archive-tenant]');
+    if (arch) {
+      if (!await showConfirm('¿Archivar al cliente "' + escapeHtml(arch.dataset.tenantName) + '"?<br><br>Se oculta de las listas y no se le podrán crear eventos. <strong>No se borra nada</strong>: un administrador puede restaurarlo cuando quiera.', { confirmLabel: 'Archivar' })) return;
+      await busy(arch, async () => { const r = await tenantCall('/api/tenants/' + encodeURIComponent(arch.dataset.archiveTenant) + '/archive', 'POST'); showToast(r.ok ? 'Cliente archivado' : (r.detail || 'No se pudo archivar'), r.ok ? 'success' : 'error'); if (r.ok) loadTenants(); });
+      return;
+    }
+    const rest = e.target.closest('[data-restore-tenant]');
+    if (rest) {
+      await busy(rest, async () => { const r = await tenantCall('/api/tenants/' + encodeURIComponent(rest.dataset.restoreTenant) + '/restore', 'POST'); showToast(r.ok ? 'Cliente restaurado' : (r.detail || 'No se pudo restaurar'), r.ok ? 'success' : 'error'); if (r.ok) loadTenants(); });
+      return;
+    }
+    const purge = e.target.closest('[data-purge-tenant]');
+    if (purge) {
+      if (!await showConfirm('¿Eliminar DEFINITIVAMENTE al cliente "' + escapeHtml(purge.dataset.tenantName) + '"?<br><br>Solo se puede si no tiene eventos. Esta acción es permanente, no se puede deshacer y queda registrada.', { confirmLabel: 'Eliminar definitivamente' })) return;
+      await busy(purge, async () => { const r = await tenantCall('/api/tenants/' + encodeURIComponent(purge.dataset.purgeTenant), 'DELETE'); showToast(r.ok ? 'Cliente eliminado' : (r.detail || 'No se pudo eliminar'), r.ok ? 'success' : 'error'); if (r.ok) loadTenants(); });
+      return;
+    }
     const deleteBtn = e.target.closest('[data-delete-event]');
     if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
     const revertBtn = e.target.closest('[data-revert-event]');
@@ -194,6 +244,18 @@
       const card = revertBtn.closest('.tenant-card');
       await busy(revertBtn, async () => { if (await revertEventToCreated(revertBtn.dataset.revertEvent)) loadEventsForTenant(card.dataset.tenantId, card); });
     }
+  });
+
+  listEl.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-edit-tenant]');
+    if (!form) return;
+    e.preventDefault();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    await busy(form.querySelector('button[type="submit"]'), async () => {
+      const r = await tenantCall('/api/tenants/' + encodeURIComponent(form.dataset.editTenant), 'PATCH', payload);
+      showToast(r.ok ? 'Datos del cliente guardados' : (r.detail || 'No se pudo guardar'), r.ok ? 'success' : 'error');
+      if (r.ok) loadTenants();
+    });
   });
 
   listEl.addEventListener('input', (e) => {
@@ -249,6 +311,9 @@
     const q = stripAccents(e.target.value.trim()).toLowerCase();
     renderTenants(q ? allTenants.filter((t) => stripAccents(t.name || '').toLowerCase().includes(q)) : allTenants);
   });
+
+  const archToggle = document.getElementById('showArchived');
+  if (archToggle) archToggle.addEventListener('change', () => { showArchived = archToggle.checked; loadTenants(); });
 
   loadTenants();
 })();

@@ -66,7 +66,11 @@
       <div class="gw-search__row"><div class="gw-search__field">{{ ic('search', 'gw-search__icon') }}<input type="search" id="searchBox" class="gw-input" placeholder="Buscar cliente o cuenta..." autocomplete="off"></div></div>
     </div>
 
-    {% if staff_role != "coordinador" %}
+    {% if staff_role in ("admin", "super_admin") %}
+    <label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>
+    {% endif %}
+
+    {% if staff_role not in ("coordinador", "digitador", "cliente") %}
     <details class="gw-group" id="newTenantGroup">
       <summary class="gw-group__sum p-cli__sum">{{ ic('plus', 'gw-icon--sm') }} Nuevo cliente/cuenta</summary>
       <div class="gw-group__body">

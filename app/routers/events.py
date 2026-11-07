@@ -346,8 +346,11 @@ def create_event(
     Un coordinador «puro» (sin rol comercial ni admin) solo puede crear eventos donde él es el
     coordinador (si manda otro id, 403: no puede crear un evento y quedarse sin verlo); la comercial
     es opcional para él (la columna admite NULL). Comercial, doble rol y admin+ siguen igual."""
-    if not db.query(Tenant).filter(Tenant.id == data.tenant_id).first():
+    tenant_row = db.query(Tenant).filter(Tenant.id == data.tenant_id).first()
+    if not tenant_row:
         raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
+    if tenant_row.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El cliente está archivado: restáuralo para crearle eventos")
     assert_same_tenant(staff, data.tenant_id, "Cliente (tenant) no encontrado")          # P5: limitado a su cliente, solo crea eventos de su cliente
     pure_coordinator = not ({"comercial", "admin", "super_admin"} & effective_roles(staff))
     if pure_coordinator and data.coordinator_staff_id is None:
