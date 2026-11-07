@@ -20,7 +20,7 @@
     return `<article class="gw-card-row" data-form="${f.id}">
       <div class="gw-card-row__head">
         <a class="gw-card-row__title" href="/kiosk/${EV}/formularios/${f.id}">${esc(f.name)}</a>
-        <span class="gw-badge ${BADGE[f.public_state] || ''}">${esc(LABELS[f.public_state] || f.public_state)}</span>
+        <span class="gw-badge ${BADGE[f.public_state] || ''}">${esc(LABELS[f.public_state] || f.public_state)}${f.use_schedule ? ' · calendario' : ''}</span>
       </div>
       <p class="gw-card-row__meta">/${esc(f.slug)}${f.use_schedule ? ' · por calendario' : ''}</p>
       <div class="gw-stats-row gw-stats-row--2">
