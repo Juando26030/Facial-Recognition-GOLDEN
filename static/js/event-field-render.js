@@ -309,6 +309,7 @@
       });
     }
     Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="country"]'), function (c) { cityDeps(host, c.dataset.evfKey, c.value, opts); });
+    if (root.GWMap) Array.prototype.forEach.call(host.querySelectorAll('[data-evf-enhance="map"]'), function (el) { root.GWMap.enhance(el, opts); });          // static/js/gw-map.js (carga perezosa de Leaflet)
   }
 
   var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, esc: esc, inventoryRow: inventoryRow };

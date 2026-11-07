@@ -164,7 +164,7 @@ async def security_headers(request, call_next):
     if not embeddable:
         h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), payment=(self)")      # la cámara solo la usa el propio quiosco
+    h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self), payment=(self)")      # la cámara y la ubicación (widget de mapa) solo las usa la propia app
     if IS_PRODUCTION:
         h.setdefault("Strict-Transport-Security", "max-age=31536000")
     if h.get("content-type", "").startswith("image/svg"):
