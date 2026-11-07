@@ -99,6 +99,8 @@ def kick() -> None:
     job = os.getenv("OPS_JOB_NAME")
     if not job:
         return
+    from app import ops_state
+    ops_state.mark_active()          # el Job horario lo lee (sin tocar la base) para decidir si corre completo o la base descansa
     try:
         cloudrun.run_job(job, ["-m", "app.ops_runner", "warmup"])
     except Exception:  # noqa: BLE001 — el precalentamiento de cada hora lo recoge igual

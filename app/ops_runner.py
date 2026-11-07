@@ -374,6 +374,11 @@ TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_d
 
 def main(task: str) -> int:
     if task == "hourly":
+        from app import ops_state
+        why = ops_state.idle_skip(_local_now())
+        if why:                                      # modo tranquilo: ni siquiera se abre la base
+            print(json.dumps({"ops": task, "skipped": why}, ensure_ascii=False))
+            return 0
         results = hourly()
     elif task in TASKS:
         try:

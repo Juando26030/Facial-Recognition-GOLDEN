@@ -337,3 +337,6 @@ Fuera del uso normal de las pantallas, lo único que corre solo es el Job horari
 | precalentamiento (`warmup`) | hora | sí |
 | archivar bases a los 90 días (L7) | **semana** | sí |
 Pendiente de decisión: el respaldo, la cola, los reportes vencidos y el precalentamiento siguen cada hora (el respaldo horario es la protección durante un evento; la purga biométrica debe seguir diaria por el plazo de 7 días de la política).
+
+## Modo tranquilo del Job horario (7-nov-2026, decisión de Juan David)
+`app/ops_state.py`: la app anota actividad en `ops/active.json` (almacenamiento, sin consultar la base) cuando entra el primer ingreso/envío tras un rato inactivo o cambia el estado de un evento o formulario (`warmup.kick`). El Job horario lee ese archivo al arrancar: con actividad en las últimas 3 h (`OPS_ACTIVE_WINDOW_H`) corre completo cada hora; sin actividad solo corre completo a las 3, 4, 5, 11 y 19 h (`OPS_IDLE_HOURS`: respaldo diario, purga biométrica, paso semanal y respaldos cada 8 h) y en las demás horas sale sin abrir la base. Si no puede leer el archivo, corre completo. La alerta de «respaldo horario viejo» pasa a 9 h (`BACKUP_HOURLY_MAX_AGE_H` en `common.yaml`); con actividad, un fallo del respaldo avisa directo.

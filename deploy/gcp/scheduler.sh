@@ -9,7 +9,7 @@
 # así que tras mover de región (o con un bootstrap sin esa variable) staging quedó sin respaldos horarios y nadie lo notó hasta que `check-backups` avisó (la alarma funcionó).
 # `check` también lo usan move_region.sh (verify) y el runbook de corte (docs/15 D2.5).
 #   --paused-ok  (producción ANTES del corte): la tarea debe existir y estar bien configurada pero puede seguir en pausa; sin él, debe estar ENABLED y haber corrido hace poco.
-# Variables: BACKUP_HOURLY_MAX_AGE_H (2, el mismo umbral de app/ops_runner.py), PYTHON (python3).
+# Variables: BACKUP_HOURLY_MAX_AGE_H (9 en el entorno de nube: modo tranquilo, app/ops_state.py), PYTHON (python3).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ENV_ARG="${1:-}"; ACTION="${2:-}"; shift 2 2>/dev/null || true
@@ -50,7 +50,7 @@ case "$ACTION" in
     newest="$(gcloud storage ls -l "gs://$BACKUP_BUCKET/db/hourly/**" 2>/dev/null | grep '\.sql\.gz$' | awk '{print $2}' | sort | tail -1 || true)"
     deployed="$(gcloud run revisions list --service "$SVC_WEB" --region "$REGION" --limit 1 --format 'value(metadata.creationTimestamp)' 2>/dev/null || true)"
     printf "%s" "$job_json" | PYTHONIOENCODING=utf-8 PAUSED_OK="$paused_ok" WANT_NAME="$SCHEDULER_OPS" WANT_REGION="$REGION" WANT_SCHEDULE="$SCHEDULE" WANT_TZ="$TZ_NAME" WANT_URI="$URI" WANT_SA="$INVOKER" \
-      NEWEST="$newest" DEPLOYED="$deployed" MAX_AGE_H="${BACKUP_HOURLY_MAX_AGE_H:-2}" "$PYTHON" -c '
+      NEWEST="$newest" DEPLOYED="$deployed" MAX_AGE_H="${BACKUP_HOURLY_MAX_AGE_H:-9}" "$PYTHON" -c '
 import json, os, sys
 from datetime import datetime, timezone
 j = json.load(sys.stdin); e = os.environ; bad = 0
