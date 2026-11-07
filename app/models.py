@@ -216,7 +216,7 @@ class StaffUser(Base):
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
     created_by = relationship("StaffUser", remote_side=[id])
 
 
