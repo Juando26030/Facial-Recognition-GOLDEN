@@ -31,6 +31,7 @@
   .g-badge-demo { width: 220px; padding: var(--gw-sp-4); border: 2px solid #1e2a6e; border-radius: 12px; text-align: center; font-weight: 700; }
   h3.gw-subtitle { margin: var(--gw-sp-5) 0 var(--gw-sp-3); }
 </style>
+<script src="../../static/js/gw-combobox.js"></script>
 </head>
 <body class="gw-page">
 <svg data-sprite xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
@@ -105,6 +106,7 @@
       <li><a class="gw-nav__link" href="#ayuda">Ayuda y recorrido</a></li>
       <li><a class="gw-nav__link" href="#pestanas">Pestañas</a></li>
       <li><a class="gw-nav__link" href="#puerta">Puerta</a></li>
+      <li><a class="gw-nav__link" href="#combobox">Lista con buscador</a></li>
       <li><a class="gw-nav__link" href="#iconos">Íconos</a></li>
     </ul>
     <div class="gw-nav__search" data-gw-search-slot hidden></div>
@@ -556,6 +558,18 @@ Piezas: .gw-steps (guía de 3 pasos) · .gw-setting (control + «?») · .gw-cho
         <button type="button" class="gw-keypad__key gw-keypad__key--clear" aria-label="Borrar"><svg class="gw-icon" aria-hidden="true"><use href="#i-backspace"/></svg></button><button type="button" class="gw-keypad__key">0</button><button type="button" class="gw-keypad__key gw-keypad__key--ok" aria-label="Confirmar"><svg class="gw-icon" aria-hidden="true"><use href="#i-check-lg"/></svg></button>
       </div></div>
   </div>
+</section>
+
+<section class="g-sec" id="combobox">
+  <h2 class="gw-title">Lista desplegable con buscador (Fase 2)</h2>
+  <p class="gw-lead">Para elegir una opción entre muchas escribiendo para filtrar (cliente, país, ciudad). <code class="g-code">static/js/gw-combobox.js</code> + <code class="g-code">.gw-combobox</code>. Teclado: flechas, Enter, Escape. Opciones de 44 px. Con <code class="g-code">data-allow-free-text</code> el texto escrito también vale. El valor queda en <code class="g-code">input.dataset.gwValue</code> y en el evento <code class="g-code">gw:combobox-change</code>.</p>
+  <div class="gw-stack">
+    <div class="gw-field"><label class="gw-label" for="gCbFijo">Cliente (lista fija)</label>
+      <input class="gw-input" id="gCbFijo" type="text" data-gw-combobox placeholder="Elige o escribe el nombre" data-options='[{"value":"1","label":"Éxito S.A.","hint":"900123"},{"value":"2","label":"Banco de Occidente"},{"value":"3","label":"Corferias"},{"value":"4","label":"Cámara de Comercio de Bogotá"}]'></div>
+    <div class="gw-field"><label class="gw-label" for="gCbLibre">Ciudad (acepta texto libre)</label>
+      <input class="gw-input" id="gCbLibre" type="text" data-gw-combobox data-allow-free-text placeholder="Elige o escribe la ciudad" data-options='[{"value":"Bogotá","label":"Bogotá"},{"value":"Medellín","label":"Medellín"},{"value":"Cali","label":"Cali"}]'></div>
+  </div>
+  <pre class="g-code">&lt;input class="gw-input" data-gw-combobox data-allow-free-text data-options='[{"value":"co","label":"Colombia"}]'&gt;</pre>
 </section>
 
 <section class="g-sec" id="iconos">
