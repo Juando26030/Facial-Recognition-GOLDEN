@@ -17,7 +17,7 @@ import logging
 from app import audit_actions, security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
-from app import audit_actions, event_archive, event_rules, formsvc
+from app import event_archive, event_rules, formsvc
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import testperson
