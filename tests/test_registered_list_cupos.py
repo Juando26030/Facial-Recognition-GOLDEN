@@ -42,6 +42,7 @@ def test_preview_detects_the_quota_column_and_what_each_quota_would_lose(client,
 def test_list_with_data_takes_quota_and_blocks_and_never_duplicates(client, factory, db):
     ev, f = _quota_form(client, factory)
     _open(client, ev, f)
+    login(client, "coord1")          # _open cierra la sesión (el formulario queda abierto al público): para cargar la lista hay que volver a entrar
     # 1001 ya estaba inscrita de verdad y 1002 ya tenía una marca que solo bloqueaba
     from app.models import FormSubmission
     db.add(FormSubmission(form_id=f["id"], event_id=ev.id, data_json='{"cedula": "1001", "ciudad": "Bogotá"}', is_test=False, person_id="1001", source="web", status="confirmed", fed=False))
