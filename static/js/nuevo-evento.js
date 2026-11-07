@@ -1,101 +1,104 @@
-/* Nuevo evento (Fase 1.5): asistente de 4 pasos sobre el mismo POST /api/events de siempre.
-   La configuración llega por data-* de #nuevoEventoRoot (nada de código en la plantilla). Delegación de eventos; mensajes con showToast/showPrompt. */
+/* Nuevo evento (Fase 2): asistente cuyos pasos y campos los define la PLANTILLA DE EVENTO (GET /api/event-template; la diseña un admin en Configuración › Diseñar plantilla para eventos).
+   La de fábrica pide lo mismo que antes. El POST /api/events es el de siempre: los campos base y los interruptores van en el nivel superior (columnas de events, las mismas de Parámetros) y los campos
+   personalizados dentro de `extra`. El servidor vuelve a validar todo. Los controles los pinta static/js/event-field-render.js (todo texto del administrador va escapado).
+   Contrato para quien agregue el selector de cliente (f2/evento-desde-eventos): el campo «client» se pinta de solo lectura con el nombre del cliente; el cliente que se envía es SIEMPRE el de `#nuevoEventoRoot` →
+   data-tenant-id (se lee al enviar, así que basta con actualizarlo). Al terminar de pintar se emite el evento `gw:newevent-rendered` en `document` ({form, template}).
+   Delegación de eventos; mensajes con showToast/showPrompt. */
 (function () {
   'use strict';
   const root = document.getElementById('nuevoEventoRoot');
   const form = document.getElementById('newEventForm');
-  if (!root || !form) return;
+  if (!root || !form || !window.EventFields) return;
+  const EF = window.EventFields;
 
-  const TENANT_ID = root.dataset.tenantId;
   const STAFF_ROLE = root.dataset.staffRole;
   const PURE_COORDINATOR = root.dataset.pureCoordinator === 'true';
   const STAFF_ID = root.dataset.staffId ? parseInt(root.dataset.staffId, 10) : null;
+  const tenantId = () => root.dataset.tenantId;
   const COUNTRIES = ['Colombia', 'México', 'Argentina', 'Chile', 'Perú', 'Ecuador', 'Venezuela', 'Bolivia', 'Paraguay', 'Uruguay', 'Brasil', 'Panamá', 'Costa Rica', 'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua', 'República Dominicana', 'Cuba', 'Puerto Rico', 'España', 'Estados Unidos', 'Canadá', 'Francia', 'Alemania', 'Italia', 'Reino Unido', 'Portugal', 'Países Bajos', 'Bélgica', 'Suiza', 'China', 'Japón', 'Corea del Sur', 'India', 'Australia'];
-
-  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const field = (name) => form.querySelector('[name="' + name + '"]');
+  const CODE_RE = /^[A-Za-z0-9._-]+$/;
+  const CODE_HELP = 'El código del evento solo puede tener letras sin tilde, números, punto (.), guion (-) y guion bajo (_), sin espacios. Ejemplo: FERIA-2026.';
+  const esc = EF.esc;
+  const host = document.getElementById('nePanels');
+  const nextBtn = document.getElementById('neNext');
+  const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : work());
   const panels = () => Array.prototype.slice.call(form.querySelectorAll('[data-gw-wizard-panel]'));
   const currentStep = () => parseInt(form.getAttribute('data-gw-step') || '0', 10);
-  const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : work());
 
-  document.getElementById('countryList').innerHTML = COUNTRIES.map((c) => '<option value="' + esc(c) + '">').join('');
-  document.querySelectorAll('.clock-time').forEach((input) => {
-    attachClockPicker(input);
-    // El reloj se abre con clic; con teclado, Enter o Espacio hacen lo mismo.
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
-  });
-  field('bandana_color').value = '#D4AF37';            // dorado Golden por defecto (la plantilla no lleva colores escritos)
-  ColorLibrary.attach(field('bandana_color'), field('bandana_color_name'));
+  let tpl = null;                  // plantilla vigente
+  let fields = {};                 // clave -> campo
+  let sections = [];               // [{id, title, keys[]}] ya sin los campos ocultos para este usuario
+  let ctx = {};
 
-  async function loadCitiesFor(country) {
-    const cityDatalist = document.getElementById('cityList');
-    if (!country) { cityDatalist.innerHTML = ''; return; }
+  async function citiesFor(country) {
     try {
       const res = await fetch('/api/cities?country=' + encodeURIComponent(country));
-      const cities = res.ok ? await res.json() : [];
-      cityDatalist.innerHTML = cities.map((c) => '<option value="' + esc(c) + '">').join('');
-    } catch (e) { cityDatalist.innerHTML = ''; }
+      return res.ok ? await res.json() : [];
+    } catch (e) { return []; }
   }
-  document.getElementById('countryField').addEventListener('change', (e) => loadCitiesFor(e.target.value.trim()));
-  // País/Ciudad por defecto (2026-09-17, pedido explícito): Colombia/Bogotá, editables; solo se precargan las sugerencias de ciudades.
-  loadCitiesFor(document.getElementById('countryField').value.trim());
-
-  let coordinatorsByLabel = {};
-  async function loadCoordinatorOptions() {
+  async function superEventList() {
     try {
-      const res = await fetch('/api/staff/coordinators');
-      const coords = res.ok ? await res.json() : [];
-      coordinatorsByLabel = {};
-      document.getElementById('coordinatorList').innerHTML = coords.map((c) => {
-        const label = (c.full_name || c.username) + ' (' + c.username + ')';
-        coordinatorsByLabel[label] = c.id;
-        return '<option value="' + esc(label) + '">';
-      }).join('');
-      if (PURE_COORDINATOR) {          // coordinador puro: el evento queda a su nombre
-        const self = coords.find((c) => c.id === STAFF_ID);
-        if (self) field('coordinator_label').value = (self.full_name || self.username) + ' (' + self.username + ')';
-      }
-    } catch (e) { showToast('No se pudo cargar la lista de coordinadores. Recarga la página.', 'error'); }
+      const res = await fetch('/api/super-events?tenant_id=' + encodeURIComponent(tenantId()));
+      return res.ok ? await res.json() : [];
+    } catch (e) { return []; }
   }
-  loadCoordinatorOptions();
 
-  // 2026-09-16 (pedido explícito): si quien crea es comercial, se preselecciona a sí misma (editable); admin+ tiene que elegir.
-  let commercialsByLabel = {};
-  async function loadCommercialOptions() {
-    try {
-      const res = await fetch('/api/staff/commercials');
-      const commercials = res.ok ? await res.json() : [];
-      commercialsByLabel = {};
-      document.getElementById('commercialList').innerHTML = commercials.map((c) => {
-        const label = (c.full_name || c.username) + ' (' + c.username + ')';
-        commercialsByLabel[label] = c.id;
-        return '<option value="' + esc(label) + '">';
-      }).join('');
-      if (STAFF_ROLE === 'comercial') {
-        const self = commercials.find((c) => c.id === STAFF_ID);
-        if (self) field('commercial_label').value = (self.full_name || self.username) + ' (' + self.username + ')';
-      }
-    } catch (e) { showToast('No se pudo cargar la lista de comerciales. Recarga la página.', 'error'); }
+  // ---- Pintar el asistente a partir de la plantilla.
+  function hiddenForUser() {
+    // El coordinador «puro» no elige comercial (el servidor se la deja vacía) y su coordinador es él mismo; las demás reglas las aplica el servidor.
+    return PURE_COORDINATOR ? { commercial_staff_id: true } : {};
   }
-  if (!PURE_COORDINATOR) loadCommercialOptions();
+  function build() {
+    const hidden = hiddenForUser();
+    sections = tpl.creation_layout.sections.map((s) => ({ id: s.id, title: s.title, keys: s.keys.filter((k) => fields[k] && !hidden[k]) })).filter((s) => s.keys.length);
+    ctx.hidden = hidden;
+    ctx.readonly = PURE_COORDINATOR ? { coordinator_staff_id: true } : {};
+    host.innerHTML = sections.map((s, i) => {
+      const last = i === sections.length - 1;
+      return '<section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT' + i + '"' + (i ? ' hidden' : '') + '>' +
+        '<h3 class="gw-nuevo__panel-title" id="neT' + i + '" tabindex="-1">' + esc(s.title) + '</h3>' +
+        '<div class="gw-fields-row gw-fields-row--2 gw-nuevo__cols3">' + s.keys.map((k) => EF.renderField(fields[k], { ctx: ctx })).join('') + '</div>' +
+        (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
+        '</section>';
+    }).join('');
+    EF.afterMount(form, { loadCities: citiesFor });
+    EF.bind(form, { fields: fields, loadCities: citiesFor });
+    applyDefaults();
+    addSuperEventButton();
+    nextBtn.disabled = false;
+    if (window.GW && GW.wizard) GW.wizard.go(form, 0);
+    document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl } }));
+  }
+  const control = (key, part) => form.querySelector('[data-evf-key="' + key + '"][data-evf-part="' + (part || 'v') + '"]');
+  function setIfEmpty(key, value) { const c = control(key); if (c && !c.value) c.value = value; }
+  function applyDefaults() {
+    setIfEmpty('country', 'Colombia');          // País/Ciudad por defecto (2026-09-17, pedido explícito): Colombia/Bogotá, editables
+    setIfEmpty('city', 'Bogotá');
+    const country = control('country');
+    if (country) country.dispatchEvent(new Event('change', { bubbles: true }));          // carga las ciudades del país inicial
+    if (PURE_COORDINATOR && STAFF_ID) { const c = control('coordinator_staff_id'); if (c) c.value = String(STAFF_ID); }
+    if (STAFF_ROLE === 'comercial' && STAFF_ID) setIfEmpty('commercial_staff_id', String(STAFF_ID));          // la comercial que crea queda como comercial (editable)
+  }
 
+  // ---- Superevento: lista del cliente y botón «Nuevo superevento» junto al campo.
+  function addSuperEventButton() {
+    const holder = form.querySelector('[data-evf-field="super_event_id"]');
+    if (!holder || holder.querySelector('#newSuperBtn')) return;
+    holder.insertAdjacentHTML('beforeend', '<button type="button" id="newSuperBtn" class="gw-btn gw-btn--secondary gw-btn--sm">Nuevo superevento</button>');
+    loadSuperEvents();
+  }
   async function loadSuperEvents(selectedId) {
-    const select = document.getElementById('superEventSelect');
-    let list = [];
-    try {
-      const res = await fetch('/api/super-events?tenant_id=' + encodeURIComponent(TENANT_ID));
-      list = res.ok ? await res.json() : [];
-    } catch (e) { list = []; }
+    const select = control('super_event_id');
+    if (!select) return;
+    const list = await superEventList();
     select.innerHTML = '<option value="">— Ninguno —</option>' + list.map((s) => '<option value="' + esc(s.id) + '">' + esc(s.name) + ' (' + esc(s.events) + ' eventos)</option>').join('');
     select.value = selectedId ? String(selectedId) : '';
   }
-  loadSuperEvents();
-
   async function createSuperEvent(btn) {
     const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
     if (!name) return;
     await busy(btn, async () => {
-      const res = await fetch('/api/super-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenant_id: TENANT_ID, name }) });
+      const res = await fetch('/api/super-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenant_id: tenantId(), name }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { showToast(data.detail || 'No se pudo crear el superevento', 'error'); return; }
       await loadSuperEvents(data.id);
@@ -103,23 +106,29 @@
     });
   }
 
-  // ---- Validación por paso. Los campos del reloj son de solo lectura (el navegador no los valida), así que se revisan aquí.
+  // ---- Valores y validación por paso (el servidor valida de nuevo).
+  const readKey = (key) => EF.readField(fields[key], form);
+  function labelOfControl(el) { const l = el && el.id ? form.querySelector('label[for="' + el.id + '"]') : null; return l ? l.textContent.replace('*', '').replace('(opcional)', '').trim() : ''; }
+  function markInvalid(holder, on) {
+    Array.prototype.forEach.call(holder.querySelectorAll('input, select, textarea'), (el) => { if (on) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); });
+  }
   function validatePanel(panel) {
-    const inputs = Array.prototype.slice.call(panel.querySelectorAll('input[name], select[name]'));
-    for (const el of inputs) {
-      const empty = el.required && !String(el.value).trim();
-      if (empty) {
-        el.setAttribute('aria-invalid', 'true');
-        el.focus();
-        showToast('Completa este campo: ' + ((panel.querySelector('label[for="' + el.id + '"]') || {}).textContent || '').replace('*', '').trim(), 'error');
+    const keys = Array.prototype.map.call(panel.querySelectorAll('[data-evf-field]'), (n) => n.getAttribute('data-evf-field'));
+    for (const key of keys) {
+      const f = fields[key];
+      if (!f || f.type === 'client') continue;
+      const holder = panel.querySelector('[data-evf-field="' + key + '"]');
+      const first = holder.querySelector('input, select, textarea');
+      const v = readKey(key);
+      let msg = EF.validateValue(f, v);
+      if (!msg && key === 'event_code' && v && !CODE_RE.test(v)) msg = CODE_HELP;
+      if (msg) {
+        markInvalid(holder, true);
+        if (first) first.focus();
+        showToast(msg.indexOf('es obligatorio') > -1 ? 'Completa este campo: ' + (labelOfControl(first) || f.title) : msg, 'error');
         return false;
       }
-      if (!el.readOnly && !el.checkValidity()) {
-        el.setAttribute('aria-invalid', 'true');
-        el.reportValidity();
-        return false;
-      }
-      el.removeAttribute('aria-invalid');
+      markInvalid(holder, false);
     }
     return true;
   }
@@ -153,30 +162,28 @@
   }, true);
 
   form.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || !e.target.matches('input:not([type="color"]):not(.clock-time):not([list])')) return;
+    if (e.key !== 'Enter' || !e.target.matches('input:not([type="color"]):not(.clock-time):not([list]):not([type="checkbox"])')) return;
     e.preventDefault();                       // Enter avanza el asistente en vez de enviar a medias
-    document.getElementById('neNext').click();
+    nextBtn.click();
   });
 
-  // ---- Resumen del último paso.
-  function labelOf(name) { const v = (field(name) || {}).value || ''; return v.trim() || '—'; }
+  // ---- Resumen del último paso (todo escapado).
+  function summaryText(f, key) {
+    if (f.type === 'client') return (root.dataset.tenantName || '').trim() || '—';
+    if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event') {
+      const c = control(key); const o = c && c.options && c.options[c.selectedIndex];
+      return c && c.value && o ? o.textContent.replace(/ \(\d+ eventos\)$/, '') : '—';
+    }
+    return EF.formatValue(f, readKey(key), ctx) || '—';
+  }
   function renderSummary() {
-    const sel = document.getElementById('superEventSelect');
-    const superLabel = sel && sel.value ? sel.options[sel.selectedIndex].textContent : 'Ninguno';
-    const color = (field('bandana_color').value || '').trim();
-    const colorName = labelOf('bandana_color_name');
-    const groups = [
-      { step: 0, title: 'Datos', rows: [['Código', labelOf('event_code')], ['Nombre', labelOf('name')], ['País y ciudad', labelOf('country') + ', ' + labelOf('city')], ['Lugar', labelOf('location')], ['Dirección', labelOf('address')]] },
-      { step: 1, title: 'Fechas', rows: [['Evento', labelOf('start_date') + ' a ' + labelOf('end_date') + ', ' + labelOf('event_time_start') + ' a ' + labelOf('event_time_end')], ['Montaje', labelOf('setup_date') + ', ' + labelOf('setup_time_start') + ' a ' + labelOf('setup_time_end')]] },
-      { step: 2, title: 'Responsables', rows: [['Coordinador', labelOf('coordinator_label')]].concat(PURE_COORDINATOR ? [] : [['Comercial', labelOf('commercial_label')]]).concat([['Superevento', superLabel]]) },
-    ];
     const box = document.getElementById('neSummary');
-    box.innerHTML = groups.map((g) =>
-      '<div class="gw-nuevo__sumcard"><div class="gw-nuevo__sumhead"><span>' + esc(g.title) + '</span>' +
-      '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-ne-goto="' + g.step + '" aria-label="Cambiar ' + esc(g.title.toLowerCase()) + '">Cambiar</button></div>' +
-      '<dl class="gw-nuevo__dl">' + g.rows.map((r) => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('') + '</dl></div>'
-    ).join('') +
-      '<div class="gw-nuevo__sumcard"><dl class="gw-nuevo__dl"><dt>Pañoleta</dt><dd>' + esc(colorName === '—' ? color : colorName + ' (' + color + ')') + '</dd></dl></div>';
+    if (!box) return;
+    box.innerHTML = sections.map((s, i) =>
+      '<div class="gw-nuevo__sumcard"><div class="gw-nuevo__sumhead"><span>' + esc(s.title) + '</span>' +
+      '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-ne-goto="' + i + '" aria-label="Cambiar ' + esc(s.title.toLowerCase()) + '">Cambiar</button></div>' +
+      '<dl class="gw-nuevo__dl">' + s.keys.map((k) => '<dt>' + esc(fields[k].title) + '</dt><dd>' + esc(summaryText(fields[k], k)) + '</dd>').join('') + '</dl></div>'
+    ).join('');
   }
 
   // Delegación: «Cambiar» del resumen vuelve al paso; «Nuevo superevento».
@@ -187,27 +194,28 @@
     if (sup) createSuperEvent(sup);
   });
 
+  // ---- Armar el cuerpo del POST /api/events: base y interruptores en el nivel superior (sus columnas), personalizados en `extra`.
+  function buildPayload() {
+    const payload = { tenant_id: tenantId() }, extra = {};
+    sections.forEach((s) => s.keys.forEach((key) => {
+      const f = fields[key];
+      if (f.type === 'client') return;
+      const v = readKey(key);
+      if (f.type === 'switch') { payload[f.config.switch] = !!v; return; }
+      if (v == null) return;
+      if (key === 'bandana') { payload.bandana_color = v[0].hex; payload.bandana_color_name = v[0].name || null; return; }
+      if (key.indexOf('c_') === 0) { extra[key] = f.type === 'commercial' || f.type === 'coordinator' ? Number(v) : v; return; }
+      payload[key] = v;
+    }));
+    if (Object.keys(extra).length) payload.extra = extra;
+    return payload;
+  }
+
   // ---- Crear el evento (el último «Continuar» emite gw:wizard-finish).
   async function submitEvent() {
     if (!validateUpTo(panels().length - 1)) return;
-    const payload = Object.fromEntries(new FormData(form).entries());
-    payload.tenant_id = TENANT_ID;
-    payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
-
-    const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
-    if (!coordinatorId) { GW.wizard.go(form, 2); focusPanelTitle(); showToast('Selecciona un coordinador válido de la lista.', 'error'); return; }
-    payload.coordinator_staff_id = coordinatorId;
-    delete payload.coordinator_label;
-
-    if (!PURE_COORDINATOR) {
-      const commercialId = commercialsByLabel[payload.commercial_label];
-      if (!commercialId) { GW.wizard.go(form, 2); focusPanelTitle(); showToast('Selecciona una comercial válida de la lista.', 'error'); return; }
-      payload.commercial_staff_id = commercialId;
-    }
-    delete payload.commercial_label;
-
-    const btn = document.getElementById('neNext');
-    await busy(btn, async () => {
+    const payload = buildPayload();
+    await busy(nextBtn, async () => {
       let res;
       try {
         res = await fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -218,10 +226,31 @@
         return;
       }
       const err = await res.json().catch(() => ({}));
-      showToast(err.detail || 'No se pudo crear el evento', 'error');
+      showToast(typeof err.detail === 'string' ? err.detail : 'No se pudo crear el evento', 'error');
     });
   }
   form.addEventListener('gw:wizard-finish', submitEvent);
   form.addEventListener('submit', (e) => { e.preventDefault(); });
   form.addEventListener('input', (e) => { if (e.target.getAttribute && e.target.getAttribute('aria-invalid')) e.target.removeAttribute('aria-invalid'); });
+
+  // ---- Arranque: leer la plantilla.
+  async function init() {
+    const loading = document.getElementById('neLoading'), err = document.getElementById('neError');
+    err.hidden = true; loading.hidden = false; nextBtn.disabled = true;
+    try {
+      const res = await fetch('/api/event-template', { cache: 'no-store' });
+      if (!res.ok) throw new Error('http ' + res.status);
+      tpl = await res.json();
+    } catch (e) {
+      loading.hidden = true; err.hidden = false;
+      return;
+    }
+    fields = {};
+    tpl.fields.forEach((f) => { if (!f.retired) fields[f.key] = f; });
+    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], tenantName: root.dataset.tenantName || '' };
+    loading.hidden = true;
+    build();
+  }
+  document.getElementById('neRetry').addEventListener('click', init);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

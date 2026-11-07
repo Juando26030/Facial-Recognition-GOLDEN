@@ -44,9 +44,22 @@ def load(db: Session, scope: str = et.SCOPE_GLOBAL) -> dict:
     return from_row(db, _row(db, scope))
 
 
+def people(db: Session) -> dict:
+    """Personal activo que se puede elegir en los campos «Comercial» y «Coordinador» (solo id y nombre): sirve a quien crea el evento y al calendario para escribir el nombre de un id.
+    Es lo mismo que ya se ve en cada evento (nombre del coordinador y de la comercial)."""
+    out = {}
+    for role in ("commercial", "coordinator"):
+        db_role = "comercial" if role == "commercial" else "coordinador"
+        rows = (db.query(StaffUser.id, StaffUser.full_name, StaffUser.username)
+                .filter(StaffUser.is_active == True, or_(StaffUser.role == db_role, StaffUser.secondary_role == db_role))      # noqa: E712
+                .order_by(StaffUser.full_name, StaffUser.username).limit(500).all())
+        out[role] = [{"id": r[0], "name": r[1] or r[2]} for r in rows]
+    return out
+
+
 def public_view(db: Session, tpl: dict = None) -> dict:
     tpl = tpl or load(db)
-    return {**tpl, "scope": et.SCOPE_GLOBAL, "catalog": et.catalog()}
+    return {**tpl, "scope": et.SCOPE_GLOBAL, "catalog": et.catalog(), "people": people(db)}
 
 
 def save(db: Session, staff: StaffUser, payload, scope: str = et.SCOPE_GLOBAL) -> dict:

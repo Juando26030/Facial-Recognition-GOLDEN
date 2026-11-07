@@ -68,6 +68,7 @@
         <button type="button" class="gw-tab" role="tab" id="tab_apariencia" data-tab="apariencia" aria-controls="apariencia" aria-selected="true">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Apariencia</span><span class="gw-tab__sum">Color y tipografía de este computador</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         {% if is_admin_plus %}
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
       </div>
@@ -115,6 +116,15 @@
             <label class="gw-check gw-check--top"><input type="checkbox" id="singleSessionChk"><span class="gw-choice__text">Sesión única para digitadores y demás roles operativos</span></label>
             <p class="gw-hint">Al iniciar sesión se cierra la anterior de esa cuenta (el otro dispositivo ve «Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo»). Si algo falla en un evento, apágalo: vuelve al comportamiento anterior sin desplegar nada.</p>
             <div class="gw-alert gw-alert--warn" id="singleSessionNote" role="status" hidden>{{ ic('alert') }}<div class="gw-alert__body">Está forzado por la variable de entorno SINGLE_SESSION: este interruptor no cambia nada mientras exista.</div></div>
+          </div>
+        </section>
+
+        <section class="gw-tabpanel" role="tabpanel" id="plantilla" aria-labelledby="tab_plantilla" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Plantilla de eventos</h2><p class="gw-tabpanel__lead">Define qué pide «Nuevo evento» y qué se ve en la tarjeta del calendario. Los eventos que ya existen no cambian.</p></div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Diseñar plantilla para eventos</h4></div>
+            <p class="gw-hint">Dos vistas: «Vista de creación de evento» (campos, orden y obligatoriedad) y «Vista calendario» (qué campos salen en la tarjeta y dónde).</p>
+            <a class="gw-btn gw-btn--primary" href="/configuracion/plantilla-evento">Abrir el diseñador</a>
           </div>
         </section>
 

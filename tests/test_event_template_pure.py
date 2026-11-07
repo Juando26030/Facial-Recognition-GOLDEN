@@ -262,3 +262,13 @@ def test_catalog_is_json_serialisable_and_lists_only_creatable_types_for_creatio
     assert {t["type"] for t in c["types"] if t["creatable"]} == set(et.CREATABLE_TYPES)
     assert "switch" not in et.CREATABLE_TYPES and "client" not in et.CREATABLE_TYPES
     assert set(c["locked"]) == {"client", "event_code", "name"}
+
+
+def test_js_fixture_matches_the_factory_template():
+    """tests/js/event_template_default.json es la plantilla de fábrica + catálogo tal como los entrega el servidor: las pruebas de Node (diseñador) parten de ella. Si cambia el código, se regenera."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "js", "event_template_default.json")
+    fx = json.load(open(path, encoding="utf-8"))
+    d = et.default_template()
+    assert fx["fields"] == d["fields"] and fx["creation_layout"] == d["creation_layout"] and fx["calendar_layout"] == d["calendar_layout"]
+    assert fx["catalog"] == json.loads(json.dumps(et.catalog()))

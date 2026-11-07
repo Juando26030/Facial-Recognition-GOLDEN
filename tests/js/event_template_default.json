@@ -1,0 +1,681 @@
+{
+ "calendar_layout": {
+  "zones": {
+   "bottom": [
+    {
+     "key": "location",
+     "label": false
+    },
+    {
+     "key": "commercial_staff_id",
+     "label": true
+    }
+   ],
+   "left": [
+    {
+     "key": "city",
+     "label": false
+    },
+    {
+     "key": "start_date",
+     "label": true
+    },
+    {
+     "key": "end_date",
+     "label": true
+    }
+   ],
+   "right": [
+    {
+     "key": "event_time_start",
+     "label": true
+    },
+    {
+     "key": "event_time_end",
+     "label": true
+    },
+    {
+     "key": "coordinator_staff_id",
+     "label": true
+    }
+   ],
+   "top": [
+    {
+     "key": "name",
+     "label": false
+    },
+    {
+     "key": "event_code",
+     "label": false
+    }
+   ]
+  }
+ },
+ "catalog": {
+  "base": [
+   "client",
+   "event_code",
+   "name",
+   "country",
+   "city",
+   "location",
+   "address",
+   "start_date",
+   "end_date",
+   "event_time_start",
+   "event_time_end",
+   "setup_date",
+   "setup_time_start",
+   "setup_time_end",
+   "coordinator_staff_id",
+   "commercial_staff_id",
+   "super_event_id",
+   "bandana",
+   "notes"
+  ],
+  "currencies": [
+   "COP",
+   "USD",
+   "EUR"
+  ],
+  "limits": {
+   "active_fields": 80,
+   "colors": 8,
+   "help": 200,
+   "inventory_refs": 30,
+   "inventory_types": 20,
+   "long": 2000,
+   "option": 60,
+   "options": 50,
+   "section_title": 40,
+   "sections": 6,
+   "short": 200,
+   "title": 60,
+   "zone_items": 12
+  },
+  "locked": [
+   "client",
+   "event_code",
+   "name"
+  ],
+  "switches": [
+   {
+    "field_key": "sw_facial_enabled",
+    "help": "El evento usa el rostro en la puerta. Se puede cambiar después en Parámetros del evento.",
+    "key": "facial_enabled",
+    "requires": null,
+    "title": "Reconocimiento facial"
+   },
+   {
+    "field_key": "sw_aceptar_enabled",
+    "help": "Las personas aceptan y dan la selfie desde el celular antes del evento. Necesita el reconocimiento facial.",
+    "key": "aceptar_enabled",
+    "requires": "facial_enabled",
+    "title": "Aceptación desde el celular"
+   },
+   {
+    "field_key": "sw_face_door_enabled",
+    "help": "Pantalla de autoservicio «Entrar con mi rostro». Necesita el reconocimiento facial.",
+    "key": "face_door_enabled",
+    "requires": "facial_enabled",
+    "title": "Entrada con rostro sin ayuda"
+   },
+   {
+    "field_key": "sw_inventory_enabled",
+    "help": "Reparto de insumos a las personas del evento.",
+    "key": "inventory_enabled",
+    "requires": null,
+    "title": "Control de inventario"
+   },
+   {
+    "field_key": "sw_areas_enabled",
+    "help": "Entrada y salida por zonas.",
+    "key": "areas_enabled",
+    "requires": null,
+    "title": "Control de áreas"
+   },
+   {
+    "field_key": "sw_certificates_enabled",
+    "help": "Certificados descargables para los asistentes.",
+    "key": "certificates_enabled",
+    "requires": null,
+    "title": "Certificados"
+   },
+   {
+    "field_key": "sw_digital_badge_enabled",
+    "help": "Escarapela enviada por correo.",
+    "key": "digital_badge_enabled",
+    "requires": null,
+    "title": "Escarapela digital"
+   },
+   {
+    "field_key": "sw_auto_print_badge",
+    "help": "Al registrar a alguien se imprime la escarapela sin tocar el botón.",
+    "key": "auto_print_badge",
+    "requires": null,
+    "title": "Imprimir la escarapela sola"
+   },
+   {
+    "field_key": "sw_auto_register",
+    "help": "Un acierto en la puerta acredita a la persona de una vez, sin confirmar.",
+    "key": "auto_register",
+    "requires": null,
+    "title": "Modo autoregistro"
+   },
+   {
+    "field_key": "sw_shared_print_enabled",
+    "help": "Varias personas imprimen en una misma impresora.",
+    "key": "shared_print_enabled",
+    "requires": null,
+    "title": "Impresión compartida y por USB"
+   }
+  ],
+  "types": [
+   {
+    "creatable": true,
+    "label": "Texto corto",
+    "type": "text_short"
+   },
+   {
+    "creatable": true,
+    "label": "Texto largo",
+    "type": "text_long"
+   },
+   {
+    "creatable": true,
+    "label": "Lista desplegable",
+    "type": "select"
+   },
+   {
+    "creatable": true,
+    "label": "Dinero",
+    "type": "money"
+   },
+   {
+    "creatable": true,
+    "label": "Número",
+    "type": "number"
+   },
+   {
+    "creatable": true,
+    "label": "Comercial",
+    "type": "commercial"
+   },
+   {
+    "creatable": true,
+    "label": "Coordinador",
+    "type": "coordinator"
+   },
+   {
+    "creatable": true,
+    "label": "Fecha",
+    "type": "date"
+   },
+   {
+    "creatable": true,
+    "label": "Hora",
+    "type": "time"
+   },
+   {
+    "creatable": true,
+    "label": "Fecha y hora",
+    "type": "datetime"
+   },
+   {
+    "creatable": true,
+    "label": "País",
+    "type": "country"
+   },
+   {
+    "creatable": true,
+    "label": "Ciudad",
+    "type": "city"
+   },
+   {
+    "creatable": true,
+    "label": "Dirección con mapa",
+    "type": "address_map"
+   },
+   {
+    "creatable": true,
+    "label": "Contacto del evento",
+    "type": "contact"
+   },
+   {
+    "creatable": true,
+    "label": "Colores de pañoletas",
+    "type": "bandana_colors"
+   },
+   {
+    "creatable": true,
+    "label": "Inventario",
+    "type": "inventory"
+   },
+   {
+    "creatable": false,
+    "label": "Interruptor",
+    "type": "switch"
+   },
+   {
+    "creatable": false,
+    "label": "Cliente",
+    "type": "client"
+   },
+   {
+    "creatable": false,
+    "label": "Superevento",
+    "type": "super_event"
+   }
+  ],
+  "zones": [
+   {
+    "label": "Arriba (encabezado)",
+    "zone": "top"
+   },
+   {
+    "label": "Izquierda",
+    "zone": "left"
+   },
+   {
+    "label": "Derecha",
+    "zone": "right"
+   },
+   {
+    "label": "Abajo",
+    "zone": "bottom"
+   }
+  ]
+ },
+ "creation_layout": {
+  "sections": [
+   {
+    "id": "datos",
+    "keys": [
+     "client",
+     "event_code",
+     "name",
+     "country",
+     "city",
+     "location",
+     "address"
+    ],
+    "title": "Datos del evento"
+   },
+   {
+    "id": "fechas",
+    "keys": [
+     "start_date",
+     "end_date",
+     "event_time_start",
+     "event_time_end",
+     "setup_date",
+     "setup_time_start",
+     "setup_time_end"
+    ],
+    "title": "Fechas y horas"
+   },
+   {
+    "id": "responsables",
+    "keys": [
+     "coordinator_staff_id",
+     "commercial_staff_id",
+     "super_event_id"
+    ],
+    "title": "Responsables"
+   },
+   {
+    "id": "revisa",
+    "keys": [
+     "bandana",
+     "notes"
+    ],
+    "title": "Revisa y crea"
+   }
+  ]
+ },
+ "fields": [
+  {
+   "config": {},
+   "help": "",
+   "key": "client",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Cliente",
+   "type": "client"
+  },
+  {
+   "config": {
+    "max_len": 200
+   },
+   "help": "Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026).",
+   "key": "event_code",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Código interno",
+   "type": "text_short"
+  },
+  {
+   "config": {
+    "max_len": 200
+   },
+   "help": "",
+   "key": "name",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Nombre del evento",
+   "type": "text_short"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "country",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "País",
+   "type": "country"
+  },
+  {
+   "config": {
+    "country_key": "country"
+   },
+   "help": "",
+   "key": "city",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Ciudad",
+   "type": "city"
+  },
+  {
+   "config": {
+    "max_len": 200
+   },
+   "help": "",
+   "key": "location",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Lugar",
+   "type": "text_short"
+  },
+  {
+   "config": {
+    "max_len": 200
+   },
+   "help": "",
+   "key": "address",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Dirección",
+   "type": "text_short"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "start_date",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Fecha inicio",
+   "type": "date"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "end_date",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Fecha fin",
+   "type": "date"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "event_time_start",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Hora inicio evento",
+   "type": "time"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "event_time_end",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Hora fin evento",
+   "type": "time"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "setup_date",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Fecha montaje",
+   "type": "date"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "setup_time_start",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Hora inicio montaje",
+   "type": "time"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "setup_time_end",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Hora fin montaje",
+   "type": "time"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "coordinator_staff_id",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Coordinador asignado",
+   "type": "coordinator"
+  },
+  {
+   "config": {},
+   "help": "",
+   "key": "commercial_staff_id",
+   "options": [],
+   "required": true,
+   "retired": false,
+   "title": "Comercial asignada",
+   "type": "commercial"
+  },
+  {
+   "config": {},
+   "help": "Opcional: agrupa eventos hermanos de este cliente.",
+   "key": "super_event_id",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Superevento",
+   "type": "super_event"
+  },
+  {
+   "config": {
+    "max": 1
+   },
+   "help": "",
+   "key": "bandana",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Color de pañoleta",
+   "type": "bandana_colors"
+  },
+  {
+   "config": {
+    "max_len": 2000
+   },
+   "help": "",
+   "key": "notes",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Observaciones",
+   "type": "text_long"
+  },
+  {
+   "config": {
+    "switch": "facial_enabled"
+   },
+   "help": "El evento usa el rostro en la puerta. Se puede cambiar después en Parámetros del evento.",
+   "key": "sw_facial_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Reconocimiento facial",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "aceptar_enabled"
+   },
+   "help": "Las personas aceptan y dan la selfie desde el celular antes del evento. Necesita el reconocimiento facial.",
+   "key": "sw_aceptar_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Aceptación desde el celular",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "face_door_enabled"
+   },
+   "help": "Pantalla de autoservicio «Entrar con mi rostro». Necesita el reconocimiento facial.",
+   "key": "sw_face_door_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Entrada con rostro sin ayuda",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "inventory_enabled"
+   },
+   "help": "Reparto de insumos a las personas del evento.",
+   "key": "sw_inventory_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Control de inventario",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "areas_enabled"
+   },
+   "help": "Entrada y salida por zonas.",
+   "key": "sw_areas_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Control de áreas",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "certificates_enabled"
+   },
+   "help": "Certificados descargables para los asistentes.",
+   "key": "sw_certificates_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Certificados",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "digital_badge_enabled"
+   },
+   "help": "Escarapela enviada por correo.",
+   "key": "sw_digital_badge_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Escarapela digital",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "auto_print_badge"
+   },
+   "help": "Al registrar a alguien se imprime la escarapela sin tocar el botón.",
+   "key": "sw_auto_print_badge",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Imprimir la escarapela sola",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "auto_register"
+   },
+   "help": "Un acierto en la puerta acredita a la persona de una vez, sin confirmar.",
+   "key": "sw_auto_register",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Modo autoregistro",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "shared_print_enabled"
+   },
+   "help": "Varias personas imprimen en una misma impresora.",
+   "key": "sw_shared_print_enabled",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Impresión compartida y por USB",
+   "type": "switch"
+  }
+ ],
+ "is_default": true,
+ "people": {
+  "commercial": [
+   {
+    "id": 1,
+    "name": "Luis"
+   }
+  ],
+  "coordinator": [
+   {
+    "id": 2,
+    "name": "Ana"
+   }
+  ]
+ },
+ "scope": "global",
+ "updated_at": null,
+ "updated_by": null,
+ "version": 0
+}

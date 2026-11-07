@@ -1,0 +1,105 @@
+{# Diseñar plantilla para eventos (Fase 2, entrega 2): solo admin y super_admin. Dos vistas sobre UNA plantilla: «Vista de creación de evento» (qué pide «Nuevo evento») y «Vista calendario» (qué sale en la tarjeta del calendario).
+   Una sola barra de guardado (botón y Ctrl/⌘+S, static/js/params-save.js). Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). La lógica está en static/js/event-template-designer.js y static/js/plantilla-evento.js. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plantilla de eventos | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-event-fields.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-plantilla-evento.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
+</head>
+<body class="gw-page gw-shell has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="gw-container gw-tpl-wrap" id="tplRoot" data-gw-tour="plantilla-evento" data-gw-tour-auto data-icons="{{ url_for('static', path='img/icons.svg') }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Configuración</p>
+        <h1 class="gw-page-head__title">Diseñar plantilla para eventos</h1>
+        <p class="gw-page-head__sub" id="tplMeta" role="status">Cargando…</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <a href="/configuracion" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('chevron', 'gw-icon--sm gw-tpl-back') }} Configuración</a>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="plantilla-evento">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Guía de 3 pasos">
+      <li data-gw-tour-step="1" data-gw-tour-title="1. Elige la vista" data-gw-tour-text="«Vista de creación de evento» define lo que pide «Nuevo evento». «Vista calendario» define lo que sale en la tarjeta del calendario."><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la vista</span>
+        {% call ayuda('ay_tpl1', 'Elige la vista') %}Son dos pantallas sobre la misma plantilla de campos. La de creación define qué pide «Nuevo evento»; la del calendario, qué se ve en la tarjeta de cada evento (solo visual).{% endcall %}</li>
+      <li data-gw-tour-step="2" data-gw-tour-title="2. Arrastra y cambia" data-gw-tour-text="Arrastra los campos para ordenarlos, elige uno para cambiar su título, si es obligatorio y sus opciones. También puedes usar los botones de subir y bajar."><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Arrastra y cambia</span>
+        {% call ayuda('ay_tpl2', 'Arrastra y cambia') %}Código, nombre y cliente siempre se piden y no se pueden quitar. Lo demás es opcional y tú decides qué es obligatorio. Con el teclado usa los botones de subir y bajar y las listas de «Paso» o «Dónde sale».{% endcall %}</li>
+      <li data-gw-tour-step="3" data-gw-tour-title="3. Guarda" data-gw-tour-text="El botón «Guardar cambios» de abajo (o Ctrl o Cmd + S) guarda las dos vistas. Los eventos que ya existen no cambian."><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Guarda</span>
+        {% call ayuda('ay_tpl3', 'Guarda') %}Los cambios valen para los eventos nuevos y para cómo se ven todos en el calendario. Si quitas un campo que ya tiene datos en eventos, esos datos se conservan.{% endcall %}</li>
+    </ol>
+
+    <p class="gw-hint" id="tplLoading" role="status">Cargando la plantilla…</p>
+    <div class="gw-alert gw-alert--err" id="tplError" role="alert" hidden>{{ ic('error') }}<div class="gw-alert__body"><span id="tplErrorText">No se pudo cargar la plantilla.</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tplRetry">Reintentar</button></div></div>
+
+    <div class="gw-tabs gw-tpl-tabs" id="paramsRoot" data-tabs-key="plantilla-evento" hidden>
+      <div class="gw-tablist" role="tablist" aria-label="Vistas de la plantilla" aria-orientation="horizontal">
+        <button type="button" class="gw-tab" role="tab" id="tab_creacion" data-tab="creacion" aria-controls="vista_creacion" aria-selected="true">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Vista de creación de evento</span><span class="gw-tab__sum">Qué pide «Nuevo evento»</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_calendario" data-tab="calendario" aria-controls="vista_calendario" aria-selected="false" tabindex="-1">{{ ic('calendar', 'gw-tab__icon') }}<span class="gw-tab__name">Vista calendario</span><span class="gw-tab__sum">Qué sale en la tarjeta</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+      </div>
+
+      <div class="gw-tabpanels">
+        <section class="gw-tabpanel" role="tabpanel" id="vista_creacion" aria-labelledby="tab_creacion" data-psave="plantilla">
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Vista de creación de evento</h2><p class="gw-tabpanel__lead">Los pasos y campos que pide «Nuevo evento», en el orden en que aparecen. Los campos con etiqueta «Siempre» no se pueden quitar.</p></div>
+          <div class="gw-tpl-grid">
+            <div class="gw-tpl-col" id="tplPaletteA" data-pnodirty></div>
+            <div class="gw-tpl-canvas" id="tplCanvasA" aria-label="Pasos de Nuevo evento"></div>
+            <aside class="gw-card gw-tpl-props" id="tplPropsA" aria-label="Parámetros del campo" aria-live="polite"></aside>
+          </div>
+        </section>
+
+        <section class="gw-tabpanel" role="tabpanel" id="vista_calendario" aria-labelledby="tab_calendario" data-psave="plantilla" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Vista calendario</h2><p class="gw-tabpanel__lead">De todos los campos de la plantilla, cuáles salen en la tarjeta de cada evento y dónde. Es solo visual: no cambia lo que se pide al crear.</p></div>
+          <div class="gw-tpl-grid">
+            <div class="gw-tpl-col" id="tplPaletteB" data-pnodirty></div>
+            <div class="gw-tpl-canvas" id="tplCanvasB" aria-label="Tarjeta del calendario"></div>
+            <aside class="gw-card gw-tpl-props" id="tplPropsB" aria-label="Dónde sale el campo" aria-live="polite"></aside>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" data-gw-tour-step="3" data-gw-tour-title="3. Guarda" data-gw-tour-text="Un solo botón guarda las dos vistas.">
+  <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+  <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+  <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+</div>
+
+<script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-template-designer.js') }}"></script>
+<script src="{{ url_for('static', path='js/plantilla-evento.js') }}"></script>
+</body>
+</html>

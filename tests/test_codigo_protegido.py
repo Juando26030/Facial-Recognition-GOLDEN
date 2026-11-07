@@ -151,5 +151,9 @@ def test_the_event_menu_shows_the_code_clearly(client, factory, db):
 
 
 def test_the_new_event_form_guides_the_code_format():
-    html = open("templates/nuevo_evento.html", encoding="utf-8").read()
-    assert 'pattern="[A-Za-z0-9._\\-]+"' in html and "no se puede cambiar después" in html
+    """Fase 2: el formulario sale de la plantilla de evento; la guía del código (formato y que no se cambia) viene en su ayuda y el formato se revisa en el navegador (y siempre en el servidor)."""
+    from app import event_template as et
+    code = [f for f in et.default_template()["fields"] if f["key"] == "event_code"][0]
+    assert "no se puede cambiar después" in code["help"] and "FERIA-2026" in code["help"]
+    js = open("static/js/nuevo-evento.js", encoding="utf-8").read()
+    assert "const CODE_RE = /^[A-Za-z0-9._-]+$/;" in js

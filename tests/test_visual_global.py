@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRADAS = ["kiosk_registro.html", "kiosk_roster.html", "kiosk_parametros.html", "kiosk_select.html", "kiosk_rostro.html", "sistema.html", "dashboard.html", "password.html", "login.html", "kiosk_formularios.html", "kiosk_usuarios.html", "kiosk_documentos.html", "kiosk_legalizaciones.html", "kiosk_certificados.html", "nuevo_evento.html", "kiosk_areas.html", "kiosk_inventario.html", "kiosk_ruleta.html", "kiosk_ruleta_visual.html", "clientes.html", "configuracion.html", "staff.html", "kiosk_estadisticas.html", "form_stats.html", "eventos.html", "calendario.html", "_event_edit_modal.html", "kiosk_formulario_editor.html", "badge_editor.html", "impresion_usb.html"]          # cada PR de la Fase 1.5 agrega las suyas
+MIGRADAS = ["kiosk_registro.html", "kiosk_roster.html", "kiosk_parametros.html", "kiosk_select.html", "kiosk_rostro.html", "sistema.html", "dashboard.html", "password.html", "login.html", "kiosk_formularios.html", "kiosk_usuarios.html", "kiosk_documentos.html", "kiosk_legalizaciones.html", "kiosk_certificados.html", "nuevo_evento.html", "kiosk_areas.html", "kiosk_inventario.html", "kiosk_ruleta.html", "kiosk_ruleta_visual.html", "clientes.html", "configuracion.html", "staff.html", "kiosk_estadisticas.html", "form_stats.html", "eventos.html", "calendario.html", "_event_edit_modal.html", "kiosk_formulario_editor.html", "badge_editor.html", "impresion_usb.html", "plantilla_evento.html"]          # cada PR de la Fase 1.5 agrega las suyas
 EMOJI = re.compile("[☀-➿\U0001F300-\U0001FAFF]")
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}(?![0-9a-zA-Z_-])")
 INLINE_HANDLER = re.compile(r"\son(?:click|change|submit|input|keydown|keyup|load|error)=", re.I)
