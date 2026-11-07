@@ -160,9 +160,9 @@ function eventCard(e) {
         <span class="gw-badge ev-card__state ${STATUS_BADGE[e.status] || ""}">${icon(STATUS_ICON[e.status] || "info", "gw-icon--sm")} ${esc(STATUS_LABELS[e.status] || e.status)}</span>
       </div>
       <div class="ev-card__meta">
-        ${metaRow("building", `<strong>${esc(e.tenant_name)}</strong>${place ? " · " + place : ""}`, "ev-card__client", [e.tenant_name, [e.city, e.country].filter(Boolean).join(", "), sup].filter(Boolean).join(" · "))}
+        ${metaRow("building", `<strong>${esc(e.tenant_name)}</strong>${e.city ? " · " + esc(e.city) : ""}${e.country ? `<span class="ev-card__country">, ${esc(e.country)}</span>` : ""}`, "ev-card__client", [e.tenant_name, [e.city, e.country].filter(Boolean).join(", "), sup].filter(Boolean).join(" · "))}
         ${metaRow("calendar", `<span class="ev-dt ev-dt--full">${fmtRange(e)}</span><span class="ev-dt ev-dt--short">${fmtRangeShort(e)}</span>`, "ev-card__dates", fmtRange(e))}
-        ${metaRow("users", `<span class="ev-card__pfx">Comercial: </span>${esc(e.commercial_name) || "—"} · <span class="ev-card__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}`, "ev-card__people", `Comercial: ${e.commercial_name || "—"} · Coordinador: ${e.coordinator_name || "—"}`)}
+        ${metaRow("users", `<span class="ev-card__who"><span class="ev-card__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-card__psep"> · </span><span class="ev-card__who"><span class="ev-card__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span>`, "ev-card__people", `Comercial: ${e.commercial_name || "—"} · Coordinador: ${e.coordinator_name || "—"}`)}
         ${sup ? metaRow("link", esc(sup), "ev-card__super") : ""}
         <p class="ev-card__row ev-card__row--plain ev-card__report"><span class="ev-rep ev-rep--full">${reportBulbHtml(e)}</span><span class="ev-rep ev-rep--dot">${reportBulbHtml(e, true)}</span></p>
       </div>
@@ -198,7 +198,7 @@ const coordinatorFilter = document.getElementById("coordinatorFilter");
 const eventsList = document.getElementById("eventsList");
 const eventsWrap = document.getElementById("eventsWrap");
 // Encabezado de columnas (solo escritorio; lo muestra gw-eventos.css) dentro de la misma rejilla que las filas.
-const EV_COLS_HTML = '<div class="ev-cols" aria-hidden="true"><span class="ev-cols__c1">Evento</span><span class="ev-cols__c2">Cliente · lugar</span><span class="ev-cols__c3">Fechas</span><span class="ev-cols__c4">Comercial · coordinador</span><span class="ev-cols__c5">Estado</span><span class="ev-cols__c6">Informe</span><span class="ev-cols__c7">Acciones</span></div>';
+const EV_COLS_HTML = '<div class="ev-cols" aria-hidden="true"><span class="ev-cols__c1">Evento</span><span class="ev-cols__c2">Cliente · lugar</span><span class="ev-cols__c3">Fechas</span><span class="ev-cols__c4" title="Comercial y coordinador">Comercial / coordinador</span><span class="ev-cols__c5">Estado</span><span class="ev-cols__c6">Informe</span><span class="ev-cols__c7">Acciones</span></div>';
 searchBox.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); });
 statusFilter.addEventListener("change", runSearch);
 if (mineFilter) mineFilter.addEventListener("change", runSearch);

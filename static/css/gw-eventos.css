@@ -163,10 +163,10 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .ev-dt--full { display: none; }
   .ev-dt--short { display: inline; }
   /* Hasta 1759 px: sin la insignia de estado (el selector de la derecha ya lo muestra) y el informe como punto con nombre accesible. */
-  .ev-wrap { --ev-cols: minmax(0, 2.2fr) minmax(0, 1.3fr) 6.75rem minmax(0, 1.3fr) 2.5rem max-content; }
+  .ev-wrap { --ev-cols: minmax(0, 2.3fr) minmax(0, 1.8fr) 8rem minmax(0, 1.6fr) 1.5rem max-content; }
   .ev-cols__c5, .ev-card__state { display: none; }
-  .ev-cols__c6 { text-align: center; }
-  .ev-card__report { justify-content: center; }
+  .ev-cols__c6 { text-align: left; overflow: visible !important; text-overflow: clip !important; }
+  .ev-card__report { justify-content: flex-start; }
   .ev-rep--full { display: none; }
   .ev-rep--dot { display: inline-flex; }
   /* filtros en una sola línea */
@@ -180,25 +180,31 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .ev-cols > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev-cols__c7 { text-align: right; }
   /* la fila */
-  .ev-list { grid-template-columns: var(--ev-cols); column-gap: var(--gw-sp-3); row-gap: var(--gw-sp-2); }
+  .ev-list { grid-template-columns: var(--ev-cols); column-gap: var(--gw-sp-2); row-gap: var(--gw-sp-2); }
   .ev-list > :not(.ev-card):not(.ev-cols) { grid-column: 1 / -1; }
-  .ev-card { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding: var(--gw-sp-2) var(--gw-sp-4); min-height: calc(var(--gw-tap) + var(--gw-sp-4)); }
+  .ev-card { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); padding: var(--gw-sp-2) var(--gw-sp-4); min-height: calc(var(--gw-tap) + var(--gw-sp-4)); }
   .ev-card__head, .ev-card__meta, .ev-card__bar, .ev-card__actions { display: contents; }
-  .ev-card__title { order: 1; display: flex; flex-wrap: nowrap; align-items: baseline; gap: var(--gw-sp-2); min-width: 0; margin: 0; font-size: var(--gw-fs-md); }
-  .ev-card__name { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); }
-  .ev-card__code { flex: 0 0 auto; font-size: var(--gw-fs-sm); }
+  .ev-card__title { order: 1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; margin: 0; font-size: var(--gw-fs-md); line-height: var(--gw-lh-tight); overflow-wrap: break-word; }
+  .ev-card__name { display: inline; }
+  .ev-card__code { font-size: var(--gw-fs-sm); }
   .ev-card__client { order: 2; } .ev-card__dates { order: 3; } .ev-card__people { order: 4; }
   .ev-card__state { order: 5; justify-self: start; font-size: var(--gw-fs-sm); padding: 2px var(--gw-sp-3); white-space: nowrap; }
   .ev-card__report { order: 6; }
   .ev-card__super, .ev-card__pfx, .ev-card__row:not(.ev-card__report) > .gw-icon { display: none; }              /* el encabezado de columnas ya dice qué es cada dato */
   .ev-card__row { align-items: center; min-width: 0; font-size: var(--gw-fs-sm); }
-  .ev-card__row > span:not(.ev-rep) { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); }
+  .ev-card__dates > span { white-space: nowrap; }
+  .ev-card__people > span { display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; }
+  .ev-card__who { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: break-word; }
+  .ev-card__psep { display: none; }
+  .ev-card__country { display: none; }
+  .ev-card__row > span:not(.ev-rep):not(.ev-dt) { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: normal; overflow-wrap: break-word; line-height: var(--gw-lh-tight); }
   .ev-card__row--plain .gw-bulb { white-space: nowrap; }
   /* a la derecha: Editar · ⋯ · estado · Ingresar, en una línea */
   .ev-card__tools { order: 7; display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--gw-sp-2); min-width: 0; }
   .ev-card__tools .ev-card__edit { order: 1; flex: 0 0 auto; }
   .ev-card__tools .ev-card__menu { order: 2; }
-  .ev-card__tools .ev-card__bar .gw-field { order: 3; display: block; flex: 0 0 6.75rem; margin: 0; }
+  .ev-card__tools .ev-card__bar .gw-field { order: 3; display: block; flex: 0 0 7.5rem; margin: 0; }
+  .ev-card__bar .gw-select { padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-1); text-overflow: clip; font-size: var(--gw-fs-sm); }
   .ev-card__tools .ev-card__enter { order: 4; margin-left: 0; flex: 0 0 auto; }
   .ev-card__bar .gw-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .ev-card__bar .gw-select { min-height: var(--gw-tap); width: 100%; text-overflow: ellipsis; }
@@ -206,14 +212,14 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .ev-card__enter.gw-btn--xl { padding: var(--gw-sp-2) var(--gw-sp-4); font-size: var(--gw-fs-md); }
   .ev-card__actions .ev-card__edit, .ev-card__actions .ev-card__enter { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
-/* 901-1759 px: botones solo con texto para que quepan las columnas de datos. */
+/* 901-1759 px: botones con ícono y color, solo con menos relleno para que quepan las columnas de datos. */
 @media (min-width: 901px) and (max-width: 1759px) {
-  .ev-card__actions .ev-card__edit .gw-icon, .ev-card__actions .ev-card__enter .gw-icon { display: none; }
   .ev-card__actions .ev-card__edit, .ev-card__actions .ev-card__enter { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
 /* ≥ 1760 px: también la insignia de estado y el informe con texto. */
 @media (min-width: 1760px) {
-  .ev-wrap { --ev-cols: minmax(0, 2.2fr) minmax(0, 1.3fr) 6.75rem minmax(0, 1.6fr) max-content 9.5rem max-content; }
+  .ev-wrap { --ev-cols: minmax(0, 2.3fr) minmax(0, 1.8fr) 8rem minmax(0, 1.6fr) max-content 9.5rem max-content; }
+  .ev-card__country { display: inline; }
   .ev-cols__c5, .ev-card__state { display: inline-flex; }
   .ev-cols__c5 { display: block; }
   .ev-cols__c6 { text-align: left; }
