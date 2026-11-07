@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import audit_actions
+from app import event_archive, audit_actions
 import re
 import json
 from typing import List, Optional
@@ -566,6 +566,8 @@ def get_all_users(
     Fase 0 de escalabilidad: (1) `ETag` + `If-None-Match`: si nada cambio se responde 304 sin construir la lista; (2) `limit`/`offset` opcionales para
     paginar (sin ellos devuelve todo, como siempre; con ellos, ordenado por cedula y con el total en `X-Total-Count`); (3) la respuesta va comprimida (gzip)."""
     event = get_event_for_staff(event_id, db, staff)
+    if not event_archive.data_open_for(event, staff):          # L7: base archivada a los 90 días; el evento sigue visible
+        raise HTTPException(status_code=403, detail=event_archive.DATA_ARCHIVED_MSG)
     if archived and staff.role not in ("admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Solo un administrador puede ver las personas archivadas")
     headers = {"Cache-Control": "private, no-cache"}
@@ -601,6 +603,8 @@ def get_directory_changes(
     el que devolvio la llamada anterior; "0:0" = todo). Devuelve `total` para que el cliente detecte lo que este metodo no ve (bajas, estados revertidos):
     si su cuenta no coincide, pide la lista completa."""
     event = get_event_for_staff(event_id, db, staff)
+    if not event_archive.data_open_for(event, staff):
+        raise HTTPException(status_code=403, detail=event_archive.DATA_ARCHIVED_MSG)
     try:
         since_log, since_att = (int(x) for x in cursor.split(":"))
     except ValueError:

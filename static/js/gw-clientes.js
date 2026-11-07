@@ -123,7 +123,7 @@
       <div class="gw-card-row gw-event-card">
         <div class="gw-card-row__head">
           <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}">${window.reportBulbHtml ? `<span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span>` : ''} <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ''}</span></span>
-          <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ''}
+          <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ''}${e.data_archived ? ' <span class="gw-badge" title="Pasaron 90 días desde el cierre: la base de datos del evento está archivada. Un super administrador puede desarchivarla.">Base archivada</span>' : ''}
         </div>
         <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.location, e.city].filter(Boolean).join(' · '))}">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="Comercial: ${esc(e.commercial_name) || '-'} · Coordinador: ${esc(e.coordinator_name) || '-'}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || '-'}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || '-'}</span></span></p>
         <div class="gw-card-row__actions p-cli__acts">
@@ -147,8 +147,9 @@
   // Archivar (finalizados, admin+) · Restaurar (admin+; si lo archivó el Job a los 90 días, solo super_admin) · Eliminar definitivamente (super_admin, solo archivados).
   function eventArchiveItems(e) {
     const name = esc(e.name);
+    const dataItem = isSuper && e.data_archived ? `<hr class="gw-menu__sep"><button type="button" class="gw-menu__item" data-restore-data="${esc(e.id)}" data-event-name="${name}" title="Vuelve a abrir la base de datos de este evento">${icon('undo', 'gw-icon--sm')} Desarchivar base de datos</button>` : '';
     if (!e.archived) {
-      return e.status === 'finalizado'
+      return dataItem +  e.status === 'finalizado'
         ? `<hr class="gw-menu__sep"><button type="button" class="gw-menu__item" data-archive-event="${esc(e.id)}" data-event-name="${name}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon('lock', 'gw-icon--sm')} Archivar evento</button>`
         : '';
     }
@@ -258,6 +259,13 @@
       if (!await showConfirm('¿Archivar el evento "' + escapeHtml(archEv.dataset.eventName) + '"?<br><br>Se oculta de las listas, queda de solo lectura y sus formularios públicos dejan de recibir inscripciones. <strong>No se borra nada</strong>: un administrador puede restaurarlo.', { confirmLabel: 'Archivar' })) return;
       const card = archEv.closest('.tenant-card');
       await busy(archEv, async () => { const r = await tenantCall('/api/events/' + encodeURIComponent(archEv.dataset.archiveEvent) + '/archive', 'POST'); showToast(r.ok ? 'Evento archivado' : (r.detail || 'No se pudo archivar'), r.ok ? 'success' : 'error'); if (r.ok) loadEventsForTenant(card.dataset.tenantId, card); });
+      return;
+    }
+    const restData = e.target.closest('[data-restore-data]');
+    if (restData) {
+      if (!await showConfirm('¿Desarchivar la base de datos del evento "' + escapeHtml(restData.dataset.eventName) + '"?<br><br>Las personas y respuestas vuelven a ser visibles para el personal. Queda registrado.', { confirmLabel: 'Desarchivar' })) return;
+      const card = restData.closest('.tenant-card');
+      await busy(restData, async () => { const r = await tenantCall('/api/events/' + encodeURIComponent(restData.dataset.restoreData) + '/restore-data', 'POST'); showToast(r.ok ? 'Base de datos desarchivada' : (r.detail || 'No se pudo desarchivar'), r.ok ? 'success' : 'error'); if (r.ok) loadEventsForTenant(card.dataset.tenantId, card); });
       return;
     }
     const restEv = e.target.closest('[data-restore-event]');

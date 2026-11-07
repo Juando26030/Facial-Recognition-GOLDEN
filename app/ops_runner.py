@@ -2,7 +2,7 @@
 Scheduler (cabe en las 3 gratuitas): cada hora al minuto 05, hora de Bogotá, corre `hourly`.
 
   hourly         respaldo de la base (cada hora) · a las OPS_DAILY_HOUR (3) también el diario · a las OPS_PURGE_HOUR (4) la purga biométrica
-                 · revisión de respaldos · cola de trabajos pendiente · archivado de eventos a los 90 días (L7) · precalentamiento. Cada paso va aislado: si uno falla los demás
+                 · revisión de respaldos · cola de trabajos pendiente · precalentamiento · y SOLO los domingos a las OPS_WEEKLY_HOUR (5) el archivado de la base de los eventos a los 90 días (L7). Cada paso va aislado: si uno falla los demás
                  corren igual, y el Job termina con código 1 (la alerta de Cloud Monitoring avisa de ejecuciones fallidas).
   backup | backup-daily | purge | archive-events | check-backups | sweep | warmup      cada paso suelto, para correrlo a mano:
                  gcloud run jobs execute golden-ops-<entorno> --region <región> --args=-m,app.ops_runner,backup
@@ -202,15 +202,15 @@ def warmup() -> str:
 
 
 def archive_events() -> str:
-    """L7 (Fase 3): archiva los eventos finalizados con 90 días o más desde su cierre (app/event_archive.py). Idempotente, NUNCA borra, registra en audit_actions con actor NULL (sistema). Solo conteos en el resultado.
-    Si algún evento falla el paso FALLA (alerta) y se reintenta la hora siguiente."""
+    """L7 (Fase 3): archiva la BASE DE DATOS de los eventos finalizados con 90 días o más desde su cierre (el evento sigue en las listas; app/event_archive.py). Idempotente, NUNCA borra, registra en audit_actions
+    con actor NULL (sistema). Solo conteos en el resultado. Corre UNA vez por semana (OPS_WEEKLY_DAY / OPS_WEEKLY_HOUR); si algún evento falla el paso FALLA (alerta) y se reintenta la semana siguiente (o a mano: `archive-events`)."""
     from app import event_archive
     from app.database import SessionLocal
     with SessionLocal() as db:
         r = event_archive.auto_archive_due(db)
     log.info("archivado automático de eventos: %s", json.dumps(r))
     if r["errors"]:
-        raise RuntimeError(f"el archivado automático tuvo {r['errors']} error(es) (se reintenta en la próxima corrida): {json.dumps(r)}")
+        raise RuntimeError(f"el archivado automático tuvo {r['errors']} error(es) (se reintenta en la próxima corrida semanal): {json.dumps(r)}")
     return json.dumps(r)
 
 
@@ -231,7 +231,9 @@ def hourly(now=None) -> dict:
         steps.append(("backup-daily", lambda: backup_db("daily", now=now)))
     if now.hour == int(os.getenv("OPS_PURGE_HOUR", "4")):
         steps.append(("purge", purge))
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("archive-events", archive_events), ("reports", purge_reports), ("warmup", warmup)]
+    if now.weekday() == int(os.getenv("OPS_WEEKLY_DAY", "6")) and now.hour == int(os.getenv("OPS_WEEKLY_HOUR", "5")):
+        steps.append(("archive-events", archive_events))          # L7: UNA vez por semana (domingo 5 a. m.), para no despertar la base de Neon cada hora
+    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:

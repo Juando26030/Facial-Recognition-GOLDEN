@@ -165,10 +165,8 @@ def test_hard_delete_needs_super_admin_and_an_archived_event_and_is_logged(clien
 def test_auto_archived_event_is_restored_only_by_super_admin(client, factory, db):
     from app import event_archive
     ev = _finished(factory, db)
-    from app.timeutil import utcnow
-    ev.finalized_at = utcnow() - timedelta(days=100)
+    event_archive.archive(db, ev, None, "archivado por el sistema (caso heredado: archived_by_id nulo)")          # el Job ya no archiva el evento (solo su base), pero si existe uno así lo restaura solo un super_admin
     db.commit()
-    assert event_archive.auto_archive_due(db)["archived"] == 1
     factory.staff("admin", "adm")
     factory.staff("super_admin", "sup")
     login(client, "adm")

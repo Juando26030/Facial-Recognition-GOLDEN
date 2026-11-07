@@ -319,3 +319,21 @@ Generada con un recorrido estático (AST) de TODOS los `@router.post/put/patch/d
 6. **`POST /api/ingreso/estado` y `/cancelar`** no tienen dependencia (flujo de ingreso por token): confirmar que el token es de un solo uso y tiene límite de intentos.
 7. Roles inconsistentes entre pares: `PUT /api/staff/{id}/password` y `DELETE /api/staff/{id}` son coordinador+ pero se acotan dentro del cuerpo (`_manageable_roles`, `DELETABLE_ROLES_BY`, `_assert_can_manage`); correcto, pero el control está en el cuerpo y no en la dependencia: un cambio descuidado lo abriría.
 
+
+## L7 corregido (7-nov-2026, pedido de Juan David)
+- El Job **ya no archiva el evento**: el evento sigue en todas las listas. Archiva **solo la base de datos** (`events.data_archived_at`): el personal deja de ver las personas del evento (directorio) y sus formularios públicos se cierran; un super_admin la desarchiva (`POST /api/events/{id}/restore-data`, menú «Desarchivar base de datos»). Nada se borra.
+- **Una vez por semana**: domingo a las `OPS_WEEKLY_HOUR` (5 a. m., hora de Bogotá), dentro del Job horario ya existente (sin tarea nueva de Scheduler). El resto de la semana ese paso no toca la base.
+- Archivar el evento completo (ocultarlo de las listas) sigue siendo solo manual, admin+.
+
+## Qué despierta la base de Neon (revisión de todo el código)
+Fuera del uso normal de las pantallas, lo único que corre solo es el Job horario (`app/ops_runner.py`, Cloud Scheduler `5 * * * *`). El monitor de disponibilidad pega a `/health`, que no toca la base; las pantallas solo consultan mientras alguien las usa (se pausan en reposo).
+| Paso del Job | Cada | Toca la base |
+|---|---|---|
+| respaldo (pg_dump) | hora | sí |
+| respaldo diario / purga biométrica | día (3 a. m. / 4 a. m.) | sí |
+| revisión de respaldos | hora | no (solo el bucket) |
+| cola pendiente (`sweep`) | hora | sí |
+| borrar reportes y paquetes vencidos | hora | sí |
+| precalentamiento (`warmup`) | hora | sí |
+| archivar bases a los 90 días (L7) | **semana** | sí |
+Pendiente de decisión: el respaldo, la cola, los reportes vencidos y el precalentamiento siguen cada hora (el respaldo horario es la protección durante un evento; la purga biométrica debe seguir diaria por el plazo de 7 días de la política).

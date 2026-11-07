@@ -60,7 +60,7 @@ def effective_rules(event: Event, state: Optional[EventState] = None) -> dict:
     rules = dict(DEFAULTS_BY_BASE.get(event.status, DEFAULTS_BY_BASE["creado"]))
     if state is not None:
         rules.update({k: bool(v) for k, v in state.get_rules().items() if k in RULES})
-    if getattr(event, "archived_at", None) is not None:          # Fase 3: un evento archivado queda de solo lectura, diga lo que diga su estado configurable
+    if getattr(event, "archived_at", None) is not None or getattr(event, "data_archived_at", None) is not None:          # Fase 3: un evento archivado queda de solo lectura, diga lo que diga su estado configurable
         rules.update({k: False for k in ARCHIVED_OFF})
     return rules
 

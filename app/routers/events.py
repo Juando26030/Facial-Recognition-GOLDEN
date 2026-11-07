@@ -154,7 +154,7 @@ def _serialize(e: Event) -> dict:
         "bandana_color": e.bandana_color,
         "bandana_color_name": e.bandana_color_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
-        "archived": e.archived_at is not None, "archived_at": e.archived_at.isoformat() if e.archived_at else None, "archived_auto": e.archived_at is not None and e.archived_by_id is None,
+        "data_archived": e.data_archived_at is not None, "data_archived_at": e.data_archived_at.isoformat() if e.data_archived_at else None, "archived": e.archived_at is not None, "archived_at": e.archived_at.isoformat() if e.archived_at else None, "archived_auto": e.archived_at is not None and e.archived_by_id is None,
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
@@ -920,6 +920,17 @@ def restore_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     if event.archived_by_id is None and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Este evento se archivó solo a los 90 días de cerrado: solo un super administrador puede restaurarlo")
     event_archive.restore(db, event, staff)
+    db.commit()
+    return _serialize(event)
+
+
+@router.post("/events/{event_id}/restore-data")
+def restore_event_data(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """L7: desarchiva la BASE DE DATOS de un evento (la archivó el Job a los 90 días). Solo super_admin; queda en audit_actions. No reabre los formularios públicos (se hace a mano)."""
+    event = _event_for_admin(db, staff, event_id)
+    if event.data_archived_at is None:
+        raise HTTPException(status_code=400, detail="La base de datos de este evento no está archivada")
+    event_archive.restore_data(db, event, staff)
     db.commit()
     return _serialize(event)
 
