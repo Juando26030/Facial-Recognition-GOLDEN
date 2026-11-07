@@ -92,6 +92,10 @@
 
   /* ----------------------------------------------------------------- Recorrido de primera vez */
   var tour = null;                                        // estado del recorrido abierto
+  function setToursOff(off) {                                // guarda en la cuenta (no en el dispositivo): PUT /api/me/tours-auto-off
+    window.GW_TOURS_OFF = !!off;
+    try { fetch('/api/me/tours-auto-off', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ off: !!off }) }).then(function (r) { if (!r.ok) throw new Error(); if (window.showToast) window.showToast(off ? 'Guías automáticas desactivadas en tu cuenta. El botón «Guía» sigue disponible.' : 'Guías automáticas activadas.', 'success'); }).catch(function () { if (window.showToast) window.showToast('No se pudo guardar la preferencia.', 'error'); }); } catch (e) { /* sin red */ }
+  }
   function tourSeen(key) { return store(true, 'gw_tour_' + key) === 'done'; }
   function tourClose(key, finished) {
     if (!tour) return;
@@ -138,13 +142,54 @@
     [skip, back, next].forEach(function (b) { b.type = 'button'; });
     skip.setAttribute('data-gw-tour-skip', ''); back.setAttribute('data-gw-tour-back', ''); next.setAttribute('data-gw-tour-next', '');
     foot.appendChild(skip); foot.appendChild(back); foot.appendChild(next);
-    card.appendChild(count); card.appendChild(title); card.appendChild(text); card.appendChild(foot);
+    card.appendChild(count); card.appendChild(title); card.appendChild(text);
+    if (document.querySelector('meta[name="gw-staff"]') || window.GW_TOURS_OFF !== undefined) {            // no mostrar más las guías solas (preferencia de la cuenta)
+      var off = mk('label', 'gw-tour__off'), chk = mk('input'); chk.type = 'checkbox'; chk.setAttribute('data-gw-tour-off', ''); chk.checked = !!window.GW_TOURS_OFF;
+      off.appendChild(chk); off.appendChild(document.createTextNode(' No mostrar guías automáticas')); card.appendChild(off);
+    }
+    card.appendChild(foot);
     root.appendChild(spot); root.appendChild(card); document.body.appendChild(root);
     var t = { key: key, root: root, spot: spot, card: card, count: count, title: title, text: text, back: back, next: next, skip: skip, steps: steps, i: 0, opener: document.activeElement,
               onMove: function () { if (tour) tourPlace(tour); } };
     tour = t;
     window.addEventListener('resize', t.onMove); window.addEventListener('scroll', t.onMove, true);
     tourShow(t, 0);
+  }
+
+  /* ----------------------------------------------------------------- Bloques plegables (pantallas de configuración)
+     Todo `.gw-group__item` cuyo primer hijo es `.gw-item-head` se puede plegar/desplegar (botón con chevron o clic en el título). Se pliega con una CLASE (`gw-is-folded`) y CSS:
+     no se mueve ni envuelve ningún nodo, así que ids, selectores y los campos pendientes de guardar siguen igual. El estado se recuerda en este dispositivo (localStorage). */
+  function foldKey(item, i) { return 'gw_fold_' + location.pathname + '#' + (item.id || ('i' + i)); }
+  function foldSet(item, folded) {
+    item.classList.toggle('gw-is-folded', folded);
+    var b = item.querySelector(':scope > .gw-item-head > [data-gw-fold-btn]');
+    if (b) { b.setAttribute('aria-expanded', folded ? 'false' : 'true'); b.setAttribute('aria-label', (folded ? 'Desplegar «' : 'Plegar «') + ((item.querySelector(':scope > .gw-item-head h4') || {}).textContent || 'bloque') + '»'); }
+  }
+  function foldInit() {
+    var panels = document.querySelectorAll('.gw-tabpanel, .gw-config__wrap, main');
+    var seen = [];
+    Array.prototype.forEach.call(document.querySelectorAll('.gw-group__item'), function (item, i) {
+      var head = item.firstElementChild;
+      if (!head || !head.classList.contains('gw-item-head') || item.children.length < 2 || item.hasAttribute('data-gw-nofold')) return;
+      var btn = mk('button', 'gw-fold__btn'); btn.type = 'button'; btn.setAttribute('data-gw-fold-btn', '');
+      btn.innerHTML = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="/static/img/icons.svg#i-chevron"></use></svg>';
+      head.appendChild(btn); head.classList.add('gw-fold__head'); item.setAttribute('data-gw-foldable', '');
+      item.setAttribute('data-gw-fold-key', foldKey(item, i));
+      foldSet(item, store(true, foldKey(item, i)) === '1');
+    });
+    void panels; void seen;
+    Array.prototype.forEach.call(document.querySelectorAll('.gw-tabpanel'), function (panel) {
+      if (panel.querySelectorAll('[data-gw-foldable]').length < 2) return;
+      var bar = mk('div', 'gw-fold__bar'), a = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Plegar todo'), z = mk('button', 'gw-btn gw-btn--ghost gw-btn--sm', 'Desplegar todo');
+      a.type = z.type = 'button'; a.setAttribute('data-gw-fold-all', '1'); z.setAttribute('data-gw-fold-all', '0');
+      bar.appendChild(a); bar.appendChild(z);
+      var lead = panel.querySelector(':scope > .gw-tabpanel__head');
+      if (lead && lead.nextSibling) panel.insertBefore(bar, lead.nextSibling); else panel.insertBefore(bar, panel.firstChild);
+    });
+  }
+  function foldToggle(item) {
+    var f = !item.classList.contains('gw-is-folded');
+    foldSet(item, f); store(false, item.getAttribute('data-gw-fold-key'), f ? '1' : '0');
   }
 
   /* ----------------------------------------------------------------- Introducción compacta en celular */
@@ -314,6 +359,14 @@
       return;
     }
     if ((el = tgt.closest('[data-gw-clear]'))) { e.preventDefault(); runClear(el); return; }
+    if ((el = tgt.closest('[data-gw-fold-btn]'))) { foldToggle(el.closest('[data-gw-foldable]')); return; }
+    if ((el = tgt.closest('.gw-fold__head h4'))) { foldToggle(el.closest('[data-gw-foldable]')); return; }
+    if ((el = tgt.closest('[data-gw-fold-all]'))) {
+      var fold = el.getAttribute('data-gw-fold-all') === '1', pnl = el.closest('.gw-tabpanel');
+      Array.prototype.forEach.call(pnl.querySelectorAll('[data-gw-foldable]'), function (it) { foldSet(it, fold); store(false, it.getAttribute('data-gw-fold-key'), fold ? '1' : '0'); });
+      return;
+    }
+    if (tgt.matches && tgt.matches('[data-gw-tour-off]')) { setToursOff(tgt.checked); return; }
     if ((el = tgt.closest('[data-gw-tour-restart]'))) { e.preventDefault(); startTour(el.getAttribute('data-gw-tour-restart'), { force: true }); return; }
     if ((el = tgt.closest('[data-gw-help-btn]'))) {
       var root = el.closest('.gw-help'); if (!root) return;
@@ -346,17 +399,18 @@
     }
   });
 
-  window.GW = Object.assign(window.GW || {}, { tour: { start: startTour, seen: tourSeen }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo } });
+  window.GW = Object.assign(window.GW || {}, { tour: { start: startTour, seen: tourSeen, setOff: setToursOff }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo } });
 
   function init() {
     applyTheme(currentTheme());
     compactIntro();
     watchClear();
     watchReq();
+    foldInit();
     if (mqMobile) { if (mqMobile.addEventListener) mqMobile.addEventListener('change', compactIntro); else if (mqMobile.addListener) mqMobile.addListener(compactIntro); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-gw-wizard]'), function (w) { wizardGo(w, 0); });
     var auto = document.querySelector('[data-gw-tour][data-gw-tour-auto]');          // recorrido de primera vez: solo si la página lo pide
-    if (auto) window.setTimeout(function () { startTour(auto.getAttribute('data-gw-tour')); }, 400);
+    if (auto && !window.GW_TOURS_OFF) window.setTimeout(function () { startTour(auto.getAttribute('data-gw-tour')); }, 400);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

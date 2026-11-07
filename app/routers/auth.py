@@ -12,7 +12,7 @@ from app import publicurl, staticver
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
-from app.auth import hash_password, verify_password
+from app.auth import get_current_staff, hash_password, verify_password
 from app import idle, security, sessions
 
 router = APIRouter()
@@ -66,6 +66,7 @@ def login_submit(
     request.session["staff_secondary_role"] = staff.secondary_role  # Sprint 2.4 Fase 15: doble rol coordinador+comercial
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username
+    request.session["tours_off"] = bool(staff.tours_auto_off)   # preferencia de la CUENTA: vale igual en cualquier dispositivo
     idle.start(request.session, db, staff)           # inactividad: marca la última actividad (y exime a los puestos de impresión)
     if staff.must_change_password:
         request.session["must_change_password"] = True
@@ -197,3 +198,12 @@ def change_submit(
     db.commit()
     request.session.pop("must_change_password", None)
     return RedirectResponse("/", status_code=302)
+
+
+@router.put("/api/me/tours-auto-off")
+def set_tours_auto_off(data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+    """«Deshabilitar demos automáticas»: se guarda en la cuenta (así vale en el celular y en el computador) y en la sesión actual. Las guías a mano siguen funcionando."""
+    staff.tours_auto_off = bool(data.get("off"))
+    db.commit()
+    request.session["tours_off"] = bool(staff.tours_auto_off)
+    return {"off": bool(staff.tours_auto_off)}

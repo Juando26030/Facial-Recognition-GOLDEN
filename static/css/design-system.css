@@ -376,6 +376,7 @@
 .gw-tour__count { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-gold-text); }
 .gw-tour__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); margin: var(--gw-sp-1) 0 var(--gw-sp-2); }
 .gw-tour__text { color: var(--gw-text); }
+.gw-tour__off { display: flex; align-items: center; gap: var(--gw-sp-2); margin-top: var(--gw-sp-3); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); cursor: pointer; }
 .gw-tour__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin-top: var(--gw-sp-4); }
 .gw-tour__foot .gw-tour__skip { margin-right: auto; }
 @media (max-width: 640px) { .gw-tour__card { left: var(--gw-sp-2) !important; right: var(--gw-sp-2); bottom: var(--gw-sp-2); top: auto !important; width: auto; } }
@@ -1006,3 +1007,14 @@
 
 /* Los botones de vaciar que estaban FUERA del campo (Registro, Respuestas) pasan a la papelera de dentro del campo; el botón sigue ahí (oculto) porque guarda la lógica de cada pantalla. */
 .gw-search__clear--proxy { display: none !important; }
+
+/* Bloques plegables de configuración (static/js/gw-ui.js: foldInit). Se pliega con la clase, sin mover nodos. */
+.gw-fold__head h4 { cursor: pointer; }
+.gw-fold__btn { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--gw-tap); min-height: var(--gw-tap); border: 0; border-radius: var(--gw-radius-sm); background: transparent; color: var(--gw-text); cursor: pointer; }
+.gw-fold__btn:hover { background: var(--gw-surface-2); }
+.gw-fold__btn .gw-icon { transition: transform .15s; transform: rotate(90deg); }
+.gw-is-folded > .gw-fold__head .gw-fold__btn .gw-icon { transform: rotate(0deg); }
+.gw-group__item.gw-is-folded > :not(.gw-item-head) { display: none !important; }
+.gw-group__item.gw-is-folded > .gw-item-head { margin-bottom: 0; }
+.gw-fold__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); justify-content: flex-end; margin: var(--gw-sp-2) 0; }
+@media (prefers-reduced-motion: reduce) { .gw-fold__btn .gw-icon { transition: none; } }
