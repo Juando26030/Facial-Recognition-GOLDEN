@@ -51,7 +51,7 @@
     </div>
 
     <ol class="gw-steps" aria-label="Guía de 3 pasos">
-      <li data-gw-tour-step="1" data-gw-tour-title="1. Datos básicos" data-gw-tour-text="Código interno, nombre y lugar del evento. El código va en los enlaces y no se puede cambiar después."><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Datos básicos</span>
+      <li data-gw-tour-step="1" data-gw-tour-title="1. Datos básicos" data-gw-tour-text="{% if pick_tenant %}Primero elige el cliente: escribe para filtrar la lista. Luego el código interno{% else %}Código interno{% endif %}, nombre y lugar del evento. El código va en los enlaces y no se puede cambiar después."><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Datos básicos</span>
         {% call ayuda('ay_datos', 'Datos básicos') %}El código interno aparece en los enlaces y en los QR del evento y no se puede cambiar después. El nombre sí se puede editar luego.{% endcall %}</li>
       <li data-gw-tour-step="2" data-gw-tour-title="2. Fechas y horas" data-gw-tour-text="Fechas y horas del evento y del montaje."><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Fechas</span>
         {% call ayuda('ay_fechas', 'Fechas y horas') %}Escribe las fechas del evento y del montaje, y toca cada hora para elegirla en el reloj.{% endcall %}</li>

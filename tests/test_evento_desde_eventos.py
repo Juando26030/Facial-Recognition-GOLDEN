@@ -97,3 +97,41 @@ def test_combobox_component_is_documented_and_tokenised():
         assert needle in js, needle
     assert "gw-combobox" in (ROOT / "docs/ux/guia_visual.html").read_text(encoding="utf-8")
     assert "gw-combobox" in (ROOT / "docs/ux/ESTANDARES_VISUALES.md").read_text(encoding="utf-8")
+
+
+def test_who_can_open_the_new_event_page_from_eventos(client, factory):
+    """Digitador y cliente no; comercial, coordinador, coordinador+comercial, admin y super_admin sí (mismo mínimo que POST /api/events)."""
+    from tests.conftest import login
+    casos = [("digitador", None, False), ("cliente", None, False), ("comercial", None, True), ("coordinador", None, True),
+             ("coordinador", "comercial", True), ("admin", None, True), ("super_admin", None, True)]
+    for i, (role, second, allowed) in enumerate(casos):
+        extra = {"secondary_role": second} if second else {}
+        factory.staff(role, f"u{i}", **extra)
+        login(client, f"u{i}")
+        r = client.get("/eventos/nuevo", follow_redirects=False)
+        assert (r.status_code == 200) == allowed, (role, second, r.status_code)
+        if not allowed:
+            assert r.headers["location"] == "/"
+
+
+def test_commercial_creates_an_event_assigned_to_herself(client, factory, db):
+    from datetime import date
+    from app.models import Event
+    from tests.conftest import login
+    factory.tenant("acme")
+    com = factory.staff("comercial", "com1")
+    coord = factory.staff("coordinador", "coord1")
+    login(client, "com1")
+    r = client.post("/api/events", json={
+        "tenant_id": "acme", "event_code": "COM-2026", "name": "Feria", "country": "Colombia", "city": "Bogotá", "location": "L", "address": "A",
+        "start_date": str(date(2027, 1, 10)), "end_date": str(date(2027, 1, 11)), "setup_date": str(date(2027, 1, 9)),
+        "event_time_start": "08:00", "event_time_end": "18:00", "setup_time_start": "08:00", "setup_time_end": "18:00",
+        "coordinator_staff_id": coord.id,
+    })
+    assert r.status_code == 200, r.text
+    assert db.query(Event).filter(Event.event_code == "COM-2026").first().commercial_staff_id == com.id
+
+
+def test_the_tour_mentions_the_client_field_only_when_it_is_asked():
+    html = (ROOT / "templates/nuevo_evento.html").read_text(encoding="utf-8")
+    assert "Primero elige el cliente" in html and "{% if pick_tenant %}Primero" in html
