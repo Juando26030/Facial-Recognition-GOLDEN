@@ -145,6 +145,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <div class="gw-field gw-field--inline" data-own-pending><label class="gw-label" for="cfgCap">Cupo de inscripciones (vacío = sin límite)</label><input type="number" class="gw-input" id="cfgCap" min="1"></div>
               </div>
               <p class="gw-hint" id="capInfo"></p>
+              <p class="gw-hint" id="statusLocked" role="status" hidden>{{ ic('info', 'gw-icon--sm') }} <b>Bloqueado: el estado lo controla el calendario.</b> Ahora mismo el formulario está <b id="statusLockedNow"></b> según el tramo que está en curso. Para volver a elegir el estado a mano, desactiva «Programar el estado por fechas».</p>
               <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
             </div>
             <div class="gw-group__item">
@@ -1377,10 +1378,15 @@ function bindSched() {
   $('schedRows').querySelectorAll('[data-si]').forEach((el) => el.addEventListener('input', () => { schedule[+el.dataset.si][el.dataset.k] = el.value; }));
   $('schedRows').querySelectorAll('[data-sdel]').forEach((b) => b.addEventListener('click', () => { schedule.splice(+b.dataset.sdel, 1); bindSched(); paintSaveBar(); }));
 }
+function paintStatusLock(on) {   // con calendario activo el estado manual no vale: se muestra bloqueado y se explica
+  $('cfgStatus').disabled = !!on;
+  $('statusLocked').hidden = !on;
+  if (on) $('statusLockedNow').textContent = '«' + (STATUS_LABEL[form.public_state] || form.public_state) + '»';
+}
 function paintStatusControls() {   // estado, cupo y calendario tal como están guardados
   $('cfgStatus').value = form.manual_status; $('cfgCap').value = form.capacity == null ? '' : form.capacity;
   $('capInfo').textContent = form.capacity ? `${form.submissions} de ${form.capacity} inscripciones` : `${form.submissions} inscripciones`;
-  $('cfgUseSched').checked = form.use_schedule; $('schedBox').hidden = !(form.use_schedule);
+  $('cfgUseSched').checked = form.use_schedule; $('schedBox').hidden = !(form.use_schedule); paintStatusLock(form.use_schedule);
   schedule = (form.schedule || []).map((x) => ({ ...x })); bindSched();
 }
 function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin pendientes); con keepStatus respeta el estado/cupo/calendario que la persona aún no ha guardado
@@ -1540,7 +1546,7 @@ $('qQuick').addEventListener('click', () => {
   f.options.forEach((o) => { if (!settings.quotas.rules.some((r) => r.conds.length === 1 && r.conds[0].field === f.id && r.conds[0].value === o)) settings.quotas.rules.push({ label: o, message: '', match: 'all', limit: 50, conds: [{ field: f.id, op: 'equals', value: o }] }); });
   paintQuotas(); showToast('Se crearon los cupos: ajusta el máximo de cada uno', 'success');
 });
-$('cfgUseSched').addEventListener('change', () => { $('schedBox').hidden = !($('cfgUseSched').checked); paintSaveBar(); });   // ya no actúa al instante: queda pendiente hasta guardar
+$('cfgUseSched').addEventListener('change', () => { $('schedBox').hidden = !($('cfgUseSched').checked); paintStatusLock($('cfgUseSched').checked); paintSaveBar(); });   // ya no actúa al instante: queda pendiente hasta guardar
 $('addSched').addEventListener('click', () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); schedule.push({ status: 'activo', from: d, to: d }); bindSched(); paintSaveBar(); });
 $('secOn').addEventListener('change', () => { $('secBox').hidden = !($('secOn').checked); });
 $('secType').addEventListener('change', () => { $('secCodeBox').hidden = !($('secType').value === 'code'); });

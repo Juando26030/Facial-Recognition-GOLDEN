@@ -262,7 +262,6 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   body.gw-registro .gw-steps__guidebtn { padding: 0 var(--gw-sp-2) !important; }
 }
 
-=======
 /* ================= M10 · botones y chips que no se parten ni se descentran (celular) ================= */
 @media (max-width: 720px) {
   .gw-registro .gw-steps--compact .gw-steps__text { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; word-break: normal; }
