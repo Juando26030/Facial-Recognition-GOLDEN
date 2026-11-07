@@ -753,8 +753,8 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
     """Asocia el correo de la inscripción a la escarapela virtual de la persona y se la envía (una sola vez). Nunca lanza: la inscripción
     ya quedó cargada y un fallo de correo no debe deshacerla; el resultado queda en el registro del envío (`digital_sent_at`).
     Seguridad (X1): si la persona YA estaba en la base (`is_new=False`), quien llena el formulario público solo conoce una cédula: el correo escrito ahí NO
-    reemplaza el contacto registrado; la escarapela (que lleva el QR de ingreso) se envía solo al contacto que ya estaba (el de la escarapela o el correo de la
-    persona) y, si no hay ninguno, no se envía."""
+    reemplaza el contacto registrado (el de la escarapela o el correo de la persona). Si la persona no tenía ninguno, se usa el del formulario (decisión de
+    Juan David: para eso se pide); queda ligado a la persona y no se vuelve a cambiar desde el formulario público."""
     from app import digital_badge
     try:
         att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
@@ -765,8 +765,12 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
             email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
             contact = digital_badge.normalize_contact(email)
         else:
-            # `prior_email` es el correo que la persona YA tenía antes de esta inscripción: el que acaba de completar el formulario público (si estaba vacío) no cuenta.
-            contact = (att.digital_contact if att else None) or digital_badge.normalize_contact(str(prior_email or "").strip())
+            # Regla de Juan David (7-nov-2026): se prioriza el contacto que la persona YA tenía (el de la escarapela o su correo en la base, `prior_email`, anterior a esta inscripción);
+            # solo si no tenía ninguno se usa el correo que escribió en el formulario (para eso se pide). Nunca se reemplaza un contacto que ya existía.
+            fid = badge_email_field(get_design(form))
+            form_email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
+            contact = ((att.digital_contact if att else None) or digital_badge.normalize_contact(str(prior_email or "").strip())
+                       or digital_badge.normalize_contact(form_email))
         if not contact:
             return
         if not (att and att.digital_contact):          # existente: solo se COMPLETA el vacío con su propio correo registrado; nunca se reemplaza

@@ -46,14 +46,15 @@ def test_x1_existing_person_badge_goes_only_to_the_contact_on_file(client, facto
     assert user.first_name == "Ana" and user.email == "real@example.com"             # X2: el nombre de quien ya existe no se pisa
 
 
-def test_x1_existing_person_without_contact_gets_no_badge(client, factory, outbox, db):
+def test_x1_existing_person_without_contact_uses_the_form_email_once(client, factory, outbox, db):
+    """Regla de Juan David: sin contacto previo se usa el correo del formulario; con contacto previo gana el que ya estaba (prueba de arriba)."""
     from app.models import EventAttendee
     ev, form = _badge_form(client, factory)
     factory.person(ev, "1001", "Ana", "Mora")
-    assert _submit(client, ev, form, {**_person_values(), "correo": "atacante@example.com"}).status_code == 200
+    assert _submit(client, ev, form, {**_person_values(), "correo": "nuevo@example.com"}).status_code == 200
     db.expire_all()
     att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").one()
-    assert not att.digital_contact and outbox == []
+    assert att.digital_contact == "nuevo@example.com" and [m["to"] for m in outbox] == ["nuevo@example.com"]
 
 
 def test_x1_new_person_still_uses_the_form_email(client, factory, outbox, db):

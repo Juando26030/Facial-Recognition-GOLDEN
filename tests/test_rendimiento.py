@@ -81,7 +81,7 @@ def test_a_batch_the_database_rejects_is_retried_row_by_row_and_only_the_bad_row
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id)}, files={"roster_file": ("p.xlsx", G.xlsx_bytes(_rows(10)), "application/octet-stream")})
     assert r.status_code == 200, r.text
     bad = [e for e in r.json()["errors"] if e.startswith("❌")]
-    assert len(bad) == 1 and "violación simulada" in bad[0] and r.json()["count"] == 9           # las otras 9 quedan guardadas
+    assert len(bad) == 1 and "choca con un dato que ya existe" in bad[0] and "violación simulada" not in bad[0] and r.json()["count"] == 9           # las otras 9 quedan guardadas
     monkeypatch.setattr(Session, "flush", real_flush)
     db.expire_all()
     ids = sorted(u.id for u in db.query(User).filter_by(tenant_id=ev.tenant_id))
@@ -187,7 +187,7 @@ def test_a_report_that_fails_halfway_ends_in_a_clear_error_and_can_be_retried(cl
     real = report_jobs.ReportManager.generate_excel_report
     monkeypatch.setattr(report_jobs.ReportManager, "generate_excel_report", staticmethod(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("falla simulada"))))
     st = _start(client, loaded)
-    assert st["status"] == "error" and "falla simulada" in st["error"] and st["ready"] is False
+    assert st["status"] == "error" and "RuntimeError" in st["error"] and "falla simulada" not in st["error"] and st["ready"] is False          # seguridad (I3): el error no repite el texto interno, solo el tipo y el código
     assert client.get(f"/api/report/download/{st['job_id']}").status_code == 409            # no hay nada que descargar
     monkeypatch.setattr(report_jobs.ReportManager, "generate_excel_report", staticmethod(real))
     assert _start(client, loaded)["status"] == "done"                                        # reintentar funciona
