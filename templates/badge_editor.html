@@ -330,7 +330,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.getElementById('categoryBar').hidden = false;
     const modeSel = document.getElementById('badgeModeSelect');
     const catSel = document.getElementById('categorySelect');
-    catSel.innerHTML = '<option value="">Plantilla general (todas)</option>' + info.categories.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
+    catSel.innerHTML = '<option value="">Plantilla general (todas)</option>' + info.categories.map(c => `<option value="${window.escapeHtml(c)}">${window.escapeHtml(c)}</option>`).join('');
     modeSel.value = info.badge_per_category ? 'per' : 'all';
     document.getElementById('categorySelectGroup').hidden = !info.badge_per_category;
     modeSel.addEventListener('change', async () => {
@@ -899,7 +899,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     let typeSpecificHtml = '';
     if (el.type === 'text_static') {
       typeSpecificHtml = propGroup('content', 'Contenido', `
-        <div class="prop-field"><label for="p_content">Texto</label><textarea id="p_content" rows="2">${el.content || ''}</textarea></div>`) + propGroup('look', 'Aspecto del texto', fontFieldsHtml(el));
+        <div class="prop-field"><label for="p_content">Texto</label><textarea id="p_content" rows="2">${window.escapeHtml(el.content || '')}</textarea></div>`) + propGroup('look', 'Aspecto del texto', fontFieldsHtml(el));
     } else if (el.type === 'text_variable') {
       typeSpecificHtml = propGroup('content', 'Contenido', `
         <div class="prop-field"><label for="p_variable">Variable</label><select id="p_variable">${variableOptionsHtml(el.variable)}</select></div>`) + propGroup('look', 'Aspecto del texto', fontFieldsHtml(el));

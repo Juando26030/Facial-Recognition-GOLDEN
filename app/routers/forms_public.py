@@ -91,6 +91,11 @@ def _limit(db: Optional[Session], request: Request, kind: str, form: WebForm, ma
         raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
 
 
+def normalize_id(value) -> str:
+    """La cédula como la normaliza `lookup` (sin espacios ni puntos)."""
+    return str(value or "").strip().replace(".", "").replace(" ", "")
+
+
 def _needs(settings: dict):
     sec = settings["security"]
     needs_code = bool(sec["enabled"] and sec["type"] == "code")
@@ -100,15 +105,59 @@ def _needs(settings: dict):
     return needs_code, needs_identify, mode
 
 
+_MASKABLE = ("text_short", "text_long", "email", "phone")
+
+
+def _mask_word(w: str) -> str:
+    return w[:1] + "*" * max(2, len(w) - 1) if w else w
+
+
+def mask_prefill_value(f: dict, value) -> object:
+    """X4: lo que el navegador ve de un campo pre-llenado de SOLO LECTURA (quien escribe una cédula ajena no debe leer los datos de esa persona). El valor real nunca
+    hace falta en el navegador: al enviar, el servidor lo vuelve a tomar de la base (`_submit`). La máscara conserva un formato que pasa la validación del
+    navegador (correo con @ y dominio, teléfono con dígitos y guiones). Se deja tal cual: la cédula (la escribió la persona misma), los campos con tipo de documento
+    (patrón estricto) y los que no son de texto (opciones, fechas, números: no hay máscara válida)."""
+    if f.get("key") == "id" or f.get("doc_types") or f.get("type") not in _MASKABLE or not isinstance(value, str) or not value.strip():
+        return value
+    v = value.strip()
+    if f["type"] == "email" and "@" in v:
+        local, _, domain = v.partition("@")
+        host, dot, tld = domain.rpartition(".")
+        if dot and host and len(tld) >= 2:
+            return f"{_mask_word(local)}@{_mask_word(host)}.{tld}"
+        return "x***@x***.co"
+    if f["type"] == "phone":
+        digits = "".join(c for c in v if c.isdigit())
+        if len(digits) < 4:
+            return "00----00"
+        return digits[:2] + "-" * min(16, max(4, len(digits) - 4)) + digits[-2:]       # máximo 20 caracteres (el patrón del navegador)
+    return " ".join(_mask_word(w) for w in v.split())
+
+
+def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
+    """(prefill, readonly) para el navegador: los de solo lectura van ENMASCARADOS y el correo/teléfono editables NO se pre-llenan (X4)."""
+    fields = design["fields"]
+    prefill, readonly = {}, []
+    for fid, val in formsvc.prefill_values(design, person).items():
+        f = fields[fid]
+        if f.get("readonly_when_prefilled"):
+            prefill[fid] = mask_prefill_value(f, val)
+            readonly.append(fid)
+        elif f.get("type") in ("email", "phone") or f.get("key") in ("email", "phone"):
+            continue
+        else:
+            prefill[fid] = val
+    return prefill, readonly
+
+
 def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] = None) -> dict:
-    """Todo lo que el navegador necesita para dibujar el formulario (+ los datos ya conocidos de la persona)."""
+    """Todo lo que el navegador necesita para dibujar el formulario (+ los datos ya conocidos de la persona, enmascarados si son de solo lectura)."""
     design = formsvc.get_design(form)
     prefill, readonly = {}, []
     if claims.get("p"):
         person = formsvc.find_person(db, form, claims["p"])
         if person:
-            prefill = formsvc.prefill_values(design, person)
-            readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
+            prefill, readonly = public_prefill(design, person)
     quota = formsvc.quota_public(db, form)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
     return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
@@ -286,7 +335,7 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     needs_code, _, _ = _needs(settings)
     if needs_code and not claims.get("g"):
         raise HTTPException(status_code=403, detail="Primero escribe el código de acceso")
-    pid = str(data.get("id") or "").strip().replace(".", "").replace(" ", "")
+    pid = normalize_id(data.get("id"))
     if not pid:
         raise HTTPException(status_code=400, detail="Escribe tu número de identificación")
     person = formsvc.find_person(db, form, pid)
@@ -577,9 +626,15 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
         return JSONResponse({"detail": "Revisa los campos marcados", "errors": errors, "error_sheet": formlib.first_error_sheet(design, errors)}, status_code=422)
 
     person_id = None
+    has_id_field = False
     for fid, f in fields.items():
-        if f.get("key") == "id" and clean.get(fid):
-            person_id = str(clean[fid]).strip()
+        if f.get("key") == "id":
+            has_id_field = True
+            if clean.get(fid):
+                person_id = str(clean[fid]).strip()
+    # X3: la identificación que se verificó en `lookup` (en el modo «solo cédulas autorizadas», la que está en la lista) es la única con la que se puede enviar.
+    if claims.get("typed_id") and has_id_field and normalize_id(person_id) != normalize_id(claims["typed_id"]):
+        return JSONResponse({"detail": "La identificación del formulario debe ser la misma con la que ingresaste. Si necesitas cambiarla, vuelve a empezar."}, status_code=403)
     is_test = access == "pruebas"
     sid = str(payload.get("sid") or "")[:40] or None
 
@@ -605,13 +660,13 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if not _enter_lock_zone():
         return _busy_response()
     try:
-        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid)
+        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid, ip=security.limit_ip(request))
     finally:
         _leave_lock_zone()
 
 
 def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict, design: dict, claims: dict, values: dict, clean: dict, uploaded: dict, pending: dict, staged: list,
-                       person_id: Optional[str], is_test: bool, sid: Optional[str]):
+                       person_id: Optional[str], is_test: bool, sid: Optional[str], ip: Optional[str] = None):
     """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
@@ -633,6 +688,12 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if not cfg:
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
             charge = quote["amount"]
+    # X6: tope de inscripciones «esperando pago» simultáneas por IP en este formulario (sin bloqueo: lectura simple antes del `FOR UPDATE`; el cupo lo sigue
+    # decidiendo `form_reserve_slot`). Sin IP confiable (infraestructura de Google) no se aplica, como los demás límites por IP.
+    cap = formsvc.pending_max_per_ip()
+    if charge and not is_test and ip and cap and formsvc.pending_from_ip(db, form, ip, sid, person_id) >= cap:
+        db.rollback()
+        return JSONResponse({"detail": "Hay varias inscripciones esperando pago desde esta conexión. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
 
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
     rules = formsvc.quota_rules(form)
@@ -689,6 +750,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                               reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)
+            formsvc.mark_pending_ip(db, form, sub, ip)        # X6: en la misma transacción
             db.commit()
             formsvc.bump_held(form)
             uploads.discard(*staged)

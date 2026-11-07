@@ -15,12 +15,12 @@ def _setup(factory, db, status="finalizado"):
     return ev
 
 
-def test_three_lookup_outcomes_without_session(client, factory, db):
+def test_lookup_outcomes_without_session(client, factory, db):
     _setup(factory, db)
     ok = client.get("/c/TOKEN123/lookup", params={"id": "1001"})
     assert ok.status_code == 200 and ok.json()["display"]["name"] == "Ana Pidio"
     not_requested = client.get("/c/TOKEN123/lookup", params={"id": "1002"})
-    assert not_requested.status_code == 404 and "no pidió certificado" in not_requested.json()["detail"]
+    assert not_requested.status_code == 404 and "No encontramos un certificado" in not_requested.json()["detail"]   # X4: mismo mensaje que «no está» (no revela quién está en el evento)
     missing = client.get("/c/TOKEN123/lookup", params={"id": "9999"})
     assert missing.status_code == 404 and "No encontramos un certificado" in missing.json()["detail"]
     other_tenant = client.get("/c/TOKEN123/lookup", params={"id": "3003"})       # existe, pero en otro cliente

@@ -5,7 +5,9 @@ navegador con la misma plantilla del editor, igual que el ZIP del coordinador).
 
 Qué se expone: solo el nombre/entidad para confirmar y los campos que la plantilla del certificado realmente
 usa — nunca la foto biométrica ni el resto de datos de la persona. El enlace es inadivinable y las consultas
-por cédula tienen tope por IP (guardado en Postgres, vale con varios procesos). Solo se genera para quienes tienen Certificado = Sí, y solo con el evento Finalizado. Si la cédula es de alguien del evento sin certificado se le dice "no pidió"; si no está en la base, "no encontramos" (decisión explícita 2026-09-23: se prefirió claridad para el asistente a esconder quién está en el evento)."""
+por cédula tienen tope por IP (guardado en Postgres, vale con varios procesos). Solo se genera para quienes tienen Certificado = Sí, y solo con el evento Finalizado.
+Seguridad (X4, nov-2026): «no está en la base» y «no pidió certificado» responden el MISMO mensaje (antes se distinguían y eso revelaba quién asistió al evento), y la
+consulta nunca devuelve correo ni teléfono aunque la plantilla los use."""
 import os
 import re
 import secrets
@@ -26,7 +28,8 @@ router = APIRouter()        # público, sin prefijo (/c/<token>)
 staff_router = APIRouter()  # con login, bajo /api
 
 NOT_FOUND = "No encontramos un certificado para esa cédula en este evento. Revisa el número o consulta con los organizadores."
-NOT_REQUESTED = "Usted no pidió certificado para este evento. Si crees que es un error, comunícate con los organizadores."
+NOT_REQUESTED = NOT_FOUND          # X4: un solo mensaje genérico (no revela si la cédula es de alguien del evento)
+NEVER_EXPOSED = ("phone", "email")  # X4: datos de contacto: nunca salen por la consulta pública
 _MAX_LOOKUPS, _LOOKUP_WINDOW = 30, timedelta(minutes=10)
 
 
@@ -68,27 +71,23 @@ def certificate_lookup(token: str, id: str, request: Request, db: Session = Depe
     wanted = id.strip()
     candidates = [wanted, re.sub(r"[\s.,]", "", wanted)]  # tolera "1.016.100.329" o con espacios
     user = att = None
-    in_event = False  # ¿la cédula pertenece a alguien de ESTE evento? (para decir "no pidió" y no "no existe")
     for candidate in dict.fromkeys(c for c in candidates if c):
         u = db.query(User).filter(User.id == candidate, User.tenant_id == event.tenant_id).first()
         if not u:
             continue
         a = db.query(EventAttendee).filter_by(event_id=event.id, user_id=candidate).first()
-        if a:
-            in_event = True
-            if a.certificate:
-                user, att = u, a
-                break
+        if a and a.certificate:
+            user, att = u, a
+            break
     if not user:
-        raise HTTPException(status_code=404, detail=NOT_REQUESTED if in_event else NOT_FOUND)
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
 
     template = _serialize_template(_get_or_create_template(event, db, None, "certificate"))
     needed = _variables_used(template)
     person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": False}
-    fields = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1,
-              "categories": ", ".join(att.get_categories())}
+    fields = {"role": user.role, "entity": user.entity, "opt_1": user.opt_1, "categories": ", ".join(att.get_categories())}     # sin correo ni teléfono (NEVER_EXPOSED)
     person.update({k: v for k, v in fields.items() if k in needed})
-    person["extra_fields"] = {k: v for k, v in user.get_extras().items() if k in needed}
+    person["extra_fields"] = {k: v for k, v in user.get_extras().items() if k in needed and k not in NEVER_EXPOSED}
     return {
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
