@@ -249,18 +249,11 @@ function notesForDay(iso) {
   return notesCache.filter(n => n.date === iso);
 }
 
-// Color del chip = "color de pañoleta" del evento, no el estado (2026-09-17, pedido explícito:
-// "en el calendario en vez de que el evento salga por colores dependiendo del estado, salga por
-// el color que está de pañoleta"). El color es un DATO del evento: va en data-bandana y se aplica por DOM
-// después de pintar (no hay estilos en línea en la plantilla). Eventos viejos sin pañoleta elegida quedan con el
-// borde neutro del sistema. Texto con contraste automático (goldenContrastColor, ver theme.js).
+// Color de pañoleta (2026-11-07, pedido de Juan David): ya NO es el fondo del evento; va en un recuadro grande dentro de la tarjeta (fondo claro, texto oscuro).
+// El color es un DATO del evento: va en data-bandana y se aplica por DOM después de pintar (no hay estilos en línea en la plantilla).
 function applyChipColors(root) {
-  root.querySelectorAll('[data-bandana]').forEach((el) => {
-    const bg = el.dataset.bandana;
-    const text = window.goldenContrastColor ? window.goldenContrastColor(bg) : null;
-    el.style.backgroundColor = bg;
-    if (text) { el.style.color = text; el.style.borderLeftColor = text; }
-  });
+  // El color de la pañoleta se pinta SOLO en el recuadro grande de la tarjeta (nunca como fondo del evento).
+  root.querySelectorAll('.cal-card__sw[data-bandana]').forEach((el) => { el.style.backgroundColor = el.dataset.bandana; });
 }
 
 // Tarjeta grande (vista Día): UN solo contrato. El layout sale de la PLANTILLA DE EVENTO (GET /api/event-template → EventFields.calendarLayout) y renderCalendarCard lo dibuja con los campos base y personalizados
@@ -287,15 +280,11 @@ function loadCardLayout() {
   return cardLayoutPromise;
 }
 
-// mode: 'day' y 'week' = tarjeta completa de la plantilla; 'month' = resumen (nombre + cliente · ciudad), porque la celda es angosta.
+// Mes, Semana y Día dibujan LA MISMA tarjeta (la de la plantilla de evento); cambia solo el ancho disponible y por eso las columnas se deciden dentro de la tarjeta.
 function eventChip(e, mode) {
-  const big = mode === 'day' || mode === 'week';
-  const colorAttr = e.bandana_color ? ` data-bandana="${esc(e.bandana_color)}"` : '';
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
-  const sub = [e.tenant_name, e.city].filter(Boolean).join(' · ');
-  const body = big ? renderCalendarCard(e, CARD_LAYOUT) : `<span class="cal-chip__name">${esc(e.name)}</span>${sub ? `<span class="cal-chip__sub">${esc(sub)}</span>` : ''}`;
-  return `<div class="cal-chip${big ? ' cal-chip--big' : ' cal-chip--sum'}${mode === 'week' ? ' cal-chip--week' : ''}"${colorAttr}>
-      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${body}</button>
+  return `<div class="cal-chip cal-chip--big cal-chip--${mode}">
+      <button type="button" class="cal-chip__main" data-event-id="${e.id}" title="${esc(tip)}" aria-haspopup="dialog" aria-expanded="false" aria-label="Acciones del evento ${esc(e.name)}">${renderCalendarCard(e, CARD_LAYOUT)}</button>
       ${reportBulbHtml(e, true)}
     </div>`;
 }

@@ -109,14 +109,24 @@
       (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') + value + '</span>';
   }
   /* Dibuja el modelo de EventFields.cardModel: {top,left,right,bottom: [{key,type,title,label,text}]}. `extraTop` = HTML ya escapado que se agrega al encabezado (p. ej. el estado). */
-  function renderCardModel(model, extraTop) {
+  function renderCardModel(model, extraTop, root_ev) {
     var m = model || {};
     function zone(z) { return (m[z] || []).map(function (it, i) { return itemHtml(it, z === 'top' && i === 0); }).join(''); }
     var top = zone('top') + (extraTop || ''), left = zone('left'), right = zone('right'), bottom = zone('bottom');
     var cols = (left ? '<span class="cal-card__col cal-card__col--left">' + left + '</span>' : '') +
       (right ? '<span class="cal-card__col cal-card__col--right">' + right + '</span>' : '');
-    return '<span class="cal-card cal-card--tpl">' + (top ? '<span class="cal-card__top">' + top + '</span>' : '') +
+    return '<span class="cal-card cal-card--tpl"><span class="cal-card__head">' + swatchesHtml(root_ev) + (top ? '<span class="cal-card__top">' + top + '</span>' : '') + '</span>' +
       (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') + (bottom ? '<span class="cal-card__bottom">' + bottom + '</span>' : '') + '</span>';
+  }
+  /* Recuadros grandes con el color de la pañoleta (uno por color). El color va en data-bandana y lo aplica la página por DOM (no hay estilos en línea). Sin color: recuadro punteado vacío. */
+  function swatchesHtml(ev, omitEmpty) {
+    var list = (ev && ev.bandana_colors && ev.bandana_colors.length) ? ev.bandana_colors : (ev && ev.bandana_color ? [{ hex: ev.bandana_color, name: ev.bandana_color_name }] : []);
+    if (!list.length && omitEmpty) return '';
+    if (!list.length) return '<span class="cal-card__swatches" aria-hidden="true"><span class="cal-card__sw cal-card__sw--empty" title="Sin color de pañoleta"></span></span>';
+    return '<span class="cal-card__swatches">' + list.map(function (c) {
+      var nm = c.name || c.hex || '';
+      return '<span class="cal-card__sw" data-bandana="' + esc(c.hex) + '" title="Pañoleta: ' + esc(nm) + '" role="img" aria-label="Color de pañoleta: ' + esc(nm) + '"></span>';
+    }).join('') + '</span>';
   }
   /* El estado no es un campo de la plantilla, pero en el calendario siempre se necesita: va como insignia al final del encabezado. */
   function statusBadge(ev) {
@@ -129,7 +139,7 @@
     if (layout && layout.zones && layout.fields && !Array.isArray(layout.fields)) {
       var api = fieldsApi();
       if (api && typeof api.cardModel === 'function') {
-        try { return renderCardModel(api.cardModel(ev, layout), statusBadge(ev)); } catch (e) { /* plantilla rara: cae al respaldo */ }
+        try { return renderCardModel(api.cardModel(ev, layout), statusBadge(ev), ev); } catch (e) { /* plantilla rara: cae al respaldo */ }
       }
       layout = null;
     }
@@ -142,9 +152,9 @@
     });
     var cols = (out.left ? '<span class="cal-card__col cal-card__col--left">' + out.left + '</span>' : '') +
       (out.right ? '<span class="cal-card__col cal-card__col--right">' + out.right + '</span>' : '');
-    return '<span class="cal-card">' + (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') +
+    return '<span class="cal-card">' + (swatchesHtml(ev, true) ? '<span class="cal-card__head">' + swatchesHtml(ev, true) + '</span>' : '') + (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') +
       (out.bottom ? '<span class="cal-card__bottom">' + out.bottom + '</span>' : '') + '</span>';
   }
 
-  return { renderCalendarCard: renderCalendarCard, renderCardModel: renderCardModel, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
+  return { renderCalendarCard: renderCalendarCard, renderCardModel: renderCardModel, swatchesHtml: swatchesHtml, DEFAULT_LAYOUT: DEFAULT_LAYOUT, FIELD_CATALOG: FIELD_CATALOG, ZONES: ZONES };
 });

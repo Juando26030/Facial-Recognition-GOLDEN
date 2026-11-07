@@ -47,7 +47,7 @@
 @media (min-width: 48.0625rem) {
   .cal-note__del { min-width: 2rem; min-height: 2rem; align-self: flex-start; margin: 0; }
   .cal-cell { padding: var(--gw-sp-2); }
-  .cal-cell__body { max-height: 12rem; }
+  .cal-cell__body { max-height: none; overflow: visible; }          /* el Mes crece con lo que haya: nada se corta ni se esconde tras una barra */
   .cal-cell--long .cal-cell__body { max-height: none; }
 }
 .cal-add { display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; }
@@ -104,46 +104,33 @@
   .cal-day .gw-empty { max-width: none; }
 }
 
-/* ---------- Tarjeta del evento (vista Día): dos columnas y una franja de equipo abajo; ver static/js/calendar-card.js ---------- */
+/* ---------- Tarjeta del evento (Mes, Semana y Día): UNA sola tarjeta, la de la plantilla (static/js/calendar-card.js) ----------
+   Fondo claro de la superficie (nunca el color de la pañoleta); el color va en un recuadro grande. Cada dato: título pequeño arriba y valor debajo;
+   el texto largo pasa a la línea siguiente, sin puntos suspensivos y sin barras: la celda crece. Columnas según el ANCHO DE LA TARJETA (container query), no de la pantalla. */
+.cal-chip { container-type: inline-size; align-items: flex-start; background: var(--gw-surface); border: 1px solid var(--gw-border); border-left: 4px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); color: var(--gw-text); }
+.cal-chip__main { white-space: normal; overflow: visible; text-overflow: clip; display: block; overflow-wrap: anywhere; padding: var(--gw-sp-2) var(--gw-sp-3); line-height: 1.35; }
+.cal-chip--big .cal-chip__main { padding: var(--gw-sp-3) var(--gw-sp-4); }
+.cal-chip .gw-bulb { margin: var(--gw-sp-2) 0 0; flex: 0 0 auto; }
 .cal-card { display: block; }
-.cal-card__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-1) var(--gw-sp-4); }
-.cal-card__col { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; }
-.cal-card__f { display: block; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); }
-.cal-card__f--strong { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
-.cal-card__k { font-weight: var(--gw-fw-bold); }
-.cal-card__k::after { content: ":"; }
-.cal-card__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gw-sp-1) var(--gw-sp-3); margin-bottom: var(--gw-sp-2); }
+.cal-card__head { display: flex; align-items: flex-start; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-2); }
+.cal-card__swatches { display: flex; flex: 0 0 auto; gap: var(--gw-sp-1); }
+.cal-card__sw { display: block; width: 2.75rem; height: 2.75rem; border-radius: var(--gw-radius-md); border: 2px solid var(--gw-border-strong); background: var(--gw-surface-2); }
+.cal-card__sw--empty { border-style: dashed; }
+.cal-card__top { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; flex: 1 1 auto; }
+.cal-card__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2) var(--gw-sp-5); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border); }
+.cal-card__col { display: flex; flex-direction: column; gap: var(--gw-sp-2); min-width: 0; }
+.cal-card__f { display: block; min-width: 0; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); }
+.cal-card__f--strong { font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
 .cal-card__f--long { white-space: pre-line; }
-.cal-card__badge, .cal-card__status { min-height: 0; padding-block: 0; }
-.cal-card__status { margin-inline-start: auto; }
-.cal-card__bottom { display: flex; flex-wrap: wrap; gap: var(--gw-sp-1) var(--gw-sp-4); margin-top: var(--gw-sp-2); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border-strong); }
-@media (max-width: 40rem) { .cal-card__cols { grid-template-columns: minmax(0, 1fr); } }
-
-/* ---------- Cuadrito de acciones del evento (static/js/event-actions.js): anclado al evento; en celular, hoja inferior ---------- */
-.cal-pop-scrim { position: fixed; inset: 0; z-index: 1600; background: transparent; }
-.cal-pop-scrim[hidden] { display: none; }
-.cal-pop { position: fixed; z-index: 1610; right: auto; top: 0; left: 0; width: min(22rem, calc(100vw - 2 * var(--gw-sp-4))); max-height: calc(100vh - 2 * var(--gw-sp-4)); overflow-y: auto; }
-.cal-pop[hidden] { display: none; }
-.cal-pop__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-2); }
-.cal-pop__titles { min-width: 0; overflow-wrap: anywhere; }
-.cal-pop__meta { font-size: var(--gw-fs-sm); }
-.cal-pop__list { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
-.cal-pop__row { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-3); }
-.cal-pop__row .gw-select { min-height: var(--gw-tap); }
-.cal-pop .cal-pop__close { width: 100%; min-height: var(--gw-tap); }
-@media (max-width: 40rem) {
-  .cal-pop-scrim { background: var(--gw-overlay); }
-  .cal-pop { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 85vh; border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; padding-bottom: calc(var(--gw-sp-4) + env(safe-area-inset-bottom, 0px)); }
+.cal-card__k { display: block; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.02em; }
+.cal-card__v { display: block; color: var(--gw-text); }
+.cal-card__top .cal-card__v { display: inline; }
+.cal-card__status { align-self: flex-start; min-height: 0; padding-block: 0; }
+.cal-card__badge { min-height: 0; padding-block: 0; }
+.cal-card__bottom { display: flex; flex-direction: column; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border); }
+@container (min-width: 34rem) {
+  .cal-card__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cal-card__bottom { flex-direction: row; flex-wrap: wrap; column-gap: var(--gw-sp-5); }
+  .cal-card__f--strong { font-size: var(--gw-fs-lg); }
 }
-
-/* ---- Resumen en el Mes (nombre + cliente · ciudad) y tarjeta dentro de la celda de la Semana ---- */
-.cal-chip--sum .cal-chip__main { display: flex; flex-direction: column; justify-content: center; line-height: 1.25; padding-block: var(--gw-sp-1); }
-.cal-chip__name, .cal-chip__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-chip__name { font-weight: var(--gw-fw-bold); }
-.cal-chip__sub { font-size: var(--gw-fs-sm); opacity: 0.85; }
-.cal-chip--week { align-items: flex-start; }
-.cal-chip--week .cal-card__cols { grid-template-columns: minmax(0, 1fr); }
-.cal-chip--week .cal-card__f--strong { font-size: var(--gw-fs-md); }
-/* Dentro de la tarjeta cada dato va en su línea: título arriba/al lado con aire y valor aparte (nada pegado) */
-.cal-card__k { margin-inline-end: var(--gw-sp-1); }
-.cal-card__f { padding-block: 1px; }
+@container (min-width: 60rem) { .cal-card__cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
