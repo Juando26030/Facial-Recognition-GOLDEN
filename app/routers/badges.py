@@ -7,12 +7,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app import crypto, reprint
+from app import audit_actions, crypto, reprint
+from app.timeutil import utcnow
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app import testperson
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
-from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
+from app.auth import get_current_staff, get_event_for_staff, require_role, require_role_excluding
 
 router = APIRouter()
 
@@ -171,18 +172,23 @@ def update_badge_template(
 
 @router.get("/events/{event_id}/saved-badge-templates")
 def list_saved_badge_templates(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
+    event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
 ):
     """Librería reusable — GLOBAL para toda la app (2026-09-16, pedido explícito: antes era por
     tenant, ahora una plantilla guardada desde CUALQUIER evento de CUALQUIER cliente aparece acá
     y se puede importar en cualquier otro, sin importar el cliente). `tenant_id` se sigue
     guardando en la fila (trazabilidad de quién la creó) pero ya no filtra qué se lista."""
     get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa para filtrar
-    saved = db.query(SavedBadgeTemplate).order_by(SavedBadgeTemplate.name).all()
+    query = db.query(SavedBadgeTemplate)
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver las plantillas archivadas")
+    else:
+        query = query.filter(SavedBadgeTemplate.archived_at.is_(None))
     return [{
         "id": s.id, "name": s.name, "width_mm": s.width_mm, "height_mm": s.height_mm,
-        "orientation": s.orientation,
-    } for s in saved]
+        "orientation": s.orientation, "archived": s.archived_at is not None,
+    } for s in query.order_by(SavedBadgeTemplate.name).all()]
 
 
 @router.post("/events/{event_id}/badge-template/save-as")
@@ -219,6 +225,8 @@ def import_saved_badge_template(
     saved = db.query(SavedBadgeTemplate).filter(SavedBadgeTemplate.id == saved_id).first()
     if not saved:
         raise HTTPException(status_code=404, detail="Plantilla guardada no encontrada")
+    if saved.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La plantilla está archivada: restáurala para importarla")
 
     tpl = _get_or_create_template(event, db, category, kind)
     tpl.width_mm = saved.width_mm
@@ -232,13 +240,44 @@ def import_saved_badge_template(
     return _serialize_template(tpl)
 
 
-@router.delete("/saved-badge-templates/{saved_id}")
-def delete_saved_badge_template(
-    saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
-):
+def _saved_or_404(db: Session, saved_id: int) -> SavedBadgeTemplate:
     saved = db.query(SavedBadgeTemplate).filter(SavedBadgeTemplate.id == saved_id).first()
     if not saved:
         raise HTTPException(status_code=404, detail="Plantilla guardada no encontrada")
+    return saved
+
+
+@router.post("/saved-badge-templates/{saved_id}/archive")
+def archive_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Archivar = sacarla de la librería (ya no se ofrece para importar). Los eventos que la importaron conservan su diseño; un administrador la restaura."""
+    saved = _saved_or_404(db, saved_id)
+    if saved.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La plantilla ya está archivada")
+    saved.archived_at, saved.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "saved_badge_template", saved.id, saved.name)
+    db.commit()
+    return {"id": saved.id, "name": saved.name, "archived": True}
+
+
+@router.post("/saved-badge-templates/{saved_id}/restore")
+def restore_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    saved = _saved_or_404(db, saved_id)
+    if saved.archived_at is None:
+        raise HTTPException(status_code=400, detail="La plantilla no está archivada")
+    saved.archived_at, saved.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "saved_badge_template", saved.id, saved.name)
+    db.commit()
+    return {"id": saved.id, "name": saved.name, "archived": False}
+
+
+@router.delete("/saved-badge-templates/{saved_id}")
+def delete_saved_badge_template(
+    saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))
+):
+    """Borrado DEFINITIVO: solo super_admin y de una plantilla ya archivada."""
+    saved = _saved_or_404(db, saved_id)
+    if saved.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva la plantilla; el borrado definitivo solo aplica a plantillas archivadas")
     # coordinador+ sin alcance de tenant fijo puede borrar de cualquier tenant (igual que el resto
     # de acciones coordinador+ en este proyecto); no se exige event_id acá porque la librería no
     # es de un evento puntual.
@@ -250,6 +289,7 @@ def delete_saved_badge_template(
     db.query(BadgeTemplate).filter(
         BadgeTemplate.imported_from_saved_template_id == saved_id
     ).update({"imported_from_saved_template_id": None})
+    audit_actions.record(db, staff, "delete", "saved_badge_template", saved.id, saved.name)
     db.delete(saved)
     db.commit()
     return {"message": "Plantilla eliminada de la librería"}

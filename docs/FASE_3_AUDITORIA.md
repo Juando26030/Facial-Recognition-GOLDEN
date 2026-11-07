@@ -21,4 +21,253 @@ No se archiva un cliente con un evento «En Proceso». Un cliente archivado no r
 Tabla `audit_actions` (migración `0088_archive_and_audit`, solo INSERT): quién (id y rol), qué, entidad, id y nombre. Nunca valores personales (en ediciones solo los nombres de los campos).
 
 ## Siguientes oleadas
-usuarios del personal, eventos (botón archivar + restaurar), personas, formularios, áreas, inventario, premios; L7 automático; cierre de seguridad (Strix + ZAP en staging, CSP, ENFORCE_STAFF_TENANT).
+usuarios del personal, eventos (botón archivar + restaurar), personas, formularios; L7 automático; cierre de seguridad (Strix + ZAP en staging, CSP, ENFORCE_STAFF_TENANT). Documentos y legalizaciones de gastos del evento (ver hallazgos de abajo).
+
+## Oleada catálogos (áreas, inventario, librerías de colores y de plantillas de escarapela)
+Migración `0092_catalogs_archive` (aditiva: `archived_at` / `archived_by_id` en `event_areas`, `inventory_items`, `saved_colors`, `saved_badge_templates`). Mismo molde que clientes.
+
+| Acción | coordinador | comercial | admin | super_admin |
+|---|---|---|---|---|
+| Ver activos (zonas, ítems, colores, plantillas) | sí (comercial sin Parámetros) | - | sí | sí |
+| Crear / editar | sí (igual que antes) | - | sí | sí |
+| Ver archivados (`include_archived=true`) | - | - | sí | sí |
+| Archivar / restaurar | - | - | sí | sí |
+| Borrar definitivo | - | - | - | sí (archivado y SIN historial) |
+
+Antes: coordinador+ borraba una zona CON todos sus movimientos, y un ítem sin entregas; coordinador+ borraba colores y plantillas de la librería. Ahora:
+- **Zona archivada:** no se elige, no recibe movimientos ni se edita; sus movimientos siguen en `areas-report`. Borrado definitivo solo si no tiene movimientos.
+- **Ítem archivado:** no se entrega ni se edita; el disponible y el reporte de inventario conservan sus entregas. Borrado definitivo solo si no tiene entregas.
+- **Color / plantilla archivados:** salen de la lista y no se pueden importar; los eventos que ya los usaron guardan su copia y no cambian.
+- Un nombre ya usado por un archivado se rechaza con el aviso de restaurarlo (no se duplica).
+- Todo queda en `audit_actions` (entidades `event_area`, `inventory_item`, `saved_color`, `saved_badge_template`; acciones `archive`, `restore`, `delete`).
+- UI: Parámetros del evento (checkbox «Ver zonas / ítems archivados» solo admin+, Archivar / Restaurar / Eliminar definitivamente con `showConfirm`); en la librería de colores y en la de plantillas, «Archivar» (solo admin+). Pendiente: pantalla para ver y restaurar colores y plantillas archivados (hoy solo por API: `GET ...?include_archived=true`, `POST .../restore`).
+- **Premios / ruleta:** no existe un catálogo de premios en la base. La ruleta guarda su configuración (JSON por evento) y los sorteos ejecutados (`roulette_draws`, auditoría de ganadores) y NO tiene borrado de sorteos; lo único que se borra es la autorización de giro (`DELETE .../roulette/authorize`, efímera). No hay nada que archivar ahí: los premios entregados no corren riesgo.
+- **No tocado a propósito:** estados de evento (`event-states`; ya tiene `is_active` y el borrado exige que ningún evento lo use), recordatorios del calendario (efímeros; solo el autor o admin+).
+
+## Tabla de auditoría de escrituras y borrados
+Generada con un recorrido estático (AST) de TODOS los `@router.post/put/patch/delete` de `app/routers/*.py` (212 rutas; `app/main.py` no define rutas de escritura propias). «Rol mínimo» es lo que declara la dependencia de la ruta (`require_role` = ese rol o superior; «sin comercial» = `require_role_excluding`). «Alcance de evento» = la ruta valida el evento/cliente con `get_event_for_staff`, `assert_event_*` o un ayudante que lo hace (revisado a mano en las que decían «vía helper»). La columna final marca lo que conviene revisar; **nada de esto se corrigió fuera de las oleadas**: es solo reporte.
+
+| Método | Ruta | Rol mínimo | Qué hace | Alcance de evento | Marca |
+|---|---|---|---|---|---|
+| `POST` | `/api/aceptar/{code}` | ninguno (público / token) | submit | sí | Público a propósito (código del evento / token de aceptación) |
+| `POST` | `/api/aceptar/{code}/check` | ninguno (público / token) | B2e: la fecha de nacimiento se valida ANTES de mostrar el texto y de abrir la cámara. Un menor  | sí | Público a propósito (código del evento / token de aceptación) |
+| `DELETE` | `/api/attendees/{user_id}/purge-data` | admin+ | Supresión individual (Habeas Data). Solo admin y super_admin. `scope=biometric` = revocación (v | sí |  |
+| `POST` | `/api/bulk_jobs/{job_id}/step` | coordinador+ (sin comercial) | Procesa el siguiente grupo de filas de una carga por pasos (idempotente; ver app/bulk_steps.py) | n/a |  |
+| `POST` | `/api/bulk_register` | coordinador+ (sin comercial) | Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background | sí |  |
+| `POST` | `/api/bulk_roster` | coordinador+ (sin comercial) | Carga de SOLO la base (Excel/CSV, sin fotos). Es la misma carga que `bulk_register`, pero esta  | n/a |  |
+| `POST` | `/api/bulk_roster/preview` | coordinador+ (sin comercial) | Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y c | sí |  |
+| `POST` | `/api/bulk_timing` | coordinador+ (sin comercial) | Tiempos de una carga medidos EN EL NAVEGADOR (preparación, firma de la subida, subida, POST, pr | n/a | Sin evento: solo números del navegador al log; sin datos personales. |
+| `POST` | `/api/calendar/notes` | coordinador+ | create calendar note | n/a | REVISAR: tablero global sin alcance por cliente/evento; coordinador+ avisa a cualquier personal notificable. |
+| `DELETE` | `/api/calendar/notes/{note_id}` | coordinador+ | Solo el autor del recordatorio o admin+ puede borrarlo — es un tablero compartido, pero no | n/a | Solo el autor o admin+ (se valida en el cuerpo); borrado real de un recordatorio (efímero, sin archivar a propósito). |
+| `POST` | `/api/checkin-cedula` | digitador+ | Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo | sí |  |
+| `POST` | `/api/colors` | coordinador+ | Crea un color; si ya existe uno con ese nombre, le cambia el tono (así "Rojo Golden" es siempre | n/a | REVISAR: coordinador crea o SOBRESCRIBE el tono de un color compartido por toda la organización (mismo nombre). |
+| `DELETE` | `/api/colors/{color_id}` | super_admin+ | Borrado DEFINITIVO: solo super_admin y de un color ya archivado (no hay otras dependencias: los | n/a |  |
+| `POST` | `/api/colors/{color_id}/archive` | admin+ | Archivar = quitarlo de la lista de colores guardados. Los eventos que ya lo usan guardan su pro | n/a |  |
+| `POST` | `/api/colors/{color_id}/restore` | admin+ | restore saved color | n/a |  |
+| `POST` | `/api/door-face` | digitador+ | `file` = un fotograma. Sin prueba de vida (decisión del dueño del producto, 2026-10-16): la val | sí |  |
+| `POST` | `/api/event-states` | admin+ | create state | n/a |  |
+| `DELETE` | `/api/event-states/{state_id}` | admin+ | delete state | n/a | REVISAR: admin borra un estado configurable (ya exige que no haya eventos en él y otro activo con el mismo estado base). Existe `is_active` para desactivar; sin registro en audit_actions. |
+| `PATCH` | `/api/event-states/{state_id}` | admin+ | update state | n/a |  |
+| `PUT` | `/api/event-template` | admin+ | Guarda la plantilla completa. Cuerpo: {version, fields, creation_layout, calendar_layout}. 400  | n/a |  |
+| `POST` | `/api/event-transfer/export/start` | super_admin+ | export start | n/a |  |
+| `POST` | `/api/event-transfer/import` | super_admin+ | import event | sí |  |
+| `POST` | `/api/event-transfer/import/dry-run` | super_admin+ | import dry run | n/a |  |
+| `POST` | `/api/event-transfer/import/inspect` | super_admin+ | import inspect | n/a |  |
+| `POST` | `/api/event-transfer/import/start` | super_admin+ | import start | n/a |  |
+| `POST` | `/api/event-transfer/imports/{import_id}/confirm` | super_admin+ | confirm import | n/a |  |
+| `POST` | `/api/event-transfer/upload` | super_admin+ | Subida de un paquete CHICO por la propia aplicación (sin tocar el bucket desde el navegador, as | n/a |  |
+| `POST` | `/api/event-transfer/upload-url` | super_admin+ | Subida directa del paquete (URL firmada al almacenamiento; en local, un PUT firmado a la app):  | n/a |  |
+| `POST` | `/api/events` | coordinador+ | Crear eventos: coordinador+. Historia: antes del 16-sep-2026 era coordinador+; ese día pasó a | sí |  |
+| `DELETE` | `/api/events/{event_id}` | admin+ | Borrado permanente — solo admin+ (coordinador+ avanza el estado del evento vía PATCH status, | sí | REVISAR: admin borra un evento completo en cascada. Oleada eventos. |
+| `PATCH` | `/api/events/{event_id}` | coordinador+ | update event | sí |  |
+| `POST` | `/api/events/{event_id}/accept-mail/resend` | coordinador+ (sin comercial) | accept mail resend | sí |  |
+| `POST` | `/api/events/{event_id}/accept-mail/start` | coordinador+ (sin comercial) | accept mail start | sí |  |
+| `POST` | `/api/events/{event_id}/accept-mail/stop` | coordinador+ (sin comercial) | accept mail stop | sí |  |
+| `POST` | `/api/events/{event_id}/accept-mail/test` | coordinador+ (sin comercial) | Envío de prueba: el correo aprobado, solo a la dirección indicada. | sí |  |
+| `POST` | `/api/events/{event_id}/access-logs/sync` | digitador+ | Sincronizacion por LOTES de ingresos que un kiosco guardo mientras no tenia conexion (base del  | sí (vía helper) |  |
+| `POST` | `/api/events/{event_id}/accreditations/undo` | digitador+ | Deshace una acreditación recién hecha con el botón «✅ Acreditar» de la fila (docs/16, 7a). Regl | sí |  |
+| `POST` | `/api/events/{event_id}/areas` | coordinador+ (sin comercial) | create area | sí |  |
+| `DELETE` | `/api/events/{event_id}/areas/{area_id}` | super_admin+ | Borrado DEFINITIVO: solo super_admin, de una zona ya archivada y SIN movimientos (con historial | sí |  |
+| `PATCH` | `/api/events/{event_id}/areas/{area_id}` | coordinador+ (sin comercial) | update area | sí |  |
+| `POST` | `/api/events/{event_id}/areas/{area_id}/archive` | admin+ | Archivar = ocultar la zona (ya no se elige ni recibe movimientos). Los movimientos registrados  | sí |  |
+| `POST` | `/api/events/{event_id}/areas/{area_id}/movement` | digitador+ (sin comercial) | Entrada/salida por cédula o QR (el QR trae el ID). `direction`: in / out / auto (alterna). | sí |  |
+| `POST` | `/api/events/{event_id}/areas/{area_id}/movement-face` | digitador+ (sin comercial) | Entrada/salida por reconocimiento facial (solo eventos con biometría). | sí |  |
+| `POST` | `/api/events/{event_id}/areas/{area_id}/restore` | admin+ | restore area | sí |  |
+| `PUT` | `/api/events/{event_id}/badge-bio-photo` | super_admin+ | Interruptor de seguridad (A1): permitir imprimir la foto BIOMÉTRICA en la escarapela (física y  | sí |  |
+| `PUT` | `/api/events/{event_id}/badge-mode` | coordinador+ (sin comercial) | Ítem 14: `per_category` False = una plantilla para todas las categorías; True = una distinta | sí |  |
+| `PUT` | `/api/events/{event_id}/badge-template` | coordinador+ (sin comercial) | update badge template | sí |  |
+| `POST` | `/api/events/{event_id}/badge-template/import/{saved_id}` | coordinador+ (sin comercial) | 'Importar plantilla': copia el diseño de una SavedBadgeTemplate al BadgeTemplate de ESTE | sí |  |
+| `POST` | `/api/events/{event_id}/badge-template/save-as` | coordinador+ (sin comercial) | 'Guardar como plantilla': copia el diseño actual del evento a una fila nueva de la | sí |  |
+| `POST` | `/api/events/{event_id}/badge-template/upload-image` | coordinador+ (sin comercial) | Sube una imagen (fondo, o un image_static suelto como un logo) y devuelve el storage_path | sí |  |
+| `PUT` | `/api/events/{event_id}/biometric-setup` | coordinador+ (sin comercial) | Guarda el paso guiado de una vez y validado EN EL SERVIDOR (esto es lo que protege; la pantalla | sí |  |
+| `POST` | `/api/events/{event_id}/biometrics/purge` | admin+ | Borra los datos biométricos del evento (irreversible; solo admin+). Exige `confirm_name` = nomb | sí |  |
+| `PUT` | `/api/events/{event_id}/categories` | coordinador+ (sin comercial) | Categorías del evento (ítem 14, reunión 2026-09-21): la lista de la que se eligen las de cada | sí |  |
+| `POST` | `/api/events/{event_id}/cedula-mrz-scan` | digitador+ | Lee por OCR la zona MRZ del reverso de la cédula colombiana nueva (Sprint 2 Parte 2, | sí |  |
+| `PUT` | `/api/events/{event_id}/certificates-enabled` | coordinador+ (sin comercial) | Activa/desactiva el módulo de certificados (ítem 5, reunión 2026-09-21). Al activarlo aparece | sí |  |
+| `POST` | `/api/events/{event_id}/certificates/public-link` | coordinador+ (sin comercial) | Genera el enlace público para que cada persona descargue su certificado. Si ya existe se devuel | sí |  |
+| `POST` | `/api/events/{event_id}/consent-click` | digitador+ | CAMINO 2 (un clic y rostro): la persona pulsó «Acepto…» en la pantalla del quiosco. Devuelve un | sí |  |
+| `PUT` | `/api/events/{event_id}/consent-config` | coordinador+ (sin comercial) | Quién es el Responsable del evento (golden / tercero + datos del organizador) y cada cuánto se  | sí |  |
+| `POST` | `/api/events/{event_id}/consents` | digitador+ | Registra decisiones de la persona: {entries: [{id (UUID del dispositivo), user_id O h (huella d | sí (vía helper) |  |
+| `PUT` | `/api/events/{event_id}/digital-badge-enabled` | coordinador+ (sin comercial) | Activa/desactiva la escarapela digital (ítem 17): agrega el campo de correo corporativo y, al | sí |  |
+| `PUT` | `/api/events/{event_id}/digital-email` | coordinador+ (sin comercial) | Guarda la plantilla (saneada). Vacía o `reset` = vuelve a la de siempre. | sí |  |
+| `POST` | `/api/events/{event_id}/digital-email/preview` | coordinador+ (sin comercial) | preview digital email | sí |  |
+| `POST` | `/api/events/{event_id}/digital-email/test` | coordinador+ (sin comercial) | Envía el correo con datos de ejemplo a UNA dirección que escribe quien edita (para verlo como l | sí |  |
+| `POST` | `/api/events/{event_id}/digital-email/upload-image` | coordinador+ (sin comercial) | upload email image | sí |  |
+| `PUT` | `/api/events/{event_id}/directory-page-size` | coordinador+ (sin comercial) | Filas por página de la tabla del directorio de ESTE evento (en vivo y lista local sin red): 10, | sí |  |
+| `POST` | `/api/events/{event_id}/documents` | coordinador+ | El archivo llega en la petición o ya subido directo al almacenamiento (`upload`, ver app/upload | sí |  |
+| `DELETE` | `/api/events/{event_id}/documents/{doc_id}` | coordinador+ | delete document | sí (vía helper) | SOSPECHOSO: coordinador borra definitivamente documentos del evento (archivo incluido), sin archivar ni registro. Candidato a la siguiente oleada. |
+| `POST` | `/api/events/{event_id}/door-face/revert/{log_id}` | digitador+ | «Revisar»: el personal deshace una entrada por rostro que no le cuadra. Queda en el rastro de c | sí |  |
+| `POST` | `/api/events/{event_id}/enroll-face` | digitador+ | CAMINO A: la persona ya aceptó en la pantalla y se captura su rostro en vivo. Guarda la foto ci | sí |  |
+| `POST` | `/api/events/{event_id}/expenses` | coordinador+ | add expense | sí |  |
+| `DELETE` | `/api/events/{event_id}/expenses/{expense_id}` | coordinador+ | delete expense | sí (vía helper) | SOSPECHOSO: coordinador borra legalizaciones de gastos (registro contable y su soporte) sin archivar ni registro. |
+| `PUT` | `/api/events/{event_id}/facial-enabled` | coordinador+ (sin comercial) | Interruptor manual (2026-09-27, pedido explícito: "si me equivoqué y ya no quiero facial no pue | sí |  |
+| `PUT` | `/api/events/{event_id}/field-configs/{field_key}` | coordinador+ (sin comercial) | upsert field config | sí |  |
+| `DELETE` | `/api/events/{event_id}/fields/{field_key}` | coordinador+ (sin comercial) | Borra un campo de ESTE evento (también uno que vino en la base original). Hay que escribir su n | sí |  |
+| `POST` | `/api/events/{event_id}/final-report` | coordinador+ | upload final report | sí |  |
+| `DELETE` | `/api/events/{event_id}/form-templates/{template_id}` | coordinador+ | delete template | sí | REVISAR: borrado real de plantilla de formulario (coordinador). Oleada formularios. |
+| `POST` | `/api/events/{event_id}/forms` | coordinador+ | Crea un formulario nuevo (con campos de partida) o, con `template_id`, a partir de una plantill | sí |  |
+| `POST` | `/api/events/{event_id}/forms-import` | admin+ | Crea la copia: todo o nada (si algo falla, se borran las imágenes ya subidas y no queda nada en | sí |  |
+| `POST` | `/api/events/{event_id}/forms-import/preview` | admin+ | Vista previa: valida y cuenta lo que se crearía. No escribe NADA. | sí |  |
+| `POST` | `/api/events/{event_id}/forms-upload-image` | coordinador+ | upload image | sí |  |
+| `DELETE` | `/api/events/{event_id}/forms/{form_id}` | coordinador+ | delete form | sí | REVISAR: coordinador borra un formulario con pagos, reembolsos e inscripciones en cascada. Oleada formularios. |
+| `PUT` | `/api/events/{event_id}/forms/{form_id}` | coordinador+ | Guarda nombre, dirección (slug), diseño y/o configuración. El diseño se valida completo en el s | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/align-to-base` | admin+ | Lleva un campo con cupos de las inscripciones al valor que la BASE DEL EVENTO tiene para esa pe | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/client-access` | coordinador+ | Crea el usuario y la contraseña temporal (se muestran UNA sola vez). Misma regla que las cuenta | sí (vía helper) | REVISAR: coordinador entrega acceso de cliente al formulario (valida evento con _form_for). |
+| `DELETE` | `/api/events/{event_id}/forms/{form_id}/client-access/{staff_id}` | coordinador+ | revoke client access | sí (vía helper) |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/discount-codes` | coordinador+ | Crea códigos para un descuento «con código»: `shared` = UN código válido `max_uses` veces (ej.  | sí |  |
+| `DELETE` | `/api/events/{event_id}/forms/{form_id}/discount-codes/{code_id}` | coordinador+ | delete code | sí | REVISAR: borrado real de un código de descuento (coordinador). Oleada formularios. |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/duplicate` | coordinador+ | duplicate form | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/feed-now` | coordinador+ | Carga a la base del evento todas las inscripciones reales aún no cargadas (quedan «No registrad | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/invites/send` | coordinador+ | Genera el enlace personal de cada persona de la fuente y lo manda por correo (a quien tenga cor | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/payments/{payment_id}/refund` | admin+ | Body: `reason` (obligatorio), `amount` (COP; por defecto el saldo), `manual` (true = ya se devo | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/payments/{payment_id}/refunds/{refund_id}/{action}` | admin+ | Un reembolso `pending` (Wompi lo aceptó pero no confirma): `check` lo vuelve a consultar y lo c | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/people` | coordinador+ | Sube (Excel/CSV) la base que pre-llenará SOLO este formulario (fuente «base subida aparte»); re | sí |  |
+| `DELETE` | `/api/events/{event_id}/forms/{form_id}/registered` | coordinador+ | «Quitar todas las marcas»: borra las marcas «ya registrado» de este formulario (liberan el cupo | sí | REVISAR: coordinador vacía la base de registrados del formulario. Oleada formularios. |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/registered` | coordinador+ | Carga o recarga la lista de «Personas ya registradas» de ESTE formulario (cédula, o el campo id | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/registered/preview` | coordinador+ | Antes de cargar: qué columnas del archivo corresponden a campos del formulario, cuáles de ellas | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/save-as-template` | coordinador+ | save template | sí |  |
+| `PUT` | `/api/events/{event_id}/forms/{form_id}/status` | coordinador+ | Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscrip | sí |  |
+| `DELETE` | `/api/events/{event_id}/forms/{form_id}/submissions/{submission_id}` | coordinador+ | delete submission | sí | SOSPECHOSO: coordinador borra una inscripción (puede tener pago) sin archivar. Oleada formularios. |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/unify-values` | admin+ | Unifica un campo que define cupos en las inscripciones ya guardadas: «Bogota», «BOGOTÁ» y los a | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/variant-table/parse` | coordinador+ | Lee un .xlsx subido y lo empareja con la tabla; devuelve las celdas y los problemas SIN guardar | sí |  |
+| `POST` | `/api/events/{event_id}/forms/{form_id}/variant-table/template` | coordinador+ | Genera el .xlsx (hojas «Tabla», «Instrucciones» y «Valores válidos») de la tabla de variantes q | sí |  |
+| `PUT` | `/api/events/{event_id}/idle-minutes` | coordinador+ (sin comercial) | Minutos sin uso tras los que se cierra la sesión del personal que trabaja en ESTE evento (5 a 6 | sí |  |
+| `POST` | `/api/events/{event_id}/inventory` | coordinador+ (sin comercial) | create item | sí |  |
+| `POST` | `/api/events/{event_id}/inventory/deliver` | digitador+ (sin comercial) | Entrega uno o varios ítems (combo) a una persona: `{cedula, items: [{item_id, qty}]}`. Todo o | sí |  |
+| `DELETE` | `/api/events/{event_id}/inventory/{item_id}` | super_admin+ | Borrado DEFINITIVO: solo super_admin, de un ítem ya archivado y SIN entregas (con entregas solo | sí |  |
+| `PATCH` | `/api/events/{event_id}/inventory/{item_id}` | coordinador+ (sin comercial) | update item | sí |  |
+| `POST` | `/api/events/{event_id}/inventory/{item_id}/archive` | admin+ | Archivar = ocultar el ítem (ya no se entrega). Las entregas hechas y el reporte se conservan; u | sí |  |
+| `POST` | `/api/events/{event_id}/inventory/{item_id}/restore` | admin+ | restore item | sí |  |
+| `PUT` | `/api/events/{event_id}/last-name-required` | coordinador+ (sin comercial) | Fase 2: «Apellido obligatorio». `mode`: «auto» (según la base cargada), «required» u «optional» | sí |  |
+| `PUT` | `/api/events/{event_id}/logo` | coordinador+ (sin comercial) | `mode`: 'default' (logo de Golden), 'hidden' (sin logo) o 'custom' (el propio ya subido). Opcio | sí |  |
+| `POST` | `/api/events/{event_id}/logo/upload` | coordinador+ (sin comercial) | upload event logo | sí |  |
+| `PUT` | `/api/events/{event_id}/modules` | coordinador+ (sin comercial) | Switches por evento: `areas_enabled` / `inventory_enabled` (solo se cambian los que vengan). | sí |  |
+| `POST` | `/api/events/{event_id}/optional-fields` | coordinador+ (sin comercial) | Agrega un campo opcional nuevo directamente desde Parámetros del Evento (2026-09-16, | sí |  |
+| `POST` | `/api/events/{event_id}/outbox/sync` | digitador+ | Sincroniza la BANDEJA DE SALIDA de un quiosco (docs/16, B8): operaciones hechas sin red, hasta  | sí | digitador+: valida el evento con _event_for_sync (ventana de 7 días tras finalizar). |
+| `PUT` | `/api/events/{event_id}/person-form` | admin+ | put person form | sí |  |
+| `PUT` | `/api/events/{event_id}/precalculo-autorizado` | super_admin+ | Solo super_admin. Para activarlo: evento de un tercero y referencia + fecha (AAAA-MM-DD) del an | sí |  |
+| `POST` | `/api/events/{event_id}/print-devices/heartbeat` | digitador+ (sin comercial) | El equipo dice que sigue ahí y si tiene la impresora conectada. Responde dónde imprime este usu | sí |  |
+| `POST` | `/api/events/{event_id}/print-jobs` | digitador+ (sin comercial) | create job | sí |  |
+| `POST` | `/api/events/{event_id}/print-jobs/release` | digitador+ (sin comercial) | La persona cerró o canceló la ventana: los trabajos que seguían «enviados» a este puesto vuelve | sí |  |
+| `POST` | `/api/events/{event_id}/print-jobs/result-batch` | digitador+ (sin comercial) | Los resultados de una tanda, DESPUÉS de que la ventana de impresión terminó. Cada trabajo se co | sí |  |
+| `POST` | `/api/events/{event_id}/print-jobs/{job_id}/result` | digitador+ (sin comercial) | job result | sí |  |
+| `PUT` | `/api/events/{event_id}/print-settings` | coordinador+ (sin comercial) | Reemplaza los valores del evento por los enviados (lo omitido o `null` vuelve al valor de fábri | sí |  |
+| `PUT` | `/api/events/{event_id}/print-stations/{staff_id}` | coordinador+ (sin comercial) | Guarda la configuración del puesto (`settings`; `null` o `{}` la borra: vuelve a lo de siempre) | sí |  |
+| `PUT` | `/api/events/{event_id}/registro-gear-digitadores` | coordinador+ (sin comercial) | Plan 7: «Mostrar configuración del registro a digitadores». Solo decide si el digitador VE el e | sí |  |
+| `PUT` | `/api/events/{event_id}/reprint-mode` | admin+ | Reimpresión del evento: habilitada (por defecto) o deshabilitada. SOLO admin o super_admin. | sí |  |
+| `POST` | `/api/events/{event_id}/reprint-requests` | digitador+ (sin comercial) | Pide permiso para reimprimir. Solo si la reimpresión está deshabilitada, la persona ya se impri | sí |  |
+| `POST` | `/api/events/{event_id}/reprint-requests/use` | digitador+ (sin comercial) | Gasta el permiso aprobado ANTES de imprimir en el propio equipo (USB o ventana de Chrome). La i | sí |  |
+| `POST` | `/api/events/{event_id}/revert-to-created` | admin+ | Devuelve un evento «en curso» a «creado» (solo admin y super_admin). NO borra nada (ni personas | sí |  |
+| `DELETE` | `/api/events/{event_id}/roulette/authorize` | coordinador+ | cancel authorization | sí |  |
+| `POST` | `/api/events/{event_id}/roulette/authorize` | coordinador+ | El operador AUTORIZA un giro: se valida ahora (para que los errores salgan aquí y no frente al  | sí |  |
+| `PUT` | `/api/events/{event_id}/roulette/behavior` | coordinador+ | save behavior | sí |  |
+| `POST` | `/api/events/{event_id}/roulette/display-link` | coordinador+ | Enlace de la pantalla de visualización (para el proyector): sin login, con código secreto. Se c | sí |  |
+| `POST` | `/api/events/{event_id}/roulette/execute` | coordinador+ | Ejecuta el sorteo YA (sin esperar el botón de la pantalla pública). La interfaz normal usa `aut | sí |  |
+| `POST` | `/api/events/{event_id}/roulette/reset-round` | coordinador+ | Modo «todos»: empieza una ronda nueva (vuelven a poder salir todos). | sí |  |
+| `PUT` | `/api/events/{event_id}/roulette/style` | coordinador+ | save style | sí |  |
+| `POST` | `/api/events/{event_id}/roulette/upload-image` | coordinador+ | upload image | sí |  |
+| `PUT` | `/api/events/{event_id}/shared-print` | coordinador+ (sin comercial) | set enabled | sí |  |
+| `PUT` | `/api/events/{event_id}/shared-print/route` | coordinador+ (sin comercial) | set route | sí |  |
+| `POST` | `/api/events/{event_id}/staff-users` | coordinador+ | Crea una cuenta digitador o cliente y la autoriza para ESTE evento en un solo paso — no | sí |  |
+| `POST` | `/api/events/{event_id}/staff-users/assign-existing` | admin+ | Autoriza una cuenta digitador/cliente YA existente (de otro evento) para ESTE evento — | sí |  |
+| `POST` | `/api/events/{event_id}/staff-users/import` | coordinador+ | Asigna digitadores a este evento desde un Excel (Identificación, Nombres, Apellidos). Cédula nu | sí |  |
+| `POST` | `/api/events/{event_id}/staff-users/purge-temporary` | coordinador+ | Borra de una vez TODAS las cuentas digitador asignadas a este evento (lo mismo que «Borrar perm | sí |  |
+| `DELETE` | `/api/events/{event_id}/staff-users/{staff_id}` | coordinador+ | Revoca el acceso de un digitador/cliente a ESTE evento y SOLO a este (E-N1, 0C). Su cuenta, su  | sí | REVISAR: coordinador desvincula/borra personal del evento (borrado real de autorizaciones/puestos). |
+| `POST` | `/api/events/{event_id}/staff-users/{staff_id}/login-request` | coordinador+ | decide login | sí (vía helper) |  |
+| `POST` | `/api/events/{event_id}/staff-users/{staff_id}/unlock` | coordinador+ | unlock account | sí (vía helper) |  |
+| `POST` | `/api/events/{event_id}/stats-links` | coordinador+ | Crea un enlace. `scope`: «event» (estadísticas del evento) o «form» (con `form_id`). `days`: 1  | sí |  |
+| `DELETE` | `/api/events/{event_id}/stats-links/{link_id}` | coordinador+ | revoke link | sí |  |
+| `DELETE` | `/api/events/{event_id}/users/{user_id}/biometrics` | coordinador+ (sin comercial) | Derecho de supresión de una persona: borra su rostro (foto y encoding). Conserva su identidad y | sí |  |
+| `DELETE` | `/api/events/{event_id}/users/{user_id}/signature/{field_key}` | digitador+ | delete signature | sí (vía helper) |  |
+| `PUT` | `/api/events/{event_id}/users/{user_id}/signature/{field_key}` | digitador+ | put signature | sí (vía helper) |  |
+| `PATCH` | `/api/events/{event_id}/users/{user_id}/status` | digitador+ | Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo; | sí |  |
+| `POST` | `/api/events/{event_id}/web-acceptance/{user_id}/verify` | digitador+ | El personal confirma, con el documento físico o el QR de la persona, que quien aceptó desde el  | sí |  |
+| `POST` | `/api/ingreso/cancelar` | ninguno (público / token) | waiting cancel | n/a | Sin dependencia: igual que /ingreso/estado. |
+| `POST` | `/api/ingreso/estado` | ninguno (público / token) | `pending` (con `expires_in`), `approved` (con `redirect`: la sesión ya quedó creada), `denied`  | n/a | Sin dependencia: parte del flujo de ingreso (token de la solicitud de login). Revisar que el token sea de un solo uso y con límite de intentos. |
+| `PUT` | `/api/me/tours-auto-off` | cualquier sesión | «Deshabilitar demos automáticas»: se guarda en la cuenta (así vale en el celular y en el comput | n/a |  |
+| `POST` | `/api/ops/simulate-crash` | _ops_reader | Simulacro 1 de la Fase 4 («matar una instancia» mientras hay carga). Triple candado: solo con D | n/a | REVISAR: se abre con un token estático OPS_TOKEN además de admin+; solo opera con CHAOS_ENABLED=1 en staging (404 en otro caso). Confirmar que CHAOS_ENABLED nunca está en producción. |
+| `POST` | `/api/print-stations/{staff_id}/release` | admin+ | Un admin libera la cuenta de un puesto (por ejemplo, cambió de computador): la sesión anterior  | n/a |  |
+| `POST` | `/api/privacy-requests` | admin+ | create request | n/a | admin+ sin alcance de cliente (el evento es opcional): aceptable, pero cualquier admin ve/crea de cualquier cliente. |
+| `PUT` | `/api/privacy-requests/{request_id}/claim-flag` | admin+ | Activa o quita la bandera «reclamo en trámite» sobre el dato de la persona (máximo 2 días hábil | n/a |  |
+| `PUT` | `/api/privacy-requests/{request_id}/status` | admin+ | set status | n/a |  |
+| `POST` | `/api/recognize` | digitador+ | Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes | sí |  |
+| `POST` | `/api/recognize/candidates` | digitador+ | «Ver 5 más cercanos»: los candidatos siguientes del MISMO reconocimiento (los guarda el token:  | n/a |  |
+| `POST` | `/api/recognize/person` | digitador+ | El registro (fila del directorio) del candidato elegido, para abrir el modal «Editar»: desde ah | n/a |  |
+| `POST` | `/api/recognize/photo` | digitador+ | Foto de registro de un candidato del reconocimiento (`index` 0 = la persona principal). Solo la | n/a |  |
+| `POST` | `/api/register` | digitador+ | file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para | n/a |  |
+| `POST` | `/api/reprint-requests/{request_id}/decision` | coordinador+ (sin comercial) | decision | sí | Alcance por assert_event_tenant + reprint.can_decide (no usa get_event_for_staff): correcto, anotado por ser distinto al patrón. |
+| `DELETE` | `/api/saved-badge-templates/{saved_id}` | super_admin+ | Borrado DEFINITIVO: solo super_admin y de una plantilla ya archivada. | n/a |  |
+| `POST` | `/api/saved-badge-templates/{saved_id}/archive` | admin+ | Archivar = sacarla de la librería (ya no se ofrece para importar). Los eventos que la importaro | n/a |  |
+| `POST` | `/api/saved-badge-templates/{saved_id}/restore` | admin+ | restore saved badge template | n/a |  |
+| `POST` | `/api/session/touch` | ninguno (público / token) | La persona hizo algo (clic, teclas, toque, scroll): el middleware ya renovó la sesión; aquí se  | n/a | Sin dependencia propia: lee la sesión del navegador; renueva la actividad. |
+| `PUT` | `/api/settings/golden-logo-height` | super_admin+ | Alto del logo de Golden para TODO el sistema (6-nov-2026): solo el super administrador. | n/a |  |
+| `PUT` | `/api/settings/single-session` | admin+ | put single session | n/a |  |
+| `POST` | `/api/staff` | admin+ | create staff | n/a |  |
+| `DELETE` | `/api/staff/{staff_id}` | coordinador+ | Borrado PERMANENTE (no desactivación) — cada rol solo puede borrar lo que tiene | n/a | REVISAR: coordinador borra cuentas de personal (acotado por DELETABLE_ROLES_BY y _assert_can_manage). Borrado real; oleada usuarios. |
+| `PATCH` | `/api/staff/{staff_id}/activate` | admin+ | activate staff | n/a |  |
+| `PATCH` | `/api/staff/{staff_id}/deactivate` | admin+ | deactivate staff | n/a |  |
+| `PATCH` | `/api/staff/{staff_id}/email` | admin+ | Completa/corrige el correo de una cuenta (las creadas antes de que existiera el campo no lo tie | n/a |  |
+| `PUT` | `/api/staff/{staff_id}/password` | coordinador+ | Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de di | n/a |  |
+| `PATCH` | `/api/staff/{staff_id}/role` | admin+ | Cambia el rol de una cuenta ya creada (Sprint 4). Solo entre los roles que se crean desde Confi | n/a |  |
+| `PATCH` | `/api/staff/{staff_id}/secondary-role` | admin+ | Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden | n/a |  |
+| `POST` | `/api/super-events` | coordinador+ | create super event | sí |  |
+| `POST` | `/api/tenants` | comercial+ | Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes pasó a ser comercial+ — antes | n/a |  |
+| `DELETE` | `/api/tenants/{tenant_id}` | super_admin+ | Borrado DEFINITIVO: solo super_admin, solo de un cliente ya archivado y sin eventos, y queda re | n/a |  |
+| `PATCH` | `/api/tenants/{tenant_id}` | comercial+ | update tenant | sí |  |
+| `POST` | `/api/tenants/{tenant_id}/archive` | admin+ | Archivar = ocultar de las listas y de los selectores. No borra nada: sus eventos y bases siguen | n/a |  |
+| `POST` | `/api/tenants/{tenant_id}/restore` | admin+ | restore tenant | n/a |  |
+| `POST` | `/api/uploads` | digitador+ | `{purpose, event_id, filename, size, content_type}` → `{url, method, headers, token}`. | sí |  |
+| `PUT` | `/api/uploads/local/{token}` | ninguno (público / token) | Receptor del PUT cuando el almacenamiento es local (desarrollo y la VM): hace lo que en la nube | n/a | Sin sesión a propósito: la autoriza el token firmado de la subida (solo almacenamiento local, no en la nube). |
+| `DELETE` | `/api/users/{user_id}` | coordinador+ | Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar" | sí | REVISAR: coordinador borra a la persona, sus registros de acceso y su foto (borrado real, sin archivar). Oleada personas. |
+| `PATCH` | `/api/users/{user_id}` | digitador+ | update user | sí |  |
+| `PUT` | `/api/users/{user_id}/cedula` | admin+ | Corrige la cédula (User.id) de una persona ya registrada (2026-09-16, pedido explícito: a | sí |  |
+| `DELETE` | `/api/users/{user_id}/logs` | admin+ | Histórico (2026-09-21 en adelante) — ya NO se usa desde el frontend, quedó reemplazado por | sí | REVISAR: admin borra el historial de accesos de una persona. Oleada personas. |
+| `POST` | `/api/users/{user_id}/print-log` | digitador+ (sin comercial) | Registra una impresión de escarapela — se llama justo antes de abrir la ventana de | sí |  |
+| `POST` | `/cambiar-contrasena` | ninguno (público / token) | change submit | sí |  |
+| `POST` | `/f/{event_id}/{slug}/beacon` | ninguno (público / token) | Marcas de uso para la analítica: `view` (abrió), `start` (empezó a llenar). Sin datos personale | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/f/{event_id}/{slug}/check` | ninguno (público / token) | Aviso temprano «Ya estás inscrito» mientras la persona escribe su identificador (cédula u otro  | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/f/{event_id}/{slug}/gate` | ninguno (público / token) | gate | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/f/{event_id}/{slug}/lookup` | ninguno (público / token) | Autoservicio por cédula: si la persona está en la base elegida, se pre-llenan y bloquean sus da | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/f/{event_id}/{slug}/pay/confirm` | ninguno (público / token) | El navegador avisa que el widget se cerró (con el id de la transacción, si la hay). No se le cr | n/a (público) | Público a propósito (Wompi sin sesión); webhook con checksum SHA-256 |
+| `POST` | `/f/{event_id}/{slug}/quote` | ninguno (público / token) | Monto a pagar según lo que la persona lleva escrito (para mostrar el total en vivo). Solo lee;  | n/a (público) | Público a propósito (Wompi sin sesión); webhook con checksum SHA-256 |
+| `POST` | `/f/{event_id}/{slug}/submit` | ninguno (público / token) | Lee el cuerpo (lo unico asincrono) y pasa el resto —consultas, cupo, insercion— a un hilo: el b | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/f/{event_id}/{slug}/upload` | ninguno (público / token) | Firma la subida directa de un archivo del formulario (ver app/uploads.py): `{fid, filename, siz | n/a (público) | Público a propósito (formulario web); protegido por límites de uso y cupo |
+| `POST` | `/internal/faces/run` | token OIDC de Google | Cola APARTE de los cálculos faciales (vector tras la aceptación): corre en el servicio de biome | n/a |  |
+| `POST` | `/internal/jobs/run` | token OIDC de Google | Ejecuta la cola dentro de ESTA petición (en Cloud Run con facturación por petición la CPU se re | n/a |  |
+| `POST` | `/login` | ninguno (público / token) | login submit | sí |  |
+| `POST` | `/logout` | ninguno (público / token) | logout | n/a |  |
+| `POST` | `/olvide-contrasena` | ninguno (público / token) | Manda un enlace de un solo uso al correo de la cuenta. La respuesta es SIEMPRE la misma (exista | sí |  |
+| `POST` | `/r/{token}/spin` | ninguno (público / token) | El botón «Girar» de la pantalla de visualización: solo funciona si el operador AUTORIZÓ un giro | n/a | Pantalla pública por token (/r/<token>) |
+| `POST` | `/reimpresion/{token}` | ninguno (público / token) | La decisión (POST; el Origin lo revisa el middleware CSRF). El enlace se gasta primero con un U | n/a |  |
+| `POST` | `/restablecer/{token}` | ninguno (público / token) | reset submit | n/a |  |
+| `POST` | `/webhooks/wompi` | ninguno (público / token) | Eventos de Wompi (`transaction.updated`). Lee el cuerpo (lo único asíncrono) y procesa en un hi | n/a | Público a propósito (Wompi sin sesión); webhook con checksum SHA-256 |
+
+### Hallazgos de la auditoría (resumen)
+1. **Ninguna ruta de escritura con sesión carece de rol:** toda ruta sin dependencia es pública a propósito (`/f/*` formularios, `/api/aceptar/*`, Wompi, pantalla de ruleta, enlaces `/ver`, `/reimpresion/<token>`, login/logout) o se autoriza por token (`PUT /api/uploads/local/{token}`, `/internal/*` con OIDC de Google).
+2. **Borrados reales por coordinador, sin archivar ni registro** (lo más delicado): `DELETE /api/users/{user_id}` (persona + accesos + foto), `DELETE .../documents/{id}` y `.../expenses/{id}` (documentos y legalizaciones con su soporte), `DELETE .../forms/{id}` y `.../submissions/{id}` (formularios y sus pagos), `DELETE /api/staff/{id}` y `.../staff-users/{id}`. Las de personas, formularios, usuarios y eventos están en las otras oleadas; **documentos y gastos del evento no están en ninguna**: candidatos a la siguiente.
+3. **Borrado real por admin:** `DELETE /api/users/{id}/logs`, `DELETE /api/events/{id}`, `DELETE /api/event-states/{id}` (este último sin registro en `audit_actions`).
+4. **Alcance por cliente/evento más débil:** `POST /api/colors` (color compartido que cualquier coordinador sobrescribe por nombre), `POST /api/calendar/notes` (tablero global), `POST /api/privacy-requests` (admin sin alcance de cliente). Con `ENFORCE_STAFF_TENANT` apagado (valor por defecto), `get_event_for_staff` no aísla por cliente al personal que tiene `tenant_id`: revisar ese interruptor en el cierre de seguridad.
+5. **`POST /api/ops/simulate-crash`** se abre con un token estático (`OPS_TOKEN`) además de admin+; responde 404 salvo `CHAOS_ENABLED=1` (staging). Verificar que esa variable no exista en producción.
+6. **`POST /api/ingreso/estado` y `/cancelar`** no tienen dependencia (flujo de ingreso por token): confirmar que el token es de un solo uso y tiene límite de intentos.
+7. Roles inconsistentes entre pares: `PUT /api/staff/{id}/password` y `DELETE /api/staff/{id}` son coordinador+ pero se acotan dentro del cuerpo (`_manageable_roles`, `DELETABLE_ROLES_BY`, `_assert_can_manage`); correcto, pero el control está en el cuerpo y no en la dependencia: un cambio descuidado lo abriría.
+
