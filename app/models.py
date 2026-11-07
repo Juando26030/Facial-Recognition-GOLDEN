@@ -290,6 +290,7 @@ class Event(Base):
     idle_minutes = Column(Integer, nullable=True)   # 0081: minutos de inactividad antes de cerrar la sesión del personal que trabaja en este evento (5-60), SOLO mientras está en proceso; NULL = el general (SESSION_IDLE_MINUTES, 10). app/idle.py
     face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
     badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
+    extra_json = Column(Text, nullable=True)   # 0087 (Fase 2): valores de los campos PERSONALIZADOS de la plantilla de evento {clave: valor} (app/event_template.py). Los campos base y los interruptores siguen en sus columnas
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
@@ -309,6 +310,43 @@ class Event(Base):
 
     def set_categories(self, data: list) -> None:
         self.categories = json.dumps(data) if data else None
+
+    def get_extra(self) -> dict:
+        try:
+            value = json.loads(self.extra_json) if self.extra_json else {}
+        except ValueError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_extra(self, data: dict) -> None:
+        self.extra_json = json.dumps(data, ensure_ascii=False) if data else None
+
+
+class EventTemplate(Base):
+    """Plantilla de evento (Fase 2, 0087): qué campos tiene un evento, cuáles pide «Nuevo evento» y cuáles salen en la tarjeta del calendario. UNA por ámbito (`scope`='global' hoy);
+    `tenant_id` queda NULL y reservado para un futuro con una plantilla por cuenta. Sin fila = la plantilla de fábrica (app/event_template.py), que reproduce el formulario de siempre.
+    `version` sube en cada guardado (bloqueo optimista: dos administradores no se pisan)."""
+    __tablename__ = 'event_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    scope = Column(String, nullable=False, unique=True, default='global')
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)
+    fields_json = Column(Text, nullable=False)
+    creation_layout_json = Column(Text, nullable=False)
+    calendar_layout_json = Column(Text, nullable=False)
+    version = Column(Integer, nullable=False, default=1, server_default='1')
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+
+class EventTemplateRevision(Base):
+    """Historial de la plantilla (auditoría simple): quién guardó qué versión y cuándo, con la plantilla completa de esa versión. Se conservan las últimas 50."""
+    __tablename__ = 'event_template_revisions'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(Integer, ForeignKey('event_templates.id', ondelete='CASCADE'), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    snapshot_json = Column(Text, nullable=False)
+    saved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    saved_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class EventState(Base):

@@ -33,6 +33,7 @@ from app.routers import person_form as person_form_router      # formulario de p
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
+from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
 
@@ -279,6 +280,7 @@ _include(login_approval_router.router)      # S1: ingreso de digitadores autoriz
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
 _include(event_states.router, prefix="/api")
+_include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(badges.router, prefix="/api")
@@ -474,6 +476,19 @@ def configuracion_page(request: Request):
     if redirect:
         return redirect
     return templates.TemplateResponse(request=request, name="configuracion.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "sidebar_active": "configuracion",
+    })
+
+
+@app.get("/configuracion/plantilla-evento")
+def plantilla_evento_page(request: Request):
+    """Diseñar la plantilla de eventos (Fase 2): vista de creación y vista del calendario. Solo admin y super_admin (cualquier otro rol vuelve al inicio)."""
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="plantilla_evento.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
