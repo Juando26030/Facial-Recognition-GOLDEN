@@ -29,6 +29,9 @@
         .pulse { display:inline-block; width:10px; height:10px; border-radius:50%; background:#2ee6a6; margin-right:6px; animation:blink 1s ease-in-out infinite; }
         @keyframes blink { 50% { opacity:0.15; } }
         .note { max-width:340px; text-align:center; font-size:0.72rem; color:#7f89b5; margin-top:14px; }
+        .extra-list { list-style:none; margin:14px auto 0; padding:0; max-width:340px; text-align:center; }
+        .extra-list li { font-size:0.85rem; color:#d8def5; padding:2px 0; }
+        .extra-list b { color:#9aa3c7; font-weight:600; }
         #error { color:#ff9aa8; text-align:center; margin-top:20vh; }
     </style>
 </head>
@@ -37,6 +40,7 @@
 <div class="sub" id="personName"></div>
 <div id="stage" style="display:none;">
     <div class="frame"><div class="frame-inner" id="clip"><div id="badgeHost"></div><div class="shimmer"></div></div></div>
+    <ul class="extra-list" id="extraList" hidden></ul>
     <div class="live">
         <div class="clock" id="clock">--:--:--</div>
         <div class="date"><span class="pulse"></span><span id="dateLine"></span></div>
@@ -63,9 +67,15 @@ setInterval(tick, 250); tick();
 async function load() {
     const res = await fetch(`${base}/data`);
     if (!res.ok) { document.getElementById('error').style.display = 'block'; return; }
-    const { event, template, person } = await res.json();
+    const { event, template, person, extra_list: extraList } = await res.json();
     document.getElementById('eventName').textContent = event.name;
     document.getElementById('personName').textContent = `${person.first_name || ''} ${person.last_name || ''}`.trim();
+    const ul = document.getElementById('extraList');          // datos elegidos por el evento (vacío = por defecto: solo lo que pinta la plantilla)
+    (extraList || []).forEach((row) => {
+        const li = document.createElement('li'), b = document.createElement('b');
+        b.textContent = `${row.label}: `; li.append(b, document.createTextNode(row.value)); ul.appendChild(li);
+    });
+    ul.hidden = !ul.children.length;
     document.getElementById('stage').style.display = 'block';
 
     // QR de entrada (Sprint 4): con la cédula, para poder registrarse con el QR aunque nunca se haya impreso una escarapela.

@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.orm import Session
 
-from app import crypto
+from app import crypto, digital_fields
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
-from app.routers.certificates_public import NEVER_EXPOSED, _variables_used
+from app.routers.certificates_public import _variables_used
 from app.routers.badges import ALLOWED_IMAGE_EXT, _get_or_create_template, _serialize_template, template_category_for_user
 
 router = APIRouter()
@@ -39,6 +39,15 @@ def digital_badge_page(token: str, request: Request, db: Session = Depends(get_d
     return templates.TemplateResponse(request=request, name="digital_badge.html", context={"token": token})
 
 
+def _extra_list(db: Session, event: Event, person: dict, keys: set) -> list:
+    """Con lista elegida por el evento: los datos marcados con su rótulo, para mostrarlos bajo el nombre. Sin lista (por defecto) no hay bloque: la plantilla lo dice todo."""
+    if digital_fields.parse_stored(event.digital_badge_fields) is None:
+        return []
+    from app.routers.parametros import field_labels_for_event  # import tardío: parametros importa mucho
+    labels = field_labels_for_event(db, event)
+    return digital_fields.display_list(keys, person, labels, digital_fields.allowed_keys(event.get_optional_labels()))
+
+
 @router.get("/b/{token}/data")
 def digital_badge_data(token: str, db: Session = Depends(get_db)):
     att, event, user = _resolve(db, token)
@@ -46,14 +55,15 @@ def digital_badge_data(token: str, db: Session = Depends(get_db)):
     template = _serialize_template(_get_or_create_template(event, db, category))
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1)
     needed = _variables_used(template)
-    person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": has_photo}
-    fields = {"role": user.role, "entity": user.entity, "opt_1": user.opt_1, "categories": ", ".join(att.get_categories())}          # A3: sin correo ni teléfono (NEVER_EXPOSED), igual que el certificado
-    person.update({k: v for k, v in fields.items() if k in needed})
-    person["extra_fields"] = {k: v for k, v in user.get_extras().items() if k in needed and k not in NEVER_EXPOSED}          # solo los campos que la plantilla pinta de verdad
+    labels = event.get_optional_labels()
+    keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), needed, labels)          # A3: sin lista = solo lo que pinta la plantilla y sin correo ni teléfono; con lista = lo que el evento eligió
+    person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": has_photo}          # «id» solo alimenta el QR de la escarapela; no es un dato elegible
+    person.update(digital_fields.build_person(user, att, keys))
     return {
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
         "person": person,
+        "extra_list": _extra_list(db, event, person, keys),
     }
 
 
