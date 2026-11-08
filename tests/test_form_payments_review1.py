@@ -52,6 +52,7 @@ def test_d1_retry_in_the_same_session_asks_wompi_before_discarding(client, facto
 
 def test_r9_the_per_ip_pending_cap_no_longer_skips_submissions_with_the_same_cedula(client, factory, keys, monkeypatch):
     monkeypatch.setenv("FORM_PENDING_MAX_PER_IP", "3")
+    monkeypatch.setenv("FORM_PENDING_MAX_PER_PERSON", "0")      # H2: el tope por cédula tiene su propia prueba (tests/test_ataque_ronda2.py)
     ev = _event(client, factory)
     form = _with_payment(client, ev)
     for n in range(3):

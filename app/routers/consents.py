@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import acceptmail, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
+from app import acceptmail, audit_actions, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
 from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app import event_archive
@@ -253,6 +253,8 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event.biometrics_locked = bool(new["biometrics_locked"])
     event.face_door_enabled = bool(new["face_door_enabled"])
     event.accept_link_email = bool(new["accept_link_email"])
+    if str(new["accept_no_birth_mode"]) != (event.accept_no_birth_mode or "any"):
+        audit_actions.record(db, staff, "update", "event_accept_no_birth_mode", event.id, event.name, f"{event.accept_no_birth_mode or 'any'} -> {new['accept_no_birth_mode']}")
     event.accept_no_birth_mode = str(new["accept_no_birth_mode"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]

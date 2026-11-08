@@ -174,3 +174,22 @@ Rama `f3f/decisiones`. Migración `0096_decisiones_dueno` (cadena `0095_super_ev
 
 ### Pendiente (no se tocó)
 B1 / autorregistro (`consents.py`, `enroll_face`): depende de un texto legal que debe dar la auditora.
+
+## Ronda de ataque 2 (8-nov-2026)
+Segundo ataque de solo lectura sobre D2/D5/D7 (cupo, aceptación sin fecha, entrega repetida) y sobre color de marca y escarapela digital. Rama `f3g/ataque-nuevo`. Pruebas: `tests/test_ataque_ronda2.py`.
+
+| Hallazgo | Estado | Qué se hizo / por qué |
+|---|---|---|
+| Cupo H1 (alto): aprobación tardía tras un rechazo entraba sin contar cupo | **Corregido** | `apply_result` (DECLINED/ERROR/VOIDED) adelanta el `created_at` de la inscripción pendiente (no de prueba) más allá de `PENDING_HOLD`; `admit_on_approval` ya no la ve como «apartado vigente» y cuenta confirmadas y pagos en curso: sin cupo queda `refund_due`. Efecto colateral bueno: cupos por variable y códigos se liberan al instante. |
+| Cupo H2 (alto): tope por IP saltable con envíos paralelos; sin tope por cédula | **Corregido** | El tope por IP (`pending_from_ip`) se cuenta ahora DESPUÉS de `reserve_slot` (fila del formulario bloqueada), mismo 429 y mensaje. Nuevo tope por cédula: `FORM_PENDING_MAX_PER_PERSON` (defecto 2, 0 = sin tope; no cuenta la propia sesión). |
+| Cupo H3 (alto/medio): renovar el apartado reenviando con el mismo `sid` sin límite | **Corregido** | `FORM_RENEWALS_MAX` (defecto 5) apartados por sesión en `PENDING_HOLD*3` (`rate_limit_events`, tipo `form_renewal_sid`); al superarlo, 429 sin crear apartado. |
+| Cupo H4 (medio): `purge_stale_pending` O(N) bajo el candado del formulario; conciliación saturada | **Pendiente** | Cambio mayor (LIMIT, filtro SQL y job horario); H2/H3 ya frenan la fuente de pendientes basura. |
+| D5 H5 (bajo/medio): el 403 distingue «inscrita sin fecha» (enumeración de cédulas) | **Aceptado** | Decisión del dueño (la pista del enlace personal es parte de D5); mitigado con 30 por IP / 10 min y 5 fallos por cédula / 15 min. |
+| D5/D7 H6 (bajo): ajustes sin auditoría | **Corregido** | `accept_no_birth_mode` y `allow_repeat_delivery` registran `audit_actions` (valor anterior -> nuevo, sin datos personales) solo si cambian. |
+| Cupo H7 (bajo): orden de candados contrario en el purgado perezoso (posible deadlock 40P01) | **Pendiente** | Raro, sin corrupción (responde 500); se resuelve junto con H4. |
+| Cupo H8 (bajo): pagos de prueba fuera del cupo, `apply_list(hold=True)`, llamada a Wompi por reenvío, `update_item` sin FOR UPDATE | **Pendiente / aceptado** | Mala configuración o rol admin; la amplificación a Wompi queda acotada por H3. |
+| Escarapela H1 (medio): apagar/encender sin auditoría y la selección de teléfono/correo sobrevive | **Corregido** | `set_digital_badge_enabled` audita (`event_digital_badge_enabled`) y al apagar pone `digital_badge_fields = NULL`. |
+| Escarapela H2 (bajo): `/b/{token}/data` sin `Cache-Control` | **Corregido** | `private, no-store`. |
+| Escarapela H3 (bajo): un coordinador decide exponer teléfono/correo sin confirmación del servidor | **Pendiente** | Pedir admin o `confirm_sensitive`; decisión de producto. |
+| Color H4 (bajo): cambiar el color no invalidaba la caché pública del formulario | **Corregido** | `set_event_brand_color` llama `formsvc.invalidate_public_cache()` (solo este proceso; otros hasta ~5 s, y `s-maxage=60` del borde sigue). |
+| Escarapela H5 (bajo): sin límite en `/b/{token}*` | **Aceptado** | Token de 144 bits: la enumeración no es viable; lo cubre Cloudflare. |

@@ -5,7 +5,7 @@ aleatorio y por persona/evento; solo sirve para ver esa escarapela (nunca datos 
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app import crypto, digital_fields
@@ -59,12 +59,12 @@ def digital_badge_data(token: str, db: Session = Depends(get_db)):
     keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), needed, labels)          # A3: sin lista = solo lo que pinta la plantilla y sin correo ni teléfono; con lista = lo que el evento eligió
     person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": has_photo}          # «id» solo alimenta el QR de la escarapela; no es un dato elegible
     person.update(digital_fields.build_person(user, att, keys))
-    return {
+    return JSONResponse({
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
         "person": person,
         "extra_list": _extra_list(db, event, person, keys),
-    }
+    }, headers={"Cache-Control": "private, no-store"})        # puede traer teléfono/correo: nunca en cachés intermedias
 
 
 @router.get("/b/{token}/asset/{tenant_id}/{filename}")

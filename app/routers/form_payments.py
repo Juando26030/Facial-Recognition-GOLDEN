@@ -8,7 +8,7 @@ invitación usada, carga a la base). Si el pago se rechaza o se abandona, esa pe
 terminal; un rechazo puede pasar a aprobado (Wompi deja reintentar con la misma referencia)."""
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from app.timeutil import utcnow
 from typing import Optional
@@ -53,6 +53,12 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         db.rollback()
         return pay
     pay.status = new
+    if new in ("declined", "error", "voided") and pay.submission_id:
+        # H1 (ronda de ataque 2): un resultado negativo libera el cupo; la inscripción pendiente deja de contar como «apartado vigente» para que una aprobación tardía de
+        # la MISMA referencia pase por el conteo completo de `admit_on_approval` (si otra persona ya tomó el cupo, queda en reembolso). Mismo orden de candados: pago -> inscripción.
+        held = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id, FormSubmission.status == formsvc.PENDING, FormSubmission.is_test == False).with_for_update().first()  # noqa: E712
+        if held:
+            held.created_at = utcnow() - formsvc.PENDING_HOLD - timedelta(minutes=1)
     formsvc.invalidate_held()          # un pago rechazado/expirado libera su cupo: la vía rápida del «lleno» no debe seguir rechazando
     pay.transaction_id = transaction_id or pay.transaction_id
     pay.payment_method = method or pay.payment_method

@@ -191,6 +191,8 @@ def set_event_brand_color(
         audit_actions.record(db, staff, "update", "event_brand_color", event.id, event.name, f"{event.brand_color or 'general'} -> {color or 'general'}")
         event.brand_color = color
     db.commit()
+    from app import formsvc          # la página pública del formulario guarda el color unos segundos en caché
+    formsvc.invalidate_public_cache()
     return {"brand_color": event.brand_color}
 
 
@@ -230,7 +232,12 @@ def set_digital_badge_enabled(
     solo correo (se descartó WhatsApp por costo) — al activar, el campo queda `required` por defecto
     (si todavía no tenía una fila propia en event_field_configs, o sea nadie lo había tocado antes)."""
     event = get_event_for_staff(event_id, db, staff)
+    was = bool(event.digital_badge_enabled)
     event.digital_badge_enabled = bool(data.get("enabled"))
+    if was != event.digital_badge_enabled:
+        audit_actions.record(db, staff, "update", "event_digital_badge_enabled", event.id, event.name, f"{was} -> {event.digital_badge_enabled}")
+    if not event.digital_badge_enabled:
+        event.digital_badge_fields = None          # al apagar se olvida la selección: reactivar no vuelve a exponer teléfono/correo sin que alguien lo elija de nuevo
     if event.digital_badge_enabled:
         row = db.query(EventFieldConfig).filter_by(event_id=event_id, field_key="digital_contact").first()
         if not row:

@@ -369,6 +369,9 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
     if "allow_multiple" in data:
         item.allow_multiple = bool(data["allow_multiple"])
     if "allow_repeat_delivery" in data:
+        if bool(data["allow_repeat_delivery"]) != bool(item.allow_repeat_delivery):
+            audit_actions.record(db, staff, "update", "inventory_item", item.id, item.name,
+                                 f"allow_repeat_delivery {bool(item.allow_repeat_delivery)} -> {bool(data['allow_repeat_delivery'])}; evento {item.event_id}")
         item.allow_repeat_delivery = bool(data["allow_repeat_delivery"])
     db.commit()
     return _item_json(item, delivered)

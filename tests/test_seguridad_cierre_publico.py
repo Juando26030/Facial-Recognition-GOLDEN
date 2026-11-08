@@ -149,10 +149,10 @@ def test_x6_hold_is_configurable_and_cap_is_configurable(monkeypatch):
     assert formsvc.pending_max_per_ip() == 30
 
 
-def test_x6_cap_is_checked_before_the_lock_and_marked_in_the_same_transaction():
+def test_x6_cap_is_checked_under_the_lock_and_marked_in_the_same_transaction():      # H2 (ronda de ataque 2): antes se leía sin candado
     src = _src("app/routers/forms_public.py")
     body = src[src.index("def _reserve_and_store"):src.index("def _widget_params")]
-    assert body.index("formsvc.pending_from_ip(") < body.index("formsvc.reserve_slot(")
+    assert body.index("formsvc.reserve_slot(") < body.index("formsvc.pending_from_ip(")
     assert body.index("formsvc.mark_pending_ip(") < body.index("db.commit()")
 
 

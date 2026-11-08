@@ -79,6 +79,7 @@ def _hold_minutes() -> int:
 
 PENDING_HOLD = timedelta(minutes=_hold_minutes())  # una inscripción esperando pago bloquea su cupo este tiempo
 HOLD_NOTICE = "Tu cupo está reservado por {m} minutos mientras pagas."
+RENEWAL_KIND = "form_renewal_sid"   # H3: marca en `rate_limit_events` (key «<form_id>:<sid>») de cada apartado de pago creado por una sesión
 PENDING_IP_KIND = "form_pending_ip"   # X6: marca en `rate_limit_events` (key «<form_id>:<submission_id>», ip) de cada inscripción que queda esperando pago
 PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
 PENDING_PAY_WINDOW = timedelta(days=3)   # C5: mientras su pago siga «pendiente» dentro de esta ventana (la misma de la conciliación con Wompi) la inscripción NO se borra
@@ -309,6 +310,45 @@ def pending_from_ip(db: Session, form: WebForm, ip: str, sid: Optional[str] = No
     if sid:
         q = q.filter(or_(FormSubmission.sid.is_(None), FormSubmission.sid != sid))
     return int(q.scalar() or 0)
+
+
+def pending_max_per_person() -> int:
+    """H2 (ronda de ataque 2): cuántas inscripciones «esperando pago» vivas admite UNA cédula (person_id) en UN formulario, sin contar la de la propia sesión (0 = sin tope)."""
+    try:
+        base = int(os.getenv("FORM_PENDING_MAX_PER_PERSON", "2"))
+    except ValueError:
+        base = 2
+    return max(0, base)
+
+
+def pending_for_person(db: Session, form: WebForm, person_id: str, sid: Optional[str] = None) -> int:
+    """H2: inscripciones reales de ESTE formulario con la misma cédula que siguen esperando pago dentro de PENDING_HOLD, distintas de la propia sesión `sid`.
+    Se llama con el formulario BLOQUEADO (después de `reserve_slot`), así los envíos paralelos se turnan."""
+    q = db.query(func.count(FormSubmission.id)).filter(
+        FormSubmission.form_id == form.id, FormSubmission.person_id == person_id, FormSubmission.status == PENDING,
+        FormSubmission.is_test == False, FormSubmission.created_at > utcnow() - PENDING_HOLD)  # noqa: E712
+    if sid:
+        q = q.filter(or_(FormSubmission.sid.is_(None), FormSubmission.sid != sid))
+    return int(q.scalar() or 0)
+
+
+def renewals_max() -> int:
+    """H3: cuántos apartados de pago puede crear UNA sesión (sid) en un formulario dentro de PENDING_HOLD * 3 (reenviar el formulario descarta el intento anterior y aparta de nuevo). 0 = sin tope."""
+    try:
+        return max(0, int(os.getenv("FORM_RENEWALS_MAX", "5")))
+    except ValueError:
+        return 5
+
+
+def renewals_used(db: Session, form: WebForm, sid: str) -> int:
+    return int(db.query(func.count(RateLimitEvent.id)).filter(
+        RateLimitEvent.kind == RENEWAL_KIND, RateLimitEvent.key == f"{form.id}:{sid}"[:200], RateLimitEvent.created_at > utcnow() - PENDING_HOLD * 3).scalar() or 0)
+
+
+def mark_renewal(db: Session, form: WebForm, sid: Optional[str]) -> None:
+    """H3: anota (en la MISMA transacción de la inscripción) un apartado de pago de esta sesión."""
+    if sid:
+        db.add(RateLimitEvent(kind=RENEWAL_KIND, key=f"{form.id}:{sid}"[:200]))
 
 
 def mark_pending_ip(db: Session, form: WebForm, sub: FormSubmission, ip: Optional[str]) -> None:

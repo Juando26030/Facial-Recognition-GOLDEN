@@ -715,12 +715,11 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if not cfg:
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
             charge = quote["amount"]
-    # X6: tope de inscripciones «esperando pago» simultáneas por IP en este formulario (sin bloqueo: lectura simple antes del `FOR UPDATE`; el cupo lo sigue
-    # decidiendo `form_reserve_slot`). Sin IP confiable (infraestructura de Google) no se aplica, como los demás límites por IP.
-    cap = formsvc.pending_max_per_ip()
-    if charge and not is_test and ip and cap and formsvc.pending_from_ip(db, form, ip, sid, person_id) >= cap:
+    # H3: máximo de apartados de pago por sesión en PENDING_HOLD*3 (reenviar con el mismo `sid` renovaba el apartado sin límite). Lectura simple y barata, ANTES de las llamadas a Wompi.
+    renew_cap = formsvc.renewals_max()
+    if charge and sid and not is_test and renew_cap and formsvc.renewals_used(db, form, sid) >= renew_cap:
         db.rollback()
-        return JSONResponse({"detail": "Hay varias inscripciones esperando pago desde esta conexión. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
+        return JSONResponse({"detail": "Has intentado reservar tu cupo demasiadas veces seguidas. Espera unos minutos antes de volver a intentarlo."}, status_code=429)
 
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
     rules = formsvc.quota_rules(form)
@@ -747,6 +746,16 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if reason == "duplicate":
                 return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
             return JSONResponse({"detail": formsvc.FULL_MSG, "stage": "closed"}, status_code=409)
+        if charge and not is_test:
+            # X6 / H2: topes de inscripciones «esperando pago» simultáneas, contados AQUÍ, con la fila del formulario BLOQUEADA (antes se leían sin candado y los envíos
+            # paralelos los saltaban). Por IP (sin IP confiable —infraestructura de Google— no se aplica, como los demás límites por IP) y por cédula.
+            ip_cap, person_cap = formsvc.pending_max_per_ip(), formsvc.pending_max_per_person()
+            if ip and ip_cap and formsvc.pending_from_ip(db, form, ip, sid, person_id) >= ip_cap:
+                db.rollback()
+                return JSONResponse({"detail": "Hay varias inscripciones esperando pago desde esta conexión. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
+            if person_id and person_cap and formsvc.pending_for_person(db, form, person_id, sid) >= person_cap:
+                db.rollback()
+                return JSONResponse({"detail": "Este documento ya tiene varias inscripciones esperando pago. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
         if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):
             db.rollback()                      # con la fila del formulario BLOQUEADA (reserve_slot): dos envíos simultáneos con el mismo correo/teléfono no pasan los dos
             return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
@@ -777,6 +786,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)
             formsvc.mark_pending_ip(db, form, sub, ip)        # X6: en la misma transacción
+            formsvc.mark_renewal(db, form, sub.sid)           # H3
             db.commit()
             formsvc.bump_held(form)
             uploads.discard(*staged)
