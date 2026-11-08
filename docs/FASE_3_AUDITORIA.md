@@ -6,7 +6,7 @@
 |---|---|---|
 | Hecho | Oleada 1: clientes | Archivar, restaurar, editar y borrado definitivo; registro de acciones (migración `0088`). |
 | Hecho | Oleada 2: usuarios del personal y eventos | Archivar y restaurar cuentas (`0089`); archivar eventos finalizados y L7 (`0090`). |
-| Hecho | Oleada 3: personas y formularios | Archivar, restaurar y borrado definitivo restringido (`0091`). |
+| Hecho | Oleada 3: personas y formularios | Formularios: archivar, restaurar y borrado definitivo restringido (`0091`). Personas: revertido, se borran (ver «Personas: se borran, no se archivan»). |
 | Hecho | Oleada 4-5: catálogos | Áreas, inventario, colores y plantillas de escarapela; tabla de auditoría de escrituras (`0092`). |
 | Hecho | L7 corregido y modo tranquilo | Archiva solo la base del evento, una vez por semana; el Job horario deja descansar la base sin actividad. |
 | Hecho | Decisión: respaldo cada 8 h | Ya aplicada: sin actividad, el respaldo corre a las 3, 4, 5, 11 y 19 h; con actividad, cada hora. La alerta de respaldo viejo pasó a 9 h. |
@@ -77,19 +77,17 @@ Auditoría de borrados que existían: `DELETE /api/users/{id}` (coordinador+, bo
 
 | Acción | digitador | coordinador | comercial | admin | super_admin |
 |---|---|---|---|---|---|
-| Archivar / restaurar persona de un evento | - | - | - | sí | sí |
-| Ver personas archivadas (`GET /users?archived=true`) | - | - | - | sí | sí |
-| Borrar persona definitivo (`DELETE /users/{id}`) | - | - | - | - | sí (inscripción ya archivada) |
+| Borrar persona del evento (`DELETE /users/{id}`) | - | sí | sí | sí | sí (ver sección final: no se archivan personas) |
 | Archivar / restaurar formulario | - | - | - | sí | sí |
 | Ver formularios archivados (`?include_archived=true`) | - | - | - | sí | sí |
 | Borrar formulario definitivo | - | - | - | - | sí (archivado y sin inscripciones ni pagos) |
 | Borrar UNA inscripción de formulario | - | - | - | sí (antes coordinador) | sí |
 
-- **Persona:** `event_attendees.archived_at/archived_by_id`. Archivar oculta a la persona del directorio de ESE evento (lista, total, incremental); no toca `users`, consentimientos, biometría ni registros de acceso. Quien solo tiene accesos (sin precarga) obtiene su inscripción al archivarla. Las estadísticas y la copia sin red no la excluyen (solo es ocultar del directorio).
+- **Persona:** ya no se archiva (ver «Personas: se borran, no se archivan», al final). Las columnas `event_attendees.archived_at/archived_by_id` de `0091` quedan sin uso.
 - **Formulario:** `web_forms.archived_at/archived_by_id`. Archivar lo saca de la lista, lo cierra al público (404 como «finalizado»: ni página, ni estado, ni cotización, ni envíos), pasa «activo» a «cerrado» y apaga el calendario para que al restaurar NO se reabra solo, y no se puede editar ni cambiar su estado hasta restaurarlo. Se conservan inscripciones, archivos y pagos; el webhook de Wompi y la confirmación/estado de un pago ya iniciado siguen funcionando. El borrado definitivo exige archivado y cero inscripciones (las marcas «ya registrado» de la base no cuentan) y cero pagos. Borrar el evento completo sigue su camino de siempre.
-- **Registro (`audit_actions`):** `attendee` (id de la inscripción y «evento N»; nunca cédula ni nombre), `form` (id y nombre del formulario) y `form_submission` (ids). Acciones `archive`, `restore`, `delete`.
-- **UI:** directorio: «Archivar de este evento» (admin+, en «Más» y en «Editar») y chip «Ver archivados» con Restaurar (y «Eliminar definitivamente» para super_admin); formularios: «Archivar» en la tarjeta, casilla «Ver archivados» con Restaurar y, para super_admin, «Eliminar definitivamente».
-- **Pendiente de decidir:** la ruta `DELETE /users/{id}/logs` (histórica, admin+, sin uso) no se tocó; las personas archivadas aún podrían acreditarse por cédula en la puerta (solo se ocultan del directorio).
+- **Registro (`audit_actions`):** `form` (id y nombre del formulario) y `form_submission` (ids). Acciones `archive`, `restore`, `delete`.
+- **UI:** formularios: «Archivar» en la tarjeta, casilla «Ver archivados» con Restaurar y, para super_admin, «Eliminar definitivamente».
+- **Pendiente de decidir:** la ruta `DELETE /users/{id}/logs` (histórica, admin+, sin uso) no se tocó.
 usuarios del personal, eventos (botón archivar + restaurar), personas, formularios; L7 automático; cierre de seguridad (Strix + ZAP en staging, CSP, ENFORCE_STAFF_TENANT). Documentos y legalizaciones de gastos del evento (ver hallazgos de abajo).
 
 ## Oleada catálogos (áreas, inventario, librerías de colores y de plantillas de escarapela)
@@ -383,3 +381,10 @@ Pendiente de decisión: el respaldo, la cola, los reportes vencidos y el precale
 
 ## Cierre de huecos de CRUD (migración `0094_crud_gaps`, 7-nov-2026)
 Detalle y matriz por entidad en [`FASE_3_CRUD_MATRIZ.md`](FASE_3_CRUD_MATRIZ.md). Resumen: estados de evento y plantillas de formulario se archivan/restauran (admin+) y se borran solo super_admin si están archivados; `DELETE /users/{id}/logs` es solo super_admin con confirmación y por evento; «Eliminar los usuarios temporales» ahora archiva; recordatorios del calendario, deshacer acreditación, «Revisar» de la puerta, firmas, accesos de cliente, accesos de personal, códigos de descuento y marcas del formulario dejan `audit_actions`; pantallas «Ver archivados» para colores y plantillas de escarapela.
+
+## Personas: se borran, no se archivan (decisión de Juan David, 7-nov-2026)
+- **Qué cambia:** en el registro de un evento, quitar a una persona (p. ej. alguien creado por error) vuelve a BORRAR de verdad, como antes de la Fase 3. `DELETE /users/{id}` es otra vez de coordinador+ y no exige archivado. Se eliminaron `POST /users/{id}/archive|restore`, el parámetro `archived` de `GET /users` y los filtros de «archivadas» del directorio, el total y el ETag; en la pantalla desaparecieron «Archivar de este evento», el chip «Ver archivados» y su ventana. El botón vuelve a ser «Eliminar de este evento» (coordinador+), con la confirmación «se elimina a X del registro de este evento».
+- **Por qué:** lo que se archiva es LA BASE DE DATOS del evento completa (L7, a los 90 días: `events.data_archived_at`), no personas sueltas. Archivar a una persona por error de captura dejaba datos personales que nadie pensaba usar, y obligaba a pasos extra (archivar, luego un super_admin borrar) para algo que el operador ya hacía bien.
+- **Se conserva el rastro:** cada borrado deja una fila en `audit_actions` (acción `delete`, entidad `event_attendee`, id de la inscripción y «evento N»; nunca cédula ni nombre).
+- **Intacto:** `purge-data`, la revocación, `app/privacy.py`, `audit_consent_logs` (inmutable) y `suppressed_people`.
+- **Columnas sin uso:** `event_attendees.archived_at/archived_by_id` (migración `0091`, ya aplicada en staging) se dejan en el modelo y la migración, marcadas «sin uso: reservado»; ningún código las lee ni las escribe. No se crea migración para quitarlas.

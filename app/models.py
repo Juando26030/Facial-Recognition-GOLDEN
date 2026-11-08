@@ -92,7 +92,7 @@ class EventAttendee(Base):
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
     last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
-    archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = visible en el directorio; con fecha = inscripción archivada (oculta por defecto, se restaura). No toca consentimientos ni audit_consent_logs
+    archived_at = Column(DateTime, nullable=True)  # sin uso: reservado (0091). Las personas se BORRAN del evento (decisión 7-nov-2026); lo que se archiva es la base del evento (events.data_archived_at). Nada la lee ni la escribe
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 

@@ -1,5 +1,5 @@
-"""Fase 3, oleada de personas y formularios (7-nov-2026). Archivar = ocultar y restaurar (admin+); borrado definitivo solo super_admin, de algo ya archivado; todo deja rastro en audit_actions
-sin datos personales. Las rutas de privacidad (purge-data, revocación) y audit_consent_logs no se tocan. Formularios: archivado = cerrado al público pero con respuestas y pagos intactos."""
+"""Fase 3, formularios (7-nov-2026): archivar = cerrado al público pero con respuestas y pagos intactos; borrado definitivo solo super_admin y de algo ya archivado; todo deja rastro en
+audit_actions sin datos personales. Las PERSONAS no se archivan (decisión 7-nov-2026): se borran del registro del evento (coordinador+); ver el bloque de personas."""
 import inspect
 
 import pytest
@@ -27,103 +27,64 @@ def _people(factory, ev_status="en_proceso"):
     return ev
 
 
-# --------------------------------------------------------------------------- personas
+# --------------------------------------------------------------------------- personas: se borran, no se archivan
 def test_sources_guard_roles():
     from app.routers import api, forms
-    assert 'require_role("admin")' in inspect.getsource(api.archive_person)
-    assert 'require_role("admin")' in inspect.getsource(api.restore_person)
-    assert 'require_role("super_admin")' in inspect.getsource(api.delete_user_from_event)
+    assert not hasattr(api, "archive_person") and not hasattr(api, "restore_person")
+    assert 'require_role("coordinador")' in inspect.getsource(api.delete_user_from_event)
     assert "ADMIN" in inspect.getsource(forms.archive_form) and "ADMIN" in inspect.getsource(forms.restore_form)
     assert 'require_role("super_admin")' in inspect.getsource(forms.delete_form)
     assert "ADMIN" in inspect.getsource(forms.delete_submission)
 
 
-def test_archived_person_is_hidden_by_default_and_listed_for_admin_only(client, factory):
+def test_people_have_no_archive_endpoints(client, factory):
     ev = _people(factory)
-    factory.staff("admin", "adm")
-    login(client, "adm")
+    factory.staff("super_admin", "sup")
+    login(client, "sup")
+    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code in (404, 405)
+    assert client.post(f"/api/users/1001/restore?event_id={ev.id}").status_code in (404, 405)
+
+
+@pytest.mark.parametrize("role", ["digitador", "cliente"])
+def test_below_coordinador_cannot_delete_a_person(client, factory, role):
+    ev = _people(factory)
+    staff = factory.staff(role, "actor")
+    factory.authorize(ev, staff)
+    login(client, "actor")
+    assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 403
     assert _ids(client, ev) == {"1001", "1002"}
-    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 200
+
+
+def test_coordinador_deletes_a_person_for_real_and_leaves_an_audit_row_without_personal_data(client, factory, db):
+    ev = _people(factory)
+    accept(db, ev, "1001")
+    before = db.query(AuditConsentLog).count()
+    assert before >= 1
+    staff = factory.staff("coordinador", "coord")
+    factory.authorize(ev, staff)
+    login(client, "coord")
+    att_id = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").first().id
+    assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 200          # sin exigir archivado
+    db.expire_all()
     assert _ids(client, ev) == {"1002"}
-    assert _ids(client, ev, archived="true") == {"1001"}
-    r = client.get("/api/users", params={"event_id": ev.id, "limit": 10, "offset": 0})
-    assert r.headers["X-Total-Count"] == "1"
-    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 400          # ya archivada
-    assert client.post(f"/api/users/1001/restore?event_id={ev.id}").status_code == 200
-    assert _ids(client, ev) == {"1001", "1002"} and _ids(client, ev, archived="true") == set()
-    assert client.post(f"/api/users/1001/restore?event_id={ev.id}").status_code == 400          # ya no está archivada
+    assert db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").first() is None
+    assert db.get(User, ("1001", ev.tenant_id)) is None and db.get(User, ("1002", ev.tenant_id)) is not None
+    assert db.query(AuditConsentLog).count() == before                                    # lo legal es inmutable: borrar a la persona no lo toca
+    rows = db.query(AuditAction).all()
+    assert len(rows) == 1 and rows[0].action == "delete" and rows[0].entity == "event_attendee" and rows[0].actor_role == "coordinador"
+    assert rows[0].entity_id == str(att_id) and rows[0].detail == f"evento {ev.id}"
+    blob = " ".join(f"{r.entity_id} {r.entity_name} {r.detail}" for r in rows)
+    assert "1001" not in blob.replace(f"evento {ev.id}", "") and "Ana" not in blob and "Mora" not in blob
 
 
-def test_archive_is_scoped_to_one_event(client, factory):
+def test_delete_is_scoped_to_one_event(client, factory, db):
     ev = _people(factory)
     other = factory.event("en_proceso")
     factory.person(other, "1001")
     factory.staff("admin", "adm")
     login(client, "adm")
-    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 200
-    assert _ids(client, other) == {"1001"}
-
-
-@pytest.mark.parametrize("role", ["digitador", "coordinador", "comercial"])
-def test_only_admin_plus_archives_restores_lists_archived_and_nobody_below_super_deletes(client, factory, role):
-    ev = _people(factory)
-    staff = factory.staff(role, "actor")
-    factory.authorize(ev, staff)
-    login(client, "actor")
-    assert client.post(f"/api/users/1001/archive?event_id={ev.id}").status_code == 403
-    assert client.post(f"/api/users/1001/restore?event_id={ev.id}").status_code == 403
-    assert client.get("/api/users", params={"event_id": ev.id, "archived": "true"}).status_code == 403
-    assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 403
-
-
-def test_hard_delete_of_a_person_needs_super_admin_and_an_archived_enrollment(client, factory, db):
-    ev = _people(factory)
-    factory.staff("admin", "adm")
-    factory.staff("super_admin", "sup")
-    login(client, "adm")
-    client.post(f"/api/users/1001/archive?event_id={ev.id}")
-    assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 403                # admin archiva, no borra
-    login(client, "sup")
-    assert client.delete(f"/api/users/1002?event_id={ev.id}").status_code == 400                # sin archivar no se borra
     assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 200
-    db.expire_all()
-    assert db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").first() is None
-    assert db.get(User, ("1001", ev.tenant_id)) is None and db.get(User, ("1002", ev.tenant_id)) is not None
-
-
-def test_archiving_does_not_touch_consent_logs_and_logs_without_personal_data(client, factory, db):
-    ev = _people(factory)
-    accept(db, ev, "1001")
-    before = db.query(AuditConsentLog).count()
-    assert before >= 1
-    factory.staff("admin", "adm")
-    factory.staff("super_admin", "sup")
-    login(client, "adm")
-    client.post(f"/api/users/1001/archive?event_id={ev.id}")
-    client.post(f"/api/users/1001/restore?event_id={ev.id}")
-    client.post(f"/api/users/1001/archive?event_id={ev.id}")
-    login(client, "sup")
-    client.delete(f"/api/users/1001?event_id={ev.id}")
-    db.expire_all()
-    assert db.query(AuditConsentLog).count() == before                                          # lo legal es inmutable: ni archivar ni borrar a la persona lo toca
-    rows = db.query(AuditAction).order_by(AuditAction.id).all()
-    assert [r.action for r in rows] == ["archive", "restore", "archive", "delete"] and all(r.entity == "attendee" for r in rows)
-    assert [r.actor_role for r in rows] == ["admin", "admin", "admin", "super_admin"]
-    blob = " ".join(f"{r.entity_id} {r.entity_name} {r.detail}" for r in rows)
-    assert "1001" not in blob.replace(f"evento {ev.id}", "") and "Ana" not in blob and "Mora" not in blob
-
-
-def test_a_person_with_only_access_logs_can_still_be_archived(client, factory, db):
-    from app.models import AccessLog
-    ev = factory.event("en_proceso")
-    factory.person(ev, "3003", "Sin", "Precarga", attend=False)
-    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="3003", record_type="Nuevo", event_id=ev.id))
-    db.commit()
-    factory.staff("admin", "adm")
-    login(client, "adm")
-    assert _ids(client, ev) == {"3003"}
-    assert client.post(f"/api/users/3003/archive?event_id={ev.id}").status_code == 200
-    assert _ids(client, ev) == set() and _ids(client, ev, archived="true") == {"3003"}
+    assert _ids(client, other) == {"1001"}
 
 
 # --------------------------------------------------------------------------- formularios

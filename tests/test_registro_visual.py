@@ -133,8 +133,8 @@ def test_row_actions_are_visible_in_one_line_and_more_is_only_for_the_rare_destr
         assert label in row, label
     assert "actBtn('Imprimir', 'printer'" in row and "actBtn('Editar', 'edit'" in row and "'Imprimir escarapela'" in row
     more = row[row.index("buildMoreMenu(["):]
-    assert "Archivar de este evento" in more and "Imprimir" not in more.split("who));")[0] and "Editar" not in more.split("who));")[0], "«Más» no esconde imprimir ni editar"
-    assert "function archivePerson" in DIR_JS and "showConfirm(" in DIR_JS[DIR_JS.index("async function personAction"):DIR_JS.index("function buildEditModal")]
+    assert "Eliminar de este evento" in more and "Imprimir" not in more.split("who));")[0] and "Editar" not in more.split("who));")[0], "«Más» no esconde imprimir ni editar"
+    assert "async function deletePerson" in DIR_JS and "showConfirm(" in DIR_JS[DIR_JS.index("async function deletePerson"):DIR_JS.index("function buildEditModal")]
     assert "btn-table-action" in row and "btn-accredit-row" in row and "is-done" in row, "clases para el modo touch y el estado «Acreditado»"
     assert re.search(r"\.gw-registro \.action-cell \{[^}]*flex-wrap: nowrap", REG_CSS), "una sola línea"
     assert re.search(r"\.gw-registro \.action-cell \.gw-btn \{[^}]*min-height: var\(--gw-tap\)", REG_CSS), "44 px"

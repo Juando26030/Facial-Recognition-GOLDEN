@@ -296,68 +296,24 @@
      exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
-  /* Fase 3: lo normal es ARCHIVAR (admin+; oculta a la persona del directorio de este evento y se restaura desde «Ver archivados»). Borrar de verdad es solo de super_admin, desde «Ver archivados». */
-  const isSuper = window.STAFF_ROLE === 'super_admin';
-  async function personAction(user, method, path, confirmMsg, confirmLabel, okMsg, done) {
+  /* Eliminar a una persona del evento (con confirmación; la usan «Editar persona» y el menú «Más» de la fila). done() corre solo si se eliminó. */
+  async function deletePerson(user, done) {
     const GCd = window.GoldenContingency && window.GoldenContingency.instance;
     if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
-    if (confirmMsg && !(await showConfirm(confirmMsg, { confirmLabel }))) return;
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    const ok = await showConfirm(`Atención: se elimina a ${window.escapeHtml(fullName || 'esta persona')} del registro de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
+    if (!ok) return;
     try {
-      const res = await fetch(withEvent(`/api/users/${encodeURIComponent(user.id)}${path}`), { method });
+      const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
       if (res.ok) {
-        showToast(okMsg, 'success');
+        showToast('Persona eliminada', 'success');
         if (done) done();
         if (window.directorySearch) window.directorySearch.reload();
       } else {
         const data = await res.json().catch(() => ({}));
-        showToast(data.detail || 'No se pudo completar la acción', 'error');
+        showToast(data.detail || 'No se pudo eliminar', 'error');
       }
     } catch (e) { showToast('Error de red', 'error'); }
-  }
-  function archivePerson(user, done) {
-    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    return personAction(user, 'POST', '/archive', `¿Archivar a ${window.escapeHtml(fullName || 'esta persona')} de este evento? Deja de aparecer en el directorio; no se borra nada y un administrador puede restaurarla desde «Ver archivados».`, 'Archivar', 'Persona archivada', done);
-  }
-  function restorePerson(user, done) { return personAction(user, 'POST', '/restore', '', '', 'Persona restaurada', done); }
-  function deletePersonForever(user, done) {
-    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    return personAction(user, 'DELETE', '', `Atención: esto elimina DEFINITIVAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer y queda registrado. ¿Continuar?`, 'Eliminar definitivamente', 'Persona eliminada', done);
-  }
-
-  /* «Ver archivados» (admin+): ventana con las inscripciones archivadas de este evento, para restaurarlas (o, super_admin, borrarlas del todo). Aparte de la tabla principal a propósito. */
-  async function openArchivedPeople() {
-    const overlay = document.createElement('div');
-    overlay.className = 'gw-modal-backdrop gw-registro__edit'; overlay.setAttribute('data-open', 'true');
-    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', 'Personas archivadas');
-    overlay.innerHTML = '<div class="gw-modal"><div class="gw-modal__head"><h4 class="gw-modal__title">Personas archivadas</h4></div><div class="gw-modal__body" data-arch-body role="status">Cargando…</div><div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-arch-close>Cerrar</button></div></div>';
-    document.body.appendChild(overlay);
-    const body = overlay.querySelector('[data-arch-body]');
-    const close = () => overlay.remove();
-    let rows = [];
-    const draw = () => {
-      body.innerHTML = '';
-      if (!rows.length) { body.textContent = 'No hay personas archivadas en este evento.'; return; }
-      rows.forEach((u) => {
-        const line = document.createElement('div'); line.className = 'gw-toolbar';
-        const name = document.createElement('div'); name.className = 'gw-toolbar__grow';
-        name.textContent = `${u.first_name || ''} ${u.last_name || ''}`.trim() + ' · ' + u.id;
-        const back = document.createElement('button'); back.type = 'button'; back.className = 'gw-btn gw-btn--secondary gw-btn--sm'; back.textContent = 'Restaurar';
-        back.addEventListener('click', () => restorePerson(u, () => { rows = rows.filter((x) => x.id !== u.id); draw(); }));
-        line.appendChild(name); line.appendChild(back);
-        if (isSuper) {
-          const del = document.createElement('button'); del.type = 'button'; del.className = 'gw-btn gw-btn--danger-outline gw-btn--sm'; del.textContent = 'Eliminar definitivamente';
-          del.addEventListener('click', () => deletePersonForever(u, () => { rows = rows.filter((x) => x.id !== u.id); draw(); }));
-          line.appendChild(del);
-        }
-        body.appendChild(line);
-      });
-    };
-    overlay.querySelector('[data-arch-close]').addEventListener('click', close);
-    try {
-      const res = await fetch(withEvent('/api/users?archived=true'));
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Error');
-      rows = await res.json(); draw();
-    } catch (e) { body.textContent = 'No se pudo cargar la lista: ' + e.message; }
   }
 
   function buildEditModal(user, opts) {
@@ -456,7 +412,7 @@
         </select>
         <p class="gw-hint">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
-      ${isAdmin ? `<button type="button" id="editModalArchive" class="gw-btn gw-btn--danger-outline gw-btn--block"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-trash"/></svg>Archivar de este evento</button>` : ''}
+      <button type="button" id="editModalDelete" class="gw-btn gw-btn--danger gw-btn--block"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-trash"/></svg>Eliminar de este evento</button>
       ` : ''}
       </div>
     `;
@@ -656,8 +612,8 @@
       try { await busyBtn(box.querySelector('#editModalSave'), saveHandler); } finally { cancelPrimedPrint(); }
     });
 
-    if (isAdmin) {
-      box.querySelector('#editModalArchive').addEventListener('click', () => archivePerson(user, close));
+    if (canManageStatus) {
+      box.querySelector('#editModalDelete').addEventListener('click', () => deletePerson(user, close));
     }
   }
 
@@ -752,7 +708,7 @@
       const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
       editBtn.addEventListener('click', () => buildEditModal(user));
       actionTd.appendChild(editBtn);
-      if (!user.__local && isAdmin) actionTd.appendChild(buildMoreMenu([{ label: 'Archivar de este evento', danger: true, run: () => archivePerson(user) }], who));          // Fase 3: archivar es de admin+ (antes eliminar era de coordinador+); borrar de verdad, solo super_admin desde «Ver archivados»
+      if (!user.__local && canManageStatus) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));          // eliminar es de coordinador en adelante: el digitador (temporal o no) no ve ni «Más»
     }
 
     tr.appendChild(actionTd);
@@ -869,12 +825,6 @@
         applyFilters();
       });
       place(counterBtn);
-      if (isAdmin) {
-        const archBtn = document.createElement('button');
-        archBtn.type = 'button'; archBtn.className = 'gw-chip'; archBtn.textContent = 'Ver archivados';
-        archBtn.addEventListener('click', openArchivedPeople);
-        place(archBtn);
-      }
 
       totalCounterEl = document.createElement('span');
       totalCounterEl.className = 'total-registered-counter gw-chip gw-chip--ok';
