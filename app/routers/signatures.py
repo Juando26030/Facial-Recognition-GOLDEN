@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import StaffUser, User
-from app import safe_limits
+from app import audit_actions, safe_limits
 from app.storage import get_storage, key_of
 
 router = APIRouter()
@@ -91,4 +91,6 @@ def delete_signature(
 ):
     event = _resolve(db, event_id, user_id, field_key, staff)
     get_storage().delete(signature_key(event.tenant_id, event_id, user_id, field_key))
+    audit_actions.record(db, staff, "delete", "signature", event.id, None, f"evento {event.id}, campo {field_key[:40]}")          # sin cédula
+    db.commit()
     return {"message": "Firma eliminada"}

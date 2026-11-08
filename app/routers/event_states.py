@@ -1,5 +1,5 @@
 """Estados de evento configurables (docs/18 §4): el administrador crea los que quiera y le adjunta reglas a cada uno (qué se habilita mientras un evento está en ese estado).
-Lectura para cualquier usuario del sistema con sesión (los menús de estado la necesitan); crear, editar y borrar: administrador o más."""
+Lectura para cualquier usuario del sistema con sesión (los menús de estado la necesitan); crear, editar, archivar y restaurar: administrador o más; borrado definitivo: solo super_admin (Fase 3)."""
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,10 +7,11 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import event_rules
+from app import audit_actions, event_rules
 from app.auth import get_current_staff, require_role
 from app.database import get_db
 from app.models import Event, EventState, StaffUser
+from app.timeutil import utcnow
 
 router = APIRouter()
 
@@ -35,7 +36,7 @@ class StatePatch(BaseModel):
 
 def serialize_state(s: EventState, events_using: int = 0) -> dict:
     full = event_rules.DEFAULTS_BY_BASE.get(s.base_status, {}) | {k: v for k, v in s.get_rules().items() if k in event_rules.RULES}
-    return {"id": s.id, "name": s.name, "base_status": s.base_status, "color": s.color, "position": s.position, "is_active": s.is_active, "rules": full, "events_using": events_using}
+    return {"id": s.id, "name": s.name, "base_status": s.base_status, "color": s.color, "position": s.position, "is_active": s.is_active, "rules": full, "events_using": events_using, "archived": s.archived_at is not None}
 
 
 def _check(name: Optional[str], base: Optional[str]) -> None:
@@ -46,9 +47,16 @@ def _check(name: Optional[str], base: Optional[str]) -> None:
 
 
 @router.get("/event-states")
-def list_states(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+def list_states(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+    """Por defecto SOLO los no archivados (los menús de estado no ofrecen los archivados). `include_archived=true` (con los archivados) es de admin+."""
     counts = dict(db.query(Event.state_id, func.count(Event.id)).group_by(Event.state_id).all())
-    states = db.query(EventState).order_by(EventState.position, EventState.id).all()
+    query = db.query(EventState)
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los estados archivados")
+    else:
+        query = query.filter(EventState.archived_at.is_(None))
+    states = query.order_by(EventState.position, EventState.id).all()
     return {"states": [serialize_state(s, counts.get(s.id, 0)) for s in states],
             "rules": [{"key": k, "label": label, "help": hint} for k, (label, hint) in event_rules.RULES.items()],
             "base_statuses": list(event_rules.BASE_STATUSES)}
@@ -73,6 +81,8 @@ def update_state(state_id: int, data: StatePatch, db: Session = Depends(get_db),
     state = db.get(EventState, state_id)
     if not state:
         raise HTTPException(status_code=404, detail="Estado no encontrado")
+    if state.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El estado está archivado: restáuralo para editarlo")
     _check(data.name, data.base_status)
     fields = data.dict(exclude_unset=True)
     if "name" in fields:
@@ -97,16 +107,57 @@ def update_state(state_id: int, data: StatePatch, db: Session = Depends(get_db),
     return serialize_state(state, using.count())
 
 
-@router.delete("/event-states/{state_id}")
-def delete_state(state_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def _state_or_404(db: Session, state_id: int) -> EventState:
     state = db.get(EventState, state_id)
     if not state:
         raise HTTPException(status_code=404, detail="Estado no encontrado")
+    return state
+
+
+@router.post("/event-states/{state_id}/archive")
+def archive_state(state_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Archivar = dejar de ofrecer el estado (queda inactivo y fuera de los menús). Mismas reglas que desactivarlo: ningún evento puede estar en él y debe quedar otro estado activo con el
+    mismo estado base (el sistema lo necesita). No borra nada; un administrador lo restaura."""
+    state = _state_or_404(db, state_id)
+    if state.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El estado ya está archivado")
+    if db.query(Event).filter(Event.state_id == state_id).count():
+        raise HTTPException(status_code=400, detail="Hay eventos en este estado: muévalos a otro antes de archivarlo")
+    if state.is_active:
+        others = db.query(EventState).filter(EventState.base_status == state.base_status, EventState.id != state_id, EventState.is_active == True, EventState.archived_at.is_(None)).count()  # noqa: E712
+        if not others:
+            raise HTTPException(status_code=400, detail=f"Es el único estado activo con estado base «{state.base_status}»: el sistema lo necesita (cree otro antes)")
+    state.is_active = False
+    state.archived_at = utcnow()
+    state.archived_by_id = staff.id
+    audit_actions.record(db, staff, "archive", "event_state", state.id, state.name)
+    db.commit()
+    return serialize_state(state)
+
+
+@router.post("/event-states/{state_id}/restore")
+def restore_state(state_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Restaurar lo deja ACTIVO otra vez."""
+    state = _state_or_404(db, state_id)
+    if state.archived_at is None:
+        raise HTTPException(status_code=400, detail="El estado no está archivado")
+    state.archived_at = None
+    state.archived_by_id = None
+    state.is_active = True
+    audit_actions.record(db, staff, "restore", "event_state", state.id, state.name)
+    db.commit()
+    return serialize_state(state)
+
+
+@router.delete("/event-states/{state_id}")
+def delete_state(state_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """Borrado DEFINITIVO (Fase 3): solo super_admin, solo de un estado ya ARCHIVADO y que ningún evento use; queda en `audit_actions`. Lo normal es archivar."""
+    state = _state_or_404(db, state_id)
+    if state.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el estado; el borrado definitivo solo aplica a estados archivados")
     if db.query(Event).filter(Event.state_id == state_id).count():
         raise HTTPException(status_code=400, detail="Hay eventos en este estado: muévalos a otro antes de borrarlo")
-    others = db.query(EventState).filter(EventState.base_status == state.base_status, EventState.id != state_id, EventState.is_active == True).count()  # noqa: E712
-    if not others:
-        raise HTTPException(status_code=400, detail=f"Es el único estado activo con estado base «{state.base_status}»: el sistema lo necesita (cree otro antes)")
+    audit_actions.record(db, staff, "delete", "event_state", state.id, state.name)
     db.delete(state)
     db.commit()
     return {"deleted": state_id}

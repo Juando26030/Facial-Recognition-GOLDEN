@@ -260,20 +260,20 @@
         });
     }
 
-    // Eliminar de una vez todos los usuarios temporales (digitadores) de este evento: es «Borrar permanente» para todos, así que pide confirmar con el número exacto.
+    // Fase 3: archivar de una vez todos los usuarios temporales (digitadores) de este evento (ya no se borran); pide confirmar con el número exacto.
     if (purgeBtn) {
         purgeBtn.addEventListener('click', () => {
             const n = allUsers.filter((u) => u.role === 'digitador').length;
             return busy(purgeBtn, async () => {
-                const ok = await showConfirm(`Se van a eliminar PERMANENTEMENTE las ${n} cuentas de digitador de este evento (no solo quitarlas del evento). Pierden el acceso aquí y se borran del sistema; no se puede deshacer. Si alguna también está en otro evento, a esa solo se le quita este evento. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
+                const ok = await showConfirm(`Se van a ARCHIVAR las ${n} cuentas de digitador de este evento: pierden el acceso y dejan de iniciar sesión, pero no se borra nada y un administrador puede restaurarlas. Si alguna también está en otro evento, a esa solo se le quita este evento. ¿Seguro?`, { confirmLabel: `Archivar ${n} cuenta(s)` });
                 if (!ok) return;
                 const res = await fetch(`/api/events/${eventId}/staff-users/purge-temporary`, { method: 'POST' });
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {
                     pageIdx = 0;
                     loadTempUsers();
-                    showToast(`${d.deleted} cuenta(s) eliminada(s)` + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
-                } else showToast(d.detail || 'No se pudieron eliminar las cuentas', 'error');
+                    showToast(`${d.archived} cuenta(s) archivada(s)` + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
+                } else showToast(d.detail || 'No se pudieron archivar las cuentas', 'error');
             }).catch(() => showToast('No se pudo completar la acción. Revisa la conexión.', 'error'));
         });
     }

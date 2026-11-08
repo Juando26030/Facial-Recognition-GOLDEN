@@ -790,35 +790,34 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
 
 @router.post("/events/{event_id}/staff-users/purge-temporary")
 def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Borra de una vez TODAS las cuentas digitador asignadas a este evento (lo mismo que «Borrar permanente», una por una). Una cuenta que además está asignada a OTRO evento no se borra:
-    solo se quita de este (para no dejar sin acceso a un evento ajeno); el resultado dice cuántas de cada tipo."""
+    """Fase 3: «Eliminar todas» las cuentas digitador de este evento ya NO las borra: las ARCHIVA (se desactivan, se les cierra la sesión y se les quita el acceso a este evento y sus equipos
+    de impresión). El borrado definitivo es de super_admin, cuenta por cuenta y desde lo archivado (`DELETE /staff/{id}`). Una cuenta que además está asignada a OTRO evento no se archiva:
+    solo se quita de este (para no dejar sin acceso a un evento ajeno). Queda UN registro en `audit_actions` con el total (nunca los usuarios: el del digitador es su cédula)."""
     _can_manage_temp(staff)
     event = get_event_for_staff(event_id, db, staff)
     ids = [r[0] for r in db.query(EventStaffAuthorization.staff_user_id).join(StaffUser, StaffUser.id == EventStaffAuthorization.staff_user_id)
            .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador")]
-    from app import staff_refs
-    deleted, only_unassigned, deactivated = 0, 0, 0
+    from app import sessions
+    archived, only_unassigned = 0, 0
     for sid in ids:
         if sid == staff.id:
             continue
         elsewhere = db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == sid, EventStaffAuthorization.event_id != event.id).count()
+        db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=sid).delete()
+        db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=sid).delete()
+        db.query(PrintRoute).filter_by(event_id=event.id, staff_user_id=sid).delete()
+        db.query(PrintRoute).filter_by(event_id=event.id, printer_staff_id=sid).update({"printer_staff_id": None})
         if elsewhere:
-            db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=sid).delete()
-            db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=sid).delete()
-            db.query(PrintRoute).filter_by(event_id=event.id, staff_user_id=sid).delete()
-            db.query(PrintRoute).filter_by(event_id=event.id, printer_staff_id=sid).update({"printer_staff_id": None})
             only_unassigned += 1
             continue
-        db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == sid).delete()
-        db.query(PrintDevice).filter_by(staff_user_id=sid).delete()
-        db.query(PrintRoute).filter_by(staff_user_id=sid).delete()
         target = db.get(StaffUser, sid)
-        if staff_refs.delete_or_deactivate(db, target) == "deleted":      # D3: suelta TODO lo que la menciona (impresiones, áreas, inventario, cargas, formularios…)
-            deleted += 1
-        else:
-            deactivated += 1
+        if target.archived_at is None:
+            target.archived_at, target.archived_by_id, target.is_active = utcnow(), staff.id, False
+            sessions.revoke_all(target)
+        archived += 1
+    audit_actions.record(db, staff, "archive", "staff_user", f"evento {event.id}", None, f"evento {event.id}: {archived} cuenta(s) de digitador archivada(s), {only_unassigned} solo quitada(s) del evento")
     db.commit()
-    return {"deleted": deleted, "only_unassigned": only_unassigned, "deactivated": deactivated}
+    return {"archived": archived, "only_unassigned": only_unassigned}
 
 
 @router.delete("/events/{event_id}/staff-users/{staff_id}")
@@ -834,6 +833,7 @@ def revoke_event_staff(
     auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
     if not target or not auth or target.role not in ("digitador", "cliente"):
         raise HTTPException(status_code=404, detail="Esa cuenta no tiene acceso a este evento")      # coordinador+ no se autoriza por evento: no hay nada que revocar aquí
+    audit_actions.record(db, staff, "revoke", "event_staff_access", auth.id, None, f"evento {event.id}: acceso de la cuenta {staff_id} revocado")          # nunca el usuario (el del digitador es su cédula)
     db.delete(auth)
     db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff_id).delete()
     db.query(PrintRoute).filter_by(event_id=event.id, staff_user_id=staff_id).delete()

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
-from app import crypto, faces, security
+from app import audit_actions, crypto, faces, security
 from app.auth import get_event_for_staff, require_event_in_progress, require_role
 from app.database import get_db
 from app.models import AccessLog, PersonChange, RateLimitEvent, StaffUser, SystemEvent, User
@@ -176,6 +176,7 @@ def door_revert(event_id: int, log_id: int, db: Session = Depends(get_db), staff
     event = get_event_for_staff(event_id, db, staff)
     log = _recent_log(db, event, log_id)
     uid = log.user_id
+    audit_actions.record(db, staff, "delete", "access_log", log.id, None, f"evento {event.id}: entrada por rostro revertida en «Revisar»")          # sin cédula; el cambio por persona queda en PersonChange
     db.delete(log)
     db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind="registration_status",
                         old_value="Registrado", new_value="No registrado", detail=REVERT_DETAIL))

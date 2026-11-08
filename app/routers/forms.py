@@ -32,6 +32,7 @@ from app.timeutil import to_local
 router = APIRouter()
 STAFF = require_role("coordinador")
 ADMIN = require_role("admin")
+SUPER = require_role("super_admin")          # Fase 3: borrado definitivo
 
 
 # ------------------------------------------------------------------ utilidades
@@ -134,7 +135,7 @@ def create_form(event_id: int, data: dict, request: Request, db: Session = Depen
     if not name:
         raise HTTPException(status_code=400, detail="Ponle un nombre al formulario")
     if data.get("template_id"):
-        tpl = db.query(SavedFormTemplate).filter_by(id=data["template_id"], tenant_id=event.tenant_id).first()
+        tpl = db.query(SavedFormTemplate).filter_by(id=data["template_id"], tenant_id=event.tenant_id, archived_at=None).first()
         if not tpl:
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
         design = json.loads(tpl.design_json)
@@ -375,6 +376,7 @@ def clear_registered(event_id: int, form_id: int, db: Session = Depends(get_db),
     form = _get_form(db, event, form_id)
     db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
     n = formsvc.clear_marks(db, form)
+    audit_actions.record(db, staff, "delete", "form_marks", form.id, form.name, f"evento {event.id}: {n} marca(s) «ya registrado»")
     db.commit()
     formsvc.invalidate_public_cache()
     formsvc.invalidate_held()
@@ -734,6 +736,7 @@ def delete_code(event_id: int, form_id: int, code_id: int, db: Session = Depends
         raise HTTPException(status_code=404, detail="Código no encontrado")
     if db.query(FormSubmission).filter(FormSubmission.discount_code_id == code.id).first():
         raise HTTPException(status_code=409, detail="Ese código ya se usó: no se puede borrar (queda como registro). Si no quieres que se use más, quita el descuento del diseño.")
+    audit_actions.record(db, staff, "delete", "form_discount_code", code.id, None, f"formulario {form.id}, evento {event.id} (código sin usos)")
     db.delete(code)
     db.commit()
     return {"message": "Código eliminado"}
@@ -765,10 +768,16 @@ def form_id_docs(staff: StaffUser = Depends(STAFF)):
 
 
 @router.get("/events/{event_id}/form-templates")
-def list_templates(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_templates(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Librería de diseños del cliente. Por defecto sin los archivados; `include_archived=true` (con ellos) es de admin+."""
     event = get_event_for_staff(event_id, db, staff)
-    rows = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id).order_by(SavedFormTemplate.name).all()
-    return [{"id": t.id, "name": t.name, "fields": len(json.loads(t.design_json)["fields"])} for t in rows]
+    query = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id)
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver las plantillas archivadas")
+    else:
+        query = query.filter(SavedFormTemplate.archived_at.is_(None))
+    return [{"id": t.id, "name": t.name, "fields": len(json.loads(t.design_json)["fields"]), "archived": t.archived_at is not None} for t in query.order_by(SavedFormTemplate.name).all()]
 
 
 @router.post("/events/{event_id}/forms/{form_id}/save-as-template")
@@ -779,6 +788,8 @@ def save_template(event_id: int, form_id: int, data: dict, db: Session = Depends
     if not name:
         raise HTTPException(status_code=400, detail="Ponle un nombre a la plantilla")
     tpl = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id, name=name).first()
+    if tpl and tpl.archived_at is not None:
+        raise HTTPException(status_code=400, detail="Ya hay una plantilla archivada con ese nombre: restáurala (un administrador) o usa otro nombre")
     if tpl:
         tpl.design_json = form.design_json          # mismo nombre: se actualiza
     else:
@@ -788,12 +799,46 @@ def save_template(event_id: int, form_id: int, data: dict, db: Session = Depends
     return {"id": tpl.id, "name": tpl.name}
 
 
-@router.delete("/events/{event_id}/form-templates/{template_id}")
-def delete_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
-    event = get_event_for_staff(event_id, db, staff)
+def _template_or_404(db: Session, event, template_id: int) -> SavedFormTemplate:
     tpl = db.query(SavedFormTemplate).filter_by(id=template_id, tenant_id=event.tenant_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    return tpl
+
+
+@router.post("/events/{event_id}/form-templates/{template_id}/archive")
+def archive_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Fase 3: archivar = sacarla de la librería (deja de ofrecerse); los formularios ya creados con ella no cambian. Un administrador la restaura."""
+    event = get_event_for_staff(event_id, db, staff)
+    tpl = _template_or_404(db, event, template_id)
+    if tpl.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La plantilla ya está archivada")
+    tpl.archived_at, tpl.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "saved_form_template", tpl.id, tpl.name)
+    db.commit()
+    return {"id": tpl.id, "name": tpl.name, "archived": True}
+
+
+@router.post("/events/{event_id}/form-templates/{template_id}/restore")
+def restore_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    event = get_event_for_staff(event_id, db, staff)
+    tpl = _template_or_404(db, event, template_id)
+    if tpl.archived_at is None:
+        raise HTTPException(status_code=400, detail="La plantilla no está archivada")
+    tpl.archived_at, tpl.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "saved_form_template", tpl.id, tpl.name)
+    db.commit()
+    return {"id": tpl.id, "name": tpl.name, "archived": False}
+
+
+@router.delete("/events/{event_id}/form-templates/{template_id}")
+def delete_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(SUPER)):
+    """Borrado DEFINITIVO (Fase 3): solo super_admin y de una plantilla ya archivada. Los formularios creados con ella guardan su propia copia del diseño."""
+    event = get_event_for_staff(event_id, db, staff)
+    tpl = _template_or_404(db, event, template_id)
+    if tpl.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva la plantilla; el borrado definitivo solo aplica a plantillas archivadas")
+    audit_actions.record(db, staff, "delete", "saved_form_template", tpl.id, tpl.name)
     db.delete(tpl)
     db.commit()
     return {"message": "Plantilla eliminada de la librería"}
