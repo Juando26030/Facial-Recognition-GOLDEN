@@ -22,20 +22,26 @@ def reconcile_pending(db: Session, limit: int = 200) -> dict:
     from app.routers.form_payments import apply_result
     now = utcnow()
     pending = (db.query(FormPayment).filter(FormPayment.status == "pending", FormPayment.created_at < now - MIN_AGE, FormPayment.created_at > now - MAX_AGE)
-               .order_by(FormPayment.created_at).limit(limit).all())
+               .order_by(FormPayment.updated_at.asc().nullsfirst(), FormPayment.created_at).limit(limit).all())      # R3: los que llevan más tiempo SIN mirarse primero
     summary = {"checked": len(pending), "updated": 0, "not_found": 0, "unavailable": 0, "mismatch": 0}
     for pay in pending:
         cfg = wompi.config(pay.is_test)
         if not cfg:
             summary["unavailable"] += 1
+            pay.updated_at = utcnow()
+            db.commit()
             continue
         txn = wompi.fetch_by_reference(cfg, pay.reference)
         if not txn:
             summary["not_found"] += 1               # la persona nunca llegó a pagar (o Wompi no respondió): se reintenta en la próxima corrida
+            pay.updated_at = utcnow()               # R3: rota. Sin esto, 200+ pagos abandonados ocupaban SIEMPRE el límite y los recientes (cuyo webhook se perdió) no se sanaban nunca
+            db.commit()
             continue
         if int(txn.get("amount_in_cents") or -1) != pay.amount_cents or txn.get("currency") != pay.currency:
             summary["mismatch"] += 1
             log.warning("el pago %s no coincide con la transacción de Wompi (monto o moneda)", pay.id)
+            pay.updated_at = utcnow()
+            db.commit()
             continue
         before = pay.status
         updated = apply_result(db, pay.id, txn.get("status", ""), txn.get("id"), txn.get("payment_method_type"))
