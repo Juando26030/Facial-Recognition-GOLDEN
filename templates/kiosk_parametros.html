@@ -150,7 +150,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-choice"><input type="radio" name="brandMode" value="default" {% if not event.brand_color %}checked{% endif %}> <span class="gw-choice__text">Color de Golden</span></label>
               <label class="gw-choice"><input type="radio" name="brandMode" value="custom" {% if event.brand_color %}checked{% endif %}> <span class="gw-choice__text">Color propio</span></label>
               <div class="gw-field"><label class="gw-label" for="brandColor">Color</label>
-                <input type="color" id="brandColor" class="gw-input" value="{{ event.brand_color or '#1e2a6e' }}" {% if not event.brand_color %}disabled{% endif %}></div>
+                <input type="color" id="brandColor" class="gw-input" value="{{ event.brand_color or brand_default }}" {% if not event.brand_color %}disabled{% endif %}></div>
             </fieldset>
           </div>
         </section>

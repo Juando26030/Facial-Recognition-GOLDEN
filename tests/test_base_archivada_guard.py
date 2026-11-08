@@ -130,7 +130,7 @@ ALLOW = {
                  "duplicate_form", "set_status", "event_fields", "field_values", "variant_table_template", "variant_table_parse", "value_suggestions", "list_codes", "create_codes",
                  "delete_code", "export_codes", "list_templates", "save_template", "archive_template", "restore_template", "delete_template", "upload_image"},          # set_status tiene su propia regla (D9)
     "login_approval.py": {"_target", "login_state"},          # cuentas de digitadores
-    "parametros.py": {"get_event_logo", "set_event_logo_mode", "upload_event_logo", "set_digital_badge_enabled", "get_digital_badge_fields", "put_digital_badge_fields", "set_directory_page_size", "get_registro_gear_digitadores",
+    "parametros.py": {"get_event_logo", "set_event_logo_mode", "set_event_brand_color", "upload_event_logo", "set_digital_badge_enabled", "get_digital_badge_fields", "put_digital_badge_fields", "set_directory_page_size", "get_registro_gear_digitadores",
                       "set_registro_gear_digitadores", "get_last_name_required", "set_last_name_required", "set_idle_minutes", "set_facial_enabled", "set_certificates_enabled",
                       "get_event_categories", "set_event_categories", "add_optional_field", "list_field_configs", "upsert_field_config", "get_digital_email", "put_digital_email",
                       "preview_digital_email", "test_digital_email", "upload_email_image", "field_usage", "delete_field"},

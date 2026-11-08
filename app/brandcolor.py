@@ -9,6 +9,7 @@ _HEX = re.compile(r"^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 LIGHT_TEXT = "#ffffff"
 DARK_TEXT = "#141c4d"          # = --gw-on-gold / --gw-navy-deep
 MIN_CONTRAST = 4.5
+DEFAULT_PICK = "#1e2a6e"      # color que ofrece el selector al elegir «Color propio» (el azul de Golden); la plantilla lo recibe, no lo escribe
 
 
 def normalize(value) -> str:

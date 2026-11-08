@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 FROZEN = {
-    "templates/form_public.html": "475b79deaeb90f22d10428b28520f44033cbdd6c94ded74c5580580d3fd72134",
-    "templates/aceptar.html": "bd2dcc2516e8da9605a79d4213c298572ea6aac473f3816cab055025ec51b7d1",
+    "templates/form_public.html": "c0f72d282662dc58db9254b976173f179fa983be2b6da9a924bf9cf979b62c7f",
+    "templates/aceptar.html": "4b17b85c8ae07ed355cdd86d048beeef5bf98ad5d3c94620e57b20a6e6c34cad",
     "templates/aceptar_no_disponible.html": "c8f76e761f2d68d59898e2843a7582afe1204f3cc3988771f0ad4350cfd96e2c",
-    "templates/digital_badge.html": "d36225388ea071bfa99d8dbe1a1267b8663100f45462b64ea45936f09dcacd2d",
-    "templates/certificate_public.html": "85714f01fc4667ab6b30b5884b80d49188852a61f57472a72fb06c7f97a5e7c1",
+    "templates/digital_badge.html": "f6490dc2cd932d13aa45a725e36fd80cafbd831c56b796a21b9a841a19f6062a",
+    "templates/certificate_public.html": "11e54fd3e40972b7faec3bbd0fe2d1822fe1f7a258ca4f33e5f51f1d3fb9bf80",
     "templates/legal_base.html": "8e4a05d1c0d384f431b705f5ce8e364ba01b5e540089707910c7fb94e294655c",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
