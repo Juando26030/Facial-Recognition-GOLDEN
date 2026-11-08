@@ -1206,7 +1206,7 @@ def _auto_partial_possible(p: FormPayment) -> bool:
     return _auto_refund_possible(p)
 
 
-REFUND_DUE_REASON = "Aprobado, pero la inscripción no se pudo admitir (la persona ya estaba inscrita con otro pago): reembolsa este pago y avísale."
+REFUND_DUE_REASON = "Aprobado, pero la inscripción no se pudo admitir (la persona ya estaba inscrita con otro pago, o el cupo se agotó mientras el pago seguía en proceso): reembolsa este pago y avísale."
 
 
 def _review_reason(p: FormPayment, confirmed_people: set, refund_due_subs: frozenset = frozenset()) -> str:

@@ -60,15 +60,39 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
     return formlib.effective_status(form.manual_status, form.use_schedule, get_schedule(form), at or now_local())
 
 
-REFUND_DUE = "refund_due"          # R2/D2: pago APROBADO que no se pudo admitir (duplicado, y —cuando se aplique D2— sin cupo): no cuenta como inscrita ni aparta cupo; se reembolsa
+REFUND_DUE = "refund_due"          # R2/D2: RED DE SEGURIDAD para un pago APROBADO que no se pudo admitir (dinero que se movió fuera de nuestro control: duplicado, o aprobado tras vencer el apartado y sin cupo): no cuenta como inscrita ni aparta cupo; se reembolsa. No hay sobreaforo.
+FULL_MSG = "Se agotaron los cupos de este formulario. No se cobró nada."
 PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
 MARK_SOURCES = ("carga_base", "lista", "lista_cupo")      # origen de las marcas «ya registrado»: carga de la base del evento | lista cargada desde el formulario | esa misma lista con «ocupar cupo» (fila confirmada)
 PREREGISTERED = "preregistered"       # FormSubmission.status de «ya registrado en el formulario» (columna de la carga de la base): bloquea la repetición pero NO ocupa cupo, ni cuenta en listas, reportes ni carga
 ALREADY_MSG = "Ya estás inscrito. No necesitas volver a inscribirte."
-PENDING_HOLD = timedelta(minutes=15)  # una inscripción esperando pago aparta su cupo este tiempo (X6: antes 30 min; menos tiempo para acaparar cupos sin pagar)
+def _hold_minutes() -> int:
+    """D2(c): minutos que un pago pendiente aparta su cupo (`FORM_PENDING_HOLD_MINUTES`, 5 a 180, por defecto 30). Con 15 min un pago lento (PSE, 3DS, OTP) perdía el cupo y,
+    si se aprobaba después, quedaba «reembolso pendiente»; más de 3 h dejaría acaparar cupos sin pagar (X6)."""
+    try:
+        v = int(os.getenv("FORM_PENDING_HOLD_MINUTES", "30"))
+    except ValueError:
+        v = 30
+    return max(5, min(180, v))
+
+
+PENDING_HOLD = timedelta(minutes=_hold_minutes())  # una inscripción esperando pago aparta su cupo este tiempo; se renueva UNA vez cuando Wompi confirma que hay una transacción en curso (`extend_hold`)
 PENDING_IP_KIND = "form_pending_ip"   # X6: marca en `rate_limit_events` (key «<form_id>:<submission_id>», ip) de cada inscripción que queda esperando pago
 PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
 PENDING_PAY_WINDOW = timedelta(days=3)   # C5: mientras su pago siga «pendiente» dentro de esta ventana (la misma de la conciliación con Wompi) la inscripción NO se borra
+
+
+def extend_hold(pay: FormPayment, sub: FormSubmission) -> bool:
+    """D2(c): Wompi acaba de decir que la transacción de este pago existe y sigue en curso (PSE, transferencia, 3DS): el apartado de cupo vuelve a empezar desde ahora, UNA sola vez
+    por pago (quien llama comprueba que el pago aún no tenía transacción). Solo si el apartado sigue VIGENTE: renovar uno vencido sería quitarle el cupo a quien ya lo tomó (esa carrera la
+    resuelve `admit_on_approval` al aprobarse). El cupo se cuenta con `created_at` del pago y de la inscripción (`form_reserve_slot`, `held_count`, cupos por variable y códigos)."""
+    now = utcnow()
+    if sub.status != PENDING or pay.created_at is None or pay.created_at <= now - PENDING_HOLD:
+        return False
+    pay.created_at = now
+    sub.created_at = now
+    invalidate_held()
+    return True
 
 
 def real_submissions(db: Session, form: WebForm):
@@ -611,17 +635,40 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission, force: b
 
 
 def admit_on_approval(db: Session, form: WebForm, sub: FormSubmission) -> Optional[str]:
-    """R2: con el formulario BLOQUEADO (la misma fila que toma `form_reserve_slot`, así dos aprobaciones simultáneas se turnan) revalida lo que el apartado no garantiza al
-    aprobarse un pago. None = se puede confirmar; si no, el motivo. HOY solo revisa el duplicado por cédula (dos intentos pendientes con la misma cédula conviven y ambos pueden
-    pagar: el segundo en llegar no se confirma). D2 (aforo, cupos por variable, usos de códigos) queda pendiente de la decisión del dueño: ver docs/FASE_3_SEGURIDAD.md, sección «Pagos».
+    """R2/D2: con el formulario BLOQUEADO (la misma fila que toma `form_reserve_slot`, así dos aprobaciones simultáneas se turnan) revalida lo que el apartado no garantiza al
+    aprobarse un pago. None = se puede confirmar; si no, el motivo ("duplicate" | "capacity" | "quota" | "code").
+    Decisión del dueño (8-nov-2026): un pago aprobado SIN cupo no debe pasar nunca, y NO hay sobreaforo. Esto es solo la red de seguridad del caso físico de un pago que Wompi aprueba
+    DESPUÉS de vencer el apartado (dinero que se movió fuera de nuestro control): mientras el apartado sigue vigente el cupo es de esta inscripción y no se revisa; vencido, se cuentan
+    las confirmadas y las que están pagando ahora, y si el cupo total, el de la variable o el código ya están llenos, la inscripción queda en `refund_due` (se reembolsa).
+    El camino normal lo evita antes: el envío revisa el cupo con `form_reserve_slot` y el apartado dura `PENDING_HOLD` (renovable una vez, `extend_hold`).
     Orden de candados: pago -> formulario (el mismo de `apply_result`). Un OperationalError (lock_timeout) sube: el webhook responde 500 y Wompi reintenta."""
-    if sub.is_test or not sub.person_id:
+    if sub.is_test:
         return None
     db.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": f"{FORM_LOCK_TIMEOUT_MS}ms"})
     db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
-    other = db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed",  # noqa: E712
-                                               FormSubmission.person_id == sub.person_id, FormSubmission.id != sub.id).first()
-    return "duplicate" if other else None
+    fs = FormSubmission
+    if sub.person_id:
+        other = db.query(fs.id).filter(fs.form_id == form.id, fs.is_test == False, fs.status == "confirmed",  # noqa: E712
+                                       fs.person_id == sub.person_id, fs.id != sub.id).first()
+        if other:
+            return "duplicate"
+    hold_from = utcnow() - PENDING_HOLD
+    if sub.created_at is not None and sub.created_at > hold_from:
+        return None                      # apartado vigente: este cupo ya era suyo
+    live = or_(fs.status == "confirmed", and_(fs.status == PENDING, fs.created_at > hold_from))
+    base = db.query(fs).filter(fs.form_id == form.id, fs.is_test == False, fs.id != sub.id, live)  # noqa: E712
+    if form.capacity is not None and base.count() >= form.capacity:
+        return "capacity"
+    now = now_local()
+    for r in quota_rules(form):
+        sig = f"|{rule_sig(r)}|"
+        if sub.quota_keys and sig in sub.quota_keys and base.filter(func.strpos(fs.quota_keys, sig) > 0).count() >= formlib.rule_limit_now(r, now):
+            return "quota"
+    if sub.discount_code_id:
+        code = db.get(FormDiscountCode, sub.discount_code_id)
+        if code and base.filter(fs.discount_code_id == code.id).count() >= code.max_uses:
+            return "code"
+    return None
 
 
 def purge_stale_pending(db: Session, form: WebForm) -> None:

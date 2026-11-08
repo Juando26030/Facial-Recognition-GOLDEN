@@ -137,8 +137,8 @@ def test_x5_reject_purges_only_with_a_verified_birth_date():
 
 
 # ------------------------------- X6: tope de pagos pendientes por IP
-def test_x6_hold_is_15_minutes_and_cap_is_configurable(monkeypatch):
-    assert formsvc.PENDING_HOLD == timedelta(minutes=15)
+def test_x6_hold_is_configurable_and_cap_is_configurable(monkeypatch):
+    assert formsvc.PENDING_HOLD == timedelta(minutes=formsvc._hold_minutes())      # D2(c): 30 min por defecto (antes 15), FORM_PENDING_HOLD_MINUTES
     monkeypatch.delenv("FORM_PENDING_MAX_PER_IP", raising=False)
     monkeypatch.delenv("PUBLIC_LIMIT_FACTOR", raising=False)
     assert formsvc.pending_max_per_ip() == 3
@@ -176,7 +176,7 @@ def test_x6_pending_from_ip_counts_only_live_pending_of_that_ip(client, factory,
     assert formsvc.pending_from_ip(db, form, "203.0.113.7", sid="s0") == 1
     assert formsvc.pending_from_ip(db, form, "203.0.113.7", person_id="901") == 1
     assert formsvc.pending_from_ip(db, form, "198.51.100.9") == 1
-    db.query(RateLimitEvent).filter_by(kind=formsvc.PENDING_IP_KIND).update({"created_at": utcnow() - timedelta(minutes=16)})
+    db.query(RateLimitEvent).filter_by(kind=formsvc.PENDING_IP_KIND).update({"created_at": utcnow() - formsvc.PENDING_HOLD - timedelta(minutes=1)})
     db.commit()
     assert formsvc.pending_from_ip(db, form, "203.0.113.7") == 0      # pasado PENDING_HOLD ya no aparta nada
 

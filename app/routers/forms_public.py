@@ -671,7 +671,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if retry:
         return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
     if full:
-        return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+        return JSONResponse({"detail": formsvc.FULL_MSG, "stage": "closed"}, status_code=409)
     if duplicate:
         return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
     if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):          # identificador que no es la cédula (correo, teléfono…): adelanto SIN bloqueo; la autoridad es la de abajo
@@ -745,7 +745,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                 return JSONResponse({"detail": formlib.quota_full_message(res.get("message"), res["label"], server=True, closed=bool(res.get("closed"))), "stage": "quota"}, status_code=409)
             if reason == "duplicate":
                 return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
-            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+            return JSONResponse({"detail": formsvc.FULL_MSG, "stage": "closed"}, status_code=409)
         if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):
             db.rollback()                      # con la fila del formulario BLOQUEADA (reserve_slot): dos envíos simultáneos con el mismo correo/teléfono no pasan los dos
             return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
