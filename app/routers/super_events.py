@@ -7,6 +7,7 @@ from app.timeutil import utcnow
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import audit_actions
 from app.auth import get_event_for_staff, require_role
 from app.tenant_scope import assert_same_tenant
 from app.database import get_db
@@ -15,11 +16,23 @@ from app.models import AccessLog, Event, StaffUser, SuperEvent, User
 router = APIRouter()
 
 
+def _serialize(s: SuperEvent) -> dict:
+    return {
+        "id": s.id, "name": s.name, "tenant_id": s.tenant_id, "events": len(s.events),
+        "archived": s.archived_at is not None, "archived_at": s.archived_at.isoformat() if s.archived_at else None,
+    }
+
+
 @router.get("/super-events")
-def list_super_events(tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_super_events(
+    tenant_id: str, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Por defecto SOLO los activos (los archivados no salen en listas ni selectores). `include_archived=true` (coordinador+, como toda la ruta) alimenta «Ver archivados»."""
     assert_same_tenant(staff, tenant_id, "Cliente no encontrado")          # P5: solo los supereventos de su cliente
-    rows = db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id).order_by(SuperEvent.name).all()
-    return [{"id": s.id, "name": s.name, "tenant_id": s.tenant_id, "events": len(s.events)} for s in rows]
+    query = db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id)
+    if not include_archived:
+        query = query.filter(SuperEvent.archived_at.is_(None))
+    return [_serialize(s) for s in query.order_by(SuperEvent.name).all()]
 
 
 @router.post("/super-events")
@@ -34,7 +47,78 @@ def create_super_event(data: dict, db: Session = Depends(get_db), staff: StaffUs
     sup = SuperEvent(tenant_id=tenant_id, name=name, created_by_id=staff.id, created_at=utcnow())
     db.add(sup)
     db.commit()
-    return {"id": sup.id, "name": sup.name, "tenant_id": sup.tenant_id, "events": 0}
+    return _serialize(sup)
+
+
+def _super_or_404(db: Session, staff: StaffUser, super_id: int) -> SuperEvent:
+    sup = db.query(SuperEvent).filter(SuperEvent.id == super_id).first()
+    if not sup:
+        raise HTTPException(status_code=404, detail="Superevento no encontrado")
+    assert_same_tenant(staff, sup.tenant_id, "Superevento no encontrado")          # P5: no toca el de otro cliente
+    return sup
+
+
+@router.patch("/super-events/{super_id}")
+def update_super_event(super_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Editar el nombre (lo único que se pide al crear, además del cliente, que NO se puede cambiar). Un superevento archivado no se edita."""
+    sup = _super_or_404(db, staff, super_id)
+    if sup.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El superevento está archivado: restáuralo para editarlo")
+    if "tenant_id" in data and str(data.get("tenant_id") or "").strip() != sup.tenant_id:
+        raise HTTPException(status_code=400, detail="No se puede cambiar el cliente de un superevento")
+    changed = []
+    if "name" in data:
+        name = str(data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="El superevento necesita un nombre")
+        if name != sup.name:
+            if db.query(SuperEvent).filter(SuperEvent.tenant_id == sup.tenant_id, SuperEvent.name == name, SuperEvent.id != sup.id).first():
+                raise HTTPException(status_code=400, detail="Ya existe un superevento con ese nombre para este cliente")
+            sup.name = name
+            changed.append("name")
+    if changed:
+        audit_actions.record(db, staff, "edit", "super_event", sup.id, sup.name, "campos: " + ", ".join(changed))
+        db.commit()
+    return _serialize(sup)
+
+
+@router.post("/super-events/{super_id}/archive")
+def archive_super_event(super_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Archivar = sacarlo de listas y selectores. NO toca sus eventos (siguen con su `super_event_id`) y la asistencia hermana (`sibling_attendance`) sigue contando entre ellos."""
+    sup = _super_or_404(db, staff, super_id)
+    if sup.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El superevento ya está archivado")
+    sup.archived_at = utcnow()
+    sup.archived_by_id = staff.id
+    audit_actions.record(db, staff, "archive", "super_event", sup.id, sup.name)
+    db.commit()
+    return _serialize(sup)
+
+
+@router.post("/super-events/{super_id}/restore")
+def restore_super_event(super_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    sup = _super_or_404(db, staff, super_id)
+    if sup.archived_at is None:
+        raise HTTPException(status_code=400, detail="El superevento no está archivado")
+    sup.archived_at = None
+    sup.archived_by_id = None
+    audit_actions.record(db, staff, "restore", "super_event", sup.id, sup.name)
+    db.commit()
+    return _serialize(sup)
+
+
+@router.delete("/super-events/{super_id}")
+def delete_super_event(super_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """Borrado DEFINITIVO: solo super_admin, solo de uno archivado y sin eventos asociados; queda registrado."""
+    sup = _super_or_404(db, staff, super_id)
+    if sup.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el superevento; el borrado definitivo solo aplica a los archivados")
+    if db.query(Event).filter(Event.super_event_id == sup.id).first():
+        raise HTTPException(status_code=400, detail="No se puede borrar: el superevento tiene eventos asociados")
+    audit_actions.record(db, staff, "delete", "super_event", sup.id, sup.name)
+    db.delete(sup)
+    db.commit()
+    return {"message": "Superevento eliminado"}
 
 
 def sibling_attendance(db: Session, event: Event, user_id: str) -> list:

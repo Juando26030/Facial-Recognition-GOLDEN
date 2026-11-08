@@ -30,7 +30,7 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
 | Ítem de inventario (`inventory_items`) / entrega (`inventory_deliveries`) | coordinador (sc) / digitador (sc) | idem | coordinador (sc) | admin | admin | super_admin (sin entregas) | hecho |
 | Campo de evento (`event_field_configs`) | coordinador (sc) | coordinador (sc) | coordinador (sc) | borrar campo (escribe su nombre; queda en `person_changes`) | n/a | n/a | hecho (confirmación fuerte + rastro) |
 | Plantilla del evento (`event_templates` / `event_template_revisions`) | admin | admin | admin (guarda revisión) | n/a (revisiones se podan solas) | n/a | n/a | n/a (global; las revisiones son la historia) |
-| Super evento (`super_events`) | coordinador | coordinador | **hueco** | **hueco** | **hueco** | **hueco** | hueco bajo: solo agrupa; no hay pantalla de editar ni archivar (decidir con Juan David) |
+| Super evento (`super_events`) | coordinador | coordinador (`include_archived`: coordinador+) | coordinador (solo el nombre; el cliente no cambia) | coordinador (decisión de Juan David 7-nov-2026: coordinadores y comerciales archivan) | coordinador | super_admin (archivado y sin eventos) | **hecho en 0095** (ventana «Administrar supereventos», junto al selector en «Editar evento» y «Nuevo evento») |
 | Autorización de personal por evento (`event_staff_authorizations`) | coordinador | coordinador | n/a | n/a | n/a | revocar acceso: coordinador; ahora con `audit_actions` | hecho |
 | Recordatorio del calendario (`calendar_notes`) | coordinador | coordinador (destinatarios) | n/a | n/a | n/a | el autor o admin+; ahora con `audit_actions` (sin el texto) | hecho (efímero a propósito) |
 | Ruleta (`roulette_configs`) / sorteos (`roulette_draws`) | coordinador | coordinador | coordinador | n/a | n/a | los sorteos no se borran (auditoría de ganadores); solo se cancela la autorización de giro | hecho a propósito |
@@ -66,6 +66,6 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
 
 ## Pendientes
 - Pantalla de archivar/restaurar para **estados de evento** y **plantillas de formulario** (hoy solo API; el proyecto no tiene pantalla de estados y la de plantillas solo las ofrece al crear un formulario).
-- **Super eventos:** no tienen editar ni archivar.
+- **Super eventos:** resuelto en 0095 (ver `FASE_3_AUDITORIA.md`).
 - Documentos y gastos: otro agente (0093). Alcance por cliente: otro agente.
 - `usuarios.js` («Borrar permanente» de una cuenta, super_admin) debería ofrecer primero «Archivar» por cuenta si no lo hace ya (revisión de la oleada 2).
