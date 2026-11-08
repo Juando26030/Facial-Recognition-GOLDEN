@@ -103,7 +103,7 @@ def client_ip(request: Request) -> str:
         agrega Google, no se puede falsificar); por Firebase Hosting es `[IP real, IP de Google]`. En ambos casos sale la IP real. Si TODAS son de Google
         (llamadas internas, o un visitante con IP de Google) devuelve la última, y `limit_ip` la descarta (ver abajo).
       * si no, `XFF_CLIENT_INDEX` (0 = la primera, comportamiento de la VM; -1 = la última…)."""
-    if os.getenv("TRUST_CF_CONNECTING_IP", "1") == "1" and request.headers.get("cf-connecting-ip"):
+    if os.getenv("TRUST_CF_CONNECTING_IP", "0") == "1" and request.headers.get("cf-connecting-ip"):
         return request.headers["cf-connecting-ip"]
     hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
     if hops:

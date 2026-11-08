@@ -121,7 +121,7 @@ def client_ip_diagnostic(request: Request, _=Depends(_ops_reader)) -> dict:
     hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
     return {"x_forwarded_for": hops, "hops": len(hops), "google_infra": [is_google_infra(h) for h in hops], "chosen_ip": client_ip(request),
             "strip_google": os.getenv("XFF_STRIP_GOOGLE", "0") == "1", "ranges": infra_info(), "xff_client_index": os.getenv("XFF_CLIENT_INDEX", "0"),
-            "trust_cf_connecting_ip": os.getenv("TRUST_CF_CONNECTING_IP", "1") == "1", "cf_connecting_ip_present": bool(request.headers.get("cf-connecting-ip")),
+            "trust_cf_connecting_ip": os.getenv("TRUST_CF_CONNECTING_IP", "0") == "1", "cf_connecting_ip_present": bool(request.headers.get("cf-connecting-ip")),
             "socket_peer": request.client.host if request.client else None}
 
 

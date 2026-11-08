@@ -28,7 +28,7 @@ Qué se corrigió en el código (rama `sec/ag2`) y qué queda en manos de la inf
 - S11: fuera de `ENVIRONMENT=development` la app no arranca si `SECRET_KEY` falta, es un valor de ejemplo del repositorio o tiene menos de 32 caracteres (`app/secretcheck.py`).
 
 ## Infraestructura (S4, lo hace Juan David)
-En la VM la app confía en `CF-Connecting-IP` (`TRUST_CF_CONNECTING_IP=1` por defecto). Si el puerto 443 de `golden-biometrics-prod` responde a tráfico que NO viene de Cloudflare, cualquiera puede inventar esa cabecera y saltarse los límites por IP. Hay que comprobarlo y, si es así:
+En la VM la app confía en `CF-Connecting-IP` (`TRUST_CF_CONNECTING_IP=1`; desde la Fase 3 el valor por defecto del código es `0`, así que la VM debe tener esa línea en su `.env`: agregarla, nunca reemplazar el archivo). Si el puerto 443 de `golden-biometrics-prod` responde a tráfico que NO viene de Cloudflare, cualquiera puede inventar esa cabecera y saltarse los límites por IP. Hay que comprobarlo y, si es así:
 1. regla de firewall de GCP que permita el 443 (y el 80) solo desde los rangos publicados de Cloudflare (https://www.cloudflare.com/ips/), o
 2. en Nginx, `set_real_ip_from <rangos de Cloudflare>; real_ip_header CF-Connecting-IP;` y `deny all` para lo demás.
 
