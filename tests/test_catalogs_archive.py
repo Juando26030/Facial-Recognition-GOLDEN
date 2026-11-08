@@ -21,7 +21,7 @@ def _area(client, ev, name="VIP"):
 
 
 def _item(client, ev, name="Gaseosa", qty=10):
-    return client.post(f"/api/events/{ev.id}/inventory", json={"name": name, "initial_qty": qty}).json()["id"]
+    return client.post(f"/api/events/{ev.id}/inventory", json={"name": name, "initial_qty": qty, "allow_repeat_delivery": True}).json()["id"]
 
 
 def _ids(r):

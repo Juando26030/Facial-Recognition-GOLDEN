@@ -307,6 +307,7 @@ def _delivered_by_item(db: Session, event_id: int) -> dict:
 def _item_json(item: InventoryItem, delivered: int) -> dict:
     return {
         "id": item.id, "name": item.name, "initial_qty": item.initial_qty, "allow_multiple": item.allow_multiple,
+        "allow_repeat_delivery": item.allow_repeat_delivery is not False,
         "delivered": delivered, "available": item.initial_qty - delivered, "archived": item.archived_at is not None,
     }
 
@@ -346,7 +347,8 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail="El ítem necesita un nombre")
     if db.query(InventoryItem).filter(InventoryItem.event_id == event.id, func.lower(InventoryItem.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento (si no lo ves, está archivado: restáuralo)")
-    item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")), created_at=utcnow())
+    item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")),
+                         allow_repeat_delivery=bool(data.get("allow_repeat_delivery", False)), created_at=utcnow())      # D7: los ítems NUEVOS no repiten la entrega a la misma persona salvo que se pida
     db.add(item)
     db.commit()
     return _item_json(item, 0)
@@ -366,6 +368,8 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
         item.initial_qty = new_qty
     if "allow_multiple" in data:
         item.allow_multiple = bool(data["allow_multiple"])
+    if "allow_repeat_delivery" in data:
+        item.allow_repeat_delivery = bool(data["allow_repeat_delivery"])
     db.commit()
     return _item_json(item, delivered)
 
@@ -422,18 +426,26 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
 
     wanted = {}
     for line in lines:
-        item_id = int(line.get("item_id"))
+        try:
+            item_id = int(line.get("item_id"))
+        except (TypeError, ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="Uno de los ítems no es válido")
         wanted[item_id] = wanted.get(item_id, 0) + _qty(line.get("qty", 1), minimum=1)
 
     # Con lock de fila: dos digitadores entregando el último ítem a la vez no lo pueden vender dos veces.
     items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id, InventoryItem.id.in_(list(wanted))).with_for_update().all()}
     delivered = _delivered_by_item(db, event.id)
+    # D7: «Permitir repetir la entrega a la misma persona» apagado -> un segundo intento para la misma persona e ítem es 409. Se comprueba con los ítems YA bloqueados
+    # (FOR UPDATE): dos digitadores (o un doble clic) entregando el mismo ítem a la misma persona se turnan en ese candado y el segundo ve la entrega del primero.
+    already = {r[0] for r in db.query(InventoryDelivery.item_id).filter(InventoryDelivery.event_id == event.id, InventoryDelivery.user_id == user.id, InventoryDelivery.item_id.in_(list(wanted))).distinct()}
     for item_id, qty in wanted.items():
         item = items.get(item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Uno de los ítems no existe en este evento")
         if item.archived_at is not None:
             raise HTTPException(status_code=400, detail=f"«{item.name}» está archivado: restáuralo para entregarlo")
+        if item_id in already and item.allow_repeat_delivery is False:
+            raise HTTPException(status_code=409, detail=f"«{item.name}» ya se le entregó a esta persona y este ítem no se puede repetir. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
         if qty > 1 and not item.allow_multiple:
             raise HTTPException(status_code=400, detail=f"«{item.name}» solo se entrega de a 1 unidad por vez")
         available = item.initial_qty - delivered.get(item_id, 0)
