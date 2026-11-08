@@ -45,7 +45,7 @@
                 ${reset}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
-                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>Borrar permanente</span></button></div></div>
+                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>Archivar cuenta</span></button></div></div>
             </div>
         </article>`;
     }
@@ -251,12 +251,12 @@
         });
     }
 
-    async function deleteTempUser(btn, staffId, username) {
-        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Se perderán su acceso a este y a todos los eventos y su contraseña. Esto no es quitarlo del evento: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
+    async function deleteTempUser(btn, staffId, username) {          // Fase 3: ya no se borra de verdad; se ARCHIVA (administrador o superior; se restaura desde Staff → «Ver archivados»)
+        if (!(await showConfirm(`¿Archivar la cuenta de "${window.escapeHtml(username)}"? Pierde el acceso a este y a todos los eventos y no podrá iniciar sesión. <strong>No se borra nada</strong>: un administrador puede restaurarla.`, { confirmLabel: 'Archivar cuenta' }))) return;
         await busy(btn, async () => {
-            const res = await fetch(`/api/staff/${staffId}`, { method: 'DELETE' });
-            if (res.ok) { loadTempUsers(); showToast('Cuenta eliminada', 'success'); }
-            else { const err = await res.json().catch(() => ({})); showToast(err.detail || 'No se pudo borrar', 'error'); }
+            const res = await fetch(`/api/staff/${staffId}/archive`, { method: 'POST' });
+            if (res.ok) { loadTempUsers(); showToast('Cuenta archivada', 'success'); }
+            else { const err = await res.json().catch(() => ({})); showToast(typeof err.detail === 'string' ? err.detail : 'No se pudo archivar', 'error'); }
         });
     }
 
@@ -319,7 +319,7 @@
         if (first) first.focus({ preventScroll: true });
     });
 
-    // Menú «Más acciones» (Borrar permanente): se abre aquí y se cierra con clic afuera, Escape o al elegir.
+    // Menú «Más acciones» (Archivar cuenta): se abre aquí y se cierra con clic afuera, Escape o al elegir.
     function closeMenus(except) {
         listEl.querySelectorAll('.gw-usr__more').forEach((m) => {
             if (m === except) return;
