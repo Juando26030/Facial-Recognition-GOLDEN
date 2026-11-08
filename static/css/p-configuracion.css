@@ -40,3 +40,7 @@
   .gw-config__wrap .gw-tabpanel > .gw-group__item:last-child { border-bottom: 1px solid var(--gw-border); }
   .gw-config__wrap .gw-config__frame { width: 100%; }
 }
+
+/* Estados de evento (static/js/event-states-admin.js): punto de color del estado; el color llega por la variable --gw-estado-color que pone el JS (solo si es #RRGGBB) */
+.gw-estado__dot { display: inline-block; width: var(--gw-sp-4); height: var(--gw-sp-4); border-radius: 50%; vertical-align: middle; background: var(--gw-estado-color, var(--gw-border-strong)); }
+.gw-estado__skeleton { min-height: var(--gw-tap); }

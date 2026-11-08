@@ -21,8 +21,8 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
 | Eventos del formulario (`form_events`) | automático | coordinador | n/a | n/a | n/a | con el formulario | n/a (traza) |
 | Acceso de cliente al formulario (`form_client_users`) | coordinador | coordinador | n/a | n/a | n/a | revocar: coordinador (desactiva la cuenta); ahora con `audit_actions` | hecho |
 | Invitaciones (`form_invites`) / base del formulario (`form_persons`) | coordinador | coordinador | reemplazo | n/a | n/a | con el formulario / al reemplazar la base | n/a (datos operativos del formulario) |
-| Plantilla de formulario (`saved_form_templates`) | coordinador | coordinador (archivadas: coordinador+) | se sobrescribe por nombre | coordinador+ | coordinador+ | super_admin (archivada) | **hecho en 0094** (API; sin pantalla: ver pendientes) |
-| Estado de evento (`event_states`) | admin | todos con sesión (admin: archivados) | admin | admin | admin | super_admin (archivado, sin eventos) | **hecho en 0094** (API; no existe pantalla en el proyecto) |
+| Plantilla de formulario (`saved_form_templates`) | coordinador | coordinador (archivadas: coordinador+) | se sobrescribe por nombre | coordinador+ | coordinador+ | super_admin (archivada) | **hecho** (API en 0094; pantalla en el listado de formularios, ver «Pantallas de estados y plantillas») |
+| Estado de evento (`event_states`) | admin | todos con sesión (admin: archivados) | admin | admin | admin | super_admin (archivado, sin eventos) | **hecho** (API en 0094; pantalla en Configuración → «Estados de evento») |
 | Plantilla de escarapela del evento (`badge_templates`) | coordinador (sc) | coordinador (sc) | coordinador (sc) | n/a (una por evento y categoría) | n/a | con el evento | n/a |
 | Plantilla de escarapela guardada (`saved_badge_templates`) | coordinador (sc) | coordinador (sc); archivadas: coordinador+ | n/a (copia) | coordinador+ | coordinador+ | super_admin (archivada) | hecho; **pantalla «Ver archivadas» en 0094** (Importar plantilla, en el editor) |
 | Color de pañoleta guardado (`saved_colors`) | coordinador | coordinador; archivados: coordinador+ | coordinador (mismo nombre cambia el tono) | coordinador+ | coordinador+ | super_admin (archivado) | hecho; **pantalla «Ver archivados» en 0094** (junto al selector de color) |
@@ -65,10 +65,15 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
    - Revisados y dejados igual: `delete_field` (ya pide escribir el nombre y deja `person_changes`), `roulette/authorize` (permiso efímero), rutas y puestos de impresión (configuración), `stats-links` (ya es una revocación lógica), `formsvc.discard_submission` (limpieza de inscripciones nunca confirmadas), `sessions`/`security`/`event_template_svc` (podas técnicas).
 
 ## Pendientes
-- Pantalla de archivar/restaurar para **estados de evento** y **plantillas de formulario** (hoy solo API; el proyecto no tiene pantalla de estados y la de plantillas solo las ofrece al crear un formulario).
+- ~~Pantalla de archivar/restaurar para **estados de evento** y **plantillas de formulario**~~ hecha en Configuración y en Formularios web (rama de pantallas) (antes solo API; el proyecto no tiene pantalla de estados y la de plantillas solo las ofrece al crear un formulario).
 - **Super eventos:** resuelto en 0095 (ver `FASE_3_AUDITORIA.md`).
 - Documentos y gastos: otro agente (0093). Alcance por cliente: otro agente.
 - `usuarios.js` («Borrar permanente» de una cuenta, super_admin) debería ofrecer primero «Archivar» por cuenta si no lo hace ya (revisión de la oleada 2).
 
 ## Cambio de roles (7-nov-2026)
 Archivar, restaurar y «Ver archivados» pasan de admin+ a **coordinador+** (coordinador, comercial, admin, super_admin) en formularios, plantillas de formulario, zonas, ítems, colores, plantillas de escarapela, documentos y gastos. Siguen en admin+: clientes, personal, eventos, estados de evento y personas. Borrado definitivo: solo super_admin.
+
+## Pantallas de estados y plantillas (7-nov-2026)
+- **Estados de evento:** pestaña «Estados de evento» de Configuración (solo admin+). Lista con nombre, color, estado base y cuántos eventos lo usan; crear (nombre, estado base, color), renombrar, Archivar / Restaurar (admin+), «Ver archivados» y «Eliminar definitivamente» (solo super_admin, con confirmación). Las reglas del servidor (estado en uso, último de su estado base) se muestran con aviso.
+- **Plantillas de formulario:** dentro de «Empezar desde una plantilla» (Formularios web), gestión para coordinador+: lista, Archivar / Restaurar, casilla «Ver archivadas»; «Eliminar definitivamente» solo super_admin. Quien no es coordinador+ solo ve el selector.
+- Permisos de botones: `static/js/archive-rules.js` (el servidor manda siempre).

@@ -144,13 +144,67 @@
     } catch (err) { showToast(err.message, 'error'); }
   });
 
+  // ---- Plantillas guardadas: elegir al crear y (coordinador+) archivar / restaurar; borrado definitivo solo super_admin ----
+  const tplPerms = window.GWArchiveRules.actions(ROLE, 'form_template', false);
+  let showArchivedTpls = false;
+  function tplRow(t) {
+    const a = window.GWArchiveRules.actions(ROLE, 'form_template', t.archived);
+    const btns = [];
+    if (a.archive) btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-tpl-archive="${t.id}" data-name="${esc(t.name)}" aria-label="Archivar la plantilla ${esc(t.name)}">${icon('trash')} Archivar</button>`);
+    if (a.restore) btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-tpl-restore="${t.id}" data-name="${esc(t.name)}" aria-label="Restaurar la plantilla ${esc(t.name)}">${icon('undo')} Restaurar</button>`);
+    if (a.del) btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-tpl-del="${t.id}" data-name="${esc(t.name)}" aria-label="Eliminar definitivamente la plantilla ${esc(t.name)}">${icon('trash')} Eliminar definitivamente</button>`);
+    return `<article class="gw-card-row" data-tpl="${t.id}">
+      <div class="gw-card-row__head"><span class="gw-card-row__title">${esc(t.name)}</span>${t.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
+      <p class="gw-card-row__meta">${esc(t.fields)} elementos</p>
+      ${btns.length ? `<div class="gw-card-row__actions">${btns.join('')}</div>` : ''}
+    </article>`;
+  }
+  async function loadTemplates() {
+    const list = $('tplList');
+    if (tplPerms.archive) { $('tplManage').hidden = false; list.setAttribute('aria-busy', 'true'); }
+    try {
+      const tpls = await j(`${api}/form-templates${showArchivedTpls && tplPerms.canViewArchived ? '?include_archived=true' : ''}`);
+      const live = tpls.filter((t) => !t.archived);
+      $('newTemplate').innerHTML = '<option value="">Formulario nuevo (cédula, nombres, apellidos, correo)</option>' + live.map((t) => `<option value="${t.id}">Plantilla: ${esc(t.name)} (${t.fields} elementos)</option>`).join('');
+      if (tplPerms.archive) {
+        const shown = showArchivedTpls ? tpls : live;
+        list.innerHTML = shown.map(tplRow).join('') || (showArchivedTpls
+          ? '<div class="gw-state" role="status"><p class="gw-state__title">No hay plantillas archivadas</p><p class="gw-state__text">Cuando archives una, aparecerá aquí para poder restaurarla.</p></div>'
+          : '<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay plantillas guardadas</p><p class="gw-state__text">Guarda un formulario como plantilla desde su editor y aparecerá aquí.</p></div>');
+      }
+    } catch (e) {
+      if (tplPerms.archive) {
+        list.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudieron cargar las plantillas</p><p class="gw-state__text">${esc(e.message)}.</p><button type="button" class="gw-btn gw-btn--secondary" data-tpl-retry>Reintentar</button></div>`;
+        if (showArchivedTpls) { showArchivedTpls = false; $('showArchivedTpls').checked = false; showToast(e.message, 'error'); }
+      }
+    } finally { list.setAttribute('aria-busy', 'false'); }
+  }
+  const tplToggle = $('showArchivedTpls');
+  if (tplToggle) tplToggle.addEventListener('change', () => { showArchivedTpls = tplToggle.checked; loadTemplates(); });
+  $('tplList').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-tpl-retry]')) { loadTemplates(); return; }
+    const arch = e.target.closest('[data-tpl-archive]');
+    if (arch) {
+      if (!(await showConfirm(`¿Archivar la plantilla «${window.escapeHtml(arch.dataset.name)}»? Deja de ofrecerse al crear formularios; los formularios ya creados no cambian y se puede restaurar desde «Ver archivadas».`, { confirmLabel: 'Archivar' }))) return;
+      try { await busy(arch, () => j(`${api}/form-templates/${arch.dataset.tplArchive}/archive`, { method: 'POST' })); showToast('Plantilla archivada', 'success'); loadTemplates(); } catch (err) { showToast(err.message, 'error'); }
+      return;
+    }
+    const rest = e.target.closest('[data-tpl-restore]');
+    if (rest) {
+      try { await busy(rest, () => j(`${api}/form-templates/${rest.dataset.tplRestore}/restore`, { method: 'POST' })); showToast('Plantilla restaurada', 'success'); loadTemplates(); } catch (err) { showToast(err.message, 'error'); }
+      return;
+    }
+    const del = e.target.closest('[data-tpl-del]');
+    if (del) {
+      if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE la plantilla «${window.escapeHtml(del.dataset.name)}»? Los formularios ya creados con ella no cambian. No se puede deshacer y queda registrado.`, { confirmLabel: 'Eliminar definitivamente' }))) return;
+      try { await busy(del, () => j(`${api}/form-templates/${del.dataset.tplDel}`, { method: 'DELETE' })); showToast('Plantilla eliminada', 'success'); loadTemplates(); } catch (err) { showToast(err.message, 'error'); }
+    }
+  });
+
   (async () => {
     try { canTransfer = (await j(`${api}/forms-transfer/allowed`)).allowed; } catch (e) { canTransfer = false; }
     $('importCard').hidden = !canTransfer;
-    try {
-      const tpls = await j(`${api}/form-templates`);
-      $('newTemplate').insertAdjacentHTML('beforeend', tpls.map((t) => `<option value="${t.id}">Plantilla: ${esc(t.name)} (${t.fields} elementos)</option>`).join(''));
-    } catch (e) { /* sin plantillas: queda «Formulario nuevo» */ }
+    loadTemplates();
     load();
   })();
 })();

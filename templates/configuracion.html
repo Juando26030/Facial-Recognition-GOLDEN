@@ -69,6 +69,7 @@
         {% if is_admin_plus %}
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
       </div>
@@ -128,6 +129,21 @@
           </div>
         </section>
 
+        <section class="gw-tabpanel" role="tabpanel" id="estados" aria-labelledby="tab_estados" data-role="{{ request.session.get('staff_role') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Estados de evento</h2><p class="gw-tabpanel__lead">Los estados que se ofrecen al cambiar un evento. Lo que hagas aquí actúa al instante.</p></div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Crear un estado</h4>{% call ayuda('ay_estados', 'Estado base') %}Cada estado se comporta como uno de los tres estados base (Creado, En proceso, Finalizado). Un estado no se puede archivar si algún evento lo usa ni si es el último activo de su estado base.{% endcall %}</div>
+            <form id="stateForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="stateName">Nombre</label><input class="gw-input" type="text" id="stateName" maxlength="60" required autocomplete="off"></div>
+              <div class="gw-field"><label class="gw-label" for="stateBase">Estado base</label><select class="gw-select" id="stateBase"></select></div>
+              <div class="gw-field"><label class="gw-label" for="stateColor">Color</label><input type="color" id="stateColor" class="gw-config__swatch" value="#D4AF37"></div>
+              <button type="submit" class="gw-btn gw-btn--primary" id="stateCreateBtn">{{ ic('plus', 'gw-icon--sm') }} Crear estado</button>
+            </form>
+          </div>
+          <label class="gw-check"><input type="checkbox" id="showArchivedStates"> Ver archivados</label>
+          <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite"></div>
+        </section>
+
         <section class="gw-tabpanel" role="tabpanel" id="staff" aria-labelledby="tab_staff" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Staff y permisos</h2><p class="gw-tabpanel__lead">Crea cuentas, cambia roles y activa o desactiva accesos. Lo que hagas aquí actúa al instante.</p></div>
           <iframe class="gw-config__frame" src="/admin/staff?embed=1" title="Staff y Permisos" loading="lazy"></iframe>
@@ -152,5 +168,7 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 });
 </script>
 <script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
+{% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>{% endif %}
 </body>
 </html>
