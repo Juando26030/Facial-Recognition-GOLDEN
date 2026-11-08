@@ -13,7 +13,7 @@ Rama `f3b/seguridad`. Pruebas: `tests/test_seguridad_fase3b.py` (las de «fuente
 | d | `POST /api/ops/simulate-crash` | Confirmado: responde 404 salvo con `DEPLOY_ENV=staging` **y** `CHAOS_ENABLED=1` (y rol admin+ u OPS_TOKEN). Ningún archivo de `deploy/`, `.github/`, Dockerfile ni compose lo menciona; solo `docs/15` explica cómo Juan David lo pone a mano con `gcloud … --update-env-vars` y lo quita | `test_d_*` (de fuente) |
 | e | `/api/ingreso/estado` y `/cancelar` sin dependencia | Ya tenían token de **un solo uso** (`consume_approved`, UPDATE condicional), **vencimiento de 5 min** (`REQUEST_TTL`), solo el SHA-256 en base y comparación en tiempo constante. Faltaba **tope de intentos**: ahora 429 (`Retry-After: 30`) a más de 60 preguntas por minuto por solicitud y 300 por IP, en memoria por proceso, sin tocar la base (la pantalla legítima pregunta 20 por minuto). La pantalla ignora el 429 y sigue preguntando | `test_e_*` |
 | f | CSP | Solo documentado (abajo); producción no cambia | `test_f_*` |
-| g | Leaflet sin SRI | Pendiente, ver abajo | `test_g_*` |
+| g | Leaflet sin SRI | Hecho el 8-nov-2026 (sha384 de `leaflet.js` y `leaflet.css` 1.9.4 en `static/js/gw-map.js`) | `test_g_*` |
 
 ## (c) Qué cambia al encender `ENFORCE_STAFF_TENANT=1`
 

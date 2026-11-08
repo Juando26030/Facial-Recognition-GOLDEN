@@ -10,6 +10,8 @@
   'use strict';
 
   var LEAFLET_VERSION = '1.9.4';
+  // SRI de Leaflet 1.9.4 (sha384, calculado el 8-nov-2026 desde cdnjs). Si se cambia LEAFLET_VERSION hay que recalcularlos o el mapa no carga.
+  var LEAFLET_SRI = { 'leaflet.js': 'sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH', 'leaflet.css': 'sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H' };
   var LEAFLET_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/' + LEAFLET_VERSION + '/';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var NOMINATIM = 'https://nominatim.openstreetmap.org/search';
@@ -128,9 +130,9 @@
     if (leafletPromise) return leafletPromise;
     leafletPromise = new Promise(function (resolve, reject) {
       var timer = setTimeout(function () { reject(new Error('timeout')); }, 15000);
-      var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = LEAFLET_BASE + 'leaflet.css'; css.crossOrigin = '';
+      var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = LEAFLET_BASE + 'leaflet.css'; css.integrity = LEAFLET_SRI['leaflet.css']; css.crossOrigin = '';
       document.head.appendChild(css);
-      var js = document.createElement('script'); js.src = LEAFLET_BASE + 'leaflet.js'; js.async = true; js.crossOrigin = '';
+      var js = document.createElement('script'); js.src = LEAFLET_BASE + 'leaflet.js'; js.integrity = LEAFLET_SRI['leaflet.js']; js.async = true; js.crossOrigin = '';
       js.onload = function () { clearTimeout(timer); if (root.L && root.L.map) { root.L.Icon.Default.imagePath = LEAFLET_BASE + 'images/'; resolve(root.L); } else reject(new Error('sin Leaflet')); };
       js.onerror = function () { clearTimeout(timer); reject(new Error('no cargó')); };
       document.head.appendChild(js);

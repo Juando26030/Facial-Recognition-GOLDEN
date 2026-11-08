@@ -1,6 +1,6 @@
 # Fase 3: auditoría de borrar / archivar / permisos
 
-## Estado de la Fase 3 (actualizado el 7-nov-2026)
+## Estado de la Fase 3 (actualizado el 8-nov-2026)
 
 | Estado | Pieza | Detalle |
 |---|---|---|
@@ -10,14 +10,14 @@
 | Hecho | Oleada 4-5: catálogos | Áreas, inventario, colores y plantillas de escarapela; tabla de auditoría de escrituras (`0092`). |
 | Hecho | L7 corregido y modo tranquilo | Archiva solo la base del evento, una vez por semana; el Job horario deja descansar la base sin actividad. |
 | Hecho | Decisión: respaldo cada 8 h | Ya aplicada: sin actividad, el respaldo corre a las 3, 4, 5, 11 y 19 h; con actividad, cada hora. La alerta de respaldo viejo pasó a 9 h. |
-| En curso | Documentos y gastos | Rama `f3b/docs-gastos`, migración `0093`. Sin fusionar. |
-| En curso | Huecos de CRUD | Rama `f3b/crud-huecos`, migración `0094`. Sin fusionar. |
-| En curso | Seguridad de alcance | Rama `f3b/seguridad`. Sin fusionar. |
-| Pendiente | Prueba completa en Cloud Shell | ~47 min con base de datos, sobre el SHA final. No se ha corrido tras la Fase 3. |
+| Hecho | Documentos y gastos | Archivar y restaurar (coordinador+), borrado definitivo solo super_admin; migración `0093`. |
+| Hecho | Huecos de CRUD, super eventos y pantallas | Estados de evento, plantillas de formulario, super eventos (`0094`, `0095`) y sus pantallas. |
+| Hecho | Seguridad de alcance | Colores, calendario, exportaciones, límite de ritmo y SRI de Leaflet. |
+| Hecho | Prueba completa en Cloud Shell | 8-nov-2026: 2.485 pasadas y 1 fallida (de prueba, ya corregida y verificada). |
 | Pendiente | Strix y ZAP contra staging | Nunca contra producción. |
-| Pendiente | Activar `ENFORCE_STAFF_TENANT` | Decide Juan David. |
+| Decidido | `ENFORCE_STAFF_TENANT` | Se queda apagado (decisión del 7-nov-2026). |
 | Pendiente | CSP con `script-src` estricto | Hoy permite scripts en línea. |
-| Pendiente | Pantalla para restaurar colores y plantillas archivados | La API ya existe; falta la pantalla. |
+| Hecho | Pantalla para restaurar colores y plantillas archivados | «Ver archivados» en la librería de colores y de plantillas. |
 
 Cierre de la fase anterior: [`CIERRE_FASE_2.md`](CIERRE_FASE_2.md).
 

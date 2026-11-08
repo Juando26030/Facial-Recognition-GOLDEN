@@ -96,8 +96,8 @@ def test_f_csp_today_has_no_script_src_and_no_report_only():
 def test_g_leaflet_is_pinned_and_sri_status_documented():
     js = _src("static/js/gw-map.js")
     assert re.search(r"LEAFLET_VERSION = '\d+\.\d+\.\d+'", js)
-    if "integrity" not in js:
-        assert "SRI de Leaflet" in _src("docs/FASE_3_SEGURIDAD.md")
+    assert "css.integrity = LEAFLET_SRI" in js and "js.integrity = LEAFLET_SRI" in js        # SRI puesto el 8-nov-2026
+    assert re.search(r"'leaflet\.js': 'sha384-[A-Za-z0-9+/=]{64}'", js) and re.search(r"'leaflet\.css': 'sha384-[A-Za-z0-9+/=]{64}'", js)
     for t in ROOT.joinpath("templates").glob("*.html"):
         for m in re.finditer(r"<script[^>]+src=\"https://cdnjs[^>]+>", t.read_text(encoding="utf-8")):
             assert "integrity=" in m.group(0), f"{t.name}: script de CDN sin SRI"
