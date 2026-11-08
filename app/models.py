@@ -371,6 +371,8 @@ class EventState(Base):
     is_active = Column(Boolean, nullable=False, default=True, server_default='true')
     rules_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)          # 0094 (Fase 3): NULL = activo; archivado = fuera de listas y selectores, se restaura. Sin relationship a StaffUser: no hay ambigüedad de llaves.
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     def get_rules(self) -> dict:
         return json.loads(self.rules_json) if self.rules_json else {}
@@ -691,6 +693,8 @@ class SavedFormTemplate(Base):
     name = Column(String, nullable=False)
     design_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)          # 0094 (Fase 3): archivar = fuera de la librería (se restaura)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class RouletteConfig(Base):

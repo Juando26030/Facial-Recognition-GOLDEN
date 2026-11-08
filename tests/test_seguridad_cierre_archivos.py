@@ -201,20 +201,21 @@ def _digitador_con_historial(factory, db, ev):
     return dig, job_id
 
 
-def test_borrado_en_bloque_suelta_impresiones_y_cargas(client, factory, db):
+def test_borrado_en_bloque_archiva_y_conserva_impresiones_y_cargas(client, factory, db):
     from app.models import BulkJob, PrintLog, StaffUser
     factory.staff("admin", "adm1")
     ev = factory.event("en_proceso")
     dig, job_id = _digitador_con_historial(factory, db, ev)
-    dig_id = dig.id          # el id se lee ANTES: después del borrado la fila ya no existe y releerla da ObjectDeletedError
+    dig_id = dig.id
     login(client, "adm1")
     r = client.post(f"/api/events/{ev.id}/staff-users/purge-temporary")
     assert r.status_code == 200, r.text
-    assert r.json()["deleted"] == 1
+    assert r.json()["archived"] == 1          # Fase 3: ya no borra, archiva (el borrado definitivo es de super_admin y de lo archivado)
     db.expire_all()
-    assert db.query(StaffUser).filter_by(id=dig_id).first() is None
-    assert db.query(PrintLog).filter_by(event_id=ev.id).one().printed_by_staff_id is None          # la impresión se conserva, sin «quién»
-    assert db.get(BulkJob, job_id).staff_user_id is None
+    row = db.query(StaffUser).filter_by(id=dig_id).first()
+    assert row is not None and row.archived_at is not None and row.is_active is False
+    assert db.query(PrintLog).filter_by(event_id=ev.id).one().printed_by_staff_id == dig_id          # la impresión conserva su «quién»
+    assert db.get(BulkJob, job_id).staff_user_id == dig_id
 
 
 def test_borrar_permanente_tambien_suelta_todo(client, factory, db):

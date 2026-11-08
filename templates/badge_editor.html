@@ -240,6 +240,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     </div>
     <div class="gw-modal__body">
       <p class="gw-modal__text">Copia el diseño de una plantilla de tu librería a este evento. No queda vinculada: puedes seguir editando aquí sin afectar la original.</p>
+      {% if staff_role in ("admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="savedTplArchived"> Ver archivadas</label>{% endif %}
       <div id="savedTplList" aria-live="polite"><p class="gw-ed-state">Cargando…</p></div>
     </div>
     <div class="gw-modal__foot">
@@ -458,11 +459,14 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   async function openImportModal() {                  // la ventana se abre sola (data-gw-open="importModal" en gw-ui.js); aquí se carga la lista
     const listEl = document.getElementById('savedTplList');
     stateLine(listEl, 'Cargando…');
+    const archBox = document.getElementById('savedTplArchived');
+    const showArch = !!(archBox && archBox.checked);          // «Ver archivadas» (admin+, Fase 3): se pueden restaurar (y, super_admin, borrar del todo)
     try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/saved-badge-templates`);
-      const list = await res.json();
+      const res = await fetch(`/api/events/${window.EVENT_ID}/saved-badge-templates` + (showArch ? '?include_archived=true' : ''));
+      let list = await res.json();
+      if (showArch) list = list.filter((s) => s.archived);
       if (!list.length) {
-        stateLine(listEl, 'Todavía no hay ninguna plantilla guardada en la librería. Usa «Guardar como plantilla» para crear la primera.');
+        stateLine(listEl, showArch ? 'No hay plantillas archivadas.' : 'Todavía no hay ninguna plantilla guardada en la librería. Usa «Guardar como plantilla» para crear la primera.');
         return;
       }
       listEl.replaceChildren();
@@ -485,7 +489,24 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         delB.textContent = 'Archivar';
         delB.setAttribute('aria-label', 'Archivar la plantilla ' + s.name);
         delB.addEventListener('click', () => busy(delB, () => deleteSavedTemplate(s.id)));
-        btnGroup.appendChild(importB); if (['admin', 'super_admin'].includes(window.STAFF_ROLE)) btnGroup.appendChild(delB);   // archivar = admin+
+        if (showArch) {
+          const resB = document.createElement('button');
+          resB.type = 'button'; resB.className = 'gw-btn gw-btn--secondary gw-btn--sm';
+          resB.textContent = 'Restaurar';
+          resB.setAttribute('aria-label', 'Restaurar la plantilla ' + s.name);
+          resB.addEventListener('click', () => busy(resB, () => restoreSavedTemplate(s.id)));
+          btnGroup.appendChild(resB);
+          if (window.STAFF_ROLE === 'super_admin') {
+            const hardB = document.createElement('button');
+            hardB.type = 'button'; hardB.className = 'gw-btn gw-btn--danger-outline gw-btn--sm';
+            hardB.textContent = 'Eliminar definitivamente';
+            hardB.setAttribute('aria-label', 'Eliminar definitivamente la plantilla ' + s.name);
+            hardB.addEventListener('click', () => busy(hardB, () => hardDeleteSavedTemplate(s.id, s.name)));
+            btnGroup.appendChild(hardB);
+          }
+        } else {
+          btnGroup.appendChild(importB); if (['admin', 'super_admin'].includes(window.STAFF_ROLE)) btnGroup.appendChild(delB);   // archivar = admin+
+        }
         row.appendChild(label); row.appendChild(btnGroup);
         listEl.appendChild(row);
       });
@@ -493,6 +514,23 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       stateLine(listEl, 'No se pudo cargar la librería (error de red). Cierra la ventana y vuelve a intentarlo.', true);
     }
   }
+
+  async function restoreSavedTemplate(savedId) {
+    const res = await fetch(`/api/saved-badge-templates/${savedId}/restore`, { method: 'POST' });
+    if (res.ok) { showToast('Plantilla restaurada: ya se puede importar', 'success'); openImportModal(); }
+    else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo restaurar', 'error');
+  }
+
+  async function hardDeleteSavedTemplate(savedId, name) {
+    const ok = await showConfirm('¿Eliminar DEFINITIVAMENTE la plantilla «' + name + '» de la librería? No se puede deshacer (los eventos que ya la usan conservan su diseño) y queda registrado.', { confirmLabel: 'Eliminar definitivamente' });
+    if (!ok) return;
+    const res = await fetch(`/api/saved-badge-templates/${savedId}`, { method: 'DELETE' });
+    if (res.ok) { showToast('Plantilla eliminada de la librería', 'success'); openImportModal(); }
+    else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo eliminar', 'error');
+  }
+
+  const archToggle = document.getElementById('savedTplArchived');
+  if (archToggle) archToggle.addEventListener('change', openImportModal);
 
   async function importSavedTemplate(savedId) {
     const ok = await showConfirm('Esto reemplaza el diseño actual de este evento por el de la plantilla importada. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, importar' });

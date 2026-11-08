@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import audit_actions
 from app.auth import require_role, scope_events_query
 from app.database import get_db
 from app.models import CalendarNote, Event, StaffUser
@@ -140,6 +141,7 @@ def delete_calendar_note(
     assert_same_tenant(staff, _note_tenant(note), "Recordatorio no encontrado")
     if note.created_by_id != staff.id and staff.role not in ("admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Solo quien lo creó (o un Admin) puede borrar este recordatorio")
+    audit_actions.record(db, staff, "delete", "calendar_note", note.id, None, f"fecha {note.date.isoformat()}; autor {note.created_by_id}")          # el texto del recordatorio no se copia
     db.delete(note)
     db.commit()
     return {"message": "Recordatorio eliminado"}

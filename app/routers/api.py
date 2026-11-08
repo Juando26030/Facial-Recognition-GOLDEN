@@ -935,6 +935,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     if utcnow() - log.timestamp > ACCREDIT_UNDO_WINDOW:
         raise HTTPException(status_code=409, detail="Pasaron más de 15 segundos: ya no se puede deshacer desde aquí. Un administrador puede cambiar el estado en Editar.")
     user_id = log.user_id
+    audit_actions.record(db, staff, "delete", "access_log", log.id, None, f"evento {event.id}: acreditación deshecha por quien la hizo (15 s)")          # sin cédula
     db.delete(log)
     db.commit()
     return {"undone": True, "user_id": user_id, **event_flags(event)}
@@ -1587,18 +1588,19 @@ def update_user_cedula(
 
 @router.delete("/users/{user_id}/logs")
 def delete_user_logs(
-    user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("admin")),
+    user_id: str, event_id: int, confirm: str = "", db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("super_admin")),
 ):
-    """Histórico (2026-09-21 en adelante) — ya NO se usa desde el frontend, quedó reemplazado por
-    `DELETE /users/{id}` (borrado real, ver abajo) y `PATCH /events/{id}/users/{id}/status`
-    (cambio de estado sin borrar nada). Se deja documentado, no se borra el endpoint, por si algún
-    integrador externo llegó a depender de él. Ojo: este SÍ borra por tenant completo, no por
-    evento — bug conocido, no replicar este patrón en código nuevo."""
+    """Fase 3: borra el HISTÓRICO DE ACCESOS de una persona en ESTE evento. Son registros de acceso (no se archivan), por eso solo super_admin y con confirmación fuerte: `confirm` debe ser
+    la identificación de la persona. Queda en `audit_actions` (cuántos registros; nunca la cédula). Antes borraba por cliente completo (bug); ahora solo el evento indicado. Lo normal para
+    deshacer un ingreso es `PATCH /events/{id}/users/{id}/status` (queda en el historial de cambios)."""
     event = get_event_for_staff(event_id, db, staff)
-    db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.tenant_id == event.tenant_id).delete()
+    if str(confirm or "").strip() != str(user_id).strip():
+        raise HTTPException(status_code=400, detail="Para borrar el histórico de accesos escribe (confirm) la identificación de la persona")
+    n = db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.event_id == event.id).delete(synchronize_session=False)
+    audit_actions.record(db, staff, "delete", "access_logs", event.id, None, f"evento {event.id}: {n} registro(s) de acceso de una persona")
     db.commit()
-    return {"message": "Registros eliminados. Estado regresado a No Registrado."}
+    return {"message": "Registros eliminados. Estado regresado a No Registrado.", "deleted": n}
 
 
 def _attendee_or_404(db: Session, event: Event, user_id: str, create: bool = False) -> EventAttendee:

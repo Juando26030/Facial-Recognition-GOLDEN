@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import form_client, form_stats
+from app import audit_actions, form_client, form_stats
 from app.auth import effective_roles, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.database import get_db
 from app.models import FormClientUser, StaffUser
@@ -79,6 +79,7 @@ def revoke_client_access(event_id: int, form_id: int, staff_id: int, db: Session
         raise HTTPException(status_code=404, detail="Ese acceso no existe en este formulario")
     user = grant.staff_user
     user.is_active = False                                      # la sesión abierta cae en la siguiente petición
+    audit_actions.record(db, staff, "delete", "form_client_access", grant.id, None, f"formulario {form.id}, evento {event_id}: acceso del cliente revocado")
     db.delete(grant)
     db.commit()
     return {"message": "Acceso revocado"}

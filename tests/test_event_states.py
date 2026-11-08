@@ -103,9 +103,10 @@ def test_only_admins_manage_states_but_everyone_logged_in_reads_them(client, fac
     assert client.post("/api/event-states", json={"name": "  ", "base_status": "creado"}).status_code == 400
     sid = body["id"]
     assert client.patch(f"/api/event-states/{sid}", json={"name": "Montaje y pruebas", "rules": {"roulette": False}}).json()["name"] == "Montaje y pruebas"
-    assert client.delete(f"/api/event-states/{sid}").status_code == 400                      # es el único activo con ese estado base
+    assert client.post(f"/api/event-states/{sid}/archive").status_code == 400                # es el único activo con ese estado base
     assert client.post("/api/event-states", json={"name": "Preparación", "base_status": "creado"}).status_code == 200
-    assert client.delete(f"/api/event-states/{sid}").status_code == 200
+    assert client.post(f"/api/event-states/{sid}/archive").status_code == 200                # Fase 3: se archiva (admin); borrar de verdad es de super_admin y de lo archivado
+    assert client.delete(f"/api/event-states/{sid}").status_code == 403
     assert client.get("/api/event-states").json()["states"][0]["name"] == "Preparación"
 
 
@@ -116,7 +117,7 @@ def test_a_state_in_use_cannot_change_base_be_disabled_or_deleted(client, factor
     login(client, "root")
     assert client.patch(f"/api/event-states/{a.id}", json={"base_status": "en_proceso"}).status_code == 400
     assert client.patch(f"/api/event-states/{a.id}", json={"is_active": False}).status_code == 400
-    assert client.delete(f"/api/event-states/{a.id}").status_code == 400
+    assert client.post(f"/api/event-states/{a.id}/archive").status_code == 400
     assert client.patch(f"/api/event-states/{b.id}", json={"base_status": "en_proceso"}).json()["base_status"] == "en_proceso"        # sin eventos sí
     assert db.get(Event, ev.id).state_id == a.id
 
