@@ -218,7 +218,8 @@ def _setup_config(event) -> dict:
     return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
             "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
-            "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled)}
+            "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled),
+            "accept_no_birth_mode": event.accept_no_birth_mode or "any"}
 
 
 @router.get("/events/{event_id}/biometric-setup")
@@ -243,6 +244,8 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
         new[k] = (str(new[k] or "").strip() or None)
     errors = biometric_setup.validate(str(new["controller_mode"]), bool(new["facial_enabled"]), new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"],
                                       bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]), locked=bool(new["biometrics_locked"]), accept_link=bool(new["accept_link_email"]))
+    if new["accept_no_birth_mode"] not in ("any", "require_personal_link"):
+        errors.append("La aceptación cuando la base no trae fecha de nacimiento debe ser «cualquier fecha adulta» o «exigir el enlace personal»")
     if new["face_door_enabled"] and (not new["facial_enabled"] or new["biometrics_locked"]):
         errors.append("La entrada con rostro (autoservicio) necesita el reconocimiento facial activo y sin candado")
     if errors:
@@ -250,6 +253,7 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event.biometrics_locked = bool(new["biometrics_locked"])
     event.face_door_enabled = bool(new["face_door_enabled"])
     event.accept_link_email = bool(new["accept_link_email"])
+    event.accept_no_birth_mode = str(new["accept_no_birth_mode"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])

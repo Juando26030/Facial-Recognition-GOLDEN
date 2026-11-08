@@ -296,6 +296,7 @@ class Event(Base):
     precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
     face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)
+    accept_no_birth_mode = Column(String, default='any', server_default='any', nullable=False)   # 0096 (D5): con la base SIN fecha de nacimiento, /aceptar acepta 'any' (cualquier fecha adulta, como antes) o 'require_personal_link' (solo con el enlace personal del correo); los eventos nuevos nacen con el segundo
     idle_minutes = Column(Integer, nullable=True)   # 0081: minutos de inactividad antes de cerrar la sesión del personal que trabaja en este evento (5-60), SOLO mientras está en proceso; NULL = el general (SESSION_IDLE_MINUTES, 10). app/idle.py
     face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
     badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
@@ -852,6 +853,7 @@ class InventoryItem(Base):
     name = Column(String, nullable=False)
     initial_qty = Column(Integer, nullable=False, default=0)
     allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
+    allow_repeat_delivery = Column(Boolean, default=True, server_default='true', nullable=False)  # 0096 (D7): ¿se puede entregar de nuevo a la MISMA persona? Los existentes sí; el alta por la API nace en false
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)

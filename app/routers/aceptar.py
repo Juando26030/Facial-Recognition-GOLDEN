@@ -28,6 +28,7 @@ from app.ttlcache import SlidingLimiter
 router = APIRouter()
 _limiter = SlidingLimiter()
 MAX_SELFIE_BYTES = 8 * 1024 * 1024
+REQUIRE_LINK = "require_personal_link"      # D5: valor de `events.accept_no_birth_mode` que exige el enlace personal cuando la base no trae la fecha de nacimiento
 GENERIC_NOT_FOUND = "No encontramos tu inscripción con ese documento y esa fecha. Acércate a la acreditación con tu cédula o QR."
 LINK_NOT_FOUND = "Este enlace no es válido o ya no está vigente. Acércate a la acreditación con tu cédula o QR."
 # Página amable (orden del 21-oct-2026) para un enlace o una página /aceptar que ya no aplica: el mismo texto para TODOS los casos (evento cerrado o sin la página,
@@ -60,6 +61,7 @@ DEVICE = {"link": "web-link", "qr": "web-qr", "web": "web-portal"}
 
 LINK_MAX_FAILS, LINK_WINDOW = 5, timedelta(minutes=15)      # intentos fallidos por enlace personal y pausa (sin guardar IP ni User-Agent: la clave es la huella del enlace)
 LINK_DOC_NOT_FOUND = "No encontramos tu inscripción con ese documento. Acércate a la acreditación con tu cédula o QR."
+NEED_LINK_MSG = "Para aceptar desde el celular usa el enlace personal que te llegó al correo. Si no lo tienes, acércate a la acreditación con tu cédula o QR."
 LINK_BLOCKED = "Demasiados intentos con este enlace. Espera unos 15 minutos o ingresa con tu cédula o QR en la acreditación."
 
 
@@ -97,9 +99,9 @@ def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
             raise HTTPException(status_code=429, detail=CEDULA_BLOCKED)
         try:
             user, att, by_link = _resolve(db, event, cedula, token)
-            birth = _check_birth(user, birth_raw)
+            birth = _check_birth(user, birth_raw, require_known=event.accept_no_birth_mode == REQUIRE_LINK)
         except HTTPException as exc:
-            if exc.status_code == 404 and ckey:                      # cédula que no existe en el evento o fecha que no coincide: cuenta contra ESA cédula (venga de la IP que venga)
+            if exc.status_code in (403, 404) and ckey:                      # cédula que no existe en el evento o fecha que no coincide: cuenta contra ESA cédula (venga de la IP que venga)
                 security.record_event(db, CEDULA_KIND, ckey, None)
             raise
         if ckey:
@@ -119,7 +121,7 @@ def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
         return user, att, by_link, user.birth_date
     if not (birth_raw or "").strip():
         raise NeedBirth()
-    return user, att, by_link, _check_birth(user, birth_raw)
+    return user, att, by_link, _check_birth(user, birth_raw)          # con enlace personal la fecha escrita siempre se acepta (D5: ese es justo el camino que sí vale sin fecha en la base)
 
 
 def _find_event(db: Session, code: str) -> Optional[Event]:
@@ -183,11 +185,14 @@ def _resolve(db: Session, event: Event, cedula: str, token: str):
     return user, att, False
 
 
-def _check_birth(user: User, birth_raw: str):
-    """La fecha de nacimiento escrita: válida y, si ya hay una registrada, la misma. 400 si falta o no se entiende; 404 genérico si no coincide."""
+def _check_birth(user: User, birth_raw: str, require_known: bool = False):
+    """La fecha de nacimiento escrita: válida y, si ya hay una registrada, la misma. 400 si falta o no se entiende; 404 genérico si no coincide.
+    D5: con `require_known` (ajuste del evento «exigir el enlace personal») y SIN fecha en la base, quien llega solo con la cédula no puede aceptar: 403 con el camino a seguir."""
     birth = minors.parse_birth(birth_raw)
     if birth is None:
         raise HTTPException(status_code=400, detail="Escribe tu fecha de nacimiento")
+    if user.birth_date is None and require_known:
+        raise HTTPException(status_code=403, detail=NEED_LINK_MSG)
     if user.birth_date is not None and user.birth_date != birth:
         raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
     return birth

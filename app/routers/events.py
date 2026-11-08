@@ -475,6 +475,7 @@ def create_event(
 
     event_data = data.dict(exclude={"extra", *event_tpl.SWITCH_KEYS})
     event_data["commercial_staff_id"] = commercial_id
+    event_data.setdefault("accept_no_birth_mode", "require_personal_link")      # D5: los eventos nuevos exigen el enlace personal si la base no trae fecha de nacimiento (los existentes quedan en 'any'; se cambia en Parámetros)
     event_data.update(prepared["columns"])          # pañoleta normalizada e interruptores: las MISMAS columnas que cambia «Parámetros del evento»
     initial = event_rules.default_state(db, event_data.get("status") or "creado")
     if initial is not None:
