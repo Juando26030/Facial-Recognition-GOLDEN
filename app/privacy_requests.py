@@ -81,9 +81,12 @@ def set_claim_flag(req: PrivacyRequest, active: bool, staff_id: Optional[int]) -
     _log(req, staff_id, "Bandera «reclamo en trámite» " + ("ACTIVADA" if active else "quitada"))
 
 
-def open_claim(db: Session, cedula: str) -> Optional[PrivacyRequest]:
-    """El reclamo con la bandera activa sobre esa cédula (para mostrar la leyenda), si lo hay."""
-    return db.query(PrivacyRequest).filter(PrivacyRequest.cedula == cedula.strip(), PrivacyRequest.claim_flag.is_(True)).order_by(PrivacyRequest.id.desc()).first()
+def open_claim(db: Session, cedula: str, tenant_id: Optional[str] = None) -> Optional[PrivacyRequest]:
+    """El reclamo con la bandera activa sobre esa cédula (para mostrar la leyenda), si lo hay. Con `tenant_id` (usuario limitado a su cliente) solo cuenta el de ese cliente."""
+    q = db.query(PrivacyRequest).filter(PrivacyRequest.cedula == cedula.strip(), PrivacyRequest.claim_flag.is_(True))
+    if tenant_id is not None:
+        q = q.filter(PrivacyRequest.tenant_id == tenant_id)
+    return q.order_by(PrivacyRequest.id.desc()).first()
 
 
 def as_dict(r: PrivacyRequest, today: Optional[date] = None) -> dict:

@@ -14,6 +14,7 @@ from app.auth import require_role, scope_events_query
 from app.database import get_db
 from app.models import CalendarNote, Event, StaffUser
 from app.routers.events import _serialize
+from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 
 router = APIRouter()
 
@@ -32,6 +33,8 @@ def list_notifiable_staff(
     mayúsculas (no hace falta el criterio de prefijo por palabra de otras búsquedas, esta lista es
     corta)."""
     query = db.query(StaffUser).filter(StaffUser.role.in_(NOTIFIABLE_ROLES), StaffUser.is_active == True)
+    if staff_tenant_enforced(staff):          # ENFORCE_STAFF_TENANT: solo ofrece compañeros de su mismo cliente
+        query = query.filter(StaffUser.tenant_id == staff.tenant_id)
     people = query.all()
     if q:
         q_lower = q.lower()
@@ -78,6 +81,11 @@ def _serialize_note(n: CalendarNote) -> dict:
     }
 
 
+def _note_tenant(n: CalendarNote):
+    """Cliente de la nota = cliente de quien la creó (None = personal global de Golden)."""
+    return n.created_by.tenant_id if n.created_by is not None else None
+
+
 @router.get("/calendar/notes")
 def list_calendar_notes(
     start: date, end: date, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
@@ -87,6 +95,10 @@ def list_calendar_notes(
     con destinatarios = solo para esas personas + quien lo creó."""
     notes = db.query(CalendarNote).filter(CalendarNote.date >= start, CalendarNote.date <= end).order_by(CalendarNote.date).all()
     visible = [n for n in notes if not n.get_targets() or staff.id in n.get_targets() or n.created_by_id == staff.id]
+    if staff_tenant_enforced(staff):
+        # Las notas no tienen cliente propio (sin migración): pertenecen al cliente de quien las creó. Con ENFORCE_STAFF_TENANT cada quien ve las de su cliente
+        # y las que otra persona le dirigió a él expresamente.
+        visible = [n for n in visible if staff.id in n.get_targets() or _note_tenant(n) == staff.tenant_id]
     return [_serialize_note(n) for n in visible]
 
 
@@ -105,6 +117,8 @@ def create_calendar_note(
         ).all()
         if len(valid) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="Uno o más destinatarios no son válidos (cliente/digitador no pueden recibir recordatorios)")
+        if staff_tenant_enforced(staff) and any(v.tenant_id != staff.tenant_id for v in valid):
+            raise HTTPException(status_code=400, detail="Uno o más destinatarios no son válidos (cliente/digitador no pueden recibir recordatorios)")      # mismo mensaje: no confirma que existen en otro cliente
 
     note = CalendarNote(date=data.date, text=text, created_by_id=staff.id)
     note.set_targets(target_ids)
@@ -123,6 +137,7 @@ def delete_calendar_note(
     note = db.query(CalendarNote).filter(CalendarNote.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Recordatorio no encontrado")
+    assert_same_tenant(staff, _note_tenant(note), "Recordatorio no encontrado")
     if note.created_by_id != staff.id and staff.role not in ("admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Solo quien lo creó (o un Admin) puede borrar este recordatorio")
     db.delete(note)

@@ -50,10 +50,26 @@ def _answer(status: str, **extra) -> JSONResponse:
     return JSONResponse({"status": status, **extra}, headers=NO_STORE)
 
 
+def _throttled(request: Request, req) -> bool:
+    """Tope de sondeos por solicitud y por IP (sin base de datos). La pantalla legítima pregunta cada 3 s, muy por debajo del tope."""
+    ip = security.limit_ip(request)
+    if ip is not None and not login_control.poll_allowed("ip:" + ip, login_control.POLL_MAX_PER_IP):
+        return True
+    if req and not login_control.poll_allowed("tok:" + login_control.token_hash(req["tok"])[:24], login_control.POLL_MAX_PER_TOKEN):
+        return True
+    return False
+
+
+def _too_many() -> JSONResponse:
+    return JSONResponse({"status": "throttled", "message": "Demasiadas consultas seguidas. Espera un momento."}, status_code=429, headers={**NO_STORE, "Retry-After": "30"})
+
+
 @router.post("/api/ingreso/estado")
 def waiting_status(request: Request, db: Session = Depends(get_db)):
     """`pending` (con `expires_in`), `approved` (con `redirect`: la sesión ya quedó creada), `denied` (con `message`), `expired` o `none` (no hay solicitud de este navegador)."""
     req = _pending_req(request)
+    if _throttled(request, req):
+        return _too_many()
     if not req:
         return _answer("none", message=login_control.EXPIRED_MSG)
     staff = db.query(StaffUser).filter(StaffUser.id == req["uid"], StaffUser.is_active == True).first()  # noqa: E712
@@ -91,6 +107,8 @@ def waiting_status(request: Request, db: Session = Depends(get_db)):
 @router.post("/api/ingreso/cancelar")
 def waiting_cancel(request: Request, db: Session = Depends(get_db)):
     req = _pending_req(request)
+    if _throttled(request, req):
+        return _too_many()
     if req:
         staff = db.get(StaffUser, req["uid"])
         if staff is not None and login_control.matches(staff, req["tok"]):

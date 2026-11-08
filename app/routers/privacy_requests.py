@@ -9,15 +9,17 @@ from app import privacy_requests as pr
 from app.auth import require_role
 from app.database import get_db
 from app.models import Event, PrivacyRequest, StaffUser
+from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 
 router = APIRouter()
 ADMIN = require_role("admin")
 
 
-def _get(db: Session, request_id: int) -> PrivacyRequest:
+def _get(db: Session, request_id: int, staff: StaffUser) -> PrivacyRequest:
     row = db.get(PrivacyRequest, request_id)
     if not row:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    assert_same_tenant(staff, row.tenant_id, "Solicitud no encontrada")      # ENFORCE_STAFF_TENANT: una solicitud de otro cliente (o sin cliente) no existe para este usuario
     return row
 
 
@@ -29,7 +31,10 @@ def create_request(data: dict, db: Session = Depends(get_db), staff: StaffUser =
         raise HTTPException(status_code=400, detail="Indica el canal, el tipo de solicitud, el nombre del titular y su cédula")
     event_id: Optional[int] = data.get("event_id") if isinstance(data.get("event_id"), int) else None
     event = db.get(Event, event_id) if event_id else None
-    req = pr.create(db, channel=channel, holder_name=name, cedula=cedula, request_type=rtype, tenant_id=event.tenant_id if event else None, event_id=event.id if event else None, staff_id=staff.id)
+    if event is not None:
+        assert_same_tenant(staff, event.tenant_id, "Evento no encontrado")
+    tenant_id = event.tenant_id if event else (staff.tenant_id if staff_tenant_enforced(staff) else None)      # limitado a su cliente: la solicitud queda siempre a nombre de su cliente
+    req = pr.create(db, channel=channel, holder_name=name, cedula=cedula, request_type=rtype, tenant_id=tenant_id, event_id=event.id if event else None, staff_id=staff.id)
     db.commit()
     return pr.as_dict(req)
 
@@ -39,6 +44,8 @@ def list_requests(status: Optional[str] = None, db: Session = Depends(get_db), s
     q = db.query(PrivacyRequest)
     if status:
         q = q.filter(PrivacyRequest.status == status)
+    if staff_tenant_enforced(staff):
+        q = q.filter(PrivacyRequest.tenant_id == staff.tenant_id)
     return [pr.as_dict(r) for r in q.order_by(PrivacyRequest.id.desc()).limit(200)]
 
 
@@ -47,7 +54,7 @@ def set_status(request_id: int, data: dict, db: Session = Depends(get_db), staff
     status = str(data.get("status") or "")
     if status not in pr.STATUSES:
         raise HTTPException(status_code=400, detail="Estado no válido")
-    row = _get(db, request_id)
+    row = _get(db, request_id, staff)
     pr.set_status(row, status, staff.id)
     db.commit()
     return pr.as_dict(row)
@@ -56,7 +63,7 @@ def set_status(request_id: int, data: dict, db: Session = Depends(get_db), staff
 @router.put("/privacy-requests/{request_id}/claim-flag")
 def set_claim_flag(request_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Activa o quita la bandera «reclamo en trámite» sobre el dato de la persona (máximo 2 días hábiles desde la radicación para activarla)."""
-    row = _get(db, request_id)
+    row = _get(db, request_id, staff)
     if row.status in ("resuelta", "rechazada") and data.get("active"):
         raise HTTPException(status_code=400, detail="La solicitud ya está cerrada")
     pr.set_claim_flag(row, bool(data.get("active")), staff.id)
@@ -69,5 +76,5 @@ def set_claim_flag(request_id: int, data: dict, db: Session = Depends(get_db), s
 @router.get("/privacy-requests/claim/{cedula}")
 def claim_for(cedula: str, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """¿Hay un reclamo en trámite sobre esta persona? (para mostrar la leyenda junto a su dato)."""
-    row = pr.open_claim(db, cedula)
+    row = pr.open_claim(db, cedula, tenant_id=staff.tenant_id if staff_tenant_enforced(staff) else None)
     return {"claim_in_progress": bool(row), "radicado": row.radicado if row else None}

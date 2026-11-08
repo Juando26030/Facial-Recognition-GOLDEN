@@ -326,7 +326,8 @@ def list_saved_colors(include_archived: bool = False, db: Session = Depends(get_
 
 @router.post("/colors")
 def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Crea un color; si ya existe uno con ese nombre, le cambia el tono (así "Rojo Golden" es siempre uno solo)."""
+    """Crea un color. Si ya existe uno con ese nombre (la librería es compartida por toda la organización), solo admin+ puede cambiarle el tono: un coordinador que manda el
+    mismo nombre con otro tono recibe 409 (con el mismo tono es idempotente). Así "Rojo Golden" es siempre uno solo y nadie lo pisa sin permiso (cierre de seguridad, Fase 3)."""
     name = str(data.get("name") or "").strip()[:60]
     hex_value = str(data.get("hex") or "").strip()
     if not name:
@@ -337,7 +338,11 @@ def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
     if color:
         if color.archived_at is not None:
             raise HTTPException(status_code=400, detail="Ese color está archivado: restáuralo para usarlo")
-        color.hex = hex_value.lower()
+        if color.hex.lower() != hex_value.lower():
+            if staff.role not in ("admin", "super_admin"):
+                raise HTTPException(status_code=409, detail=f"Ya existe un color llamado «{color.name}» con otro tono. Elígelo de la lista o ponle otro nombre; solo un administrador puede cambiarlo")
+            audit_actions.record(db, staff, "update", "saved_color", color.id, color.name, f"{color.hex} -> {hex_value.lower()}")
+            color.hex = hex_value.lower()
     else:
         color = SavedColor(name=name, hex=hex_value.lower(), created_by_id=staff.id)
         db.add(color)

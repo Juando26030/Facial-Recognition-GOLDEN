@@ -10,6 +10,9 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
+import time
+from collections import deque
 from datetime import timedelta
 from typing import Optional
 
@@ -109,3 +112,36 @@ def consume_approved(db: Session, staff: StaffUser, token: str) -> bool:
     db.commit()
     db.refresh(staff)
     return n == 1
+
+
+# ------------------------------------------------------------------------------------------------ límite de sondeos (cierre de seguridad, Fase 3)
+# /api/ingreso/estado y /cancelar no piden sesión (la solicitud viaja en la cookie firmada). El token ya es de un solo uso y vence a los 5 minutos; aquí se acota ADEMÁS cuántas veces
+# puede preguntar un navegador (la pantalla legítima pregunta cada 3 s = 20/min) y una IP. En memoria por proceso, sin tocar la base (este sondeo es frecuente); con 3 procesos el tope real
+# es hasta 3 veces mayor, que sigue siendo inofensivo frente a un token de 256 bits.
+POLL_MAX_PER_TOKEN = 60          # por minuto y por solicitud (3x lo normal)
+POLL_MAX_PER_IP = 300            # por minuto y por IP (varios digitadores detrás de la misma red)
+POLL_WINDOW = 60.0
+_POLL_MAX_KEYS = 5000
+_poll_hits: dict = {}
+_poll_lock = threading.Lock()
+
+
+def poll_allowed(key: str, limit: int, now: float = None) -> bool:
+    """True si `key` aún no llegó a `limit` sondeos en la última ventana; cuenta este. Ventana deslizante en memoria."""
+    now = time.monotonic() if now is None else now
+    with _poll_lock:
+        if len(_poll_hits) > _POLL_MAX_KEYS:
+            for k in [k for k, q in _poll_hits.items() if not q or now - q[-1] > POLL_WINDOW]:
+                del _poll_hits[k]
+        q = _poll_hits.setdefault(key, deque())
+        while q and now - q[0] > POLL_WINDOW:
+            q.popleft()
+        if len(q) >= limit:
+            return False
+        q.append(now)
+        return True
+
+
+def reset_poll_limits() -> None:
+    with _poll_lock:
+        _poll_hits.clear()

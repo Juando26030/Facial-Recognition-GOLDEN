@@ -130,6 +130,8 @@ def _fresh_public_limiter(monkeypatch):
     monkeypatch.setattr(aceptar, "_limiter", SlidingLimiter())
     from app.routers import reprint as reprint_router
     monkeypatch.setattr(reprint_router, "_limiter", SlidingLimiter())
+    from app import login_control
+    login_control.reset_poll_limits()
 
 
 @pytest.fixture(autouse=True)

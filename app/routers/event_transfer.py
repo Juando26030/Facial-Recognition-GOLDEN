@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import event_transfer, event_transfer_jobs, uploads
-from app.auth import require_role
+from app.auth import assert_event_tenant, require_role
 from app.database import get_db
 from app.models import Event, EventTransferLog, StaffUser, Tenant
 from app.storage import get_storage
@@ -48,6 +48,7 @@ def export_start(body: ExportStart, staff: StaffUser = Depends(SUPER), db: Sessi
     event = db.get(Event, body.event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     try:
         job_id = event_transfer_jobs.start_export(db, staff, event, include_biometrics=body.include_biometrics, passphrase=body.passphrase)
     except event_transfer.TransferError as e:
@@ -168,6 +169,7 @@ def export_event(event_id: int, include_biometrics: bool = False, staff: StaffUs
     event = db.get(Event, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     if include_biometrics:
         raise HTTPException(status_code=400, detail="La biometría se exporta desde el asistente (pide una frase de transporte): usa «Exportar evento».")
     data, _ = event_transfer.export_event(db, event, staff_username=staff.username)
