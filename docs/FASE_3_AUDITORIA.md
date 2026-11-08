@@ -92,6 +92,25 @@ Antes: coordinador+ borraba una zona CON todos sus movimientos, y un ítem sin e
 - **Premios / ruleta:** no existe un catálogo de premios en la base. La ruleta guarda su configuración (JSON por evento) y los sorteos ejecutados (`roulette_draws`, auditoría de ganadores) y NO tiene borrado de sorteos; lo único que se borra es la autorización de giro (`DELETE .../roulette/authorize`, efímera). No hay nada que archivar ahí: los premios entregados no corren riesgo.
 - **No tocado a propósito:** estados de evento (`event-states`; ya tiene `is_active` y el borrado exige que ningún evento lo use), recordatorios del calendario (efímeros; solo el autor o admin+).
 
+## Oleada documentos y legalizaciones del evento (migración `0093_docs_expenses_archive`)
+Aditiva: `archived_at` / `archived_by_id` en `event_documents` y `event_expenses`. Código en `app/routers/event_docs.py`; pantallas `kiosk_documentos.html` y `kiosk_legalizaciones.html` (+ sus JS).
+
+Auditoría de lo que existía: crear (`POST .../documents`, `POST .../expenses`, coordinador+), leer/listar, descargar (`.../download`, `.../evidence`), ZIP de documentos y reporte Excel de gastos (coordinador+) y borrar (`DELETE`, coordinador+, **borrado real del registro y del archivo, sin rastro**). **No existen endpoints de edición** (ni PUT ni PATCH): un documento o gasto mal cargado se archiva y se vuelve a crear; una prueba fija que siga así, y quien agregue edición debe rechazar los archivados. `delete_event_files` (borrar el evento completo, ya limitado a super_admin y a eventos archivados) no se tocó.
+
+| Acción | coordinador / comercial | admin | super_admin |
+|---|---|---|---|
+| Crear, ver activos, descargar, ZIP, reporte | sí (igual que antes) | sí | sí |
+| Ver archivados (`include_archived=true`) y descargar su archivo/evidencia | - | sí | sí |
+| Archivar / restaurar | - | sí | sí |
+| Borrar definitivo (`DELETE`) | - (antes sí) | - | sí, solo si está ARCHIVADO |
+
+- **Archivado:** sale de la lista, del ZIP de documentos y del reporte Excel; en gastos **no suma al total** (ni en la lista con `include_archived`). El archivo (documento o evidencia) queda intacto en el almacenamiento y el registro conserva su historial; restaurar lo devuelve todo. Para coordinador/comercial un archivado responde 404 al intentar descargarlo.
+- **Borrado definitivo:** super_admin y solo de lo ya archivado (si no, 400); borra la fila y después, ya confirmada la base, el archivo con `get_storage().delete` (misma API de `app/storage.py` que ya usaba el código). Antes lo hacía cualquier coordinador+.
+- **Registro (`audit_actions`):** entidades `event_document` (nombre/referencia del documento) y `event_expense` (categoría del gasto), con `evento N`; acciones `archive`, `restore`, `delete`. Nunca el responsable, descripción, valor ni nombre del archivo.
+- **UI:** casilla «Ver archivados» (solo admin+) en ambas pantallas; botones Archivar / Restaurar (admin+) y «Eliminar definitivamente» (super_admin, solo en archivados), todos con `showConfirm`. El contador y el total de la pantalla cuentan solo lo activo.
+- **Paquete de evento (`event_transfer`):** los archivados viajan con su marca `archived_at`; `archived_by_id` se enlaza por nombre de usuario como los demás campos de personal.
+- **Hueco de permisos (reportar, no cambiado):** documentos y gastos los crea hasta `comercial` (coordinador+ en `require_role`), aunque el docstring dice que no son módulos operativos; y con `ENFORCE_STAFF_EVENT_SCOPE` apagado cualquier coordinador ve los documentos y gastos de cualquier evento. Decisión pendiente de Juan David; no se tocó quién crea.
+
 ## Tabla de auditoría de escrituras y borrados
 Generada con un recorrido estático (AST) de TODOS los `@router.post/put/patch/delete` de `app/routers/*.py` (212 rutas; `app/main.py` no define rutas de escritura propias). «Rol mínimo» es lo que declara la dependencia de la ruta (`require_role` = ese rol o superior; «sin comercial» = `require_role_excluding`). «Alcance de evento» = la ruta valida el evento/cliente con `get_event_for_staff`, `assert_event_*` o un ayudante que lo hace (revisado a mano en las que decían «vía helper»). La columna final marca lo que conviene revisar; **nada de esto se corrigió fuera de las oleadas**: es solo reporte.
 

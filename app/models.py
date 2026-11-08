@@ -773,6 +773,8 @@ class EventDocument(Base):
     size_bytes = Column(Integer, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0093 (Fase 3): NULL = activo; con fecha = archivado (oculto, conserva el archivo, se restaura)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class EventExpense(Base):
@@ -790,6 +792,8 @@ class EventExpense(Base):
     evidence_name = Column(String, nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0093 (Fase 3)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class SuperEvent(Base):

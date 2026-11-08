@@ -1,4 +1,4 @@
-/* Legalizaciones del evento (Fase 1.5): gastos como tarjetas, alta con rueda en el botón y borrado con confirmación.
+/* Legalizaciones del evento (Fase 1.5): gastos como tarjetas, alta con rueda en el botón y archivado y borrado definitivo con confirmación.
    La lógica y las rutas de la API son las de siempre; solo cambió cómo se ve. */
 (function () {
   'use strict';
@@ -7,6 +7,7 @@
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const icon = (n) => '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>';
   const money = (n) => Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ROLE = window.STAFF_ROLE || '', isAdmin = ROLE === 'admin' || ROLE === 'super_admin', isSuper = ROLE === 'super_admin';
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
 
   function setList(html, loading) {
@@ -18,7 +19,8 @@
   async function loadExpenses() {
     let data;
     try {
-      const res = await fetch('/api/events/' + EVENT_ID + '/expenses');
+      const withArchived = isAdmin && $('showArchived') && $('showArchived').checked;
+      const res = await fetch('/api/events/' + EVENT_ID + '/expenses' + (withArchived ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http ' + res.status);
       data = await res.json();
     } catch (err) {
@@ -26,7 +28,7 @@
       return;
     }
     $('totalAmount').textContent = money(data.total);
-    $('expCount').textContent = String(data.expenses.length);
+    $('expCount').textContent = String(data.expenses.filter((x) => !x.archived).length);
     if (!data.expenses.length) {
       setList('<div class="gw-state">' + icon('form') + '<p class="gw-state__title">Todavía no hay gastos</p><p class="gw-state__text">Registra el primero con el botón «Registrar gasto» de arriba.</p></div>');
       return;
@@ -35,14 +37,16 @@
       <article class="gw-card-row">
         <div class="gw-card-row__head">
           <h3 class="gw-card-row__title">${esc(x.category)}</h3>
-          <span class="gw-badge ${x.has_evidence ? 'gw-badge--ok' : 'gw-badge--warn'}">${x.has_evidence ? 'Con evidencia' : 'Sin evidencia'}</span>
+          <span class="gw-badge ${x.has_evidence ? 'gw-badge--ok' : 'gw-badge--warn'}">${x.has_evidence ? 'Con evidencia' : 'Sin evidencia'}</span>${x.archived ? ' <span class="gw-badge">Archivado</span>' : ''}
         </div>
         <p class="gw-card-row__amount">${money(x.amount)}</p>
         <p class="gw-card-row__meta">${x.created_at ? new Date(x.created_at + 'Z').toLocaleDateString() + ' · ' : ''}Responsable: ${esc(x.responsible)}${x.applies_to ? ' · Aplica a: ' + esc(x.applies_to) : ''}</p>
         ${x.description ? `<p class="gw-text-sm">${esc(x.description)}</p>` : ''}
         ${x.has_evidence ? `<a href="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" target="_blank" rel="noopener" aria-label="Abrir la evidencia en una pestaña nueva"><img class="gw-card-row__thumb" src="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" alt="Evidencia del gasto" loading="lazy"></a>` : ''}
         <div class="gw-card-row__actions">
-          <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${x.id}">${icon('trash')} Eliminar</button>
+          ${isAdmin && !x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${x.id}">Archivar</button>` : ''}
+          ${isAdmin && x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${x.id}">${icon('undo')} Restaurar</button>` : ''}
+          ${isSuper && x.archived ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${x.id}">${icon('trash')} Eliminar definitivamente</button>` : ''}
         </div>
       </article>`).join(''));
   }
@@ -64,14 +68,29 @@
 
   $('expList').addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry]')) { setList('<span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando gastos…</span></span>', true); loadExpenses(); return; }
-    const btn = e.target.closest('[data-del]');
+    const btn = e.target.closest('[data-archive], [data-restore], [data-del]');
     if (!btn) return;
-    if (!await showConfirm('¿Eliminar este gasto (y su evidencia)? No se puede deshacer.', { confirmLabel: 'Eliminar' })) return;
-    let ok = false;
-    try { await busy(btn, async () => { ok = (await fetch('/api/events/' + EVENT_ID + '/expenses/' + btn.dataset.del, { method: 'DELETE' })).ok; }); } catch (err) { ok = false; }
-    showToast(ok ? 'Gasto eliminado' : 'No se pudo eliminar', ok ? 'success' : 'error');
+    const act = btn.dataset.archive ? 'archive' : btn.dataset.restore ? 'restore' : 'delete';
+    const id = btn.dataset.archive || btn.dataset.restore || btn.dataset.del;
+    const cfg = {
+      archive: ['¿Archivar este gasto? Sale de la lista, del total y del reporte, pero se conserva (con su evidencia) y se puede restaurar.', 'Archivar', 'Gasto archivado'],
+      restore: ['¿Restaurar este gasto? Vuelve a la lista y a sumar en el total.', 'Restaurar', 'Gasto restaurado'],
+      delete: ['¿Eliminar definitivamente este gasto y su evidencia? No se puede deshacer.', 'Eliminar definitivamente', 'Gasto eliminado definitivamente'],
+    }[act];
+    if (!await showConfirm(cfg[0], { confirmLabel: cfg[1] })) return;
+    const url = '/api/events/' + EVENT_ID + '/expenses/' + id + (act === 'delete' ? '' : '/' + act);
+    let ok = false, msg = '';
+    try {
+      await busy(btn, async () => {
+        const res = await fetch(url, { method: act === 'delete' ? 'DELETE' : 'POST' });
+        ok = res.ok;
+        if (!ok) msg = (await res.json().catch(() => ({}))).detail || '';
+      });
+    } catch (err) { ok = false; }
+    showToast(ok ? cfg[2] : (msg || 'No se pudo completar la acción'), ok ? 'success' : 'error');
     loadExpenses();
   });
 
+  if ($('showArchived')) $('showArchived').addEventListener('change', loadExpenses);
   loadExpenses();
 })();
