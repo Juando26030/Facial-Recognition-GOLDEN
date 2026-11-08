@@ -18,7 +18,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import bodylimit, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -200,6 +200,7 @@ if timing.active():                                  # diagnóstico de esperas (
     from app.database import engine as _engine
     timing.install_db(_engine)
     app.add_middleware(timing.TimingMiddleware)
+app.add_middleware(bodylimit.BodyLimitMiddleware)             # C3/R3-07: tope de cuerpo en las rutas públicas (413 antes de leer nada)
 app.add_middleware(obs.RequestLogMiddleware, on_5xx=ops.record_5xx)     # el más externo: mide y registra TODA petición (incluidos los errores)
 
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
@@ -876,6 +877,12 @@ def _error_response(request: Request, status: int, message: str, headers: dict =
         f"<body style='font-family:sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;text-align:center'><h2>Algo salió mal</h2><p>{message}</p>"
         f"<p style='color:#666'>Si sigue pasando, avisa a soporte con este código: <strong>{rid}</strong></p><p><a href='/'>Volver al inicio</a></p></body></html>",
         status_code=status, headers=headers)
+
+
+@app.exception_handler(bodylimit.BodyTooLarge)
+async def body_too_large(request: Request, exc: Exception):
+    """El cuerpo (sin Content-Length o con uno falso) pasó el tope de su ruta pública mientras se leía: 413, sin 500 ni traza."""
+    return JSONResponse({"detail": bodylimit.MSG}, status_code=413, headers={"Connection": "close"})
 
 
 @app.exception_handler(Exception)
