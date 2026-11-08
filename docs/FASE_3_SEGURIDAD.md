@@ -61,3 +61,10 @@ for f in leaflet.js leaflet.css; do curl -s https://cdnjs.cloudflare.com/ajax/li
 ```
 
 Luego en `loadLeaflet()` poner `js.integrity` / `css.integrity` con esos valores (y `crossOrigin = 'anonymous'`). Los demás scripts de CDN en plantillas (Chart.js 4.5.1, SheetJS 0.18.5) ya llevan SRI y `test_g_*` lo exige.
+
+
+## CSP estricto: decisión del 8-nov-2026
+No se activa en este despliegue. Se hace por etapas, sin esperar a la versión final:
+1. **Ya (trinquete):** `tests/test_csp_trinquete.py` impide que crezca el JavaScript en línea; toda plantilla nueva nace sin él.
+2. **Fase 4 y siguientes:** cada plantilla que se toque migra sus bloques a `static/js/` y baja su número en el trinquete.
+3. **Cuando el contador llegue a 0:** cabecera `Content-Security-Policy-Report-Only` con `script-src 'self'` en staging, luego en producción, y por último la cabecera que bloquea.
