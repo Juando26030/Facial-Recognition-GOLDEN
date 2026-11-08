@@ -8,7 +8,7 @@ import os
 import uuid
 import zipfile
 from datetime import datetime
-from app import heavy, safe_limits
+from app import audit_actions, heavy, safe_limits
 from app.timeutil import utcnow
 from decimal import Decimal, InvalidOperation
 
@@ -29,6 +29,18 @@ from app import uploads
 from app.storage import get_storage, key_of
 
 router = APIRouter()
+
+ARCHIVE_ROLE = require_role("admin")            # Fase 3: archivar y restaurar documentos / gastos = admin+
+HARD_DELETE_ROLE = require_role("super_admin")  # borrado definitivo: solo super_admin, de lo ya archivado
+
+
+def _only_active(query, model, include_archived: bool, staff: StaffUser):
+    """Por defecto SOLO los activos; `include_archived=true` es de admin+ (pantalla «Ver archivados»)."""
+    if include_archived:
+        if staff.role not in ("admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los archivados")
+        return query
+    return query.filter(model.archived_at.is_(None))
 
 DOC_EXT = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods",
            ".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -61,13 +73,15 @@ def _doc_json(d: EventDocument) -> dict:
     return {
         "id": d.id, "name": d.name, "description": d.description or "", "filename": d.original_filename,
         "size_bytes": d.size_bytes, "created_at": d.created_at.isoformat() if d.created_at else None,
+        "archived": d.archived_at is not None,
     }
 
 
 @router.get("/events/{event_id}/documents")
-def list_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_documents(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
-    docs = db.query(EventDocument).filter(EventDocument.event_id == event.id).order_by(EventDocument.created_at.desc()).all()
+    query = _only_active(db.query(EventDocument).filter(EventDocument.event_id == event.id), EventDocument, include_archived, staff)
+    docs = query.order_by(EventDocument.created_at.desc()).all()
     return [_doc_json(d) for d in docs]
 
 
@@ -102,10 +116,20 @@ def add_document(
     return _doc_json(doc)
 
 
-def _get_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> EventDocument:
+def _find_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> EventDocument:
     event = get_event_for_staff(event_id, db, staff)
     doc = db.query(EventDocument).filter(EventDocument.id == doc_id, EventDocument.event_id == event.id).first()
-    if not doc or not get_storage().exists(doc.stored_path):
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return doc
+
+
+def _get_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> EventDocument:
+    """Documento con su archivo presente. Uno archivado solo lo descarga admin+ (para los demás es como si no existiera)."""
+    doc = _find_doc(db, event_id, doc_id, staff)
+    if doc.archived_at is not None and staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not get_storage().exists(doc.stored_path):
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     return doc
 
@@ -115,7 +139,7 @@ def download_all_documents(event_id: int, db: Session = Depends(get_db), staff: 
     """Todos los documentos del evento en un ZIP (al finalizar el evento). Cada archivo se nombra
     "<referencia> - <archivo original>" y los nombres repetidos se numeran."""
     event = get_event_for_staff(event_id, db, staff)
-    docs = db.query(EventDocument).filter(EventDocument.event_id == event.id).order_by(EventDocument.created_at).all()
+    docs = db.query(EventDocument).filter(EventDocument.event_id == event.id, EventDocument.archived_at.is_(None)).order_by(EventDocument.created_at).all()
     if not docs:
         raise HTTPException(status_code=404, detail="Este evento no tiene documentos")
     buffer, used = io.BytesIO(), set()
@@ -144,13 +168,41 @@ def download_document(event_id: int, doc_id: int, db: Session = Depends(get_db),
     return get_storage().response(doc.stored_path, filename=doc.original_filename, media_type=doc.mime_type or "application/octet-stream")
 
 
+@router.post("/events/{event_id}/documents/{doc_id}/archive")
+def archive_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    """Oculta el documento de la lista y del ZIP; el archivo se conserva y se puede restaurar."""
+    doc = _find_doc(db, event_id, doc_id, staff)
+    if doc.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El documento ya está archivado")
+    doc.archived_at, doc.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "event_document", doc.id, doc.name, f"evento {doc.event_id}")
+    db.commit()
+    return {"message": "Documento archivado"}
+
+
+@router.post("/events/{event_id}/documents/{doc_id}/restore")
+def restore_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    doc = _find_doc(db, event_id, doc_id, staff)
+    if doc.archived_at is None:
+        raise HTTPException(status_code=400, detail="El documento no está archivado")
+    doc.archived_at, doc.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "event_document", doc.id, doc.name, f"evento {doc.event_id}")
+    db.commit()
+    return {"message": "Documento restaurado"}
+
+
 @router.delete("/events/{event_id}/documents/{doc_id}")
-def delete_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    doc = _get_doc(db, event_id, doc_id, staff)
-    _remove(doc.stored_path)
+def delete_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(HARD_DELETE_ROLE)):
+    """Borrado DEFINITIVO: solo super_admin y solo de un documento ya archivado; borra también el archivo del almacenamiento."""
+    doc = _find_doc(db, event_id, doc_id, staff)
+    if doc.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el documento; el borrado definitivo solo aplica a documentos archivados")
+    audit_actions.record(db, staff, "delete", "event_document", doc.id, doc.name, f"evento {doc.event_id}")
+    stored = doc.stored_path
     db.delete(doc)
     db.commit()
-    return {"message": "Documento eliminado"}
+    _remove(stored)   # después del commit: si falla la base no se pierde el archivo
+    return {"message": "Documento eliminado definitivamente"}
 
 
 # ---------------------------------------------------------------- Legalizaciones (ítem 7)
@@ -159,15 +211,17 @@ def _expense_json(e: EventExpense) -> dict:
     return {
         "id": e.id, "category": e.category, "responsible": e.responsible, "description": e.description or "",
         "applies_to": e.applies_to or "", "amount": float(e.amount or 0), "has_evidence": bool(e.evidence_path),
-        "created_at": e.created_at.isoformat() if e.created_at else None,
+        "created_at": e.created_at.isoformat() if e.created_at else None, "archived": e.archived_at is not None,
     }
 
 
 @router.get("/events/{event_id}/expenses")
-def list_expenses(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_expenses(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """El total suma SOLO los gastos activos (un gasto archivado no cuenta aunque se muestre con `include_archived`)."""
     event = get_event_for_staff(event_id, db, staff)
-    rows = db.query(EventExpense).filter(EventExpense.event_id == event.id).order_by(EventExpense.created_at).all()
-    return {"expenses": [_expense_json(e) for e in rows], "total": float(sum((e.amount or 0) for e in rows))}
+    query = _only_active(db.query(EventExpense).filter(EventExpense.event_id == event.id), EventExpense, include_archived, staff)
+    rows = query.order_by(EventExpense.created_at).all()
+    return {"expenses": [_expense_json(e) for e in rows], "total": float(sum((e.amount or 0) for e in rows if e.archived_at is None))}
 
 
 @router.post("/events/{event_id}/expenses")
@@ -231,7 +285,7 @@ def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUs
     incrustada como imagen, y el total al final. Se puede bajar en cualquier momento (normalmente al
     finalizar el evento)."""
     event = get_event_for_staff(event_id, db, staff)
-    rows = db.query(EventExpense).filter(EventExpense.event_id == event.id).order_by(EventExpense.created_at).all()
+    rows = db.query(EventExpense).filter(EventExpense.event_id == event.id, EventExpense.archived_at.is_(None)).order_by(EventExpense.created_at).all()
     headers = ["Fecha", "Categoría", "Responsable", "Descripción", "Aplica a", "Valor", "Evidencia"]
     df = pd.DataFrame(
         [[to_local(e.created_at).strftime("%Y-%m-%d") if e.created_at else "", e.category, e.responsible, e.description or "",
@@ -284,15 +338,45 @@ def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUs
 @router.get("/events/{event_id}/expenses/{expense_id}/evidence")
 def expense_evidence(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     exp = _get_expense(db, event_id, expense_id, staff)
+    if exp.archived_at is not None and staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
     if not exp.evidence_path or not get_storage().exists(exp.evidence_path):
         raise HTTPException(status_code=404, detail="Este gasto no tiene evidencia")
     return get_storage().response(exp.evidence_path, filename=exp.evidence_name)
 
 
-@router.delete("/events/{event_id}/expenses/{expense_id}")
-def delete_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+@router.post("/events/{event_id}/expenses/{expense_id}/archive")
+def archive_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    """Saca el gasto de la lista, del total y del reporte; la evidencia se conserva y se puede restaurar."""
     exp = _get_expense(db, event_id, expense_id, staff)
-    _remove(exp.evidence_path)
+    if exp.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El gasto ya está archivado")
+    exp.archived_at, exp.archived_by_id = utcnow(), staff.id
+    audit_actions.record(db, staff, "archive", "event_expense", exp.id, exp.category, f"evento {exp.event_id}")
+    db.commit()
+    return {"message": "Gasto archivado"}
+
+
+@router.post("/events/{event_id}/expenses/{expense_id}/restore")
+def restore_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
+    exp = _get_expense(db, event_id, expense_id, staff)
+    if exp.archived_at is None:
+        raise HTTPException(status_code=400, detail="El gasto no está archivado")
+    exp.archived_at, exp.archived_by_id = None, None
+    audit_actions.record(db, staff, "restore", "event_expense", exp.id, exp.category, f"evento {exp.event_id}")
+    db.commit()
+    return {"message": "Gasto restaurado"}
+
+
+@router.delete("/events/{event_id}/expenses/{expense_id}")
+def delete_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(HARD_DELETE_ROLE)):
+    """Borrado DEFINITIVO: solo super_admin y solo de un gasto ya archivado; borra también su evidencia del almacenamiento."""
+    exp = _get_expense(db, event_id, expense_id, staff)
+    if exp.archived_at is None:
+        raise HTTPException(status_code=400, detail="Primero archiva el gasto; el borrado definitivo solo aplica a gastos archivados")
+    audit_actions.record(db, staff, "delete", "event_expense", exp.id, exp.category, f"evento {exp.event_id}")
+    evidence = exp.evidence_path
     db.delete(exp)
     db.commit()
-    return {"message": "Gasto eliminado"}
+    _remove(evidence)
+    return {"message": "Gasto eliminado definitivamente"}

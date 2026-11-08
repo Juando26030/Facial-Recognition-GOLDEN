@@ -41,7 +41,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = {{ staff_role|tojson }}; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg" data-gw-tour="documentos" data-gw-tour-auto>
@@ -92,7 +92,7 @@
           <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ponle nombre</span>
             {% call ayuda('ay_doc2', 'Ponle nombre') %}El nombre o referencia es lo que verás en la lista; la descripción es opcional y ayuda a encontrarlo después.{% endcall %}</li>
           <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Compártelo</span>
-            {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Eliminar no se puede deshacer.{% endcall %}</li>
+            {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Un administrador puede archivar un documento (se oculta, pero se conserva y se restaura); solo un super administrador lo elimina definitivamente.{% endcall %}</li>
         </ol>
       </div>
     </details>
@@ -103,7 +103,10 @@
         <div class="gw-stat gw-docs-zip">{{ ic('download', 'gw-stat__icon') }}<span class="gw-stat__label">Todos juntos</span>
           <a id="zipBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/documents/zip" hidden>Descargar (ZIP)</a></div>
       </div>
-      <h2 class="gw-card__title" id="docListTitle">Documentos adjuntos <span id="docCount" class="gw-muted"></span></h2>
+      <div class="gw-row gw-row--between">
+        <h2 class="gw-card__title" id="docListTitle">Documentos adjuntos <span id="docCount" class="gw-muted"></span></h2>
+        {% if staff_role in ("admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
+      </div>
       <div id="docList" class="gw-cards" aria-live="polite" aria-busy="true">
         <span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando documentos…</span></span>
       </div>

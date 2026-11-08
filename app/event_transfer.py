@@ -88,8 +88,8 @@ TABLES = [
     {"name": "person_changes", "kind": "event", "staff": ("staff_user_id",), "user": "user_id"},
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
-    {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id",)},
-    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id",)},
+    {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id", "archived_by_id")},
+    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id")},
 ]
 SPEC = {t["name"]: t for t in TABLES}
 PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "audit_consent_logs", "web_acceptances")
