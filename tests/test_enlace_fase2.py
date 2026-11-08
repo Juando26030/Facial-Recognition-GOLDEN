@@ -52,7 +52,11 @@ def test_card_data_follows_edit_and_retired_fields(admin, factory):
     assert admin.patch(f"/api/events/{ev['id']}", json={"extra": {"c_nota": "otra"}}).status_code == 200          # lo que hace «Editar evento»
     tpl = admin.get("/api/event-template").json()
     body = _body(tpl)
-    body["fields"] = [f for f in body["fields"] if f["key"] != "c_nota"]          # el admin retira el campo
+    body["fields"] = [f for f in body["fields"] if f["key"] != "c_nota"]          # el admin retira el campo (y lo saca de las dos vistas, como hace el diseñador)
+    for sec in body["creation_layout"]["sections"]:
+        sec["keys"] = [k for k in sec["keys"] if k != "c_nota"]
+    for zone, items in body["calendar_layout"]["zones"].items():
+        body["calendar_layout"]["zones"][zone] = [it for it in items if it["key"] != "c_nota"]
     assert admin.put("/api/event-template", json=body).status_code == 200
     row = [e for e in admin.get("/api/events/calendar?start=2026-11-01&end=2026-11-30").json() if e["id"] == ev["id"]][0]
     assert row["extra"]["c_nota"] == "otra"                           # el dato se conserva; la tarjeta lo omite porque el campo está retirado

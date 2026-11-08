@@ -132,7 +132,7 @@ def prepare_creation(db: Session, payload: dict, extra, waive=()) -> dict:
         f = by_key[k]
         if k in et.BOUND_KEYS or f["type"] not in ("commercial", "coordinator"):
             continue
-        role = f["type"]
+        role = {"commercial": "comercial", "coordinator": "coordinador"}[f["type"]]          # el tipo del campo va en inglés; el rol en la base, en español
         ok = db.query(StaffUser.id).filter(StaffUser.id == v, StaffUser.is_active == True, or_(StaffUser.role == role, StaffUser.secondary_role == role)).first()      # noqa: E712
         if not ok:
             errors.append(f"«{f['title']}»: la persona elegida no es válida")

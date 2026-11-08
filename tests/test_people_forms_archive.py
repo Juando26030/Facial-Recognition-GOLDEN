@@ -52,7 +52,7 @@ def test_below_coordinador_cannot_delete_a_person(client, factory, role):
     factory.authorize(ev, staff)
     login(client, "actor")
     assert client.delete(f"/api/users/1001?event_id={ev.id}").status_code == 403
-    assert _ids(client, ev) == {"1001", "1002"}
+    assert len(_ids(client, ev)) == 2          # siguen las dos personas (al cliente el directorio le enmascara la cédula, por eso se cuentan en vez de comparar las cédulas)
 
 
 def test_coordinador_deletes_a_person_for_real_and_leaves_an_audit_row_without_personal_data(client, factory, db):

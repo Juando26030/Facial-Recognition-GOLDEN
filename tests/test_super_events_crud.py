@@ -144,6 +144,7 @@ def test_hard_delete_rules(client, factory, db):
 
 
 def test_actions_are_logged(client, factory, db):
+    factory.tenant("acme")
     factory.staff("super_admin", "sup")
     login(client, "sup")
     sid = _mk(client)

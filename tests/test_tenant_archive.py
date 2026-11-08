@@ -57,12 +57,15 @@ def test_cannot_archive_with_event_in_progress_but_can_when_finished(client, fac
 def test_cannot_create_event_for_archived_tenant(client, factory):
     factory.tenant("acme")
     coord = factory.staff("coordinador", "coord")
+    com = factory.staff("comercial", "com")
     factory.staff("admin", "adm")
     login(client, "adm")
+    payload = _payload(coord.id, commercial_staff_id=com.id)          # el admin debe elegir la comercial: sin ella el 400 sería por otro motivo
     client.post("/api/tenants/acme/archive")
-    assert client.post("/api/events", json=_payload(coord.id)).status_code == 400
+    r = client.post("/api/events", json=payload)
+    assert r.status_code == 400 and "archivado" in r.json()["detail"]
     client.post("/api/tenants/acme/restore")
-    assert client.post("/api/events", json=_payload(coord.id)).status_code == 200
+    assert client.post("/api/events", json=payload).status_code == 200
 
 
 @pytest.mark.parametrize("role,expected", [("coordinador", 403), ("comercial", 200), ("admin", 200), ("super_admin", 200)])

@@ -209,6 +209,7 @@ def test_c_role_matrix_with_enforce_staff_tenant(client, factory, monkeypatch, r
 @pytest.mark.parametrize("role", ("digitador", "cliente"))
 def test_c_authorized_temp_accounts_are_also_cut_by_tenant(client, factory, monkeypatch, role):
     ev_other = factory.event(tenant_id="beta")
+    factory.tenant("acme")          # el cliente propio de la cuenta debe existir (llave foránea)
     s = factory.staff(role, "temp", tenant_id="acme")
     factory.authorize(ev_other, s)
     monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
