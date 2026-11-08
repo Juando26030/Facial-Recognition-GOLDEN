@@ -532,9 +532,19 @@ def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
 
 
 # ------------------------------------------------------------------ pantalla pública (proyector)
+PUBLIC_WINNER_KEYS = ("position", "name", "entity")          # B15: a la pantalla pública NO sale la cédula del ganador (la pantalla solo pinta posición, nombre y entidad)
+
+
+def public_winners(winners: list) -> list:
+    return [{k: w[k] for k in PUBLIC_WINNER_KEYS if k in w} for w in winners]
+
+
 def _cfg_by_token(db: Session, token: str) -> RouletteConfig:
     cfg = db.query(RouletteConfig).filter(RouletteConfig.display_token == token).first()
     if not cfg:
+        raise HTTPException(status_code=404, detail="Pantalla no disponible")
+    event = db.get(Event, cfg.event_id)
+    if event is None or event.archived_at is not None or event.data_archived_at is not None:          # B15: el enlace público deja de servir con el evento o su base archivados
         raise HTTPException(status_code=404, detail="Pantalla no disponible")
     return cfg
 
@@ -563,7 +573,7 @@ def display_state(token: str, after: Optional[int] = None, db: Session = Depends
     if last and after is not None and last.id > after:
         names = [p["name"] for p in candidates(db, event)]
         _RNG.shuffle(names)
-        out["draw"] = {"id": last.id, "label": last.label, "mode": last.mode, "winners": json.loads(last.winners_json), "pool": names[:POOL_SIZE]}
+        out["draw"] = {"id": last.id, "label": last.label, "mode": last.mode, "winners": public_winners(json.loads(last.winners_json)), "pool": names[:POOL_SIZE]}
     return out
 
 
@@ -582,7 +592,8 @@ def spin(token: str, request: Request, db: Session = Depends(get_db)):
     locked.authorized_json = None                        # se consume antes de sortear: pase lo que pase no se puede repetir
     db.commit()
     try:
-        return _run_draw(db, event, locked, auth["label"], auth["by"])
+        res = _run_draw(db, event, locked, auth["label"], auth["by"])
+        return {**res, "winners": public_winners(res["winners"])}          # la cédula queda en el sorteo guardado (reporte del operador), no en la pantalla pública
     except HTTPException:
         locked.authorized_json = json.dumps(auth)        # el sorteo no se pudo hacer: la autorización sigue vigente
         db.commit()
