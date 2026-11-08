@@ -174,7 +174,7 @@ def test_x6_pending_from_ip_counts_only_live_pending_of_that_ip(client, factory,
     db.commit()
     assert formsvc.pending_from_ip(db, form, "203.0.113.7") == 2      # la confirmada no cuenta
     assert formsvc.pending_from_ip(db, form, "203.0.113.7", sid="s0") == 1
-    assert formsvc.pending_from_ip(db, form, "203.0.113.7", person_id="901") == 1
+    assert formsvc.pending_from_ip(db, form, "203.0.113.7", person_id="901") == 2      # R9: la cédula la escribe cualquiera, ya NO excluye (una IP no acumula pendientes con la de otra persona)
     assert formsvc.pending_from_ip(db, form, "198.51.100.9") == 1
     db.query(RateLimitEvent).filter_by(kind=formsvc.PENDING_IP_KIND).update({"created_at": utcnow() - formsvc.PENDING_HOLD - timedelta(minutes=1)})
     db.commit()

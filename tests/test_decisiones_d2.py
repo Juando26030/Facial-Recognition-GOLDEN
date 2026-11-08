@@ -8,7 +8,7 @@ import pytest
 from app import formsvc
 from app.models import FormPayment, FormSubmission, SystemEvent, WebForm
 from app.timeutil import utcnow
-from tests.test_form_payments import PROD, SANDBOX, TIPO, _event_for, _no_dns, _values, _with_payment  # noqa: F401
+from tests.test_form_payments import PROD, SANDBOX, TIPO, _event_for, _no_dns, _staff, _values, _with_payment  # noqa: F401
 from tests.test_forms import _event, _state, _status, _submit, _url
 
 
@@ -28,6 +28,7 @@ def _other(n):
 def _limited(client, factory, capacity):
     ev = _event(client, factory)
     form = _with_payment(client, ev)
+    _staff(client)                                                                          # _with_payment cierra la sesión: se vuelve a entrar para fijar el cupo
     assert _status(client, ev, form, capacity=capacity).status_code == 200
     client.post("/logout")
     return ev, form
