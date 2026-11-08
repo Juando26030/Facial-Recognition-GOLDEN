@@ -6,9 +6,13 @@ from sqlalchemy.orm import Session
 
 from app import event_rules, idle, sessions
 from app.database import get_db
+from app.timeutil import utcnow
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
 ROLE_HIERARCHY = {role: i for i, role in enumerate(STAFF_ROLES)}
+
+
+FORM_CLIENT_OWN_PREFIXES = ("/api/form-client/", "/mi-formulario")          # sus propias rutas responden con su mensaje de acceso vencido (403, form_client.resolve)
 
 
 def hash_password(raw: str) -> str:
@@ -33,6 +37,12 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
     if sessions.is_replaced(db, request, staff):         # entró con esta cuenta en otro dispositivo (sesión única): el cliente detiene todo y lleva al inicio de sesión
         request.session.clear()
         raise HTTPException(status_code=401, detail="session_replaced")
+    if staff.role == "cliente" and not request.url.path.startswith(FORM_CLIENT_OWN_PREFIXES):          # B10: la cuenta de cliente de formulario VENCIDA no usa el resto de la API (assets, estados, sondeos)
+        from app import form_client
+        grant = form_client.grant_for(db, staff)
+        if grant is not None and grant.expires_at <= utcnow():
+            request.session.clear()
+            raise HTTPException(status_code=401, detail="Tu acceso venció. Pide uno nuevo a tu contacto de Golden.")
     return staff
 
 
@@ -121,6 +131,12 @@ def assert_event_tenant(event: Event, staff: StaffUser) -> None:
     Apagado por defecto: hoy todo el personal es de Golden; se enciende (en staging primero) antes de dar acceso a personal de otra empresa."""
     if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and event.tenant_id != staff.tenant_id:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+
+def assert_tenant_id(tenant_id: str, staff: StaffUser) -> None:
+    """Como `assert_event_tenant`, para recursos que solo traen el id del cliente en la ruta (p. ej. imágenes de escarapela): con ENFORCE_STAFF_TENANT=1, el personal de un cliente no toca los de otro."""
+    if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and tenant_id != staff.tenant_id:
+        raise HTTPException(status_code=404, detail="No encontrado")
 
 
 def event_scope_enforced() -> bool:

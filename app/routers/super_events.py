@@ -1,13 +1,13 @@
 """Superevento (reunión 2026-09-21, ítem 19): agrupa eventos independientes de un mismo cliente bajo
 un "padre". Cada hijo se maneja totalmente separado (parámetros, registro, reportes) — lo único que
 cruza es el aviso de que una persona ya asistió a un evento hermano."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.timeutil import utcnow
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import audit_actions
+from app import audit_actions, security
 from app.auth import get_event_for_staff, require_role
 from app.tenant_scope import assert_same_tenant
 from app import event_archive
@@ -138,14 +138,18 @@ def sibling_attendance(db: Session, event: Event, user_id: str) -> list:
     return attended
 
 
+SIBLING_CHECK_MAX = 300          # consultas por cuenta cada 10 min (un puesto de registro muy activo no llega)
+
+
 @router.get("/users/{user_id}/sibling-check")
 def sibling_check(
-    user_id: str, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
+    user_id: str, event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """¿Esta persona ya asistió a un evento hermano de este (mismo superevento)? Si sí, devuelve sus
     datos guardados para poder solo vincularla a este evento en vez de capturarlos de nuevo."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
+    security.enforce_public_limit(db, request, "sibling_check", str(staff.id), SIBLING_CHECK_MAX, timedelta(minutes=10))          # B11: no es un oráculo para probar cédulas sin freno
     attended = sibling_attendance(db, event, user_id)
     if not attended:
         return {"siblings": []}
