@@ -56,6 +56,10 @@
               <label class="gw-label" for="newTemplate">Empezar desde</label>
               <select class="gw-select" id="newTemplate"><option value="">Formulario nuevo (cédula, nombres, apellidos, correo)</option></select>
             </div>
+            <div class="gw-stack" id="tplManage" hidden>
+              <label class="gw-check"><input type="checkbox" id="showArchivedTpls"> Ver archivadas</label>
+              <div class="gw-cards" id="tplList" aria-live="polite"></div>
+            </div>
           </div>
         </details>
         <button type="submit" class="gw-btn gw-btn--primary gw-btn--block gw-forms-main" id="newBtn">{{ ic('plus') }} Crear formulario</button>
@@ -83,6 +87,7 @@
     </section>
   </div>
 </main>
+<script src="{{ url_for('static', path='js/archive-rules.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/kiosk-formularios.js') }}" defer></script>
 </body>
 </html>

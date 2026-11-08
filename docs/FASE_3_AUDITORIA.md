@@ -383,3 +383,11 @@ Pendiente de decisión: el respaldo, la cola, los reportes vencidos y el precale
 
 ## Cierre de huecos de CRUD (migración `0094_crud_gaps`, 7-nov-2026)
 Detalle y matriz por entidad en [`FASE_3_CRUD_MATRIZ.md`](FASE_3_CRUD_MATRIZ.md). Resumen: estados de evento y plantillas de formulario se archivan/restauran (admin+) y se borran solo super_admin si están archivados; `DELETE /users/{id}/logs` es solo super_admin con confirmación y por evento; «Eliminar los usuarios temporales» ahora archiva; recordatorios del calendario, deshacer acreditación, «Revisar» de la puerta, firmas, accesos de cliente, accesos de personal, códigos de descuento y marcas del formulario dejan `audit_actions`; pantallas «Ver archivados» para colores y plantillas de escarapela.
+
+## Pantallas de estados y plantillas (7-nov-2026)
+Rama `f3c/pantallas-archivados`, sin migraciones ni cambios de servidor. Qué se construyó y dónde:
+- **Estados de evento** viven en Configuración (pestaña nueva, solo admin+): `templates/configuracion.html`, `static/js/event-states-admin.js`, estilos mínimos en `static/css/p-configuracion.css` (punto de color por la variable `--gw-estado-color`, solo si el color es `#RRGGBB`). Usa `GET/POST/PATCH /api/event-states`, `archive`, `restore` y `DELETE`. Se carga al abrir la pestaña (no antes). Renombrar usa `showPrompt`; archivar y eliminar, `showConfirm`; los rechazos del servidor salen con `showToast`.
+- **Plantillas de formulario:** gestión dentro del bloque «Empezar desde una plantilla» de `templates/kiosk_formularios.html` + `static/js/kiosk-formularios.js` (coordinador+ ve la lista con Archivar/Restaurar y «Ver archivadas»; super_admin además «Eliminar definitivamente»). El selector de creación solo ofrece las no archivadas.
+- `static/js/archive-rules.js`: quién ve cada botón (estados admin+, plantillas coordinador+, borrado super_admin). Solo oculta botones; el servidor decide.
+- Pruebas: `tests/test_fase3_pantallas_archivados.py` (fuente: sin diálogos nativos ni `onclick`, `url_for('static')`, sin colores/tamaños sueltos; pestaña solo para admin) y `tests/js/archive_rules_check.js`.
+- Dependencia: hoy el servidor exige admin+ para archivar/restaurar/ver archivadas de plantillas; mientras el otro agente lo pasa a coordinador+, un coordinador vería el aviso de «Solo un administrador…» al marcar «Ver archivadas».
