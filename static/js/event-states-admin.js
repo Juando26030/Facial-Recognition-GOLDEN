@@ -12,6 +12,8 @@
   const icon = (n) => `<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
   const BASE = { creado: 'Creado', en_proceso: 'En proceso', finalizado: 'Finalizado' };
   const HEX = /^#[0-9a-fA-F]{6}$/;
+  const DEFAULT_COLOR = '#D4AF37'; // dorado de marca; el color se guarda como dato del estado, no como estilo
+  if ($('stateColor')) $('stateColor').value = DEFAULT_COLOR;
   const perms = R.actions(ROLE, 'event_state', false);
   let showArchived = false;
 
