@@ -38,7 +38,7 @@ def complete(db: Session, pay: FormPayment, refund: FormRefund) -> Optional[str]
     warning = None
     if refund.cancel_registration and pay.submission_id:
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first()
-        if sub and sub.status == "confirmed":
+        if sub and sub.status in ("confirmed", formsvc.REFUND_DUE):          # R2: una inscripción «reembolso pendiente» también pasa a reembolsada
             sub.status = "refunded"
             if sub.fed:
                 warning = "La persona ya estaba cargada a la base del evento: revísala en Registro si hay que sacarla de allí."
@@ -83,7 +83,7 @@ def refund_payment(event_id: int, form_id: int, payment_id: int, data: dict, db:
     remaining = pay.amount_cents - (pay.refunded_cents or 0)
     try:
         amount_cents = int(round(float(data.get("amount") if data.get("amount") not in (None, "") else remaining / 100))) * 100
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):          # R8: «inf» / 1e999 daban OverflowError (500)
         raise HTTPException(status_code=400, detail="El monto debe ser un número en pesos")
     if not 0 < amount_cents <= remaining:
         raise HTTPException(status_code=400, detail=f"El monto debe estar entre $1 y ${remaining // 100:,} COP (lo que queda por devolver)".replace(",", "."))
@@ -179,6 +179,17 @@ def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_
     if not refund or refund.status != "pending":
         raise HTTPException(status_code=404, detail="No hay un reembolso pendiente con ese identificador")
     if action == "discard":
+        if refund.kind == "void":
+            # D16: una anulación de tarjeta que Wompi aceptó puede terminar sola. Antes de darla por perdida (y permitir un reembolso manual encima = doble devolución) se pregunta a Wompi.
+            cfg = wompi.config(pay.is_test)
+            if cfg and pay.transaction_id:
+                txn = wompi.fetch_transaction(cfg, pay.transaction_id)
+                if txn is None:
+                    raise HTTPException(status_code=503, detail="No se pudo consultar a Wompi: no se descarta una anulación sin saber en qué estado quedó. Intenta de nuevo en un momento.")
+                if str(txn.get("status", "")).upper() == "VOIDED":
+                    warning = complete(db, pay, refund)
+                    db.commit()
+                    return {"status": "done", "message": "Wompi ya había anulado la transacción: el dinero volvió a la tarjeta. NO registres otro reembolso.", "warning": warning}
         refund.status = "failed"
         db.commit()
         return {"status": "failed", "message": "Reembolso pendiente descartado", "warning": None}

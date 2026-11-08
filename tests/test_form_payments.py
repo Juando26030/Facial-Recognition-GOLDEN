@@ -262,7 +262,9 @@ def test_capacity_counts_people_who_are_paying_and_releases_it_when_they_fail(cl
     assert _submit(client, ev, form, other, sid="b").status_code == 200                    # rechazado: el cupo se libera
 
 
-def test_retrying_replaces_the_previous_attempt_of_the_same_person(client, factory, keys):
+def test_retrying_replaces_the_previous_attempt_of_the_same_session_when_wompi_has_nothing_alive(client, factory, keys, monkeypatch):
+    """D1: el intento anterior se descarta SOLO si es de la MISMA sesión (`sid`) y Wompi no tiene ninguna transacción viva de esa referencia (antes: también por cédula y sin preguntar)."""
+    monkeypatch.setattr(wompi, "reference_state", lambda cfg, reference: "none")
     ev = _event(client, factory)
     form = _with_payment(client, ev)
     a = _submit(client, ev, form, _values(), sid="s1").json()["payment"]["reference"]

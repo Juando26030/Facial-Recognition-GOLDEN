@@ -91,6 +91,28 @@ def _limit(db: Optional[Session], request: Request, kind: str, form: WebForm, ma
         raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
 
 
+# R4: freno a quien PRUEBA códigos de descuento (el oráculo es `quote`/`submit`: responde «válido / inválido / agotado»). Cuenta SOLO los fallos, por formulario (rotar de IP no lo
+# evita) y por IP, en memoria del proceso como los demás límites públicos. Los códigos generados llevan >= 6 caracteres aleatorios (forms.CODE_MIN_RANDOM): esto es la segunda barrera.
+_code_fails = SlidingLimiter()
+CODE_FAIL_FORM_MAX = int(os.getenv("CODE_FAIL_FORM_MAX", "120"))
+CODE_FAIL_IP_MAX = int(os.getenv("CODE_FAIL_IP_MAX", "12"))
+
+
+def code_attempts_check(form_id: int, ip: Optional[str]) -> None:
+    """429 si ya hubo demasiados códigos fallidos en este formulario (o desde esta IP) en la ventana."""
+    w = _LIMIT.total_seconds()
+    if _code_fails.count(("form", form_id), w) >= max(1, int(CODE_FAIL_FORM_MAX * LIMIT_FACTOR)) or (
+            ip is not None and _code_fails.count(("ip", form_id, ip), w) >= max(1, int(CODE_FAIL_IP_MAX * LIMIT_FACTOR))):
+        raise HTTPException(status_code=429, detail="Demasiados códigos incorrectos seguidos — espera unos minutos e intenta de nuevo.")
+
+
+def code_attempt_failed(form_id: int, ip: Optional[str]) -> None:
+    w = _LIMIT.total_seconds()
+    _code_fails.hit(("form", form_id), 10 ** 9, w)
+    if ip is not None:
+        _code_fails.hit(("ip", form_id, ip), 10 ** 9, w)
+
+
 def normalize_id(value) -> str:
     """La cédula como la normaliza `lookup` (sin espacios ni puntos)."""
     return str(value or "").strip().replace(".", "").replace(" ", "")
@@ -673,8 +695,11 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
     quote = charge = cfg = code_row = None
     pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
     if pay_field:
+        if formsvc.normalize_code(payload.get("code")):
+            code_attempts_check(form.id, ip)
         ctx, code_row, code_problem = formsvc.price_context(db, form, pay_field["pay"], payload.get("d"), payload.get("code"))
         if formsvc.normalize_code(payload.get("code")) and code_problem:
+            code_attempt_failed(form.id, ip)
             return JSONResponse({"detail": formsvc.CODE_MESSAGES[code_problem], "code_error": True}, status_code=422)
         quote = formlib.compute_amount(pay_field["pay"], formlib.priced_values(design, clean), formsvc.now_local().date(), 1 + formlib.companions_count(design, clean), ctx)
         if code_row and not any(a.get("id") == code_row.discount_id for a in quote["applied"]):
@@ -700,13 +725,12 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
     try:
         # Reintento, cupos y duplicado en UNA ida y vuelta, que deja la fila del formulario BLOQUEADA hasta el commit: dos personas enviando el
         # ultimo cupo a la vez no lo llenan dos veces. Despues solo se inserta y se confirma; correo y base del evento van a la cola.
-        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta (antes del bloqueo)
-            prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
-            cond = [FormSubmission.sid == sid] if sid else []
-            if person_id:
-                cond.append(FormSubmission.person_id == person_id)
-            for old in prior.filter(or_(*cond)).all():
-                formsvc.discard_submission(db, form, old, force=True)      # reintento de la misma persona: el intento anterior se descarta (si su pago aún aprobara, queda a la vista «sin inscripción»)
+        if charge and sid:      # D1: SOLO el intento anterior de la MISMA sesión del navegador. La cédula la escribe cualquiera y no identifica a nadie: descartar por cédula dejaba a un tercero borrar la inscripción de otra persona que estaba pagando.
+            for old in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING, FormSubmission.sid == sid).all():
+                if not formsvc.superseded_is_safe(db, old):        # Wompi aún tiene (o no se pudo saber si tiene) una transacción viva de ese intento: no se descarta
+                    db.rollback()
+                    return JSONResponse({"detail": "Ya tienes un pago en proceso. Termínalo o espera unos minutos antes de volver a intentar."}, status_code=409)
+                formsvc.discard_submission(db, form, old, force=True)      # recomprueba bajo candado (R1): si entre tanto se aprobó, no la borra
             db.flush()
         res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean)
         if not res["ok"]:

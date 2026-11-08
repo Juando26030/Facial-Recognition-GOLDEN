@@ -106,6 +106,17 @@ class SlidingLimiter:
             q.append(now)
             return True
 
+    def count(self, key, window_s: float) -> int:
+        """Cuántos golpes lleva `key` dentro de la ventana, SIN registrar uno nuevo."""
+        now = time.monotonic()
+        with self._lock:
+            q = self._hits.get(key)
+            if not q:
+                return 0
+            while q and q[0] <= now - window_s:
+                q.popleft()
+            return len(q)
+
     def _prune(self, now: float) -> None:
         for k in [k for k, q in self._hits.items() if not q or q[-1] < now - 3600]:
             del self._hits[k]

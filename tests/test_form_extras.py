@@ -249,7 +249,7 @@ def test_unique_codes_are_single_use_and_come_out_in_an_excel(client, factory, k
     r = _codes(client, ev, form, discount_id=saved["discounts"][0]["id"], mode="unique", count=3, prefix="vip")
     assert r.status_code == 200 and r.json()["created"] == 3
     codes = r.json()["codes"]
-    assert len(set(codes)) == 3 and all(c.startswith("VIP") and len(c) == 8 for c in codes)
+    assert len(set(codes)) == 3 and all(c.startswith("VIP") and len(c) >= 3 + 6 for c in codes)          # R4: al menos 6 caracteres aleatorios tras el prefijo
     free = _submit(client, ev, form, _who(1), code=codes[0], sid="a")                        # 100 %: no hay pago y se confirma directo
     assert free.status_code == 200 and "payment_required" not in free.json()
     again = _submit(client, ev, form, _who(2), code=codes[0], sid="b")                       # el mismo código no sirve dos veces

@@ -75,6 +75,21 @@ def verify_event(event: dict, header_checksum: Optional[str] = None) -> Optional
     return bool(given) and any(hmac.compare_digest(event_checksum(event, s).lower(), given) for s in secrets)
 
 
+def verify_event_env(event: dict, header_checksum: Optional[str] = None):
+    """D8: el secreto que FIRMÓ el evento decide su ambiente (no se confía en `event["environment"]`, que no va firmado y puede faltar). None = no hay ningún
+    secreto de eventos configurado; False = firma inválida; "prod" o "test" = ambiente del secreto con el que cuadra el checksum."""
+    cfgs = [c for c in (config(False), config(True)) if c and c["events_secret"]]
+    if not cfgs:
+        return None
+    given = str((event.get("signature") or {}).get("checksum") or header_checksum or "").lower()
+    if not given:
+        return False
+    for c in cfgs:
+        if hmac.compare_digest(event_checksum(event, c["events_secret"]).lower(), given):
+            return "test" if c["test"] else "prod"
+    return False
+
+
 STATUS_URL = "https://wompi.statuspage.io/api/v2/status.json"
 STATUS_TTL = 60.0              # segundos que un resultado se considera vigente
 STATUS_MAX_STALE = 900.0       # y hasta cuándo se sigue usando el último resultado BUENO si las consultas fallan (después: «unknown»)
@@ -206,6 +221,24 @@ def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
         return None
     approved = [r for r in rows if str(r.get("status")).upper() == "APPROVED"]
     return approved[0] if approved else sorted(rows, key=lambda r: str(r.get("created_at") or ""))[-1]
+
+
+def reference_state(cfg: dict, reference: str) -> str:
+    """Estado de una referencia en Wompi: "none" (Wompi no tiene ninguna transacción), "pending", "approved", "declined" o "unknown" (no se pudo consultar).
+    A diferencia de `fetch_by_reference`, distingue «no hay nada» de «falló la red»: quien descarta una inscripción por esto debe tratar «unknown» como «hay algo»."""
+    if not _safe_id(reference):
+        return "unknown"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions?reference={reference}", headers=_headers(cfg)), timeout=8) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
+            rows = (json.loads(res.read().decode()) or {}).get("data") or []
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        return "unknown"
+    if not isinstance(rows, list):
+        return "unknown"
+    if not rows:
+        return "none"
+    sts = {str(r.get("status")).upper() for r in rows if isinstance(r, dict)}
+    return "approved" if "APPROVED" in sts else "pending" if "PENDING" in sts else "declined"
 
 
 def _soft_error(body) -> Optional[str]:

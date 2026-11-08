@@ -60,6 +60,7 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
     return formlib.effective_status(form.manual_status, form.use_schedule, get_schedule(form), at or now_local())
 
 
+REFUND_DUE = "refund_due"          # R2/D2: pago APROBADO que no se pudo admitir (duplicado, y —cuando se aplique D2— sin cupo): no cuenta como inscrita ni aparta cupo; se reembolsa
 PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
 MARK_SOURCES = ("carga_base", "lista", "lista_cupo")      # origen de las marcas «ya registrado»: carga de la base del evento | lista cargada desde el formulario | esa misma lista con «ocupar cupo» (fila confirmada)
 PREREGISTERED = "preregistered"       # FormSubmission.status de «ya registrado en el formulario» (columna de la carga de la base): bloquea la repetición pero NO ocupa cupo, ni cuenta en listas, reportes ni carga
@@ -279,8 +280,8 @@ def pending_max_per_ip() -> int:
 
 
 def pending_from_ip(db: Session, form: WebForm, ip: str, sid: Optional[str] = None, person_id: Optional[str] = None) -> int:
-    """X6: inscripciones de ESTE formulario creadas desde `ip` que siguen esperando pago dentro de PENDING_HOLD. No cuentan las de la misma sesión o la misma
-    cédula (un reintento de pago descarta el intento anterior). Solo lecturas simples: compatible con el pooler de Neon y sin pedir el bloqueo del formulario."""
+    """X6: inscripciones de ESTE formulario creadas desde `ip` que siguen esperando pago dentro de PENDING_HOLD. No cuentan las de la misma sesión (un reintento de pago descarta el intento anterior
+    de ESA sesión). R9: ya NO se excluye por cédula —la escribe cualquiera—, si no una IP acumularía pendientes con la cédula de otra persona. Solo lecturas simples: compatible con el pooler de Neon y sin pedir el bloqueo del formulario."""
     rows = db.query(RateLimitEvent.key).filter(
         RateLimitEvent.kind == PENDING_IP_KIND, RateLimitEvent.ip == ip, RateLimitEvent.created_at > utcnow() - PENDING_HOLD,
         RateLimitEvent.key.like(f"{form.id}:%")).limit(500).all()
@@ -294,8 +295,6 @@ def pending_from_ip(db: Session, form: WebForm, ip: str, sid: Optional[str] = No
     q = db.query(func.count(FormSubmission.id)).filter(FormSubmission.id.in_(ids), FormSubmission.form_id == form.id, FormSubmission.status == PENDING)
     if sid:
         q = q.filter(or_(FormSubmission.sid.is_(None), FormSubmission.sid != sid))
-    if person_id:
-        q = q.filter(or_(FormSubmission.person_id.is_(None), FormSubmission.person_id != person_id))
     return int(q.scalar() or 0)
 
 
@@ -576,11 +575,28 @@ def has_live_payment(db: Session, sub: FormSubmission) -> bool:
             and_(FormPayment.status == "pending", FormPayment.created_at > utcnow() - PENDING_PAY_WINDOW))).first() is not None
 
 
+def superseded_is_safe(db: Session, old: FormSubmission) -> bool:
+    """D1: el intento anterior de la MISMA sesión solo se descarta si Wompi no tiene ninguna transacción viva (pendiente o aprobada) para sus referencias. Si no se pudo
+    consultar («unknown») se asume que sí hay una: perder una inscripción pagada es peor que pedirle esperar unos minutos a quien reintenta. Hace llamadas a Wompi: se invoca
+    ANTES de tomar el bloqueo del formulario."""
+    from app import wompi
+    for p in db.query(FormPayment).filter(FormPayment.submission_id == old.id, FormPayment.status == "pending").all():
+        cfg = wompi.config(p.is_test)
+        state = wompi.reference_state(cfg, p.reference) if cfg else "unknown"
+        if state in ("pending", "approved", "unknown"):
+            return False
+    return True
+
+
 def discard_submission(db: Session, form: WebForm, sub: FormSubmission, force: bool = False) -> bool:
     """Borra una inscripción (y sus archivos) que nunca llegó a confirmarse. Los pagos que la referenciaban quedan
     como registro financiero, sin inscripción. C5: nunca borra una inscripción con un pago aprobado (ni, sin `force`, con uno pendiente que aún
-    puede aprobarse: la conciliación la confirmará); devuelve False si no la borró."""
-    if db.query(FormPayment.id).filter(FormPayment.submission_id == sub.id, FormPayment.status.in_(("approved", "refunded"))).first():
+    puede aprobarse: la conciliación la confirmará); devuelve False si no la borró.
+    R1: la comprobación se REPITE con las filas bloqueadas (pago -> inscripción, el mismo orden de `apply_result`): un webhook que confirmó la inscripción entre la lectura
+    de quien llama y este borrado ya no se pierde."""
+    pays = db.query(FormPayment).filter(FormPayment.submission_id == sub.id).with_for_update().populate_existing().all()
+    fresh = db.query(FormSubmission).filter(FormSubmission.id == sub.id).with_for_update().populate_existing().first()
+    if fresh is None or fresh.status != PENDING or any(p.status in ("approved", "refunded") for p in pays):
         return False
     if not force and has_live_payment(db, sub):
         return False
@@ -592,6 +608,20 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission, force: b
     db.delete(sub)
     invalidate_held()
     return True
+
+
+def admit_on_approval(db: Session, form: WebForm, sub: FormSubmission) -> Optional[str]:
+    """R2: con el formulario BLOQUEADO (la misma fila que toma `form_reserve_slot`, así dos aprobaciones simultáneas se turnan) revalida lo que el apartado no garantiza al
+    aprobarse un pago. None = se puede confirmar; si no, el motivo. HOY solo revisa el duplicado por cédula (dos intentos pendientes con la misma cédula conviven y ambos pueden
+    pagar: el segundo en llegar no se confirma). D2 (aforo, cupos por variable, usos de códigos) queda pendiente de la decisión del dueño: ver docs/FASE_3_SEGURIDAD.md, sección «Pagos».
+    Orden de candados: pago -> formulario (el mismo de `apply_result`). Un OperationalError (lock_timeout) sube: el webhook responde 500 y Wompi reintenta."""
+    if sub.is_test or not sub.person_id:
+        return None
+    db.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": f"{FORM_LOCK_TIMEOUT_MS}ms"})
+    db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
+    other = db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed",  # noqa: E712
+                                               FormSubmission.person_id == sub.person_id, FormSubmission.id != sub.id).first()
+    return "duplicate" if other else None
 
 
 def purge_stale_pending(db: Session, form: WebForm) -> None:

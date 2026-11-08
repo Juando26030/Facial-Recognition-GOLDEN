@@ -17,9 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, fx, ops, timing, wompi
+from app import formlib, formsvc, fx, ops, security, timing, wompi
 from app.database import SessionLocal, get_db
-from app.models import FormPayment, FormSubmission, WebForm
+from app.models import FormPayment, FormRefund, FormSubmission, WebForm
 from app.routers import forms_public as fp
 
 router = APIRouter()
@@ -40,8 +40,15 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         # C5: webhook repetido o conciliación sobre un pago ya aprobado cuya inscripción quedó en espera: se completa (idempotente).
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).with_for_update().first() if pay.submission_id else None
         if sub and sub.status == formsvc.PENDING:
-            formsvc.finalize_submission(db, db.query(WebForm).filter(WebForm.id == pay.form_id).first(), sub)
-            return pay
+            return _admit_or_flag(db, pay, sub)
+    if pay and new == "voided" and pay.status == "refunded":
+        # D16: el VOIDED de una anulación que nosotros mismos pedimos llega con el pago ya «refunded» (normal, sin alerta). Si en cambio el pago se devolvió A MANO y ninguna
+        # anulación por la API quedó hecha (p. ej. se descartó un void pendiente y luego se registró un reembolso manual), Wompi devolvió el dinero también: doble devolución.
+        done = {k for (k,) in db.query(FormRefund.kind).filter(FormRefund.payment_id == pay.id, FormRefund.status == "done").all()}
+        if "manual" in done and not done & {"void", "api"}:
+            ops.record_system_event("void_after_refund", str(pay.reference)[:80], "Wompi anuló una transacción que ya se devolvió a mano: doble devolución, revisar en la lista de pagos")
+        db.rollback()
+        return pay
     if not pay or not new or pay.status in ("approved", "refunded"):
         db.rollback()
         return pay
@@ -54,13 +61,28 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         pay.confirmed_at = utcnow()
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first() if pay.submission_id else None
         if sub and sub.status == formsvc.PENDING:
-            formsvc.finalize_submission(db, db.query(WebForm).filter(WebForm.id == pay.form_id).first(), sub)   # confirma y hace commit
-            return pay
+            return _admit_or_flag(db, pay, sub)          # confirma y hace commit (o la deja «reembolso pendiente»)
         # Aprobado pero sin inscripción pendiente (la persona reintentó y se descartó el intento, o se borró): nunca se pierde. Queda a la vista en la
         # lista de pagos como «sin inscripción» (con el motivo de la revisión) y se anota en «Estado del sistema» para conciliarlo a mano.
         log.warning("pago %s aprobado sin inscripción pendiente: queda marcado para revisión", pay.id)
         ops.record_system_event("payment_without_submission", str(pay.reference)[:80], "aprobado sin inscripción: revisar en la lista de pagos")
     db.commit()
+    return pay
+
+
+def _admit_or_flag(db: Session, pay: FormPayment, sub: FormSubmission) -> FormPayment:
+    """R2: un pago aprobado confirma su inscripción solo si `formsvc.admit_on_approval` (bajo el candado del formulario) no encuentra un motivo; si lo hay, la inscripción pasa a
+    `refund_due` (no cuenta como inscrita ni aparta cupo), el pago queda aprobado y a la vista para reembolsar, y se anota en «Estado del sistema». Nunca se pierde un cobro."""
+    form = db.query(WebForm).filter(WebForm.id == pay.form_id).first()
+    why = formsvc.admit_on_approval(db, form, sub)
+    if why:
+        sub.status = formsvc.REFUND_DUE
+        formsvc.invalidate_held()
+        log.warning("pago %s aprobado que no se puede admitir (%s): queda para reembolso", pay.id, why)
+        db.commit()
+        ops.record_system_event("payment_refund_due", str(pay.reference)[:80], f"aprobado sin poder admitir la inscripción ({why}): reembolsar")
+        return pay
+    formsvc.finalize_submission(db, form, sub)           # confirma y hace commit (suelta el candado del formulario)
     return pay
 
 
@@ -104,12 +126,15 @@ def _build_quote(design: dict, values: dict, field: dict, ctx: dict, code_row, p
     return out
 
 
-def _quote_with_code(form_id: int, design: dict, values: dict, field: dict, link, code) -> dict:
+def _quote_with_code(form_id: int, design: dict, values: dict, field: dict, link, code, ip: Optional[str] = None) -> dict:
     """Con un código de descuento el monto depende de la base (existe, no está agotado): único camino del `quote` que la consulta."""
     db = SessionLocal()
     try:
         ctx, code_row, problem = formsvc.price_context(db, SimpleNamespace(id=form_id), field["pay"], link, code)
-        return _build_quote(design, values, field, ctx, code_row, problem, code)
+        out = _build_quote(design, values, field, ctx, code_row, problem, code)
+        if (out.get("code") or {}).get("status") != "ok":
+            fp.code_attempt_failed(form_id, ip)          # R4: inválido, agotado o que no aplica: cuenta como intento fallido
+        return out
     finally:
         db.close()
 
@@ -132,7 +157,9 @@ async def quote(event_id: int, slug: str, data: dict, request: Request):
     if not field:
         return {"has_payment": False}
     if formsvc.normalize_code(data.get("code")):
-        return await timing.run(_quote_with_code, ctx["id"], design, values, field, data.get("d"), data.get("code"))
+        ip = security.limit_ip(request)
+        fp.code_attempts_check(ctx["id"], ip)          # R4
+        return await timing.run(_quote_with_code, ctx["id"], design, values, field, data.get("d"), data.get("code"), ip)
     price_ctx, _, _ = formsvc.price_context(None, None, field["pay"], data.get("d"), None)         # sin código no usa la base
     return _build_quote(design, values, field, price_ctx, None, None, None)
 
@@ -185,10 +212,10 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
 def _process_webhook(db: Session, event: dict, checksum: Optional[str]) -> dict:
     """Se acepta solo con checksum válido (SHA-256 con el secreto de eventos); sin secreto configurado se rechaza. Responde 200 aun si la referencia no
     es nuestra, para que Wompi no reintente. Cada evento válido queda anotado para «Estado del sistema» (último webhook recibido)."""
-    ok = wompi.verify_event(event, checksum)
-    if ok is None:
+    env = wompi.verify_event_env(event, checksum)          # D8: el secreto que firmó decide el ambiente
+    if env is None:
         raise HTTPException(status_code=503, detail="Los eventos de Wompi no están configurados")
-    if not ok:
+    if env is False:
         raise HTTPException(status_code=401, detail="Firma inválida")
     if event.get("event") != "transaction.updated":
         return {"ok": True, "ignored": "evento no manejado"}
@@ -197,8 +224,7 @@ def _process_webhook(db: Session, event: dict, checksum: Optional[str]) -> dict:
     pay = db.query(FormPayment).filter(FormPayment.reference == str(txn.get("reference") or "")).first()
     if not pay:
         return {"ok": True, "ignored": "referencia desconocida"}
-    env_is_test = str(event.get("environment") or "").lower() == "test"
-    if event.get("environment") and env_is_test != pay.is_test:
+    if (env == "test") != bool(pay.is_test):
         return {"ok": True, "ignored": "ambiente distinto al del pago"}       # un evento de pruebas no puede aprobar un pago real
     if int(txn.get("amount_in_cents") or -1) != pay.amount_cents or txn.get("currency") != pay.currency:
         return {"ok": True, "ignored": "monto distinto al esperado"}

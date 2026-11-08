@@ -648,6 +648,7 @@ def value_suggestions(event_id: int, form_id: int, key: str = "", fid: str = "",
     return {"values": ordered[:200], "total": len(ordered)}
 
 
+CODE_MIN_RANDOM = 6        # R4: caracteres aleatorios mínimos de un código generado (31^6 ≈ 887 millones); con prefijo de 5-6 letras antes quedaban 3-4 y eran adivinables
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"        # sin 0/O/1/I/L: se dictan y se copian sin equivocarse
 MAX_CODES_PER_FORM = 20000
 
@@ -701,7 +702,7 @@ def create_codes(event_id: int, form_id: int, data: dict, db: Session = Depends(
 
     def fresh(prefix=""):
         while True:
-            code = prefix + "".join(secrets.choice(CODE_ALPHABET) for _ in range(8 - len(prefix) if len(prefix) < 6 else 4))
+            code = prefix + "".join(secrets.choice(CODE_ALPHABET) for _ in range(max(CODE_MIN_RANDOM, 8 - len(prefix))))
             if not db.query(FormDiscountCode).filter_by(form_id=form.id, code=code).first() and code not in seen:
                 seen.add(code)
                 return code
@@ -1196,9 +1197,14 @@ def _auto_partial_possible(p: FormPayment) -> bool:
     return _auto_refund_possible(p)
 
 
-def _review_reason(p: FormPayment, confirmed_people: set) -> str:
+REFUND_DUE_REASON = "Aprobado, pero la inscripción no se pudo admitir (la persona ya estaba inscrita con otro pago): reembolsa este pago y avísale."
+
+
+def _review_reason(p: FormPayment, confirmed_people: set, refund_due_subs: frozenset = frozenset()) -> str:
     """C5: motivo visible de por qué un pago aprobado necesita revisión humana ('' si no). Pago aprobado sin inscripción: se conciliaba a mano; si la persona ya
     quedó inscrita con otro pago es un posible doble cobro (reembolsar uno)."""
+    if p.status == "approved" and p.submission_id in refund_due_subs and not (p.refunded_cents or 0):
+        return REFUND_DUE_REASON          # R2: inscripción en «reembolso pendiente»
     if p.status != "approved" or p.submission_id or (p.refunded_cents or 0):
         return ""
     if p.person_id and p.person_id in confirmed_people:
@@ -1225,6 +1231,7 @@ def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: 
     rows = q.order_by(FormPayment.id.desc()).limit(2000).all()
     paid = [p for p in rows if p.status in ("approved", "refunded")]
     confirmed_people = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed", FormSubmission.person_id != None).all()}  # noqa: E711
+    refund_due_subs = frozenset(r[0] for r in db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.REFUND_DUE).all())
     refunds = {}
     for r in db.query(FormRefund).filter(FormRefund.payment_id.in_([p.id for p in rows] or [0])).order_by(FormRefund.id):
         refunds.setdefault(r.payment_id, []).append(r)
@@ -1235,7 +1242,7 @@ def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: 
         "refunded_cop": sum(p.refunded_cents or 0 for p in paid) // 100,
         "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",
                   "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status in ("approved", "refunded") and not p.submission_id and not (p.refunded_cents or 0),
-                  "review": _review_reason(p, confirmed_people),
+                  "review": _review_reason(p, confirmed_people, refund_due_subs),
                   "fee": _fee_cop(p) if p.status in ("approved", "refunded") else 0,
                   "net": _net_cop(p) if p.status in ("approved", "refunded") else 0,
                   "refunded": (p.refunded_cents or 0) // 100, "remaining": (p.amount_cents - (p.refunded_cents or 0)) // 100 if p.status == "approved" else 0,
@@ -1453,6 +1460,9 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
     orphans = sum(1 for p in pays if p.status == "approved" and not p.submission_id)
     if orphans:
         kpis.append(an.kpi("Pagos sin inscripción", orphans, "aprobados pero sin inscripción: revisar en la lista de pagos", "warn"))
+    due = db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.REFUND_DUE).count()
+    if due:
+        kpis.append(an.kpi("Pagos por reembolsar", due, "aprobados que no se pudieron admitir: reembolsa y avisa a la persona", "warn"))
     per_day = defaultdict(int)
     for p in approved:
         per_day[to_local(p.confirmed_at or p.created_at).strftime("%Y-%m-%d")] += (p.amount_cents // 100 - _fee_cop(p)) if net_fees else p.amount_cents // 100

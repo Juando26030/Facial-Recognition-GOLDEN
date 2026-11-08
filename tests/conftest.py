@@ -106,6 +106,7 @@ def _clean_tables(_database):
     formsvc.invalidate_public_cache()
     from app.routers import forms_public
     forms_public._limiter.reset()          # el limite por IP es en memoria: cada prueba empieza de cero
+    forms_public._code_fails.reset()
     yield
     _wipe_test_files()
 
@@ -120,6 +121,14 @@ def _no_wompi_status_network(monkeypatch):
     from app import wompi
     monkeypatch.setitem(wompi._status, "at", time.time() + 10 ** 9)
     monkeypatch.setitem(wompi._status, "data", {"indicator": "none", "description": ""})
+
+
+@pytest.fixture(autouse=True)
+def _no_wompi_reference_network(monkeypatch):
+    """Reintentar un pago consulta a Wompi por la referencia del intento anterior (`wompi.reference_state`, D1). Las pruebas no tienen red: por defecto Wompi «no tiene ninguna
+    transacción»; las pruebas del reintento seguro ponen su propio estado («pending», «unknown»…)."""
+    from app import wompi
+    monkeypatch.setattr(wompi, "reference_state", lambda cfg, reference: "none")
 
 
 @pytest.fixture(autouse=True)
