@@ -30,6 +30,7 @@ from app import testperson
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
+from app.eventpeople import member_ids, person_of_event as _person_of_event      # nombre histórico; la regla vive en app/eventpeople.py
 from app import roster_dups, roster_text, personform, lastname
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -1032,7 +1033,8 @@ def sync_access_logs(
         if client_id and client_id not in known_ids and not cedula and h and h not in rmap and not rebuilt:
             rmap, rebuilt = _roster_map(db, event, force=True), True              # una huella desconocida: puede ser alguien agregado después de armar el mapa
         resolved.append(cedula or rmap.get(h, ""))
-    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_({c for c in resolved if c}))}
+    members = member_ids(db, event, {c for c in resolved if c})              # R2-1: también la ruta `cedula` queda acotada a las personas de ESTE evento (la de huella ya lo estaba)
+    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(members))} if members else {}
     checked = {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id.in_(list(users)))}
     attendees = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(list(users)))}
     results = []
@@ -1373,17 +1375,6 @@ def _clean_user_fields(data: dict) -> dict:
         else:
             raise HTTPException(status_code=400, detail=f"El valor de «{key}» no es válido")
     return out
-
-
-def _person_of_event(db: Session, event: Event, user_id: str) -> Optional[User]:
-    """La persona `user_id` SOLO si es de ESTE evento (inscrita o con algún registro aquí), igual que el directorio y la bandeja sin red (P6, 6-nov-2026):
-    la cédula sola no basta para editar o acreditar a alguien de otro evento del mismo cliente (los datos de `User` se comparten entre sus eventos)."""
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
-    if user is None:
-        return None
-    if db.query(EventAttendee.id).filter_by(event_id=event.id, user_id=user.id).first() or db.query(AccessLog.id).filter_by(event_id=event.id, user_id=user.id).first():
-        return user
-    return None
 
 
 def _clean_extra_fields(raw) -> dict:

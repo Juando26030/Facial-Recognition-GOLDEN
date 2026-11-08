@@ -9,6 +9,7 @@ from typing import Optional
 
 from app import audit_actions, crypto, reprint
 from app.timeutil import utcnow
+from app.eventpeople import require_person_of_event
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app import testperson
@@ -344,9 +345,7 @@ def get_badge_print_data(
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
     event = get_event_for_staff(event_id, db, staff)
     _require_printable(event, user_id)
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    user = require_person_of_event(db, event, user_id)
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     return {
@@ -370,6 +369,7 @@ def get_user_photo(
     event = get_event_for_staff(event_id, db, staff)
     if not event.badge_bio_photo_allowed:
         raise HTTPException(status_code=404, detail="La impresión de la foto biométrica en la escarapela está desactivada en este evento")
+    require_person_of_event(db, event, user_id)            # B2: solo la foto de alguien de ESTE evento
     key = photo_key(event.tenant_id, user_id)
     if not get_storage().exists(key):
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
@@ -387,6 +387,7 @@ def get_print_count(
     """Cuántas veces se ha impreso la escarapela de esta persona en ESTE evento — para avisar
     antes de repetir (Sprint 2.4 Fase 3, pedido explícito)."""
     event = get_event_for_staff(event_id, db, staff)
+    require_person_of_event(db, event, user_id)
     count = db.query(PrintLog).filter(
         PrintLog.event_id == event.id, PrintLog.user_id == user_id, PrintLog.tenant_id == event.tenant_id
     ).count()
@@ -404,9 +405,7 @@ def log_print(
     impresión, tras cualquier confirmación necesaria."""
     event = get_event_for_staff(event_id, db, staff)
     _require_printable(event, user_id)
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    require_person_of_event(db, event, user_id)
     # Fase 1B: con la reimpresión deshabilitada, registrar la impresión de alguien ya impreso exige haber gastado un permiso hace un momento (la impresión local la hace el navegador:
     # esto es lo que el servidor puede hacer cumplir; ver docs/1B_reimpresion_permisos.md «control de pantalla»).
     if reprint.is_locked_for(event, staff) and reprint.already_printed(db, event, user_id) and not reprint.recently_used(db, event, staff, user_id):
