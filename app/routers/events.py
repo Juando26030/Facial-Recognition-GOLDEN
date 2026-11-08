@@ -466,6 +466,8 @@ def create_event(
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != data.tenant_id:
             raise HTTPException(status_code=400, detail="El superevento debe existir y ser del mismo cliente que el evento")
+        if sup.archived_at is not None:
+            raise HTTPException(status_code=400, detail="El superevento está archivado: restáuralo para asignarle eventos")
 
     event_data = data.dict(exclude={"extra", *event_tpl.SWITCH_KEYS})
     event_data["commercial_staff_id"] = commercial_id
@@ -548,6 +550,8 @@ def update_event(
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != event.tenant_id:
             raise HTTPException(status_code=400, detail="El superevento debe existir y ser del mismo cliente que el evento")
+        if sup.archived_at is not None and sup.id != event.super_event_id:          # conservar el que ya tiene (archivado) no estorba; asignar uno archivado nuevo, sí
+            raise HTTPException(status_code=400, detail="El superevento está archivado: restáuralo para asignarle eventos")
 
     effective_start = data.start_date if data.start_date is not None else event.start_date
     effective_end = data.end_date if data.end_date is not None else event.end_date

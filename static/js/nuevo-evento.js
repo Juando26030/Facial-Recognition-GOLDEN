@@ -88,7 +88,7 @@
   function addSuperEventButton() {
     const holder = form.querySelector('[data-evf-field="super_event_id"]');
     if (!holder || holder.querySelector('#newSuperBtn')) return;
-    holder.insertAdjacentHTML('beforeend', '<button type="button" id="newSuperBtn" class="gw-btn gw-btn--secondary gw-btn--sm">Nuevo superevento</button>');
+    holder.insertAdjacentHTML('beforeend', '<button type="button" id="newSuperBtn" class="gw-btn gw-btn--secondary gw-btn--sm">Nuevo superevento</button> <button type="button" id="manageSuperBtn" class="gw-btn gw-btn--secondary gw-btn--sm">Administrar</button>');
     loadSuperEvents();
   }
   async function loadSuperEvents(selectedId) {
@@ -206,6 +206,7 @@
     if (go) { GW.wizard.go(form, parseInt(go.getAttribute('data-ne-goto'), 10)); focusPanelTitle(); return; }
     const sup = e.target.closest('#newSuperBtn');
     if (sup) createSuperEvent(sup);
+    if (e.target.closest('#manageSuperBtn') && window.GWSuper) GWSuper.manage({ tenantId: tenantId(), role: STAFF_ROLE, onChange: () => loadSuperEvents(control('super_event_id') && control('super_event_id').value) });
   });
 
   // ---- Armar el cuerpo del POST /api/events: base y interruptores en el nivel superior (sus columnas), personalizados en `extra`.

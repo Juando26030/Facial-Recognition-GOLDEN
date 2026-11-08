@@ -809,6 +809,8 @@ class SuperEvent(Base):
     name = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)  # 0095 (Fase 3): NULL = activo; con fecha = archivado (fuera de listas y selectores, se restaura; sus eventos no se tocan)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     events = relationship("Event", back_populates="super_event")
 

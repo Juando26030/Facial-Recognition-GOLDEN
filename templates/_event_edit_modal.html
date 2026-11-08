@@ -79,6 +79,7 @@
               <div class="ee-super">
                 <select class="gw-select" name="super_event_id" id="eeSuperEvent"><option value="">— Ninguno —</option></select>
                 <button type="button" class="gw-btn gw-btn--secondary" id="eeNewSuper">{{ ic('plus', 'gw-icon--sm') }} Nuevo</button>
+                {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<button type="button" class="gw-btn gw-btn--secondary" id="eeManageSuper">Administrar</button>{% endif %}
               </div>
             </div>
             <div class="gw-fields-row gw-fields-row--2">
@@ -132,6 +133,7 @@
 <datalist id="modalCommercialList"></datalist>
 
 <script src="{{ url_for('static', path='js/gw-busy.js') }}"></script>
+<script src="{{ url_for('static', path='js/gw-super-eventos.js') }}"></script>
 <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-combobox.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-geo.js') }}"></script>
@@ -288,9 +290,16 @@
   async function loadSuperEvents(selectedId) {
     const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(current.tenant_id)}`);
     const list = res.ok ? await res.json() : [];
+    if (selectedId && !list.some(s => String(s.id) === String(selectedId))) {          // el del evento puede estar archivado: se conserva (si no, al guardar se le quitaría)
+      const all = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(current.tenant_id)}&include_archived=true`);
+      const kept = (all.ok ? await all.json() : []).find(s => String(s.id) === String(selectedId));
+      if (kept) list.push({ ...kept, name: kept.name + ' (archivado)' });
+    }
     superSelect.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${esc(s.name)} (${s.events} eventos)</option>`).join('');
     superSelect.value = selectedId ? String(selectedId) : '';
   }
+  const manageSuper = document.getElementById('eeManageSuper');
+  if (manageSuper) manageSuper.addEventListener('click', () => window.GWSuper && GWSuper.manage({ tenantId: current.tenant_id, role: ROLE, onChange: () => loadSuperEvents(superSelect.value) }));
   document.getElementById('eeNewSuper').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
