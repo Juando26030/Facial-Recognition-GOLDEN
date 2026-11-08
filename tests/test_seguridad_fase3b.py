@@ -85,12 +85,23 @@ def test_e_poll_limiter_is_a_sliding_window():
     assert lc.POLL_MAX_PER_TOKEN >= 3 * (60 / lc.POLL_SECONDS)
 
 
-def test_f_csp_today_has_no_script_src_and_no_report_only():
+def test_f_csp_enforced_has_form_action_and_report_only_has_script_src():
     main = _src("app/main.py")
-    assert "Content-Security-Policy-Report-Only" not in main
-    assert "object-src 'none'; base-uri 'self'" in main and "script-src" not in main      # el plan para endurecerla está en docs/FASE_3_SEGURIDAD.md
+    assert "object-src 'none'; base-uri 'self'; form-action 'self'" in main        # la política que SÍ se aplica
+    assert 'h.setdefault("Content-Security-Policy-Report-Only"' in main and "CSP_REPORT_ONLY" in main
+    panel = re.search(r'_CSP_PANEL = \((.*?)\)\n_CSP_PUBLIC_FORM', main, re.S).group(1)
+    public = re.search(r'_CSP_PUBLIC_FORM = \((.*?)\)\s+#', main, re.S).group(1)
+    assert "script-src 'self'" in panel and "script-src 'self'" in public and "form-action 'self'" in panel and "form-action 'self'" in public
+    assert "wompi" not in panel and "translate" not in panel                        # Wompi y Google Translate solo en los formularios públicos
+    assert "checkout.wompi.co" in public and "frame-ancestors" not in public and "frame-ancestors 'self'" in panel
     doc = _src("docs/FASE_3_SEGURIDAD.md")
     assert "script-src" in doc and "Report-Only" in doc
+
+
+def test_f_no_form_in_templates_posts_outside_the_site():
+    for t in ROOT.joinpath("templates").glob("*.html"):
+        for m in re.finditer(r"<form\b[^>]*\baction\s*=\s*[\"']?(https?:)?//", t.read_text(encoding="utf-8"), re.I):
+            raise AssertionError(f"{t.name}: <form> con action externo; form-action 'self' lo bloquearía")
 
 
 def test_g_leaflet_is_pinned_and_sri_status_documented():
@@ -104,6 +115,16 @@ def test_g_leaflet_is_pinned_and_sri_status_documented():
 
 
 # ------------------------------------------------------------------------------------------------ con base
+def test_f_csp_headers_on_panel_and_public_form(client, factory):
+    r = client.get("/login")
+    assert "form-action 'self'" in r.headers["content-security-policy"] and "frame-ancestors 'self'" in r.headers["content-security-policy"]
+    ro = r.headers["content-security-policy-report-only"]
+    assert "connect-src" in ro and "script-src 'self'" in ro and "wompi" not in ro
+    r = client.get("/f/1/no-existe")                                  # aunque sea 404, el middleware pone las cabeceras de /f/*
+    assert "frame-ancestors" not in r.headers["content-security-policy"] and "form-action 'self'" in r.headers["content-security-policy"]
+    assert "checkout.wompi.co" in r.headers["content-security-policy-report-only"] and "frame-ancestors" not in r.headers["content-security-policy-report-only"]
+
+
 def test_a_colors_coordinator_cannot_overwrite_but_admin_can(client, factory):
     factory.staff("coordinador", "coo")
     factory.staff("admin", "adm")

@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from app.inputcheck import check_username, text_validator, username_validator
+from app.inputcheck import check_text, check_username, text_validator, username_validator
 from app.tenant_scope import assert_same_tenant
 from sqlalchemy.orm import Session
 
@@ -332,6 +332,10 @@ def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
     hex_value = str(data.get("hex") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Ponle un nombre al color para guardarlo (ej. Rojo Golden)")
+    try:
+        check_text(name, "El nombre del color")      # C1: sin «<» ni «>» (el panel además lo escapa al pintar)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not _HEX_RE.match(hex_value):
         raise HTTPException(status_code=400, detail="El color debe ser un hex como #C0392B")
     color = db.query(SavedColor).filter(func.lower(SavedColor.name) == name.lower()).first()

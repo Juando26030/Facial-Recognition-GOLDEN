@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -14,6 +14,7 @@ from app.storage import badge_asset_key, get_storage, photo_key
 from app import event_archive
 from app.database import get_db
 from app import testperson
+from app.inputcheck import text_validator
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import assert_tenant_id, get_current_staff, get_event_for_staff, require_role, require_role_excluding
 
@@ -58,7 +59,8 @@ class BadgeTemplateIn(BaseModel):
 
 
 class SaveAsIn(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=80)
+    _t = text_validator("name")      # C2: sin «<» ni «>»
 
 
 def _default_certificate_elements(event) -> list:
@@ -331,7 +333,11 @@ def get_badge_asset(
     assert_tenant_id(tenant_id, staff)                                          # B12: con ENFORCE_STAFF_TENANT=1 solo los del propio cliente
     if form_client.is_form_client(db, staff):                                  # B12: la cuenta de cliente de formulario solo ve estadísticas, no imágenes de escarapela
         raise HTTPException(status_code=404, detail="No encontrado")
-    return get_storage().response(badge_asset_key(tenant_id, filename))         # nunca se confía en la ruta que manda el cliente
+    try:
+        key = badge_asset_key(tenant_id, filename)         # nunca se confía en la ruta que manda el cliente
+    except ValueError:                                     # «..» en el cliente: no existe, no es un error del servidor (R3-08)
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return get_storage().response(key)
 
 
 def _require_printable(event, user_id: str) -> None:

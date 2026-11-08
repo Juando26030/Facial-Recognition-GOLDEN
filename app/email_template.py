@@ -136,4 +136,4 @@ def render(event, first: str, last: str, link: str):
 
     body = fill(body_t, True)
     wrapped = f'<div style="font-family:Agrandir,Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5;max-width:600px;margin:0 auto;">{body}</div>'
-    return fill(subject_t, False).replace("\n", " ")[:200], wrapped, to_text(body)
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", fill(subject_t, False)).strip()[:200], wrapped, to_text(body)

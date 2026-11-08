@@ -8,7 +8,15 @@ def _req(headers):
     return SimpleNamespace(headers=headers, client=SimpleNamespace(host="10.0.0.1"))
 
 
-def test_vm_behaviour_is_unchanged():
+def test_default_does_not_trust_cf_connecting_ip(monkeypatch):
+    """E6 (Fase 3): sin la variable, una cabecera falsificable no decide la IP (la VM debe fijar TRUST_CF_CONNECTING_IP=1 en su .env)."""
+    monkeypatch.delenv("TRUST_CF_CONNECTING_IP", raising=False)
+    assert security.client_ip(_req({"cf-connecting-ip": "6.6.6.6"})) == "10.0.0.1"
+    assert security.client_ip(_req({"cf-connecting-ip": "6.6.6.6", "x-forwarded-for": "2.2.2.2"})) == "2.2.2.2"
+
+
+def test_vm_behaviour_is_unchanged(monkeypatch):
+    monkeypatch.setenv("TRUST_CF_CONNECTING_IP", "1")
     assert security.client_ip(_req({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2"})) == "1.1.1.1"
     assert security.client_ip(_req({"x-forwarded-for": "2.2.2.2, 3.3.3.3"})) == "2.2.2.2"
     assert security.client_ip(_req({})) == "10.0.0.1"

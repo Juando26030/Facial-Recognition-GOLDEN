@@ -21,7 +21,7 @@ SKIP = ("script", "style", "iframe", "object", "embed", "template", "svg", "math
 VOID = ("br",)
 
 # una etiqueta de verdad: nombre + atributos con forma de atributo («<b && c>» o «a < b» de un texto viejo no lo son)
-_FORMAT_RE = re.compile(r"<\/?(?:b|strong|i|em|u|p|div|br|ul|ol|li|span)(?:\s+[a-z-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>\"']*))*\s*\/?>", re.I)
+_FORMAT_RE = re.compile(r"<\/?(?:b|strong|i|em|u|p|div|br|ul|ol|li|span)(?:\s+[a-z-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>\"']+))*\s*\/?>", re.I)      # valor sin comillas: «+», no «*» (con «*» el valor vacío hacía la expresión ambigua y exponencial: ReDoS, R3-01)
 _HEX = re.compile(r"#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})")
 _RGB = re.compile(r"rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(0|1|0?\.\d{1,3}|1\.0)\s*)?\)")
 _SIZE = re.compile(r"(\d{1,3}(?:\.\d{1,2})?)(px|pt|em|rem|%)")
@@ -37,7 +37,10 @@ def hosted_fonts() -> frozenset:
 
 
 def has_format(text) -> bool:
-    return bool(_FORMAT_RE.search(str(text or "")))
+    s = str(text or "")
+    if len(s) > 20000:       # defensa extra: ningún texto legítimo con formato llega a tanto; que sanitize() lo recorte o rechace en vez de evaluar la expresión
+        return True
+    return bool(_FORMAT_RE.search(s))
 
 
 def _color(v: str):

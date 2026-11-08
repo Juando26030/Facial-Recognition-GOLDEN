@@ -580,7 +580,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.className = 'gw-btn gw-btn--secondary gw-btn--sm'; b.addEventListener('click', fn); act.appendChild(b); };
                 if (q.status === 'recibida' || q.status === 'en_tramite') {
                     if (q.request_type !== 'consulta') btn(q.claim_flag ? 'Quitar bandera' : 'Activar bandera', async () => { const x = await call(`/api/privacy-requests/${q.id}/claim-flag`, 'PUT', { active: !q.claim_flag }); if (!x.ok) showToast(x.data.detail || 'No se pudo', 'error'); load(); });
-                    btn('Resolver', async () => { if (await showConfirm('¿Marcar la solicitud ' + q.radicado + ' como resuelta?')) { await call(`/api/privacy-requests/${q.id}/status`, 'PUT', { status: 'resuelta' }); load(); } });
+                    btn('Resolver', async () => { if (await showConfirm('¿Marcar la solicitud ' + window.escapeHtml(q.radicado) + ' como resuelta?')) { await call(`/api/privacy-requests/${q.id}/status`, 'PUT', { status: 'resuelta' }); load(); } });
                 }
                 tr.appendChild(act); table.appendChild(tr); void flag;
             });
@@ -717,7 +717,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const purgeData = async (scope, msg) => {
             const id = document.getElementById('privCedula').value.trim();
             if (!id) return say('Escribe la cédula', true);
-            if (!(await showConfirm(msg.replace('{id}', id)))) return;
+            if (!(await showConfirm(msg.replace('{id}', window.escapeHtml(id))))) return;
             const r = await fetch(`/api/attendees/${encodeURIComponent(id)}/purge-data?event_id=${window.EVENT_ID}&scope=${scope}&confirm=true`, { method: 'DELETE' });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) return say(d.detail || 'No se pudo suprimir', true);

@@ -14,6 +14,7 @@ Tres caminos, en este orden de preferencia:
 import base64
 import json
 import os
+import re
 import smtplib
 import time
 import urllib.error
@@ -84,28 +85,38 @@ def _outbox_fallback(msg: EmailMessage, to: str, reason: str) -> dict:
     return {"sent": False, "detail": f"{reason} — el correo quedó guardado en {key}"}
 
 
+def clean_subject(subject) -> str:
+    """Asunto de una sola línea (sin CR/LF/tabuladores ni controles) y de 200 caracteres como máximo."""
+    return re.sub(r"[\x00-\x1f\x7f\u2028\u2029]+", " ", str(subject or "")).strip()[:200]
+
+
 def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None, reply_to: Optional[str] = None) -> dict:
     """`attachments`: lista de (nombre_archivo, bytes, mime "tipo/subtipo"). Devuelve
     {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar. `html`: versión con formato (el `body` queda como texto alterno)."""
     attachments = attachments or []
+    subject = clean_subject(subject)                            # C6: un «\r» o «\n» en el asunto hacía lanzar a EmailMessage (rompía el trabajo en cola)
+    to = re.sub(r"[\s\x00-\x1f]+", "", str(to or ""))
     if os.getenv("DEPLOY_ENV", "").strip().lower() == "staging" and not subject.startswith("[STAGING]"):
         subject = "[STAGING] " + subject                      # ningún correo de pruebas se confunde con uno de producción
 
     if all(os.getenv(k) for k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER")):
         return _send_via_graph(to, subject, body, attachments, html, reply_to)
 
-    msg = EmailMessage()
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "no-reply@golden.local"
-    msg["From"], msg["To"], msg["Subject"] = sender, to, subject
-    if reply_to:
-        msg["Reply-To"] = reply_to
-    msg.set_content(body)
-    if html:
-        msg.add_alternative(html, subtype="html")
-    for filename, content, mime in attachments:
-        maintype, _, subtype = mime.partition("/")
-        msg.add_attachment(content, maintype=maintype, subtype=subtype or "octet-stream", filename=filename)
+    try:                                                         # armar el mensaje también puede lanzar (cabeceras inválidas): el contrato es «nunca lanza»
+        msg = EmailMessage()
+        msg["From"], msg["To"], msg["Subject"] = sender, to, subject
+        if reply_to:
+            msg["Reply-To"] = re.sub(r"[\s\x00-\x1f]+", "", reply_to)
+        msg.set_content(body)
+        if html:
+            msg.add_alternative(html, subtype="html")
+        for filename, content, mime in attachments:
+            maintype, _, subtype = mime.partition("/")
+            msg.add_attachment(content, maintype=maintype, subtype=subtype or "octet-stream", filename=filename)
+    except (ValueError, TypeError) as e:
+        return {"sent": False, "detail": f"No se pudo armar el correo: {e}"}
 
     if not host:
         return _outbox_fallback(msg, to, "Ni Microsoft Graph ni SMTP están configurados")
