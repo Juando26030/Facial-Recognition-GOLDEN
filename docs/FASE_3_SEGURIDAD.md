@@ -68,3 +68,30 @@ No se activa en este despliegue. Se hace por etapas, sin esperar a la versión f
 1. **Ya (trinquete):** `tests/test_csp_trinquete.py` impide que crezca el JavaScript en línea; toda plantilla nueva nace sin él.
 2. **Fase 4 y siguientes:** cada plantilla que se toque migra sus bloques a `static/js/` y baja su número en el trinquete.
 3. **Cuando el contador llegue a 0:** cabecera `Content-Security-Policy-Report-Only` con `script-src 'self'` en staging, luego en producción, y por último la cabecera que bloquea.
+
+## Pagos (formularios públicos con Wompi): auditoría con revisión cruzada, 8-nov-2026
+
+Rama `f3e/pagos`. Hecho: D1 + R1 + R9 (no se descarta la inscripción pendiente de otra persona por teclear su cédula; solo el intento propio de la MISMA sesión y tras preguntar a Wompi; se recomprueba bajo candado), R2 (dos pendientes con la misma cédula no se confirman ambas: la segunda pasa a `refund_due`), D16, R3, R4, D8 y R8. Sin migraciones: `form_submissions.status` es texto libre (confirmar con `\d form_submissions` en Neon que no haya un CHECK que impida `refund_due`).
+
+### D2 — PENDIENTE de la decisión del dueño (esqueleto, NO aplicado)
+
+**El problema.** El apartado de cupo es un reloj de 15 min (`formsvc.PENDING_HOLD`). Pasado ese tiempo el cupo se vuelve a vender, pero un pago que tarde en aprobarse (3DS, PSE, OTP) se confirma igual (`apply_result`) sin mirar el aforo, los cupos por variable (`quota_keys`) ni los usos de un código (`max_uses`): sobreventa. No requiere atacante.
+
+**Pregunta al dueño.** Cuando un pago se aprueba y ya no hay cupo, ¿se admite igual (sobreaforo) o se reembolsa? El aforo, ¿es físico y duro?
+
+**Opción recomendada (sin sobreventa; «quien pagó tiene prioridad sobre quien solo apartó»):** inscripción en estado `refund_due`, alerta y reembolso.
+
+1. Ya existe el gancho: `formsvc.admit_on_approval(db, form, sub)` (hoy solo revisa el duplicado por cédula) y `form_payments._admit_or_flag`. Con el formulario BLOQUEADO (la misma fila que toma `form_reserve_slot`) se cuentan SOLO las confirmadas (`status == "confirmed"`, sin pruebas, sin la propia) y se devuelve un motivo:
+   - `capacity`: `confirmadas >= form.capacity`;
+   - `quota`: para cada regla de `quota_rules(form)` que cumple la inscripción (`sub.quota_keys` contiene `|firma|`), `confirmadas con esa firma >= formlib.rule_limit_now(regla, now_local())`;
+   - `code`: `confirmadas con sub.discount_code_id >= code.max_uses`;
+   - `duplicate` (ya hecho).
+2. Si hay motivo: `sub.status = REFUND_DUE` (no cuenta como inscrita ni aparta cupo; ya se ve en la lista de pagos con el aviso «reembolsa y avisa» y en el KPI «Pagos por reembolsar»), `payment_refund_due` en «Estado del sistema» (ya hecho), y el administrador reembolsa por el flujo normal (`form_refunds.complete` ya pasa `refund_due` a `refunded`).
+3. Opcional: para tarjeta, encolar `wompi.void_transaction` automático en `_admit_or_flag`; PSE/Nequi siguen manuales. Opcional: correo a la persona avisando del reembolso.
+4. Pruebas a escribir al aplicarlo (propuestas en `/tmp/revision_1.md`): aprobación tardía sobre aforo 1 con apartado vencido (`created_at` del pago de hace 20 min) -> `{"b": "confirmed", "a": "refund_due"}`; cupo por variable agotado; código de un solo uso gastado por otra inscripción.
+5. Si el negocio prefiere admitir con sobreaforo: cambiar `>= capacity` por un tope duro `capacity + N` (y documentar N).
+
+Riesgos conocidos del diseño: el orden de candados es pago -> formulario; el único camino inverso es `purge_stale_pending` (llamado dentro de `_reserve_and_store` con el formulario bloqueado, 24 h de antigüedad): interbloqueo posible pero rarísimo, lo corta Postgres y el webhook se reintenta. Se elimina moviendo `purge_stale_pending` antes de `reserve_slot`. Un `lock_timeout` al aprobar responde 500 y Wompi reintenta; la conciliación (`reconcile`) también lo repite.
+
+### Pendientes de esta auditoría que NO se tocaron aquí
+D3/B1 (consentimientos: pertenencia de la persona y hash del texto), D5, D6, D7 (idempotencia de entrega), D17, D21, R5 (negarse a cobrar si `access == "activo"` y las llaves son de pruebas), R6, R7 (ventana de tiempo del webhook).
