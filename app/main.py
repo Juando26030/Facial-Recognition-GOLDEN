@@ -151,6 +151,24 @@ async def idle_gate(request, call_next):
         idle.unbind(token)
 
 
+# E1 (Fase 3, nov-2026): la política que SÍ se aplica suma `form-action 'self'` (ningún <form> del repo apunta fuera del sitio; lo fija tests/test_seguridad_fase3b.py) y,
+# además, una política completa en modo «Report-Only»: no bloquea nada, los avisos salen en la consola del navegador. Dos políticas: la del panel y la de los formularios
+# públicos `/f/*` (que además cargan Wompi y el traductor de Google y se incrustan en el sitio del cliente, por eso sin `frame-ancestors`). Se conserva 'unsafe-inline'
+# en script-src/style-src mientras haya bloques en línea (tests/test_csp_trinquete.py los hace bajar); con eso script-src todavía no frena un XSS, pero connect-src,
+# img-src y form-action ya cortan la salida de datos. Cuando la consola salga limpia en staging se pasa a obligatoria. Sin `report-uri` (no hay ruta de reportes; ver docs/FASE_3_SEGURIDAD.md).
+# CSP_REPORT_ONLY=0 apaga la cabecera de prueba.
+_CSP_REPORT_ONLY = os.getenv("CSP_REPORT_ONLY", "1") == "1"
+_CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+              "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com; font-src 'self' data:; media-src 'self' blob:; "
+              "connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com; frame-src 'self' blob:; worker-src 'self' blob:; "
+              "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+_CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://checkout.wompi.co https://translate.google.com "
+                    "https://translate.googleapis.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://www.gstatic.com; "
+                    "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com https://www.gstatic.com https://www.google.com https://translate.googleapis.com; "
+                    "font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com https://*.wompi.co https://translate.googleapis.com; "
+                    "frame-src 'self' blob: https://*.wompi.co https://translate.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'")      # sin frame-ancestors: se incrusta a propósito
+
+
 @app.middleware("http")
 async def security_headers(request, call_next):
     """Cabeceras de seguridad globales (Fase 0C, pasada 2: B1/D8). No pisan lo que la ruta ya haya fijado.
@@ -170,7 +188,9 @@ async def security_headers(request, call_next):
     if h.get("content-type", "").startswith("image/svg"):
         h["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     else:
-        h.setdefault("Content-Security-Policy", ("" if embeddable else "frame-ancestors 'self'; ") + "object-src 'none'; base-uri 'self'")
+        h.setdefault("Content-Security-Policy", ("" if embeddable else "frame-ancestors 'self'; ") + "object-src 'none'; base-uri 'self'; form-action 'self'")
+        if _CSP_REPORT_ONLY:
+            h.setdefault("Content-Security-Policy-Report-Only", _CSP_PUBLIC_FORM if embeddable else _CSP_PANEL)
     return response
 
 
