@@ -189,9 +189,16 @@ def test_c_role_matrix_with_enforce_staff_tenant(client, factory, monkeypatch, r
         r = client.get(path)
         return r.status_code == 404 and r.json().get("detail") == "Evento no encontrado"
 
+    def role_denied(ep):
+        """La puerta del ROL va antes que la del cliente: si el rol no alcanza ese endpoint (p. ej. timing-report es de admin; zonas excluye al comercial puro) da 403 también en el evento propio, y no se filtra nada."""
+        return client.get(f"/api/events/{ev_own.id}/{ep}").status_code == 403
+
     monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
     login(client, "limitado")
     for ep in EVENT_ENDPOINTS:
+        if role_denied(ep):
+            assert client.get(f"/api/events/{ev_other.id}/{ep}").status_code == 403, ep
+            continue
         assert not_found(f"/api/events/{ev_other.id}/{ep}"), ep
         assert not not_found(f"/api/events/{ev_own.id}/{ep}"), ep
     assert ev_other.id not in {e["id"] for e in client.get("/api/events").json()}

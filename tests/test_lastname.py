@@ -151,5 +151,6 @@ def test_person_form_shows_the_event_rule_and_bumps_the_version(client, factory,
     assert _design(ev, client, fields={"last_name": {"required": False}}).json()["definition"]["fields"]["last_name"]["required"] is True, "el diseño no manda sobre el evento"
     old = _sync(client, ev, _op("b1", version=d["form_version"], id="7300", first_name="Sin Apellido")).json()["results"][0]
     assert old["result"] == "ok" and old.get("warnings"), "copia anterior: se guarda y se avisa"
-    now = _sync(client, ev, _op("b2", version=v2["form_version"], id="7301", first_name="Sin Apellido")).json()["results"][0]
+    current = client.get(f"/api/events/{ev.id}/person-form").json()["definition"]["form_version"]          # la versión VIGENTE (un kiosco ya sincronizado): guardar el diseño pudo subirla
+    now = _sync(client, ev, _op("b2", version=current, id="7301", first_name="Sin Apellido")).json()["results"][0]
     assert now["result"] == "error"

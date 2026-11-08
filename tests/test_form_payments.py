@@ -299,8 +299,7 @@ def test_form_with_approved_payments_cannot_be_deleted_and_reports_show_the_mone
     client.post("/webhooks/wompi", json=_event_for("prod", ref, 13500000, "APPROVED", txn="TX-1", method="PSE"))
     _staff(client)
     base = f"/api/events/{ev.id}/forms/{form['id']}"
-    r = client.delete(base)
-    assert r.status_code == 409 and "pagos aprobados" in r.json()["detail"]
+    assert client.delete(base).status_code == 403                               # el borrado definitivo es solo del super_admin
     ws = load_workbook(io.BytesIO(client.get(f"{base}/report").content)).active
     header = [c.value for c in ws[2]]
     row = [c.value for c in ws[3]]
@@ -309,6 +308,12 @@ def test_form_with_approved_payments_cannot_be_deleted_and_reports_show_the_mone
     assert "Pronto pago" in row[header.index("Reglas y descuentos")]
     kpis = {k["label"]: k["value"] for k in client.get(f"{base}/analytics").json()["kpis"]}
     assert kpis["Ingresos (aprobados)"] == "$135.000"
+    assert client.post(f"{base}/archive").status_code == 200                    # coordinador archiva; el definitivo exige super_admin + archivado
+    factory.staff("super_admin", "sup2")
+    client.post("/logout")
+    login(client, "sup2")
+    r = client.delete(base)
+    assert r.status_code == 409 and "pagos" in r.json()["detail"]               # con pagos aprobados nunca se borra
 
 
 def test_payment_field_state_is_reported_to_the_editor(client, factory, keys, monkeypatch):

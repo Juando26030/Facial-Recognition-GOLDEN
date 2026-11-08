@@ -138,13 +138,17 @@ def test_p5_calendar_and_tenants_are_cut_by_client(client, factory, monkeypatch)
     monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
     factory.tenant("beta")
     factory.staff("coordinador", "coordB", tenant_id="beta")
+    factory.staff("comercial", "comB", tenant_id="beta")
     acme = factory.event("en_proceso", tenant_id="acme", start_date=date(2026, 11, 10), end_date=date(2026, 11, 11))
     login(client, "coordB")
     cal = client.get("/api/events/calendar", params={"start": "2026-11-01", "end": "2026-11-30"}).json()
     assert acme.id not in {e["id"] for e in cal}
     assert {t["id"] for t in client.get("/api/tenants").json()} == {"beta"}
-    assert client.patch("/api/tenants/acme", json={"contact_email": "x@beta.com"}).status_code == 404
+    assert client.patch("/api/tenants/acme", json={"contact_email": "x@beta.com"}).status_code == 403      # coordinador no edita clientes (comercial+)
     assert client.get("/api/super-events", params={"tenant_id": "acme"}).status_code == 404
+    client.post("/logout")
+    login(client, "comB")
+    assert client.patch("/api/tenants/acme", json={"contact_email": "x@beta.com"}).status_code == 404      # comercial de otro cliente: no lo ve
 
 
 def test_p6_edit_and_status_only_for_people_of_this_event(client, factory, db):

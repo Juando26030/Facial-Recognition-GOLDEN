@@ -109,8 +109,11 @@ def test_paused_is_fine_before_the_cutover_with_paused_ok(tmp_path):
 def test_no_hourly_backups_is_a_failure_and_the_alarm_threshold_is_not_loosened(tmp_path):
     r, _, _ = run(tmp_path, "check", job=good_job(), backups_hours=None, deployed_hours=3)
     assert r.returncode == 1 and "no hay respaldos horarios" in r.stdout
-    r, _, _ = run(tmp_path, "check", job=good_job(), backups_hours=[2.5], deployed_hours=5)       # 2,5 h > 2 h (el mismo umbral que check-backups)
-    assert r.returncode == 1 and "tiene 2.5 h" in r.stdout
+    # Modo tranquilo (Fase 3): de noche el Job horario se salta si nadie usó el sistema, así que el umbral es 9 h (BACKUP_HOURLY_MAX_AGE_H, el mismo que check-backups); más allá de eso, falla.
+    r, _, _ = run(tmp_path, "check", job=good_job(), backups_hours=[9.5], deployed_hours=12)
+    assert r.returncode == 1 and "tiene 9.5 h" in r.stdout and "máximo 9 h" in r.stdout
+    r, _, _ = run(tmp_path, "check", job=good_job(), backups_hours=[8.5], deployed_hours=12)       # dentro del hueco normal de la noche: no alarma
+    assert "el último respaldo horario tiene" not in r.stdout
 
 
 def test_a_backup_older_than_the_last_deploy_fails_but_only_after_the_first_tick_could_have_run(tmp_path):
