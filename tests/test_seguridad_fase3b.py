@@ -222,7 +222,9 @@ def test_c_authorized_temp_accounts_are_also_cut_by_tenant(client, factory, monk
     monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
     monkeypatch.setenv("DIGITADOR_LOGIN_CONTROL", "0")
     login(client, "temp")
-    r = client.get(f"/api/events/{ev_other.id}/consent-text")
+    # consent-text es del digitador en adelante: el rol «cliente» usa un endpoint suyo (estadísticas); en ambos el corte por cliente va antes que la autorización puntual.
+    ep = "consent-text" if role == "digitador" else "stats/variables"
+    r = client.get(f"/api/events/{ev_other.id}/{ep}")
     assert r.status_code == 404 and r.json()["detail"] == "Evento no encontrado"
 
 
