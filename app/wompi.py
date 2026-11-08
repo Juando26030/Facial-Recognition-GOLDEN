@@ -8,7 +8,6 @@ pruebas y otro de producción, y un formulario en estado `pruebas` usa el de pru
 La llave PRIVADA (prv_…) solo se usa desde el servidor: consultar una transacción y anularla. Nunca sale al navegador.
 """
 import hashlib
-import hmac
 import json
 import os
 import threading
@@ -16,6 +15,8 @@ import time
 import urllib.error
 import urllib.request
 from typing import Optional
+
+from app.safeeq import safe_eq
 
 WIDGET_URL = "https://checkout.wompi.co/widget.js"
 API = {False: "https://production.wompi.co/v1", True: "https://sandbox.wompi.co/v1"}
@@ -72,7 +73,7 @@ def verify_event(event: dict, header_checksum: Optional[str] = None) -> Optional
     if not secrets:
         return None
     given = str((event.get("signature") or {}).get("checksum") or header_checksum or "").lower()
-    return bool(given) and any(hmac.compare_digest(event_checksum(event, s).lower(), given) for s in secrets)
+    return bool(given) and any(safe_eq(event_checksum(event, s).lower(), given) for s in secrets)
 
 
 def verify_event_env(event: dict, header_checksum: Optional[str] = None):

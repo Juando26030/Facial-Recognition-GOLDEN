@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import appmode, ops
 from app.obs import mask_pii
+from app.safeeq import safe_eq
 from app.auth import get_current_staff, require_role
 from app.database import get_db
 
@@ -53,7 +54,7 @@ def readyz() -> JSONResponse:
 def _ops_reader(request: Request, db: Session = Depends(get_db)) -> Optional[object]:
     """Admin+ con sesión, o el token de operaciones (para que el despliegue pregunte sin iniciar sesión)."""
     token, supplied = os.getenv("OPS_TOKEN"), request.headers.get("x-ops-token")
-    if token and supplied and hmac.compare_digest(token, supplied):
+    if token and supplied and safe_eq(token, supplied):
         return None
     return require_role("admin")(get_current_staff(request, db))
 

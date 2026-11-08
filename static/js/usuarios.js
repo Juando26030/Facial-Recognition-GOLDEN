@@ -62,7 +62,7 @@
             const d = await res.json();
             const map = {};
             (d.accounts || []).forEach((a) => { map[a.id] = a; });
-            const key = JSON.stringify([d.can_manage, (d.accounts || []).map((a) => [a.id, a.locked, a.login_pending])]);
+            const key = JSON.stringify([d.can_manage, (d.accounts || []).map((a) => [a.id, a.locked, a.login_pending, a.req])]);
             canManage = !!d.can_manage;
             loginState = map;
             if (key !== loginStateKey) {
@@ -233,7 +233,7 @@
 
     async function decideLogin(btn, staffId, username, allow) {
         await busy(btn, async () => {
-            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/login-request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow }) });
+            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/login-request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow, req: (loginState[staffId] || {}).req }) });
             const d = await res.json().catch(() => ({}));
             if (res.ok) showToast(allow ? `Ingreso de ${username} autorizado` : `Ingreso de ${username} no autorizado`, 'success');
             else showToast(typeof d.detail === 'string' ? d.detail : 'No se pudo responder la solicitud', 'error');

@@ -26,6 +26,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app import formlib, formsvc, jobs, security, timing, uploads, wompi, safe_limits
+from app.safeeq import safe_eq
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
@@ -77,7 +78,7 @@ def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = Tru
     state = formsvc.public_state(db, form, held) if check_full else formsvc.status_of(form)
     if state == "finalizado":
         raise HTTPException(status_code=404, detail="Formulario no disponible")
-    if state == "pruebas" and not (k and secrets.compare_digest(str(k), form.test_key)):
+    if state == "pruebas" and not (k and safe_eq(str(k), form.test_key)):
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     return state
 
@@ -339,7 +340,7 @@ def gate(event_id: int, slug: str, data: dict, request: Request, db: Session = D
     sec = formsvc.get_settings(form)["security"]
     if not (sec["enabled"] and sec["type"] == "code"):
         raise HTTPException(status_code=400, detail="Este formulario no pide código")
-    if not secrets.compare_digest(str(data.get("code") or "").strip().lower(), sec["code"].strip().lower()):
+    if not safe_eq(str(data.get("code") or "").strip().lower(), sec["code"].strip().lower()):
         raise HTTPException(status_code=403, detail="El código no es correcto")
     claims = _read(data.get("t"), form)
     return {"token": _issue(form, **{**claims, "g": True})}

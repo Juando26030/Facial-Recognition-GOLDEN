@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app import formsvc, wompi
 from app.auth import get_event_for_staff, require_role
+from app import event_archive
 from app.database import get_db
 from app.models import FormPayment, FormRefund, FormSubmission, StaffUser
 from app.routers.forms import _get_form
@@ -68,6 +69,7 @@ def refund_payment(event_id: int, form_id: int, payment_id: int, data: dict, db:
     """Body: `reason` (obligatorio), `amount` (COP; por defecto el saldo), `manual` (true = ya se devolvió por fuera; exige `note`),
     `cancel_registration` (por defecto: sí si el reembolso deja el pago en cero)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     pay = db.query(FormPayment).filter(FormPayment.id == payment_id, FormPayment.form_id == form.id).with_for_update().first()
     if not pay:
@@ -173,6 +175,7 @@ def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_
     if action not in ("check", "discard"):
         raise HTTPException(status_code=404, detail="Acción no válida")
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     pay = db.query(FormPayment).filter(FormPayment.id == payment_id, FormPayment.form_id == form.id).with_for_update().first()
     refund = db.query(FormRefund).filter(FormRefund.id == refund_id, FormRefund.payment_id == payment_id).first() if pay else None

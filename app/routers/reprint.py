@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import reprint, security
 from app.auth import assert_event_tenant, effective_roles, get_event_for_staff, require_role, require_role_excluding
+from app import event_archive
 from app.database import get_db
 from app.models import Event, EventAttendee, ReprintAudit, ReprintLink, ReprintRequest, StaffUser
 from app.timeutil import utcnow
@@ -59,6 +60,7 @@ def set_mode(event_id: int, data: dict, db: Session = Depends(get_db), staff: St
 def history(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DECIDER)):
     """Historial de solicitudes de ESTE evento con su cadena de auditoría. Solo quien decide en él (su coordinador o admin+)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if not reprint.can_decide(event, staff):
         raise HTTPException(status_code=403, detail="Solo el coordinador de este evento o un administrador ve este historial.")
     reprint.expire_due(db, event.id)
@@ -83,6 +85,7 @@ def _attendee(db: Session, event: Event, user_id: str) -> EventAttendee:
 def create(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """Pide permiso para reimprimir. Solo si la reimpresión está deshabilitada, la persona ya se imprimió y quien pide no decide en este evento. Quien no pertenece al evento recibe el 403/404 de siempre."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     uid = _attendee(db, event, data.get("user_id")).user_id
     if not reprint.is_locked_for(event, staff):
         raise HTTPException(status_code=409, detail="En este evento puedes reimprimir sin permiso.")
@@ -109,6 +112,7 @@ def mine(event_id: int, user_id: str, db: Session = Depends(get_db), staff: Staf
 def use(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """Gasta el permiso aprobado ANTES de imprimir en el propio equipo (USB o ventana de Chrome). La impresión compartida lo gasta el servidor en print-jobs. 403 si no hay permiso vigente."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     uid = str(data.get("user_id") or "").strip()
     reprint.gate(db, event, staff, uid, "local")
     db.commit()

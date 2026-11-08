@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app import acceptmail, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
 from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
+from app import event_archive
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
 from app.models import StaffUser, SystemEvent, User
@@ -37,6 +38,7 @@ def consent_text(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
 def consent_status(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
     """¿Hay aceptación vigente de esta persona en este evento? `last`: 'consent' | 'rejection' | 'revocation' | None."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     last = consent.latest(db, event.tenant_id, user_id, event.id)
     blocked = consent.biometric_blocked(db, event.tenant_id, user_id)
     return {"accepted": not blocked and consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode, "blocked": blocked,
@@ -117,6 +119,7 @@ def consent_click(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     1 a N con los vectores pre-calculados del evento. NO registra nada todavía: la aceptación se registra solo si hay coincidencia, atribuida a la persona identificada.
     Solo existe en eventos con `precalculo_autorizado`."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if not event.precalculo_autorizado:
         raise HTTPException(status_code=409, detail="Este evento no tiene autorizado el pre-cálculo de vectores: identifica a la persona por cédula o QR")
     t = legal_texts.render(event)
@@ -173,6 +176,7 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
     from app.biometrics import BiometricEngine
     from app.storage import photo_key
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     uid = re.sub(r"[\s.]", "", user_id)
     if not event.facial_enabled:
         raise HTTPException(status_code=409, detail="Este evento no usa reconocimiento facial")
@@ -198,6 +202,7 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
     from app import faces_version
     from app.models import WebAcceptance
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     uid = re.sub(r"[\s.]", "", user_id)
     row = db.get(WebAcceptance, (event.tenant_id, uid, event.id))
     if row is None:
@@ -278,7 +283,9 @@ def accept_mail_test(event_id: int, data: dict, db: Session = Depends(get_db), s
 def accept_mail_start(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     if data.get("confirm") is not True:
         raise HTTPException(status_code=400, detail="Falta la confirmación.")
-    r = acceptmail.start(db, get_event_for_staff(event_id, db, staff), staff.id)
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    r = acceptmail.start(db, event, staff.id)
     if not r["ok"]:
         raise HTTPException(status_code=400, detail=r["detail"])
     return r
@@ -296,6 +303,7 @@ def accept_mail_stop(event_id: int, db: Session = Depends(get_db), staff: StaffU
 def accept_links_csv(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     """Enlaces personales confiables de los adultos del listado (para enviarlos por otro medio). Cada enlace es la llave de una persona: se descarga con su sesión y no se guarda en caché."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     text = acceptmail.export_links(db, event, staff.id)
     if text is None:
         raise HTTPException(status_code=400, detail=acceptmail.blocked_reason(event))
@@ -305,18 +313,23 @@ def accept_links_csv(event_id: int, db: Session = Depends(get_db), staff: StaffU
 @router.get("/events/{event_id}/accept-mail/log.csv")
 def accept_mail_log_csv(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     return _csv(acceptmail.log_csv(db, event), f"registro_envios_{event.event_code}.csv")
 
 
 @router.get("/events/{event_id}/accept-mail/pending")
 def accept_mail_pending(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     """Personas «sin confirmar» (no se sabe si su correo salió): para reenviarlas a mano, una por una."""
-    return {"pending": acceptmail.pending_list(db, get_event_for_staff(event_id, db, staff))}
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    return {"pending": acceptmail.pending_list(db, event)}
 
 
 @router.post("/events/{event_id}/accept-mail/resend")
 def accept_mail_resend(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
-    r = acceptmail.resend(db, get_event_for_staff(event_id, db, staff), str(data.get("user_id") or ""), staff.id)
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    r = acceptmail.resend(db, event, str(data.get("user_id") or ""), staff.id)
     if not r["ok"]:
         raise HTTPException(status_code=400, detail=r["detail"])
     return r

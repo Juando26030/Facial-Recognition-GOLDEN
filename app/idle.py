@@ -92,9 +92,36 @@ def limit_seconds(session) -> int:
     return general_minutes() * 60
 
 
+ABSOLUTE_ROLES = ("admin", "super_admin")      # roles sin `sid` (varias sesiones a la vez): la cookie robada de uno se podía mantener viva indefinidamente navegando (Fase 3, B7)
+ABSOLUTE_HOURS_DEFAULT = 12
+
+
+def absolute_hours() -> float:
+    """Tope ABSOLUTO de una sesión de admin/super_admin desde que inició (ADMIN_SESSION_MAX_HOURS, 12 por defecto; 0 = apagado). Un valor ilegible vuelve a 12."""
+    raw = os.getenv("ADMIN_SESSION_MAX_HOURS", "").strip()
+    if not raw:
+        return ABSOLUTE_HOURS_DEFAULT
+    try:
+        return max(0.0, min(float(raw), 24 * 14.0))
+    except ValueError:
+        return ABSOLUTE_HOURS_DEFAULT
+
+
+def absolute_expired(session, at: Optional[int] = None) -> bool:
+    """¿Pasó el tope absoluto (desde `iat`, el inicio de la sesión) de una sesión de admin/super_admin? Renovar con actividad NO lo mueve. Sin `iat` (cookie anterior al cambio) no expulsa:
+    el middleware lo marca desde ahora."""
+    if session.get("staff_role") not in ABSOLUTE_ROLES:
+        return False
+    limit = absolute_hours() * 3600
+    iat = session.get("iat")
+    if limit <= 0 or not isinstance(iat, int) or isinstance(iat, bool):
+        return False
+    return (at if at is not None else now()) - iat > limit
+
+
 def start(session, db=None, staff=None) -> None:
-    """Al iniciar sesión: marca la última actividad y, si hay impresión en marcha (`printing_in_progress`), una exención con vencimiento a IDLE_EXEMPT_HOURS (12 h por defecto)."""
-    session["la"] = now()
+    """Al iniciar sesión: marca el inicio (`iat`, tope absoluto de admin) y la última actividad y, si hay impresión en marcha (`printing_in_progress`), una exención con vencimiento a IDLE_EXEMPT_HOURS (12 h por defecto)."""
+    session["iat"] = session["la"] = now()
     session.pop("idle_m", None)
     session.pop("idle_off", None)
     if staff is not None and db is not None:

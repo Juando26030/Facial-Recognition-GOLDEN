@@ -13,8 +13,10 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role
+from app import event_archive
 from app.database import get_db
-from app.models import StaffUser, User
+from app.eventpeople import require_person_of_event
+from app.models import StaffUser
 from app import audit_actions, safe_limits
 from app.storage import get_storage, key_of
 
@@ -42,11 +44,10 @@ def rename_signatures(tenant_id: str, old_id: str, new_id: str) -> None:
 
 def _resolve(db: Session, event_id: int, user_id: str, field_key: str, staff: StaffUser):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if not field_key.startswith("opcional_"):
         raise HTTPException(status_code=400, detail="Campo de firma inválido")
-    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    require_person_of_event(db, event, user_id)            # Fase 3: la firma es de alguien de ESTE evento
     return event
 
 

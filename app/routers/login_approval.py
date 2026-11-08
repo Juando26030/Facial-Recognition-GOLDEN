@@ -138,7 +138,8 @@ def login_state(event_id: int, db: Session = Depends(get_db), staff: StaffUser =
             .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador").all())
     now = utcnow()
     accounts = [{"id": s.id, "locked": login_control.is_locked(s), "login_pending": bool(can and login_control.pending(s, now)),
-                 "expires_in": login_control.seconds_left(s, now) if can and login_control.pending(s, now) else 0} for s in rows]
+                 "expires_in": login_control.seconds_left(s, now) if can and login_control.pending(s, now) else 0,
+                 **({"req": login_control.request_code(s)} if can and login_control.pending(s, now) else {})} for s in rows]
     return JSONResponse({"can_manage": can, "event_in_progress": event.status == "en_proceso", "accounts": accounts}, headers=NO_STORE)
 
 
@@ -148,6 +149,9 @@ def decide_login(event_id: int, staff_id: int, data: dict, db: Session = Depends
     allow = data.get("allow") is True
     if not login_control.pending(target):
         raise HTTPException(status_code=409, detail="Esa persona ya no está esperando para ingresar (la solicitud venció o ya se respondió)")
+    req = data.get("req")
+    if req is not None and str(req) != login_control.request_code(target):          # B6: otra solicitud reemplazó a la que el coordinador estaba viendo
+        raise HTTPException(status_code=409, detail="La solicitud cambió mientras la mirabas: revisa de nuevo quién está pidiendo entrar")
     if allow and event.status != "en_proceso":
         raise HTTPException(status_code=400, detail="Solo se puede autorizar el ingreso desde un evento en proceso")
     target.login_req_status = login_control.APPROVED if allow else login_control.DENIED

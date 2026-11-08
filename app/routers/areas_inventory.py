@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role, require_role_excluding
 from app import audit_actions, faces, heavy
+from app import event_archive
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
@@ -208,6 +209,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
 def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     """Entrada/salida por cédula o QR (el QR trae el ID). `direction`: in | out | auto (alterna)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
     area = _get_area(db, event, area_id, active_only=True)
     user = _find_person(db, event, str(data.get("cedula") or ""))
@@ -221,6 +223,7 @@ def area_movement_face(
 ):
     """Entrada/salida por reconocimiento facial (solo eventos con biometría)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
     area = _get_area(db, event, area_id, active_only=True)
     try:
@@ -239,6 +242,7 @@ def area_movement_face(
 def area_presence(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     """Última situación de cada persona en la zona: verde = entró ('in'), rojo = salió ('out')."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     area = _get_area(db, event, area_id)
     last = {}
     for m in db.query(AreaMovement).filter(AreaMovement.area_id == area.id).order_by(AreaMovement.timestamp, AreaMovement.id):
@@ -277,6 +281,7 @@ def _xlsx_response(sheets: dict, filename: str, widths: dict = None) -> Streamin
 def areas_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Todos los movimientos con hora EXACTA (con segundos) y zona."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     areas = {a.id: a.name for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     staff_names = {s.id: (s.full_name or s.username) for s in db.query(StaffUser)}
@@ -408,6 +413,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     """Entrega uno o varios ítems (combo) a una persona: `{cedula, items: [{item_id, qty}]}`. Todo o
     nada: si algún ítem no alcanza, no se entrega nada. El disponible se descuenta solo."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
     user = _find_person(db, event, str(data.get("cedula") or ""))
     lines = data.get("items") or []
@@ -452,6 +458,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
 @router.get("/events/{event_id}/inventory/deliveries")
 def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     items = {i.id: i.name for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     rows = db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id).order_by(InventoryDelivery.delivered_at.desc(), InventoryDelivery.id.desc()).limit(60).all()
@@ -466,6 +473,7 @@ def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: Staff
 def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Hoja 'Entregas' (hora, a quién, qué se le entregó) + hoja 'Inventario' (inicial / entregado / disponible)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id).order_by(InventoryItem.id)}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     staff_names = {s.id: (s.full_name or s.username) for s in db.query(StaffUser)}

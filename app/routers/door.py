@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import audit_actions, crypto, faces, security
 from app.auth import get_event_for_staff, require_event_in_progress, require_role
+from app import event_archive
 from app.database import get_db
 from app.models import AccessLog, PersonChange, RateLimitEvent, StaffUser, SystemEvent, User
 from app.ops import record_system_event
@@ -54,6 +55,7 @@ def _count(event, outcome: str, dist: float = None, margin: float = None, reason
 
 def _door_event(db: Session, event_id: int, staff: StaffUser):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if not (event.face_door_enabled and event.facial_enabled and not event.biometrics_locked):
         raise HTTPException(status_code=403, detail=OFF_MSG)
     return event
@@ -127,6 +129,7 @@ def _repeat_log_ids(db: Session, event, since) -> list:
 def door_recent(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
     """Franja de supervisión: las últimas entradas por rostro y los «ya había entrado» (para revisar sin hacer clic). La foto se pide aparte por cada línea."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     rows = (db.query(AccessLog, User).join(User, (User.id == AccessLog.user_id) & (User.tenant_id == AccessLog.tenant_id))
             .filter(AccessLog.event_id == event.id, AccessLog.registration_method == METHOD).order_by(AccessLog.id.desc()).limit(RECENT).all())
     marked = {int(ref.split(":", 1)[1]) for (ref,) in db.query(SystemEvent.ref).filter(SystemEvent.kind == "door_face_after_revert", SystemEvent.ref.like(f"{event.id}:%"))
@@ -160,6 +163,7 @@ def _recent_log(db: Session, event, log_id: int, allow_repeat: bool = False) -> 
 def door_photo(event_id: int, log_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
     """La foto de REGISTRO de quien acaba de entrar por rostro (solo entradas por rostro de las últimas 12 horas): para que el personal compare sin hacer clic."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     log = _recent_log(db, event, log_id, allow_repeat=True)
     if log.registration_method == METHOD and log.timestamp < utcnow() - PHOTO_WINDOW:
         raise HTTPException(status_code=404, detail="Entrada no encontrada")
@@ -174,6 +178,7 @@ def door_photo(event_id: int, log_id: int, db: Session = Depends(get_db), staff:
 def door_revert(event_id: int, log_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
     """«Revisar»: el personal deshace una entrada por rostro que no le cuadra. Queda en el rastro de cambios (quién y cuándo) y en el contador."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     log = _recent_log(db, event, log_id)
     uid = log.user_id
     audit_actions.record(db, staff, "delete", "access_log", log.id, None, f"evento {event.id}: entrada por rostro revertida en «Revisar»")          # sin cédula; el cambio por persona queda en PersonChange
@@ -189,6 +194,7 @@ def door_revert(event_id: int, log_id: int, db: Session = Depends(get_db), staff
 def door_stats(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
     """Contador de HOY (hora local): intentos, coincidencias, sin coincidencia, sin rostro y revertidas; más las distancias (solo números) para calibrar."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     now_local = to_local(utcnow())
     since = local_to_utc(datetime(now_local.year, now_local.month, now_local.day))
     counts = {"match": 0, "match_repeat": 0, "no_match": 0, "no_face": 0, "no_live": 0, "reverted": 0}

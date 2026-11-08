@@ -135,7 +135,7 @@ async def idle_gate(request, call_next):
     if not session or not session.get("staff_user_id") or idle.exempt_path(path):
         return await call_next(request)
     nav = idle.is_navigation(request.method, request.headers)
-    if idle.expired(session):
+    if idle.absolute_expired(session) or idle.expired(session):          # tope absoluto de admin/super_admin (B7) o inactividad
         session.clear()
         if nav:
             return RedirectResponse("/login?expirada=1", status_code=302)
@@ -144,6 +144,8 @@ async def idle_gate(request, call_next):
         idle.renew(session, reset_event=nav)
     elif not isinstance(session.get("la"), int):
         session["la"] = idle.now()
+    if not isinstance(session.get("iat"), int):          # cookie anterior al tope absoluto: corre desde ahora (desplegar no expulsa a nadie)
+        session["iat"] = idle.now()
     token = idle.bind(session)
     try:
         return await call_next(request)

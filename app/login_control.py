@@ -81,6 +81,11 @@ def new_request(staff: StaffUser) -> str:
     return token
 
 
+def request_code(staff: StaffUser) -> str:
+    """Código corto de la solicitud VIGENTE (6 primeros del hash): el coordinador lo manda al responder; si entre tanto otra solicitud la reemplazó (B6), la respuesta se rechaza en vez de aprobar a ciegas la nueva."""
+    return (staff.login_req_hash or "")[:6]
+
+
 def clear_request(staff: StaffUser) -> None:
     staff.login_req_hash = staff.login_req_at = staff.login_req_status = None
 

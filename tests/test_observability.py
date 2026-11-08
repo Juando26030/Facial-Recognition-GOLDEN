@@ -282,3 +282,58 @@ def test_static_urls_are_paths_not_absolute_urls(client):
     html = client.get("/login", headers={"host": "golden-web-staging-abc-ue.a.run.app"}).text
     assets = re.findall(r'(?:href|src)="([^"]*/static/[^"]*)"', html)
     assert assets and all(a.startswith("/static/") and "?v=" in a for a in assets), assets
+
+
+def test_alnum_ids_in_the_path_and_personal_query_values_are_masked():
+    """Fase 3 (E16/C9): pasaportes/CE en la ruta y id, email, q o nombre en la query no llegan al log."""
+    out = obs.mask_pii(obs.mask_url("/api/users/AB123456?event_id=3&email=juan@x.co&q=Maria+Lopez"))
+    assert "AB123456" not in out and "juan@x.co" not in out and "Maria" not in out and "event_id=3" in out
+    assert "CE-998877" not in obs.mask_url("/events/3/users/CE-998877/badge-print-data")
+    assert "AB12" not in obs.mask_url("/api/events/3/consent-status/AB12")
+    assert "1016100329" not in obs.mask_pii(obs.mask_url("/c/x/lookup?id=1016100329"))
+    assert "juan.perez" not in obs.mask_pii(obs.mask_url("/api/email-validate?email=juan.perez@gmail.com"))
+
+
+def test_fixed_routes_stay_readable():
+    assert obs.mask_url("/api/users/changes?event_id=3") == "/api/users/changes?event_id=3"
+    assert obs.mask_url("/api/users?event_id=3&page=2") == "/api/users?event_id=3&page=2"
+
+
+def test_the_request_line_masks_the_url_in_httpRequest_too():
+    import json
+    import logging
+
+    class Capture(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.lines = []
+
+        def emit(self, record):
+            self.lines.append(obs.JsonFormatter().format(record))
+
+    cap = Capture()
+    lg = logging.getLogger("golden.http")
+    lg.addHandler(cap)
+    lg.setLevel(logging.INFO)
+    try:
+        import asyncio
+
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        mw = obs.RequestLogMiddleware(app)
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            return None
+
+        scope = {"type": "http", "method": "GET", "path": "/api/users/AB123456", "query_string": b"event_id=3&q=Maria+Lopez&email=juan@x.co", "headers": [], "client": ("10.1.2.3", 1)}
+        asyncio.run(mw(scope, receive, send))
+    finally:
+        lg.removeHandler(cap)
+    line = json.loads(cap.lines[-1])
+    assert "AB123456" not in line["httpRequest"]["requestUrl"] and "Maria" not in line["httpRequest"]["requestUrl"] and "juan" not in line["httpRequest"]["requestUrl"]
+    assert "AB123456" not in line["message"] and "Maria" not in line["message"]

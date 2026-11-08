@@ -194,7 +194,8 @@ def test_display_page_needs_no_login_and_only_animates_new_draws(client, factory
     client.post("/logout")
     assert client.get(f"/r/{token}/state").json()["draw"] is None                        # sin `after`: solo el id (liviano)
     first = client.get(f"/r/{token}/state", params={"after": 0}).json()
-    assert first["draw"]["winners"][0]["id"] == "1003" and first["latest_id"] == 1
+    assert first["draw"]["winners"][0]["position"] == 1 and first["draw"]["winners"][0]["name"] and first["latest_id"] == 1
+    assert all("id" not in w for w in first["draw"]["winners"]) and "1003" not in str(first)          # B15: la pantalla pública no recibe la cédula del ganador
     assert client.get(f"/r/{token}/state", params={"after": 1}).json()["draw"] is None      # ya lo vio: no se repite
     assert client.get("/api/events/1/roulette").status_code == 401                           # y no abre nada más
 
@@ -263,7 +264,8 @@ def test_the_operator_only_authorizes_and_the_public_screen_spins(client, factor
     assert state["authorized"] is True and state["authorized_label"] == "Sorteo iPhone"
     client.post("/logout")
     r = client.post(f"/r/{token}/spin")                                           # la pantalla pública, sin login
-    assert r.status_code == 200 and [w["id"] for w in r.json()["winners"]] == ["1003"] and r.json()["label"] == "Sorteo iPhone"
+    assert r.status_code == 200 and [w["position"] for w in r.json()["winners"]] == [1] and r.json()["label"] == "Sorteo iPhone"
+    assert all("id" not in w for w in r.json()["winners"]) and "1003" not in str(r.json())          # B15
     assert client.post(f"/r/{token}/spin").status_code == 409                     # una autorización = un giro
     assert client.get(f"/r/{token}/state").json()["authorized"] is False
     login(client, "coord1")
@@ -328,3 +330,20 @@ def test_the_pool_sent_to_the_screen_covers_big_events(client, factory, db):
     client.post("/logout")
     r = client.post(f"/r/{token}/spin").json()
     assert len(r["pool"]) == 80 and r["winners"][0]["name"] in r["pool"]           # todos los nombres, para que la columna del casino los recorra
+
+
+def test_display_link_stops_serving_when_the_event_or_its_base_is_archived(client, factory, db):
+    from app.timeutil import utcnow
+    ev = _setup(client, factory, db)
+    token = _token(client, ev)
+    client.post("/logout")
+    assert client.get(f"/r/{token}/state").status_code == 200
+    ev.data_archived_at = utcnow()
+    db.commit()
+    assert client.get(f"/r/{token}/state").status_code == 404 and client.get(f"/r/{token}").status_code == 404
+    ev.data_archived_at, ev.archived_at = None, utcnow()
+    db.commit()
+    assert client.get(f"/r/{token}/state").status_code == 404
+    ev.archived_at = None
+    db.commit()
+    assert client.get(f"/r/{token}/state").status_code == 200          # restaurar el evento reabre el mismo enlace

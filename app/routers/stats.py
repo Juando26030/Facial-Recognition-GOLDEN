@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth import effective_roles, get_event_for_staff, require_role_or_client
+from app import event_archive
 from app.database import get_db
 from app import testperson
 from app.models import AccessLog, EventAttendee, StaffUser, User
@@ -165,4 +166,5 @@ def get_stats_data(
     staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     return data_for(db, event, variable, staff_view=is_staff_view(staff))

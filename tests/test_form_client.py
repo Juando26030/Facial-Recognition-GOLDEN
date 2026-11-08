@@ -216,3 +216,20 @@ def test_generated_passwords_pass_the_strict_policy():
     for _ in range(50):
         pw = form_client.new_password()
         assert len(pw) == 14 and security.password_problem(pw, "cliente-f1-ab12", strict=True) is None
+
+
+def test_an_expired_form_client_cannot_use_the_rest_of_the_api(client, factory, db):
+    """Fase 3 (B10): vencido el acceso, la cuenta sigue activa pero solo ve su propio mensaje; badge-assets, estados y sondeos le dan 401."""
+    from app.models import FormClientUser
+    ev, form = _setup(client, factory)
+    login(client, "adm1")
+    acc = _create_access(client, ev, form, days=1)
+    client.post("/logout")
+    login(client, acc["username"], acc["password"])
+    assert client.get("/api/ping-auth").status_code == 200
+    g = db.query(FormClientUser).one()
+    g.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()
+    assert client.get("/api/form-client/stats").status_code == 403           # su propia ruta: mensaje de acceso vencido
+    assert client.get("/api/ping-auth").status_code == 401
+    assert client.get("/api/badge-assets/acme/x.png").status_code == 401

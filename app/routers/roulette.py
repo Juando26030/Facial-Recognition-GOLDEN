@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app import heavy, publicurl, security
 from app.auth import get_event_for_staff, require_role
+from app import event_archive
 from app.database import get_db
 from app import testperson
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
@@ -214,6 +215,7 @@ def list_candidates(
     """Candidatos visibles (con el filtro opcional, JSON `{"conditions":[...]}`) — para elegir a mano (modos 1-3 y
     5a) y para ver cuántos cumplen el filtro (5b)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     people = candidates(db, event)
     if filter:
         try:
@@ -415,6 +417,7 @@ def execute(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     """Ejecuta el sorteo YA (sin esperar el botón de la pantalla pública). La interfaz normal usa `authorize`: el giro lo dispara el
     botón de la pantalla de visualización. Se conserva por compatibilidad."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     return _run_draw(db, event, _get_config(db, event), str(data.get("label") or "").strip()[:120], staff.id)
 
 
@@ -485,6 +488,7 @@ def round_status(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
 @router.get("/events/{event_id}/roulette/draws")
 def list_draws(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     draws = db.query(RouletteDraw).filter_by(event_id=event.id).order_by(RouletteDraw.id.desc()).all()
     names = _staff_names(db, [d.created_by_id for d in draws])
     return [_serialize_draw(d, names) for d in draws]
@@ -500,6 +504,7 @@ MODE_LABELS = {
 def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Reporte Excel de todos los sorteos del evento (mismo estilo que el resto de reportes)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     draws = db.query(RouletteDraw).filter_by(event_id=event.id).order_by(RouletteDraw.id).all()
     names = _staff_names(db, [d.created_by_id for d in draws])
     wb = Workbook()
@@ -527,9 +532,19 @@ def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
 
 
 # ------------------------------------------------------------------ pantalla pública (proyector)
+PUBLIC_WINNER_KEYS = ("position", "name", "entity")          # B15: a la pantalla pública NO sale la cédula del ganador (la pantalla solo pinta posición, nombre y entidad)
+
+
+def public_winners(winners: list) -> list:
+    return [{k: w[k] for k in PUBLIC_WINNER_KEYS if k in w} for w in winners]
+
+
 def _cfg_by_token(db: Session, token: str) -> RouletteConfig:
     cfg = db.query(RouletteConfig).filter(RouletteConfig.display_token == token).first()
     if not cfg:
+        raise HTTPException(status_code=404, detail="Pantalla no disponible")
+    event = db.get(Event, cfg.event_id)
+    if event is None or event.archived_at is not None or event.data_archived_at is not None:          # B15: el enlace público deja de servir con el evento o su base archivados
         raise HTTPException(status_code=404, detail="Pantalla no disponible")
     return cfg
 
@@ -558,7 +573,7 @@ def display_state(token: str, after: Optional[int] = None, db: Session = Depends
     if last and after is not None and last.id > after:
         names = [p["name"] for p in candidates(db, event)]
         _RNG.shuffle(names)
-        out["draw"] = {"id": last.id, "label": last.label, "mode": last.mode, "winners": json.loads(last.winners_json), "pool": names[:POOL_SIZE]}
+        out["draw"] = {"id": last.id, "label": last.label, "mode": last.mode, "winners": public_winners(json.loads(last.winners_json)), "pool": names[:POOL_SIZE]}
     return out
 
 
@@ -577,7 +592,8 @@ def spin(token: str, request: Request, db: Session = Depends(get_db)):
     locked.authorized_json = None                        # se consume antes de sortear: pase lo que pase no se puede repetir
     db.commit()
     try:
-        return _run_draw(db, event, locked, auth["label"], auth["by"])
+        res = _run_draw(db, event, locked, auth["label"], auth["by"])
+        return {**res, "winners": public_winners(res["winners"])}          # la cédula queda en el sorteo guardado (reporte del operador), no en la pantalla pública
     except HTTPException:
         locked.authorized_json = json.dumps(auth)        # el sorteo no se pudo hacer: la autorización sigue vigente
         db.commit()
