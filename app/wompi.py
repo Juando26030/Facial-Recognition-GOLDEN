@@ -86,7 +86,7 @@ def verify_event_env(event: dict, header_checksum: Optional[str] = None):
     if not given:
         return False
     for c in cfgs:
-        if hmac.compare_digest(event_checksum(event, c["events_secret"]).lower(), given):
+        if safe_eq(event_checksum(event, c["events_secret"]).lower(), given):
             return "test" if c["test"] else "prod"
     return False
 
