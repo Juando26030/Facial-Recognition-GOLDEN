@@ -41,7 +41,7 @@ def test_event_state_archive_restore_delete(client, factory, db):
     assert client.delete(f"/api/event-states/{aid}").status_code == 200
     db.expire_all()
     assert db.get(EventState, aid) is None
-    assert [a for a, _ in _acts(db, "event_state")] == ["archive", "restore", "archive", "delete"]
+    assert [a for a, _ in _acts(db, "event_state")] == ["archive", "restore"] * 3 + ["archive", "delete"]   # coordinador, comercial y admin archivan+restauran; el super_admin archiva y borra
     assert db.get(EventState, b.id) is not None
 
 
@@ -99,7 +99,7 @@ def test_form_template_library_archive(client, factory, db):
     assert client.delete(f"/api/events/{ev.id}/form-templates/{tid}").status_code == 400   # sin archivar
     client.post(f"/api/events/{ev.id}/form-templates/{tid}/archive")
     assert client.delete(f"/api/events/{ev.id}/form-templates/{tid}").status_code == 200
-    assert [a for a, _ in _acts(db, "saved_form_template")] == ["archive", "restore", "archive", "delete"]
+    assert [a for a, _ in _acts(db, "saved_form_template")] == ["archive", "restore"] * 3 + ["archive", "delete"]   # coordinador, comercial y admin archivan+restauran; el super_admin archiva y borra
 
 
 # ------------------------------------------------------------------ histórico de accesos de una persona

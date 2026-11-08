@@ -148,18 +148,19 @@ def test_archive_closes_public_forms_and_they_cannot_be_reopened_while_archived(
 def test_hard_delete_needs_super_admin_and_an_archived_event_and_is_logged(client, factory, db):
     ev = _finished(factory, db)
     keep = _finished(factory, db)
+    ev_id, keep_id = ev.id, keep.id
     factory.staff("admin", "adm")
     factory.staff("super_admin", "sup")
     login(client, "adm")
-    client.post(f"/api/events/{ev.id}/archive")
-    assert client.delete(f"/api/events/{ev.id}").status_code == 403            # admin ya no borra
+    client.post(f"/api/events/{ev_id}/archive")
+    assert client.delete(f"/api/events/{ev_id}").status_code == 403            # admin ya no borra
     login(client, "sup")
-    assert client.delete(f"/api/events/{keep.id}").status_code == 400            # sin archivar no se borra
-    assert client.delete(f"/api/events/{ev.id}").status_code == 200
+    assert client.delete(f"/api/events/{keep_id}").status_code == 400            # sin archivar no se borra
+    assert client.delete(f"/api/events/{ev_id}").status_code == 200
     db.expire_all()
-    assert db.query(Event).filter_by(id=ev.id).first() is None and db.query(Event).filter_by(id=keep.id).first() is not None
+    assert db.query(Event).filter_by(id=ev_id).first() is None and db.query(Event).filter_by(id=keep_id).first() is not None
     row = db.query(AuditAction).filter_by(action="delete").one()
-    assert row.entity == "event" and row.entity_id == str(ev.id) and row.actor_role == "super_admin"
+    assert row.entity == "event" and row.entity_id == str(ev_id) and row.actor_role == "super_admin"
 
 
 def test_auto_archived_event_is_restored_only_by_super_admin(client, factory, db):

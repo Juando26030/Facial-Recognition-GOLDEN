@@ -179,18 +179,19 @@ def test_saved_badge_template_archive_hides_and_blocks_import(client, factory, d
     saved = SavedBadgeTemplate(tenant_id=ev.tenant_id, name="Base", width_mm=62, height_mm=99.8)
     db.add(saved)
     db.commit()
+    sid = saved.id
     login(client, "adm")
-    assert client.delete(f"/api/saved-badge-templates/{saved.id}").status_code == 403
-    assert client.post(f"/api/saved-badge-templates/{saved.id}/archive").status_code == 200
-    assert saved.id not in _ids(client.get(f"/api/events/{ev.id}/saved-badge-templates"))
-    assert saved.id in _ids(client.get(f"/api/events/{ev.id}/saved-badge-templates", params={"include_archived": "true"}))
-    assert client.post(f"/api/events/{ev.id}/badge-template/import/{saved.id}").status_code == 400
-    assert client.post(f"/api/saved-badge-templates/{saved.id}/restore").status_code == 200
-    client.post(f"/api/saved-badge-templates/{saved.id}/archive")
+    assert client.delete(f"/api/saved-badge-templates/{sid}").status_code == 403
+    assert client.post(f"/api/saved-badge-templates/{sid}/archive").status_code == 200
+    assert sid not in _ids(client.get(f"/api/events/{ev.id}/saved-badge-templates"))
+    assert sid in _ids(client.get(f"/api/events/{ev.id}/saved-badge-templates", params={"include_archived": "true"}))
+    assert client.post(f"/api/events/{ev.id}/badge-template/import/{sid}").status_code == 400
+    assert client.post(f"/api/saved-badge-templates/{sid}/restore").status_code == 200
+    client.post(f"/api/saved-badge-templates/{sid}/archive")
     login(client, "sup")
-    assert client.delete(f"/api/saved-badge-templates/{saved.id}").status_code == 200
+    assert client.delete(f"/api/saved-badge-templates/{sid}").status_code == 200
     db.expire_all()
-    assert db.get(SavedBadgeTemplate, saved.id) is None
+    assert db.get(SavedBadgeTemplate, sid) is None
 
 
 def test_actions_are_logged(client, factory, db):
