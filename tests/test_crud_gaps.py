@@ -41,7 +41,7 @@ def test_event_state_archive_restore_delete(client, factory, db):
     assert client.delete(f"/api/event-states/{aid}").status_code == 200
     db.expire_all()
     assert db.get(EventState, aid) is None
-    assert [a for a, _ in _acts(db, "event_state")] == ["archive", "restore"] * 3 + ["archive", "delete"]   # coordinador, comercial y admin archivan+restauran; el super_admin archiva y borra
+    assert [a for a, _ in _acts(db, "event_state")] == ["archive", "restore", "archive", "delete"]   # el admin archiva, restaura y vuelve a archivar; el super_admin borra
     assert db.get(EventState, b.id) is not None
 
 
