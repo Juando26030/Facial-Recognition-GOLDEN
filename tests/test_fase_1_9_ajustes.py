@@ -70,7 +70,8 @@ def test_el_asterisco_obligatorio_es_naranja_y_sale_en_toda_pantalla_del_persona
     pf = read("static/js/person-form.js")
     assert "star.className = 'gw-req'" in pf and "label.textContent = label.textContent.replace(" in pf
     d = read("static/js/directory.js")
-    assert 'class="gw-req"' in d and 'class="gw-input" required>' in d          # el dato fijo del Editar es obligatorio de verdad, no solo marcado
+    # el dato fijo del Editar es obligatorio de verdad, no solo marcado (el apellido solo si el evento lo exige: app/lastname.py)
+    assert 'class="gw-req"' in d and """class="gw-input"${req ? ' required' : ''}>""" in d and '<span class="gw-req" aria-hidden="true"> *</span>' in d
     assert "gw-req" in read("static/js/person-form-designer.js")
 
 

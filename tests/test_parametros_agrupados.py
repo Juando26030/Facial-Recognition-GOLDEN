@@ -59,7 +59,9 @@ def test_the_buttons_of_each_block_stay_in_the_dom_hidden_and_call_the_same_save
 
 def test_destructive_and_immediate_actions_keep_their_confirmation():
     assert "Borrar campo" in TEMPLATE and "cfg-delete" in TEMPLATE and "/usage" in TEMPLATE and "Escribe <b>" in TEMPLATE
-    assert "showConfirm('¿Eliminar esta zona" in TEMPLATE and "showConfirm('¿Eliminar este ítem" in TEMPLATE and "purgeEventBiometrics" in TEMPLATE
+    # las zonas y los ítems ahora se ARCHIVAN (se pueden restaurar); el borrado definitivo es aparte, y todo pasa por showConfirm
+    assert "await showConfirm(msg, { confirmLabel })" in TEMPLATE and "'¿Archivar esta zona?" in TEMPLATE and "'¿Archivar este ítem?" in TEMPLATE
+    assert "'¿Eliminar DEFINITIVAMENTE esta zona?" in TEMPLATE and "'¿Eliminar DEFINITIVAMENTE este ítem?" in TEMPLATE and "purgeEventBiometrics" in TEMPLATE
     assert "¿Quitar la configuración de este puesto?" in TEMPLATE and "¿Liberar esta cuenta?" in TEMPLATE and "¿Volver al texto por defecto?" in TEMPLATE
     assert not re.search(r"\b(alert|confirm|prompt)\(", TEMPLATE.replace("showConfirm(", "").replace("showPrompt(", "")), "nada de alert/confirm/prompt del navegador"
 
