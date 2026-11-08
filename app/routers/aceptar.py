@@ -18,7 +18,7 @@ from PIL import Image
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app import company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, privacy, security
+from app import brandcolor, company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, RateLimitEvent, User, WebAcceptance
 from app.storage import get_storage, photo_key
@@ -214,7 +214,7 @@ def _logo_url(event: Event, code: str) -> str:
 def _page(request: Request, event: Event, code: str, token: str, channel: str, already: str = ""):
     from app.main import templates
     return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event), "already": already,
-                                                                                     "logo_url": _logo_url(event, code)})
+                                                                                     "logo_url": _logo_url(event, code), "brand_css": brandcolor.css(event.brand_color)})
 
 
 @router.get("/api/aceptar/{code}/logo")

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, idle, lastname, publicurl, registro_gear
+from app import audit_actions, biometric_setup, brandcolor, idle, lastname, publicurl, registro_gear
 from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -163,6 +163,25 @@ def set_event_logo_mode(
     event.logo_mode = mode
     db.commit()
     return {"logo_mode": event.logo_mode, "logo_height": event.logo_height, "logo_fit": event.logo_fit}
+
+
+@router.put("/events/{event_id}/brand-color")
+def set_event_brand_color(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Color de marca del evento para sus páginas públicas. `color`: '#rrggbb' o null/'' (= el general de Golden). Se rechaza el que no deje leer el texto de los botones."""
+    event = get_event_for_staff(event_id, db, staff)
+    raw = data.get("color")
+    try:
+        color = brandcolor.validate(raw) if raw not in (None, "") else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if color != event.brand_color:
+        audit_actions.record(db, staff, "update", "event_brand_color", event.id, event.name, f"{event.brand_color or 'general'} -> {color or 'general'}")
+        event.brand_color = color
+    db.commit()
+    return {"brand_color": event.brand_color}
 
 
 @router.post("/events/{event_id}/logo/upload")

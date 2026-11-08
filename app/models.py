@@ -279,6 +279,7 @@ class Event(Base):
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
     categories = Column(Text, nullable=True)  # JSON: nombres de las categorías del evento (ítem 14)
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
+    brand_color = Column(String, nullable=True)  # 0098: color de marca del evento '#rrggbb' (NULL = el dorado general de Golden); app/brandcolor.py
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
     faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
     state_id = Column(Integer, ForeignKey('event_states.id'), nullable=True)  # estado configurable (docs/18): sus reglas mandan; `status` sigue siendo el estado BASE con el que se comporta (creado | en_proceso | finalizado)
