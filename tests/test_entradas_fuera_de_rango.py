@@ -42,7 +42,7 @@ def test_badge_asset_with_dotdot_is_404(client, factory):
 
 
 def test_long_password_is_rejected_with_400_on_staff_creation_and_reset(client, factory):
-    factory.staff("admin", "adm")
+    factory.staff("super_admin", "adm")
     login(client, "adm")
     r = client.post("/api/staff", json={"username": "nuevo1", "password": "Aq7" + "x" * 80, "role": "admin", "full_name": "Nuevo Uno", "phone": "3001112233"})
     assert r.status_code in (400, 422), r.text

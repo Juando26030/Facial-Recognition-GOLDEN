@@ -39,6 +39,7 @@ def test_badge_assets_respect_the_tenant_when_enforced(client, factory, monkeypa
     from app.storage import badge_asset_key, get_storage
     ev = factory.event("en_proceso", tenant_id="otro")
     get_storage().put(badge_asset_key("otro", "logo.png"), b"\x89PNG\r\n\x1a\n")
+    factory.tenant("acme")                                                                                   # la cuenta apunta a un cliente que debe existir (llave foránea)
     factory.staff("coordinador", "coord_acme", tenant_id="acme")
     login(client, "coord_acme")
     assert client.get(f"/api/badge-assets/{ev.tenant_id}/logo.png").status_code == 200          # apagado por defecto (hoy todo el personal es de Golden)

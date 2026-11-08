@@ -165,9 +165,9 @@ _CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn
               "connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com; frame-src 'self' blob:; worker-src 'self' blob:; "
               "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
 _CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://checkout.wompi.co https://translate.google.com "
-                    "https://translate.googleapis.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://www.gstatic.com; "
+                    "https://translate.googleapis.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com; "
                     "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com https://www.gstatic.com https://www.google.com https://translate.googleapis.com; "
-                    "font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com https://*.wompi.co https://translate.googleapis.com; "
+                    "font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com https://*.wompi.co https://translate.googleapis.com; "
                     "frame-src 'self' blob: https://*.wompi.co https://translate.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'")      # sin frame-ancestors: se incrusta a propósito
 
 
