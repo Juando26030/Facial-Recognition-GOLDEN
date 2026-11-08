@@ -721,6 +721,16 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
         db.rollback()
         return JSONResponse({"detail": "Has intentado reservar tu cupo demasiadas veces seguidas. Espera unos minutos antes de volver a intentarlo."}, status_code=429)
 
+    # X6 / H2 (pre-chequeo SIN candado, solo para no encolar en la fila del formulario a quien ya superó el tope; la autoridad es la comprobación de abajo, bajo candado).
+    if charge and not is_test:
+        _ip_cap, _person_cap = formsvc.pending_max_per_ip(), formsvc.pending_max_per_person()
+        if ip and _ip_cap and formsvc.pending_from_ip(db, form, ip, sid, person_id) >= _ip_cap:
+            db.rollback()
+            return JSONResponse({"detail": "Hay varias inscripciones esperando pago desde esta conexión. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
+        if person_id and _person_cap and formsvc.pending_for_person(db, form, person_id, sid) >= _person_cap:
+            db.rollback()
+            return JSONResponse({"detail": "Este documento ya tiene varias inscripciones esperando pago. Termina uno de esos pagos o espera unos minutos e intenta de nuevo."}, status_code=429)
+
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
     rules = formsvc.quota_rules(form)
     try:

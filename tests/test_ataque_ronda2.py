@@ -51,17 +51,17 @@ def test_h1_a_late_approval_after_a_decline_with_the_seat_still_free_is_admitted
 def test_h2_the_ip_and_person_caps_are_checked_after_the_lock_is_taken():
     src = open("app/routers/forms_public.py", encoding="utf-8").read()
     body = src[src.index("def _reserve_and_store"):src.index("def _widget_params")]
-    assert body.index("formsvc.reserve_slot(") < body.index("formsvc.pending_from_ip(") < body.index("db.commit()")
-    assert body.index("formsvc.reserve_slot(") < body.index("formsvc.pending_for_person(")
+    assert body.index("formsvc.reserve_slot(") < body.rindex("formsvc.pending_from_ip(") < body.index("db.commit()")
+    assert body.index("formsvc.reserve_slot(") < body.rindex("formsvc.pending_for_person(")
 
 
 def test_h2_person_cap_is_configurable(monkeypatch):
     monkeypatch.delenv("FORM_PENDING_MAX_PER_PERSON", raising=False)
-    assert formsvc.pending_max_per_person() == 2
+    assert formsvc.pending_max_per_person() == 3
     monkeypatch.setenv("FORM_PENDING_MAX_PER_PERSON", "0")
     assert formsvc.pending_max_per_person() == 0
     monkeypatch.setenv("FORM_PENDING_MAX_PER_PERSON", "basura")
-    assert formsvc.pending_max_per_person() == 2
+    assert formsvc.pending_max_per_person() == 3
 
 
 def test_h2_one_cedula_cannot_hold_more_than_the_cap_of_pending_payments(client, factory, keys, db, monkeypatch):

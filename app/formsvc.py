@@ -315,7 +315,7 @@ def pending_from_ip(db: Session, form: WebForm, ip: str, sid: Optional[str] = No
 def pending_max_per_person() -> int:
     """H2 (ronda de ataque 2): cuántas inscripciones «esperando pago» vivas admite UNA cédula (person_id) en UN formulario, sin contar la de la propia sesión (0 = sin tope)."""
     try:
-        base = int(os.getenv("FORM_PENDING_MAX_PER_PERSON", "2"))
+        base = int(os.getenv("FORM_PENDING_MAX_PER_PERSON", "3"))
     except ValueError:
         base = 2
     return max(0, base)
