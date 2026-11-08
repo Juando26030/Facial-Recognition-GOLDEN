@@ -138,7 +138,13 @@ def test_templates_library_save_and_start_from_one(client, factory):
     assert len(made["design"]["fields"]) == len(f["design"]["fields"])
     other = factory.event("en_proceso", tenant_id="otro")
     assert client.post(f"/api/events/{other.id}/forms", json={"name": "x", "template_id": tpl["id"]}).status_code == 404     # las plantillas son del cliente
-    assert client.delete(f"/api/events/{ev.id}/form-templates/{tpl['id']}").status_code == 200
+    tpl_url = f"/api/events/{ev.id}/form-templates/{tpl['id']}"
+    assert client.delete(tpl_url).status_code == 403                                                                          # el borrado definitivo es solo del super_admin
+    assert client.post(f"{tpl_url}/archive").status_code == 200                                                               # coordinador archiva
+    factory.staff("super_admin", "sup3")
+    client.post("/logout")
+    login(client, "sup3")
+    assert client.delete(f"/api/events/{ev.id}/form-templates/{tpl['id']}").status_code == 200                                # super_admin borra la ya archivada
 
 
 def test_only_coordinador_plus_manage_forms(client, factory):
