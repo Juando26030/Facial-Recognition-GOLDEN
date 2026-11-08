@@ -19,15 +19,15 @@
     const row = colorInput.closest('.badge-input-row, .ee-row') || colorInput.parentElement.parentElement;
     row.insertAdjacentElement('afterend', box);
     const select = box.querySelector('.cl-select');
-    if (window.STAFF_ROLE && !['admin', 'super_admin'].includes(window.STAFF_ROLE)) box.querySelector('.cl-del').hidden = true;   // archivar = admin+
-    const isAdminPlus = !window.STAFF_ROLE || ['admin', 'super_admin'].includes(window.STAFF_ROLE);
+    const canArchive = !window.STAFF_ROLE || ['coordinador', 'comercial', 'admin', 'super_admin'].includes(window.STAFF_ROLE);          // archivar / restaurar / «Ver archivados» = coordinador+ (cambio 7-nov)
+    if (!canArchive) box.querySelector('.cl-del').hidden = true;
     const isSuper = window.STAFF_ROLE === 'super_admin';
     const archBox = box.querySelector('.cl-arch');
-    if (window.STAFF_ROLE && isAdminPlus) box.querySelector('.cl-arch-wrap').hidden = false;          // «Ver archivados»: admin+ (Fase 3)
+    if (window.STAFF_ROLE && canArchive) box.querySelector('.cl-arch-wrap').hidden = false;          // «Ver archivados»: coordinador+
     let colors = [];
     const archived = () => archBox.checked;
-    function syncButtons() {          // en «Ver archivados» el elegido se restaura (admin+) o se borra del todo (super_admin); si no, se archiva
-      box.querySelector('.cl-del').hidden = !isAdminPlus || archived();
+    function syncButtons() {          // en «Ver archivados» el elegido se restaura (coordinador+) o se borra del todo (super_admin); si no, se archiva
+      box.querySelector('.cl-del').hidden = !canArchive || archived();
       box.querySelector('.cl-save').hidden = archived();
       box.querySelector('.cl-restore').hidden = !archived();
       box.querySelector('.cl-hard').hidden = !(archived() && isSuper);
@@ -62,7 +62,7 @@
     box.querySelector('.cl-del').addEventListener('click', async () => {
       if (!select.value) { showToast('Elige primero un color de la lista', 'error'); return; }
       const c = colors.find((x) => String(x.id) === select.value);
-      if (!(await showConfirm(`¿Archivar «${c ? c.name : 'este color'}»? Se quita de la lista de colores guardados; los eventos que ya lo usan no cambian y un administrador puede restaurarlo.`, { variant: 'warning', confirmLabel: 'Sí, archivar' }))) return;
+      if (!(await showConfirm(`¿Archivar «${c ? c.name : 'este color'}»? Se quita de la lista de colores guardados; los eventos que ya lo usan no cambian y un coordinador o superior puede restaurarlo.`, { variant: 'warning', confirmLabel: 'Sí, archivar' }))) return;
       const res = await fetch(`/api/colors/${select.value}/archive`, { method: 'POST' });
       if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo archivar', 'error'); return; }
       showToast('Color archivado', 'success');

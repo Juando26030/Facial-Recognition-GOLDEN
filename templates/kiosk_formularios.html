@@ -78,7 +78,7 @@
 
     <section class="gw-stack" aria-labelledby="formsListTitle" data-gw-tour-step="2" data-gw-tour-title="2. Edita y prueba" data-gw-tour-text="Cada tarjeta es un formulario. «Editar», «Estadísticas» y «Copiar enlace» siempre están a la vista.">
       <h2 class="gw-card-row__title" id="formsListTitle">Formularios de este evento</h2>
-      {% if staff_role in ("admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchivedForms"> Ver archivados</label>{% endif %}
+      {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchivedForms"> Ver archivados</label>{% endif %}
       <div id="body" class="gw-cards" aria-live="polite" aria-busy="true"><span class="gw-skeleton" role="status" aria-label="Cargando formularios"></span></div>
     </section>
   </div>

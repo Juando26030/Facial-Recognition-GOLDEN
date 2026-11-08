@@ -74,7 +74,19 @@ def test_form_template_library_archive(client, factory, db):
     tid = tpl.id
     login(client, "co")
     assert client.delete(f"/api/events/{ev.id}/form-templates/{tid}").status_code == 403   # coordinador ya no borra
-    assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/archive").status_code == 403
+    assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/archive").status_code == 200   # cambio 7-nov: coordinador+ archiva y restaura
+    assert client.get(f"/api/events/{ev.id}/form-templates", params={"include_archived": "true"}).status_code == 200
+    assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/restore").status_code == 200
+    for role in ("comercial", "digitador", "cliente"):
+        s = factory.staff(role, f"u_{role}")
+        factory.authorize(ev, s)
+        login(client, f"u_{role}")
+        want = 200 if role == "comercial" else 403
+        assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/archive").status_code == want
+        if want == 200:
+            assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/restore").status_code == 200
+        else:
+            assert client.get(f"/api/events/{ev.id}/form-templates", params={"include_archived": "true"}).status_code == 403
     login(client, "adm")
     assert client.post(f"/api/events/{ev.id}/form-templates/{tid}/archive").status_code == 200
     assert client.get(f"/api/events/{ev.id}/form-templates").json() == []

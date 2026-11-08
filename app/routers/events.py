@@ -314,11 +314,11 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 @router.get("/colors")
 def list_saved_colors(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento). Por defecto sin los archivados; `include_archived=true` es de admin+."""
+    """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento). Por defecto sin los archivados; `include_archived=true` es de coordinador+."""
     query = db.query(SavedColor)
     if include_archived:
-        if staff.role not in ("admin", "super_admin"):
-            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los colores archivados")
+        if staff.role not in ("coordinador", "comercial", "admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver los colores archivados")
     else:
         query = query.filter(SavedColor.archived_at.is_(None))
     return [{"id": c.id, "name": c.name, "hex": c.hex, "archived": c.archived_at is not None} for c in query.order_by(SavedColor.name)]
@@ -358,8 +358,8 @@ def _color_or_404(db: Session, color_id: int) -> SavedColor:
 
 
 @router.post("/colors/{color_id}/archive")
-def archive_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
-    """Archivar = quitarlo de la lista de colores guardados. Los eventos que ya lo usan guardan su propia copia: no cambian. Un administrador lo restaura."""
+def archive_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Archivar = quitarlo de la lista de colores guardados. Los eventos que ya lo usan guardan su propia copia: no cambian. Un coordinador o superior lo restaura."""
     color = _color_or_404(db, color_id)
     if color.archived_at is not None:
         raise HTTPException(status_code=400, detail="El color ya está archivado")
@@ -370,7 +370,7 @@ def archive_saved_color(color_id: int, db: Session = Depends(get_db), staff: Sta
 
 
 @router.post("/colors/{color_id}/restore")
-def restore_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def restore_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     color = _color_or_404(db, color_id)
     if color.archived_at is None:
         raise HTTPException(status_code=400, detail="El color no está archivado")

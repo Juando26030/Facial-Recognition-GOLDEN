@@ -181,8 +181,8 @@ def list_saved_badge_templates(
     get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa para filtrar
     query = db.query(SavedBadgeTemplate)
     if include_archived:
-        if staff.role not in ("admin", "super_admin"):
-            raise HTTPException(status_code=403, detail="Solo un administrador puede ver las plantillas archivadas")
+        if staff.role not in ("coordinador", "comercial", "admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver las plantillas archivadas")
     else:
         query = query.filter(SavedBadgeTemplate.archived_at.is_(None))
     return [{
@@ -248,8 +248,8 @@ def _saved_or_404(db: Session, saved_id: int) -> SavedBadgeTemplate:
 
 
 @router.post("/saved-badge-templates/{saved_id}/archive")
-def archive_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
-    """Archivar = sacarla de la librería (ya no se ofrece para importar). Los eventos que la importaron conservan su diseño; un administrador la restaura."""
+def archive_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Archivar = sacarla de la librería (ya no se ofrece para importar). Los eventos que la importaron conservan su diseño; un coordinador o superior la restaura."""
     saved = _saved_or_404(db, saved_id)
     if saved.archived_at is not None:
         raise HTTPException(status_code=400, detail="La plantilla ya está archivada")
@@ -260,7 +260,7 @@ def archive_saved_badge_template(saved_id: int, db: Session = Depends(get_db), s
 
 
 @router.post("/saved-badge-templates/{saved_id}/restore")
-def restore_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def restore_saved_badge_template(saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     saved = _saved_or_404(db, saved_id)
     if saved.archived_at is None:
         raise HTTPException(status_code=400, detail="La plantilla no está archivada")

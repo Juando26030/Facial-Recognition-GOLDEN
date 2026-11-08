@@ -7,7 +7,7 @@
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const icon = (n) => '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>';
   const money = (n) => Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const ROLE = window.STAFF_ROLE || '', isAdmin = ROLE === 'admin' || ROLE === 'super_admin', isSuper = ROLE === 'super_admin';
+  const ROLE = window.STAFF_ROLE || '', canArchive = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), isSuper = ROLE === 'super_admin';
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
 
   function setList(html, loading) {
@@ -19,7 +19,7 @@
   async function loadExpenses() {
     let data;
     try {
-      const withArchived = isAdmin && $('showArchived') && $('showArchived').checked;
+      const withArchived = canArchive && $('showArchived') && $('showArchived').checked;
       const res = await fetch('/api/events/' + EVENT_ID + '/expenses' + (withArchived ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http ' + res.status);
       data = await res.json();
@@ -44,8 +44,8 @@
         ${x.description ? `<p class="gw-text-sm">${esc(x.description)}</p>` : ''}
         ${x.has_evidence ? `<a href="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" target="_blank" rel="noopener" aria-label="Abrir la evidencia en una pestaña nueva"><img class="gw-card-row__thumb" src="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" alt="Evidencia del gasto" loading="lazy"></a>` : ''}
         <div class="gw-card-row__actions">
-          ${isAdmin && !x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${x.id}">Archivar</button>` : ''}
-          ${isAdmin && x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${x.id}">${icon('undo')} Restaurar</button>` : ''}
+          ${canArchive && !x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${x.id}">Archivar</button>` : ''}
+          ${canArchive && x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${x.id}">${icon('undo')} Restaurar</button>` : ''}
           ${isSuper && x.archived ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${x.id}">${icon('trash')} Eliminar definitivamente</button>` : ''}
         </div>
       </article>`).join(''));

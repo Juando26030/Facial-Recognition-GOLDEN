@@ -1,6 +1,6 @@
 # Fase 3: matriz CRUD por entidad (7-nov-2026)
 
-Una fila por cada tabla de `app/models.py` (61). Rol mínimo = el que declara la ruta (`require_role`; «sc» = «sin comercial»). **hecho** = existe y cumple el criterio de la Fase 3 (archivar y restaurar admin+, borrar definitivo solo super_admin y de lo archivado, todo en `audit_actions`); **hueco** = falta algo (se dice qué); **n/a** = no aplica a propósito (con el porqué).
+Una fila por cada tabla de `app/models.py` (61). Rol mínimo = el que declara la ruta (`require_role`; «sc» = «sin comercial»). **hecho** = existe y cumple el criterio de la Fase 3 (archivar y restaurar coordinador+ [cambio 7-nov; antes admin+; incluye comercial] salvo clientes, personal, eventos, estados de evento y personas, que siguen admin+; borrar definitivo solo super_admin y de lo archivado, todo en `audit_actions`); **hueco** = falta algo (se dice qué); **n/a** = no aplica a propósito (con el porqué).
 Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se borra salvo super_admin sobre lo ya archivado. Lo de privacidad (`purge-data`, revocación, `audit_consent_logs`) es por derecho del titular y no se toca.
 
 ## Entidades de negocio
@@ -14,27 +14,27 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
 | Inscripción de persona en un evento (`event_attendees`) | digitador | digitador | digitador | n/a (no se archiva; `archived_at` reservada sin uso) | n/a | coordinador+ (borra de verdad, con fila en `audit_actions`) | hecho. Lo que se archiva es la base del evento completa (L7) |
 | Registro de acceso (`access_logs`) | digitador | digitador | n/a (inmutable) | n/a (es un registro) | n/a | deshacer 15 s: quien acreditó; «Revisar» (puerta): digitador; histórico de una persona (`DELETE /users/{id}/logs`): **solo super_admin** con confirmación (cédula) | hecho. Las tres rutas dejan `audit_actions` (sin cédula) |
 | Cambios de la persona (`person_changes`) | automático | admin+ (historial) | n/a | n/a | n/a | solo con la persona (super_admin) | hecho (rastro propio) |
-| Formulario web (`web_forms`) | coordinador | coordinador | coordinador | admin | admin | super_admin (archivado, sin inscripciones ni pagos) | hecho |
+| Formulario web (`web_forms`) | coordinador | coordinador | coordinador | coordinador+ | coordinador+ | super_admin (archivado, sin inscripciones ni pagos) | hecho |
 | Inscripción de formulario (`form_submissions`) | público | coordinador | coordinador | n/a (la cubre archivar el formulario) | n/a | admin (una); marcas «ya registrado» en bloque: coordinador, ahora con `audit_actions` | hecho |
 | Código de descuento (`form_discount_codes`) | coordinador | coordinador | n/a | n/a | n/a | coordinador, solo si nunca se usó; ahora con `audit_actions` | hecho (configuración sin historial) |
 | Pago (`form_payments`) / reembolso (`form_refunds`) | automático (Wompi) | coordinador | admin (reembolso) | n/a | n/a | n/a (registro financiero; solo se desvincula) | hecho a propósito |
 | Eventos del formulario (`form_events`) | automático | coordinador | n/a | n/a | n/a | con el formulario | n/a (traza) |
 | Acceso de cliente al formulario (`form_client_users`) | coordinador | coordinador | n/a | n/a | n/a | revocar: coordinador (desactiva la cuenta); ahora con `audit_actions` | hecho |
 | Invitaciones (`form_invites`) / base del formulario (`form_persons`) | coordinador | coordinador | reemplazo | n/a | n/a | con el formulario / al reemplazar la base | n/a (datos operativos del formulario) |
-| Plantilla de formulario (`saved_form_templates`) | coordinador | coordinador (admin: archivadas) | se sobrescribe por nombre | admin | admin | super_admin (archivada) | **hecho en 0094** (API; sin pantalla: ver pendientes) |
+| Plantilla de formulario (`saved_form_templates`) | coordinador | coordinador (archivadas: coordinador+) | se sobrescribe por nombre | coordinador+ | coordinador+ | super_admin (archivada) | **hecho en 0094** (API; sin pantalla: ver pendientes) |
 | Estado de evento (`event_states`) | admin | todos con sesión (admin: archivados) | admin | admin | admin | super_admin (archivado, sin eventos) | **hecho en 0094** (API; no existe pantalla en el proyecto) |
 | Plantilla de escarapela del evento (`badge_templates`) | coordinador (sc) | coordinador (sc) | coordinador (sc) | n/a (una por evento y categoría) | n/a | con el evento | n/a |
-| Plantilla de escarapela guardada (`saved_badge_templates`) | coordinador (sc) | coordinador (sc); archivadas: admin | n/a (copia) | admin | admin | super_admin (archivada) | hecho; **pantalla «Ver archivadas» en 0094** (Importar plantilla, en el editor) |
-| Color de pañoleta guardado (`saved_colors`) | coordinador | coordinador; archivados: admin | coordinador (mismo nombre cambia el tono) | admin | admin | super_admin (archivado) | hecho; **pantalla «Ver archivados» en 0094** (junto al selector de color) |
-| Zona (`event_areas`) / movimiento (`area_movements`) | coordinador (sc) / digitador (sc) | coordinador / digitador | coordinador (sc) | admin | admin | super_admin (zona archivada y sin movimientos) | hecho (movimiento: inmutable) |
-| Ítem de inventario (`inventory_items`) / entrega (`inventory_deliveries`) | coordinador (sc) / digitador (sc) | idem | coordinador (sc) | admin | admin | super_admin (sin entregas) | hecho |
+| Plantilla de escarapela guardada (`saved_badge_templates`) | coordinador (sc) | coordinador (sc); archivadas: coordinador+ | n/a (copia) | coordinador+ | coordinador+ | super_admin (archivada) | hecho; **pantalla «Ver archivadas» en 0094** (Importar plantilla, en el editor) |
+| Color de pañoleta guardado (`saved_colors`) | coordinador | coordinador; archivados: coordinador+ | coordinador (mismo nombre cambia el tono) | coordinador+ | coordinador+ | super_admin (archivado) | hecho; **pantalla «Ver archivados» en 0094** (junto al selector de color) |
+| Zona (`event_areas`) / movimiento (`area_movements`) | coordinador (sc) / digitador (sc) | coordinador / digitador | coordinador (sc) | coordinador+ | coordinador+ | super_admin (zona archivada y sin movimientos) | hecho (movimiento: inmutable) |
+| Ítem de inventario (`inventory_items`) / entrega (`inventory_deliveries`) | coordinador (sc) / digitador (sc) | idem | coordinador (sc) | coordinador+ | coordinador+ | super_admin (sin entregas) | hecho |
 | Campo de evento (`event_field_configs`) | coordinador (sc) | coordinador (sc) | coordinador (sc) | borrar campo (escribe su nombre; queda en `person_changes`) | n/a | n/a | hecho (confirmación fuerte + rastro) |
 | Plantilla del evento (`event_templates` / `event_template_revisions`) | admin | admin | admin (guarda revisión) | n/a (revisiones se podan solas) | n/a | n/a | n/a (global; las revisiones son la historia) |
 | Super evento (`super_events`) | coordinador | coordinador (`include_archived`: coordinador+) | coordinador (solo el nombre; el cliente no cambia) | coordinador (decisión de Juan David 7-nov-2026: coordinadores y comerciales archivan) | coordinador | super_admin (archivado y sin eventos) | **hecho en 0095** (ventana «Administrar supereventos», junto al selector en «Editar evento» y «Nuevo evento») |
 | Autorización de personal por evento (`event_staff_authorizations`) | coordinador | coordinador | n/a | n/a | n/a | revocar acceso: coordinador; ahora con `audit_actions` | hecho |
 | Recordatorio del calendario (`calendar_notes`) | coordinador | coordinador (destinatarios) | n/a | n/a | n/a | el autor o admin+; ahora con `audit_actions` (sin el texto) | hecho (efímero a propósito) |
 | Ruleta (`roulette_configs`) / sorteos (`roulette_draws`) | coordinador | coordinador | coordinador | n/a | n/a | los sorteos no se borran (auditoría de ganadores); solo se cancela la autorización de giro | hecho a propósito |
-| Documentos del evento (`event_documents`) / gastos (`event_expenses`) | coordinador | coordinador | coordinador | **otro agente** | **otro agente** | **otro agente** | no tocado aquí (0093) |
+| Documentos del evento (`event_documents`) / gastos (`event_expenses`) | coordinador | coordinador (archivados: coordinador+) | coordinador | coordinador+ | coordinador+ | super_admin (archivado) | hecho (oleada documentos y legalizaciones) |
 | Carga masiva (`bulk_jobs`) | coordinador (sc) | coordinador (sc) | n/a | n/a | n/a | con el evento | n/a (traza técnica) |
 | Cambios de estado del evento (`event_status_changes`) | automático | admin+ | n/a | n/a | n/a | con el evento | n/a (traza) |
 | Enlaces de estadísticas (`stats_links`) | coordinador | coordinador | n/a | revocar (marca `revoked_at`) | n/a | n/a | hecho (ya es lógico) |
@@ -69,3 +69,6 @@ Criterio: archivar = ocultar de listas y selectores y poder restaurar; nada se b
 - **Super eventos:** resuelto en 0095 (ver `FASE_3_AUDITORIA.md`).
 - Documentos y gastos: otro agente (0093). Alcance por cliente: otro agente.
 - `usuarios.js` («Borrar permanente» de una cuenta, super_admin) debería ofrecer primero «Archivar» por cuenta si no lo hace ya (revisión de la oleada 2).
+
+## Cambio de roles (7-nov-2026)
+Archivar, restaurar y «Ver archivados» pasan de admin+ a **coordinador+** (coordinador, comercial, admin, super_admin) en formularios, plantillas de formulario, zonas, ítems, colores, plantillas de escarapela, documentos y gastos. Siguen en admin+: clientes, personal, eventos, estados de evento y personas. Borrado definitivo: solo super_admin.

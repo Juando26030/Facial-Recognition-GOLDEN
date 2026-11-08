@@ -8,8 +8,8 @@
   const BADGE = { pruebas: 'gw-badge--warn', activo: 'gw-badge--ok', cerrado: '', cupo_lleno: 'gw-badge--err', finalizado: '' };
   const ICONS = ($('formsRoot') && $('formsRoot').dataset.icons) || '/static/img/icons.svg';
   const icon = (n) => `<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
-  const ROLE = window.STAFF_ROLE || '', isAdmin = ROLE === 'admin' || ROLE === 'super_admin', isSuper = ROLE === 'super_admin';
-  let showArchived = false;          // «Ver archivados» (admin+)
+  const ROLE = window.STAFF_ROLE || '', canArchive = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), isSuper = ROLE === 'super_admin';
+  let showArchived = false;          // «Ver archivados» (coordinador+)
   let canTransfer = false;          // exportar / importar: solo admin y super_admin (el servidor lo exige igual)
   const busy = (btn, fn) => (window.GW && window.GW.busy ? window.GW.busy(btn, fn) : fn());
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
@@ -35,7 +35,7 @@
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}" title="Copiar enlace">${icon('link')} <span class="gw-forms-lbl">Copiar enlace</span></button>
         ${f.archived
     ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${f.id}" data-name="${esc(f.name)}">Restaurar</button>${isSuper ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}" title="Eliminar definitivamente" aria-label="Eliminar definitivamente ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Eliminar definitivamente</span></button>` : ''}`
-    : (isAdmin ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-archive="${f.id}" data-name="${esc(f.name)}" title="Archivar" aria-label="Archivar ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Archivar</span></button>` : '')}
+    : (canArchive ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-archive="${f.id}" data-name="${esc(f.name)}" title="Archivar" aria-label="Archivar ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Archivar</span></button>` : '')}
         <div class="gw-menu gw-forms-kebab">
           <button type="button" class="gw-btn gw-btn--secondary gw-forms-kebab__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(f.name)}" title="Más acciones">${icon('more')}</button>
           <div class="gw-menu__panel" role="group" hidden>
@@ -52,7 +52,7 @@
     const box = $('body');
     box.setAttribute('aria-busy', 'true');
     try {
-      const forms = await j(`${api}/forms${showArchived && isAdmin ? '?include_archived=true' : ''}`);
+      const forms = await j(`${api}/forms${showArchived && canArchive ? '?include_archived=true' : ''}`);
       box.innerHTML = forms.map(card).join('') || (showArchived ? '<div class="gw-state" role="status"><p class="gw-state__title">No hay formularios archivados</p><p class="gw-state__text">Cuando archives uno, aparecerá aquí para poder restaurarlo.</p></div>' : `<div class="gw-state" role="status"><p class="gw-state__title">Este evento todavía no tiene formularios</p><p class="gw-state__text">Crea el primero arriba con «Crear formulario»${canTransfer ? ' o impórtalo desde otro entorno' : ''}.</p></div>`);
     } catch (e) {
       box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar la lista</p><p class="gw-state__text">${esc(e.message)}. Inténtalo de nuevo; si sigue igual, avisa a un administrador.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry>Reintentar</button></div>`;
@@ -92,7 +92,7 @@
     }
     const arch = e.target.closest('[data-archive]');
     if (arch) {
-      if (!(await showConfirm(`¿Archivar el formulario «${window.escapeHtml(arch.dataset.name)}»? Deja de recibir envíos y se oculta de la lista; las respuestas y los pagos se conservan y un administrador puede restaurarlo desde «Ver archivados».`, { confirmLabel: 'Archivar' }))) return;
+      if (!(await showConfirm(`¿Archivar el formulario «${window.escapeHtml(arch.dataset.name)}»? Deja de recibir envíos y se oculta de la lista; las respuestas y los pagos se conservan y un coordinador o superior puede restaurarlo desde «Ver archivados».`, { confirmLabel: 'Archivar' }))) return;
       try { await busy(arch, () => j(`${api}/forms/${arch.dataset.archive}/archive`, { method: 'POST' })); showToast('Formulario archivado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
       return;
     }

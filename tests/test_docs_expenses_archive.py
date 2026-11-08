@@ -1,9 +1,10 @@
-"""Fase 3, oleada documentos y legalizaciones (7-nov-2026): archivar = ocultar y restaurar (admin+); borrado definitivo solo super_admin, de lo ya archivado, y borra
+"""Fase 3, oleada documentos y legalizaciones (7-nov-2026): archivar = ocultar y restaurar (coordinador+, cambio 7-nov); borrado definitivo solo super_admin, de lo ya archivado, y borra
 también el archivo del almacenamiento; el archivo se conserva mientras esté archivado; todo deja rastro en audit_actions."""
 import inspect
 import io
 import zipfile
 
+import pytest
 from PIL import Image
 
 from app.models import AuditAction, EventDocument, EventExpense
@@ -47,7 +48,7 @@ def test_sources_guard_roles():
         assert "ARCHIVE_ROLE" in inspect.getsource(fn)
     for fn in (ed.delete_document, ed.delete_expense):
         assert "HARD_DELETE_ROLE" in inspect.getsource(fn)
-    assert 'require_role("admin")' in inspect.getsource(ed).split("ARCHIVE_ROLE =")[1].splitlines()[0]
+    assert 'require_role("coordinador")' in inspect.getsource(ed).split("ARCHIVE_ROLE =")[1].splitlines()[0]          # cambio 7-nov: coordinador+
     assert 'require_role("super_admin")' in inspect.getsource(ed).split("HARD_DELETE_ROLE =")[1].splitlines()[0]
 
 
@@ -70,13 +71,33 @@ def test_document_archive_hides_from_list_and_zip_keeps_file_and_restores(client
     assert acts == [("archive", "event_document"), ("restore", "event_document")]
 
 
-def test_coordinator_cannot_archive_restore_delete_or_see_archived(client, factory):
-    ev = _setup(client, factory, "coordinador")
+@pytest.mark.parametrize("role", ["coordinador", "comercial"])
+def test_coordinator_and_commercial_archive_restore_and_see_archived_but_cannot_hard_delete(client, factory, role):
+    ev = _setup(client, factory, role)
     d, e = _doc(client, ev), _exp(client, ev)
-    for url in (f"documents/{d}/archive", f"documents/{d}/restore", f"expenses/{e}/archive", f"expenses/{e}/restore"):
-        assert client.post(f"/api/events/{ev.id}/{url}").status_code == 403
+    for url in (f"documents/{d}/archive", f"expenses/{e}/archive"):
+        assert client.post(f"/api/events/{ev.id}/{url}").status_code == 200
+    assert client.get(f"/api/events/{ev.id}/documents", params={"include_archived": "true"}).status_code == 200
+    assert client.get(f"/api/events/{ev.id}/expenses", params={"include_archived": "true"}).status_code == 200
+    assert client.get(f"/api/events/{ev.id}/documents/{d}/download").status_code == 200          # archivado: lo descarga coordinador+
     assert client.delete(f"/api/events/{ev.id}/documents/{d}").status_code == 403
     assert client.delete(f"/api/events/{ev.id}/expenses/{e}").status_code == 403
+    for url in (f"documents/{d}/restore", f"expenses/{e}/restore"):
+        assert client.post(f"/api/events/{ev.id}/{url}").status_code == 200
+
+
+@pytest.mark.parametrize("role", ["digitador", "cliente"])
+def test_digitador_and_cliente_cannot_archive_restore_or_see_archived(client, factory, role):
+    ev = factory.event()
+    factory.staff("admin", "boss")
+    login(client, "boss")
+    d, e = _doc(client, ev), _exp(client, ev)
+    client.post("/logout")
+    s = factory.staff(role, "actor")
+    factory.authorize(ev, s)
+    login(client, "actor")
+    for url in (f"documents/{d}/archive", f"documents/{d}/restore", f"expenses/{e}/archive", f"expenses/{e}/restore"):
+        assert client.post(f"/api/events/{ev.id}/{url}").status_code == 403
     assert client.get(f"/api/events/{ev.id}/documents", params={"include_archived": "true"}).status_code == 403
     assert client.get(f"/api/events/{ev.id}/expenses", params={"include_archived": "true"}).status_code == 403
 
@@ -135,7 +156,7 @@ def test_expense_archive_leaves_total_list_and_report_but_keeps_evidence(client,
     assert client.get(f"/api/events/{ev.id}/expenses").json()["total"] == 150
 
 
-def test_archived_items_hidden_from_coordinator_evidence_and_download(client, factory):
+def test_archived_items_hidden_by_default_but_downloadable_by_coordinator(client, factory):
     ev = _setup(client, factory, "admin")
     d, e = _doc(client, ev), _exp(client, ev)
     client.post(f"/api/events/{ev.id}/documents/{d}/archive")
@@ -143,9 +164,9 @@ def test_archived_items_hidden_from_coordinator_evidence_and_download(client, fa
     client.post("/logout")
     factory.staff("coordinador", "coord")
     login(client, "coord")
-    assert client.get(f"/api/events/{ev.id}/documents/{d}/download").status_code == 404
-    assert client.get(f"/api/events/{ev.id}/expenses/{e}/evidence").status_code == 404
-    assert client.get(f"/api/events/{ev.id}/documents").json() == []
+    assert client.get(f"/api/events/{ev.id}/documents").json() == []          # por defecto no salen
+    assert client.get(f"/api/events/{ev.id}/documents/{d}/download").status_code == 200          # cambio 7-nov: coordinador+ ve y descarga lo archivado
+    assert client.get(f"/api/events/{ev.id}/expenses/{e}/evidence").status_code == 200
 
 
 def test_no_edit_endpoints_exist_for_documents_or_expenses():

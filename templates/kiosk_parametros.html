@@ -7,6 +7,7 @@
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 {% set can_change_reprint = ('admin' in staff_role) %}
 {% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
+{% set can_archive = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
 {% set n_categories = ((event.categories | fromjson) | length) if event.categories else 0 %}
 <!DOCTYPE html>
 <html lang="es">
@@ -381,7 +382,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
-              {% if is_admin_plus %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
+              {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
               <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
@@ -399,7 +400,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             <div id="inventoryConfig" class="gw-stack" {% if not event.inventory_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
-              {% if is_admin_plus %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
+              {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
               <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
@@ -609,9 +610,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         } });
     });
 
-    const ROLE = {{ staff_role|tojson }}, CAN_ARCHIVE = ROLE === 'admin' || ROLE === 'super_admin', CAN_HARD_DELETE = ROLE === 'super_admin';
+    const ROLE = {{ staff_role|tojson }}, CAN_ARCHIVE = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), CAN_HARD_DELETE = ROLE === 'super_admin';
     const archToggle = (id) => { const el = document.getElementById(id); return !!(el && el.checked && CAN_ARCHIVE); };
-    // Archivar = ocultar y conservar el historial (admin+); restaurar (admin+); borrado definitivo solo super_admin, de lo archivado y sin historial.
+    // Archivar = ocultar y conservar el historial (coordinador+); restaurar (coordinador+); borrado definitivo solo super_admin, de lo archivado y sin historial.
     const rowActions = (x, kind, label) => {
         if (!CAN_ARCHIVE) return '';
         if (!x.archived) return `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm ${kind}-arch" title="Lo oculta; no borra el historial y se puede restaurar" aria-label="Archivar ${label} ${esc(x.name)}">${gwIcon('lock')} Archivar</button>`;
@@ -639,7 +640,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     document.getElementById('areasBody').addEventListener('click', (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
         const url = `${base}/areas/${tr.dataset.area}`;
-        if (e.target.closest('.area-arch')) archiveAction(url + '/archive', '¿Archivar esta zona? Deja de usarse y se oculta, pero sus movimientos y reportes se conservan. Un administrador puede restaurarla.', 'Archivar', 'Zona archivada', loadAreas);
+        if (e.target.closest('.area-arch')) archiveAction(url + '/archive', '¿Archivar esta zona? Deja de usarse y se oculta, pero sus movimientos y reportes se conservan. Un coordinador o superior puede restaurarla.', 'Archivar', 'Zona archivada', loadAreas);
         else if (e.target.closest('.area-rest')) archiveAction(url + '/restore', '¿Restaurar esta zona?', 'Restaurar', 'Zona restaurada', loadAreas);
         else if (e.target.closest('.area-del')) archiveAction(url, '¿Eliminar DEFINITIVAMENTE esta zona? No se puede deshacer (solo es posible si no tiene movimientos).', 'Eliminar', 'Zona eliminada', loadAreas, 'DELETE');
     });
@@ -674,7 +675,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     document.getElementById('itemsBody').addEventListener('click', (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
         const url = `${base}/inventory/${tr.dataset.item}`;
-        if (e.target.closest('.item-arch')) archiveAction(url + '/archive', '¿Archivar este ítem? Deja de entregarse y se oculta, pero sus entregas y reportes se conservan. Un administrador puede restaurarlo.', 'Archivar', 'Ítem archivado', loadItems);
+        if (e.target.closest('.item-arch')) archiveAction(url + '/archive', '¿Archivar este ítem? Deja de entregarse y se oculta, pero sus entregas y reportes se conservan. Un coordinador o superior puede restaurarlo.', 'Archivar', 'Ítem archivado', loadItems);
         else if (e.target.closest('.item-rest')) archiveAction(url + '/restore', '¿Restaurar este ítem?', 'Restaurar', 'Ítem restaurado', loadItems);
         else if (e.target.closest('.item-del')) archiveAction(url, '¿Eliminar DEFINITIVAMENTE este ítem? No se puede deshacer (solo es posible si no tiene entregas).', 'Eliminar', 'Ítem eliminado', loadItems, 'DELETE');
     });
