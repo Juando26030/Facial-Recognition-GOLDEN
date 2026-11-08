@@ -62,7 +62,7 @@
     box.querySelector('.cl-del').addEventListener('click', async () => {
       if (!select.value) { showToast('Elige primero un color de la lista', 'error'); return; }
       const c = colors.find((x) => String(x.id) === select.value);
-      if (!(await showConfirm(`¿Archivar «${c ? c.name : 'este color'}»? Se quita de la lista de colores guardados; los eventos que ya lo usan no cambian y un coordinador o superior puede restaurarlo.`, { variant: 'warning', confirmLabel: 'Sí, archivar' }))) return;
+      if (!(await showConfirm(`¿Archivar «${esc(c ? c.name : 'este color')}»? Se quita de la lista de colores guardados; los eventos que ya lo usan no cambian y un coordinador o superior puede restaurarlo.`, { variant: 'warning', confirmLabel: 'Sí, archivar' }))) return;
       const res = await fetch(`/api/colors/${select.value}/archive`, { method: 'POST' });
       if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo archivar', 'error'); return; }
       showToast('Color archivado', 'success');
@@ -79,7 +79,7 @@
     box.querySelector('.cl-hard').addEventListener('click', async () => {
       if (!select.value) { showToast('Elige primero un color archivado', 'error'); return; }
       const c = colors.find((x) => String(x.id) === select.value);
-      if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE «${c ? c.name : 'este color'}» de la librería? No se puede deshacer (los eventos que ya lo usan guardan su propia copia) y queda registrado.`, { variant: 'danger', confirmLabel: 'Eliminar definitivamente' }))) return;
+      if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE «${esc(c ? c.name : 'este color')}» de la librería? No se puede deshacer (los eventos que ya lo usan guardan su propia copia) y queda registrado.`, { variant: 'danger', confirmLabel: 'Eliminar definitivamente' }))) return;
       const res = await fetch(`/api/colors/${select.value}`, { method: 'DELETE' });
       if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo eliminar', 'error'); return; }
       showToast('Color eliminado de la librería', 'success');

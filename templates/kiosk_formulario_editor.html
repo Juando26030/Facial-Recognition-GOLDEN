@@ -1755,7 +1755,7 @@ $('clCopy').addEventListener('click', async () => {
 });
 $('clList').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-clrevoke]'); if (!b) return;
-  if (!(await showConfirm(`¿Quitar el acceso de ${b.dataset.cluser}? Dejará de poder entrar.`, { confirmLabel: 'Quitar acceso' }))) return;
+  if (!(await showConfirm(`¿Quitar el acceso de ${window.escapeHtml(b.dataset.cluser)}? Dejará de poder entrar.`, { confirmLabel: 'Quitar acceso' }))) return;
   try { await j(`${api}/client-access/${b.dataset.clrevoke}`, { method: 'DELETE' }); showToast('Acceso quitado', 'success'); loadClients(); } catch (err) { showToast(err.message, 'error'); }
 });
 

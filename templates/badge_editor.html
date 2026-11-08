@@ -522,7 +522,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   }
 
   async function hardDeleteSavedTemplate(savedId, name) {
-    const ok = await showConfirm('¿Eliminar DEFINITIVAMENTE la plantilla «' + name + '» de la librería? No se puede deshacer (los eventos que ya la usan conservan su diseño) y queda registrado.', { confirmLabel: 'Eliminar definitivamente' });
+    const ok = await showConfirm('¿Eliminar DEFINITIVAMENTE la plantilla «' + window.escapeHtml(name) + '» de la librería? No se puede deshacer (los eventos que ya la usan conservan su diseño) y queda registrado.', { confirmLabel: 'Eliminar definitivamente' });
     if (!ok) return;
     const res = await fetch(`/api/saved-badge-templates/${savedId}`, { method: 'DELETE' });
     if (res.ok) { showToast('Plantilla eliminada de la librería', 'success'); openImportModal(); }

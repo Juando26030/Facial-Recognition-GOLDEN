@@ -124,7 +124,8 @@
   window.openGwDialog = openDialog;
 
   /* showConfirm(message, { variant: "danger" (default: botón rojo, para borrar/sobrescribir) | "warning" (aviso amarillo: «¿seguro?» sin ser destructivo),
-     confirmLabel, title }). Devuelve Promise<boolean>. Hacer clic afuera o Esc = cancelar (no es un formulario de datos). */
+     confirmLabel, title, text }). Devuelve Promise<boolean>. Hacer clic afuera o Esc = cancelar (no es un formulario de datos).
+     `message` es HTML (solo para texto propio de la app); si el mensaje lleva algo que escribió una persona, pásalo ESCAPADO (window.escapeHtml) o usa `opts.text`: texto plano que se escapa aquí (C1/C2, Fase 3). */
   window.showConfirm = function (message, opts) {
     opts = opts || {};
     const isWarning = opts.variant === "warning";
@@ -134,7 +135,7 @@
       d = openDialog({
         title: opts.title || (isWarning ? "Ten en cuenta" : "Confirmar"),
         warning: isWarning,
-        bodyHtml: '<p class="gw-modal__text">' + message + "</p>",
+        bodyHtml: '<p class="gw-modal__text">' + (opts.text != null ? window.escapeHtml(opts.text) : message) + "</p>",
         buttons: [
           { id: "toastConfirmCancel", cls: "gw-btn--secondary", label: "Cancelar" },
           { id: "toastConfirmOk", cls: isWarning ? "gw-btn--primary" : "gw-btn--danger", label: opts.confirmLabel || "Confirmar" },

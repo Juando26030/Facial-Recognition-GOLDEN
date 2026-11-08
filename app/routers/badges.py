@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -12,6 +12,7 @@ from app.timeutil import utcnow
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app import testperson
+from app.inputcheck import text_validator
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role, require_role_excluding
 
@@ -56,7 +57,8 @@ class BadgeTemplateIn(BaseModel):
 
 
 class SaveAsIn(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=80)
+    _t = text_validator("name")      # C2: sin «<» ni «>»
 
 
 def _default_certificate_elements(event) -> list:
