@@ -17,7 +17,7 @@
   label { display:block; font-weight:600; margin:12px 0 4px; }
   input[type=text], input[type=date] { width:100%; box-sizing:border-box; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); font:inherit; font-size:1.05rem; }
   button { padding:12px 26px; border-radius:26px; border:2px solid var(--gold); font:inherit; font-weight:700; font-size:1rem; cursor:pointer; margin:6px 8px 0 0; }
-  button.primary { background:var(--gold); color:#111; }
+  button.primary { background:var(--gold); color:var(--on-gold, #111); }
   button.secondary { background:transparent; color:var(--ink); }
   button[disabled] { opacity:.5; cursor:not-allowed; }
   .msg { margin-top:16px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fafbfd; }
@@ -31,6 +31,7 @@
   .minor .solution { font-weight:700; background:#fff8e1; border:2px solid var(--gold); border-radius:12px; padding:12px 14px; margin:12px 0; }
   .minor .error { font-size:.9rem; color:var(--muted); margin-top:16px; }
 </style>
+{% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
 </head>
 <body>
 <main>

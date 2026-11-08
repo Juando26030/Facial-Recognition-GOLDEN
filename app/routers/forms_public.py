@@ -25,7 +25,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, jobs, security, timing, uploads, wompi, safe_limits
+from app import brandcolor, formlib, formsvc, jobs, security, timing, uploads, wompi, safe_limits
 from app.safeeq import safe_eq
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
@@ -245,7 +245,8 @@ def _page_title(event_id: int, slug: str, k: Optional[str]) -> dict:
     try:
         form = _load(db, event_id, slug)
         _access(db, form, k)
-        return {"title": form.name}
+        ev = db.get(Event, event_id)
+        return {"title": form.name, "brand_css": brandcolor.css(getattr(ev, "brand_color", None))}
     finally:
         db.close()
 
@@ -264,7 +265,7 @@ async def page(event_id: int, slug: str, request: Request, k: Optional[str] = No
             cached = await _cached_async(formsvc.public_cache, key, lambda: _page_title(event_id, slug, k))
     except HTTPException:
         return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
-    response = templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": cached["title"]})
+    response = templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": cached["title"], "brand_css": cached.get("brand_css", "")})
     if not k:
         response.headers["Cache-Control"] = "public, max-age=30, s-maxage=60"
     return response

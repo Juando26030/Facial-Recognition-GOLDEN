@@ -20,7 +20,7 @@
         .card { background:#fff; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,0.08); padding:22px 20px; width:100%; max-width:440px; box-sizing:border-box; }
         label { display:block; font-size:0.78rem; font-weight:700; color:#777; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
         input[type=text] { width:100%; box-sizing:border-box; padding:12px 14px; border:1px solid #ccc; border-radius:10px; font-size:1.05rem; }
-        button.primary { width:100%; margin-top:14px; padding:13px; border:none; border-radius:24px; background:#D4AF37; color:#1a1200; font-weight:700; font-size:1rem; cursor:pointer; }
+        button.primary { width:100%; margin-top:14px; padding:13px; border:none; border-radius:24px; background:var(--gold, #D4AF37); color:var(--on-gold, #1a1200); font-weight:700; font-size:1rem; cursor:pointer; }
         button.primary:disabled { opacity:0.6; cursor:default; }
         button.secondary { margin-top:10px; background:none; border:none; color:#666; text-decoration:underline; cursor:pointer; font-size:0.85rem; }
         .msg { margin-top:12px; font-size:0.88rem; padding:10px 12px; border-radius:10px; display:none; }
@@ -34,6 +34,7 @@
         .frame { border:1px solid #ddd; border-radius:8px; overflow:hidden; margin:0 auto; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.08); }
         #host { transform-origin:top left; }
     </style>
+    {% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
 </head>
 <body>
 <div class="brand">{{ company_name }}</div>

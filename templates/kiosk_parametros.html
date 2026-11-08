@@ -144,6 +144,14 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-label" for="logoFile">Subir un logo nuevo <span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span></label>
               <input type="file" id="logoFile" class="gw-input" data-pnodirty accept="image/*">
             </div>
+            <fieldset class="gw-fieldset" id="brandColorBox" data-psave="logo">
+              <legend class="gw-label">Color de marca del evento</legend>
+              <p class="gw-hint">Es el color de los botones en las páginas públicas de este evento (aceptación desde el celular, formularios y certificados). Si no eliges uno, se usa el dorado de Golden.</p>
+              <label class="gw-choice"><input type="radio" name="brandMode" value="default" {% if not event.brand_color %}checked{% endif %}> <span class="gw-choice__text">Color de Golden</span></label>
+              <label class="gw-choice"><input type="radio" name="brandMode" value="custom" {% if event.brand_color %}checked{% endif %}> <span class="gw-choice__text">Color propio</span></label>
+              <div class="gw-field"><label class="gw-label" for="brandColor">Color</label>
+                <input type="color" id="brandColor" class="gw-input" value="{{ event.brand_color or '#1e2a6e' }}" {% if not event.brand_color %}disabled{% endif %}></div>
+            </fieldset>
           </div>
         </section>
 
@@ -939,6 +947,11 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     // Logo del evento (modo, alto y ajuste): pendiente hasta el «Guardar» global, que recarga para ver el encabezado nuevo. Subir una imagen es inmediato (es un archivo).
     const logoMode0 = (document.querySelector('input[name="logoMode"]:checked') || {}).value;
     const logoFit0 = (document.querySelector('input[name="logoFit"]:checked') || {}).value;
+    const brandColor = document.getElementById('brandColor');
+    const brandColor0 = {{ (event.brand_color or '')|tojson }} ? brandColor.value : null;          // null = el general de Golden
+    document.querySelectorAll('input[name="brandMode"]').forEach((radio) => radio.addEventListener('change', () => {
+        brandColor.disabled = radio.value !== 'custom';
+    }));
     const logoH = document.getElementById('logoH');
     const logoH0 = logoH ? logoH.value : null;
     if (logoH) logoH.addEventListener('input', () => { document.getElementById('logoHv').textContent = logoH.value; });
@@ -950,6 +963,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const mode = (document.querySelector('input[name="logoMode"]:checked') || {}).value;
         if (mode && mode !== logoMode0) await must(await jsonPut(url, { mode }), 'No se pudo cambiar el logo');
         if (logoH && logoH.value !== logoH0) await must(await jsonPut(url, { height: +logoH.value }), 'No se pudo guardar el alto del logo');
+        const brandMode = (document.querySelector('input[name="brandMode"]:checked') || {}).value;
+        const brandValue = brandMode === 'custom' ? brandColor.value : null;
+        if (brandValue !== brandColor0) await must(await jsonPut(`/api/events/${window.EVENT_ID}/brand-color`, { color: brandValue }), 'No se pudo guardar el color de marca');
         const fit = (document.querySelector('input[name="logoFit"]:checked') || {}).value;
         if (fit && fit !== logoFit0) await must(await jsonPut(url, { fit }), 'No se pudo guardar el ajuste del logo');
     } });

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
-from app import publicurl, security
+from app import brandcolor, publicurl, security
 from app.storage import badge_asset_key, get_storage
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -58,7 +58,7 @@ def certificate_page(token: str, request: Request, db: Session = Depends(get_db)
     except HTTPException:
         return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Enlace no disponible</h3>", status_code=404)
     return templates.TemplateResponse(request=request, name="certificate_public.html", context={
-        "token": token, "event_name": event.name, "finalized": event.status == "finalizado",
+        "token": token, "event_name": event.name, "brand_css": brandcolor.css(event.brand_color), "finalized": event.status == "finalizado",
     })
 
 
