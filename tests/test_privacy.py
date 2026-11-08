@@ -145,18 +145,36 @@ def test_purge_event_erases_faces_but_keeps_people_who_are_in_another_active_eve
     assert u2.face_encoding and os.path.isfile(f"data/{ev.tenant_id}/known_people/1002.jpg")
 
 
-def test_a_coordinator_can_erase_one_persons_face_but_only_admins_purge_the_event(client, factory, db):
-    from app.models import User
+def test_only_admins_erase_one_persons_face_and_it_is_audited_without_personal_data(client, factory, db):
+    import os
+    from app.models import AuditAction, AuditConsentLog, User
     factory.staff("coordinador", "coord1")
+    factory.staff("admin", "adm1")
     ev = factory.event("en_proceso")
     _with_face(db, ev, "1001")
     login(client, "coord1")
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": ev.name}).status_code == 403
+    assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").status_code == 403           # B9: el coordinador ya no puede
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").first().face_encoding is not None
+    client.post("/logout")
+    login(client, "adm1")
     assert client.delete(f"/api/events/{ev.id}/users/9999/biometrics").status_code == 404
     assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is True
     db.expire_all()
-    assert db.query(User).filter_by(id="1001").first().face_encoding is None
-    assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is False                         # ya no había nada
+    u = db.query(User).filter_by(id="1001").first()
+    assert u.face_encoding is None and u.is_biometric_enabled is False
+    assert not os.path.isfile(f"data/{ev.tenant_id}/known_people/1001.jpg")
+    assert db.query(AuditConsentLog).filter_by(user_id="1001", reason="revocation").count() == 1       # queda como revocación
+    row = db.query(AuditAction).filter_by(action="purge_biometrics").one()
+    assert row.entity_id == str(ev.id) and "1001" not in (row.detail or "") + (row.entity_name or "")
+    assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is False        # ya no había nada
+
+
+def test_the_parameters_screen_hides_the_face_delete_buttons_from_non_admins():
+    src = open("templates/kiosk_parametros.html", encoding="utf-8").read()
+    i = src.index('id="privPerson"')
+    assert src.rfind("{% if is_admin_plus %}", 0, i) > src.rfind('id="privacyCard"', 0, i)
 
 
 # ------------------------------- páginas legales públicas -------------------------------

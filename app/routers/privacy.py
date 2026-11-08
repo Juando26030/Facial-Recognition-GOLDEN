@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app import ops, privacy
+from app import audit_actions, ops, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.models import EventAttendee, StaffUser
@@ -31,12 +31,19 @@ def purge_event_biometrics(event_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.delete("/events/{event_id}/users/{user_id}/biometrics")
-def purge_person_biometrics(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(VIEW)):
-    """Derecho de supresión de una persona: borra su rostro (foto y encoding). Conserva su identidad y su registro de asistencia."""
+def purge_person_biometrics(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Derecho de supresión de una persona (revocación): borra su rostro (vector, foto y todas las versiones) y deja la constancia de revocación. Conserva su identidad y su asistencia.
+    B9 (decisión del dueño, 8-nov-2026): solo admin y superior (antes lo hacía un coordinador) y queda en el registro de acciones SIN datos personales (quién, evento, alcance)."""
     event = get_event_for_staff(event_id, db, staff)
     if not db.query(EventAttendee.id).filter_by(event_id=event.id, user_id=user_id).first():
         raise HTTPException(status_code=404, detail="Esa persona no está en este evento")
-    had = privacy.purge_person(db, event.tenant_id, user_id)
+    result = privacy.erase_person(db, event, user_id, "biometric")          # vector, foto (todas las versiones), is_biometric_enabled=false y la `revocation` en audit_consent_logs
+    if not result["found"]:
+        raise HTTPException(status_code=404, detail="Esa persona no está en este evento")
+    had = bool(result.get("had_biometrics"))
+    audit_actions.record(db, staff, "purge_biometrics", "event", event.id, event.name, "alcance biometric; rostro de una persona (ruta de la ficha)")
+    db.commit()
+    ops.record_system_event("person_purge", f"event:{event.id}", f"por {staff.username} (id {staff.id}); alcance biometric")
     return {"deleted": had, "message": "Rostro borrado" if had else "Esa persona no tenía datos biométricos guardados"}
 
 

@@ -484,17 +484,17 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div id="privacyCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Datos del rostro</h4>{% call ayuda('ay_privacidad', 'Datos del rostro') %}El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan. Para autorizar el rostro en los formularios web, crea en «Campos» un campo de consentimiento aparte y en «Insertar texto tipo» elige «Autorización del dato biométrico»; debe ser una casilla separada de la autorización general de datos.{% endcall %}</div>
             <p id="privInfo" class="gw-msg" role="status">Cargando…</p>
-            <div class="gw-danger-zone">
+            {% if is_admin_plus %}<div class="gw-danger-zone">
               <h4>{{ ic('alert') }} Borrar rostros (no se puede deshacer)</h4>
               <div class="gw-field"><label class="gw-label" for="privCedula">Cédula de la persona a la que se le borrará el rostro</label><input class="gw-input" type="text" id="privCedula" aria-label="Cédula de la persona a la que se le borrará el rostro"></div>
               <div class="gw-actions">
                 <button type="button" id="privPerson" class="gw-btn gw-btn--danger-outline">{{ ic('trash', 'gw-icon--sm') }} Borrar solo el rostro de esta persona</button>
-                {% if is_admin_plus %}<button type="button" id="privRevoke" class="gw-btn gw-btn--danger-outline" title="La persona sigue entrando por cédula o QR">{{ ic('trash', 'gw-icon--sm') }} Revocar autorización (borrar rostro y dejar constancia)</button>
+                <button type="button" id="privRevoke" class="gw-btn gw-btn--danger-outline" title="La persona sigue entrando por cédula o QR">{{ ic('trash', 'gw-icon--sm') }} Revocar autorización (borrar rostro y dejar constancia)</button>
                 <button type="button" id="privAll" class="gw-btn gw-btn--danger">{{ ic('trash', 'gw-icon--sm') }} Suprimir TODOS los datos de esta persona</button>
-                <button type="button" id="privEvent" class="gw-btn gw-btn--danger">{{ ic('trash', 'gw-icon--sm') }} Borrar los datos del rostro de TODO el evento</button>{% endif %}
+                <button type="button" id="privEvent" class="gw-btn gw-btn--danger">{{ ic('trash', 'gw-icon--sm') }} Borrar los datos del rostro de TODO el evento</button>
               </div>
               <div id="privStatus" class="gw-msg" role="status" aria-live="polite"></div>
-            </div>
+            </div>{% else %}<p class="gw-hint">Borrar el rostro de una persona o de todo el evento lo hace un administrador.</p>{% endif %}
           </div>
           {% else %}
           <div class="gw-group__item"><p class="gw-alert" role="note">{{ ic('info') }}<span class="gw-alert__body">Este evento no usa reconocimiento facial, así que no hay rostros guardados que borrar.</span></p></div>
@@ -717,7 +717,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret} Cifrado del rostro en reposo: <b>${d.encrypted ? 'activo' : 'NO activo (avisa a soporte)'}</b>.${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
         }
         load();
-        document.getElementById('privPerson').addEventListener('click', async () => {
+        const privPerson = document.getElementById('privPerson');
+        if (privPerson) privPerson.addEventListener('click', async () => {
             const id = document.getElementById('privCedula').value.trim();
             if (!id) return say('Escribe la cédula', true);
             if (!(await showConfirm(`¿Borrar el rostro (foto y datos del rostro) de la persona con cédula ${window.escapeHtml(id)}? No se puede deshacer; su registro de asistencia se conserva.`))) return;

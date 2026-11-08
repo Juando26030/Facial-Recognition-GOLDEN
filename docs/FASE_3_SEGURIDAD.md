@@ -73,7 +73,7 @@ No se activa en este despliegue. Se hace por etapas, sin esperar a la versión f
 
 Rama `f3e/pagos`. Hecho: D1 + R1 + R9 (no se descarta la inscripción pendiente de otra persona por teclear su cédula; solo el intento propio de la MISMA sesión y tras preguntar a Wompi; se recomprueba bajo candado), R2 (dos pendientes con la misma cédula no se confirman ambas: la segunda pasa a `refund_due`), D16, R3, R4, D8 y R8. Sin migraciones: `form_submissions.status` es texto libre (confirmar con `\d form_submissions` en Neon que no haya un CHECK que impida `refund_due`).
 
-### D2 — PENDIENTE de la decisión del dueño (esqueleto, NO aplicado)
+### D2 — antes pendiente; RESUELTO el 8-nov-2026 (ver «Decisiones del dueño», abajo; este esqueleto queda como contexto)
 
 **El problema.** El apartado de cupo es un reloj de 15 min (`formsvc.PENDING_HOLD`). Pasado ese tiempo el cupo se vuelve a vender, pero un pago que tarde en aprobarse (3DS, PSE, OTP) se confirma igual (`apply_result`) sin mirar el aforo, los cupos por variable (`quota_keys`) ni los usos de un código (`max_uses`): sobreventa. No requiere atacante.
 
@@ -147,3 +147,30 @@ Hecho, con sus pruebas (los IDs son de la revisión cruzada):
   - Diseño del endpoint de reportes (NO implementado): `POST /api/csp-report` público, cuerpo máximo 8 KiB (ya cubierto por `bodylimit` si se agrega la ruta), límite por IP, guardar solo `violated-directive` y `blocked-uri` sin query ni fragmento, y agregar `report-uri /api/csp-report` a ambas políticas.
 
 No hecho en esta rama (por tamaño o porque lo hace otro corrector): C7 (adjunto del informe final: quitar `.xls`, validar el `.xlsx` con `safe_limits.check_zip`), C8 (paquete de evento: lista blanca de extensiones, `iterations` entre 100.000 y 2.000.000, `MIN_PASSPHRASE = 12`), E4/R3-02 (`security.safe_eq`), R3-03 a R3-06, E7, E8, E9, E12.
+
+
+## Decisiones del dueño, 8-nov-2026
+
+Rama `f3f/decisiones`. Migración `0096_decisiones_dueno` (cadena `0095_super_events_archive` -> `0096_decisiones_dueno`), solo aditiva.
+
+### D2 — un pago aprobado sin cupo no debe pasar nunca (el cupo es como un asiento de cine)
+- **Regla.** Al hacer clic en «pagar» (el envío que crea el pago, antes de abrir el widget de Wompi), si en ese instante hay cupo, queda BLOQUEADO para esa persona aunque no haya terminado de pagar. Al aprobarse el pago se CONFIRMA. Si el pago no se completa (rechazado, error, anulado o abandonado) el cupo se LIBERA: al instante si Wompi informa el fallo, o solo a los **10 minutos**.
+- **Un solo valor.** `FORM_HOLD_MINUTES` (por defecto 10; piso 2, techo 180) define `formsvc.PENDING_HOLD`, que gobierna `held_count`, los cupos por variable, los usos de códigos y el parámetro `hold_from` de `form_reserve_slot` (misma función SQL de la migración 0049; no hizo falta tocarla). Antes eran 15 min fijos; ya no hay renovación de la ventana.
+- **(a)** Sin cupo (total, por variable o código agotado) no se entra (`cupo_lleno`) ni se crea el pago. **(b)** El re-chequeo atómico es `form_reserve_slot` bajo `FOR UPDATE` en el envío; si ya no hay cupo responde 409 con «Se agotaron los cupos de este formulario. No se cobró nada.» (`formsvc.FULL_MSG`) y no se crea ni inscripción ni pago. La respuesta con pago incluye `hold_minutes` y el formulario muestra «Tu cupo está reservado por N minutos mientras pagas.»
+- **(d) Red de seguridad, sin sobreaforo.** `refund_due` y `admit_on_approval` quedan SOLO para el caso físico de un pago que Wompi aprueba DESPUÉS de vencida la reserva (dinero que se movió fuera de nuestro control). Con la reserva vigente no se revisa nada; vencida, se cuentan confirmadas + pagos en curso de otros y, si el cupo total, el de la variable o el código ya están llenos (o la cédula ya está inscrita), la inscripción pasa a `refund_due`, aparece en la lista de pagos con el aviso «reembolsa y avísale» y en «Estado del sistema» (`payment_refund_due`). Si el cupo sigue libre, se admite.
+- Pruebas: `tests/test_decisiones_d2.py` (bloqueo al iniciar, confirmación al aprobar, liberación a los 10 min y al fallar/anular, dos personas por el último cupo, cupo por variable, vía rápida con caché vieja, aprobación tardía con y sin cupo). Se ajustó `test_seguridad_cierre_publico.py` (X6) a la constante.
+
+### D5 — aceptación web cuando la base no trae fecha de nacimiento (configurable)
+- Ajuste del evento `events.accept_no_birth_mode`: `any` (comportamiento de siempre) | `require_personal_link` (sin el enlace personal del correo no se acepta con selfie: 403 «Para aceptar desde el celular usa el enlace personal que te llegó al correo…», antes de la cámara y sin guardar nada). Eventos existentes: `any`; eventos NUEVOS creados por la API: `require_personal_link`. El rechazo cuenta como fallo de esa cédula (mismo freno de 5 intentos / 15 min). No cambia nada para quien sí tiene fecha registrada ni para quien entra con enlace personal.
+- Se edita en Parámetros -> Invitaciones («Si la base no trae la fecha de nacimiento», con ayuda) y por `PUT /api/events/{id}/biometric-setup` (clave `accept_no_birth_mode`). Código: `aceptar._check_birth(require_known=...)`. No se tocó `consents.py` más que la configuración, ni `enroll_face`. Pruebas: `tests/test_decisiones_d5.py`.
+
+### D7 — repetir la entrega de inventario a la misma persona (configurable por ítem)
+- `inventory_items.allow_repeat_delivery`: ítems existentes permiten (true); ítems NUEVOS por la API nacen sin permitir. Sin permiso, `deliver` responde 409 («ya se le entregó a esta persona y este ítem no se puede repetir…») y no entrega nada del combo; la comprobación ocurre después de bloquear los ítems `FOR UPDATE`, así doble clic o dos digitadores se turnan. Un `item_id` basura ahora es 400, no 500.
+- Control en Parámetros -> Inventario (columna en la tabla y casilla en «Ítem nuevo»), y en el alta/edición de la API. Pruebas: `tests/test_decisiones_d7.py` (se ajustó el ayudante de `test_catalogs_archive.py`, que re-entrega al mismo).
+
+### B9 — borrar el rostro de una persona
+- `DELETE /events/{id}/users/{uid}/biometrics`: ahora solo admin y superior (antes coordinador). Usa `privacy.erase_person(..., "biometric")`: borra vector y foto (todas las versiones), pone `is_biometric_enabled=false` y registra la revocación en `audit_consent_logs`. Deja fila en `audit_actions` (`purge_biometrics`, evento, sin datos personales) y el evento de sistema. Los demás caminos que borran un rostro (`purge-data`, menores, rechazo) no cambian.
+- La pantalla de Parámetros oculta el borrado de rostros al coordinador. Prueba: `tests/test_privacy.py` (el test que asumía coordinador ahora verifica el 403).
+
+### Pendiente (no se tocó)
+B1 / autorregistro (`consents.py`, `enroll_face`): depende de un texto legal que debe dar la auditora.

@@ -409,3 +409,11 @@ Rama `f3c/pantallas-archivados`, sin migraciones ni cambios de servidor. Qué se
 - `static/js/archive-rules.js`: quién ve cada botón (estados admin+, plantillas coordinador+, borrado super_admin). Solo oculta botones; el servidor decide.
 - Pruebas: `tests/test_fase3_pantallas_archivados.py` (fuente: sin diálogos nativos ni `onclick`, `url_for('static')`, sin colores/tamaños sueltos; pestaña solo para admin) y `tests/js/archive_rules_check.js`.
 - Dependencia: hoy el servidor exige admin+ para archivar/restaurar/ver archivadas de plantillas; mientras el otro agente lo pasa a coordinador+, un coordinador vería el aviso de «Solo un administrador…» al marcar «Ver archivadas».
+
+## Cambio de matriz, 8-nov-2026 (B9)
+
+| Acción | digitador | coordinador | comercial | admin | super_admin |
+|---|---|---|---|---|---|
+| Borrar el rostro de UNA persona (`DELETE /events/{id}/users/{uid}/biometrics`) | - | - (antes sí) | - | sí (con revocación y registro en `audit_actions`) | sí |
+
+Detalle y demás decisiones del dueño (D2, D5, D7) en `docs/FASE_3_SEGURIDAD.md`, sección «Decisiones del dueño, 8-nov-2026». Migración `0096_decisiones_dueno`.
