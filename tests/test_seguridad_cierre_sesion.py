@@ -274,3 +274,19 @@ def test_the_waiting_page_and_its_script_follow_the_frontend_rules():
     assert "alert(" not in js and "confirm(" not in js and "/api/ingreso/estado" in js and "method: 'POST'" in js
     usuarios = open("static/js/usuarios.js", encoding="utf8").read()
     assert "visibilityState" in usuarios and "login-state" in usuarios and "Bloqueada" in usuarios and "Está intentando ingresar" in usuarios
+
+
+def test_a_replaced_login_request_cannot_be_approved_with_the_old_code(client, second, env, control):
+    """Fase 3 (B6): si otra solicitud reemplaza a la que el coordinador estaba mirando, su clic sobre la vieja no aprueba a ciegas la nueva."""
+    from app.main import app
+    ev, coord, dig = env
+    assert login(client, "80123456", "80123456").status_code == 303
+    login(second, "coord")
+    seen = _state(second, ev)[dig.id]["req"]
+    with TestClient(app, follow_redirects=False) as other:                  # otro navegador con la misma cédula/clave: reemplaza la solicitud
+        assert login(other, "80123456", "80123456").status_code == 303
+    url = f"/api/events/{ev.id}/staff-users/{dig.id}/login-request"
+    assert second.post(url, json={"allow": True, "req": seen}).status_code == 409
+    fresh = _state(second, ev)[dig.id]["req"]
+    assert fresh != seen
+    assert second.post(url, json={"allow": True, "req": fresh}).status_code == 200
