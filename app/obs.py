@@ -29,15 +29,21 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 _FLOAT_VECTOR = re.compile(r"\[\s*-?\d+\.\d+(\s*,\s*-?\d+\.\d+){7,}\s*\]")       # un encoding facial (128 decimales)
 _LONG_NUMBER = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{5,}\d(?![\w])")            # cédulas, teléfonos
 _TOKEN = re.compile(r"(?<![\w-])[A-Za-z0-9_-]{28,}(?![\w-])")                    # tokens de enlaces, hashes, llaves
-_SENSITIVE_QUERY = re.compile(r"([?&](?:t|i|k|d|code|token|key|access_token|password)=)[^&\s]*", re.I)
+# Parámetros de query que NUNCA se registran: claves/tokens, y (Fase 3, E16/C9) lo que identifica a una persona: id, email, q (búsquedas por nombre), cédula, documento, teléfono, nombre.
+_SENSITIVE_QUERY = re.compile(r"([?&](?:t|i|k|d|code|token|key|access_token|password|id|ids|email|correo|q|search|buscar|term|cedula|cc|document|documento|identificacion|phone|telefono|celular|name|nombre|nombres|apellido|apellidos|first_name|last_name)=)[^&\s]*", re.I)
 _PATH_TOKEN = re.compile(r"(/(?:b|c|r|reimpresion|restablecer|api/ver|ver/[ef])/)[^/\s?]+")      # S8: también el enlace de restablecer contraseña
 _PATH_ID = re.compile(r"(?<=/)\d{5,}(?=/|\?|$)")
+# Segmento que lleva la cédula/pasaporte de una persona en la ruta, sea numérico o alfanumérico (`/api/users/AB123456`, `/events/3/users/CE-998877/badge-print-data`, `/attendees/<id>/purge-data`).
+# `users/changes` es una ruta fija, no una persona.
+_PATH_ENTITY = re.compile(r"(/(?:users|people|attendees|persons|consent-status|web-acceptance)/)(?!changes(?:[/?\s]|$))[^/\s?]+", re.I)
 
 
 def mask_pii(text: Any) -> str:
     """Enmascara correos, vectores de encodings, números largos (cédulas/teléfonos) y tokens dentro de un texto."""
     s = str(text)
     s = _FLOAT_VECTOR.sub("[encoding]", s)
+    s = _SENSITIVE_QUERY.sub(r"\1[x]", s)            # una URL dentro de cualquier mensaje (librerías, excepciones): sin id/email/q/nombre en la query
+    s = _PATH_ENTITY.sub(r"\1***", s)
     s = _EMAIL.sub(lambda m: m.group(0)[0] + "***@***", s)
     s = _LONG_NUMBER.sub(_mask_number, s)
     return _TOKEN.sub("[token]", s)
@@ -56,6 +62,7 @@ def mask_url(url: str) -> str:
     """Ruta + query sin tokens ni cédulas: `/b/<token>` -> `/b/[token]`, `?t=...` -> `?t=[x]`, `/api/users/1016100329` -> `/api/users/***`."""
     url = _SENSITIVE_QUERY.sub(r"\1[x]", url)
     url = _PATH_TOKEN.sub(r"\1[token]", url)
+    url = _PATH_ENTITY.sub(r"\1***", url)
     return _PATH_ID.sub("***", url)
 
 
@@ -162,7 +169,7 @@ class RequestLogMiddleware:
             if path not in ("/health", "/healthz"):
                 query = scope.get("query_string", b"").decode("latin-1")
                 client = scope.get("client")
-                http = {"requestMethod": scope.get("method"), "requestUrl": mask_url(path + ("?" + query if query else "")), "status": status,
+                http = {"requestMethod": scope.get("method"), "requestUrl": mask_pii(mask_url(path + ("?" + query if query else ""))), "status": status,
                         "latency": f"{time.perf_counter() - start:.3f}s", "remoteIp": mask_ip(headers.get("cf-connecting-ip") or (client[0] if client else None))}
                 real_5xx = status >= 500 and not backpressure
                 self.log.log(logging.ERROR if real_5xx else logging.INFO, "%s %s -> %s", http["requestMethod"], http["requestUrl"], status, extra={"http_request": http})
