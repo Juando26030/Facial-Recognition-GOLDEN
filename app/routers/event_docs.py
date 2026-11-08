@@ -45,6 +45,7 @@ DOC_EXT = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".
            ".png", ".jpg", ".jpeg", ".webp", ".gif"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 MAX_FILE_BYTES = 25_000_000
+MAX_EXPENSE = Decimal("999999999999.99")      # cabe en Numeric(14, 2)
 
 
 def _store(tenant_id: str, kind: str, event_id: int, upload_name: str, content: bytes) -> str:
@@ -234,7 +235,7 @@ def add_expense(
         raise HTTPException(status_code=400, detail="La categoría y la persona responsable son obligatorias")
     try:
         value = Decimal(amount.replace(",", ".").strip())
-        if value < 0:
+        if not value.is_finite() or value < 0 or value > MAX_EXPENSE:      # C11: Infinity / 1E+999 pasaban «< 0» y la columna Numeric(14, 2) daba 500
             raise InvalidOperation
     except InvalidOperation:
         raise HTTPException(status_code=400, detail="El valor del gasto debe ser un número mayor o igual a 0")
