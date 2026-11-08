@@ -9,7 +9,7 @@ Create Date: 2026-11-08
 from alembic import op
 
 revision = "0098_event_brand_color"
-down_revision = "0095_super_events_archive"      # temporal: el integrador la reencadena tras 0096/0097
+down_revision = "0096_decisiones_dueno"
 branch_labels = None
 depends_on = None
 

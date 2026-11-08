@@ -344,6 +344,16 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint">Cada persona recibe el enlace a su escarapela por correo o celular.</p>
             </div>
             {% if event.digital_badge_enabled %}
+            <div id="dfieldsBox" data-psave="dfields" class="gw-stack">
+              <div class="gw-sub gw-item-head"><h5>{{ ic('badge', 'gw-icon--sm') }} Datos que se ven en la escarapela digital</h5>{% call ayuda('ay_dfields', 'Datos de la escarapela digital') %}Por defecto la escarapela digital solo muestra los datos que usa el diseño de la escarapela. Si eliges los datos a mano, se muestran exactamente esos (el nombre y el apellido salen siempre). La cédula nunca se muestra como dato.{% endcall %}</div>
+              <fieldset class="gw-fieldset">
+                <legend class="gw-label">Qué datos de la persona se ven</legend>
+                <label class="gw-choice"><input type="radio" name="dfMode" value="default"> <span class="gw-choice__text"><b>Por defecto</b><span>Solo lo que usa el diseño de la escarapela.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="dfMode" value="custom"> <span class="gw-choice__text"><b>Elegir los datos</b><span>Marca cuáles se muestran.</span></span></label>
+              </fieldset>
+              <div id="dfList" class="gw-stack" hidden></div>
+              <div id="dfWarn" class="gw-alert gw-alert--warn" role="alert" hidden></div>
+            </div>
             <div id="mailEditor" data-psave="mail" class="gw-stack">
               <div class="gw-sub gw-item-head"><h5>{{ ic('mail', 'gw-icon--sm') }} Correo que recibe la persona</h5>{% call ayuda('ay_correo', 'Correo de la escarapela') %}Escribe el correo como quieras (negritas, enlaces, imágenes). Las variables se reemplazan por los datos de cada persona. Debe llevar el Botón o el Enlace a la escarapela.{% endcall %}</div>
               <div class="gw-field"><label class="gw-label" for="mailSubject">Asunto</label><input class="gw-input" type="text" id="mailSubject"></div>
@@ -951,6 +961,33 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     GWParams.register({ key: 'digital', label: 'Escarapela digital', order: 36, reload: true, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { enabled: document.getElementById('digitalEnabled').checked }), 'No se pudo cambiar la escarapela digital');
     } });
+    const dfBox = document.getElementById('dfieldsBox');
+    if (dfBox) (async () => {          // Datos visibles en la escarapela digital (app/digital_fields.py): lista de claves o «por defecto»
+        const url = `/api/events/${window.EVENT_ID}/digital-badge-fields`;
+        const list = document.getElementById('dfList'), warn = document.getElementById('dfWarn');
+        const modes = dfBox.querySelectorAll('input[name="dfMode"]');
+        let state;
+        try { state = await must(await fetch(url), 'No se pudieron leer los datos de la escarapela'); } catch (e) { showToast(e.message, 'error'); return; }
+        const chosen = () => Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map((c) => c.value);
+        const custom = () => dfBox.querySelector('input[name="dfMode"]:checked').value === 'custom';
+        const refresh = () => {
+            list.hidden = !custom();
+            const risky = custom() && state.fields.some((f) => f.sensitive && chosen().includes(f.key));
+            warn.hidden = !risky; warn.textContent = risky ? state.warning : '';
+        };
+        state.fields.forEach((f) => {
+            const label = document.createElement('label'); label.className = 'gw-check';
+            const box = document.createElement('input'); box.type = 'checkbox'; box.value = f.key; box.checked = (state.selected || []).includes(f.key);
+            label.append(box, document.createTextNode(' ' + f.label + (f.sensitive ? ' (dato personal)' : '')));
+            list.appendChild(label);
+        });
+        modes.forEach((r) => { r.checked = r.value === (state.selected === null ? 'default' : 'custom'); });
+        refresh();
+        dfBox.addEventListener('change', refresh);
+        GWParams.register({ key: 'dfields', label: 'Datos de la escarapela digital', order: 37, save: async () => {
+            await must(await jsonPut(url, { fields: custom() ? chosen() : null }), 'No se pudieron guardar los datos de la escarapela digital');
+        } });
+    })();
     GWParams.register({ key: 'cert', label: 'Certificados', order: 35, reload: true, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/certificates-enabled`, { enabled: document.getElementById('certificatesEnabled').checked }), 'No se pudo cambiar el módulo de certificados');
     } });

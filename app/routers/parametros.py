@@ -10,6 +10,7 @@ comportamiento tolerante de siempre; forzar esto ahí arriesgaba romper cargas r
 incompletos que hoy funcionan.
 """
 import io
+import json
 import os
 import re
 import uuid
@@ -20,7 +21,16 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import audit_actions, biometric_setup, brandcolor, idle, lastname, publicurl, registro_gear
+from app import (
+    audit_actions,
+    biometric_setup,
+    brandcolor,
+    digital_fields,
+    idle,
+    lastname,
+    publicurl,
+    registro_gear,
+)
 from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -227,6 +237,41 @@ def set_digital_badge_enabled(
             db.add(EventFieldConfig(event_id=event_id, field_key="digital_contact", required=True, field_type="text_short"))
     db.commit()
     return {"digital_badge_enabled": event.digital_badge_enabled}
+
+
+def _digital_fields_state(db: Session, event: Event) -> dict:
+    labels = field_labels_for_event(db, event)
+    options = [{"key": k, "label": labels[k], "sensitive": k in digital_fields.SENSITIVE_KEYS}
+               for k in digital_fields.allowed_keys(event.get_optional_labels()) if k in labels]          # solo lo que el evento tiene (los campos borrados o sin categorías no se ofrecen)
+    return {"enabled": bool(event.digital_badge_enabled), "fields": options, "selected": digital_fields.parse_stored(event.digital_badge_fields),
+            "warning": digital_fields.SENSITIVE_WARNING}
+
+
+@router.get("/events/{event_id}/digital-badge-fields")
+def get_digital_badge_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Datos de la persona que se pueden mostrar en la escarapela digital y los elegidos (`selected` nulo = por defecto: solo lo que usa la plantilla)."""
+    return _digital_fields_state(db, get_event_for_staff(event_id, db, staff))
+
+
+@router.put("/events/{event_id}/digital-badge-fields")
+def put_digital_badge_fields(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Guarda qué datos salen en la escarapela digital. `fields`: lista de claves, o nulo para volver al comportamiento por defecto. Rechaza claves desconocidas."""
+    event = get_event_for_staff(event_id, db, staff)
+    if not event.digital_badge_enabled:
+        raise HTTPException(status_code=409, detail="Activa primero la escarapela digital")
+    state = _digital_fields_state(db, event)
+    offered = {f["key"] for f in state["fields"]}
+    try:
+        value = digital_fields.validate(data.get("fields"), event.get_optional_labels())
+    except digital_fields.FieldsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if value is not None and any(k not in offered for k in value):
+        raise HTTPException(status_code=400, detail="Uno de los datos ya no existe en este evento")
+    event.digital_badge_fields = None if value is None else json.dumps(value)
+    audit_actions.record(db, staff, "edit", "event_digital_badge_fields", event.id, event.name,
+                         "por defecto" if value is None else ", ".join(value)[:400] or "ninguno")          # solo claves, nunca datos de personas
+    db.commit()
+    return _digital_fields_state(db, event)
 
 
 DIRECTORY_PAGE_SIZES = (10, 20, 50, 100, 200)
