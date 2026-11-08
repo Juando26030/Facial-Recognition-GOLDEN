@@ -317,7 +317,7 @@ def pending_max_per_person() -> int:
     try:
         base = int(os.getenv("FORM_PENDING_MAX_PER_PERSON", "3"))
     except ValueError:
-        base = 2
+        base = 3
     return max(0, base)
 
 
