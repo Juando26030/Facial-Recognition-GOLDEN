@@ -12,6 +12,7 @@ from app import crypto
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
+from app.routers.certificates_public import NEVER_EXPOSED, _variables_used
 from app.routers.badges import ALLOWED_IMAGE_EXT, _get_or_create_template, _serialize_template, template_category_for_user
 
 router = APIRouter()
@@ -20,7 +21,7 @@ router = APIRouter()
 def _resolve(db: Session, token: str):
     att = db.query(EventAttendee).filter(EventAttendee.digital_token == token).first()
     event = db.query(Event).filter(Event.id == att.event_id).first() if att else None
-    if not att or not event or not event.digital_badge_enabled:
+    if not att or not event or not event.digital_badge_enabled or event.archived_at is not None or event.data_archived_at is not None:          # R2-2: archivar el evento o su base (L7) cierra también el enlace
         raise HTTPException(status_code=404, detail="Escarapela no encontrada")
     user = db.query(User).filter(User.id == att.user_id, User.tenant_id == att.tenant_id).first()
     if not user:
@@ -44,14 +45,15 @@ def digital_badge_data(token: str, db: Session = Depends(get_db)):
     category = template_category_for_user(event, db, user.id)
     template = _serialize_template(_get_or_create_template(event, db, category))
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1)
+    needed = _variables_used(template)
+    person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": has_photo}
+    fields = {"role": user.role, "entity": user.entity, "opt_1": user.opt_1, "categories": ", ".join(att.get_categories())}          # A3: sin correo ni teléfono (NEVER_EXPOSED), igual que el certificado
+    person.update({k: v for k, v in fields.items() if k in needed})
+    person["extra_fields"] = {k: v for k, v in user.get_extras().items() if k in needed and k not in NEVER_EXPOSED}          # solo los campos que la plantilla pinta de verdad
     return {
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
-        "person": {
-            "id": user.id, "first_name": user.first_name, "last_name": user.last_name, "role": user.role,
-            "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1,
-            "extra_fields": user.get_extras(), "has_photo": has_photo, "categories": ", ".join(att.get_categories()),
-        },
+        "person": person,
     }
 
 

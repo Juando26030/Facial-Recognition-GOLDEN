@@ -909,6 +909,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     `ACCREDIT_UNDO_WINDOW` (15 s) después y con el evento todavía abierto para registrar; se identifica por el `client_id` que generó la pantalla. Borra solo ESE ingreso (la persona vuelve a «No
     registrado» si era el único). Quien necesite deshacer más tarde o lo de otro usa Editar → Estado de registro (administrador o más), como siempre."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     client_id = str((body or {}).get("client_id") or "").strip()[:64]
     if not client_id:
         raise HTTPException(status_code=400, detail="Falta el identificador de la acreditación")
@@ -972,6 +973,9 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
         reverted = status_changes.revert_info(db, event)          # devuelto a «Creado»: los quioscos sin red sincronizan lo anterior al cambio durante 7 días (app/status_changes.py)
         if event.status != "en_proceso" and not recent and not (reverted and reverted[1]):
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
+    if event.archived_at is not None:                # B4: ningún rol (ni coordinador+, que conserva su margen después de finalizar) escribe en un evento archivado
+        raise HTTPException(status_code=403, detail="Este evento está archivado: no recibe registros")
+    event_archive.require_data_open(event, staff)    # ni con la base archivada (L7)
     event.sync_revert = status_changes.revert_info(db, event)     # (momento, ventana abierta) o None; atributo de paso, no se guarda
     return event
 
@@ -1322,6 +1326,7 @@ def local_roster(
     «No registrado» / «Registrado» / «Nuevo»). Sin fotos, encodings, teléfono ni correo. Mismos permisos que acreditar (digitador+ con acceso al evento; el cliente no), no se
     entrega de un evento finalizado, límite de `ROSTER_LIMIT` descargas por usuario y evento cada 10 min, `ETag` (304 si nada cambió) y gzip. `max_age_s`: vida máxima de la copia. `event.auto_register`: el «Modo autoregistro» del evento (el quiosco sin red solo acredita al escanear si está encendido)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if event.status == "finalizado":
         raise HTTPException(status_code=409, detail="El evento ya finalizó: no hay roster local")
     key = f"{staff.id}:{event.id}"
@@ -1401,6 +1406,7 @@ def update_user(
     staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     user = _person_of_event(db, event, user_id)
     if user:
         personform.apply_case(data, personform.active(db, event))          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» y correo en minúsculas
@@ -1514,6 +1520,7 @@ def update_user_cedula(
     persona en TODOS los eventos de este cliente, no solo en este — más sensible que un campo
     normal del perfil."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     old_id = user_id
     new_id = str(data.get("new_id", "")).strip()
     if not new_id:
@@ -1572,6 +1579,7 @@ def delete_user_logs(
     la identificación de la persona. Queda en `audit_actions` (cuántos registros; nunca la cédula). Antes borraba por cliente completo (bug); ahora solo el evento indicado. Lo normal para
     deshacer un ingreso es `PATCH /events/{id}/users/{id}/status` (queda en el historial de cambios)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if str(confirm or "").strip() != str(user_id).strip():
         raise HTTPException(status_code=400, detail="Para borrar el histórico de accesos escribe (confirm) la identificación de la persona")
     n = db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.event_id == event.id).delete(synchronize_session=False)
@@ -1594,6 +1602,7 @@ def delete_user_from_event(
     eventos, ver CLAUDE.md), se borra también el `User` y su foto física — si sigue en otro
     evento, ese `User` se conserva intacto, no se puede reventar la base de un evento ajeno."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -1653,6 +1662,7 @@ def update_registration_status(
     llegado) sin que quede "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés,
     corregir un registro hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     user = _person_of_event(db, event, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -1725,6 +1735,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
 
     extras = _parse_extra_fields(extra_fields)
@@ -1885,6 +1896,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
     También trae los rótulos de campos opcionales del evento viejo que este todavía no tenga, para
     que sus valores (opcional_N) sigan teniendo nombre. Devuelve ({ids}, nombre_del_evento_origen)."""
     source = get_event_for_staff(source_event_id, db, staff)
+    event_archive.require_data_open(source, staff)
     if source.id == event.id:
         raise HTTPException(status_code=400, detail="Elige un evento distinto a este")
     if source.tenant_id != event.tenant_id:
@@ -1923,6 +1935,7 @@ def bulk_roster_preview(
     """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
     la carga real lo vuelve a usar."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     if blocked := event_rules.roster_block_reason(event, append_only=True):
         raise HTTPException(status_code=400, detail=blocked)
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
@@ -1949,6 +1962,7 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    event_archive.require_data_open(event, staff)
     case_mode, keep_dups = _text_case_or_400(text_case), _truthy(keep_duplicates)          # Plan 5: «Texto» y «No eliminar repetidos» (app/roster_text.py, app/roster_dups.py)
     append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
     if append and (zip_upload or (zip_file is not None and bool(zip_file.filename))):
@@ -2098,7 +2112,7 @@ def bulk_job_status(
     job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Carga no encontrada")
-    get_event_for_staff(job.event_id, db, staff)
+    event_archive.require_data_open(get_event_for_staff(job.event_id, db, staff), staff)
     if bulk_steps._is_steps(job):
         return bulk_steps.serialize_job(job)
     return bulk_jobs.serialize(job, db)
@@ -2153,6 +2167,7 @@ def _bulk_register_impl(
     resume = bool(step and step.get("phase") == "rows")
     phases = _Phases()
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
     # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22). En los pasos siguientes al primero no se repite: el primero ya la aplicó.
     blocked = None if resume else event_rules.roster_block_reason(event, append_only=append_only)
@@ -2672,6 +2687,7 @@ def download_report(
     # acción operativa, sin la excepción de cliente.
 ):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))
 
 
@@ -2680,6 +2696,7 @@ def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff
     """A3: personas YA registradas en este evento a las que les falta un obligatorio (se acreditaron sin conexión, o el campo se volvió obligatorio después). La pantalla las lista
     como «falta completar» para abrir «Editar persona» en el campo vacío. Sin columnas nuevas: se calcula con los datos de hoy."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
     if not any(c["required"] for c in field_configs):
         return {"count": 0, "people": []}

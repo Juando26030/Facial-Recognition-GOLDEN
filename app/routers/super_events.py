@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import audit_actions
 from app.auth import get_event_for_staff, require_role
 from app.tenant_scope import assert_same_tenant
+from app import event_archive
 from app.database import get_db
 from app.models import AccessLog, Event, StaffUser, SuperEvent, User
 
@@ -144,6 +145,7 @@ def sibling_check(
     """¿Esta persona ya asistió a un evento hermano de este (mismo superevento)? Si sí, devuelve sus
     datos guardados para poder solo vincularla a este evento en vez de capturarlos de nuevo."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     attended = sibling_attendance(db, event, user_id)
     if not attended:
         return {"siblings": []}

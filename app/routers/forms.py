@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
 from app.auth import get_event_for_staff, require_role
+from app import event_archive
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import Event, EventAttendee, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
@@ -331,6 +332,7 @@ def upload_registered(event_id: int, form_id: int, file: UploadFile = File(...),
     `with_data` (sí): además de la cédula se guardan los datos de los campos del formulario que trae el archivo (p. ej. la ciudad) y, como ocupan cupo, restan de los cupos por variables.
     Una persona que ya está inscrita (o ya marcada) no se duplica."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     if mode not in ("add", "replace") or effect not in ("block", "hold"):
         raise HTTPException(status_code=400, detail="Modo no válido")
@@ -469,8 +471,8 @@ def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = 
 def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
-    if event.archived_at is not None:
-        raise HTTPException(status_code=400, detail="El evento está archivado: sus formularios no reciben inscripciones. Restaura el evento para reabrirlos")
+    if event.archived_at is not None or event.data_archived_at is not None:          # D9: tampoco con la base archivada (L7)
+        raise HTTPException(status_code=400, detail="El evento está archivado: sus formularios no reciben inscripciones. Restaura el evento (o su base) para reabrirlos")
     form = _get_form(db, event, form_id)
     _not_archived(form)
     was_active = form.manual_status == "activo"
@@ -527,6 +529,7 @@ def _maybe_feed_on_close(db: Session, form: WebForm) -> None:
 def feed_now(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Carga a la base del evento todas las inscripciones reales aún no cargadas (quedan «No registrado»)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     return formsvc.feed_pending(db, form, _upsert())
 
@@ -894,6 +897,7 @@ def list_submissions(event_id: int, form_id: int, include_tests: bool = True, pa
     sin tildes ni mayúsculas; ver `formlib.answers_parse_query`). `quota`: id de una regla de cupo (mismas llaves `quota_keys` con que se cuenta el cupo).
     `total` = con los filtros; `total_all` = todas las visibles (con o sin pruebas según `include_tests`), sin buscador ni cupo."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
     base = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
@@ -953,6 +957,7 @@ def unify_values(event_id: int, form_id: int, payload: dict, db: Session = Depen
     Solo cambia el campo indicado y solo si coincide EXACTO (sin tildes/mayúsculas) con un valor de las reglas o con un alias dado; lo demás no se toca. Repetirlo no cambia nada."""
     from app import value_unify
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
     field_id = str(payload.get("field") or "")
@@ -1002,6 +1007,7 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     lo informa (`would_exceed`, 409 al aplicar) salvo que se pida expresamente `allow_over: true`. Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
     from app import value_unify
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
     field_id = str(payload.get("field") or "")
@@ -1089,6 +1095,7 @@ def delete_submission(event_id: int, form_id: int, submission_id: int, db: Sessi
     """Fase 3: borrar UNA inscripción es de admin+ (antes coordinador) y queda en `audit_actions` (id de la inscripción y del formulario, sin datos de la persona). Un formulario archivado conserva
     todas sus respuestas: no se borran desde aquí."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     sub = db.query(FormSubmission).filter_by(id=submission_id, form_id=form.id).first()
     if not sub:
@@ -1108,6 +1115,7 @@ def delete_submission(event_id: int, form_id: int, submission_id: int, db: Sessi
 @router.get("/events/{event_id}/forms/{form_id}/files/{submission_id}/{field_id}")
 def download_file(event_id: int, form_id: int, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     sub = db.query(FormSubmission).filter_by(id=submission_id, form_id=form.id).first()
     info = json.loads(sub.data_json).get(field_id) if sub else None
@@ -1121,6 +1129,7 @@ def report(event_id: int, form_id: int, include_tests: bool = False, request: Re
     """Reporte Excel del formulario (mismas convenciones que `app/reports.py`: título arriba, encabezado oscuro,
     autofiltro). Por defecto SIN las inscripciones de prueba."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
     cols = _column_defs(design)
@@ -1218,6 +1227,7 @@ def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: 
     """Pagos del formulario con su referencia (evento + formulario + inscripción): la conciliación por evento vive aquí, no
     en el dashboard de Wompi. `orphan` = aprobado pero sin inscripción (revisar a mano)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     q = db.query(FormPayment).filter(FormPayment.form_id == form.id)
     if not include_tests:
@@ -1251,6 +1261,7 @@ def upload_people(event_id: int, form_id: int, file: UploadFile = File(...), db:
     """Sube (Excel/CSV) la base que pre-llenará SOLO este formulario (fuente «base subida aparte»); reemplaza la anterior."""
     from app.routers.api import _read_roster_rows, _ID_KEYS, _normalize_optional_key
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     header, rows = _read_roster_rows(file.filename, file.file.read())
     id_col = next((k for k in header if formsvc.COLUMN_TO_KEY.get(k) == "id"), None)
@@ -1279,6 +1290,7 @@ def upload_people(event_id: int, form_id: int, file: UploadFile = File(...), db:
 @router.get("/events/{event_id}/forms/{form_id}/invites")
 def invites_status(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     rows = db.query(FormInvite).filter_by(form_id=form.id).all()
     return {"total": len(rows), "sent": sum(1 for r in rows if r.sent_at), "used": sum(1 for r in rows if r.used_at), "source_people": len(formsvc.source_people(db, form))}
@@ -1289,6 +1301,7 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
     """Genera el enlace personal de cada persona de la fuente y lo manda por correo (a quien tenga correo) en segundo
     plano, con avance (`GET /api/bulk_jobs/{id}`). `only_unsent` (por defecto sí) no reenvía a quien ya lo recibió."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     form = _get_form(db, event, form_id)
     if formsvc.get_settings(form)["prefill"]["mode"] != "invite":
         raise HTTPException(status_code=400, detail="Este formulario no usa enlaces personalizados por invitado (cámbialo en su configuración)")
@@ -1472,4 +1485,5 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
 @router.get("/events/{event_id}/forms/{form_id}/analytics")
 def form_analytics(event_id: int, form_id: int, include_tests: bool = False, net_fees: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     return form_dashboard(db, _get_form(db, event, form_id), include_tests, net_fees)

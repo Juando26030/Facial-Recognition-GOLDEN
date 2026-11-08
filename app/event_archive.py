@@ -11,6 +11,7 @@ import os
 from datetime import datetime, time, timedelta
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -83,6 +84,13 @@ def data_open_for(event: Event, staff: Optional[StaffUser]) -> bool:
 
 
 DATA_ARCHIVED_MSG = "La base de datos de este evento está archivada (pasaron 90 días desde su cierre). Un super administrador puede desarchivarla si se necesita."
+
+
+def require_data_open(event: Event, staff: Optional[StaffUser]) -> None:
+    """403 si la base del evento está archivada (L7) y quien pide no es super_admin. Va en TODA ruta que lea o escriba personas, respuestas, pagos o archivos de un evento
+    (la prueba tests/test_base_archivada_guard.py falla si una ruta nueva con `get_event_for_staff` la olvida y no está en su lista de excepciones)."""
+    if not data_open_for(event, staff):
+        raise HTTPException(status_code=403, detail=DATA_ARCHIVED_MSG)
 
 
 def archive_data(db: Session, event: Event, staff: Optional[StaffUser], detail: Optional[str] = None) -> None:

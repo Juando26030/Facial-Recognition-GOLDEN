@@ -35,7 +35,7 @@ _MAX_LOOKUPS, _LOOKUP_WINDOW = 30, timedelta(minutes=10)
 
 def _event_by_token(db: Session, token: str) -> Event:
     event = db.query(Event).filter(Event.certificates_token == token).first()
-    if not event or not event.certificates_enabled:
+    if not event or not event.certificates_enabled or event.archived_at is not None or event.data_archived_at is not None:          # R2-2: archivar el evento o su base (L7) cierra también el enlace público
         raise HTTPException(status_code=404, detail="Enlace no disponible")
     return event
 

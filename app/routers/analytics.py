@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import analytics as an, regtime
 from app.auth import get_event_for_staff, require_role, require_role_or_client
+from app import event_archive
 from app.database import get_db
 from app import testperson
 from app.models import AccessLog, Event, EventAttendee, StaffUser, User
@@ -94,6 +95,7 @@ def _origin_kpis(attendees: dict, ids: set, logs: list) -> list:
 @router.get("/events/{event_id}/analytics/registro")
 def analytics_registro(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     staff_view = is_staff_view(staff)
     return registro_dashboard(db, event, with_origin=staff_view, with_operators=staff_view)
 
@@ -103,6 +105,7 @@ def timing_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     """Fase 1A, PR1 (solo lectura, admin y super_admin): p50/p90 del tiempo por registro (`access_logs.took_ms`) del evento, en total, por pantalla (`ui_flow`) y por digitador. Solo agregados:
     ni cédulas ni nombres de asistentes; el digitador va por su nombre de cuenta (nunca su usuario, que es su cédula) o «Digitador N»."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     rows = db.query(AccessLog.registered_by_staff_id, AccessLog.ui_flow, AccessLog.took_ms, AccessLog.record_type).filter(AccessLog.event_id == event.id, AccessLog.user_id != testperson.TEST_ID).all()
     ids = {r[0] for r in rows if r[0] is not None}
     names = {sid: (name or "").strip() for sid, name in db.query(StaffUser.id, StaffUser.full_name).filter(StaffUser.id.in_(ids))} if ids else {}
