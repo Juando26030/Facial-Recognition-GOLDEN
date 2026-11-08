@@ -1,5 +1,39 @@
 # Handoff — migración a Cloud Run + Neon (estado al 2026-09-29)
 
+> ## ESTADO ACTUAL (7-nov-2026, noche) — léelo primero
+> **Fase 1 cerrada; Fase 2 entregada en staging; Fase 3 en curso.** Producción corre `main` (`1951bea`, 7-nov 02:16) y **no tiene nada de la Fase 2 ni de la Fase 3**. Resumen para Juan David: [`CIERRE_FASE_2.md`](CIERRE_FASE_2.md).
+>
+> | Qué | Estado |
+> |---|---|
+> | Rama `f2/integracion` | Integra la Fase 2 y la Fase 3 (oleadas 1 a 5 y modo tranquilo). Commit más reciente al escribir esto: `a34b6bc` (pulido visual del calendario); queda por delante lo que se fusione después: ver `git log f2/integracion`. En staging, sin fusionar a `main`. |
+> | Migraciones en staging | `0087_event_templates`, `0088_archive_and_audit`, `0089_staff_archive`, `0090_event_archive`, `0091_people_forms_archive`, `0092_catalogs_archive`. Todas aditivas. La última a la fecha es la `0092`. |
+> | Ramas de la Fase 3 en curso (NO fusionadas) | `f3b/docs-gastos` (migración `0093`), `f3b/crud-huecos` (migración `0094`), `f3b/seguridad` (alcance por cliente). Cada una sale de `f2/integracion`. Al fusionar, revisar que `0093` y `0094` queden en cadena (un solo extremo en Alembic). |
+> | Rama de documentación | `f3b/cierre-fase2` (este cierre). |
+> | Pendientes grandes | Prueba completa con base de datos en Cloud Shell (~47 min) sobre el SHA final; Strix y ZAP contra staging; `ENFORCE_STAFF_TENANT` (decide Juan David); CSP estricto; pantalla para restaurar colores y plantillas. Tablero en `FASE_3_AUDITORIA.md`. |
+> | GitHub Actions | Bloqueado por facturación: se despliega a mano. |
+>
+> ### Desplegar a staging (lo corre Juan David en Cloud Shell)
+> ```bash
+> export REGION=us-east4
+> export GOOGLE_CLOUD_QUOTA_PROJECT=goldenweb-staging
+> git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN && cd Facial-Recognition-GOLDEN
+> git checkout <rama o SHA>          # p. ej. f2/integracion
+> nohup bash deploy/gcp/manual_deploy.sh staging <ID-del-proyecto-staging> > ~/deploy.log 2>&1 &
+> tail -f ~/deploy.log               # el build de dlib puede tardar 20-60 min; si se corta, repetir el mismo comando
+> ```
+> Si el clon ya existe: `git fetch && git checkout <SHA>` y repetir el `nohup`. Producción usa el mismo script con `production`, solo con autorización explícita (ver `CIERRE_FASE_2.md` §5).
+>
+> ### Apagar y encender staging (`deploy/gcp/staging_power.sh`)
+> ```bash
+> bash deploy/gcp/staging_power.sh status   # solo lee
+> bash deploy/gcp/staging_power.sh on       # SOLO mientras se prueba
+> bash deploy/gcp/staging_power.sh off      # al terminar (por defecto staging queda apagado)
+> ```
+> Pausa la tarea horaria de staging y su alerta para que la base de Neon descanse. Se niega a tocar producción.
+>
+> Reglas que no cambian: nada a `main`, ni merge, ni despliegue a producción, ni migración en producción sin autorización explícita de Juan David para esa acción.
+
+
 > **ESTADO ACTUAL (5-nov-2026): las Fases 0 y 1 (0A, 0B, 0C, 1A, 1B) están CERRADAS por Juan David** — ver [`CIERRE_FASES_0_1.md`](CIERRE_FASES_0_1.md). Producción corre en Cloud Run + Neon (`app.golden-eventos.com`), desplegada con el workflow manual `cloudrun.yml` (confirm=DESPLEGAR). Lo siguiente es la **Fase 2** (diseño y calendario; plan en `29_PLAN_MAESTRO…`). **Lo que sigue abajo es el estado de la migración al 29-sep-2026 y se conserva como historia: la VM y la rama `migra/fase1-2` ya no son el camino de producción.** Lo vigente: `CLAUDE.md`, `15_MIGRACION.md` (progreso), `13_RUNBOOK_PRODUCCION.md`, `19_GUIA_PRODUCCION.md`.
 
 Documento para que una sesión nueva retome sin perder contexto. Complementa (no reemplaza) a [`docs/15_MIGRACION.md`](15_MIGRACION.md)

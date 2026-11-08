@@ -1,5 +1,26 @@
 # Fase 3: auditoría de borrar / archivar / permisos
 
+## Estado de la Fase 3 (actualizado el 7-nov-2026)
+
+| Estado | Pieza | Detalle |
+|---|---|---|
+| Hecho | Oleada 1: clientes | Archivar, restaurar, editar y borrado definitivo; registro de acciones (migración `0088`). |
+| Hecho | Oleada 2: usuarios del personal y eventos | Archivar y restaurar cuentas (`0089`); archivar eventos finalizados y L7 (`0090`). |
+| Hecho | Oleada 3: personas y formularios | Archivar, restaurar y borrado definitivo restringido (`0091`). |
+| Hecho | Oleada 4-5: catálogos | Áreas, inventario, colores y plantillas de escarapela; tabla de auditoría de escrituras (`0092`). |
+| Hecho | L7 corregido y modo tranquilo | Archiva solo la base del evento, una vez por semana; el Job horario deja descansar la base sin actividad. |
+| Hecho | Decisión: respaldo cada 8 h | Ya aplicada: sin actividad, el respaldo corre a las 3, 4, 5, 11 y 19 h; con actividad, cada hora. La alerta de respaldo viejo pasó a 9 h. |
+| En curso | Documentos y gastos | Rama `f3b/docs-gastos`, migración `0093`. Sin fusionar. |
+| En curso | Huecos de CRUD | Rama `f3b/crud-huecos`, migración `0094`. Sin fusionar. |
+| En curso | Seguridad de alcance | Rama `f3b/seguridad`. Sin fusionar. |
+| Pendiente | Prueba completa en Cloud Shell | ~47 min con base de datos, sobre el SHA final. No se ha corrido tras la Fase 3. |
+| Pendiente | Strix y ZAP contra staging | Nunca contra producción. |
+| Pendiente | Activar `ENFORCE_STAFF_TENANT` | Decide Juan David. |
+| Pendiente | CSP con `script-src` estricto | Hoy permite scripts en línea. |
+| Pendiente | Pantalla para restaurar colores y plantillas archivados | La API ya existe; falta la pantalla. |
+
+Cierre de la fase anterior: [`CIERRE_FASE_2.md`](CIERRE_FASE_2.md).
+
 Decisiones de Juan David (7-nov-2026):
 - **Archivar** = se oculta de listas y selectores y se puede restaurar. Nada se borra.
 - **Clientes:** crea y edita comercial+; archiva y restaura admin+; borrado definitivo solo super_admin (cliente ya archivado y sin eventos), con registro.
