@@ -137,10 +137,13 @@ def session_touch(request: Request):
 @router.post("/logout")
 def logout(request: Request, db: Session = Depends(get_db)):
     staff_id, sid = request.session.get("staff_user_id"), request.session.get("sid")
-    if staff_id and sid:                                # al cerrar sesión la cuenta queda libre (un puesto puede volver a entrar sin esperar)
+    if staff_id:
         staff = db.get(StaffUser, staff_id)
-        if staff is not None and staff.session_token == sid:
-            staff.session_token = sessions.logout_token()      # S2: NULL volvía a dar por buenas las cookies viejas (también las reemplazadas); este valor no coincide con ninguna
+        if staff is not None:
+            if sid and staff.session_token == sid:      # al cerrar sesión la cuenta queda libre (un puesto puede volver a entrar sin esperar)
+                staff.session_token = sessions.logout_token()      # S2: NULL volvía a dar por buenas las cookies viejas (también las reemplazadas); este valor no coincide con ninguna
+            if staff.role in sessions.MULTI_ROLES and int(request.session.get("ep") or 0) == int(staff.session_epoch or 0):
+                sessions.revoke_all(staff)          # B7: admin/super_admin no tienen `sid`; subir la época invalida toda copia de la cookie (y cierra también sus otras sesiones, que es lo esperable de «cerrar sesión»)
             db.commit()
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
