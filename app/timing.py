@@ -16,6 +16,8 @@ from typing import Optional
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 
+from app.safeeq import safe_eq
+
 log = logging.getLogger("golden.timing")
 _stats: ContextVar[Optional[dict]] = ContextVar("golden_timing", default=None)
 
@@ -118,7 +120,7 @@ class TimingMiddleware:
         want = False
         if self.emit:
             secret = token()
-            want = bool(secret) and hmac.compare_digest(Headers(scope=scope).get("x-timing-token", ""), secret)
+            want = bool(secret) and safe_eq(Headers(scope=scope).get("x-timing-token", ""), secret)
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
