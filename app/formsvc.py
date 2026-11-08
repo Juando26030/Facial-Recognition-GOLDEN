@@ -67,32 +67,21 @@ MARK_SOURCES = ("carga_base", "lista", "lista_cupo")      # origen de las marcas
 PREREGISTERED = "preregistered"       # FormSubmission.status de «ya registrado en el formulario» (columna de la carga de la base): bloquea la repetición pero NO ocupa cupo, ni cuenta en listas, reportes ni carga
 ALREADY_MSG = "Ya estás inscrito. No necesitas volver a inscribirte."
 def _hold_minutes() -> int:
-    """D2(c): minutos que un pago pendiente aparta su cupo (`FORM_PENDING_HOLD_MINUTES`, 5 a 180, por defecto 30). Con 15 min un pago lento (PSE, 3DS, OTP) perdía el cupo y,
-    si se aprobaba después, quedaba «reembolso pendiente»; más de 3 h dejaría acaparar cupos sin pagar (X6)."""
+    """D2: minutos que un pago pendiente BLOQUEA su cupo, como un asiento de cine (`FORM_HOLD_MINUTES`, 2 a 180, por defecto 10). Al hacer clic en «pagar», si hay cupo, queda bloqueado
+    para esa persona; al aprobarse el pago se confirma; si el pago no se completa (o se rechaza, falla o se cancela) se libera solo al vencer. Es el MISMO valor para `held_count`, los
+    cupos por variable, los códigos y `form_reserve_slot` (recibe `hold_from`)."""
     try:
-        v = int(os.getenv("FORM_PENDING_HOLD_MINUTES", "30"))
+        v = int(os.getenv("FORM_HOLD_MINUTES", "10"))
     except ValueError:
-        v = 30
-    return max(5, min(180, v))
+        v = 10
+    return max(2, min(180, v))
 
 
-PENDING_HOLD = timedelta(minutes=_hold_minutes())  # una inscripción esperando pago aparta su cupo este tiempo; se renueva UNA vez cuando Wompi confirma que hay una transacción en curso (`extend_hold`)
+PENDING_HOLD = timedelta(minutes=_hold_minutes())  # una inscripción esperando pago bloquea su cupo este tiempo
+HOLD_NOTICE = "Tu cupo está reservado por {m} minutos mientras pagas."
 PENDING_IP_KIND = "form_pending_ip"   # X6: marca en `rate_limit_events` (key «<form_id>:<submission_id>», ip) de cada inscripción que queda esperando pago
 PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
 PENDING_PAY_WINDOW = timedelta(days=3)   # C5: mientras su pago siga «pendiente» dentro de esta ventana (la misma de la conciliación con Wompi) la inscripción NO se borra
-
-
-def extend_hold(pay: FormPayment, sub: FormSubmission) -> bool:
-    """D2(c): Wompi acaba de decir que la transacción de este pago existe y sigue en curso (PSE, transferencia, 3DS): el apartado de cupo vuelve a empezar desde ahora, UNA sola vez
-    por pago (quien llama comprueba que el pago aún no tenía transacción). Solo si el apartado sigue VIGENTE: renovar uno vencido sería quitarle el cupo a quien ya lo tomó (esa carrera la
-    resuelve `admit_on_approval` al aprobarse). El cupo se cuenta con `created_at` del pago y de la inscripción (`form_reserve_slot`, `held_count`, cupos por variable y códigos)."""
-    now = utcnow()
-    if sub.status != PENDING or pay.created_at is None or pay.created_at <= now - PENDING_HOLD:
-        return False
-    pay.created_at = now
-    sub.created_at = now
-    invalidate_held()
-    return True
 
 
 def real_submissions(db: Session, form: WebForm):
@@ -640,7 +629,7 @@ def admit_on_approval(db: Session, form: WebForm, sub: FormSubmission) -> Option
     Decisión del dueño (8-nov-2026): un pago aprobado SIN cupo no debe pasar nunca, y NO hay sobreaforo. Esto es solo la red de seguridad del caso físico de un pago que Wompi aprueba
     DESPUÉS de vencer el apartado (dinero que se movió fuera de nuestro control): mientras el apartado sigue vigente el cupo es de esta inscripción y no se revisa; vencido, se cuentan
     las confirmadas y las que están pagando ahora, y si el cupo total, el de la variable o el código ya están llenos, la inscripción queda en `refund_due` (se reembolsa).
-    El camino normal lo evita antes: el envío revisa el cupo con `form_reserve_slot` y el apartado dura `PENDING_HOLD` (renovable una vez, `extend_hold`).
+    El camino normal lo evita antes: el envío revisa el cupo con `form_reserve_slot` y el apartado dura `PENDING_HOLD` (10 min por defecto, `FORM_HOLD_MINUTES`).
     Orden de candados: pago -> formulario (el mismo de `apply_result`). Un OperationalError (lock_timeout) sube: el webhook responde 500 y Wompi reintenta."""
     if sub.is_test:
         return None

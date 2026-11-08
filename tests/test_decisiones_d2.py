@@ -1,12 +1,12 @@
 """D2 (decisión del dueño, 8-nov-2026): un pago aprobado sin cupo no debe pasar nunca. (a) sin cupo no se accede ni se empieza a pagar; (b) el envío que crea el pago revisa el cupo
-de forma atómica (`form_reserve_slot`); (c) el apartado de un pago pendiente dura lo que el pago puede tardar (constante configurable, renovada una vez al haber transacción en curso);
+de forma atómica (`form_reserve_slot`); (c) el cupo se BLOQUEA al hacer clic en pagar y se libera solo a los 10 minutos (FORM_HOLD_MINUTES; como un asiento de cine);
 (d) `refund_due` queda solo como red de seguridad, sin sobreaforo. Las llaves de Wompi son inventadas."""
 from datetime import timedelta
 
 import pytest
 
 from app import formsvc
-from app.models import FormPayment, FormSubmission, SystemEvent
+from app.models import FormPayment, FormSubmission, SystemEvent, WebForm
 from app.timeutil import utcnow
 from tests.test_form_payments import PROD, SANDBOX, TIPO, _event_for, _no_dns, _values, _with_payment  # noqa: F401
 from tests.test_forms import _event, _state, _status, _submit, _url
@@ -78,59 +78,72 @@ def test_d2b_a_quota_by_variable_that_is_full_does_not_create_the_payment(client
     assert _submit(client, ev, form, _other(4) | {"tipo": "General"}, sid="c").status_code == 200          # otra variable sigue abierta
 
 
-# ------------------------------- (c) el apartado dura lo que el pago puede tardar -------------------------------
-def test_d2c_the_hold_is_configurable_and_longer_than_15_minutes_by_default(monkeypatch):
-    monkeypatch.delenv("FORM_PENDING_HOLD_MINUTES", raising=False)
-    assert formsvc._hold_minutes() == 30
-    monkeypatch.setenv("FORM_PENDING_HOLD_MINUTES", "45")
-    assert formsvc._hold_minutes() == 45
-    monkeypatch.setenv("FORM_PENDING_HOLD_MINUTES", "1")
-    assert formsvc._hold_minutes() == 5                  # piso: menos que eso no deja pagar
-    monkeypatch.setenv("FORM_PENDING_HOLD_MINUTES", "99999")
-    assert formsvc._hold_minutes() == 180                # techo: más permitiría acaparar cupos sin pagar
-    monkeypatch.setenv("FORM_PENDING_HOLD_MINUTES", "abc")
-    assert formsvc._hold_minutes() == 30
+# ------------------------------- (c) cupo como asiento de cine: se bloquea al pagar, se libera a los 10 minutos -------------------------------
+def test_d2c_the_hold_is_10_minutes_by_default_and_configurable(monkeypatch):
+    monkeypatch.delenv("FORM_HOLD_MINUTES", raising=False)
+    assert formsvc._hold_minutes() == 10 and formsvc.PENDING_HOLD == timedelta(minutes=10)
+    monkeypatch.setenv("FORM_HOLD_MINUTES", "20")
+    assert formsvc._hold_minutes() == 20
+    monkeypatch.setenv("FORM_HOLD_MINUTES", "0")
+    assert formsvc._hold_minutes() == 2              # piso
+    monkeypatch.setenv("FORM_HOLD_MINUTES", "99999")
+    assert formsvc._hold_minutes() == 180            # techo
+    monkeypatch.setenv("FORM_HOLD_MINUTES", "abc")
+    assert formsvc._hold_minutes() == 10
 
 
-def test_d2c_a_slow_payment_between_15_minutes_and_the_hold_keeps_its_seat(client, factory, keys, db):
+def test_d2c_clicking_pay_blocks_the_seat_and_tells_the_person(client, factory, keys, db):
+    ev, form = _limited(client, factory, capacity=1)
+    r = _submit(client, ev, form, _values(), sid="a").json()
+    assert r["payment_required"] is True and r["hold_minutes"] == 10
+    assert formsvc.held_count(db, db.get(WebForm, form["id"])) == 1                          # bloqueado aunque no haya terminado de pagar
+    assert _submit(client, ev, form, _other(8), sid="b").status_code == 409
+    assert "Tu cupo está reservado por ${data.hold_minutes} minutos mientras pagas." in open("templates/form_public.html", encoding="utf-8").read()
+
+
+def test_d2c_approval_confirms_the_blocked_seat(client, factory, keys, db):
     ev, form = _limited(client, factory, capacity=1)
     ref = _submit(client, ev, form, _values(), sid="a").json()["payment"]["reference"]
-    _age(db, ref, 20)                                                                       # antes (15 min) ya habría perdido el cupo
-    assert _submit(client, ev, form, _other(5), sid="b").status_code == 409
+    _age(db, ref, 8)                                                                          # aún dentro de los 10 minutos
     client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, "APPROVED"))
     db.expire_all()
     assert db.query(FormSubmission).filter_by(sid="a").one().status == "confirmed"
+    assert formsvc.held_count(db, db.get(WebForm, form["id"])) == 1
 
 
-def test_d2c_a_transaction_in_flight_renews_the_hold_once(client, factory, keys, db):
+def test_d2c_the_seat_is_released_after_10_minutes_without_paying(client, factory, keys, db):
     ev, form = _limited(client, factory, capacity=1)
     ref = _submit(client, ev, form, _values(), sid="a").json()["payment"]["reference"]
-    pay_id = _age(db, ref, 25)
-    client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, "PENDING", txn="T9", method="PSE"))     # Wompi: hay una transacción PSE en curso
-    db.expire_all()
-    pay = db.get(FormPayment, pay_id)
-    assert pay.transaction_id == "T9" and pay.created_at > utcnow() - timedelta(minutes=2)                      # el apartado volvió a empezar
-    assert db.get(FormSubmission, pay.submission_id).created_at > utcnow() - timedelta(minutes=2)
-    old = pay.created_at
-    client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, "PENDING", txn="T9", method="PSE"))     # un segundo aviso igual NO lo renueva otra vez
-    db.expire_all()
-    assert db.get(FormPayment, pay_id).created_at == old
+    _age(db, ref, 9)
+    assert _submit(client, ev, form, _other(9), sid="b").status_code == 409                   # a los 9 min sigue bloqueado
+    _age(db, ref, 11)
+    assert formsvc.held_count(db, db.get(WebForm, form["id"])) == 0
+    assert _submit(client, ev, form, _other(9), sid="c").status_code == 200                   # a los 11 min otra persona lo toma
 
 
-def test_d2c_an_expired_hold_is_not_renewed_so_it_cannot_take_a_seat_someone_else_got(client, factory, keys, db):
+@pytest.mark.parametrize("status", ["DECLINED", "ERROR", "VOIDED"])
+def test_d2c_a_failed_or_cancelled_payment_releases_the_seat_at_once(client, factory, keys, db, status):
     ev, form = _limited(client, factory, capacity=1)
     ref = _submit(client, ev, form, _values(), sid="a").json()["payment"]["reference"]
-    pay_id = _age(db, ref, 90)
-    pay = db.get(FormPayment, pay_id)
-    sub = db.get(FormSubmission, pay.submission_id)
-    assert formsvc.extend_hold(pay, sub) is False
+    client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, status))
+    assert formsvc.held_count(db, db.get(WebForm, form["id"])) == 0
+    assert _submit(client, ev, form, _other(10), sid="b").status_code == 200
+
+
+def test_d2c_two_people_competing_for_the_last_seat_only_one_gets_it(client, factory, keys, db):
+    ev, form = _limited(client, factory, capacity=2)
+    assert _submit(client, ev, form, _values(), sid="a").status_code == 200                   # queda 1
+    r1 = _submit(client, ev, form, _other(11), sid="b")
+    r2 = _submit(client, ev, form, _other(12), sid="c")
+    assert sorted([r1.status_code, r2.status_code]) == [200, 409]
+    assert db.query(FormPayment).count() == 2                                                  # solo 2 pagos creados para 2 cupos
 
 
 # ------------------------------- (d) red de seguridad: sin sobreaforo -------------------------------
 def test_d2d_an_approval_after_the_hold_expired_and_the_seat_was_taken_goes_to_refund_due(client, factory, keys, db):
     ev, form = _limited(client, factory, capacity=1)
     ref_a = _submit(client, ev, form, _values(), sid="a").json()["payment"]["reference"]
-    _age(db, ref_a, 60)                                                                      # el apartado de A venció (y nadie lo renovó)
+    _age(db, ref_a, 15)                                                                      # el apartado de A venció (y nadie lo renovó)
     ref_b = _submit(client, ev, form, _other(6), sid="b").json()["payment"]["reference"]     # B toma el cupo liberado
     client.post("/webhooks/wompi", json=_event_for("prod", ref_b, 15000000, "APPROVED", txn="TB"))
     client.post("/webhooks/wompi", json=_event_for("prod", ref_a, 15000000, "APPROVED", txn="TA"))    # el dinero de A se movió fuera de nuestro control
@@ -145,7 +158,7 @@ def test_d2d_an_approval_after_the_hold_expired_and_the_seat_was_taken_goes_to_r
 def test_d2d_an_approval_after_the_hold_expired_with_the_seat_still_free_is_admitted(client, factory, keys, db):
     ev, form = _limited(client, factory, capacity=1)
     ref = _submit(client, ev, form, _values(), sid="a").json()["payment"]["reference"]
-    _age(db, ref, 60)
+    _age(db, ref, 15)
     client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, "APPROVED"))
     db.expire_all()
     assert db.query(FormSubmission).filter_by(sid="a").one().status == "confirmed"
@@ -156,7 +169,7 @@ def test_d2d_an_expired_payment_does_not_overflow_a_variable_quota(client, facto
     form = _with_payment(client, ev, extra=[TIPO], quotas=VIP_QUOTA)
     client.post("/logout")
     ref_a = _submit(client, ev, form, _values(tipo="VIP"), sid="a").json()["payment"]["reference"]
-    _age(db, ref_a, 60)
+    _age(db, ref_a, 15)
     ref_b = _submit(client, ev, form, _other(7) | {"tipo": "VIP"}, sid="b").json()["payment"]["reference"]
     client.post("/webhooks/wompi", json=_event_for("prod", ref_b, 15000000, "APPROVED", txn="TB"))
     client.post("/webhooks/wompi", json=_event_for("prod", ref_a, 15000000, "APPROVED", txn="TA"))

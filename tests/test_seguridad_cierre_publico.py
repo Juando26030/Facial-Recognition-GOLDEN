@@ -138,7 +138,7 @@ def test_x5_reject_purges_only_with_a_verified_birth_date():
 
 # ------------------------------- X6: tope de pagos pendientes por IP
 def test_x6_hold_is_configurable_and_cap_is_configurable(monkeypatch):
-    assert formsvc.PENDING_HOLD == timedelta(minutes=formsvc._hold_minutes())      # D2(c): 30 min por defecto (antes 15), FORM_PENDING_HOLD_MINUTES
+    assert formsvc.PENDING_HOLD == timedelta(minutes=formsvc._hold_minutes())      # D2: 10 min por defecto, FORM_HOLD_MINUTES
     monkeypatch.delenv("FORM_PENDING_MAX_PER_IP", raising=False)
     monkeypatch.delenv("PUBLIC_LIMIT_FACTOR", raising=False)
     assert formsvc.pending_max_per_ip() == 3

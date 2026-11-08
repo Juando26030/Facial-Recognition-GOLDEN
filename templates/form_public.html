@@ -284,6 +284,10 @@ function loadWidget(url) {
 async function pay(data, reset, fr) {
   const p = data.payment;
   fr.button.textContent = "Abriendo el pago…";
+  if (p && data.hold_minutes) {   // D2: el cupo queda bloqueado al hacer clic en pagar y se libera solo si el pago no se completa
+    const hold = document.createElement("div"); hold.style.cssText = "text-align:center; font-size:.88rem; margin-top:10px;"; hold.setAttribute("role", "status");
+    hold.textContent = `Tu cupo está reservado por ${data.hold_minutes} minutos mientras pagas.`; fr.form.appendChild(hold);
+  }
   try { await loadWidget(p.widget_url); } catch (e) { return reset("No pudimos cargar el medio de pago. Revisa tu conexión e intenta de nuevo.", true); }
   // PSE y las transferencias sacan a la persona de esta página (van al banco): Wompi la devuelve a `redirectUrl` con `?id=<transacción>`,
   // y ahí la página verifica el pago sola (ver resume()). Con tarjeta o Nequi el widget responde en el callback y no hace falta.

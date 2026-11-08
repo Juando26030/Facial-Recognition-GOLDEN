@@ -52,16 +52,11 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
     if not pay or not new or pay.status in ("approved", "refunded"):
         db.rollback()
         return pay
-    first_txn = bool(transaction_id) and not pay.transaction_id          # D2(c): primera vez que Wompi nos da la transacción de este pago
     pay.status = new
     formsvc.invalidate_held()          # un pago rechazado/expirado libera su cupo: la vía rápida del «lleno» no debe seguir rechazando
     pay.transaction_id = transaction_id or pay.transaction_id
     pay.payment_method = method or pay.payment_method
     pay.updated_at = utcnow()
-    if new == "pending" and first_txn and pay.submission_id:
-        sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first()
-        if sub is not None:
-            formsvc.extend_hold(pay, sub)          # transacción en curso (PSE, 3DS…): el cupo apartado vuelve a durar PENDING_HOLD desde ahora
     if new == "approved":
         pay.confirmed_at = utcnow()
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first() if pay.submission_id else None

@@ -779,7 +779,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             db.commit()
             formsvc.bump_held(form)
             uploads.discard(*staged)
-            return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
+            return {"ok": True, "payment_required": True, "hold_minutes": int(formsvc.PENDING_HOLD.total_seconds() // 60), "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
         enqueued = formsvc.confirm_submission(db, form, sub, record_event=False)
         submit_event = (form.id, sub.sid or os.urandom(4).hex(), sub.source, sub.is_test)      # se leen ANTES del commit (después los objetos quedan expirados)
         db.commit()
