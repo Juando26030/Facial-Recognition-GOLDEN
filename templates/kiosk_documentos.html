@@ -92,7 +92,7 @@
           <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ponle nombre</span>
             {% call ayuda('ay_doc2', 'Ponle nombre') %}El nombre o referencia es lo que verás en la lista; la descripción es opcional y ayuda a encontrarlo después.{% endcall %}</li>
           <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Compártelo</span>
-            {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Un administrador puede archivar un documento (se oculta, pero se conserva y se restaura); solo un super administrador lo elimina definitivamente.{% endcall %}</li>
+            {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Un coordinador o superior puede archivar un documento (se oculta, pero se conserva y se restaura); solo un super administrador lo elimina definitivamente.{% endcall %}</li>
         </ol>
       </div>
     </details>
@@ -105,7 +105,7 @@
       </div>
       <div class="gw-row gw-row--between">
         <h2 class="gw-card__title" id="docListTitle">Documentos adjuntos <span id="docCount" class="gw-muted"></span></h2>
-        {% if staff_role in ("admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
+        {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
       </div>
       <div id="docList" class="gw-cards" aria-live="polite" aria-busy="true">
         <span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando documentos…</span></span>

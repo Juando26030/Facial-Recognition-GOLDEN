@@ -30,16 +30,15 @@ from app.storage import get_storage, key_of
 
 router = APIRouter()
 
-ARCHIVE_ROLE = require_role("admin")            # Fase 3: archivar y restaurar documentos / gastos = admin+
+ARCHIVE_ROLE = require_role("coordinador")      # Fase 3 (cambio 7-nov): archivar y restaurar documentos / gastos = coordinador+ (incluye comercial)
+ARCHIVE_VIEW_ROLES = ("coordinador", "comercial", "admin", "super_admin")
 HARD_DELETE_ROLE = require_role("super_admin")  # borrado definitivo: solo super_admin, de lo ya archivado
 
 
 def _only_active(query, model, include_archived: bool, staff: StaffUser):
-    """Por defecto SOLO los activos; `include_archived=true` es de admin+ (pantalla «Ver archivados»)."""
+    """Por defecto SOLO los activos; `include_archived=true` es de coordinador+ (pantalla «Ver archivados»)."""
     if include_archived:
-        if staff.role not in ("admin", "super_admin"):
-            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los archivados")
-        return query
+        return query          # el acceso (coordinador+) ya lo exige cada endpoint; digitador y cliente no llegan aquí
     return query.filter(model.archived_at.is_(None))
 
 DOC_EXT = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods",
@@ -125,9 +124,9 @@ def _find_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> Even
 
 
 def _get_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> EventDocument:
-    """Documento con su archivo presente. Uno archivado solo lo descarga admin+ (para los demás es como si no existiera)."""
+    """Documento con su archivo presente. Uno archivado lo descarga coordinador+ (cualquiera que llegue aquí); para digitador y cliente es como si no existiera."""
     doc = _find_doc(db, event_id, doc_id, staff)
-    if doc.archived_at is not None and staff.role not in ("admin", "super_admin"):
+    if doc.archived_at is not None and staff.role not in ARCHIVE_VIEW_ROLES:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if not get_storage().exists(doc.stored_path):
         raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -338,7 +337,7 @@ def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUs
 @router.get("/events/{event_id}/expenses/{expense_id}/evidence")
 def expense_evidence(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     exp = _get_expense(db, event_id, expense_id, staff)
-    if exp.archived_at is not None and staff.role not in ("admin", "super_admin"):
+    if exp.archived_at is not None and staff.role not in ARCHIVE_VIEW_ROLES:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
     if not exp.evidence_path or not get_storage().exists(exp.evidence_path):
         raise HTTPException(status_code=404, detail="Este gasto no tiene evidencia")

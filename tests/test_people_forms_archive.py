@@ -33,7 +33,7 @@ def test_sources_guard_roles():
     assert 'require_role("admin")' in inspect.getsource(api.archive_person)
     assert 'require_role("admin")' in inspect.getsource(api.restore_person)
     assert 'require_role("super_admin")' in inspect.getsource(api.delete_user_from_event)
-    assert "ADMIN" in inspect.getsource(forms.archive_form) and "ADMIN" in inspect.getsource(forms.restore_form)
+    assert "ARCHIVE" in inspect.getsource(forms.archive_form) and "ARCHIVE" in inspect.getsource(forms.restore_form)          # cambio 7-nov: coordinador+
     assert 'require_role("super_admin")' in inspect.getsource(forms.delete_form)
     assert "ADMIN" in inspect.getsource(forms.delete_submission)
 
@@ -178,12 +178,21 @@ def test_form_archive_permissions_and_hard_delete_rules(client, factory, db):
     ev, form = _form_setup(client, factory, with_submission=True)
     empty = client.post(f"/api/events/{ev.id}/forms", json={"name": "Vacío"}).json()
     base, ebase = f"/api/events/{ev.id}/forms/{form['id']}", f"/api/events/{ev.id}/forms/{empty['id']}"
-    factory.staff("coordinador", "coord9")
-    login(client, "coord9")
-    assert client.post(f"{base}/archive").status_code == 403
-    assert client.post(f"{base}/restore").status_code == 403
-    assert client.get(f"/api/events/{ev.id}/forms", params={"include_archived": "true"}).status_code == 403
-    assert client.delete(ebase).status_code == 403
+    for role in ("coordinador", "comercial"):          # cambio 7-nov: archivan, restauran y ven archivados; borrar de verdad sigue siendo solo de super_admin
+        factory.staff(role, f"{role}9")
+        login(client, f"{role}9")
+        assert client.post(f"{base}/archive").status_code == 200
+        assert client.get(f"/api/events/{ev.id}/forms", params={"include_archived": "true"}).status_code == 200
+        assert client.post(f"{base}/restore").status_code == 200
+        assert client.delete(ebase).status_code == 403
+    for role in ("digitador", "cliente"):
+        s = factory.staff(role, f"{role}9")
+        factory.authorize(ev, s)
+        login(client, f"{role}9")
+        assert client.post(f"{base}/archive").status_code == 403
+        assert client.post(f"{base}/restore").status_code == 403
+        assert client.get(f"/api/events/{ev.id}/forms", params={"include_archived": "true"}).status_code == 403
+        assert client.delete(ebase).status_code == 403
     login(client, "adm1")
     assert client.delete(ebase).status_code == 403                                      # admin archiva, no borra
     client.post(f"{base}/archive")

@@ -8,7 +8,7 @@
   const icon = (n) => '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>';
   const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB');
   const fileKind = (n) => { const m = /\.([A-Za-z0-9]{1,5})$/.exec(n || ''); return m ? m[1].toUpperCase() : 'Archivo'; };
-  const ROLE = window.STAFF_ROLE || '', isAdmin = ROLE === 'admin' || ROLE === 'super_admin', isSuper = ROLE === 'super_admin';
+  const ROLE = window.STAFF_ROLE || '', canArchive = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), isSuper = ROLE === 'super_admin';
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
 
   function setList(html, loading) {
@@ -20,7 +20,7 @@
   async function loadDocs() {
     let docs = [];
     try {
-      const withArchived = isAdmin && $('showArchived') && $('showArchived').checked;
+      const withArchived = canArchive && $('showArchived') && $('showArchived').checked;
       const res = await fetch('/api/events/' + EVENT_ID + '/documents' + (withArchived ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http ' + res.status);
       docs = await res.json();
@@ -46,8 +46,8 @@
         ${d.description ? `<p class="gw-text-sm">${esc(d.description)}</p>` : ''}
         <div class="gw-card-row__actions">
           <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/${EVENT_ID}/documents/${d.id}/download">${icon('download')} Descargar</a>
-          ${isAdmin && !d.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${d.id}" data-name="${esc(d.name)}">Archivar</button>` : ''}
-          ${isAdmin && d.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${d.id}" data-name="${esc(d.name)}">${icon('undo')} Restaurar</button>` : ''}
+          ${canArchive && !d.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${d.id}" data-name="${esc(d.name)}">Archivar</button>` : ''}
+          ${canArchive && d.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${d.id}" data-name="${esc(d.name)}">${icon('undo')} Restaurar</button>` : ''}
           ${isSuper && d.archived ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${d.id}" data-name="${esc(d.name)}">${icon('trash')} Eliminar definitivamente</button>` : ''}
         </div>
       </article>`).join(''));

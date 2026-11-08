@@ -35,7 +35,7 @@ def test_sources_guard_roles():
     for fn in (ai.delete_area, ai.delete_item):
         assert "HARD_DELETE_ROLE" in inspect.getsource(fn)
     for fn in (events.archive_saved_color, events.restore_saved_color, badges.archive_saved_badge_template, badges.restore_saved_badge_template):
-        assert 'require_role("admin")' in inspect.getsource(fn)
+        assert 'require_role("coordinador")' in inspect.getsource(fn)          # cambio 7-nov: coordinador+ (incluye comercial)
     for fn in (events.delete_saved_color, badges.delete_saved_badge_template):
         assert 'require_role("super_admin")' in inspect.getsource(fn)
 
@@ -70,8 +70,8 @@ def test_area_name_clash_with_archived_one(client, factory):
     assert r.status_code == 400 and "archivada" in r.json()["detail"]
 
 
-@pytest.mark.parametrize("role,expected", [("coordinador", 403), ("admin", 200), ("super_admin", 200)])
-def test_archive_is_admin_plus(client, factory, role, expected):
+@pytest.mark.parametrize("role,expected", [("digitador", 403), ("cliente", 403), ("coordinador", 200), ("comercial", 200), ("admin", 200), ("super_admin", 200)])
+def test_archive_is_coordinador_plus(client, factory, role, expected):
     ev = factory.event()
     factory.staff("super_admin", "boss")
     factory.staff(role, "actor")
@@ -80,10 +80,23 @@ def test_archive_is_admin_plus(client, factory, role, expected):
     login(client, "actor")
     assert client.post(f"/api/events/{ev.id}/areas/{aid}/archive").status_code == expected
     assert client.post(f"/api/events/{ev.id}/inventory/{iid}/archive").status_code == expected
+    if expected == 200:          # y quien archiva también restaura
+        assert client.post(f"/api/events/{ev.id}/areas/{aid}/restore").status_code == 200
+        assert client.post(f"/api/events/{ev.id}/inventory/{iid}/restore").status_code == 200
 
 
-def test_coordinador_cannot_list_archived(client, factory):
+def test_coordinador_lists_archived(client, factory):
     ev = _setup(client, factory, "coordinador")
+    assert client.get(f"/api/events/{ev.id}/areas", params={"include_archived": "true"}).status_code == 200
+    assert client.get(f"/api/events/{ev.id}/inventory", params={"include_archived": "true"}).status_code == 200
+
+
+@pytest.mark.parametrize("role", ["digitador", "cliente"])
+def test_digitador_and_cliente_cannot_list_archived(client, factory, role):
+    ev = factory.event()
+    s = factory.staff(role, "actor")
+    factory.authorize(ev, s)
+    login(client, "actor")
     assert client.get(f"/api/events/{ev.id}/areas", params={"include_archived": "true"}).status_code == 403
     assert client.get(f"/api/events/{ev.id}/inventory", params={"include_archived": "true"}).status_code == 403
 
@@ -190,3 +203,31 @@ def test_actions_are_logged(client, factory, db):
     rows = db.query(AuditAction).order_by(AuditAction.id).all()
     assert [(r.action, r.entity) for r in rows] == [("archive", "event_area"), ("restore", "event_area"), ("archive", "inventory_item")]
     assert all(r.actor_role == "admin" for r in rows)
+
+
+@pytest.mark.parametrize("role,expected", [("digitador", 403), ("cliente", 403), ("coordinador", 200), ("comercial", 200)])
+def test_colors_archive_restore_and_list_archived_by_role(client, factory, role, expected):
+    factory.staff("admin", "adm")
+    factory.staff(role, "actor")
+    login(client, "adm")
+    cid = client.post("/api/colors", json={"name": "Azul", "hex": "#0000FF"}).json()["id"]
+    login(client, "actor")
+    assert client.post(f"/api/colors/{cid}/archive").status_code == expected
+    assert client.get("/api/colors", params={"include_archived": "true"}).status_code == (expected if role in ("digitador", "cliente") else 200)
+    if expected == 200:
+        assert client.post(f"/api/colors/{cid}/restore").status_code == 200
+        assert client.delete(f"/api/colors/{cid}").status_code == 403          # el borrado definitivo sigue siendo solo de super_admin
+
+
+@pytest.mark.parametrize("role,expected", [("digitador", 403), ("cliente", 403), ("coordinador", 200), ("comercial", 200)])
+def test_saved_badge_template_archive_restore_by_role(client, factory, db, role, expected):
+    ev = factory.event()
+    factory.staff(role, "actor")
+    saved = SavedBadgeTemplate(tenant_id=ev.tenant_id, name="Base", width_mm=62, height_mm=99.8)
+    db.add(saved)
+    db.commit()
+    login(client, "actor")
+    assert client.post(f"/api/saved-badge-templates/{saved.id}/archive").status_code == expected
+    if expected == 200:
+        assert client.post(f"/api/saved-badge-templates/{saved.id}/restore").status_code == 200
+        assert client.delete(f"/api/saved-badge-templates/{saved.id}").status_code == 403

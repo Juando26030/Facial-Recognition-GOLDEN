@@ -31,15 +31,15 @@ router = APIRouter()
 
 CONFIG_ROLE = require_role_excluding("coordinador", ("comercial",))  # define zonas/ítems y baja reportes
 OPERATE_ROLE = require_role_excluding("digitador", ("comercial",))  # registra movimientos / entregas
-ARCHIVE_ROLE = require_role("admin")          # Fase 3: archivar y restaurar zonas / ítems = admin+
+ARCHIVE_ROLE = require_role("coordinador")    # Fase 3 (cambio 7-nov): archivar y restaurar zonas / ítems = coordinador+ (incluye comercial)
 HARD_DELETE_ROLE = require_role("super_admin")  # borrado definitivo: solo super_admin, de algo ya archivado y sin historial
 
 
 def _only_active(query, model, include_archived: bool, staff: StaffUser):
-    """Por defecto SOLO los activos; `include_archived=true` es de admin+ (pantalla «Ver archivados»)."""
+    """Por defecto SOLO los activos; `include_archived=true` es de coordinador+ (pantalla «Ver archivados»)."""
     if include_archived:
-        if staff.role not in ("admin", "super_admin"):
-            raise HTTPException(status_code=403, detail="Solo un administrador puede ver los archivados")
+        if staff.role not in ("coordinador", "comercial", "admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver los archivados")
         return query
     return query.filter(model.archived_at.is_(None))
 
@@ -134,7 +134,7 @@ def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(g
 
 @router.post("/events/{event_id}/areas/{area_id}/archive")
 def archive_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
-    """Archivar = ocultar la zona (ya no se elige ni recibe movimientos). Los movimientos registrados y el reporte se conservan; un administrador la restaura."""
+    """Archivar = ocultar la zona (ya no se elige ni recibe movimientos). Los movimientos registrados y el reporte se conservan; un coordinador o superior la restaura."""
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
     if area.archived_at is not None:
         raise HTTPException(status_code=400, detail="La zona ya está archivada")
@@ -367,7 +367,7 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
 
 @router.post("/events/{event_id}/inventory/{item_id}/archive")
 def archive_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE_ROLE)):
-    """Archivar = ocultar el ítem (ya no se entrega). Las entregas hechas y el reporte se conservan; un administrador lo restaura."""
+    """Archivar = ocultar el ítem (ya no se entrega). Las entregas hechas y el reporte se conservan; un coordinador o superior lo restaura."""
     item = _get_item(db, get_event_for_staff(event_id, db, staff), item_id)
     if item.archived_at is not None:
         raise HTTPException(status_code=400, detail="El ítem ya está archivado")

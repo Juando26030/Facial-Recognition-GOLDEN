@@ -102,7 +102,7 @@
       </div>
       <div class="gw-row gw-row--between">
         <h2 class="gw-card__title" id="expListTitle">Gastos registrados</h2>
-        {% if staff_role in ("admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
+        {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
         <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/expenses/report">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a>
       </div>
       <div id="expList" class="gw-cards" aria-live="polite" aria-busy="true">

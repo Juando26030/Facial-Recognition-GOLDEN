@@ -32,6 +32,7 @@ from app.timeutil import to_local
 router = APIRouter()
 STAFF = require_role("coordinador")
 ADMIN = require_role("admin")
+ARCHIVE = require_role("coordinador")          # Fase 3 (cambio 7-nov): archivar y restaurar formularios / plantillas = coordinador+ (incluye comercial)
 SUPER = require_role("super_admin")          # Fase 3: borrado definitivo
 
 
@@ -114,10 +115,8 @@ def _detail(db: Session, form: WebForm, request: Request) -> dict:
 # ------------------------------------------------------------------ CRUD
 @router.get("/events/{event_id}/forms")
 def list_forms(event_id: int, request: Request, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
-    """Fase 3: por defecto SOLO los formularios no archivados; `include_archived=true` (admin+) devuelve los archivados («Ver archivados»)."""
+    """Fase 3: por defecto SOLO los formularios no archivados; `include_archived=true` (coordinador+) devuelve los archivados («Ver archivados»)."""
     event = get_event_for_staff(event_id, db, staff)
-    if include_archived and staff.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=403, detail="Solo un administrador puede ver los formularios archivados")
     q = db.query(WebForm).filter(WebForm.event_id == event.id)
     q = q.filter(WebForm.archived_at.isnot(None)) if include_archived else q.filter(WebForm.archived_at.is_(None))
     forms = q.order_by(WebForm.id.desc()).all()
@@ -384,7 +383,7 @@ def clear_registered(event_id: int, form_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/events/{event_id}/forms/{form_id}/archive")
-def archive_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+def archive_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE)):
     """Fase 3: archivar = ocultar de las listas y cerrar al público (no recibe envíos). Conserva inscripciones, archivos y pagos: el contrato exige poder entregar esa base. Si estaba activo
     pasa a «cerrado» (y sin calendario) para que al restaurarlo NO se reabra solo; un administrador lo vuelve a abrir cuando quiera."""
     event = get_event_for_staff(event_id, db, staff)
@@ -403,7 +402,7 @@ def archive_form(event_id: int, form_id: int, db: Session = Depends(get_db), sta
 
 
 @router.post("/events/{event_id}/forms/{form_id}/restore")
-def restore_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+def restore_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     if form.archived_at is None:
@@ -769,13 +768,10 @@ def form_id_docs(staff: StaffUser = Depends(STAFF)):
 
 @router.get("/events/{event_id}/form-templates")
 def list_templates(event_id: int, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
-    """Librería de diseños del cliente. Por defecto sin los archivados; `include_archived=true` (con ellos) es de admin+."""
+    """Librería de diseños del cliente. Por defecto sin los archivados; `include_archived=true` (con ellos) es de coordinador+."""
     event = get_event_for_staff(event_id, db, staff)
     query = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id)
-    if include_archived:
-        if staff.role not in ("admin", "super_admin"):
-            raise HTTPException(status_code=403, detail="Solo un administrador puede ver las plantillas archivadas")
-    else:
+    if not include_archived:
         query = query.filter(SavedFormTemplate.archived_at.is_(None))
     return [{"id": t.id, "name": t.name, "fields": len(json.loads(t.design_json)["fields"]), "archived": t.archived_at is not None} for t in query.order_by(SavedFormTemplate.name).all()]
 
@@ -789,7 +785,7 @@ def save_template(event_id: int, form_id: int, data: dict, db: Session = Depends
         raise HTTPException(status_code=400, detail="Ponle un nombre a la plantilla")
     tpl = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id, name=name).first()
     if tpl and tpl.archived_at is not None:
-        raise HTTPException(status_code=400, detail="Ya hay una plantilla archivada con ese nombre: restáurala (un administrador) o usa otro nombre")
+        raise HTTPException(status_code=400, detail="Ya hay una plantilla archivada con ese nombre: restáurala o usa otro nombre")
     if tpl:
         tpl.design_json = form.design_json          # mismo nombre: se actualiza
     else:
@@ -807,8 +803,8 @@ def _template_or_404(db: Session, event, template_id: int) -> SavedFormTemplate:
 
 
 @router.post("/events/{event_id}/form-templates/{template_id}/archive")
-def archive_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
-    """Fase 3: archivar = sacarla de la librería (deja de ofrecerse); los formularios ya creados con ella no cambian. Un administrador la restaura."""
+def archive_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE)):
+    """Fase 3: archivar = sacarla de la librería (deja de ofrecerse); los formularios ya creados con ella no cambian. Un coordinador o superior la restaura."""
     event = get_event_for_staff(event_id, db, staff)
     tpl = _template_or_404(db, event, template_id)
     if tpl.archived_at is not None:
@@ -820,7 +816,7 @@ def archive_template(event_id: int, template_id: int, db: Session = Depends(get_
 
 
 @router.post("/events/{event_id}/form-templates/{template_id}/restore")
-def restore_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+def restore_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ARCHIVE)):
     event = get_event_for_staff(event_id, db, staff)
     tpl = _template_or_404(db, event, template_id)
     if tpl.archived_at is None:
