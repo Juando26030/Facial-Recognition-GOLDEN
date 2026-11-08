@@ -328,7 +328,11 @@ def get_badge_asset(
     """Sirve una imagen subida para escarapelas — cualquier staff autenticado puede verla (es
     una imagen de fondo/logo, no un dato sensible; el login ya es la barrera real, igual que con
     el resto de la app)."""
-    return get_storage().response(badge_asset_key(tenant_id, filename))         # nunca se confía en la ruta que manda el cliente
+    try:
+        key = badge_asset_key(tenant_id, filename)         # nunca se confía en la ruta que manda el cliente
+    except ValueError:                                     # «..» en el cliente: no existe, no es un error del servidor (R3-08)
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return get_storage().response(key)
 
 
 def _require_printable(event, user_id: str) -> None:

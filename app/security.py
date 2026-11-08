@@ -284,6 +284,9 @@ def _is_common(low: str) -> bool:
     return low in COMMON_PASSWORDS or (letters in COMMON_PASSWORDS and len(letters) >= 4) or (low.strip("0123456789") == "" and len(set(low)) <= 2)
 
 
+MAX_PASSWORD_BYTES = 72      # bcrypt 5 lanza ValueError con más de 72 bytes: se rechaza con un 4xx en vez de dar 500 (R3-08)
+
+
 def password_rules(password: str, username: Optional[str] = None, strict: bool = False) -> list:
     """Política de contraseñas como lista de requisitos [{id, label, problem, ok}] (la ÚNICA fuente: `password_problem` y el endpoint
     /api/password-policy salen de acá; static/js/password-policy.js evalúa lo mismo en vivo). Siempre: mínimo MIN_PASSWORD_LENGTH, distinta del usuario y fuera de una lista
@@ -308,6 +311,8 @@ def password_problem(password: str, username: Optional[str] = None, strict: bool
     for r in password_rules(password, username, strict):
         if not r["ok"]:
             return r["problem"]
+    if len((password or "").encode("utf-8")) > MAX_PASSWORD_BYTES:
+        return f"La contraseña es demasiado larga (máximo {MAX_PASSWORD_BYTES} bytes, unos {MAX_PASSWORD_BYTES // 2}-{MAX_PASSWORD_BYTES} caracteres)"
     return None
 
 

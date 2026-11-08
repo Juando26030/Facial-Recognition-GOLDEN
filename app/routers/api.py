@@ -16,7 +16,7 @@ import time
 import logging
 from openpyxl.utils import get_column_letter
 from PIL import Image
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import UnidentifiedImageError
 from sqlalchemy import func, or_, text
@@ -544,7 +544,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
 
 @router.get("/users")
 def get_all_users(
-    event_id: int, request: Request, limit: Optional[int] = None, offset: int = 0,
+    event_id: int, request: Request, limit: Optional[int] = Query(None, ge=1, le=1_000_000), offset: int = Query(0, ge=0),
     db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff),
 ):
     """Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
