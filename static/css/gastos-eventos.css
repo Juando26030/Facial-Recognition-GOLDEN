@@ -24,3 +24,8 @@
 .gw-ge__comment { border-left: 4px solid var(--gw-gold-1); padding: var(--gw-sp-2) var(--gw-sp-4); margin: 0 0 var(--gw-sp-3); background: var(--gw-surface); border-radius: var(--gw-radius-sm); }
 .gw-ge__comment cite { display: block; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-style: normal; }
 .gw-ge__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
+/* Revisión visual F5-9: los encabezados de las tablas angostas se partían letra por letra («Cli/ent/e»); aquí no se parten y la tabla se desplaza dentro de su caja si no cabe. */
+.gw-ge .gw-table th { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.gw-ge .gw-table td { overflow-wrap: normal; word-break: normal; }
+.gw-ge .gw-table td:first-child { overflow-wrap: anywhere; min-width: 10rem; }
+.gw-ge #gw-ge-questions .gw-ge__svg, .gw-ge #gw-ge-nps .gw-ge__svg { max-width: 48rem; }

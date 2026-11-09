@@ -3,7 +3,7 @@
 .gw-gx__bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-3); }
 .gw-gx__bar-spacer { flex: 1 1 auto; }
 .gw-gx__bar .gw-input { min-width: 11rem; }
-.gw-gx__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: var(--gw-sp-3); }
+.gw-gx__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));          /* 4 cifras: 4 en fila o 2 × 2, nunca 3 + 1 */ gap: var(--gw-sp-3); }
 .gw-gx__kpi { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
 .gw-gx__kpi-label { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); font-weight: var(--gw-fw-bold); }
 .gw-gx__kpi-value { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }

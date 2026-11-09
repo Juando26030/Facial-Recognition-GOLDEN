@@ -1077,6 +1077,7 @@
 .gw-list__item > .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
 .gw-list__item code { font-size: var(--gw-fs-sm); overflow-wrap: anywhere; word-break: break-all; }
 .gw-list__item .gw-badge { vertical-align: middle; }
+.gw-list__item .gw-card-row__actions .gw-select, .gw-list__item .gw-card-row__actions select.gw-input { width: auto; min-width: 14rem; max-width: 100%; }
 .gw-section-title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); }
 .gw-text-danger { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
 @media (max-width: 640px) {

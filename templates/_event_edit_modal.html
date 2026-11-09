@@ -138,7 +138,7 @@
             <div class="ee-report__head"><span class="gw-hint" id="eeLocalInfo"></span></div>
             <div class="ee-report__row">
               <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalTake">Llevar a un servidor local</button>
-              <button type="button" class="gw-btn gw-btn--primary" id="eeLocalRelease" hidden>Pasar a internet</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalRelease" hidden>Pasar a internet</button>
             </div>
             <p class="gw-hint">Mientras el evento esté en un servidor local, aquí solo se puede ver. «Pasar a internet» deja el evento editable otra vez en la nube; el servidor local sube antes todo lo que tenga pendiente.</p>
           </div>
@@ -150,7 +150,7 @@
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeHistoryField">Filtrar por campo</label><select class="gw-select" id="eeHistoryField" data-eh="field"><option value="">Todos los campos</option></select></div>
             <div class="gw-table-wrap">
-              <table class="gw-table">
+              <table class="gw-table ee-history">
                 <thead><tr><th>Cuándo</th><th>Quién</th><th>Campo</th><th>Cambio</th></tr></thead>
                 <tbody data-eh="body"></tbody>
               </table>
@@ -160,7 +160,6 @@
               <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="prev">Anterior</button>
               <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="next">Siguiente</button>
             </div>
-          </div>
           </div>
         </details>
 
@@ -202,7 +201,7 @@
             </div>
             <p class="gw-hint" id="eeDeliveryInfo" role="status"></p>
             <label class="gw-check"><input type="checkbox" id="eeDeliveryMailChk"> <span>Enviar al correo del cliente <span id="eeDeliveryTo"></span></span></label>
-            <div class="ee-delivery__row"><button type="button" class="gw-btn gw-btn--primary" id="eeDeliverySend" disabled>Enviar</button></div>
+            <div class="ee-delivery__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeDeliverySend" disabled>Enviar</button></div>
           </div>
         </details>
         {% endif %}
