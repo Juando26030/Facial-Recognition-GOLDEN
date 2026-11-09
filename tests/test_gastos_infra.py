@@ -84,7 +84,7 @@ def test_map_gcp_rows():
 
 
 def test_import_google_idempotent_and_keeps_manual(db, monkeypatch):
-    monkeypatch.setenv("GCP_BILLING_EXPORT_TABLE", "proj.dataset.gcp_billing_export_v1_X")
+    monkeypatch.setenv("GCP_BILLING_EXPORT_TABLE", "goldenweb-test.billing_export.gcp_billing_export_v1_X")
     calls = {"n": 5000}
 
     def q(table, month):
@@ -103,10 +103,79 @@ def test_import_google_off_without_env(db, monkeypatch):
     assert ic.import_google(db)["configured"] is False
 
 
-def test_gcp_table_rejects_injection(monkeypatch):
-    monkeypatch.setenv("GCP_BILLING_EXPORT_TABLE", "a.b.c`; DROP TABLE x; --")
+@pytest.mark.parametrize("bad", ["a.b.c`; DROP TABLE x; --", "goldenweb-prod.billing_export.t` UNION SELECT 1 --", "goldenweb-prod.billing.export.t",
+                                 "goldenweb-prod.billing_export", "Goldenweb-prod.d.t", "goldenweb-prod-.d.t", "dom.com:goldenweb-prod.d.t", "goldenweb prod.d.t",
+                                 "goldenweb-prod.d.t\nx", "abc.d.t"])
+def test_gcp_table_rejects_injection(monkeypatch, bad):
+    monkeypatch.setenv("GCP_BILLING_EXPORT_TABLE", bad)
     with pytest.raises(ic.InfraError):
         ic.gcp_table()
+
+
+def test_gcp_table_accepts_real_export_name(monkeypatch):
+    monkeypatch.setenv("GCP_BILLING_EXPORT_TABLE", "goldenweb-prod.billing_export.gcp_billing_export_v1_01D3FA_9264E8_E8058D")
+    assert ic.gcp_table() == "goldenweb-prod.billing_export.gcp_billing_export_v1_01D3FA_9264E8_E8058D"
+
+
+class _Resp:
+    def __init__(self, js, status=200):
+        self._js, self.status_code = js, status
+
+    def json(self):
+        return self._js
+
+
+class _FakeBQ:
+    """Sesión simulada de la API REST de BigQuery: jobs.query sin terminar, luego getQueryResults en dos páginas."""
+
+    def __init__(self, pages, first=None):
+        self.calls, self.pages, self.first = [], list(pages), first
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append(("POST", url, json, None))
+        return self.first or _Resp({"jobComplete": False, "jobReference": {"projectId": "goldenweb-prod", "jobId": "job_1", "location": "US"}})
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append(("GET", url, None, dict(params or {})))
+        return self.pages.pop(0)
+
+
+_SCHEMA = {"fields": [{"name": "invoice_month"}, {"name": "service"}, {"name": "currency"}, {"name": "net_cost"}]}
+TABLE = "goldenweb-prod.billing_export.gcp_billing_export_v1_01D3FA_9264E8_E8058D"
+
+
+def test_query_gcp_rest_waits_paginates_and_parameterizes():
+    s = _FakeBQ([_Resp({"jobComplete": True, "schema": _SCHEMA, "rows": [{"f": [{"v": "202611"}, {"v": "Cloud Run"}, {"v": "COP"}, {"v": "5000.5"}]}], "pageToken": "p2",
+                        "jobReference": {"jobId": "job_1"}}),
+                 _Resp({"jobComplete": True, "schema": _SCHEMA, "rows": [{"f": [{"v": "202611"}, {"v": "Cloud Storage"}, {"v": "USD"}, {"v": "2"}]}]})])
+    rows = ic._query_gcp(TABLE, "2026-11", session=s)
+    assert [r["service"] for r in rows] == ["Cloud Run", "Cloud Storage"] and rows[0]["net_cost"] == "5000.5"
+    method, url, body, _ = s.calls[0]
+    assert method == "POST" and url == "https://bigquery.googleapis.com/bigquery/v2/projects/goldenweb-prod/queries"
+    assert body["useLegacySql"] is False and body["parameterMode"] == "NAMED"
+    assert body["queryParameters"] == [{"name": "ym", "parameterType": {"type": "STRING"}, "parameterValue": {"value": "202611"}}]
+    assert f"FROM `{TABLE}` WHERE invoice.month = @ym" in body["query"] and "202611" not in body["query"]
+    assert s.calls[1][1].endswith("/queries/job_1") and s.calls[1][3]["location"] == "US" and "pageToken" not in s.calls[1][3]
+    assert s.calls[2][3]["pageToken"] == "p2"
+    out, _ = ic.map_gcp_rows(rows, Decimal("4000"))
+    assert {o["concept"]: o["amount_cop"] for o in out} == {"Cloud Run": Decimal("5000.50"), "Cloud Storage": Decimal("8000.00")}
+
+
+def test_query_gcp_rest_errors_and_timeout_do_not_leak():
+    bad = _FakeBQ([], first=_Resp({"error": {"status": "PERMISSION_DENIED", "message": "User x@y lacks bigquery.jobs.create"}}, status=403))
+    with pytest.raises(ic._BigQueryError) as e:
+        ic._query_gcp(TABLE, "2026-11", session=bad)
+    assert "403" in str(e.value) and "PERMISSION_DENIED" in str(e.value) and "x@y" not in str(e.value)
+    t = [0.0]
+
+    def clock():
+        t[0] += 30
+        return t[0]
+    slow = _FakeBQ([_Resp({"jobComplete": False, "jobReference": {"jobId": "job_1"}})] * 5)
+    with pytest.raises(ic._BigQueryError):
+        ic._query_gcp(TABLE, "2026-11", session=slow, clock=clock)
+    with pytest.raises(ic.InfraError):
+        ic._query_gcp("x.y`;--.z", "2026-11", session=slow)
 
 
 def test_neon_usage_without_key_and_with_fake(monkeypatch):
@@ -137,6 +206,18 @@ def test_non_admin_forbidden(client, factory, role):
     assert client.get("/api/gastos/infra/summary").status_code == 403
     assert client.post("/api/gastos/infra/costs", json=_body()).status_code == 403
     assert client.get("/gastos").status_code == 302
+
+
+def test_tenant_scoped_admin_cannot_see_platform_panels(client, factory, monkeypatch):
+    """Con ENFORCE_STAFF_TENANT=1, un admin de otra empresa no ve los gastos de la plataforma ni los comentarios de todos los clientes (F5-9 E)."""
+    monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
+    factory.staff("admin", username="adm_t", tenant_id="acme")
+    login(client, "adm_t")
+    assert client.get("/api/gastos/infra/summary").status_code == 403
+    assert client.get("/api/gastos/eventos/panel").status_code == 403
+    factory.staff("admin", username="adm_g")
+    login(client, "adm_g")
+    assert client.get("/api/gastos/infra/summary").status_code == 200
 
 
 def test_page_for_admin_and_anonymous(client, factory):

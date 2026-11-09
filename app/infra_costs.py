@@ -386,12 +386,21 @@ def build_workbook(db: Session, first: str, last: str) -> bytes:
 
 
 # ------------------------------------------------------------------------------------------------ importación automática de Google (OPCIONAL)
+# proyecto (6-30: minúscula inicial, minúsculas/dígitos/guiones, sin guion final) . conjunto (letras/dígitos/_) . tabla (letras/dígitos/_).
+_GCP_TABLE_RE = re.compile(r"([a-z][a-z0-9-]{4,28}[a-z0-9])\.([A-Za-z_][A-Za-z0-9_]{0,1023})\.([A-Za-z_][A-Za-z0-9_]{0,1023})")
+BQ_API = "https://bigquery.googleapis.com/bigquery/v2"
+BQ_SCOPE = "https://www.googleapis.com/auth/bigquery.readonly"
+BQ_TIMEOUT_S = 50                # tope total de la consulta (cabe en una petición de 60 s si se dispara desde el botón)
+BQ_MAX_PAGES = 50
+
+
 def gcp_table() -> str:
-    """`proyecto.conjunto.tabla` de la exportación de facturación a BigQuery, de GCP_BILLING_EXPORT_TABLE. Se valida: se interpola en la consulta."""
+    """`proyecto.conjunto.tabla` de la exportación de facturación a BigQuery, de GCP_BILLING_EXPORT_TABLE. Se valida con una expresión ESTRICTA porque se interpola
+    en la consulta (entre comillas invertidas): sin comillas, espacios, puntos de más ni el prefijo «dominio:» de proyectos antiguos."""
     t = os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip()
     if not t:
         return ""
-    if not re.fullmatch(r"[A-Za-z0-9_.:-]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+", t):
+    if not _GCP_TABLE_RE.fullmatch(t):
         raise InfraError("GCP_BILLING_EXPORT_TABLE debe tener la forma proyecto.conjunto.tabla")
     return t
 
@@ -424,14 +433,74 @@ def map_gcp_rows(rows, trm_default: Optional[Decimal]) -> tuple:
     return out, warns
 
 
-def _query_gcp(table: str, month: str) -> list:
-    from google.cloud import bigquery           # import perezoso: solo si el entorno activó la exportación (y la librería está instalada)
-    ym = month.replace("-", "")
+class _BigQueryError(RuntimeError):
+    """Falla de la API de BigQuery. El mensaje lleva solo el código HTTP y el motivo de Google (nunca la consulta, tokens ni encabezados)."""
+
+
+def _bq_session():
+    import google.auth                                   # viene con google-cloud-storage (no hace falta google-cloud-bigquery)
+    from google.auth.transport.requests import AuthorizedSession
+    creds, _ = google.auth.default(scopes=[BQ_SCOPE])
+    return AuthorizedSession(creds)
+
+
+def _bq_json(resp) -> dict:
+    if resp.status_code != 200:
+        try:
+            reason = (resp.json().get("error") or {}).get("status") or ""
+        except Exception:  # noqa: BLE001
+            reason = ""
+        raise _BigQueryError(f"BigQuery respondió HTTP {resp.status_code} {str(reason)[:60]}".strip())
+    return resp.json()
+
+
+def _bq_rows(js: dict) -> list:
+    names = [f["name"] for f in ((js.get("schema") or {}).get("fields") or [])]
+    return [{n: (c or {}).get("v") for n, c in zip(names, r.get("f") or [])} for r in (js.get("rows") or [])]
+
+
+def _query_gcp(table: str, month: str, session=None, clock=None) -> list:
+    """Consulta la exportación de facturación por la API REST de BigQuery (jobs.query + getQueryResults con paginación). `session` = algo con
+    `.post/.get(url, json=, params=, timeout=)` que devuelve respuestas tipo requests (en las pruebas se simula). El proyecto de la consulta = primera parte de la tabla."""
+    import time
+    m = _GCP_TABLE_RE.fullmatch(table or "")
+    if not m:
+        raise InfraError("GCP_BILLING_EXPORT_TABLE debe tener la forma proyecto.conjunto.tabla")
+    project = m.group(1)
+    ym = valid_month(month).replace("-", "")
     sql = (f"SELECT invoice.month AS invoice_month, service.description AS service, currency, "
            f"SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net_cost "
            f"FROM `{table}` WHERE invoice.month = @ym GROUP BY 1, 2, 3")
-    job = bigquery.Client().query(sql, job_config=bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("ym", "STRING", ym)]))
-    return [dict(r.items()) for r in job.result()]
+    clock = clock or time.monotonic
+    deadline = clock() + BQ_TIMEOUT_S
+    s = session or _bq_session()
+    base = f"{BQ_API}/projects/{urllib.parse.quote(project, safe='')}/queries"
+    body = {"query": sql, "useLegacySql": False, "parameterMode": "NAMED", "timeoutMs": 20000, "maxResults": 1000,
+            "queryParameters": [{"name": "ym", "parameterType": {"type": "STRING"}, "parameterValue": {"value": ym}}]}
+    js = _bq_json(s.post(base, json=body, timeout=30))
+    ref = js.get("jobReference") or {}
+    job_id, location = ref.get("jobId"), ref.get("location")
+    rows: list = []
+    pages = 0
+    while True:
+        if js.get("jobComplete") is False:
+            if clock() > deadline:
+                raise _BigQueryError("BigQuery no terminó la consulta a tiempo")
+        else:
+            rows += _bq_rows(js)
+            if not js.get("pageToken"):
+                return rows
+            pages += 1
+            if pages >= BQ_MAX_PAGES or clock() > deadline:
+                raise _BigQueryError("La respuesta de BigQuery tiene demasiadas páginas o tardó demasiado")
+        if not job_id:
+            raise _BigQueryError("BigQuery no devolvió el identificador de la consulta")
+        params = {"timeoutMs": 10000, "maxResults": 1000}
+        if location:
+            params["location"] = location
+        if js.get("jobComplete") is not False and js.get("pageToken"):
+            params["pageToken"] = js["pageToken"]
+        js = _bq_json(s.get(f"{base}/{urllib.parse.quote(job_id, safe='')}", params=params, timeout=30))
 
 
 def import_google(db: Session, month: Optional[str] = None, query=_query_gcp) -> dict:
