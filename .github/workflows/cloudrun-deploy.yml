@@ -92,9 +92,3 @@ jobs:
         run: |
           python deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$FIREBASE_SITE"
           npx --yes firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase/firebase.json --non-interactive
-
-      - if: steps.cfg.outputs.ready == 'true' && vars.FORMS_SITE != ''
-        name: Firebase Hosting · sitio de inscripciones (todo → publico; solo si la variable FORMS_SITE existe)
-        run: |
-          python deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "${{ vars.FORMS_SITE }}" --inscripciones
-          npx --yes firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase-inscripciones/firebase.json --non-interactive
