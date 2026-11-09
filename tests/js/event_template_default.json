@@ -248,8 +248,8 @@
     "type": "bandana_colors"
    },
    {
-    "creatable": true,
-    "label": "Inventario",
+    "creatable": false,
+    "label": "Inventario (anterior)",
     "type": "inventory"
    },
    {
