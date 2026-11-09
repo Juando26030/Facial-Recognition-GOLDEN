@@ -159,11 +159,12 @@ def test_config_by_type_is_sanitised():
     assert "mínimo" in _raises(et.validate_template, _with(_tpl(), f))
     f = _custom(key="c_m", type_="money", title="Valor", config={"currency": "XXX"})
     _raises(et.validate_template, _with(_tpl(), f))
-    f = _custom(key="c_i", type_="inventory", title="Inv", config={"inventory_types": []})
-    _raises(et.validate_template, _with(_tpl(), f))
     inv = {"inventory_types": [{"key": "panoletas", "label": "Pañoletas", "refs": ["Roja", "Azul"]}]}
-    out = et.validate_template(_with(_tpl(), _custom(key="c_i", type_="inventory", title="Inv", config={**inv, "basura": 1})))
-    assert [x for x in out["fields"] if x["key"] == "c_i"][0]["config"] == inv
+    f = _custom(key="c_i", type_="inventory", title="Inv", config=inv)
+    assert "catálogo" in _raises(et.validate_template, _with(_tpl(), f))          # Fase 5: el campo viejo ya no se crea ni se deja activo (el inventario es el catálogo)
+    out = et.validate_template(_with(_tpl(), {**f, "retired": True}))          # …pero uno retirado (migración 0109) sigue pasando sin romper la plantilla
+    assert [x for x in out["fields"] if x["key"] == "c_i"][0]["retired"] is True
+    assert not et.TYPES["inventory"]["creatable"]
 
 
 def test_clean_value_by_type():

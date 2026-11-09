@@ -14,3 +14,9 @@
 ## Aclaraciones (8-nov-2026, 23:40)
 - **Jornada** es un campo de la plantilla del evento como cualquier otro: el admin decide si se agrega o no, y si se muestra o no en la vista de calendario.
 - **Encuesta de satisfacción:** por ahora una encuesta normal genérica (Juan David define sus preguntas después). **Sus respuestas se guardan aparte**, en estructura propia (no mezcladas con los formularios de inscripción), porque en una fase posterior alimentan la analítica para gerencia: promedios de satisfacción por mes, por evento y por cliente. Diseño: tabla propia con evento, cliente, fecha, respuestas por pregunta (con puntaje numérico donde aplique); sin datos personales innecesarios; no se purga con la biometría.
+
+## Respuestas del 9-nov-2026
+- **Facturado:** solo desde «Finalizado» **y** con la base de datos final adjunta (el servidor lo exige; la lista del evento lo explica).
+- **Roles Almacén y Contabilidad:** pueden ser cuentas propias (solo almacén / solo contabilidad) y también combinarse con coordinador, comercial y entre ellos. Una cuenta que solo tiene estos roles entra directo a la pantalla `/inventario`.
+- **Cuadre:** exacto (asignado = salió) para pasar a «En proceso»; al finalizar solo avisa lo que falte por devolver o justificar.
+- **Inventarios:** unificados ya en el catálogo (migración `0109_inventory_unify`; ver `FASE_5_INVENTARIO.md`).

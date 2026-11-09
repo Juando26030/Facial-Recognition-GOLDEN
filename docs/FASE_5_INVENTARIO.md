@@ -17,9 +17,11 @@ inventario al crear o editar un evento; el inventario es por cantidad con regla 
 
 ## Qué es nuevo y qué ya existía
 * `inventory_items` / `inventory_deliveries` (Fase 2 y antes) son el reparto de insumos a PERSONAS en el quiosco (`kiosk_inventario.html`): **no se tocaron**.
-* El campo «Inventario» del motor de plantilla (`app/event_template.py`, `app/event_inventory.py`: tipos y referencias definidos por plantilla, guardados en `events.extra_json`) **sigue igual** y sigue funcionando.
-  Es el pedido libre del cliente. El catálogo nuevo es otra cosa: productos globales con cantidades reales que mueve el almacén. No se unificaron porque el campo de plantilla es por-campo y sin
-  existencias; mezclarlos habría roto eventos existentes. Si más adelante se quiere un solo origen, el camino es sembrar `event_inventory_items` desde las líneas del campo (`type` -> producto por nombre).
+* **UNIFICADO (9-nov-2026, decisión de Juan David):** el campo «Inventario» del motor de plantilla (`app/event_inventory.py`, guardado en `events.extra_json`) ya no existe como inventario aparte: el único inventario es el catálogo.
+  La migración `0109_inventory_unify` (`app/inventory_unify.py`) pasa cada tipo del campo viejo a un producto del catálogo (categoría «Inventario anterior»), suma las líneas de cada evento en `qty_assigned`
+  (las referencias quedan en las notas), no pisa líneas que el catálogo ya tenga, deja el campo viejo «retirado» en la plantilla y conserva los valores viejos en `extra_json` como respaldo. Es idempotente.
+  Ya no se puede crear un campo «inventario» en el diseñador de la plantilla (el servidor lo rechaza); el módulo `event_inventory.py` queda solo para leer lo viejo.
+* El «Control de inventario» del quiosco (`inventory_items` / `inventory_deliveries`, reparto de insumos a PERSONAS) es otra función y **no se tocó**.
 * «Los productos del catálogo se reflejan solos como campos de inventario»: en «Nuevo evento» y «Editar evento» el bloque lista **todos los productos activos** del catálogo; no hay que dar de alta nada por
   evento. Un producto archivado deja de ofrecerse, pero el evento que ya lo tiene lo conserva.
 

@@ -70,7 +70,7 @@ TYPES = {
     "address_map": {"label": "Dirección con mapa", "creatable": True},
     "contact": {"label": "Contacto del evento", "creatable": True},
     "bandana_colors": {"label": "Colores de pañoletas", "creatable": True},
-    "inventory": {"label": "Inventario", "creatable": True},
+    "inventory": {"label": "Inventario (anterior)", "creatable": False},          # Fase 5: ya no se crea; vive el catálogo (app/inventory_unify.py). Un campo viejo sobrevive solo «retirado»
     "workday": {"label": "Jornada (calculada)", "creatable": False},
     "switch": {"label": "Interruptor", "creatable": False},
     "client": {"label": "Cliente", "creatable": False},
@@ -440,7 +440,10 @@ def _clean_field(rf) -> dict:
     if not KEY_RE.match(key):
         raise TemplateError("Clave de campo inválida")
     type_ = rf.get("type")
-    if type_ not in CREATABLE_TYPES:
+    if type_ == "inventory":
+        if not retired:          # Fase 5 (9-nov-2026): el inventario es UNO solo, el catálogo (app/inventory_unify.py). El campo viejo solo sobrevive «retirado».
+            raise TemplateError(f"«{title}»: el inventario ahora se maneja con el catálogo (Configuración → Inventario); este tipo de campo ya no se puede usar")
+    elif type_ not in CREATABLE_TYPES:
         raise TemplateError(f"Tipo de campo no permitido en «{title}»")
     options = _clean_options(rf.get("options"), f"«{title}»: las opciones", MAX_OPTIONS) if type_ == "select" else []
     config = clean_config(type_, rf.get("config"), key=key)
