@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -64,7 +65,7 @@
       <h2 class="gw-card__title">Expositores del evento</h2>
       <div class="gw-table-wrap"><table class="gw-table gw-table-cards ex-table">
         <thead><tr><th>Expositor</th><th>Contactos</th><th>Estado</th><th>Acciones</th></tr></thead>
-        <tbody id="exBody"><tr><td colspan="4">Cargando…</td></tr></tbody>
+        <tbody id="exBody">{{ skeleton('table', rows=4, cols=4, label='Cargando expositores…') }}</tbody>
       </table></div>
     </div>
   </div>

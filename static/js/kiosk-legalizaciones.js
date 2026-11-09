@@ -67,7 +67,7 @@
   });
 
   $('expList').addEventListener('click', async (e) => {
-    if (e.target.closest('[data-retry]')) { setList('<span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando gastos…</span></span>', true); loadExpenses(); return; }
+    if (e.target.closest('[data-retry]')) { setList(window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'cards', rows: 3, label: 'Cargando gastos…' }) : '<span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando gastos…</span></span>', true); loadExpenses(); return; }
     const btn = e.target.closest('[data-archive], [data-restore], [data-del]');
     if (!btn) return;
     const act = btn.dataset.archive ? 'archive' : btn.dataset.restore ? 'restore' : 'delete';

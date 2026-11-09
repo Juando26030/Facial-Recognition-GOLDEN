@@ -10,7 +10,8 @@
   async function load() {
     if (!root || !eventId) return;
     const body = el('[data-eh="body"]'), info = el('[data-eh="info"]');
-    body.innerHTML = '<tr><td colspan="4" class="gw-hint">Cargando…</td></tr>';
+    if (window.GW && GW.skeleton) GW.skeleton(body, { kind: 'table', rows: 5, cols: 4, label: 'Cargando el historial…' });
+    else body.innerHTML = '<tr><td colspan="4" class="gw-hint">Cargando…</td></tr>';
     let data;
     try {
       const qs = new URLSearchParams({ page: String(page), per_page: '10' });
@@ -19,7 +20,8 @@
       if (!res.ok) throw new Error('http ' + res.status);
       data = await res.json();
     } catch (e) {
-      body.innerHTML = '<tr><td colspan="4" class="gw-hint">No se pudo cargar el historial.</td></tr>';
+      if (window.GW && GW.skeleton) GW.skeleton.error(body, { cols: 4, title: 'No se pudo cargar el historial', text: 'Cierra y vuelve a abrir este grupo para intentarlo de nuevo.', retry: false });
+      else body.innerHTML = '<tr><td colspan="4" class="gw-hint">No se pudo cargar el historial.</td></tr>';
       if (window.showToast) showToast('No se pudo cargar el historial de cambios', 'error');
       return;
     }

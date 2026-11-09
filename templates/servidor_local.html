@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -61,7 +62,7 @@
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="slReload">Actualizar lista</button>
       </div>
     </div>
-    <div id="slEvents" aria-busy="true"><p class="gw-hint">Cargando eventos de la nube...</p></div>
+    <div id="slEvents" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
     <p class="gw-hint">¿Sin conexión o prefieres hacerlo a mano? En la nube exporta el evento y aquí impórtalo (Parámetros del sistema). El resultado es el mismo.</p>
   </div>
 </main>

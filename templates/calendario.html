@@ -6,6 +6,7 @@
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 {% set has_filters = staff_role in ("comercial", "admin", "super_admin") %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -105,7 +106,7 @@
         </select></div>
     </div>
 
-    <div id="calBody" aria-busy="false"></div>
+    <div id="calBody" aria-busy="false">{{ skeleton('block', label='Cargando el calendario…') }}</div>
   </div>
 </main>
 
@@ -250,7 +251,7 @@ async function loadAndRender() {
   if (coordinatorFilter && coordinatorFilter.value) params.set('coordinator_staff_id', coordinatorFilter.value);
 
   calBody.setAttribute('aria-busy', 'true');
-  if (!calBody.firstElementChild) calBody.innerHTML = '<div class="gw-skeleton" role="status" aria-label="Cargando el calendario"></div><div class="gw-skeleton"></div>';
+  if (!calBody.firstElementChild) calBody.innerHTML = window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'block', label: 'Cargando el calendario…' }) : '<div class="gw-skeleton" role="status" aria-label="Cargando el calendario"></div>';
   try {
     const [evRes, noteRes] = await Promise.all([
       fetch(`/api/events/calendar?${params.toString()}`),

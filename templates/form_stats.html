@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -55,7 +56,8 @@
             <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">{% if not client_view and not public_view %}Comparte el enlace{% else %}Actualiza cuando quieras{% endif %}</span></li>
         </ol>
         <div id="fs-body" class="fs-body">
-            <div class="gw-state"><div class="gw-spinner" role="status" aria-label="Cargando"></div><p class="gw-state__text">Cargando las estadísticas…</p></div>
+            {{ skeleton('stats', rows=4, label='Cargando las estadísticas…') }}
+            {{ skeleton('block', label='') }}
         </div>
     </div>
 {% endif %}

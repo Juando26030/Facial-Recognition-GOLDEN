@@ -7,6 +7,7 @@
 {% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
 {% set is_super = staff_role == "super_admin" %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -148,7 +149,7 @@
             </form>
           </div>
           <label class="gw-check"><input type="checkbox" id="showArchivedStates"> Ver archivados</label>
-          <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite"></div>
+          <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando estados…') }}</div>
         </section>
 
         <section class="gw-tabpanel" role="tabpanel" id="alertas" aria-labelledby="tab_alertas" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
@@ -167,7 +168,7 @@
 
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>¿Quién recibe la alerta?</h4>{% call ayuda('ay_alrecipients', 'Destinatarios') %}Puede agregar correos de personas que no tienen cuenta en la plataforma, o cuentas de la plataforma (reciben el aviso en la campana y en su correo registrado). Pause un destinatario sin borrarlo con «Desactivar».{% endcall %}</div>
-            <div class="gw-cards" id="alList" aria-live="polite"></div>
+            <div class="gw-cards" id="alList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando destinatarios…') }}</div>
             <form id="alEmailForm" class="gw-stack">
               <div class="gw-field"><label class="gw-label" for="alEmail">Agregar un correo</label><input class="gw-input" type="email" id="alEmail" maxlength="200" autocomplete="off" placeholder="nombre@empresa.com"></div>
               <button type="submit" class="gw-btn gw-btn--secondary" id="alEmailBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar correo</button>
@@ -185,7 +186,7 @@
 
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Últimas alertas</h4></div>
-            <div class="gw-cards" id="alRecent" aria-live="polite"></div>
+            <div class="gw-cards" id="alRecent" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando alertas enviadas…') }}</div>
           </div>
         </section>
 
@@ -199,7 +200,7 @@
               <div class="gw-field"><label class="gw-label" for="invCatName">Nombre de la categoría</label><input class="gw-input" type="text" id="invCatName" maxlength="80" required autocomplete="off"></div>
               <button type="submit" class="gw-btn gw-btn--primary" id="invCatBtn">{{ ic('plus', 'gw-icon--sm') }} Crear categoría</button>
             </form>
-            <div class="gw-cards gw-inv__cards" id="invCatList" aria-live="polite"></div>
+            <div class="gw-cards gw-inv__cards" id="invCatList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando categorías…') }}</div>
           </div>
 
           <div class="gw-group__item" data-pnodirty>
@@ -219,7 +220,7 @@
               </div>
             </form>
             <label class="gw-check"><input type="checkbox" id="invShowArchived"> Ver archivados</label>
-            <div class="gw-cards gw-inv__cards" id="invProdList" aria-live="polite"></div>
+            <div class="gw-cards gw-inv__cards" id="invProdList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando productos…') }}</div>
           </div>
         </section>
         {% endif %}

@@ -165,7 +165,8 @@
     var rm = el('button', 'gw-btn gw-btn--secondary gw-btn--sm remove-chart-btn'); rm.type = 'button'; rm.setAttribute('aria-label', 'Quitar el gráfico de ' + label); rm.title = 'Quitar';
     rm.innerHTML = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + (container.dataset.icons || '') + '#i-close"/></svg>';
     tools.append(select, rm); head.appendChild(tools);
-    var msg = el('p', 'gw-chart-card__msg chart-loading', 'Cargando…'); msg.setAttribute('role', 'status');
+    var msg = el('div', 'gw-chart-card__msg chart-loading'); msg.setAttribute('role', 'status');
+    if (window.GW && window.GW.skeleton) msg.innerHTML = window.GW.skeleton.html({ kind: 'block', label: 'Cargando ' + label + '…' }); else msg.textContent = 'Cargando…';
     var box = el('div', 'gw-chart-card__box'); box.hidden = true; var canvas = document.createElement('canvas'); box.appendChild(canvas);
     card.append(head, msg, box);
     container.appendChild(card); updateEmptyMsg();

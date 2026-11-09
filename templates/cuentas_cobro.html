@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -51,12 +52,12 @@
     </div>
     <section class="gw-card" aria-labelledby="accTitle">
       <div class="gw-card__head"><h2 class="gw-card__title" id="accTitle">Cuentas</h2><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-new>Agregar cuenta</button></div>
-      <div id="accounts" aria-busy="true"><p class="gw-hint">Cargando...</p></div>
+      <div id="accounts" aria-busy="true">{{ skeleton('list', rows=3, label='Cargando cuentas de cobro…') }}</div>
     </section>
     <section class="gw-card" aria-labelledby="frmTitle">
       <div class="gw-card__head"><h2 class="gw-card__title" id="frmTitle">Formularios y QR</h2></div>
       <p class="gw-hint">Elige con qué cuenta cobra cada formulario (solo si aún no tiene pagos reales) y baja su QR.</p>
-      <div id="forms" aria-busy="true"><p class="gw-hint">Cargando...</p></div>
+      <div id="forms" aria-busy="true">{{ skeleton('list', rows=3, label='Cargando formularios…') }}</div>
     </section>
   </div>
 </main>

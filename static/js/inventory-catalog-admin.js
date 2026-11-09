@@ -70,6 +70,7 @@
   async function load() {
     try { catalog = await j('/api/inventory/catalog?include_archived=true', { cache: 'no-store' }); paint(); }
     catch (e) {
+      $('invProdList').innerHTML = '';
       $('invCatList').innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar el catálogo</p><p class="gw-state__text">${esc(e.message)}</p><button type="button" class="gw-btn gw-btn--secondary" data-inv-retry>Reintentar</button></div>`;
     }
   }

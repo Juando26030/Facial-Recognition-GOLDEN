@@ -140,6 +140,9 @@
     },
   };
 
+  // Esqueleto de la primera carga (static/js/gw-carga.js); sin él, nada (la pantalla igual muestra «Actualizar» y el aviso de error).
+  const SK = (o) => (window.GW && window.GW.skeleton ? window.GW.skeleton.html(o) : '');
+
   function mount(container, url, opts) {
     opts = opts || {};
     injectStyles();
@@ -149,9 +152,9 @@
         <div class="ad-tools"><span class="ad-updated" role="status" aria-live="polite"></span>
           <button type="button" class="ad-refresh">Actualizar</button></div>
       </div>
-      ${opts.stats ? '<p class="ad-state" role="status">Cargando las cifras…</p>' : ''}
-      <div class="ad-kpis"></div>
-      <div class="ad-charts${opts.large ? ' ad-charts--large' : ''}${opts.stats ? ' ad-charts--wide' : ''}"></div>
+      ${opts.stats ? '<p class="ad-state" role="status" hidden></p>' : ''}
+      <div class="ad-kpis">${SK({ kind: 'stats', rows: 4, label: 'Cargando las cifras…' })}</div>
+      <div class="ad-charts${opts.large ? ' ad-charts--large' : ''}${opts.stats ? ' ad-charts--wide' : ''}">${SK({ kind: 'block', label: '' })}${SK({ kind: 'block', label: '' })}</div>
       <p class="ad-empty" hidden>Todavía no hay datos para mostrar. Aparecen aquí apenas llegue el primer registro.</p>`;
     const q = (c) => container.querySelector(c);
     const charts = {};
@@ -238,6 +241,7 @@
         <div class="ad-kpi__value">${esc(k.value)}</div>
         <div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('');
       const host = q('.ad-charts');
+      host.querySelectorAll('[data-gw-sk]').forEach((el) => el.remove());          // fuera el esqueleto de la primera carga
       const wanted = new Set(data.charts.map((c) => c.id));
       Object.keys(charts).forEach((id) => { if (!wanted.has(id)) { charts[id].destroy(); delete charts[id]; } });
       host.querySelectorAll('[data-chart]').forEach((el) => { if (!wanted.has(el.dataset.chart)) el.remove(); });
@@ -271,6 +275,7 @@
       } catch (e) {
         q('.ad-updated').textContent = e.message;
         const st = q('.ad-state'); if (st && !lastData) { st.hidden = false; st.className = 'ad-state ad-state--err'; st.textContent = e.message + '. Usa «Actualizar» para intentar de nuevo.'; }
+        if (!lastData) container.querySelectorAll('[data-gw-sk]').forEach((el) => el.remove());          // sin datos: el aviso (o la fecha de arriba) dice qué pasó; nada queda «cargando»
       }
     }
     const refresh = q('.ad-refresh');

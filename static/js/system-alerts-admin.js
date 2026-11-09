@@ -44,7 +44,10 @@
   }
 
   async function load() {
-    try { state = await j('/api/system-alerts'); paint(); loaded = true; } catch (e) { fail(e); }
+    try { state = await j('/api/system-alerts'); paint(); loaded = true; } catch (e) {
+      fail(e);
+      if (!loaded && window.GW && GW.skeleton) { GW.skeleton.error($('alList'), { title: 'No se pudieron cargar las alertas', text: e.message || 'Inténtalo de nuevo.' }); $('alRecent').innerHTML = ''; }
+    }
   }
 
   $('alSettingsForm').addEventListener('submit', (ev) => {
