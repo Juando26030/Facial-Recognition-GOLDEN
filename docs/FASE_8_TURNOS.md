@@ -1,6 +1,6 @@
 # Fase 8 · Turnos y filas
 
-Decidido por Juan David (9-nov-2026). Módulo en **Parámetros → Zonas e inventario → Turnos y filas** (interruptor propio, columnas `events.queue_enabled` / `queue_config_json`; migración `0114_queue_turns`).
+Decidido por Juan David (9-nov-2026). Módulo en **Parámetros → Zonas e inventario → Turnos y filas** (interruptor propio, columnas `events.queue_enabled` / `queue_config_json`; migración `0116_queue_turns`).
 
 ## Cómo funciona
 - **Letras (filas)**: 1 a 8 letras A–Z con nombre opcional («A=Mesa 1, B=Mesa 2»). Los turnos son A1, A2… y se reparten por fila parejo (la persona nueva cae en la fila con menos esperando).

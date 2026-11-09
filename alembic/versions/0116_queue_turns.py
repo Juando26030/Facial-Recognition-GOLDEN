@@ -1,13 +1,13 @@
 """Turnos y filas (Fase 8): interruptor y configuración en el evento, y las tablas de turnos y llamados.
 
-Revision ID: 0114_queue_turns
+Revision ID: 0116_queue_turns
 Revises: 0113_public_slug
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0114_queue_turns"
-down_revision = "0113_public_slug"
+revision = "0116_queue_turns"
+down_revision = "0115_kiosk_selfreg"
 branch_labels = None
 depends_on = None
 
