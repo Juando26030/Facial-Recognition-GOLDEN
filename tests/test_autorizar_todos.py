@@ -104,7 +104,8 @@ def test_roles(client, factory, db, ev):
     assert _post(client, db, ev).status_code == 200
 
 
-def test_foreign_tenant_event_is_refused(client, factory, db):
+def test_foreign_tenant_event_is_refused(client, factory, db, monkeypatch):
+    monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")          # el aislamiento por cliente es opcional en la plataforma (apagado por decisión); aquí se enciende
     factory.tenant("acme")
     factory.staff("coordinador", "coord", tenant_id="acme")
     other = factory.event("en_proceso", tenant_id="otra")

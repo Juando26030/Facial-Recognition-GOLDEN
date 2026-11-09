@@ -221,9 +221,10 @@ def factory(db):
 
         def staff(self, role, username=None, password=PASSWORD, email=None, tenant_id=None, phone=None, **extra):
             self.counter += 1
+            full_name = extra.pop("full_name", None) or f"{role} {self.counter}"
             s = StaffUser(
                 username=username or f"{role}{self.counter}", password_hash=hash_password(password), role=role,
-                full_name=f"{role} {self.counter}", email=email, tenant_id=tenant_id,
+                full_name=full_name, email=email, tenant_id=tenant_id,
                 phone=phone or f"+57300000{self.counter:04d}", **extra,
             )
             db.add(s)
