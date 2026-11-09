@@ -1082,6 +1082,7 @@
 .gw-text-danger { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
 @media (max-width: 640px) {
   .gw-list__item { padding: var(--gw-sp-3); }
-  .gw-list__item > :not(:first-child) { flex: 1 1 100%; }
+  .gw-list__item > :not(:first-child) { flex: 1 1 100%; min-width: 0; }
   .gw-list__item > .gw-btn { width: 100%; }
+  .gw-list__item .gw-card-row__actions .gw-select, .gw-list__item .gw-card-row__actions select.gw-input { min-width: 0; flex: 1 1 8rem; }
 }
