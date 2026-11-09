@@ -112,6 +112,12 @@ def check_backups(bucket=None, now=None) -> str:
     return "; ".join(["respaldos al día", *warned.values()]) if warned else "respaldos al día"
 
 
+def offsite_copy() -> str:
+    """Fase 9-B: copia semanal CIFRADA del respaldo más reciente a OneDrive (app/offsite_copy.py). Sin variables de OneDrive no hace nada; si falla o pasan >10 días, el paso falla y main() avisa."""
+    from app import offsite_copy as oc
+    return oc.run()
+
+
 def _alert(key: str, subject: str, body: str) -> None:
     """Correo a ALERT_EMAIL, como máximo una vez cada REALERT_H (6) horas por clave (constancia en system_events)."""
     from app import ops
@@ -234,7 +240,7 @@ def hourly(now=None) -> dict:
         steps.append(("purge", purge))
     if now.weekday() == int(os.getenv("OPS_WEEKLY_DAY", "6")) and now.hour == int(os.getenv("OPS_WEEKLY_HOUR", "5")):
         steps.append(("archive-events", archive_events))          # L7: UNA vez por semana (domingo 5 a. m.), para no despertar la base de Neon cada hora
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
+    steps += [("check-backups", check_backups), ("offsite-copy", offsite_copy), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:
@@ -370,7 +376,7 @@ def retry_face_jobs() -> str:
 
 
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "archive-events": archive_events, "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
+         "archive-events": archive_events, "check-backups": check_backups, "offsite-copy": offsite_copy, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
 
 
 def main(task: str) -> int:
