@@ -1202,6 +1202,29 @@ class AppSetting(Base):
     updated_at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class InfraCost(Base):
+    """0121 (Fase 9C): gasto de infraestructura de un mes (Google, Neon, Microsoft, Cloudflare, dominio…). Solo admin/super_admin (app/infra_costs.py). `amount_cop` ya viene en pesos con la TRM del
+    día guardada en `trm`, así el histórico no cambia si el dólar se mueve. `source_key` único = importación automática de Google idempotente."""
+    __tablename__ = 'infra_costs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    month = Column(String(7), nullable=False, index=True)             # AAAA-MM
+    provider = Column(String(20), nullable=False)
+    concept = Column(String(160), nullable=False)
+    kind = Column(String(10), nullable=False, default='variable')      # fixed | variable
+    currency = Column(String(3), nullable=False, default='COP')
+    amount = Column(Numeric(14, 2), nullable=False)
+    trm = Column(Numeric(12, 2), nullable=True)
+    amount_cop = Column(Numeric(14, 2), nullable=False)
+    source = Column(String(12), nullable=False, default='manual')      # manual | gcp_export
+    source_key = Column(String(160), nullable=True, unique=True)
+    note = Column(String(300), nullable=True)
+    attachment_key = Column(String(300), nullable=True)
+    attachment_name = Column(String(160), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class SessionAudit(Base):
     """0072: sesiones cerradas, rechazadas o forzadas. Solo lo necesario (Ley 1581): cuenta, hora, tipo de dispositivo, navegador y resultado; sin IP. Se borra a los 90 días (ops_runner.purge)."""
     __tablename__ = 'session_audit'
