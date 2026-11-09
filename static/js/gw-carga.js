@@ -16,6 +16,7 @@
     'use strict';
     const GESTURE_MS = 1000, MIN_VISIBLE_MS = 300, BAR_DELAY_MS = 400, NAV_TIMEOUT_MS = 10000, PAGE_SETTLE_MS = 1500, ERROR_SETTLE_MS = 1500, POLL_TIMEOUT_MS = 2000;
     const ACTION_SEL = 'button, .gw-btn, [role="button"], input[type="submit"], input[type="button"], a[data-gw-action]';
+    const TOGGLE_SEL = '[role="tab"], [aria-expanded], [aria-haspopup], [aria-pressed]';
     const QUIET_URL = /\/(health|ready|healthz|readyz)(\?|$)|\/api\/session\//;
     const FILE_URL = /\.(xlsx|xls|csv|pdf|zip|png|jpe?g|docx|txt|json|ics|vcf|pkpass)(\?|#|$)|\/(export|descargar|download)\b/i;
 
@@ -56,6 +57,8 @@
             if (btns.has(btn)) return true;                                                                   // ya es nuestro: suma al contador
             if (attr(btn, 'aria-busy') === 'true') return false;                                              // GW.busy o la pantalla ya lo manejan
             if (btn.closest ? btn.closest('[data-gw-busy-off]') : attr(btn, 'data-gw-busy-off') !== null) return false;
+            // pestañas, desplegables y menús: se ven cargando por su contenido (esqueleto) o la barra; el botón queda libre para volver a pulsarlo (cerrar)
+            if (btn.matches && btn.matches(TOGGLE_SEL)) return false;
             if (btn.querySelector && btn.querySelector('.golden-btn-spinner, .gw-spinner')) return false;     // setButtonLoading ya puso su rueda
             return true;
         }

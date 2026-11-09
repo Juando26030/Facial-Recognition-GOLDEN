@@ -61,6 +61,9 @@ for (const other of [btn({ attrs: { 'aria-busy': 'true' } }), btn({ spinner: tru
     t.press(other); k = t.begin({ url: '/x' }); assert.ok(!('data-gw-busy' in other.attrs), 'no se duplica'); t.end(k);
 }
 assert.strictEqual(bar.shows, 0, 'botón con su propia rueda: sin barra extra');
+// pestañas, desplegables y menús no se marcan (se pueden volver a pulsar para cerrar): la carga se ve en la barra
+const tab = btn(); tab.matches = (sel) => /role="tab"/.test(sel);
+t.press(tab); k = t.begin({ url: '/api/tab' }); assert.ok(!('data-gw-busy' in tab.attrs) && !t.isBusy(tab)); c.advance(500); assert.ok(bar.on, 'barra en su lugar'); t.end(k); c.advance(400);
 
 // 5) sondeos: dentro de quiet (setInterval / GW.poll / onResume), con X-Gw-Passive, keepalive o /health → nada
 ({ c, t, bar } = make()); b = btn(); t.press(b);

@@ -101,6 +101,6 @@
 
   /* La pestaña carga sus datos la primera vez que se abre (no antes: la página de Configuración no hace consultas de más). */
   const tab = $('tab_alertas');
-  if (tab) tab.addEventListener('click', () => { if (!loaded) load(); });
-  if (location.hash === '#alertas') load();
+  if (tab) { tab.addEventListener('click', () => { if (!loaded) load(); }); tab.addEventListener('gw:tabshow', () => { if (!loaded) load(); }); }
+  if (location.hash === '#alertas' || !root.hidden) load();
 })();

@@ -107,6 +107,6 @@
   let loaded = false;
   const start = () => { if (!loaded) { loaded = true; load(); } };
   const tab = $('tab_estados');
-  if (tab) tab.addEventListener('click', start);
+  if (tab) { tab.addEventListener('click', start); tab.addEventListener('gw:tabshow', start); }
   if (!root.hidden) start();
 })();
