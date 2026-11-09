@@ -1470,8 +1470,16 @@
         if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
         if (e.key === 'Enter') {
           e.preventDefault();
-          const raw = cedulaInput.value.trim();
+          let raw = cedulaInput.value.trim();
           if (!raw) return;
+          if (window.QrCode && QrCode.isDynamic && QrCode.isDynamic(raw)) {           // QR dinámico de la credencial digital: el servidor valida firma y vigencia y devuelve la persona
+            QrCode.resolveDynamic(raw, window.EVENT_ID).then((resolved) => {
+              const qr = QrCode.parse(resolved);
+              fastCheckin(qr.cedula, false, { nombres: qr.nombres, apellidos: qr.apellidos }, undefined, 'qr');
+              cedulaInput.value = ''; syncClearBtn();
+            }).catch((err) => { showToast(err.message || 'No se pudo validar el código', 'error'); verdict('err', 'Código no válido', err.message || 'No se pudo validar el código'); });
+            return;
+          }
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
             const q = SC.classifyQuery(raw);
             const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'

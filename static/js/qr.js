@@ -53,6 +53,20 @@
     return format === 'pdf417' ? null : { kind: 'qr', cedula: q ? q.cedula : plain, nombres: '', apellidos: '' };
   }
 
+  /* QR DINÁMICO de la credencial digital (Fase 8, app/dynamic_qr.py): «gwq1.<id>.<ventana>.<firma>» (cambia cada 30 s) o «gwq1s.<id>.<firma>» (el del pase de Wallet). No trae la cédula: el SERVIDOR valida firma y vigencia
+     y devuelve la persona. `resolveDynamic(texto, eventId)` devuelve el mismo texto si NO es dinámico y, si lo es, «cédula|nombres|apellidos» (el formato del QR de la escarapela, así el resto del flujo no cambia).
+     Rechaza con Error(mensaje en español) si el código es inválido, vencido o de otro evento. */
+  const DYNAMIC_RE = /^gwq1s?\.\d{1,12}(?:\.\d{1,12})?\.[0-9a-f]{20}$/i;
+  function isDynamic(raw) { return DYNAMIC_RE.test(String(raw == null ? '' : raw).trim()); }
+  async function resolveDynamic(raw, eventId) {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!isDynamic(text)) return raw;
+    const res = await fetch('/api/qr/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, event_id: eventId == null ? window.EVENT_ID : eventId }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo validar el código');
+    return [data.cedula, data.first_name, data.last_name].map((x) => String(x == null ? '' : x).replace(/\|/g, ' ').trim()).join('|');
+  }
+
   // Copia PROPIA de jsQR (static/vendor/jsqr, Apache-2.0): sin CDN, así el escáner de QR por cámara también funciona sin red (el service worker del quiosco la guarda en la primera visita).
   const JSQR_URL = '/static/vendor/jsqr/jsQR.js?v=1.4.0';
   let jsQrPromise = null;
@@ -172,6 +186,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
-  if (typeof module !== 'undefined') module.exports = { parse, classify };  // para las pruebas en Node
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, isDynamic, resolveDynamic }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
+  if (typeof module !== 'undefined') module.exports = { parse, classify, isDynamic, resolveDynamic };  // para las pruebas en Node
 })();

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from app import crypto, digital_fields
+from app import crypto, digital_fields, dynamic_qr, publicurl, wallet
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
@@ -64,7 +64,38 @@ def digital_badge_data(token: str, db: Session = Depends(get_db)):
         "template": template,
         "person": person,
         "extra_list": _extra_list(db, event, person, keys),
+        "wallet": wallet.availability(),          # sin credenciales de Wallet no se pinta ningún botón
     }, headers={"Cache-Control": "private, no-store"})        # puede traer teléfono/correo: nunca en cachés intermedias
+
+
+@router.get("/b/{token}/qr")
+def digital_badge_qr(token: str, db: Session = Depends(get_db)):
+    """QR DINÁMICO de la credencial: los códigos de las próximas ventanas de 30 s (la página los rota por su reloj y vuelve a pedir antes de que se acaben). Firma y vigencia se validan en el servidor al escanear."""
+    att, _, _ = _resolve(db, token)
+    return JSONResponse(dynamic_qr.batch(att.id, att.digital_token), headers={"Cache-Control": "private, no-store"})
+
+
+def _wallet_args(db: Session, token: str) -> dict:
+    att, event, user = _resolve(db, token)
+    return {"att_id": att.id, "person_name": f"{user.first_name or ''} {user.last_name or ''}".strip(), "event_name": event.name, "code": dynamic_qr.make_static(att.id, att.digital_token)}
+
+
+@router.get("/b/{token}/wallet/google")
+def digital_badge_google_wallet(token: str, db: Session = Depends(get_db)):
+    """Enlace «Guardar en Google Wallet» (JWT firmado). 404 si Google Wallet no está configurado."""
+    args = _wallet_args(db, token)
+    if not wallet.availability()["google"]:
+        raise HTTPException(status_code=404, detail="Google Wallet no está disponible")
+    return JSONResponse({"url": wallet.google_save_url(origin=publicurl.configured(), **args)}, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/b/{token}/wallet/apple")
+def digital_badge_apple_wallet(token: str, db: Session = Depends(get_db)):
+    """Archivo .pkpass para Apple Wallet. 404 si Apple Wallet no está configurado."""
+    args = _wallet_args(db, token)
+    if not wallet.availability()["apple"]:
+        raise HTTPException(status_code=404, detail="Apple Wallet no está disponible")
+    return Response(wallet.apple_pkpass(**args), media_type="application/vnd.apple.pkpass", headers={"Cache-Control": "private, no-store", "Content-Disposition": 'attachment; filename="credencial.pkpass"'})
 
 
 @router.get("/b/{token}/asset/{tenant_id}/{filename}")

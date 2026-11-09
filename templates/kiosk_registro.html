@@ -668,7 +668,9 @@
                 title: 'Escanear',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processMrzPhoto,
-                onCode: (text, format) => {
+                onCode: async (rawText, format) => {
+                    let text = rawText;
+                    try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }          // QR dinámico: lo valida el servidor
                     const r = QrCode.classify(text, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
                     if (!r || !window.directorySearch) { showToast('No se reconoció el código: acerca la cámara al QR o al reverso de la cédula', 'error'); return; }
                     if (r.kind === 'qr') window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos }, 'qr');
@@ -739,7 +741,9 @@
                 title: 'Escanear cédula',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processRegScanMrzPhoto,
-                onCode: (text, format) => {
+                onCode: async (rawText, format) => {
+                    let text = rawText;
+                    try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }
                     const r = QrCode.classify(text, format, GoldenDirectory.parseOldCedulaBarcode);
                     if (r) fillRegFormFromScan(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
                     else showToast('No se reconoció el código: acerca la cámara al reverso de la cédula', 'error');
