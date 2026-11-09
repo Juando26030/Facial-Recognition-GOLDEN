@@ -32,7 +32,7 @@
   }
 
   async function start(button) {
-    const ask = window.showConfirm || ((m) => Promise.resolve(window.confirm(m)));          // showConfirm siempre está en las pantallas con menú; el respaldo es solo para páginas sueltas
+    const ask = window.showConfirm || (() => Promise.resolve(false));          // regla del repo: nunca confirm() del navegador; sin toast.js no se actualiza (F5-9 A-13)
     const ok = await ask('Se va a actualizar este servidor a la versión de producción. Primero se guarda una copia de la base de datos y el sistema se detiene unos minutos (no apagues el equipo). ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, actualizar ahora' });
     if (!ok) return;
     button.disabled = true;

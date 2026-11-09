@@ -63,6 +63,8 @@ def export_start(body: ExportStart, staff: StaffUser = Depends(EXPORTER), db: Se
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    if body.include_biometrics and staff.role != "super_admin":          # F5-9 A-01: la biometría (vectores del rostro) solo la exporta el super_admin, como antes de la Fase 6
+        raise HTTPException(status_code=403, detail="Solo el Super Admin puede exportar la biometría de un evento.")
     try:
         job_id = event_transfer_jobs.start_export(db, staff, event, include_biometrics=body.include_biometrics, passphrase=body.passphrase)
     except event_transfer.TransferError as e:
@@ -70,8 +72,14 @@ def export_start(body: ExportStart, staff: StaffUser = Depends(EXPORTER), db: Se
     return _job(db, job_id, staff)
 
 
+def _owns_job(row, staff: StaffUser) -> bool:
+    """F5-9 A-02: un trabajo de exportar/importar solo lo ve (y descarga) quien lo pidió; el super_admin ve todos."""
+    return staff.role == "super_admin" or (row is not None and row.staff_username == staff.username)
+
+
 def _job(db: Session, job_id: int, staff: StaffUser) -> dict:
-    st = event_transfer_jobs.status(db, job_id)
+    row = db.get(EventTransferLog, job_id)
+    st = event_transfer_jobs.status(db, job_id) if _owns_job(row, staff) else None
     if st is None:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")
     if st["ready"]:
@@ -95,6 +103,8 @@ def download(job_id: int, t: str, staff: StaffUser = Depends(EXPORTER), db: Sess
     if data.get("j") != job_id or data.get("u") != staff.id:
         raise HTTPException(status_code=403, detail="Ese enlace no es para tu sesión.")
     row = db.get(EventTransferLog, job_id)
+    if row is not None and not _owns_job(row, staff):
+        raise HTTPException(status_code=403, detail="Ese enlace no es para tu sesión.")
     if not row or row.kind != "job_export" or not row.file_key or not get_storage().exists(row.file_key):
         raise HTTPException(status_code=404, detail="El paquete ya no está disponible (se borra a las 24 horas): expórtalo de nuevo.")
     log.info("event_transfer_download job=%s", job_id)                        # sin datos personales

@@ -31,15 +31,25 @@ try {
     if (-not "$($req.package_url)".StartsWith('https://')) { throw 'La dirección del paquete no es HTTPS' }
     if ("$($req.sha256)" -notmatch '^[0-9a-f]{64}$') { throw 'La huella del paquete no es válida' }
     Import-GoldenEnv
+    # F5-9 A-04: la petición la escribe la app (o quien pueda escribir en data\update): NO se confía en su dirección ni en su huella. Se vuelve a preguntar a producción
+    # (HTTPS, sin redirecciones) y solo se sigue si coincide EXACTAMENTE con lo publicado; se instala lo que dice producción, no lo que dice el archivo.
+    $prod = "$env:PRODUCTION_URL".Trim().TrimEnd('/')
+    if (-not $prod.StartsWith('https://')) { throw 'PRODUCTION_URL no es HTTPS' }
+    $manifest = Invoke-RestMethod -Uri "$prod/api/ops/update-manifest" -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0
+    if (-not $manifest.available -or "$($manifest.package_url)" -ne "$($req.package_url)" -or "$($manifest.sha256)".ToLower() -ne "$($req.sha256)") {
+        throw 'La petición no coincide con el paquete que publica producción'
+    }
+    $pkgUrl = "$($manifest.package_url)"; $pkgSha = "$($manifest.sha256)".ToLower()
+    if (-not $pkgUrl.StartsWith('https://') -or $pkgSha -notmatch '^[0-9a-f]{64}$') { throw 'Producción no publica un paquete válido' }
 
     Write-UpdateStatus 'backup' 'Guardando una copia de la base de datos'
     $backup = Backup-Database 'antes-de-actualizar'
 
     Write-UpdateStatus 'download' 'Descargando la versión nueva'
     Remove-Quietly $pkg
-    Invoke-WebRequest -Uri $req.package_url -OutFile $pkg -UseBasicParsing -TimeoutSec 1800
+    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -UseBasicParsing -TimeoutSec 1800
     $hash = (Get-FileHash $pkg -Algorithm SHA256).Hash.ToLower()
-    if ($hash -ne $req.sha256) { Remove-Quietly $pkg; throw 'La descarga no coincide con la huella de producción; no se instaló nada' }
+    if ($hash -ne $pkgSha) { Remove-Quietly $pkg; throw 'La descarga no coincide con la huella de producción; no se instaló nada' }
 
     Write-UpdateStatus 'apply' 'Instalando la versión nueva'
     Remove-Quietly $new; Remove-Quietly $old

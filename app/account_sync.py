@@ -25,6 +25,7 @@ STAFF_FIELDS = ("username", "password_hash", "full_name", "role", "secondary_rol
 TENANT_FIELDS = ("id", "client_code", "name", "contact_name", "contact_phone", "contact_email")
 FETCH_TIMEOUT = 20.0
 MAX_BYTES = 5_000_000
+NO_PASSWORD = "!"          # F5-9 A-08: una cuenta inactiva o archivada viaja SIN su hash (no sirve para entrar en el local y no se expone si el token del nodo se filtra); bcrypt nunca acepta «!»
 
 
 def _tenant_row(t: Tenant) -> dict:
@@ -32,7 +33,10 @@ def _tenant_row(t: Tenant) -> dict:
 
 
 def _staff_row(s: StaffUser) -> dict:
-    return {f: getattr(s, f) for f in STAFF_FIELDS} | {"archived": s.archived_at is not None}
+    row = {f: getattr(s, f) for f in STAFF_FIELDS} | {"archived": s.archived_at is not None}
+    if not s.is_active or s.archived_at is not None:
+        row["password_hash"] = NO_PASSWORD
+    return row
 
 
 def snapshot(db: Session) -> dict:
@@ -125,8 +129,9 @@ def fetch(url: str, token: str, since: Optional[str], timeout: float = FETCH_TIM
         return None
     q = f"?since={since}" if since else ""
     req = urllib.request.Request(f"{url}/api/node/accounts{q}", headers={"Accept": "application/json", "X-Node-Token": token})
+    from app.cloud_client import open_no_redirect
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:      # noqa: S310
+        with open_no_redirect(req, timeout=timeout) as resp:      # F5-9 A-10: sin seguir redirecciones (llevarían el token a otro sitio)
             data = json.loads(resp.read(MAX_BYTES).decode("utf-8"))
         return data if isinstance(data, dict) else None
     except (urllib.error.URLError, OSError, ValueError):

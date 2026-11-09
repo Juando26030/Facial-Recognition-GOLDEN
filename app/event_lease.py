@@ -12,7 +12,7 @@ from app.timeutil import to_local, utcnow
 def fmt_local(dt) -> str:
     return to_local(dt).strftime("%d/%m/%Y %I:%M %p")
 
-LEASE_ROLES = ("coordinador", "comercial", "almacen", "contabilidad")      # además de admin/super_admin (jerarquía): cualquiera de la empresa menos digitadores y clientes
+LEASE_ROLES = ("coordinador", "comercial")      # además de admin/super_admin (jerarquía). F5-9 D5: almacén y contabilidad NO (no ven datos de asistentes); una cuenta coordinador+almacén sí, por ser coordinador (effective_roles)
 NODE_NAME_MAX = 60
 
 

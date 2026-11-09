@@ -4,6 +4,7 @@ import os
 from fastapi import HTTPException
 
 PASSWORD_ONLY_CLOUD = "La contraseña solo se cambia en la nube"
+ACCOUNTS_ONLY_CLOUD = "Las cuentas se crean en la nube: aquí llegan solas al conectarse"
 
 
 def is_local_server() -> bool:

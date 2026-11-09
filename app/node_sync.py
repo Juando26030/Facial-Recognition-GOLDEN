@@ -68,8 +68,9 @@ def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
         raise SyncError("PRODUCTION_URL debe ser https")
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url + path, data=data, method=method, headers=_headers())
+    from app.cloud_client import open_no_redirect
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:      # noqa: S310
+        with open_no_redirect(req, timeout=HTTP_TIMEOUT) as resp:      # F5-9 A-10: sin redirecciones (el token no viaja a otra dirección)
             return json.loads(resp.read(2_000_000).decode("utf-8") or "{}")
     except urllib.error.HTTPError as e:
         try:

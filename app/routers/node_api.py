@@ -2,6 +2,7 @@
 arrendamiento («en servidor local») y su liberación. Ninguna respuesta lleva datos de personas salvo el paquete que el nodo pide a propósito; en los logs solo conteos."""
 import logging
 import re
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -12,9 +13,11 @@ from app.database import get_db
 from app.models import AuditAction, Event
 from app.models import LocalNode
 from app.node_auth import require_node
+from app.timeutil import utcnow
 
 log = logging.getLogger("golden.node_api")
 router = APIRouter()
+ABORT_WINDOW = timedelta(hours=2)          # F5-9 A-07: «deshacer» solo sirve para una descarga fallida (recién tomado y sin nada subido); lo demás es «Pasar a internet» (0 pendientes)
 
 
 def _meta(e: Event) -> dict:
@@ -25,8 +28,9 @@ def _meta(e: Event) -> dict:
     }
 
 
-def _event(db: Session, event_id: int) -> Event:
-    event = db.get(Event, event_id)
+def _event(db: Session, event_id: int, lock: bool = False) -> Event:
+    q = db.query(Event).filter(Event.id == event_id)
+    event = (q.with_for_update() if lock else q).first()          # F5-9 A-06: tomar/soltar con la fila bloqueada: dos servidores no se quedan los dos con el mismo evento
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     return event
@@ -48,6 +52,8 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
     event = _event(db, event_id)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado")
+    if event.local_node_name != node.name:          # F5-9 A-05: el paquete (datos de personas) solo sale hacia el servidor que TIENE el evento arrendado (se toma antes con /lease, queda auditado)
+        raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local: tómalo primero.")
     data, _ = event_transfer.export_event(db, event, staff_username=f"nodo:{node.name}"[:60])
     log.info("node_package event=%s bytes=%s", event_id, len(data))
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", event.event_code or "evento")
@@ -56,7 +62,7 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
 
 @router.post("/node/events/{event_id}/lease")
 def node_take_lease(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
-    event = _event(db, event_id)
+    event = _event(db, event_id, lock=True)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo antes de llevarlo a un servidor local")
     already = event_lease.is_leased(event) and event.local_node_name == node.name
@@ -67,13 +73,21 @@ def node_take_lease(event_id: int, db: Session = Depends(get_db), node: LocalNod
     return {**event_lease.serialize(event), "already_mine": already}
 
 
+def abort_allowed(event, now=None) -> bool:
+    """Solo se deshace un arrendamiento recién tomado (descarga fallida): sin ninguna subida confirmada y dentro de ABORT_WINDOW."""
+    now = now or utcnow()
+    return event.local_last_upload_at is None and event.local_since is not None and now - event.local_since <= ABORT_WINDOW
+
+
 @router.post("/node/events/{event_id}/abort")
 def node_abort(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """Deshace el arrendamiento si la descarga falló a medias (NO es «pasar a internet»: eso es /release de nodes.py, que exige 0 pendientes): solo el servidor que lo tiene puede soltarlo (p. ej. si la descarga falló a medias)."""
-    event = _event(db, event_id)
+    event = _event(db, event_id, lock=True)
     if event_lease.is_leased(event):
         if event.local_node_name != node.name:
             raise HTTPException(status_code=409, detail=f"El evento está en el servidor local «{event.local_node_name}», no en este.")
+        if not abort_allowed(event):
+            raise HTTPException(status_code=409, detail="El evento ya está trabajando en este servidor local: para devolverlo usa «Pasar a internet» (sube todo antes de soltarlo).")
         event_lease.release(event)
         _audit(db, node, "lease_release", event, f"Volvió a internet desde el servidor local «{node.name}»")
         db.commit()

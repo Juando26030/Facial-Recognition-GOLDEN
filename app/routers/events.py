@@ -653,6 +653,9 @@ def create_event_staff(
     Fase 15 (doble rol coordinador+comercial): ambas excepciones se evalúan sobre effective_roles,
     no sobre `staff.role` a secas — alguien coordinador+comercial SÍ puede crear digitador (porque
     también es coordinador de verdad), la exclusión es solo para quien es comercial pura."""
+    from app import localmode
+    if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
+        raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
     if data.role == "cliente":
         # 2026-11-05 (pedido de Juan David): ya no se crean cuentas «cliente» temporales de evento; para compartir estadísticas están los enlaces con vencimiento (/ver/e/{token}, stats_links.py). Las cuentas cliente existentes y el cliente de FORMULARIO (/mi-formulario) no se tocan.
         raise HTTPException(status_code=400, detail="Ya no se crean cuentas de cliente para el evento. Para compartir las estadísticas usa un enlace con vencimiento.")
@@ -779,6 +782,9 @@ def staff_users_template(event_id: int, db: Session = Depends(get_db), staff: St
 def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Asigna digitadores a este evento desde un Excel (Identificación, Nombres, Apellidos). Cédula nueva → crea la cuenta (usuario y contraseña = cédula) y la asigna; cédula que ya tenía
     cuenta de digitador del mismo cliente → solo la asigna. Una cédula que ya es otra cosa (otro rol u otro cliente) no se toca y se informa. Devuelve cantidades y los motivos por fila (sin contraseñas)."""
+    from app import localmode
+    if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
+        raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
     import re as _re
     from app import heavy, safe_limits
     from app.inputcheck import check_text

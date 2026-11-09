@@ -87,7 +87,8 @@ def fetch_production(url: str, timeout: float = FETCH_TIMEOUT) -> Optional[dict]
     if not (url.startswith("https://") or url.startswith("http://localhost") or url.startswith("http://127.0.0.1")):
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(url + "/api/ops/version", headers={"Accept": "application/json"}), timeout=timeout) as resp:      # noqa: S310
+        from app.cloud_client import open_no_redirect
+        with open_no_redirect(urllib.request.Request(url + "/api/ops/version", headers={"Accept": "application/json"}), timeout=timeout) as resp:      # F5-9 A-10: sin redirecciones
             data = json.loads(resp.read(20000).decode("utf-8"))
         return data if isinstance(data, dict) else None
     except (urllib.error.URLError, OSError, ValueError):

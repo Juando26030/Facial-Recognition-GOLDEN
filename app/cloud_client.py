@@ -23,6 +23,22 @@ class CloudError(Exception):
         self.status = status
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """F5-9 A-10: urllib sigue redirecciones COPIANDO las cabeceras propias (X-Node-Token) y deja pasar de https a http. Hacia la nube nunca se sigue una redirección:
+    una 3xx se trata como error (HTTPError) y el token no sale hacia otra dirección."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):          # noqa: D102
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def open_no_redirect(req, timeout: float):
+    """`urlopen` sin redirecciones; lo usan todos los clientes del servidor local hacia la nube (cloud_client, node_sync, account_sync, versioning, local_update)."""
+    return _opener.open(req, timeout=timeout)
+
+
 def base_url() -> str:
     return os.getenv("CLOUD_BASE_URL", "").strip().rstrip("/")
 
@@ -51,7 +67,7 @@ def _request(method: str, path: str, body: Optional[dict] = None, timeout: float
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url + path, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:      # noqa: S310 — solo HTTPS o localhost (arriba)
+        with open_no_redirect(req, timeout=timeout) as resp:      # solo HTTPS o localhost (arriba) y sin redirecciones
             payload = resp.read(MAX_PACKAGE_BYTES + 1) if raw else resp.read(5_000_000)
             if raw and len(payload) > MAX_PACKAGE_BYTES:
                 raise CloudError("El paquete del evento es más grande de lo permitido para bajarlo en un paso: usa exportar e importar a mano.")

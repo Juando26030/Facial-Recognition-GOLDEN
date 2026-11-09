@@ -60,8 +60,9 @@ def revoke_node(node_id: int, db: Session = Depends(get_db), staff: StaffUser = 
 
 
 # ------------------------------------------------------------------------------------------------ lo que usa el servidor local (token de nodo)
-def _leased_event(db: Session, event_id: int, node: LocalNode) -> Event:
-    event = db.get(Event, event_id)
+def _leased_event(db: Session, event_id: int, node: LocalNode, lock: bool = False) -> Event:
+    q = db.query(Event).filter(Event.id == event_id)
+    event = (q.with_for_update() if lock else q).first()          # F5-9 A-06: liberar con la fila bloqueada
     if event is None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if event.local_node_name != node.name:
@@ -80,14 +81,14 @@ def node_ping(request: Request, node: LocalNode = Depends(node_auth.require_node
 def node_access_logs(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
     node_auth.require_compatible(request)
     _leased_event(db, event_id, node)
-    return api.sync_access_logs(event_id, body, db, node_auth.node_staff(db, node))
+    return api.sync_access_logs(event_id, body, db, node_auth.node_staff(db, node, via=True))
 
 
 @router.post("/node/events/{event_id}/outbox")
 def node_outbox(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
     node_auth.require_compatible(request)
     _leased_event(db, event_id, node)
-    return api.outbox_sync(event_id, body, db, node_auth.node_staff(db, node))
+    return api.outbox_sync(event_id, body, db, node_auth.node_staff(db, node, via=True))
 
 
 @router.post("/node/events/{event_id}/uploaded")
@@ -104,7 +105,7 @@ def node_uploaded(event_id: int, request: Request, db: Session = Depends(get_db)
 def node_release(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
     """«Pasar a internet»: el nodo ya subió TODO (`pending` = 0 que él mismo contó tras la última confirmación) y la nube libera el evento. Con pendientes no se libera."""
     node_auth.require_compatible(request)
-    event = _leased_event(db, event_id, node)
+    event = _leased_event(db, event_id, node, lock=True)
     pending = (body or {}).get("pending")
     if not isinstance(pending, int) or pending != 0:
         raise HTTPException(status_code=409, detail="Todavía hay datos pendientes de subir: no se puede pasar a internet")

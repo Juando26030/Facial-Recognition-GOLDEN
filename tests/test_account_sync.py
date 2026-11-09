@@ -113,3 +113,32 @@ def test_local_server_blocks_every_password_path_but_login_still_works(client, f
     assert r.status_code == 403
     monkeypatch.delenv("LOCAL_SERVER")
     assert client.put(f"/api/staff/{vid}/password", json={"new_password": "Otra#2026xyz"}).status_code == 200      # en la nube sigue igual
+
+
+def test_f5_9_inactive_or_archived_accounts_travel_without_their_hash(db, factory):
+    """F5-9 A-08: una cuenta desactivada o archivada no entrega su hash a ningún nodo (si el token se filtra, no hay hash que romper) y en el local no sirve para entrar."""
+    from app.timeutil import utcnow
+    factory.staff("admin", "root")
+    off = factory.staff("coordinador", "baja")
+    arch = factory.staff("coordinador", "archivada")
+    off.is_active = False
+    arch.archived_at = utcnow()
+    db.commit()
+    rows = {r["username"]: r for r in account_sync.snapshot(db)["staff"]}
+    assert rows["baja"]["password_hash"] == account_sync.NO_PASSWORD == rows["archivada"]["password_hash"]
+    assert rows["root"]["password_hash"] != account_sync.NO_PASSWORD
+    assert verify_password(PASSWORD, account_sync.NO_PASSWORD) is False
+
+
+def test_f5_9_local_server_never_creates_accounts(client, factory, db, monkeypatch):
+    """F5-9 A-12 (regla de Juan David): en el servidor local no se crean digitadores (uno a uno ni por Excel) ni accesos de cliente de formulario."""
+    factory.staff("admin", "root")
+    ev = factory.event("en_proceso")
+    ev_id = ev.id
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    login(client, "root")
+    r = client.post(f"/api/events/{ev_id}/staff-users", json={"username": "99887766", "full_name": "Digi", "role": "digitador"})
+    assert r.status_code == 403 and "nube" in r.json()["detail"]
+    r = client.post(f"/api/events/{ev_id}/staff-users/import", files={"file": ("d.xlsx", b"x", "application/octet-stream")})
+    assert r.status_code == 403
+    assert db.query(StaffUser).filter_by(username="99887766").first() is None

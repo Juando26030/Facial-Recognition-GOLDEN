@@ -16,6 +16,18 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 VALID_DAYS = 825
+# F5-9 A-11: la llave de la autoridad vive en el portátil y la autoridad se instala en Windows y en los celulares. Con «restricciones de nombre» solo puede firmar
+# certificados para la red local (el nombre del equipo, golden.local, localhost y direcciones privadas): si alguien se roba ca.key NO puede suplantar sitios de internet.
+PRIVATE_NETS = ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+
+
+def name_constraints(host: str) -> x509.NameConstraints:
+    dns = []
+    for n in (host, "golden.local", "localhost"):
+        n = (n or "").strip().lower()
+        if n and n not in dns:
+            dns.append(n)
+    return x509.NameConstraints(permitted_subtrees=[x509.DNSName(n) for n in dns] + [x509.IPAddress(ipaddress.ip_network(c)) for c in PRIVATE_NETS], excluded_subtrees=None)
 
 
 def _key():
@@ -53,6 +65,7 @@ def make(folder: Path, host: str, ips: list) -> dict:
         ca_cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(ca_key.public_key()).serial_number(x509.random_serial_number())
                    .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=3650))
                    .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+                   .add_extension(name_constraints(host), critical=True)
                    .add_extension(x509.KeyUsage(digital_signature=True, key_cert_sign=True, crl_sign=True, content_commitment=False, key_encipherment=False, data_encipherment=False, key_agreement=False, encipher_only=False, decipher_only=False), critical=True)
                    .sign(ca_key, hashes.SHA256()))
         ca_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))

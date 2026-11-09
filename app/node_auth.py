@@ -56,11 +56,14 @@ def require_node(request: Request, db: Session = Depends(get_db)) -> LocalNode:
     return node
 
 
-def node_staff(db: Session, node: LocalNode) -> StaffUser:
-    """La cuenta (admin/super_admin) que creó el token: con su alcance se aplican los lotes del nodo."""
+def node_staff(db: Session, node: LocalNode, via: bool = False) -> StaffUser:
+    """La cuenta (admin/super_admin) que creó el token: con su alcance se aplican los lotes del nodo. Con `via`, la marca (atributo de paso, no se guarda) como «llega por el
+    servidor local `node.name`»: así `api._event_for_sync` deja subir a ESE servidor en un evento arrendado y a nadie más (F5-9 A-09)."""
     staff = db.get(StaffUser, node.created_by_id) if node.created_by_id else None
-    if staff is None or staff.role not in ("admin", "super_admin") or not getattr(staff, "is_active", True):
+    if staff is None or staff.role not in ("admin", "super_admin") or not getattr(staff, "is_active", True) or getattr(staff, "archived_at", None) is not None:
         raise HTTPException(status_code=403, detail="La cuenta que creó este servidor local ya no existe o no es de administración: crea el servidor de nuevo")
+    if via:
+        staff.via_node_name = node.name
     return staff
 
 

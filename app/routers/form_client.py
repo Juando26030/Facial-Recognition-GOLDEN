@@ -53,6 +53,9 @@ def list_client_access(event_id: int, form_id: int, db: Session = Depends(get_db
 @router.post("/events/{event_id}/forms/{form_id}/client-access")
 def create_client_access(event_id: int, form_id: int, data: ClientAccessIn, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Crea el usuario y la contraseña temporal (se muestran UNA sola vez). Misma regla que las cuentas cliente de evento: comercial, admin o super_admin."""
+    from app import localmode
+    if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
+        raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
     if not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
         raise HTTPException(status_code=403, detail="Solo un comercial o Admin puede crear accesos para clientes")
     event, form = _form_for_manager(db, event_id, form_id, staff)

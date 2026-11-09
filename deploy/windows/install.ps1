@@ -8,6 +8,15 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Write-Log '== Instalación del servidor local =='
 foreach ($d in @($ConfigDir, $DataDir, $FilesDir, $UpdateDir, $BackupDir, $LogDir, $CertDir)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
+# ---- 0. Permisos de la carpeta (F5-9 A-03). Una carpeta nueva en C:\ hereda «Modificar» para Usuarios autenticados: cualquier cuenta de Windows del equipo podría cambiar
+# los scripts o la app que corren como SYSTEM, o dejar una petición de actualización. Se corta la herencia: SYSTEM y Administradores, control total; Usuarios solo leen y
+# ejecutan los programas (app, python, pgsql, tools, scripts) y la carpeta de certificados (el .cer para los celulares; las llaves tienen sus propios permisos).
+# NetworkService (PostgreSQL) escribe en data\ (la base) y en logs\. Nadie más lee data\, backups\ ni config\ (datos personales y secretos).
+& icacls $Root /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+foreach ($d in @($AppDir, $PyDir, $PgDir, $ToolsDir, $ScriptsDir, $CertDir)) { if (Test-Path $d) { & icacls $d /grant 'BUILTIN\Users:(OI)(CI)RX' | Out-Null } }
+& icacls $DataDir /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)F' | Out-Null
+& icacls $LogDir /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+
 # ---- 1. Configuración y secretos (solo la primera vez; una reinstalación conserva la clave y la base)
 if (-not (Test-Path $EnvFile)) {
     $defaults = Read-EnvFile (Join-Path $ScriptsDir 'defaults.env')
@@ -65,7 +74,6 @@ function Invoke-AsNetworkService([string]$Exe, [string]$Args_, [string]$LogName)
 }
 if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
     New-Item -ItemType Directory -Force -Path $PgData | Out-Null
-    & icacls $DataDir /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)F' | Out-Null
     $pwfile = Join-Path $ConfigDir 'pg.pw'
     Write-Utf8NoBom $pwfile $cfg['LOCAL_DB_PASSWORD']
     & icacls $pwfile /grant 'NT AUTHORITY\NETWORK SERVICE:R' | Out-Null
