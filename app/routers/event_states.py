@@ -63,12 +63,20 @@ def list_states(include_archived: bool = False, db: Session = Depends(get_db), s
             "can_set_billed": bool({"comercial", "admin", "super_admin"} & effective_roles(staff))}          # Fase 5: quién puede poner o quitar un estado de facturación («Facturado»)
 
 
+def _check_billing(rules: Optional[dict], base: str) -> None:
+    """F5-9 C6: un estado de facturación (regla `client_delivery`) solo puede tener estado base «finalizado». Sin esto un administrador podía encender la regla en «En proceso»
+    y habilitar la entrega al cliente de eventos en curso, sin base final ni quién/cuándo facturó."""
+    if event_rules.clean_rules(rules).get("client_delivery") and base != "finalizado":
+        raise HTTPException(status_code=400, detail="La regla de facturación (entrega al cliente) solo puede ir en un estado con base «Finalizado»")
+
+
 @router.post("/event-states")
 def create_state(data: StateIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     _check(data.name, data.base_status)
     name = data.name.strip()
     if db.query(EventState).filter(func.lower(EventState.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail=f"Ya existe un estado llamado «{name}»")
+    _check_billing(data.rules, data.base_status)
     position = data.position if data.position is not None else (db.query(func.coalesce(func.max(EventState.position), -1)).scalar() + 1)
     import json
     state = EventState(name=name, base_status=data.base_status, color=data.color, position=position, is_active=data.is_active, rules_json=json.dumps(event_rules.clean_rules(data.rules)))
@@ -93,6 +101,7 @@ def update_state(state_id: int, data: StatePatch, db: Session = Depends(get_db),
         state.name = name
     using = db.query(Event).filter(Event.state_id == state_id)
     if "base_status" in fields and fields["base_status"] != state.base_status:
+        _check_billing(fields.get("rules", state.get_rules()), fields["base_status"])
         if using.count():
             raise HTTPException(status_code=400, detail="Hay eventos en este estado: no se puede cambiar su estado base (muévalos antes a otro estado)")
         state.base_status = fields["base_status"]
@@ -103,7 +112,16 @@ def update_state(state_id: int, data: StatePatch, db: Session = Depends(get_db),
             setattr(state, key, fields[key])
     if "rules" in fields:
         import json
-        state.rules_json = json.dumps(event_rules.clean_rules(fields["rules"]))
+        new_rules = event_rules.clean_rules(fields["rules"])
+        _check_billing(new_rules, state.base_status)
+        was, now = event_rules.is_billing_state(state), bool(new_rules.get("client_delivery", False))
+        if was != now:
+            # F5-9 C6: encender o apagar la facturación de un estado con eventos los «factura» o «desfactura» a todos de golpe, sin pasar por la puerta de comercial/admin ni dejar
+            # quién y cuándo en cada evento. Hay que moverlos antes (eso sí queda registrado por evento).
+            if using.count():
+                raise HTTPException(status_code=400, detail="Hay eventos en este estado: muévalos a otro antes de encender o apagar la regla de facturación")
+            audit_actions.record(db, staff, "billing_rule_on" if now else "billing_rule_off", "event_state", state.id, state.name, "regla de facturación (entrega al cliente)")
+        state.rules_json = json.dumps(new_rules)
     db.commit()
     return serialize_state(state, using.count())
 
