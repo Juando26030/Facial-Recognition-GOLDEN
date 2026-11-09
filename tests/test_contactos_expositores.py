@@ -7,6 +7,14 @@ from tests.conftest import login
 
 
 # ------------------------------------------------------------------ vCard y lectura del QR (puras)
+def test_vcard_drops_unicode_line_breaks_and_control_chars():
+    """F5-9 B: un nombre con NEL, separadores de línea Unicode o \r no puede inyectar una línea nueva (p. ej. un EMAIL o URL falsos) en la tarjeta."""
+    v = contacts.vcard("Ana\u2028EMAIL:x@evil.com", "Mora\x85URL:http://evil", "Acme\r\nTEL:1", "", "", "")
+    lines = v.split("\r\n")
+    assert not any(l.startswith(("EMAIL", "URL", "TEL")) for l in lines)
+    assert "\u2028" not in v and "\x85" not in v
+
+
 def test_vcard_escapes_and_has_required_lines():
     v = contacts.vcard("Ana;María", "Pérez, Díaz", "Acme\nSAS", "Gerente", "+573001112233", "ana@example.com", "Feria")
     assert v.startswith("BEGIN:VCARD\r\nVERSION:3.0\r\n") and v.rstrip().endswith("END:VCARD")

@@ -191,8 +191,12 @@ def turn_page(event_id: int, token: str, request: Request, db: Session = Depends
 def turn_state(event_id: int, token: str, request: Request, db: Session = Depends(get_db)):
     if not poll_allowed(f"turnost:{security.client_ip(request)}", 120):
         raise HTTPException(status_code=429, detail="Demasiadas consultas")
-    event = _public_event(db, event_id)
-    view = qt.public_view(queue_svc.snapshot(db, event), token)
+    snap = queue_svc.cached_public(event_id)              # F5-9 B: cientos de celulares sondeando cada ~6 s no consultan la base (ni el evento): salen de la memoria
+    if snap is None:
+        snap = queue_svc.snapshot(db, _public_event(db, event_id))
+    if not snap.get("public_ok"):
+        raise HTTPException(status_code=404, detail="Turnos no disponibles")
+    view = qt.public_view(snap, token)
     if view is None:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
     return JSONResponse(view, headers=NO_STORE)

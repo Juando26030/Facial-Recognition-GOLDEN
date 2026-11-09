@@ -98,6 +98,19 @@ def test_resolve_accepts_dynamic_and_static_and_rejects_the_rest(client, factory
     assert staff and client.post("/api/qr/resolve", json={"text": live}).status_code == 400
 
 
+def test_static_wallet_code_only_works_at_the_entrance(client, factory, db):
+    """F5-9 B: el código estático (pase de Wallet, no rota) solo vale en la entrada; áreas e inventario exigen el dinámico."""
+    ev, att, token = _person(db, factory)
+    factory.staff("coordinador", "coord")
+    login(client, "coord")
+    static = dynamic_qr.make_static(att.id, token)
+    live = dynamic_qr.make_dynamic(att.id, token, dynamic_qr.window_of())
+    assert client.post("/api/qr/resolve", json={"text": static, "event_id": ev.id, "purpose": "entry"}).status_code == 200
+    for purpose in ("area", "inventory"):
+        assert client.post("/api/qr/resolve", json={"text": static, "event_id": ev.id, "purpose": purpose}).status_code == 400
+        assert client.post("/api/qr/resolve", json={"text": live, "event_id": ev.id, "purpose": purpose}).status_code == 200
+
+
 def test_resolve_needs_a_session_and_dies_when_the_link_is_regenerated(client, factory, db):
     ev, att, token = _person(db, factory)
     live = dynamic_qr.make_dynamic(att.id, token, dynamic_qr.window_of())

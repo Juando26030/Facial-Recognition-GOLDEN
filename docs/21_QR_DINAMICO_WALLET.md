@@ -7,7 +7,7 @@
 ## Cómo funciona
 1. La página pide al servidor `GET /b/<enlace>/qr` un lote de 4 códigos (2 minutos) y los va rotando; vuelve a pedir antes de que se acaben.
 2. Al escanear en la puerta / áreas / inventario, la pantalla del operador (`static/js/qr.js`) detecta el código dinámico y lo valida en el servidor (`POST /api/qr/resolve`, requiere sesión de personal). El servidor responde con cédula y nombre, y el resto del flujo (registro, áreas, inventario) sigue igual que con el QR de la escarapela impresa. **El QR de la escarapela impresa no cambia.**
-3. Códigos: `gwq1.<id>.<ventana>.<firma>` (dinámico) y `gwq1s.<id>.<firma>` (estático, solo para Wallet). Firma HMAC-SHA256 con una clave derivada de la configuración del servidor y del enlace secreto de la persona.
+3. Códigos: `gwq1.<id>.<ventana>.<firma>` (dinámico) y `gwq1s.<id>.<firma>` (estático, solo para Wallet y **solo en la entrada**: `POST /api/qr/resolve` lo rechaza con `purpose` «area» o «inventory», que mandan áreas e inventario). Firma HMAC-SHA256 con una clave derivada de la configuración del servidor y del enlace secreto de la persona.
 4. Errores: 400 código no válido o de otro evento; 410 vencido (captura vieja); 404 la persona ya no está.
 
 ## Limitación importante de Wallet

@@ -135,3 +135,27 @@ def test_digitador_cannot_configure(client, factory):
     factory.authorize(ev, dig)
     login(client, dig.username)
     assert client.put(f"/api/events/{ev.id}/queue/config", json={"enabled": True, "config": {}}).status_code == 403
+
+
+def test_public_state_poll_is_served_from_memory_and_respects_archive(client, factory, db, monkeypatch):
+    """F5-9 B: el sondeo de cada celular no toca la base mientras haya un estado fresco; un evento archivado deja de mostrar turnos."""
+    from app.models import AccessLog
+    from app.routers import queue as queue_router
+    coord, ev = _setup(client, factory, require_registered=True)
+    factory.person(ev, "1001", "Ana", "Uno")
+    db.add(AccessLog(tenant_id="acme", user_id="1001", event_id=ev.id, record_type="entrada"))
+    db.commit()
+    token = client.post(f"/turno/{ev.id}/buscar", json={"cedula": "1001"}).json()["token"]
+    assert client.get(f"/turno/{ev.id}/{token}/state").status_code == 200          # calienta la memoria
+
+    def boom(*a, **k):
+        raise AssertionError("el sondeo no debía consultar la base")
+    monkeypatch.setattr(queue_router, "_public_event", boom)
+    assert client.get(f"/turno/{ev.id}/{token}/state").status_code == 200
+    assert client.get(f"/turno/{ev.id}/otro-token/state").status_code == 404
+    monkeypatch.undo()
+    queue_svc.invalidate(ev.id)
+    from app.timeutil import utcnow
+    ev.archived_at = utcnow()
+    db.commit()
+    assert client.get(f"/turno/{ev.id}/{token}/state").status_code == 404

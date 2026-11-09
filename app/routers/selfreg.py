@@ -4,10 +4,10 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import event_rules, selfreg
+from app import event_rules, selfreg, testperson
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
-from app.models import StaffUser
+from app.models import StaffUser, User
 from app.routers import parametros
 from app.routers.api import _manual_register
 
@@ -48,16 +48,26 @@ def selfreg_submit(event_id: int, data: dict, request: Request, db: Session = De
     last = str((data or {}).get("last_name") or "").strip()
     if not cedula or not first:
         raise HTTPException(status_code=400, detail="Escribe tu cédula y tu nombre.")
+    if testperson.is_test(cedula):                                  # la persona de prueba es del personal, no del autoservicio
+        raise HTTPException(status_code=409, detail=NEUTRAL_HELP)
     direct, extras = selfreg.split_values((data or {}).get("values") or {})
     cats = direct.get("categories")
+    existing = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+    if existing is not None:
+        # F5-9 B: la cédula ya existe. Solo se marca el ingreso si el nombre coincide, y sin tocar NADA de lo guardado: una fecha de menor borraría su biometría,
+        # un correo de escarapela se la entregaría a otra persona. El mensaje es el mismo neutro de siempre (no dice de quién es la cédula).
+        if not selfreg.same_person(first, existing.first_name):
+            raise HTTPException(status_code=409, detail=NEUTRAL_HELP)
+        direct, extras, cats = {k: direct[k] for k in ("role", "entity", "phone", "email", "opt_1") if k in direct}, {}, None
     try:
         reply = _manual_register(
             event_id=event.id, id=cedula, first_name=first, last_name=last,
             role=direct.get("role", ""), entity=direct.get("entity", ""), phone=direct.get("phone", ""), email=direct.get("email", ""), opt_1=direct.get("opt_1", ""),
             extra_fields=json.dumps(extras) if extras else None,
             categories=json.dumps(cats if isinstance(cats, list) else [cats]) if cats else None,
-            certificate=direct.get("certificate") or None, digital_contact=direct.get("digital_contact") or None, send_digital_now=None,
-            request=request, field_labels=None, file=None, force=False, biometric_consent=None, birth_date=direct.get("birth_date", ""),
+            certificate=direct.get("certificate") or None, digital_contact=direct.get("digital_contact") or None,
+            send_digital_now=None if existing is None else "false",
+            request=request, field_labels=None, file=None, force=False, biometric_consent=None, birth_date=direct.get("birth_date", "") if existing is None else "",
             db=db, staff=staff, took_ms=None, ui_flow="selfreg", origin="autoregistro", method="autoregistro",
         )
     except HTTPException as e:

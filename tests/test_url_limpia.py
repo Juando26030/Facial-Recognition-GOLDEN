@@ -18,6 +18,13 @@ def test_validate(slug, ok):
     assert (public_slug.validate(slug) is None) is ok
 
 
+@pytest.mark.parametrize("form_slug,bad", [(None, False), ("inscripcion", False), ("registro-2", False), ("a" * 81, True), ("..", True), ("a%2fb", True), ("x y", True), ("<script>", True), ("-a", True)])
+def test_impossible_form_names_are_404_without_touching_the_cache(form_slug, bad):
+    """F5-9 B: un nombre de formulario imposible no consulta la base ni ocupa la caché pública compartida."""
+    from app.routers import clean_url
+    assert clean_url.bad_form_slug(form_slug) is bad
+
+
 def test_candidate_is_name_plus_year_without_repeating_it_and_never_reserved():
     assert public_slug.candidate("Congreso G12 Ñandú", 2026) == "congreso-g12-nandu-2026"
     assert public_slug.candidate("Feria 2026", 2026) == "feria-2026"

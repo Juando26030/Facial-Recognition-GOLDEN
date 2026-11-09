@@ -24,6 +24,9 @@ def resolve_qr(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
         raise HTTPException(status_code=400, detail="Código no válido para este evento")
     if event.archived_at is not None or event.data_archived_at is not None:
         raise HTTPException(status_code=400, detail="Código no válido para este evento")
+    purpose = str((data or {}).get("purpose") or "entry").strip().lower()
+    if parsed["kind"] == "s" and purpose != "entry":          # F5-9 B: el código ESTÁTICO del pase de Wallet es solo de ENTRADA (no rota): áreas e inventario exigen el dinámico
+        raise HTTPException(status_code=400, detail="El código del pase de Wallet solo sirve en la entrada. Aquí muestra la credencial digital (el QR que cambia cada 30 segundos).")
     verdict = dynamic_qr.verify(parsed, att.digital_token or "")
     if verdict == "expired":
         raise HTTPException(status_code=410, detail="Código vencido: que la persona lo muestre de nuevo (se renueva solo cada 30 segundos). Una captura de pantalla no sirve.")

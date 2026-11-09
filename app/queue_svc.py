@@ -76,10 +76,19 @@ def _build(db: Session, event: Event) -> dict:
     recent = [{"id": c.id, "label": qt.label(c.lane, c.number), "lane": c.lane, "desk": c.desk or "", "at": c.called_at.isoformat() + "Z"} for c in calls]
     snap = qt.build_snapshot(cfg["lanes"], turns, recent, cfg["show_name"])
     snap["enabled"] = bool(event.queue_enabled)
+    snap["public_ok"] = bool(event.queue_enabled) and event.archived_at is None and event.data_archived_at is None      # lo mismo que exige la página pública (routers/queue._public_event)
     snap["event_name"] = event.name
     snap["mode"] = cfg["mode"]
     snap["total"] = len(turns)
     return snap
+
+
+def cached_public(event_id: int, ttl: float = SNAPSHOT_TTL) -> Optional[dict]:
+    """F5-9 B: el estado vigente en memoria para la página pública, SIN tocar la base (ni siquiera para leer el evento). None si no hay uno fresco: entonces el router lo calcula."""
+    now = time.monotonic()
+    with _lock:
+        hit = _cache.get(event_id)
+    return hit[1] if hit and now - hit[0] < ttl else None
 
 
 def snapshot(db: Session, event: Event, ttl: float = SNAPSHOT_TTL) -> dict:

@@ -9,9 +9,14 @@ Reglas:
 - No se puede ver ni buscar a otras personas; una cédula repetida da un mensaje amable que NO revela datos (ni si existía, ni de quién es).
 - Límite de intentos por equipo y evento (`SELFREG_MAX_PER_10MIN`, 40 por defecto): el contador vive en memoria de cada proceso (basta para frenar un abuso; no es una cuota exacta).
 - La pantalla se reinicia sola tras cada registro y tras un rato sin tocarla (static/js/selfreg.js).
+- Seguridad (F5-9 B): la persona de prueba (PRUEBA) no se autorregistra. Si la cédula YA existe en el cliente, la pantalla solo marca el ingreso cuando el nombre escrito coincide con el
+  guardado (`same_person`) y NUNCA cambia sus datos: ni fecha de nacimiento (una fecha de menor borraría su biometría), ni correo de la escarapela digital (se la enviaría a otro), ni
+  categorías. Quien escribe la cédula de otra persona no puede marcarle el ingreso, borrarle el rostro ni quedarse con su credencial.
 """
 import os
+import re
 import time
+import unicodedata
 from collections import defaultdict, deque
 from typing import Optional
 
@@ -70,3 +75,15 @@ def split_values(values: dict) -> tuple:
         elif k.startswith("opcional_"):
             extras[k] = v
     return direct, extras
+
+
+def _name_tokens(text) -> set:
+    plain = unicodedata.normalize("NFD", str(text or "")).encode("ascii", "ignore").decode("ascii").lower()
+    return {t for t in re.split(r"[^a-z0-9]+", plain) if len(t) >= 2}
+
+
+def same_person(typed_first, stored_first) -> bool:
+    """¿El nombre escrito en el kiosco corresponde al guardado? Basta UNA palabra del nombre en común (sin tildes ni mayúsculas): «maria» vale para «María José».
+    Sin nombre guardado no se puede comprobar: no coincide (la persona va al punto de ayuda)."""
+    stored = _name_tokens(stored_first)
+    return bool(stored) and bool(_name_tokens(typed_first) & stored)

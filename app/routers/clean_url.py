@@ -3,6 +3,7 @@
 Solo sirven la PÁGINA: el cascarón es el mismo de `/f/{id}/{slug}` y habla con `/f/{id}/{slug}/state|submit|…` en el mismo host (el prefijo `/inscripciones/` está en appmode.PUBLIC_PREFIXES: Firebase lo manda al servicio `publico`
 y `/static` sale de la CDN, como todo lo público). Se registran AL FINAL de la aplicación y solo en `all` y `publico` (app/main.py), así que nunca tapan una ruta existente; un nombre reservado o desconocido da 404.
 Un nombre de enlace viejo (slug_history) responde 301 al nuevo. `async` a propósito, como `page` del formulario: la resolución se sirve de la caché pública sin hilo ni base."""
+import re
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +14,12 @@ from app.database import SessionLocal
 from app.routers import forms_public
 
 router = APIRouter(prefix="/inscripciones")
+_FORM_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")          # la forma de formlib.slugify (+ «-2», «-3»…): lo demás no existe
+
+
+def bad_form_slug(form_slug: Optional[str]) -> bool:
+    """F5-9 B: un nombre de formulario imposible da 404 SIN tocar la base ni llenar la caché pública (que comparten todos los formularios: llenarla de basura la vaciaría)."""
+    return form_slug is not None and (len(form_slug) > 80 or not _FORM_SLUG.match(form_slug))
 
 
 def _resolve(slug: str, form_slug: Optional[str]) -> dict:
@@ -25,7 +32,8 @@ def _resolve(slug: str, form_slug: Optional[str]) -> dict:
 
 async def _serve(request: Request, slug: str, form_slug: Optional[str], k: Optional[str]):
     s = slug.lower()
-    if public_slug.validate(s):                                       # reservados y nombres imposibles: 404 sin tocar la base
+    form_slug = form_slug.lower() if form_slug is not None else None
+    if public_slug.validate(s) or bad_form_slug(form_slug):                                       # reservados y nombres imposibles: 404 sin tocar la base
         raise HTTPException(status_code=404, detail="No encontrado")
     request.scope["public_form"] = True                               # cabeceras de formulario incrustable (app/main.py security_headers)
     key = ("slug", s, form_slug)

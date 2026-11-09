@@ -38,7 +38,7 @@ def text_hash() -> str:
 # ------------------------------------------------------------------------------------------------ vCard
 def _esc(v) -> str:
     """Valor de texto de vCard 3.0: barra, coma, punto y coma y saltos de línea escapados; sin caracteres de control."""
-    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", str(v or ""))
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]", "", str(v or ""))          # F5-9 B: también NEL/C1 y los separadores de línea Unicode (algunos lectores parten la línea con ellos)
     return s.replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
 
 
@@ -201,12 +201,16 @@ def leads_with_data(db: Session, ex: EventExhibitor) -> list:
     """Los contactos del expositor que SIGUEN compartiendo, con los datos autorizados y la tarjeta para guardarlos. Quien retiró su autorización desaparece."""
     leads = db.query(ExhibitorLead).filter_by(exhibitor_id=ex.id).order_by(ExhibitorLead.scanned_at.desc(), ExhibitorLead.id.desc()).all()
     ok = sharing_ids(db, ex.tenant_id, ex.event_id, [l.user_id for l in leads])
+    ids = list({l.user_id for l in leads if l.user_id in ok})
+    users, cards = {}, {}
+    if ids:                                                   # F5-9 B: dos consultas, no dos por contacto (la página del expositor recarga la lista tras cada escaneo; con 800 eran 1 600)
+        users = {u.id: u for u in db.query(User).filter(User.tenant_id == ex.tenant_id, User.id.in_(ids)).all()}
+        cards = {c.user_id: c for c in db.query(ContactCard).filter(ContactCard.event_id == ex.event_id, ContactCard.tenant_id == ex.tenant_id, ContactCard.user_id.in_(ids)).all()}
     out = []
     for l in leads:
         if l.user_id not in ok:
             continue
-        user = db.query(User).filter(User.id == l.user_id, User.tenant_id == ex.tenant_id).first()
-        card = db.query(ContactCard).filter_by(event_id=ex.event_id, tenant_id=ex.tenant_id, user_id=l.user_id).first()
+        user, card = users.get(l.user_id), cards.get(l.user_id)
         if user and card and not is_minor(user):
             out.append({**shared_data(user), "scanned_at": l.scanned_at.isoformat(), "card": card.share_token})
     return out

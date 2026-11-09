@@ -130,3 +130,38 @@ def test_config_needs_coordinator_and_toggles(client, factory, db):
     assert client.put(f"/api/events/{ev.id}/selfreg-config", json={"enabled": True}).json() == {"enabled": True}
     db.refresh(ev)
     assert ev.selfreg_enabled is True
+
+
+# ---- F5-9 B (revisión de seguridad): suplantar a una persona que ya existe ----
+def test_same_person_matches_one_name_word_without_accents():
+    assert selfreg.same_person("maria", "María José")
+    assert selfreg.same_person("JOSE perez", "María José")
+    assert not selfreg.same_person("Pedro", "María José")
+    assert not selfreg.same_person("Pedro", "")
+
+
+def test_test_person_cannot_selfregister(client, station):
+    assert _send(client, station, id="PRUEBA", first_name="Prueba").status_code == 409
+
+
+def test_existing_person_with_other_name_is_refused_and_untouched(client, db, factory, station):
+    db.add(User(id="9100", tenant_id=station.tenant_id, first_name="Carolina", last_name="Ruiz", is_biometric_enabled=True))
+    db.commit()
+    r = _send(client, station, id="9100", first_name="Intruso", values={"birth_date": "2015-01-01", "digital_contact": "atacante@example.com"})
+    assert r.status_code == 409 and "Carolina" not in r.text
+    assert db.query(AccessLog).filter_by(event_id=station.id, user_id="9100").count() == 0
+    db.expire_all()
+    u = db.query(User).filter_by(id="9100", tenant_id=station.tenant_id).one()
+    assert u.birth_date is None and u.is_biometric_enabled is True
+
+
+def test_existing_person_with_matching_name_checks_in_without_changing_data(client, db, station):
+    db.add(User(id="9101", tenant_id=station.tenant_id, first_name="Carolina", last_name="Ruiz", is_biometric_enabled=True))
+    db.commit()
+    r = _send(client, station, id="9101", first_name="carolina", values={"birth_date": "2015-01-01", "digital_contact": "atacante@example.com"})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    db.expire_all()
+    u = db.query(User).filter_by(id="9101", tenant_id=station.tenant_id).one()
+    assert u.birth_date is None and u.is_biometric_enabled is True                 # una fecha de menor no le borra la biometría
+    att = db.query(EventAttendee).filter_by(event_id=station.id, user_id="9101").one()
+    assert not att.digital_contact                                                   # el correo escrito no se queda con su escarapela
