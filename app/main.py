@@ -51,6 +51,7 @@ from app.routers import event_transfer as event_transfer_router      # exportar 
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
 from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
+from app.routers import gastos_eventos as gastos_eventos_router      # Fase 9 D: panel de gastos, pestaña «Eventos» (solo admin)
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
@@ -353,6 +354,7 @@ _include(notifications_router.router, prefix="/api")      # campana de notificac
 _include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
 _include(analytics.router, prefix="/api")
+_include(gastos_eventos_router.router, prefix="/api")      # Fase 9 D: /api/gastos/eventos/* (satisfacción y tiempos; solo admin)
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
 _include(form_client_router.router, prefix="/api")      # estadísticas de un formulario + acceso de cliente por formulario (solo agregados)
