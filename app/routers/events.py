@@ -18,10 +18,11 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc
+from app import event_history
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
-from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import EventChangeLog, EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
@@ -583,6 +584,7 @@ def update_event(
     _validate_event_dates(effective_start, effective_end, effective_setup)
 
     extra_patch = event_template_svc.merge_extra(db, event.get_extra(), data.extra) if data.extra is not None else None      # valida ANTES de tocar nada
+    history_before = event_history.snapshot(db, event)          # Fase 5: historial por campo (se compara con lo que quede abajo, en el mismo commit)
     for field, value in data.dict(exclude_unset=True, exclude={"extra"}).items():
         setattr(event, field, value)
     if extra_patch is not None:
@@ -595,7 +597,10 @@ def update_event(
     elif leaving_billing:
         event.billed_at = event.billed_by_id = None          # el historial (quién y cuándo lo facturó) queda en audit_actions
         audit_actions.record(db, staff, "unbilled", "event", event.id, event.name, f"pasó a «{new_state.name}»")
+    changed_rows = event_history.record(db, event, history_before, staff, "edit")
     db.commit()
+    if changed_rows:
+        jobs.kick()                  # despierta el envío del aviso de campos clave (si se encoló alguno)
     if status_changed:
         warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora
     return _serialize(event)
@@ -970,6 +975,7 @@ def delete_event(
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
+    db.query(EventChangeLog).filter(EventChangeLog.event_id == event_id).delete()
     for _form in db.query(WebForm).filter(WebForm.event_id == event_id).all():
         delete_form_rows(db, _form)
     db.query(RouletteDraw).filter(RouletteDraw.event_id == event_id).delete()
@@ -1074,12 +1080,14 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
         raise HTTPException(status_code=409, detail="Solo un evento «En proceso» se puede devolver a «Creado»" + (" (los finalizados no se tocan)." if event.status == "finalizado" else "."))
     reason = ((data.reason if data else None) or "").strip()[:500] or None
     counts = _revert_counts(db, event_id)
+    history_before = event_history.snapshot(db, event)
     event.status = "creado"
     new_state = event_rules.default_state(db, "creado")
     if new_state is not None:
         event.state_id = new_state.id
     db.add(EventStatusChange(event_id=event.id, tenant_id=event.tenant_id, staff_user_id=staff.id, staff_username=staff.username, from_status="en_proceso", to_status="creado", reason=reason,
                              attendees_count=counts["attendees"], access_logs_count=counts["access_logs"], at=utcnow()))
+    event_history.record(db, event, history_before, staff, "state")
     db.commit()
     log.info("evento %s devuelto a «creado» por el usuario %s (%s personas, %s ingresos)", event.id, staff.id, counts["attendees"], counts["access_logs"])
     warmup.kick()                  # sale de «en proceso»: soltar las instancias precalentadas, como en cualquier cambio de estado

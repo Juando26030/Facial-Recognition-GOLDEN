@@ -117,6 +117,25 @@
           </div>
         </details>
 
+        {# Historial de cambios del evento por campo (Fase 5, solo lectura; static/js/event-history-panel.js). Lo ve quien edita el evento: coordinador, comercial, admin y super_admin. #}
+        <details class="gw-form-group" id="eeHistoryGroup" hidden>
+          <summary class="gw-form-group__summary">Historial de cambios</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-field"><label class="gw-label" for="eeHistoryField">Filtrar por campo</label><select class="gw-select" id="eeHistoryField" data-eh="field"><option value="">Todos los campos</option></select></div>
+            <div class="gw-table-wrap">
+              <table class="gw-table">
+                <thead><tr><th>Cuándo</th><th>Quién</th><th>Campo</th><th>Cambio</th></tr></thead>
+                <tbody data-eh="body"></tbody>
+              </table>
+            </div>
+            <div class="gw-pager">
+              <span class="gw-pager__info" data-eh="info" aria-live="polite"></span>
+              <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="prev">Anterior</button>
+              <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="next">Siguiente</button>
+            </div>
+          </div>
+        </details>
+
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
         <details class="gw-form-group" open>
           <summary class="gw-form-group__summary">Informe final</summary>
@@ -162,6 +181,7 @@
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
 <script src="{{ url_for('static', path='js/workday.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-history-panel.js') }}"></script>
 <script>
 (function () {
   const ROLE = {{ staff_role|tojson }};
@@ -423,6 +443,16 @@
     });
   });
 
+  /* ---------- Historial de cambios (solo lectura; el servidor decide quién lo puede leer) ---------- */
+  const historyGroup = document.getElementById('eeHistoryGroup');
+  if (historyGroup && window.EventHistoryPanel) EventHistoryPanel.bind(historyGroup);
+  function paintHistory(ev) {
+    if (!historyGroup || !window.EventHistoryPanel) return;
+    historyGroup.hidden = !['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE);
+    historyGroup.open = false;
+    EventHistoryPanel.show(ev.id);
+  }
+
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
@@ -448,6 +478,7 @@
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
     paintWorkday(tpl);
+    paintHistory(ev);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     document.getElementById('eeFinalDbFile').value = '';

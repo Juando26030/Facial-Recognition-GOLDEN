@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import acceptmail, audit_actions, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
+from app import acceptmail, audit_actions, biometric_setup, event_history, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
 from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app import event_archive
@@ -153,6 +153,7 @@ def set_precalc(event_id: int, data: dict, db: Session = Depends(get_db), staff:
 def set_consent_config(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     """Quién es el Responsable del evento (golden | tercero + datos del organizador) y cada cuánto se pide la autorización (once | every_scan)."""
     event = get_event_for_staff(event_id, db, staff)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     mode = str(data.get("controller_mode", event.controller_mode))
     name, nit, email = (str(data.get(k, getattr(event, k)) or "").strip() or None for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"))
     aceptar = bool(data.get("aceptar_enabled", event.aceptar_enabled))
@@ -162,7 +163,9 @@ def set_consent_config(event_id: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail=err or "El modo de la autorización debe ser «once» o «every_scan»")
     event.controller_mode, event.organizer_name, event.organizer_nit, event.organizer_privacy_email, event.consent_prompt_mode = mode, name, nit, email, prompt
     event.aceptar_enabled = aceptar
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"controller_mode": mode, "organizer_name": name, "organizer_nit": nit, "organizer_privacy_email": email, "consent_prompt_mode": prompt, "aceptar_enabled": aceptar}
 
 
@@ -234,6 +237,7 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     """Guarda el paso guiado de una vez y validado EN EL SERVIDOR (esto es lo que protege; la pantalla solo guía). Todo o nada. El pre-cálculo NO se activa aquí (solo un super_admin, con anexo y garantía);
     si la nueva configuración lo deja sin sustento (evento propio, sin fotos previas o rostro apagado) se APAGA solo."""
     event = get_event_for_staff(event_id, db, staff)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     cur = _setup_config(event)
     new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
     if new["biometrics_locked"] and not cur["biometrics_locked"]:      # al poner el candado, lo que no se pidió expresamente se apaga solo
@@ -261,7 +265,9 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])
     if event.precalculo_autorizado and not (event.facial_enabled and event.controller_mode == "tercero" and event.client_photos_before):
         event.precalculo_autorizado = False
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"config": _setup_config(event), **biometric_setup.summary(event)}
 
 
