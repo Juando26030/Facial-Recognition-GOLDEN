@@ -1481,3 +1481,67 @@ class QueueCall(Base):
     called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
     called_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (Index('ix_queue_call_event', 'event_id', 'id'),)
+
+
+class ContactCard(Base):
+    """Tarjeta de contacto de UNA persona en UN evento (Fase 8, 0114): `token` = enlace PRIVADO donde la persona decide si comparte sus datos con expositores; `share_token` = lo que lleva el QR/NFC que ve el expositor.
+    Los dos son aleatorios (nada de cédulas en la URL: las direcciones quedan en los registros del proveedor). Sin datos personales aquí: solo quién (llave de la persona) y los tokens."""
+    __tablename__ = 'contact_cards'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(String, nullable=False)
+    token = Column(String, nullable=False, unique=True)
+    share_token = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('event_id', 'tenant_id', 'user_id', name='uq_contact_card_person'),)
+
+
+class AuditContactShare(Base):
+    """Constancia INMUTABLE (solo INSERT) de que una persona aceptó o retiró compartir sus datos de contacto con los expositores (Ley 1581: autorización previa, expresa e informada). Vigente = el ÚLTIMO registro
+    de la persona en el evento. Guarda la versión y la huella del texto exacto que vio; la cédula solo como huella (HMAC)."""
+    __tablename__ = 'audit_contact_shares'
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(String, nullable=False)
+    cedula_hash = Column(String, nullable=False)
+    at = Column(DateTime, default=utcnow, nullable=False)
+    version = Column(String, nullable=False)
+    text_hash = Column(String, nullable=False)
+    shared = Column(Boolean, nullable=False)
+    adult_confirmed = Column(Boolean, nullable=False, default=False)
+    reason = Column(String, nullable=False)          # consent | revocation
+    __table_args__ = (Index('ix_contact_share_person', 'event_id', 'tenant_id', 'user_id', 'at'),)
+
+
+class EventExhibitor(Base):
+    """Un expositor del evento (Fase 8, 0114). `token` = su enlace PRIVADO (escanear asistentes y ver su lista); `card_token` = su tarjeta pública (QR/NFC que escanean los asistentes para guardarlo). Los datos de la tarjeta
+    los pone el organizador con el expositor (son datos del expositor, publicados por él)."""
+    __tablename__ = 'event_exhibitors'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)          # empresa / stand
+    contact_name = Column(String, nullable=True)
+    title = Column(String, nullable=True)          # cargo
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    token = Column(String, nullable=False, unique=True)
+    card_token = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (Index('ix_exhibitor_event', 'event_id'),)
+
+
+class ExhibitorLead(Base):
+    """Persona escaneada por un expositor (Fase 8, 0114). Solo la llave de la persona: lo que se muestra se lee en el momento y SOLO si la persona sigue compartiendo (retirar la autorización oculta el contacto)."""
+    __tablename__ = 'exhibitor_leads'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    exhibitor_id = Column(Integer, ForeignKey('event_exhibitors.id', ondelete='CASCADE'), nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    scanned_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('exhibitor_id', 'tenant_id', 'user_id', name='uq_exhibitor_lead'),)
