@@ -12,3 +12,12 @@
 .entrega__scale { display: flex; justify-content: space-between; gap: var(--gw-sp-3); }
 .entrega__foot { text-align: center; }
 .entrega [hidden] { display: none !important; }
+/* Revisión visual F5-9: el <legend> de cada pregunta se dibujaba SOBRE el borde de la tarjeta (asomando por arriba); flotado queda dentro, como título de la tarjeta. */
+.entrega__q > .entrega__legend { float: left; width: 100%; padding: 0; margin: 0 0 var(--gw-sp-3); line-height: var(--gw-lh-tight); }
+.entrega__q > .entrega__legend + * { clear: both; margin-top: 0; }
+.entrega .gw-fields-row { row-gap: var(--gw-sp-3); }
+.entrega .gw-segment__opt { min-height: var(--gw-tap); }
+/* .gw-fieldset quita borde y relleno: la pregunta debe seguir viéndose como tarjeta y con aire entre una y otra (en escritorio quedaban pegadas y sin margen interno). */
+.entrega__q.gw-card { padding: var(--gw-sp-5); border: 1px solid var(--gw-border); }
+.entrega #surveyForm > * + * { margin-top: var(--gw-sp-5); }
+@media (max-width: 640px) { .entrega__q.gw-card { padding: var(--gw-sp-4); } }

@@ -14,3 +14,12 @@
 .gw-versionbar { position: sticky; top: 0; z-index: 70; padding: var(--gw-sp-2) var(--gw-sp-4); text-align: center; }
 .gw-versionbar--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); }
 .gw-versionbar--err { background: var(--gw-err-bg); color: var(--gw-err-text); }
+
+/* Revisión visual F5-9: la campana flotante tapaba el botón «Guardar cambios» de la barra de guardado (Parámetros, Configuración), el «⋯» de la última fila del Registro
+   y el final de las páginas. Sube por encima de la barra de guardado y las páginas dejan aire abajo para que lo último se pueda ver y tocar. */
+body:has(.gw-savebar) .gw-bell { bottom: calc(var(--gw-sp-4) + 4.75rem); }
+.gw-page:has(.gw-bell) .golden-main { padding-bottom: calc(var(--gw-tap) + var(--gw-sp-7)); }
+body.gw-registro .gw-reg__list { padding-bottom: calc(var(--gw-tap) + var(--gw-sp-5)); }
+@media (max-width: 640px) {
+  body:has(.gw-savebar) .gw-bell { bottom: calc(var(--gw-sp-4) + 8rem); }
+}
