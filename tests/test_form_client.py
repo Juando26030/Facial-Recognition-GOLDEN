@@ -41,6 +41,17 @@ def _enroll(client, ev, form, n, ciudad, cat):
     assert r.status_code == 200, r.text
 
 
+def _login_client(client, acc):
+    """Fase 4: la contraseña que entrega el comercial se cambia al primer ingreso; estas pruebas miran lo que el cliente ve DESPUÉS, así que se da por cambiada."""
+    from app.database import SessionLocal
+    from app.models import StaffUser
+
+    with SessionLocal() as s:
+        s.query(StaffUser).filter_by(username=acc["username"]).update({"must_change_password": False})
+        s.commit()
+    return login(client, acc["username"], acc["password"])
+
+
 def _create_access(client, ev, form, **body):
     r = client.post(f"/api/events/{ev.id}/forms/{form['id']}/client-access", json=body)
     assert r.status_code == 200, r.text
@@ -100,7 +111,7 @@ def test_create_access_shows_password_once_and_the_client_sees_only_their_form(c
     listed = client.get(f"/api/events/{ev.id}/forms/{form['id']}/client-access").json()["users"]
     assert [u["username"] for u in listed] == [acc["username"]] and not listed[0]["expired"]
     client.post("/logout")
-    assert login(client, acc["username"], acc["password"]).status_code in (200, 302, 303)
+    assert _login_client(client, acc).status_code in (200, 302, 303)
     assert client.get("/").headers["location"] == "/mi-formulario"
     page = client.get("/mi-formulario")
     assert page.status_code == 200 and "/api/form-client/stats" in page.text
@@ -128,7 +139,7 @@ def test_client_of_one_form_never_sees_another_form_of_the_same_event(client, fa
     client.post("/logout")
     _enroll(client, ev, form1, 1, "Cali", "General")
     _enroll(client, ev, form1, 2, "Cali", "General")
-    assert login(client, acc2["username"], acc2["password"]).status_code in (200, 302, 303)
+    assert _login_client(client, acc2).status_code in (200, 302, 303)
     d = client.get("/api/form-client/stats").json()
     assert d["form"]["id"] == form2["id"] and d["summary"]["registered"] == 0 and d["capacity"]["total"] == 9           # su formulario, no el primero
     assert client.get(f"/api/events/{ev.id}/forms/{form1['id']}/stats").status_code == 403
@@ -154,7 +165,7 @@ def test_expired_access_is_refused_and_revoking_removes_it(client, factory, db):
     bad = client.post(f"/api/events/{ev.id}/forms/{form['id']}/client-access", json={"days": 999})
     assert bad.status_code == 400
     client.post("/logout")
-    login(client, acc["username"], acc["password"])
+    _login_client(client, acc)
     assert client.get("/api/form-client/stats").status_code == 200
     g = db.query(FormClientUser).one()
     g.expires_at = utcnow() - timedelta(minutes=1)
@@ -225,7 +236,7 @@ def test_an_expired_form_client_cannot_use_the_rest_of_the_api(client, factory, 
     login(client, "adm1")
     acc = _create_access(client, ev, form, days=1)
     client.post("/logout")
-    login(client, acc["username"], acc["password"])
+    _login_client(client, acc)
     assert client.get("/api/ping-auth").status_code == 200
     g = db.query(FormClientUser).one()
     g.expires_at = utcnow() - timedelta(minutes=1)

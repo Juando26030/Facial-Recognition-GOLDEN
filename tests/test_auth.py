@@ -233,8 +233,9 @@ def test_password_reset_by_manager_forces_change_and_respects_hierarchy(client, 
     assert client.put(f"/api/staff/{admin.id}/password", json={"new_password": "Temporal#2026"}).status_code == 403
     assert client.put(f"/api/staff/{coord.id}/password", json={"new_password": "Temporal#2026"}).status_code == 400  # la propia: cambiar-contrasena
     client.post("/logout")
-    r = login(client, "9990001", "Temporal#2026")
-    assert r.status_code == 302 and r.headers["location"] == "/cambiar-contrasena"
+    r = login(client, "9990001", "9990001")                          # Fase 4: el digitador temporal vuelve a entrar con su cédula y no cambia contraseña
+    assert r.status_code == 302 and r.headers["location"] != "/cambiar-contrasena"
+    client.post("/logout")
     assert login(client, "9990001", PASSWORD).status_code == 401   # la anterior ya no sirve
 
 
