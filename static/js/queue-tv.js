@@ -18,7 +18,7 @@
       var flash = key && last[l.letter] !== undefined && last[l.letter] !== key;
       if (flash) changed = true;
       last[l.letter] = key;
-      return '<div class="tq-tv__lane' + (flash ? ' tq-tv__lane--flash' : '') + '"><div>' + esc(l.name && l.name !== l.letter ? l.name : 'Fila ' + l.letter) + '</div>' +
+      return '<div class="tq-tv__lane' + (flash ? ' tq-tv__lane--flash' : '') + '"><div class="tq-tv__name">' + esc(l.name && l.name !== l.letter ? l.name : 'Fila ' + l.letter) + '</div>' +
         '<div class="tq-tv__label">' + esc(label) + '</div><div class="tq-tv__desk">' + esc(s && s.desk ? s.desk : '') + '</div></div>';
     }).join('');
     recentEl.innerHTML = (d.recent || []).slice(0, 6).map(function (c) { return '<span>' + esc(c.label) + (c.desk ? ' · ' + esc(c.desk) : '') + '</span>'; }).join('');

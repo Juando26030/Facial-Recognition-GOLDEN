@@ -18,7 +18,7 @@
     <button type="button" class="gw-btn gw-btn--primary gw-btn--block" id="scanBtn">Escanear asistente</button>
     <div class="gw-field">
       <label class="gw-label" for="cedulaIn">¿Sin cámara? Escribe la cédula</label>
-      <div class="ct-row"><input class="gw-input" id="cedulaIn" inputmode="numeric" autocomplete="off" style="flex:1"><button type="button" class="gw-btn gw-btn--secondary" id="cedulaBtn">Buscar</button></div>
+      <div class="ct-row"><input class="gw-input ct-grow" id="cedulaIn" inputmode="numeric" autocomplete="off"><button type="button" class="gw-btn gw-btn--secondary" id="cedulaBtn">Buscar</button></div>
     </div>
     <div class="gw-state" id="scanResult" role="status" aria-live="polite" hidden></div>
   </div>
@@ -30,7 +30,7 @@
   </div>
   <div class="gw-card gw-stack">
     <h2 class="gw-card__title">Mi tarjeta (para que los asistentes me guarden)</h2>
-    <div class="ct-qr" id="qrHost"></div>
+    <div class="ct-qr gw-no-theme" id="qrHost"></div>
     <p class="ct-muted" id="cardUrl"></p>
     <div class="ct-row"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="copyBtn">Copiar enlace</button>
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="nfcBtn" hidden>Escribir etiqueta NFC</button></div>

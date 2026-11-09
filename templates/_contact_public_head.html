@@ -6,13 +6,23 @@
 <style>{{ brand_css|safe }}
   .ct-wrap { max-width: 460px; margin: 0 auto; padding: var(--gw-sp-5) var(--gw-sp-4) var(--gw-sp-8); display: flex; flex-direction: column; gap: var(--gw-sp-4); }
   .ct-logo { text-align: center; } .ct-logo img { max-height: 56px; max-width: 70%; object-fit: contain; }
-  .ct-qr { width: 220px; max-width: 70%; margin: 0 auto; padding: var(--gw-sp-3); background: #fff; border-radius: var(--gw-radius-md); }
+  .ct-qr { width: 13.75rem; max-width: 70%; margin: 0 auto; padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); line-height: 0; }          /* lleva .gw-no-theme: el QR va siempre sobre blanco */
   .ct-legal { white-space: pre-line; font-size: var(--gw-fs-sm); }
   .ct-check { display: flex; gap: var(--gw-sp-3); align-items: flex-start; font-weight: var(--gw-fw-bold); }
-  .ct-check input { width: 22px; height: 22px; margin-top: 2px; flex: none; }
-  .ct-name { font-size: var(--gw-fs-xl, 1.5rem); margin: 0; word-break: break-word; }
+  .ct-check { min-height: var(--gw-tap); cursor: pointer; }
+  .ct-check input { width: 1.5rem; height: 1.5rem; margin: 0; flex: none; accent-color: var(--gw-navy); }
+  :root[data-theme="dark"] .ct-check input { accent-color: var(--gw-gold-2); }
+  .ct-name { font-size: var(--gw-fs-xl); margin: 0; word-break: break-word; }
   .ct-muted { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); margin: 0; }
   .ct-row { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+  .ct-grow { flex: 1 1 10rem; min-width: 0; }
+  .ct-item > span { min-width: 0; }
+  .ct-item .gw-btn { flex: none; }
+  /* resultado del escaneo del expositor (expositor-page.js): verde si se guardó, ámbar si no; con texto, no solo color */
+  .gw-state--success { border-style: solid; border-color: var(--gw-ok-line); background: var(--gw-ok-bg); color: var(--gw-ok-text); }
+  .gw-state--success .gw-state__text { color: var(--gw-ok-text); }
+  .gw-state--warning { border-style: solid; border-color: var(--gw-warn-line); background: var(--gw-warn-bg); color: var(--gw-warn-text); }
+  .gw-state--warning .gw-state__text { color: var(--gw-warn-text); }
   .ct-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
   .ct-item { display: flex; justify-content: space-between; align-items: center; gap: var(--gw-sp-3); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
   .ct-item strong { display: block; word-break: break-word; }

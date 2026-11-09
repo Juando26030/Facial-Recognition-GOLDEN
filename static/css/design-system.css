@@ -1044,3 +1044,23 @@
 .gw-combobox__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-combobox__empty { display: flex; align-items: center; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 @media (forced-colors: active) { .gw-combobox__opt.is-active { outline: 2px solid Highlight; } }
+
+/* ============================================================ Revisión visual F5-9 · cabecera en ventana angosta y tableta vertical (641-900 px)
+   Con el menú plegado, el nombre completo + «Tema oscuro» + «Salir» no cabían y «Salir» bajaba a una segunda línea. Igual que en celular pero con más aire:
+   UNA línea, tema solo ícono (su nombre accesible lo pone _gw_theme_toggle.html) y el nombre recortado con «…» (completo en `title`). */
+@media (min-width: 641px) and (max-width: 900px) {
+  .gw-page .golden-header-container { flex-wrap: nowrap; align-items: center; gap: var(--gw-sp-3); }
+  .gw-page .golden-header .golden-logo { flex: 0 1 auto; min-width: 0; }
+  .gw-page .golden-header .golden-nav, .gw-page .golden-header .gw-kiosk-nav { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; justify-content: flex-end; }
+  .gw-page .golden-header form { margin: 0; }
+  .gw-page .golden-header .gw-theme-toggle { flex: none; justify-content: center; width: var(--gw-tap); padding: 0; }
+  .gw-page .golden-header .gw-theme-toggle [data-gw-theme-label] { display: none; }
+  .gw-page .golden-header .golden-nav-user, .gw-page .golden-header .gw-shell__who, .gw-page .golden-header .gw-registro__who, .gw-page .golden-header .gw-parametros__who { flex: 0 1 auto; min-width: 2.5rem; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-page .golden-header .gw-btn { flex: none; }
+  /* franja azul del evento: Cliente · Evento · Código seguidos (como en celular), en vez de tres bloques apilados */
+  .gw-page .golden-event-strip { padding: var(--gw-sp-2) var(--gw-sp-4); font-size: var(--gw-fs-sm); }
+  .gw-page .golden-event-strip-inner { display: block; text-align: left; }
+  .gw-page .golden-event-strip-inner > span { display: inline; }
+  .gw-page .golden-event-strip-inner > span + span::before { content: " \00b7  "; color: var(--gw-nav-accent); font-weight: var(--gw-fw-bold); }
+  .gw-page .golden-event-strip strong { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}

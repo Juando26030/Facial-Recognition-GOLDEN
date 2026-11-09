@@ -6,7 +6,12 @@
 .gw-autoreg__sub { font-size: var(--gw-fs-lg); color: var(--gw-text-muted); text-align: center; }
 .gw-autoreg__form { display: flex; flex-direction: column; gap: var(--gw-sp-4); }
 .gw-autoreg__fields { display: flex; flex-direction: column; gap: var(--gw-sp-3); }
-.gw-autoreg__check { display: flex; align-items: flex-start; gap: var(--gw-sp-3); font-size: var(--gw-fs-md); }
+.gw-autoreg__check { display: flex; align-items: flex-start; gap: var(--gw-sp-3); font-size: var(--gw-fs-md); min-height: var(--gw-tap); cursor: pointer; }
+.gw-autoreg__check input { width: 1.75rem; height: 1.75rem; flex: none; margin: 0; accent-color: var(--gw-navy); cursor: pointer; }          /* casilla grande: se toca con el dedo en el quiosco */
+:root[data-theme="dark"] .gw-autoreg__check input { accent-color: var(--gw-gold-2); }
+.gw-autoreg__check label { cursor: pointer; padding-top: var(--gw-sp-1); }
+.gw-autoreg .gw-label { font-size: var(--gw-fs-md); }
+.gw-autoreg .gw-input, .gw-autoreg .gw-select { min-height: 3.25rem; font-size: var(--gw-fs-lg); }
 .gw-autoreg__send { width: 100%; min-height: 4rem; font-size: var(--gw-fs-xl); border-radius: var(--gw-radius-pill); }
 .gw-autoreg__msg { padding: var(--gw-sp-4) var(--gw-sp-5); border: 2px solid var(--gw-info-line); border-radius: var(--gw-radius-md); background: var(--gw-info-bg); color: var(--gw-info-text); font-size: clamp(var(--gw-fs-lg), 3vw, var(--gw-fs-xl)); font-weight: var(--gw-fw-bold); text-align: center; }
 .gw-autoreg__msg--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }

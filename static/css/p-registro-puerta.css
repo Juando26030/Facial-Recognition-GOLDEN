@@ -303,7 +303,7 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { flex: 1.1 1 0; min-width: 0; max-width: none; font-size: var(--gw-fs-md); }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name] { order: 1; }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 2; }
-  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id] { order: 3; flex: 0 0 8.5rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id] { order: 3; flex: 0 0 7.5rem; }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id]::before { content: none; }          /* sin «C.C.»: la columna ya es la cédula (ahorra ancho) */
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 4; flex: 0.7 1 0; min-width: 0; font-size: var(--gw-fs-sm); }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 5; flex: 1 1 0; min-width: 0; font-size: var(--gw-fs-sm); }
@@ -318,7 +318,7 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado:has(td[data-field=reason] .gw-reason) { flex-wrap: wrap; }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 10; flex: 1 1 100%; white-space: normal; }
   /* acciones a la derecha, en línea; ancho fijo para que el encabezado y todas las filas queden alineados */
-  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 9; flex: 0 0 27.5rem; display: flex; justify-content: flex-end; margin: 0 0 0 auto; gap: var(--gw-sp-2); overflow: visible; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 9; flex: 0 0 18.5rem; display: flex; justify-content: flex-end; margin: 0 0 0 auto; gap: var(--gw-sp-2); overflow: visible; }
   /* una casilla vacía (sin empresa, sin tipo, sin origen) CONSERVA su lugar: así no se corre el resto de la fila */
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=opt_1]:empty,
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=entity]:empty,
@@ -329,14 +329,14 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table thead th { display: block; padding: 0; min-width: 0; background: transparent; border: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); text-transform: none; letter-spacing: 0; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=first_name] { order: 1; flex: 1.1 1 0; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=last_name] { order: 2; flex: 1.1 1 0; }
-  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=id] { order: 3; flex: 0 0 8.5rem; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=id] { order: 3; flex: 0 0 7.5rem; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=opt_1] { order: 4; flex: 0.7 1 0; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=entity] { order: 5; flex: 1 1 0; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=status] { order: 6; flex: 0 0 7.75rem; text-align: center; padding: 0 var(--gw-sp-2); }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=origin] { order: 7; flex: 0 0 8.5rem; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=recent] { order: 8; display: none; }
   html body.gw-registro .gw-reg__list .golden-table:has(tbody tr[data-recent]) thead th[data-col=recent] { display: block; flex: 0 0 8.75rem; }
-  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { order: 9; flex: 0 0 27.5rem; text-align: right; margin-left: auto; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { order: 9; flex: 0 0 18.5rem; text-align: right; margin-left: auto; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn,
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn { min-height: 2.5rem !important; height: 2.5rem; min-width: 2.5rem; padding: 0 var(--gw-sp-3) !important; font-size: var(--gw-fs-md) !important; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
@@ -383,8 +383,32 @@ html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accr
 html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-icon { color: var(--gw-gold-text); }
 html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-icon { color: var(--gw-info-line); }
 
-/* Escritorio estrecho (901-1279 px): la columna de acciones ocupa menos, para que quepan nombre y empresa */
-@media (min-width: 901px) and (max-width: 1279px) {
+/* Columna de acciones del ancho EXACTO de sus botones (revisión visual F5-9): de 901 a 1499 px son Acreditar (9rem) + 3 íconos de 2,5rem + 3 separaciones = 18,5rem;
+   desde 1500 px Imprimir y Editar dicen su nombre y la columna crece. Así el espacio sobrante va a nombre, apellido y empresa en vez de quedar vacío antes de los botones. */
+@media (min-width: 1500px) {
   html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell,
-  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { flex: 0 0 21rem; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { flex: 0 0 27.5rem; }
+}
+/* Escritorio estrecho y tableta horizontal (revisión visual F5-9): con las 8 columnas, el nombre y el apellido quedaban de 0 a 60 px. Reglas por ancho:
+   - 901-1279 px: el menú lateral se pliega detrás del botón ☰ (como en celular; SOLO en Registro) y se ocultan «Tipo» y «Origen» (siguen en el filtro de origen y en Editar).
+   - 1280-1599 px: se oculta solo «Origen».
+   La cédula y la casilla vacía de una fila sin dato conservan su lugar, así todo queda alineado con el encabezado. */
+@media (min-width: 901px) and (max-width: 1279px) {
+  body.gw-registro.has-sidebar .golden-sidebar { transform: translateX(-100%); transition: transform var(--gw-dur); }
+  body.gw-registro.has-sidebar.sidebar-open .golden-sidebar { transform: translateX(0); }
+  body.gw-registro.has-sidebar .golden-sidebar-toggle { display: block; }
+  body.gw-registro.has-sidebar.sidebar-open .golden-sidebar-backdrop { display: block; }
+  body.gw-registro.has-sidebar .golden-header { left: 0; width: 100%; }
+  body.gw-registro.has-sidebar .golden-main,
+  body.gw-registro.has-sidebar .golden-content-spacer,
+  body.gw-registro.has-sidebar .golden-event-strip { margin-left: 0; }
+  body.gw-registro.has-sidebar .golden-header-container { padding-left: 4.2rem; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=opt_1],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=opt_1]:empty,
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=opt_1] { display: none; }
+}
+@media (min-width: 901px) and (max-width: 1599px) {
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=origin],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=origin]:empty,
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=origin] { display: none; }
 }

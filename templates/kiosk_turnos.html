@@ -61,13 +61,13 @@
     <div class="gw-card"><p>«Turnos y filas» está apagado. Se activa en <a href="/kiosk/{{ event.id }}/parametros">Parámetros</a> → Zonas e inventario.</p></div>
     {% else %}
     <section class="gw-card gw-stack" aria-labelledby="tqLanesT">
-      <h2 id="tqLanesT" class="gw-h3">Filas</h2>
+      <h2 id="tqLanesT" class="gw-card__title">Filas</h2>
       <div class="gw-field"><label class="gw-label" for="tqDesk">Tu puesto (opcional, sale en la pantalla)</label><input class="gw-input" id="tqDesk" type="text" maxlength="40" placeholder="Por ejemplo: Mesa 2"></div>
       <div id="tqLanes" class="tq-lanes" aria-live="polite"></div>
     </section>
 
     <section class="gw-card gw-stack" aria-labelledby="tqSetupT">
-      <h2 id="tqSetupT" class="gw-h3">Dar turnos</h2>
+      <h2 id="tqSetupT" class="gw-card__title">Dar turnos</h2>
       <p class="gw-hint" id="tqModeHint"></p>
       <div class="gw-actions">
         <button type="button" class="gw-btn gw-btn--primary" data-act="assign">Asignar turnos</button>
@@ -79,9 +79,9 @@
     </section>
 
     <section class="gw-card gw-stack" aria-labelledby="tqQrT">
-      <h2 id="tqQrT" class="gw-h3">QR para la gente</h2>
+      <h2 id="tqQrT" class="gw-card__title">QR para la gente</h2>
       <p class="gw-hint">Imprímelo o ponlo en pantalla: la persona lo escanea, escribe su cédula y ve su turno. El QR no lleva ningún dato personal.</p>
-      <div id="tqQr" class="tq-qr"></div>
+      <div><div id="tqQr" class="tq-qr gw-no-theme"></div></div>
       <p class="gw-hint"><span id="tqUrl"></span></p>
       <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary" data-act="print-qr">Imprimir QR</button><button type="button" class="gw-btn gw-btn--secondary" data-act="copy-url">Copiar enlace</button></div>
     </section>

@@ -6,7 +6,7 @@
 .gw-tv__logo { max-height: clamp(3rem, 11vh, 7rem); max-width: 30vw; object-fit: contain; }
 .gw-tv__title { margin: 0; font-size: clamp(1.6rem, 4.4vw, 4.2rem); line-height: 1.05; overflow-wrap: anywhere; }
 .gw-tv__count { grid-area: count; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
-.gw-tv__num { margin: 0; font-size: clamp(4rem, 17vw, 16rem); line-height: 1; font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; background: var(--gw-gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.gw-tv__num { margin: 0; white-space: nowrap; font-size: clamp(4rem, 10vw, 14rem);          /* «612 / 850» en UNA línea (a 17vw la cifra no cabía en su columna y «/ 850» bajaba) */ line-height: 1; font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; background: var(--gw-gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .gw-tv__of { font-size: .42em; color: var(--gw-text-muted); -webkit-text-fill-color: var(--gw-text-muted); }
 .gw-tv__label { margin: 0 0 var(--gw-sp-4); font-size: clamp(1.1rem, 2.4vw, 2.2rem); color: var(--gw-text-muted); }
 .gw-tv__bar { height: clamp(.8rem, 2.2vh, 1.6rem); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); border: 1px solid var(--gw-border); overflow: hidden; }
@@ -22,8 +22,9 @@
 .gw-tv__ent { grid-column: 1 / -1; font-size: clamp(.9rem, 1.7vw, 1.5rem); color: var(--gw-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gw-tv__list .gw-tv__empty { display: block; color: var(--gw-text-muted); border-left-color: var(--gw-border); }
 .gw-tv__foot { grid-area: foot; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
-.gw-tv__foot.is-off { color: var(--gw-warn-text, var(--gw-text)); }
+.gw-tv__foot.is-off { color: var(--gw-warn-text); }
 @media (max-width: 800px) {
+  .gw-tv__num { font-size: clamp(3.5rem, 22vw, 9rem); }
   .gw-tv__main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "count" "recent" "foot"; gap: var(--gw-sp-4); }
   .gw-tv__logo { max-width: 40vw; }
 }

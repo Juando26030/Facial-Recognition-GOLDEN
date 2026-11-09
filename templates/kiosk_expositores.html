@@ -6,6 +6,7 @@
     <title>Expositores | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-expositores.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -41,7 +42,7 @@
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name|upper }}</p>
         <h1 class="gw-page-head__title">Expositores</h1>
-        <p class="gw-page-head__sub">Cada expositor recibe un enlace privado para escanear asistentes. Solo ve a quienes aceptaron compartir sus datos. Guía: docs/22_CONTACTOS_EXPOSITORES.md.</p>
+        <p class="gw-page-head__sub">Cada expositor recibe un enlace privado para escanear asistentes. Solo ve a quienes aceptaron compartir sus datos.</p>
       </div>
     </div>
 
@@ -59,7 +60,7 @@
 
     <div class="gw-card gw-stack">
       <h2 class="gw-card__title">Expositores del evento</h2>
-      <div class="gw-table-wrap"><table class="gw-table">
+      <div class="gw-table-wrap"><table class="gw-table gw-table-cards ex-table">
         <thead><tr><th>Expositor</th><th>Contactos</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody id="exBody"><tr><td colspan="4">Cargando…</td></tr></tbody>
       </table></div>
