@@ -19,10 +19,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app import appmode, ops
+from app import appmode, event_lease, ops
 from app.obs import mask_pii
 from app.safeeq import safe_eq
-from app.auth import get_current_staff, require_role
+from app.auth import get_current_staff, require_role, require_role_or_any
 from app.database import get_db
 
 router = APIRouter()
@@ -116,6 +116,40 @@ def version_check(request: Request, force: bool = False) -> dict:
     if not request.session.get("staff_user_id"):
         raise HTTPException(status_code=401, detail="No autenticado")
     return versioning.check(force=force)
+
+
+@router.get("/api/ops/update-manifest")
+def update_manifest() -> dict:
+    """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público y sin base de datos."""
+    from app import local_update
+    return local_update.published_manifest()
+
+
+@router.get("/api/ops/update-status")
+def update_status(request: Request) -> dict:
+    """Avance de «Actualizar ahora» (lo escribe el servicio de actualización del servidor local). Sin base de datos; pide sesión."""
+    from app import local_update
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    if not local_update.is_local_server():
+        return {"enabled": False}
+    return {"enabled": True, **local_update.read_status()}
+
+
+@router.post("/api/ops/update")
+def update_now(data: dict, db: Session = Depends(get_db), staff=Depends(require_role_or_any("coordinador", event_lease.LEASE_ROLES))) -> dict:
+    """«Actualizar ahora» (solo servidores locales). Si hay un turno en marcha responde 409 `shift_active` y exige repetir con `confirm_shift: true` (la pantalla lo pregunta con showConfirm)."""
+    from datetime import timedelta
+    from app import local_update
+    from app.models import AccessLog, Event
+    from app.timeutil import utcnow
+    in_progress = db.query(Event).filter(Event.status == "en_proceso").count()
+    since = utcnow() - timedelta(minutes=local_update.RECENT_ACTIVITY_MINUTES)
+    recent = db.query(AccessLog).filter(AccessLog.timestamp >= since).count()
+    try:
+        return local_update.request_update(staff_id=staff.id, events_in_progress=in_progress, recent_checkins=recent, confirm_shift=bool((data or {}).get("confirm_shift")))
+    except local_update.UpdateRefused as e:
+        raise HTTPException(status_code=409 if e.code in ("shift_active", "busy") else 400, detail={"code": e.code, "message": e.message})
 
 
 @router.get("/api/ops/status")

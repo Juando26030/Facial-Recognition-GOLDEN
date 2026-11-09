@@ -1,0 +1,13 @@
+<service>
+  <id>GoldenLocalUpdater</id>
+  <name>Golden Local - Actualizador</name>
+  <description>Recoge las peticiones de «Actualizar ahora», hace copias de la base y actualiza el servidor local.</description>
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\GoldenLocal\scripts\updater-service.ps1"</arguments>
+  <startmode>Automatic</startmode>
+  <depend>GoldenLocalDB</depend>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>3</keepFiles></log>
+  <logpath>C:\GoldenLocal\logs</logpath>
+</service>

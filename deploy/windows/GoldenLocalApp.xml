@@ -1,0 +1,16 @@
+<service>
+  <id>GoldenLocalApp</id>
+  <name>Golden Local - Aplicación</name>
+  <description>Servidor local de GoldenWeb (registro y acceso sin internet).</description>
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\GoldenLocal\scripts\run-app.ps1"</arguments>
+  <workingdirectory>C:\GoldenLocal\app</workingdirectory>
+  <startmode>Automatic</startmode>
+  <depend>GoldenLocalDB</depend>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+  <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>5</keepFiles></log>
+  <logpath>C:\GoldenLocal\logs</logpath>
+</service>
