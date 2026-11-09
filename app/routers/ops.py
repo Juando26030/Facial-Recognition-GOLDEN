@@ -101,6 +101,23 @@ def run_face_jobs(_=Depends(google_invoker)) -> dict:
     return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")), kinds=jobs.FACE_KINDS, pool="faces")}
 
 
+@router.get("/api/ops/version")
+def version() -> dict:
+    """Versión de este servidor (commit, fecha y última migración). Pública y sin base de datos: la consultan los servidores locales para saber si están al día (app/versioning.py)."""
+    from app import versioning
+    return versioning.local_version()
+
+
+@router.get("/api/ops/version-check")
+def version_check(request: Request, force: bool = False) -> dict:
+    """Solo servidores locales (con PRODUCTION_URL): compara su versión con la de producción para mostrar el aviso de «desactualizado». En la nube responde {configured: false}. Pide sesión (cookie)
+    pero NO toca la base de datos: la página lo consulta al abrir y en la nube no debe costar nada."""
+    from app import versioning
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    return versioning.check(force=force)
+
+
 @router.get("/api/ops/status")
 def status(db: Session = Depends(get_db), staff=Depends(require_role("admin"))) -> dict:
     return ops.system_status(db)

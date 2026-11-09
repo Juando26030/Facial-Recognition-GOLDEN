@@ -12,6 +12,7 @@
 {% if staff_role is defined and staff_role and ("coordinador" in staff_role or "admin" in staff_role) %}<script src="{{ url_for('static', path='js/reprint-inbox.js') }}" defer></script>{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
 <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/version-banner.js') }}" defer></script>
 <aside class="golden-sidebar" id="gwSidebar">
   <nav>
     <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>

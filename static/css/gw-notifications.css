@@ -9,3 +9,8 @@
 .gw-bell__item p { margin: var(--gw-sp-1) 0; }
 .gw-bell__item--new { background: var(--gw-info-bg); color: var(--gw-info-text); }
 .gw-bell__item:focus-visible, .gw-bell__btn:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+
+/* Franja de versión de los servidores locales (static/js/version-banner.js). */
+.gw-versionbar { position: sticky; top: 0; z-index: 70; padding: var(--gw-sp-2) var(--gw-sp-4); text-align: center; }
+.gw-versionbar--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); }
+.gw-versionbar--err { background: var(--gw-err-bg); color: var(--gw-err-text); }
