@@ -61,7 +61,7 @@
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Asigna el rol</span>
         {% call ayuda('ay_stf2', 'Asigna el rol') %}El rol define qué puede hacer. Después, desde la tarjeta de la cuenta, un administrador puede cambiarlo o darle un segundo rol (coordinador + comercial).{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Revisa los accesos</span>
-        {% call ayuda('ay_stf3', 'Revisa los accesos') %}En la lista ves quién está activo. Desactivar corta el acceso sin borrar nada; «Archivar» oculta la cuenta y la deja sin acceso, y se puede restaurar; el borrado definitivo es solo del super administrador y solo de cuentas archivadas.{% endcall %}</li>
+        {% call ayuda('ay_stf3', 'Revisa los accesos') %}En la lista ves quién está activo. Desactivar corta el acceso sin borrar nada; «Eliminar cuenta» (administrador) la borra de verdad y no se puede deshacer; no aplica a un Super Admin ni a quien sea coordinador o comercial de un evento. Las que quedaron archivadas se ven en «Ver archivados».{% endcall %}</li>
     </ol>
 
     <details class="gw-group" id="newStaffGroup" data-gw-tour-step="1" data-gw-tour-title="1. Crea la cuenta" data-gw-tour-text="Abre «Nueva cuenta» y llena los datos. La contraseña es temporal: la persona elige la suya al entrar.">

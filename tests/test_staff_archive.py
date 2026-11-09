@@ -92,18 +92,19 @@ def test_hard_delete_rules(client, factory, db):
     factory.staff("super_admin", "sup")
     libre = factory.staff("comercial", "libre")
     ocupado = factory.staff("coordinador", "ocupado")
-    factory.event("finalizado", coordinator=ocupado)
-    libre_id, ocupado_id = libre.id, ocupado.id
+    dig = factory.staff("digitador", "9090909")
+    ev = factory.event("finalizado", coordinator=ocupado)
+    factory.authorize(ev, dig)
+    libre_id, ocupado_id, dig_id = libre.id, ocupado.id, dig.id
     login(client, "adm")
-    assert client.delete(f"/api/staff/{libre_id}").status_code == 403              # solo super_admin
-    login(client, "sup")
-    assert client.delete(f"/api/staff/{libre_id}").status_code == 400              # primero archivar
-    assert client.post(f"/api/staff/{libre_id}/archive").status_code == 200
-    assert client.post(f"/api/staff/{ocupado_id}/archive").status_code == 200
-    assert client.delete(f"/api/staff/{ocupado_id}").status_code == 400            # tiene eventos asignados
-    assert client.delete(f"/api/staff/{libre_id}").status_code == 200
+    assert client.delete(f"/api/staff/{ocupado_id}").status_code == 400            # coordinador de un evento: reasignar primero
+    assert client.delete(f"/api/staff/{libre_id}").status_code == 200              # admin elimina directo, sin archivar antes
+    assert client.delete(f"/api/staff/{dig_id}").status_code == 200                # su autorización al evento se quita sola
+    sup = db.query(StaffUser).filter_by(username="sup").one()
+    assert client.delete(f"/api/staff/{sup.id}").status_code in (400, 403)         # nunca un super_admin
     db.expire_all()
     assert db.query(StaffUser).filter_by(id=libre_id).first() is None
+    assert db.query(StaffUser).filter_by(id=dig_id).first() is None
     assert db.query(StaffUser).filter_by(id=ocupado_id).first() is not None
 
 

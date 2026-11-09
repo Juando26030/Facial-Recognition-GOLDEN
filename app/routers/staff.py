@@ -396,23 +396,17 @@ def restore_staff(staff_id: int, db: Session = Depends(get_db), staff: StaffUser
 
 @router.delete("/staff/{staff_id}")
 def delete_staff(
-    staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))
+    staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    """Borrado DEFINITIVO (Fase 3): solo super_admin, solo de una cuenta ya ARCHIVADA y sin eventos asignados (ni como coordinador/comercial ni autorizada), y queda registrado.
-    No borra Eventos ni AccessLogs asociados (son datos de negocio reales): las referencias a esta cuenta se desvinculan (quedan en NULL). Lo normal es archivar."""
-    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    if target.id == staff.id:
-        raise HTTPException(status_code=400, detail="No puedes borrar tu propia cuenta")
-    if target.role not in DELETABLE_ROLES_BY["super_admin"]:
-        raise HTTPException(status_code=403, detail=f"No puedes borrar cuentas de rol '{target.role}'")
-    _assert_can_manage(db, staff, target)
-    if target.archived_at is None:
-        raise HTTPException(status_code=400, detail="Primero archiva la cuenta; el borrado definitivo solo aplica a cuentas archivadas")
-    if db.query(Event.id).filter(or_(Event.coordinator_staff_id == target.id, Event.commercial_staff_id == target.id)).first() \
-            or db.query(EventStaffAuthorization.id).filter(EventStaffAuthorization.staff_user_id == target.id).first():
-        raise HTTPException(status_code=400, detail="No se puede borrar: la cuenta tiene eventos asignados")
+    """Eliminar cuenta (8-nov-2026, decisión de Juan David): el administrador borra de verdad cualquier cuenta que administra (comercial, coordinador, digitador, cliente; el super_admin también admin),
+    sin pasar por «archivar» (para dejar sin acceso sin borrar está «Desactivar»). Nunca un super_admin. No se puede si la cuenta es coordinador o comercial de algún evento (hay que reasignarlo primero);
+    las autorizaciones de digitador/cliente a eventos se quitan solas. No borra Eventos ni AccessLogs: las referencias a esta cuenta quedan en NULL. Queda registrado."""
+    target = _target_for_lifecycle(db, staff, staff_id)
+    if target.role == "super_admin":
+        raise HTTPException(status_code=403, detail="Una cuenta de Super Admin no se elimina")
+    if db.query(Event.id).filter(or_(Event.coordinator_staff_id == target.id, Event.commercial_staff_id == target.id)).first():
+        raise HTTPException(status_code=400, detail="No se puede eliminar: es coordinador o comercial de un evento. Reasigna el evento primero (o desactiva la cuenta)")
+    sessions.revoke_all(target)
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == target.id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == target.id).update({"authorized_by_id": None})
@@ -427,9 +421,13 @@ def delete_staff(
     outcome = staff_refs.delete_or_deactivate(db, target)      # D3: suelta TODAS las referencias (impresiones, áreas, inventario, cargas, formularios…); si una no se puede soltar, desactiva
     if outcome == "deleted":
         audit_actions.record(db, staff, "delete", "staff_user", target_id, audit_name, f"rol: {role}")
+    if outcome != "deleted":
+        if target.archived_at is None:
+            target.archived_at, target.archived_by_id = utcnow(), staff.id
+        target.is_active = False
     db.commit()
     if outcome == "deactivated":
-        return {"message": f"{username} tiene registros que no se pueden desvincular: sigue archivada y desactivada en lugar de borrarse", "deactivated": True}
+        return {"message": f"{username} tiene registros que no se pueden desvincular: quedó archivada y desactivada en lugar de borrarse", "deactivated": True}
     return {"message": f"{username} eliminado permanentemente de la base de datos"}
 
 

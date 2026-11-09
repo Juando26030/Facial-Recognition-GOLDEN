@@ -47,7 +47,7 @@
       if (!isAdminPlus || s.username === staffUsername) return '<p class="gw-hint">Cuenta archivada.</p>';
       const a = `data-id="${esc(s.id)}" data-username="${esc(s.username)}"`;
       let html = `<button type="button" class="gw-btn gw-btn--primary" data-staff-action="restore" ${a}>${icon('undo', 'gw-icon--sm')}<span>Restaurar</span></button>`;
-      if (staffRole === 'super_admin' && s.role !== 'super_admin') html += ` <button type="button" class="gw-btn gw-btn--danger-outline" data-staff-action="delete" ${a}>${icon('trash', 'gw-icon--sm')}<span>Eliminar definitivamente</span></button>`;
+      if (isAdminPlus && s.role !== 'super_admin') html += ` <button type="button" class="gw-btn gw-btn--danger-outline" data-staff-action="delete" ${a}>${icon('trash', 'gw-icon--sm')}<span>Eliminar definitivamente</span></button>`;
       return html;
     }
     if (s.role === 'super_admin' || s.username === staffUsername) return '<p class="gw-hint">Sin acciones disponibles para esta cuenta.</p>';
@@ -66,7 +66,7 @@
         : item('secondary', `También ${esc(roleLabel(otherRole))}`, 'plus', `data-value="${esc(otherRole)}"`));
     }
     if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol', 'user-plus', `data-current="${esc(s.role)}"`));
-    if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('archive', 'Archivar cuenta', 'lock', ''));          // el borrado definitivo vive en «Ver archivados» (solo super_admin)
+    if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Eliminar cuenta', 'trash', '', true));          // 8-nov-2026: se elimina de verdad (para dejar sin acceso está «Desactivar»); nunca un super_admin
     if (more.length) parts.push(`<div class="gw-menu gw-staff__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-staff-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(s.username)}">${icon('more')}</button><div class="gw-menu__panel" role="menu" hidden>${more.join('')}</div></div>`);
     return parts.join('');
   }
@@ -181,7 +181,7 @@
   }
 
   async function deleteStaff(btn) {
-    if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"?<br><br>Solo se puede si no tiene eventos asignados. Esta acción es permanente, no se puede deshacer y queda registrada.`, { confirmLabel: 'Eliminar definitivamente' }))) return;
+    if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"?<br><br>Se borra de verdad: no se puede deshacer y queda registrado. No se puede si es coordinador o comercial de un evento. Si solo quieres que no entre, usa «Desactivar».`, { confirmLabel: 'Eliminar cuenta' }))) return;
     await busy(btn, async () => {
       const res = await fetch(`/api/staff/${btn.dataset.id}`, { method: 'DELETE' });
       if (res.ok) { loadStaff(); showToast('Cuenta eliminada', 'success'); } else showToast(await apiError(res, 'No se pudo eliminar'), 'error');
