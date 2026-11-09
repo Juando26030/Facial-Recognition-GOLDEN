@@ -29,3 +29,12 @@ Alcance del plan maestro (docs/29 §11): servidor local con sincronización (doc
 
 ## Lo que NO puedo verificar yo
 Nada de esta fase se prueba sin una laptop real con Docker y un router: el kit es un borrador razonado, no probado. Lo programable (permisos, arrendamiento, subida) lleva pruebas automáticas; lo físico lo hacemos juntos en E5.
+
+## Flujo de uso decidido por Juan David (9-nov-2026, 13:49)
+1. Los eventos se crean en la **nube** (producción).
+2. El servidor local, **conectado a internet**, muestra la **lista de TODOS los eventos** como en producción (por clientes, por eventos y por calendario), pero **sin descargar su información**.
+3. Al abrir un evento aparecen sus opciones de siempre (ingresar, editar…) y además **«Descargar a local»**: el evento baja completo (como exportar de la nube e importar en el local, pero en un solo paso).
+4. También se puede hacer **a mano** (exportar en la nube, importar en el local).
+5. Cada vez que el servidor tiene internet **sube lo que tenga, cada ~30 minutos**, como una copia en producción.
+6. **Instalación:** un archivo que se abre con doble clic e instala TODO (incluida la base de datos), sin Docker ni comandos.
+7. El servidor **no se apaga solo nunca**: un turno puede durar de 6 a.m. a 6 p.m. o de 6 p.m. a 6 a.m. y se pueden editar más de 12 horas; solo se apaga a mano. (Las «12 horas» eran solo la duración típica del día.)
