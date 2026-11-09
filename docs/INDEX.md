@@ -1,7 +1,7 @@
 # Índice de `docs/` (0B, 2-nov-2026)
 
 Qué es cada documento y cuál manda. Si un documento de producto (`00`–`06`) no coincide con el código, manda el código y `CLAUDE.md`.
-Hay números repetidos (`00`, `13`, `18`) porque son documentos distintos de épocas distintas; **no se renumeran** para no romper enlaces,
+Hay números repetidos (`00`, `13`, `18`, `20`, `21`, `22`) porque son documentos distintos de épocas distintas; **no se renumeran** para no romper enlaces,
 runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 
 ## Para retomar el trabajo
@@ -31,6 +31,20 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 | [`EVENTOS_EN_CURSO_LANZAMIENTO.md`](EVENTOS_EN_CURSO_LANZAMIENTO.md) | Lanzamiento y reversa de «eventos en curso» (migración 0077) |
 | [`observabilidad.md`](observabilidad.md) · [`recuperacion_desastre.md`](recuperacion_desastre.md) · [`runbook_evento.md`](runbook_evento.md) | Salud/logs, recuperación ante desastre, qué revisar en una noche grande |
 | [`investigaciones_reunion_2026-09-21.md`](investigaciones_reunion_2026-09-21.md) | Investigaciones puntuales (histórico) |
+
+## Etapa «después del piloto» (Fases 5 a 9, rama `f5/integracion`, sin desplegar al 9-nov-2026)
+| Documento | Contenido |
+|---|---|
+| [`29_PLAN_MAESTRO_ETAPA_2026-10-29.md`](29_PLAN_MAESTRO_ETAPA_2026-10-29.md) | Plan maestro de la etapa (fases, «listo cuando») |
+| [`REVISION_F5-9_PLAN_VS_CODIGO.md`](REVISION_F5-9_PLAN_VS_CODIGO.md) | **Lo planeado contra lo construido (revisión 9-nov)** |
+| [`seguridad/F5-9_RESUMEN.md`](seguridad/F5-9_RESUMEN.md) | **Ronda de seguridad de las Fases 5–9** (y los cinco informes `seguridad/F5-9_*.md`) |
+| [`ux/REVISION_VISUAL_F5-9.md`](ux/REVISION_VISUAL_F5-9.md) | Revisión visual de las pantallas nuevas |
+| Fase 5 · eventos | `FASE_5_DECISIONES.md`, `FASE_5_FACTURADO.md`, `FASE_5_ENTREGA_ENCUESTA.md`, `FASE_5_HISTORIAL.md`, `FASE_5_INVENTARIO.md`, `FASE_5_JORNADA.md`, `FASE_5_NOTIFICACIONES.md` |
+| Fase 6 · sin red | `FASE_6_SERVIDOR_LOCAL.md` (estado y decisiones), `17_SERVIDOR_LOCAL.md` (diseño) |
+| Fase 7 · cliente | `20_URL_LIMPIA_INSCRIPCIONES.md` (el «20» de inscripciones) |
+| Fase 8 · vanguardia | `FASE_8_PANTALLA_TV.md`, `FASE_8_TURNOS.md`, `FASE_8_AUTORREGISTRO_KIOSCO.md`, `21_QR_DINAMICO_WALLET.md` (el «21» de QR), `22_CONTACTOS_EXPOSITORES.md` (el «22» de expositores), `23_COBROS_WOMPI_MULTICUENTA.md` |
+| Fase 9 · plataforma | `FASE_9_PLATAFORMA.md`, `24_COPIA_SEMANAL_ONEDRIVE.md` |
+| Otros «20–22» (Fases 3–4) | `20_CUENTAS_POR_SERVICIO.md`, `20_FORM_YA_INSCRITO.md`, `21_ESTADISTICAS_FORMULARIO_Y_CLIENTE.md`, `22_SESION_INACTIVIDAD.md` |
 
 ## Legal, UX y otros
 - [`legal/`](legal/): textos de la auditora, política de privacidad, decisiones y pendientes (empezar por `DECISIONES_Y_PENDIENTES.md`). Los textos legales son literales y no se editan.
