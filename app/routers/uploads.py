@@ -17,6 +17,7 @@ _RULES = {
     "bulk_zip": ("coordinador", ("comercial",)),
     "event_doc": ("coordinador", ()),
     "expense_evidence": ("coordinador", ()),
+    "final_database": ("coordinador", ()),
 }
 
 

@@ -600,6 +600,12 @@ def update_event(
     return _serialize(event)
 
 
+@router.get("/events/{event_id}")
+def get_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Un evento (mismo formato de la lista), para abrir su edición desde un enlace: /eventos?editar=<id> (correo del aviso de la base final, Fase 5)."""
+    return _serialize(get_event_for_staff(event_id, db, staff))
+
+
 @router.get("/events/{event_id}/staff-users")
 def list_event_staff(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))

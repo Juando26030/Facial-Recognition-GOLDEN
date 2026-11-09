@@ -35,6 +35,7 @@ PURPOSES = {
     "bulk_zip": ({".zip"}, 2 * 1024 * 1024 * 1024),
     "event_doc": ({".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods",
                    ".png", ".jpg", ".jpeg", ".webp", ".gif"}, 25_000_000),
+    "final_database": ({".xlsx", ".csv"}, 50 * 1024 * 1024),      # base de datos final del evento (Fase 5, app/final_db.py)
     "expense_evidence": ({".png", ".jpg", ".jpeg", ".webp", ".gif"}, 25_000_000),
     "event_package": ({".zip"}, int(os.getenv("EVENT_TRANSFER_MAX_ZIP_MB", "512")) * 1024 * 1024),      # paquete de un evento exportado (docs/18): se borra al importarlo y a las 24 h
     "form_file": (None, 20 * 1024 * 1024),       # extensiones y tope reales: los del campo (los valida el endpoint público)

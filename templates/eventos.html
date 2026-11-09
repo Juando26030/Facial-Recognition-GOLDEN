@@ -165,7 +165,7 @@ function eventCard(e) {
     <div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
       <div class="gw-card-row__head">
         <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? " (" + esc(e.event_code) + ")" : ""}"><span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span> <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ""}</span></span>
-        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ""}
+        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ""}${e.billed ? ` <span class="gw-badge gw-badge--ok" title="Facturado${e.billed_by_name ? " por " + esc(e.billed_by_name) : ""}">${esc(e.state_name || "Facturado")}</span>` : ""}
       </div>
       <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.tenant_name, where].filter(Boolean).join(" · ") + sup)}"><strong>${esc(e.tenant_name)}</strong>${where ? " · " + esc(where) : ""}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="${esc(who)}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span></span></p>
       <div class="gw-card-row__actions p-cli__acts">
@@ -319,6 +319,16 @@ eventsList.addEventListener("change", async (e) => {
 });
 
 runSearch();
+// Enlace directo a la edición de un evento (correo del aviso de la base final): /eventos?editar=<id>
+try {
+  const wanted = new URLSearchParams(location.search).get("editar");
+  if (/^\d+$/.test(wanted || "")) {
+    fetch(`/api/events/${wanted}`).then((r) => (r.ok ? r.json() : null)).then((ev) => {
+      if (ev && window.openEventEditModal) openEventEditModal(ev, runSearch);
+      else showToast("No se encontró ese evento o no tienes acceso", "error");
+    }).catch(() => { /* sin red: queda la lista */ });
+  }
+} catch (err) { /* sin parámetros */ }
 </script>
 {% include "_event_edit_modal.html" %}
 </body>

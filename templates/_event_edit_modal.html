@@ -25,11 +25,12 @@
             <div class="gw-field"><label class="gw-label" for="eeName">Nombre del evento</label><input class="gw-input" type="text" id="eeName" name="name" required></div>
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="modalStatusSelect">Estado del evento</label>
-                <select class="gw-select" name="status" id="modalStatusSelect">
-                  <option value="creado">Creado</option>
-                  <option value="en_proceso">En Proceso</option>
-                  <option value="finalizado">Finalizado</option>
+                <select class="gw-select" name="state" id="modalStatusSelect">
+                  <option value="st:creado">Creado</option>
+                  <option value="st:en_proceso">En Proceso</option>
+                  <option value="st:finalizado">Finalizado</option>
                 </select>
+                <p class="gw-hint" id="eeBilledInfo" hidden></p>
               </div>
               <div class="gw-field"><label class="gw-label" for="eeNotes">Observaciones</label><input class="gw-input" type="text" id="eeNotes" name="notes"></div>
             </div>
@@ -97,6 +98,23 @@
           </div>
         </details>
 
+        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
+        <details class="gw-form-group" open id="eeFinalDbGroup">
+          <summary class="gw-form-group__summary">Base de datos final</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head">
+              <span class="gw-hint" id="eeFinalDbInfo"></span>
+              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
+            </div>
+            <div class="ee-report__row">
+              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
+              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
+            </div>
+            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
+          </div>
+        </details>
+
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
         <details class="gw-form-group" open>
           <summary class="gw-form-group__summary">Informe final</summary>
@@ -133,6 +151,7 @@
 <datalist id="modalCommercialList"></datalist>
 
 <script src="{{ url_for('static', path='js/gw-busy.js') }}"></script>
+<script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-super-eventos.js') }}"></script>
 <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-combobox.js') }}"></script>
@@ -276,6 +295,82 @@
       : `<span class="gw-badge gw-badge--warn gw-bulb">${icon('info')}Informe pendiente</span>`;
   };
 
+  /* ---------- estado del evento (estados configurables + «Facturado», Fase 5) ---------- */
+  const stateSel = document.getElementById('modalStatusSelect');
+  let statesInfo = null;
+  async function loadStates() {
+    if (statesInfo) return statesInfo;
+    try {
+      const res = await fetch('/api/event-states');
+      if (res.ok) { const d = await res.json(); statesInfo = { list: (d.states || []).filter((st) => st.is_active), canBill: !!d.can_set_billed }; }
+    } catch (e) { /* sin lista: quedan los tres estados de siempre */ }
+    return statesInfo;
+  }
+  async function paintState(ev) {
+    const info = await loadStates();
+    stateSel.disabled = false; stateSel.title = '';
+    if (!info || !info.list.length) {          // sin estados configurados: los tres de siempre (por estado base)
+      stateSel.value = 'st:' + (ev.status || 'creado'); stateSel.dataset.initial = stateSel.value; stateSel.dataset.initialBase = ev.status || 'creado'; paintBilled(ev); return;
+    }
+    const wasBilling = !!ev.billed;
+    stateSel.innerHTML = info.list.map((st) => {
+      const blocked = st.billing && (!info.canBill || (ev.status !== 'finalizado' && ev.state_id !== st.id));
+      const why = !info.canBill ? ' (solo comercial o administrador)' : ' (solo si está Finalizado)';
+      return `<option value="id:${st.id}" data-base="${esc(st.base_status)}"${blocked ? ' disabled' : ''}>${esc(st.name)}${st.billing && blocked ? why : ''}</option>`;
+    }).join('');
+    let sel = ev.state_id && info.list.some((st) => st.id === ev.state_id) ? 'id:' + ev.state_id : null;
+    if (!sel) {
+      const fallback = info.list.find((st) => st.base_status === (ev.status || 'creado') && !st.billing);
+      if (fallback) sel = 'id:' + fallback.id;
+      else { stateSel.insertAdjacentHTML('afterbegin', `<option value="st:${esc(ev.status || 'creado')}" data-base="${esc(ev.status || 'creado')}">${esc(ev.state_name || ev.status || 'creado')}</option>`); sel = 'st:' + (ev.status || 'creado'); }
+    }
+    stateSel.value = sel;
+    stateSel.dataset.initial = sel;
+    stateSel.dataset.initialBase = ev.status || 'creado';
+    if (wasBilling && !info.canBill) { stateSel.disabled = true; stateSel.title = 'Solo una comercial o un administrador puede sacar el evento de «Facturado»'; }
+    paintBilled(ev);
+  }
+  function paintBilled(ev) {
+    const el = document.getElementById('eeBilledInfo');
+    el.hidden = !ev.billed;
+    el.textContent = ev.billed ? `Facturado${ev.billed_by_name ? ' por ' + ev.billed_by_name : ''}${ev.billed_at ? ' el ' + new Date(ev.billed_at + 'Z').toLocaleString() : ''}` : '';
+  }
+
+  /* ---------- base de datos final (Fase 5) ---------- */
+  const FINAL_DB_DIRECT_OVER = 20 * 1024 * 1024;          // por encima de esto el archivo va directo al almacenamiento (Cloud Run corta las peticiones grandes)
+  function paintFinalDb(ev) {
+    document.getElementById('eeFinalDbInfo').textContent = ev.final_db_uploaded
+      ? `Subida${ev.final_db_name ? ': ' + ev.final_db_name : ''}${ev.final_db_uploaded_by_name ? ' por ' + ev.final_db_uploaded_by_name : ''}${ev.final_db_uploaded_at ? ' el ' + new Date(ev.final_db_uploaded_at + 'Z').toLocaleString() : ''} (subir otra la reemplaza)`
+      : 'Pendiente de subir';
+    const dl = document.getElementById('eeFinalDbDownload');
+    dl.hidden = !ev.final_db_uploaded;
+    dl.href = `/api/events/${ev.id}/final-database`;
+  }
+  document.getElementById('eeFinalDbUpload').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const file = document.getElementById('eeFinalDbFile').files[0];
+    if (!file) { showToast('Elige primero el archivo de la base de datos final (Excel o CSV)', 'error'); return; }
+    if (!/\.(xlsx|csv)$/i.test(file.name)) { showToast('La base de datos final debe ser un archivo Excel (.xlsx) o CSV (.csv)', 'error'); return; }
+    const who = current.commercial_name ? ` a ${esc(current.commercial_name)}` : ' a la comercial del evento';
+    const msg = current.final_db_uploaded ? `Ya hay una base final subida: se reemplazará y se avisará por correo${who}. ¿Continuar?` : `Se subirá la base final y se avisará por correo${who} para que revise si ya se puede facturar. ¿Continuar?`;
+    if (!(await showConfirm(msg, { variant: 'warning', confirmLabel: 'Sí, subir' }))) return;
+    await busy(btn, async () => {
+      const fd = new FormData();
+      try {
+        if (file.size > FINAL_DB_DIRECT_OVER && window.DirectUpload) fd.append('upload_token', await DirectUpload.upload(file, { body: { purpose: 'final_database', event_id: current.id } }));
+        else fd.append('file', file);
+      } catch (err) { showToast(err.message || 'No se pudo subir el archivo', 'error'); return; }
+      const res = await fetch(`/api/events/${current.id}/final-database`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo subir la base de datos final', 'error'); return; }
+      current.final_db_uploaded = true; current.final_db_name = data.final_db_name; current.final_db_uploaded_at = data.final_db_uploaded_at; current.final_db_uploaded_by_name = data.final_db_uploaded_by_name;
+      document.getElementById('eeFinalDbFile').value = '';
+      paintFinalDb(current);
+      showToast(`${data.message}. ${data.notice || ''}`.trim(), 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
+
   function paintReport(ev) {
     document.getElementById('eeReportBulb').innerHTML = window.reportBulbHtml(ev);
     document.getElementById('eeReportInfo').textContent = ev.report_uploaded
@@ -334,13 +429,14 @@
     form.notes.value = ev.notes || '';
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
-    form.status.value = ev.status || 'creado';
-    form.status.dataset.initial = form.status.value;          // para pedir confirmación solo si pasa a «Finalizado»
+    await paintState(ev);
     form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
+    document.getElementById('eeFinalDbFile').value = '';
+    paintFinalDb(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
     document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
     markClean();
@@ -395,8 +491,14 @@
       if (got.error) { setStatus('error', got.error); showToast(got.error, 'error'); return; }
       if (Object.keys(got.extra).length) payload.extra = got.extra;
     }
-    const statusSel = document.getElementById('modalStatusSelect');
-    if (payload.status === 'finalizado' && statusSel && statusSel.dataset.initial !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
+    const stateValue = payload.state || '';
+    delete payload.state;
+    if (stateValue && stateValue !== stateSel.dataset.initial) {          // solo si cambió: así guardar otros campos nunca toca (ni pide permiso de) el estado
+      if (stateValue.startsWith('id:')) payload.state_id = parseInt(stateValue.slice(3), 10);
+      else if (stateValue.startsWith('st:')) payload.status = stateValue.slice(3);
+      const base = (stateSel.selectedOptions[0] && stateSel.selectedOptions[0].dataset.base) || (stateValue.startsWith('st:') ? stateValue.slice(3) : '');
+      if (base === 'finalizado' && stateSel.dataset.initialBase !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
+    }
     setStatus('idle', 'Guardando…');
     await busy(saveBtn, async () => {
       let res;

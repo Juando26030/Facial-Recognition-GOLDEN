@@ -123,7 +123,7 @@ ALLOW = {
     "consents.py": {"consent_text", "set_precalc", "set_consent_config", "get_biometric_setup", "put_biometric_setup", "accept_mail_status", "accept_mail_test", "accept_mail_stop", "set_badge_bio_photo"},
     "event_docs.py": {"list_documents", "add_document", "_find_doc", "download_all_documents", "list_expenses", "add_expense", "_get_expense", "expenses_report"},          # documentos y gastos: no son personas
     "event_report.py": {"upload_final_report", "download_final_report"},
-    "events.py": {"list_event_staff", "assign_existing_staff", "staff_users_template", "import_event_staff", "purge_event_staff", "delete_event_staff_account", "revoke_event_staff"},          # personal de la plataforma, no asistentes
+    "events.py": {"get_event", "list_event_staff", "assign_existing_staff", "staff_users_template", "import_event_staff", "purge_event_staff", "delete_event_staff_account", "revoke_event_staff"},          # personal de la plataforma, no asistentes
     "staff_credentials.py": {"resend_event_staff", "set_event_staff_email", "set_event_staff_mail"},          # cuentas del personal y su correo, no personas, respuestas ni pagos
     "form_client.py": {"_form_for_manager"},
     "form_transfer.py": {"export_form", "import_preview", "import_form", "transfer_allowed"},          # el diseño del formulario, sin respuestas
