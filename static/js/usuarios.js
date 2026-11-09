@@ -346,20 +346,20 @@
         });
     }
 
-    // Fase 3: archivar de una vez todos los usuarios temporales (digitadores) de este evento (ya no se borran); pide confirmar con el número exacto.
+    // Eliminar de una vez todos los usuarios temporales (digitadores) de este evento (8-nov-2026: se borran de verdad, salvo los que tienen compromiso firmado); pide confirmar con el número exacto.
     if (purgeBtn) {
         purgeBtn.addEventListener('click', () => {
             const n = allUsers.filter((u) => u.role === 'digitador').length;
             return busy(purgeBtn, async () => {
-                const ok = await showConfirm(`Se van a ARCHIVAR las ${n} cuentas de digitador de este evento: pierden el acceso y dejan de iniciar sesión, pero no se borra nada y un administrador puede restaurarlas. Si alguna también está en otro evento, a esa solo se le quita este evento. ¿Seguro?`, { confirmLabel: `Archivar ${n} cuenta(s)` });
+                const ok = await showConfirm(`Se van a ELIMINAR las ${n} cuentas de digitador de este evento. <strong>No se pueden recuperar.</strong> Si alguna también está en otro evento, a esa solo se le quita este evento; y las que ya firmaron su compromiso quedan archivadas (sin acceso) porque la firma es evidencia y no se borra. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
                 if (!ok) return;
                 const res = await fetch(`/api/events/${eventId}/staff-users/purge-temporary`, { method: 'POST' });
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {
                     pageIdx = 0;
                     loadTempUsers();
-                    showToast(`${d.archived} cuenta(s) archivada(s)` + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
-                } else showToast(d.detail || 'No se pudieron archivar las cuentas', 'error');
+                    showToast(`${d.deleted} cuenta(s) eliminada(s)` + (d.kept_archived ? ` · ${d.kept_archived} quedaron archivadas (tienen registros, como su compromiso firmado)` : '') + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
+                } else showToast(d.detail || 'No se pudieron eliminar las cuentas', 'error');
             }).catch(() => showToast('No se pudo completar la acción. Revisa la conexión.', 'error'));
         });
     }

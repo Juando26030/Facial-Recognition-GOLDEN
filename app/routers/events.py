@@ -832,15 +832,16 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
 
 @router.post("/events/{event_id}/staff-users/purge-temporary")
 def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Fase 3: «Eliminar todas» las cuentas digitador de este evento ya NO las borra: las ARCHIVA (se desactivan, se les cierra la sesión y se les quita el acceso a este evento y sus equipos
-    de impresión). El borrado definitivo es de super_admin, cuenta por cuenta y desde lo archivado (`DELETE /staff/{id}`). Una cuenta que además está asignada a OTRO evento no se archiva:
-    solo se quita de este (para no dejar sin acceso a un evento ajeno). Queda UN registro en `audit_actions` con el total (nunca los usuarios: el del digitador es su cédula)."""
+    """«Eliminar los usuarios temporales» de este evento: BORRA de verdad las cuentas de digitador (decisión de Juan David, 8-nov-2026; antes solo se archivaban). A cada una se le quita el acceso
+    a este evento y a sus equipos de impresión y luego se borra la cuenta soltando lo que la menciona (app/staff_refs.py). Dos excepciones, sin borrar: (1) una cuenta que además está asignada a OTRO
+    evento solo se quita de este; (2) una cuenta con registros que no se pueden soltar (p. ej. su compromiso firmado, que es evidencia) queda ARCHIVADA y desactivada, no borrada. Queda UN registro
+    en `audit_actions` con los totales (nunca los usuarios: el del digitador es su cédula)."""
     _can_manage_temp(staff)
     event = get_event_for_staff(event_id, db, staff)
     ids = [r[0] for r in db.query(EventStaffAuthorization.staff_user_id).join(StaffUser, StaffUser.id == EventStaffAuthorization.staff_user_id)
            .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador")]
-    from app import sessions
-    archived, only_unassigned = 0, 0
+    from app import sessions, staff_refs
+    deleted, kept, only_unassigned = 0, 0, 0
     for sid in ids:
         if sid == staff.id:
             continue
@@ -853,13 +854,22 @@ def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: Staff
             only_unassigned += 1
             continue
         target = db.get(StaffUser, sid)
-        if target.archived_at is None:
-            target.archived_at, target.archived_by_id, target.is_active = utcnow(), staff.id, False
-            sessions.revoke_all(target)
-        archived += 1
-    audit_actions.record(db, staff, "archive", "staff_user", f"evento {event.id}", None, f"evento {event.id}: {archived} cuenta(s) de digitador archivada(s), {only_unassigned} solo quitada(s) del evento")
+        if target is None:
+            continue
+        db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == sid).update({"authorized_by_id": None})
+        db.query(AccessLog).filter(AccessLog.registered_by_staff_id == sid).update({"registered_by_staff_id": None})
+        db.query(StaffUser).filter(StaffUser.created_by_id == sid).update({"created_by_id": None})
+        sessions.revoke_all(target)
+        if staff_refs.delete_or_deactivate(db, target) == "deleted":
+            deleted += 1
+        else:
+            if target.archived_at is None:
+                target.archived_at, target.archived_by_id = utcnow(), staff.id
+            target.is_active = False
+            kept += 1
+    audit_actions.record(db, staff, "delete", "staff_user", f"evento {event.id}", None, f"evento {event.id}: {deleted} cuenta(s) de digitador eliminada(s), {kept} archivada(s) por tener registros, {only_unassigned} solo quitada(s) del evento")
     db.commit()
-    return {"archived": archived, "only_unassigned": only_unassigned}
+    return {"deleted": deleted, "kept_archived": kept, "only_unassigned": only_unassigned}
 
 
 @router.delete("/events/{event_id}/staff-users/{staff_id}")

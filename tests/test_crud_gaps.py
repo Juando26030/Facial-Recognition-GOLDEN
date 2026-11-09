@@ -144,7 +144,7 @@ def test_calendar_note_delete_author_or_admin_and_audited(client, factory, db):
 
 
 # ------------------------------------------------------------------ borrado en bloque de digitadores temporales
-def test_purge_temporary_archives_instead_of_deleting(client, factory, db):
+def test_purge_temporary_deletes_for_real(client, factory, db):
     factory.staff("coordinador", "co")
     ev = factory.event("en_proceso")
     dig = factory.staff("digitador", "55667788")
@@ -153,12 +153,11 @@ def test_purge_temporary_archives_instead_of_deleting(client, factory, db):
     login(client, "co")
     r = client.post(f"/api/events/{ev.id}/staff-users/purge-temporary")
     assert r.status_code == 200, r.text
-    assert r.json()["archived"] == 1
+    assert r.json()["deleted"] == 1 and r.json()["kept_archived"] == 0
     db.expire_all()
-    row = db.get(StaffUser, dig_id)
-    assert row is not None and row.archived_at is not None and row.is_active is False
+    assert db.get(StaffUser, dig_id) is None                                                       # se borró de verdad
     acts = db.query(AuditAction).filter_by(entity="staff_user").all()
-    assert len(acts) == 1 and acts[0].action == "archive" and "55667788" not in f"{acts[0].entity_name}{acts[0].detail}"
+    assert len(acts) == 1 and acts[0].action == "delete" and "55667788" not in f"{acts[0].entity_name}{acts[0].detail}"
 
 
 def test_sources_guard_roles():
