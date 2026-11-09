@@ -24,6 +24,7 @@
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
+    <script src="{{ url_for('static', path='js/queue-params.js') }}" defer></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
 </head>
 <body class="gw-page gw-parametros has-sidebar">
@@ -443,6 +444,28 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <button type="button" id="addItemBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar ítem</button>
               </div>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
+            </div>
+          </div>
+
+          <!-- Turnos y filas (Fase 8): módulo propio con su botón Guardar (fuera del seguimiento de «Sin guardar»). -->
+          <div class="gw-group__item" id="queueBox" data-pnodirty data-event="{{ event.id }}">
+            <div class="gw-item-head"><h4>Turnos y filas</h4>{% call ayuda('ay_turnos', 'Turnos y filas') %}La persona escanea un QR, ve su turno (A1, B7…) en su celular y le avisa cuando la llamen. En la pantalla del televisor se ve el turno llamado. El orden puede ser por llegada, por orden de inscripción, alfabético o el que tú subas en un Excel.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="queueEnabled" {% if event.queue_enabled %}checked{% endif %}> Activar turnos y filas</label>
+            <div id="queueConfig" class="gw-stack" {% if not event.queue_enabled %}hidden{% endif %}>
+              <div class="gw-field"><label class="gw-label" for="queueMode">¿Cómo se ordena la gente?</label>
+                <select class="gw-select" id="queueMode">
+                  <option value="arrival">Por llegada (el turno se da al escanear el QR)</option>
+                  <option value="form">Por orden de inscripción en el formulario</option>
+                  <option value="alpha">Alfabético (apellido y nombre)</option>
+                  <option value="manual">Manual (subo un Excel con el orden)</option>
+                </select></div>
+              <div class="gw-field"><label class="gw-label" for="queueLanes">Filas (letras separadas por coma, con nombre opcional)</label>
+                <input class="gw-input" type="text" id="queueLanes" placeholder="A=Mesa 1, B=Mesa 2">
+                <p class="gw-hint">Máximo 8 filas. Con una sola letra (A) todos van en la misma fila.</p></div>
+              <label class="gw-check"><input type="checkbox" id="queueShowName"> Mostrar el primer nombre en el celular (nunca la cédula; nunca a menores de edad)</label>
+              <label class="gw-check"><input type="checkbox" id="queueRequireReg"> Por llegada: dar turno solo a quien ya fue acreditado</label>
+              <div class="gw-actions"><button type="button" id="queueSave" class="gw-btn gw-btn--primary">Guardar turnos y filas</button></div>
+              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
             </div>
           </div>
         </section>

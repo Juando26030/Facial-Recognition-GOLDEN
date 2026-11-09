@@ -317,6 +317,8 @@ class Event(Base):
     local_node_name = Column(String, nullable=True)      # 0111 (Fase 6): nombre del servidor local que TIENE el evento (arrendamiento: un solo escritor). NULL = el evento vive en la nube. Mientras esté puesto, la nube lo muestra en solo lectura
     local_since = Column(DateTime, nullable=True)        # desde cuándo está en ese servidor local
     local_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso en local
+    queue_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0116 (Fase 8): «Turnos y filas» activado desde Parámetros (app/queue_turns.py)
+    queue_config_json = Column(Text, nullable=True)      # configuración de los turnos: orden, filas (letras), mostrar nombre… (queue_turns.clean_config); NULL = la de fábrica
     local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
     # --- Lado del SERVIDOR LOCAL (0112, Fase 6): solo se usan cuando este evento es una copia bajada de la nube (LOCAL_SERVER=1); en la nube quedan NULL ---
     cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
@@ -1442,3 +1444,40 @@ class SlugHistory(Base):
     slug = Column(String, nullable=False, index=True)
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
     hold_until = Column(DateTime, nullable=False)
+
+
+class QueueTurn(Base):
+    """Un turno de «Turnos y filas» (Fase 8, 0116): una persona, una fila (letra) y un número. `rank` ordena la fila (menor se llama primero; «saltar»/«volver a la fila» solo lo cambian).
+    `token` es el enlace secreto de la persona (/turno/<evento>/<token>): solo muestra SU turno. Sin cédulas en lo que se muestra a otros."""
+    __tablename__ = 'queue_turns'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    user_id = Column(String, nullable=False)
+    lane = Column(String(1), nullable=False)
+    number = Column(Integer, nullable=False)
+    rank = Column(Integer, nullable=False)
+    token = Column(String, nullable=False, unique=True)
+    status = Column(String(10), nullable=False, default='waiting', server_default='waiting')      # waiting | called | done | skipped
+    desk = Column(String(40), nullable=True)        # puesto que lo llamó («Caja 2»)
+    called_seq = Column(Integer, nullable=True)     # orden global del último llamado (para saber cuál es «el que están llamando»)
+    called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    called_at = Column(DateTime, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    source = Column(String(10), nullable=False, default='arrival', server_default='arrival')      # arrival | form | alpha | manual
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('event_id', 'lane', 'number', name='uq_queue_turn_number'), UniqueConstraint('event_id', 'user_id', name='uq_queue_turn_user'),
+                      Index('ix_queue_turn_event_status', 'event_id', 'status'))
+
+
+class QueueCall(Base):
+    """Cada vez que se llama un turno (solo se INSERTA): la pantalla de TV muestra los últimos."""
+    __tablename__ = 'queue_calls'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    turn_id = Column(Integer, ForeignKey('queue_turns.id', ondelete='CASCADE'), nullable=False)
+    lane = Column(String(1), nullable=False)
+    number = Column(Integer, nullable=False)
+    desk = Column(String(40), nullable=True)
+    called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    called_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (Index('ix_queue_call_event', 'event_id', 'id'),)

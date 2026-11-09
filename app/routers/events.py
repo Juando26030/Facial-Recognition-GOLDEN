@@ -25,6 +25,7 @@ from app import pledge, testperson, workday
 from app.models import EventChangeLog, EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
+from app import queue_svc
 from app.routers.areas_inventory import delete_event_modules
 from app.auth import assert_event_scope, assert_event_tenant, effective_roles, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
@@ -997,6 +998,7 @@ def delete_event(
     db.query(PrintLog).filter(PrintLog.event_id == event_id).delete()
     delete_event_files(db, event_id)
     delete_event_modules(db, event_id)
+    queue_svc.delete_event_data(db, event_id)
     db.query(AccessLog).filter(AccessLog.event_id == event_id).update({"event_id": None})
     db.delete(event)
     db.commit()
