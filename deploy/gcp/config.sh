@@ -131,4 +131,5 @@ service_secrets() {   # nombre corto del servicio -> lista «nombre:VARIABLE[*]�
   case "$1" in publico) echo "$SECRETS_PUBLICO";; biometria) echo "$SECRETS_BIOMETRIA";; *) echo "$SECRETS_WEB";; esac
 }
 # El Job de operaciones también manda correos (avisos) y lee lo de la app que necesita la purga (llave de rostros).
-OPS_SECRETS="direct-database-url:DIRECT_DATABASE_URL* neon-api-key:NEON_API_KEY alert-email:ALERT_EMAIL"
+OPS_SECRETS="direct-database-url:DIRECT_DATABASE_URL* neon-api-key:NEON_API_KEY alert-email:ALERT_EMAIL
+onedrive-tenant-id:ONEDRIVE_TENANT_ID onedrive-client-id:ONEDRIVE_CLIENT_ID onedrive-client-secret:ONEDRIVE_CLIENT_SECRET onedrive-drive-user:ONEDRIVE_DRIVE_USER onedrive-folder:ONEDRIVE_FOLDER backup-copy-encryption-key:BACKUP_COPY_ENCRYPTION_KEY"

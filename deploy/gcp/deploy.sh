@@ -56,7 +56,7 @@ secrets_flag() {   # $1 = lista «nombre:VARIABLE[*]»; los de * son obligatorio
     if [ "${var%\*}" != "$var" ]; then required=1; var="${var%\*}"; fi
     s="$(secret_name "$name")"
     # Staging NUNCA manda correos reales ni cobra de verdad (Fase 0C): no se le conectan las credenciales de Microsoft Graph ni las llaves de producción de Wompi.
-    if [ "$GOLDEN_ENV" = staging ]; then case "$name" in azure-*|graph-sender|wompi-public-key|wompi-integrity-secret|wompi-events-secret|wompi-private-key) continue;; esac; fi
+    if [ "$GOLDEN_ENV" = staging ]; then case "$name" in azure-*|graph-sender|wompi-public-key|wompi-integrity-secret|wompi-events-secret|wompi-private-key|onedrive-*|backup-copy-encryption-key) continue;; esac; fi
     if gcloud secrets describe "$s" >/dev/null 2>&1; then out+="${var}=${s}:latest,"
     elif [ "$required" = 1 ] && [ "$PLACEHOLDER" = 0 ]; then echo "Falta el secreto obligatorio ${s} (corre bootstrap.sh)." >&2; exit 1
     fi

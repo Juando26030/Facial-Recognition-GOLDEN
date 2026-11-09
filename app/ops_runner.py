@@ -112,6 +112,12 @@ def check_backups(bucket=None, now=None) -> str:
     return "; ".join(["respaldos al día", *warned.values()]) if warned else "respaldos al día"
 
 
+def offsite_copy() -> str:
+    """Fase 9-B: copia semanal CIFRADA del respaldo más reciente a OneDrive (app/offsite_copy.py). Sin variables de OneDrive no hace nada; si falla o pasan >10 días, el paso falla y main() avisa."""
+    from app import offsite_copy as oc
+    return oc.run()
+
+
 def _alert(key: str, subject: str, body: str) -> None:
     """Correo a ALERT_EMAIL, como máximo una vez cada REALERT_H (6) horas por clave (constancia en system_events)."""
     from app import ops
@@ -248,7 +254,7 @@ def hourly(now=None) -> dict:
         steps.append(("archive-events", archive_events))          # L7: UNA vez por semana (domingo 5 a. m.), para no despertar la base de Neon cada hora
     if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and now.day == int(os.getenv("OPS_INFRA_DAY", "2")) and now.hour == int(os.getenv("OPS_INFRA_HOUR", "6")):
         steps.append(("infra-costs", import_infra_costs))          # Fase 9C: UNA vez al mes, y solo si el entorno activó la exportación de Google
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
+    steps += [("check-backups", check_backups), ("offsite-copy", offsite_copy), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:
@@ -384,7 +390,7 @@ def retry_face_jobs() -> str:
 
 
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "archive-events": archive_events, "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs, "infra-costs-import": import_infra_costs}
+         "archive-events": archive_events, "check-backups": check_backups, "offsite-copy": offsite_copy, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs, "infra-costs-import": import_infra_costs}
 
 
 def main(task: str) -> int:

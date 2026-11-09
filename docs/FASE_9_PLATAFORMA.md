@@ -35,6 +35,25 @@ Además llega a la campana de las cuentas de la plataforma que estén en la list
 **Archivos.** `app/mass_delete.py`, `app/routers/system_alerts.py`, `alembic/versions/0119_system_alerts.py`, `templates/configuracion.html` (pestaña), `static/js/system-alerts-admin.js`, `tests/test_alertas_borrado.py`.
 
 
+## B. Copia semanal cifrada a OneDrive (hecha, sin probar contra Microsoft real)
+
+**Qué hace.** Una vez por semana el Job de operaciones toma el respaldo más reciente del bucket, lo **cifra** (Fernet por trozos, llave nueva `BACKUP_COPY_ENCRYPTION_KEY`) y lo sube a una carpeta de OneDrive de la empresa por Microsoft Graph (autenticación de aplicación, sin usuario). Así hay una copia **fuera del proyecto de Google**, y aunque alguien viera el OneDrive, el archivo no se puede leer sin la llave.
+
+- Código: `app/offsite_copy.py`; paso `offsite-copy` en `app/ops_runner.py` (corre cada hora pero solo copia cuando toca); tarea suelta: `python -m app.ops_runner offsite-copy`.
+- Cuándo toca: no hay copia buena o la última tiene ≥ 6 días, ya pasadas las 6 a. m. (hora Bogotá) y sin intento en las últimas 6 h (`OFFSITE_EVERY_DAYS`, `OFFSITE_HOUR`, `OFFSITE_RETRY_HOURS`).
+- Retención: últimas 8 copias (`OFFSITE_KEEP_WEEKS`, mínimo 2). Solo borra archivos `golden_db_*.gwbk` **dentro de la carpeta configurada**; nunca otras carpetas ni otros nombres.
+- Resultado: `offsite/state.json` en el bucket de respaldos (fecha, tamaño, ok/fallo, motivo corto, últimas 20 corridas; sin datos personales ni secretos). Se muestra en `/sistema` como «Copia semanal fuera de Google» (verde ≤ 8 días, amarillo hasta 10, rojo después).
+- Alertas: si una corrida falla, o pasan más de 10 días sin copia buena, el paso falla y el Job manda el correo de alerta de siempre (`ALERT_EMAIL`, máximo uno cada 6 h por causa).
+- Sin variables de OneDrive: el paso responde «copia semanal no configurada» y no toca nada; `/sistema` lo muestra en amarillo con el enlace a la guía.
+- Staging nunca recibe estos secretos (`deploy/gcp/deploy.sh` los salta) para que pruebas no suban copias a la carpeta real.
+- Formato `.gwbk`: cabecera `GWBK1`, trozos de 8 MB cifrados cada uno con índice y marca de «último» (detecta truncado, trozos repetidos o desordenados). Abrir: `scripts/open_backup_copy.py` (en cualquier computador, sin la nube).
+- Sin migración: el estado vive en el bucket (no consume la base de Neon).
+- Memoria: el archivo se cifra y se sube por pedazos de 10 MiB; el tamaño cifrado se calcula antes y se comprueba al final.
+
+**Pruebas:** `tests/test_copia_semanal.py` (21 casos con Graph simulado: cifrado, tamaño exacto, PUT simple y sesión por trozos con `Content-Range`, reintentos 503, retención, estado, alertas, `/sistema`, script de apertura). Los de cifrado, ejecución y script se corrieron localmente (sin Postgres) y pasaron; falta correr la suite completa y probar contra el Microsoft real.
+
+**Lo que NO se pudo verificar** (Microsoft Learn bloqueó la lectura desde el entorno): forma exacta del endpoint de token v2, `PUT …/root:/ruta:/content`, `createUploadSession` con `Content-Range`, listado `children` y `DELETE`. Están escritos de memoria y documentados en `docs/24_COPIA_SEMANAL_ONEDRIVE.md`; se confirman en la primera prueba real (paso 8 de la guía).
+
 ## D. Panel de gastos — pestaña «Eventos» (análisis de satisfacción y tiempos)
 
 **Quién la ve:** solo `admin` y `super_admin` (`require_role("admin")`). **Dónde:** `/gastos` → pestaña «Eventos». **Código:** `app/event_analytics.py` (cálculo puro, sin base), `app/routers/gastos_eventos.py` (API), `templates/_gastos_eventos.html`, `static/js/gastos-eventos.js`, `static/css/gastos-eventos.css`. **Pruebas:** `tests/test_analitica_eventos.py`. **Sin migración:** todo sale de tablas que ya existen.
