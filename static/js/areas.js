@@ -124,7 +124,9 @@
     } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
   }
 
-  function scanValue(raw) {
+  async function scanValue(rawText) {
+    let raw = rawText;
+    try { raw = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código')); return; }          // QR dinámico de la credencial digital
     const qr = QrCode.parse(raw);
     if (qr && qr.isQr) return register(qr.cedula, false, undefined, 'qr');   // QR propio: en vez de entregar la cédula
     const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);               // cédula vieja (CSV del lector) o ID suelto
@@ -169,7 +171,7 @@
   // Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
     title: 'Escanear QR — Control de Áreas',
-    onCode: (text) => { const qr = QrCode.parse(text); if (qr) register(qr.cedula, false, undefined, 'qr'); },
+    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID).then((raw) => { const qr = QrCode.parse(raw); if (qr) register(qr.cedula, false, undefined, 'qr'); }).catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
   }));
 
   $('nameSearch').addEventListener('input', (e) => {

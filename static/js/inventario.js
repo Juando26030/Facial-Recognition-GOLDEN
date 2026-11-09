@@ -81,16 +81,18 @@
   $('scanInput').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const raw = e.target.value.trim(); e.target.value = '';
-    if (!raw) return;
-    const qr = QrCode.parse(raw);
-    const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
-    byId(qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw));   // QR propio: en vez de entregar la cédula
+    const typed = e.target.value.trim(); e.target.value = '';
+    if (!typed) return;
+    QrCode.resolveDynamic(typed, window.EVENT_ID).then((raw) => {          // QR dinámico de la credencial digital: lo valida el servidor
+      const qr = QrCode.parse(raw);
+      const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
+      byId(qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw));   // QR propio: en vez de entregar la cédula
+    }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); });
   });
   // Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
     title: 'Escanear QR — Control de Inventario',
-    onCode: (text) => { const qr = QrCode.parse(text); if (qr) byId(qr.cedula); },
+    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID).then((raw) => { const qr = QrCode.parse(raw); if (qr) byId(qr.cedula); }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
   }));
   $('nameSearch').addEventListener('input', (e) => {
     const q = e.target.value.trim();

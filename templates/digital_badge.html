@@ -47,7 +47,13 @@
     </div>
     <div class="qr-entry" id="qrEntry" style="display:none; margin:14px auto 0; text-align:center;">
         <div id="qrBox" style="display:inline-block; background:#fff; padding:10px; border-radius:12px; line-height:0;"></div>
-        <div style="font-size:0.75rem; color:#9aa3c7; margin-top:6px;">Muestra este código al ingresar, en vez de tu cédula.</div>
+        <div style="width:200px; height:4px; background:#1b2150; border-radius:2px; margin:8px auto 0; overflow:hidden;"><div id="qrBar" style="height:100%; width:100%; background:#D4AF37; transition:width .5s linear;"></div></div>
+        <div style="font-size:0.75rem; color:#9aa3c7; margin-top:6px;">Muestra este código al ingresar, en vez de tu cédula. Se renueva solo: una captura de pantalla no sirve.</div>
+    </div>
+    <div id="walletBox" style="display:none; margin:14px auto 0; text-align:center;">
+        <button type="button" id="walletGoogle" style="display:none; margin:4px; padding:10px 16px; border-radius:22px; border:1px solid #D4AF37; background:#0a0e2e; color:#fff; font-size:0.85rem; cursor:pointer;">Guardar en Google Wallet</button>
+        <a id="walletApple" href="#" style="display:none; margin:4px; padding:10px 16px; border-radius:22px; border:1px solid #D4AF37; background:#0a0e2e; color:#fff; font-size:0.85rem; text-decoration:none;">Guardar en Apple Wallet</a>
+        <div style="font-size:0.7rem; color:#7f89b5; margin-top:4px;">El pase de Wallet sirve solo para entrar y no se renueva solo: para más seguridad usa esta página.</div>
     </div>
     <p class="note">Documento personal y en vivo: la animación y el reloj deben moverse. Una captura de pantalla no es válida.</p>
 </div>
@@ -64,10 +70,57 @@ function tick() {
 }
 setInterval(tick, 250); tick();
 
+
+// ---------- QR dinámico ----------
+let qrCodes = [], qrStep = 30, qrShown = '', qrFetching = false;
+function renderQr(code) {
+    if (typeof qrcode === 'undefined') return;
+    const qr = qrcode(0, 'M'); qr.addData(code); qr.make();
+    const box = document.getElementById('qrBox');
+    box.innerHTML = qr.createSvgTag({ scalable: true });
+    const svg = box.querySelector('svg'); if (svg) { svg.style.width = '180px'; svg.style.height = '180px'; }
+}
+async function fetchQr() {
+    if (qrFetching) return; qrFetching = true;
+    try {
+        const res = await fetch(`${base}/qr`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        qrStep = data.step || 30; qrCodes = data.codes || [];
+        document.getElementById('qrEntry').style.display = 'block';
+    } catch (e) { /* sin red: se sigue mostrando el último código mientras sea vigente */ }
+    finally { qrFetching = false; }
+}
+function qrTick() {
+    const now = Date.now();
+    let cur = null;
+    for (const c of qrCodes) if (c.from_ms <= now) cur = c;
+    const ahead = qrCodes.filter((c) => c.from_ms > now).length;
+    if (!cur) { if (!qrCodes.length) return; }
+    else if (cur.code !== qrShown) { qrShown = cur.code; try { renderQr(cur.code); } catch (e) { /* sin QR, la escarapela sigue */ } }
+    if (cur) { const left = qrStep - ((now - cur.from_ms) / 1000); const bar = document.getElementById('qrBar'); if (bar) bar.style.width = `${Math.max(0, Math.min(100, (left / qrStep) * 100))}%`; }
+    if (ahead < 2) fetchQr();
+}
+function startDynamicQr() { fetchQr().then(qrTick); setInterval(qrTick, 500); }
+
+// ---------- Wallet ----------
+function showWalletButtons(w) {
+    if (!w || (!w.google && !w.apple)) return;
+    const box = document.getElementById('walletBox'); box.style.display = 'block';
+    if (w.google) {
+        const b = document.getElementById('walletGoogle'); b.style.display = 'inline-block';
+        b.addEventListener('click', async () => {
+            b.disabled = true;
+            try { const r = await fetch(`${base}/wallet/google`, { cache: 'no-store' }); const d = await r.json(); if (r.ok && d.url) location.href = d.url; } finally { b.disabled = false; }
+        });
+    }
+    if (w.apple) { const a = document.getElementById('walletApple'); a.style.display = 'inline-block'; a.href = `${base}/wallet/apple`; }
+}
+
 async function load() {
     const res = await fetch(`${base}/data`);
     if (!res.ok) { document.getElementById('error').style.display = 'block'; return; }
-    const { event, template, person, extra_list: extraList } = await res.json();
+    const { event, template, person, extra_list: extraList, wallet } = await res.json();
     document.getElementById('eventName').textContent = event.name;
     document.getElementById('personName').textContent = `${person.first_name || ''} ${person.last_name || ''}`.trim();
     const ul = document.getElementById('extraList');          // datos elegidos por el evento (vacío = por defecto: solo lo que pinta la plantilla)
@@ -78,15 +131,9 @@ async function load() {
     ul.hidden = !ul.children.length;
     document.getElementById('stage').style.display = 'block';
 
-    // QR de entrada (Sprint 4): con la cédula, para poder registrarse con el QR aunque nunca se haya impreso una escarapela.
-    if (typeof qrcode !== 'undefined' && person.id) {
-        try {
-            const qr = qrcode(0, 'M'); qr.addData(String(person.id)); qr.make();
-            document.getElementById('qrBox').innerHTML = qr.createSvgTag({ scalable: true });
-            const svg = document.querySelector('#qrBox svg'); if (svg) { svg.style.width = '180px'; svg.style.height = '180px'; }
-            document.getElementById('qrEntry').style.display = 'block';
-        } catch (e) { /* sin QR, la escarapela sigue funcionando */ }
-    }
+    // QR de entrada DINÁMICO (Fase 8): el servidor entrega los códigos de las próximas ventanas de 30 s y esta página los rota por su reloj; una captura de pantalla caduca en ~1 minuto.
+    startDynamicQr();
+    showWalletButtons(wallet);
     const host = document.getElementById('badgeHost');
     BadgeRender.renderBadge(host, template, person, {
         assetUrl: (p) => `${base}/asset/${p}`,   // storage_path = "<cliente>/<archivo>"
