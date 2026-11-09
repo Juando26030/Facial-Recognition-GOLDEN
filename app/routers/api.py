@@ -1731,7 +1731,7 @@ def manual_register(
 
 
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional"):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
@@ -1785,11 +1785,11 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,
-            registration_method="tradicional",  # Fase 16: alta manual, formulario
+            registration_method=method,  # Fase 16: alta manual, formulario (Fase 8: «autoregistro» si la persona se creó sola en el kiosco)
             **regtime.measured(took_ms, ui_flow),
         )
         db.add(log)
-        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, touch=True)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, origin=origin, touch=True)
         db.commit()
         reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
         if contact_clean and event.digital_badge_enabled:
@@ -1858,11 +1858,11 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
         event_id=event.id, registered_by_staff_id=staff.id,
-        registration_method="tradicional",  # Fase 16: alta manual, formulario
+        registration_method=method,  # Fase 16: alta manual, formulario (Fase 8: «autoregistro» si la persona se creó sola en el kiosco)
         **regtime.measured(took_ms, ui_flow),
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, touch=True)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, origin=origin, touch=True)
     db.commit()
 
     if img_array is not None:

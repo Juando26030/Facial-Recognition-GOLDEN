@@ -126,6 +126,9 @@
         <div>Sin conexión: ves tu lista y lo que registres aquí; no ves a los otros equipos hasta que vuelva la red.</div>
       </div>
 
+      {% if event.selfreg_enabled and event.status == "en_proceso" and staff_role != "cliente" %}
+      <p class="gw-hint"><a href="/kiosk/{{ event.id }}/autoregistro">Abrir la pantalla de autorregistro</a> (la persona se registra sola, sin base de datos).</p>
+      {% endif %}
       {% set ns = namespace(n=0) %}
       {% if staff_role == "cliente" or event.facial_enabled %}
       <div class="tabs" role="group" aria-label="Secciones">
