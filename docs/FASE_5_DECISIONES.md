@@ -10,3 +10,7 @@
 - **Inventario:** el Super Admin define en Configuración la estructura (categorías) y los productos del catálogo; esos productos aparecen como campos de inventario al crear el evento.
 - **Roles nuevos:** almacén y contabilidad (por el sistema de roles múltiples); sus correos salen de las cuentas con ese rol.
 - Pendiente de diseño: la encuesta de satisfacción se construye con el motor de formularios web (no existe aún en el código).
+
+## Aclaraciones (8-nov-2026, 23:40)
+- **Jornada** es un campo de la plantilla del evento como cualquier otro: el admin decide si se agrega o no, y si se muestra o no en la vista de calendario.
+- **Encuesta de satisfacción:** por ahora una encuesta normal genérica (Juan David define sus preguntas después). **Sus respuestas se guardan aparte**, en estructura propia (no mezcladas con los formularios de inscripción), porque en una fase posterior alimentan la analítica para gerencia: promedios de satisfacción por mes, por evento y por cliente. Diseño: tabla propia con evento, cliente, fecha, respuestas por pregunta (con puntaje numérico donde aplique); sin datos personales innecesarios; no se purga con la biometría.
