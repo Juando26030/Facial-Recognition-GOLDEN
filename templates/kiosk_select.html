@@ -131,6 +131,9 @@
           {{ tile("/api/events/%s/final-report" % event.id, "download", "Descargar informe", "El informe final que se adjuntó al evento (el mismo que se envió a la comercial)", true) }}
           {% endif %}
           {{ tile("/kiosk/%s/legalizaciones" % event.id, "form", "Legalizaciones", "Gastos del evento con evidencia, y reporte con el total") }}
+          {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+          {{ tile("/kiosk/%s/expositores" % event.id, "users", "Expositores", "Enlaces para que los expositores escaneen asistentes y guarden sus contactos") }}
+          {% endif %}
           {% if staff_role != "comercial" %}
           {{ tile("/kiosk/%s/parametros" % event.id, "settings", "Parámetros del evento", "Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola") }}
           {% endif %}

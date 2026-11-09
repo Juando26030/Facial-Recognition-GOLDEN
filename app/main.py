@@ -27,6 +27,7 @@ from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
 from app.routers import clean_url as clean_url_router      # D2.5k: /inscripciones/<evento>/<formulario> (se registra al final)
 from app.routers import public_link as public_link_router
+from app.routers import contacts as contacts_router      # Fase 8: contactos para expositores
 from app.routers import event_lease as event_lease_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
@@ -353,6 +354,7 @@ _include(form_client_router.router, prefix="/api")      # estadísticas de un fo
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
+_include(contacts_router.router)      # Fase 8: captura de contactos para expositores (/contacto, /tarjeta, /expositor y /api/events/{id}/exhibitors)
 _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
@@ -836,6 +838,12 @@ def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(ge
     que la contiene) y solo se ve el contenido real."""
     embed = request.query_params.get("embed") == "1"
     return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"], extra_context={"embed": embed})
+
+
+@app.get("/kiosk/{event_id}/expositores")
+def kiosk_expositores_page(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Fase 8: expositores del evento y sus enlaces (coordinador en adelante)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_expositores.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/parametros")
