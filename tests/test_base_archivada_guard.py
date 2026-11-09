@@ -135,6 +135,7 @@ ALLOW = {
                       "get_event_categories", "set_event_categories", "add_optional_field", "list_field_configs", "upsert_field_config", "get_digital_email", "put_digital_email",
                       "preview_digital_email", "test_digital_email", "upload_email_image", "field_usage", "delete_field"},
     "person_form.py": {"get_person_form", "put_person_form"},
+    "pledge.py": {"get_pledge", "create_link", "revoke_link", "set_enabled", "pledge_state"},          # compromiso del digitador: administrar el enlace y las banderas (el documento y lo sensible sí exigen datos abiertos)
     "print_settings.py": {"get_settings", "put_settings"},
     "print_stations.py": {"my_station", "put_station"},
     "privacy.py": {"get_privacy", "purge_event_biometrics", "purge_person_biometrics", "purge_data"},          # el derecho de supresión debe funcionar siempre

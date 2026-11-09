@@ -34,6 +34,7 @@ from app import brandcolor, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
+from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
@@ -301,6 +302,7 @@ def _include(router, prefix: str = "") -> None:
     app.include_router(router, prefix=prefix)
 
 _include(auth_router.router)
+_include(pledge_router.router, prefix="/api")      # Fase 4: compromiso digital del digitador (lado del coordinador; el público es el motor de formularios)
 _include(login_approval_router.router)      # S1: ingreso de digitadores autorizado por el coordinador y desbloqueo de cuentas (app/login_control.py)
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")

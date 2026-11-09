@@ -25,11 +25,11 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import brandcolor, formlib, formsvc, jobs, security, timing, uploads, wompi, safe_limits
+from app import brandcolor, crypto, formlib, formsvc, jobs, pledge, security, timing, uploads, wompi, safe_limits
 from app.safeeq import safe_eq
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
-from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
+from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, StaffUser, WebForm
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
 from app.ttlcache import SlidingLimiter
@@ -67,6 +67,8 @@ def _read(token: Optional[str], form: WebForm) -> dict:
 def _load(db: Session, event_id: int, slug: str, allow_archived: bool = False) -> WebForm:
     form = db.query(WebForm).filter(WebForm.event_id == event_id, WebForm.slug == slug).first()
     if not form or (form.archived_at is not None and not allow_archived):          # Fase 3: un formulario archivado está cerrado al público (404 como «finalizado»); sus respuestas y pagos se conservan
+        raise HTTPException(status_code=404, detail="Formulario no disponible")
+    if form.kind == formsvc.PLEDGE_KIND and not safe_eq(form.slug, slug):          # el enlace del compromiso es secreto (144 bits): se compara en tiempo constante
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     return form
 
@@ -181,6 +183,10 @@ def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] 
         person = formsvc.find_person(db, form, claims["p"])
         if person:
             prefill, readonly = public_prefill(design, person)
+    if form.kind == formsvc.PLEDGE_KIND and claims.get("pc"):          # Camino B/C: ya viene identificado por su sesión de espera (no se vuelve a pedir la cédula)
+        who = db.get(StaffUser, int(claims["pc"]))
+        if who is not None:
+            prefill, readonly = {pledge.FID_ID: who.username, pledge.FID_NAME: who.full_name or ""}, [pledge.FID_ID]
     quota = formsvc.quota_public(db, form)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
     return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
@@ -486,6 +492,8 @@ def _check_upload(f: dict, name: str, content: bytes, settings: dict) -> Optiona
             ok = False
     elif ext in ("txt", "csv"):
         ok = b"\x00" not in content[:2048]
+    if ok and f.get("capture") == "signature":          # firma dibujada: PNG pequeño y con trazo (app/pledge.py)
+        return pledge.signature_problem(content)
     return None if ok else f"«{f['label']}»: el contenido no corresponde a un archivo .{ext}"
 
 
@@ -603,9 +611,13 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if access in ("cerrado", "cupo_lleno"):
         return JSONResponse({"detail": "Este formulario ya no recibe inscripciones", "stage": "closed"}, status_code=409)
     _limit(db, request, "form_submit", form, 60)
+    if form.kind == formsvc.PLEDGE_KIND and not pledge.throttle(form, security.limit_ip(request)):          # tope propio del compromiso: por enlace y por IP
+        raise HTTPException(status_code=429, detail="Demasiados envíos seguidos — espera unos minutos e intenta de nuevo.")
 
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
+    if formsvc.sensitive_ids(design) and crypto.production() and not crypto.enabled():          # lo sensible solo se guarda cifrado: sin llave, falla cerrado
+        return JSONResponse({"detail": "El servicio no está listo para recibir este formulario. Avisa a tu coordinador."}, status_code=503)
     claims = _read(payload.get("t"), form)
     _check_stage(settings, claims)
     # Archivos ya subidos directo al almacenamiento (`uploads`: {campo: token}); los viejos multipart siguen llegando en `files`.
@@ -646,6 +658,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
 
     clean, errors = formlib.validate_submission(design, values, uploaded, check_email)
     errors.update(file_errors)
+    if form.kind == formsvc.PLEDGE_KIND:
+        errors.update(pledge.extra_errors(form, clean, claims))
     if errors:
         return JSONResponse({"detail": "Revisa los campos marcados", "errors": errors, "error_sheet": formlib.first_error_sheet(design, errors)}, status_code=422)
 
@@ -659,6 +673,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     # X3: la identificación que se verificó en `lookup` (en el modo «solo cédulas autorizadas», la que está en la lista) es la única con la que se puede enviar.
     if claims.get("typed_id") and has_id_field and normalize_id(person_id) != normalize_id(claims["typed_id"]):
         return JSONResponse({"detail": "La identificación del formulario debe ser la misma con la que ingresaste. Si necesitas cambiarla, vuelve a empezar."}, status_code=403)
+    if form.kind == formsvc.PLEDGE_KIND:
+        person_id = pledge.normalize_cedula(clean.get(pledge.FID_ID)) or person_id
     is_test = access == "pruebas"
     sid = str(payload.get("sid") or "")[:40] or None
 
@@ -684,13 +700,13 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if not _enter_lock_zone():
         return _busy_response()
     try:
-        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid, ip=security.limit_ip(request))
+        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid, ip=security.limit_ip(request), request=request)
     finally:
         _leave_lock_zone()
 
 
 def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict, design: dict, claims: dict, values: dict, clean: dict, uploaded: dict, pending: dict, staged: list,
-                       person_id: Optional[str], is_test: bool, sid: Optional[str], ip: Optional[str] = None):
+                       person_id: Optional[str], is_test: bool, sid: Optional[str], ip: Optional[str] = None, request: Optional[Request] = None):
     """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
@@ -775,8 +791,10 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             db.rollback()
             return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
 
+        secret = formsvc.split_sensitive(design, clean)          # campos `sensitive`: fuera de data_json, cifrados aparte (app/crypto.py)
         sub = FormSubmission(
             form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
+            sensitive_json=json.dumps(secret, ensure_ascii=False) if secret else None,
             source=str(payload.get("source") or "")[:40] or None, sid=sid, started_at=started.created_at if started else None,
             status=formsvc.PENDING if charge else "confirmed", discount_code_id=code_row.id if code_row else None,
             quota_keys=formsvc.quota_keys_for(rules, clean),
@@ -801,9 +819,23 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             formsvc.bump_held(form)
             uploads.discard(*staged)
             return {"ok": True, "payment_required": True, "hold_minutes": int(formsvc.PENDING_HOLD.total_seconds() // 60), "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
+        extras = {}
+        if form.kind == formsvc.PLEDGE_KIND:          # cuenta temporal + asignación al evento + evidencia (huella, firma, documento) en la MISMA transacción
+            if is_test:
+                raise pledge.Skip("test")
+            extras = pledge.on_confirmed(db, form, sub, design, clean, secret, pending.get(pledge.FID_SIG, b""), claims, ip, request.session if request is not None else None)
         enqueued = formsvc.confirm_submission(db, form, sub, record_event=False)
         submit_event = (form.id, sub.sid or os.urandom(4).hex(), sub.source, sub.is_test)      # se leen ANTES del commit (después los objetos quedan expirados)
         db.commit()
+    except pledge.Skip:
+        db.rollback()          # nada que guardar: a quien envía se le responde igual que a un envío exitoso (no se revela si la cédula existe ni si ya firmó)
+        for fid in pending:
+            stored = (clean.get(fid) or {}).get("stored") if isinstance(clean.get(fid), dict) else None
+            ev = db.get(Event, form.event_id)
+            if stored and ev is not None:
+                get_storage().delete(form_file_key(ev.tenant_id, form.id, stored))
+        uploads.discard(*staged)
+        return _respond({"ok": True, "thanks": settings["thanks"], "is_test": is_test}, [])
     except OperationalError as exc:
         db.rollback()
         if getattr(exc.orig, "pgcode", None) == "55P03":     # lock_not_available: la espera del bloqueo del cupo pasó de FORM_LOCK_TIMEOUT_MS
@@ -815,7 +847,11 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
     formsvc.bump_held(form)
     uploads.discard(*staged)
     after = [lambda: _record_submit_event(*submit_event)] + ([jobs.kick] if enqueued else [])      # kick() solo si de verdad se encoló algo
-    return _respond({"ok": True, "thanks": settings["thanks"], "is_test": is_test}, after)
+    body = {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
+    if extras.get("next_url"):          # Camino B/C: después de firmar sigue a la fila de espera (o al siguiente compromiso pendiente)
+        body["redirect"] = extras["next_url"]
+        pledge.finish_session(request, extras)
+    return _respond(body, after)
 
 
 def _widget_params(pay: FormPayment, cfg: dict, design: dict, clean: dict, quote: dict) -> dict:

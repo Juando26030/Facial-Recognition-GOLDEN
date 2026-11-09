@@ -24,7 +24,7 @@ from app.auth import get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, EventAttendee, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
+from app.models import Event, EventAttendee, EventStaffPledge, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
@@ -39,7 +39,7 @@ SUPER = require_role("super_admin")          # Fase 3: borrado definitivo
 
 # ------------------------------------------------------------------ utilidades
 def _get_form(db: Session, event: Event, form_id: int) -> WebForm:
-    form = db.query(WebForm).filter(WebForm.id == form_id, WebForm.event_id == event.id).first()
+    form = db.query(WebForm).filter(WebForm.id == form_id, WebForm.event_id == event.id, WebForm.kind == "registration").first()          # el compromiso del digitador (kind='pledge') se administra solo desde app/routers/pledge.py
     if not form:
         raise HTTPException(status_code=404, detail="Formulario no encontrado")
     return form
@@ -118,7 +118,7 @@ def _detail(db: Session, form: WebForm, request: Request) -> dict:
 def list_forms(event_id: int, request: Request, include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Fase 3: por defecto SOLO los formularios no archivados; `include_archived=true` (coordinador+) devuelve los archivados («Ver archivados»)."""
     event = get_event_for_staff(event_id, db, staff)
-    q = db.query(WebForm).filter(WebForm.event_id == event.id)
+    q = db.query(WebForm).filter(WebForm.event_id == event.id, WebForm.kind == "registration")
     q = q.filter(WebForm.archived_at.isnot(None)) if include_archived else q.filter(WebForm.archived_at.is_(None))
     forms = q.order_by(WebForm.id.desc()).all()
     for f in forms:
@@ -439,6 +439,7 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
         raise HTTPException(status_code=409, detail=f"El formulario «{form.name}» tiene pagos aprobados: son registros financieros y no se pueden borrar. Ciérralo o finalízalo en su lugar.")
     db.query(FormRefund).filter(FormRefund.payment_id.in_(db.query(FormPayment.id).filter(FormPayment.form_id == form.id))).delete(synchronize_session=False)
     db.query(FormPayment).filter(FormPayment.form_id == form.id).delete()
+    db.query(EventStaffPledge).filter(EventStaffPledge.submission_id.in_(db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id))).delete(synchronize_session=False)
     db.query(FormSubmission).filter(FormSubmission.form_id == form.id).delete()
     db.query(FormDiscountCode).filter(FormDiscountCode.form_id == form.id).delete()
     db.query(FormEvent).filter(FormEvent.form_id == form.id).delete()

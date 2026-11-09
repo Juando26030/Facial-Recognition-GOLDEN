@@ -53,7 +53,7 @@ const qs = new URLSearchParams(location.search);
 const K = qs.get("k"), D = qs.get("d") || "", INVITE = qs.get("i"), SOURCE = qs.get("utm_source") || qs.get("src") || "";
 const SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s) { s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("sid_" + BASE, s); } return s; } catch (e) { return Math.random().toString(36).slice(2); } })();
 const app = document.getElementById("app");
-let token = null, theme = null;
+let token = qs.get("t") || null, theme = null;      // `t`: token de etapa que ya identifica a la persona (compromiso del digitador al ingresar con su cédula); el servidor lo valida
 
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const assetUrl = (p) => `${BASE}/asset/${p}` + (K ? `?k=${encodeURIComponent(K)}` : "");
@@ -270,6 +270,7 @@ function showForm(st) {
     msg.textContent = "";                                   // respuesta final (o rendición): el aviso de espera desaparece
     if (lastErr) return reset("No pudimos enviar tu inscripción por un problema de conexión. Lo que escribiste sigue aquí: intenta de nuevo en un momento.", true);
     if (res.ok && data.payment_required) return pay(data, reset, fr);
+    if (res.ok && data.redirect) { location.replace(data.redirect); return; }          // compromiso del digitador: sigue a la fila de espera
     if (res.ok) return done(data.thanks);
     if (res.status === 422 && data.errors) { reset(""); return fr.setErrors(data.errors); }
     if (res.status === 409 && data.stage === "closed") return load();

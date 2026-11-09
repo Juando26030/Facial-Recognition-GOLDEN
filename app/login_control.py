@@ -125,6 +125,10 @@ def approve_if_pending(db: Session, staff_id: int, req_hash: Optional[str]) -> b
 def can_approve(db: Session, event: Event, target: StaffUser):
     """GANCHO de reglas para autorizar el ingreso de un digitador en un evento (lo usan el botón individual y «Autorizar a todos»). Devuelve (True, "") o (False, motivo en español).
     Hoy no pone condiciones; aquí se agrega, p. ej., «el compromiso del evento sigue pendiente»: quien no cumpla se OMITE con ese motivo en la autorización masiva."""
+    from app import pledge          # Fase 4: sin el compromiso firmado del evento no se autoriza el ingreso (import perezoso: pledge usa login_control)
+    blocked = pledge.blocked_message(db, target)
+    if blocked:
+        return False, blocked
     return True, ""
 
 

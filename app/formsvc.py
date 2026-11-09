@@ -60,6 +60,51 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
     return formlib.effective_status(form.manual_status, form.use_schedule, get_schedule(form), at or now_local())
 
 
+PLEDGE_KIND = "pledge"           # WebForm.kind del compromiso digital del digitador (app/pledge.py); 'registration' = inscripción de siempre
+
+
+def sensitive_ids(design: dict) -> set:
+    """Ids de los campos marcados `sensitive` (salud, contacto de emergencia…)."""
+    return {fid for fid, f in design["fields"].items() if f.get("sensitive")}
+
+
+def split_sensitive(design: dict, clean: dict) -> dict:
+    """Saca de `clean` las respuestas de campos sensibles y las devuelve aparte: así NO van a `data_json` (listas, reportes, Excel) y se guardan CIFRADAS en `sensitive_json`."""
+    return {fid: clean.pop(fid) for fid in sensitive_ids(design) if fid in clean}
+
+
+def sensitive_retention_days() -> int:
+    """Días tras finalizar el evento en que se borran las respuestas sensibles (FORM_PLEDGE_HEALTH_RETENTION_DAYS, 30 por defecto)."""
+    raw = os.getenv("FORM_PLEDGE_HEALTH_RETENTION_DAYS", "").strip()
+    return int(raw) if raw.isdigit() else 30
+
+
+def sensitive_max_days() -> int:
+    """Tope en días desde el envío aunque el evento no se finalice (FORM_SENSITIVE_MAX_DAYS, 180 por defecto)."""
+    raw = os.getenv("FORM_SENSITIVE_MAX_DAYS", "").strip()
+    return int(raw) if raw.isdigit() else 180
+
+
+def purge_sensitive(db: Session, now: Optional[datetime] = None, batch: int = 500) -> int:
+    """Retención de lo sensible (mismo patrón que la purga biométrica, app/privacy.py): borra `sensitive_json` de los envíos cuyo evento lleva `sensitive_retention_days()` finalizado, o con
+    más de `sensitive_max_days()` desde el envío. Idempotente, por lotes y solo devuelve conteos. Marca `health_purged_at` en la evidencia del compromiso."""
+    from app.models import EventStaffPledge
+    now = now or utcnow()
+    after_cut, cap_cut = now - timedelta(days=sensitive_retention_days()), now - timedelta(days=sensitive_max_days())
+    total = 0
+    while True:
+        ids = [r[0] for r in db.query(FormSubmission.id).join(Event, Event.id == FormSubmission.event_id).filter(
+            FormSubmission.sensitive_json.isnot(None),
+            or_(and_(Event.status == "finalizado", Event.finalized_at.isnot(None), Event.finalized_at <= after_cut), FormSubmission.created_at <= cap_cut)).limit(batch)]
+        if not ids:
+            break
+        db.query(FormSubmission).filter(FormSubmission.id.in_(ids)).update({FormSubmission.sensitive_json: None}, synchronize_session=False)
+        db.query(EventStaffPledge).filter(EventStaffPledge.submission_id.in_(ids)).update({EventStaffPledge.health_purged_at: now}, synchronize_session=False)
+        db.commit()
+        total += len(ids)
+    return total
+
+
 REFUND_DUE = "refund_due"          # R2/D2: RED DE SEGURIDAD para un pago APROBADO que no se pudo admitir (dinero que se movió fuera de nuestro control: duplicado, o aprobado tras vencer el apartado y sin cupo): no cuenta como inscrita ni aparta cupo; se reembolsa. No hay sobreaforo.
 FULL_MSG = "Se agotaron los cupos de este formulario. No se cobró nada."
 PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
@@ -494,7 +539,7 @@ def mark_preregistered(db: Session, event: Event, person_ids) -> int:
     if not ids:
         return 0
     created = 0
-    for form in db.query(WebForm).filter(WebForm.event_id == event.id).all():
+    for form in db.query(WebForm).filter(WebForm.event_id == event.id, WebForm.kind == "registration").all():          # el compromiso del digitador no lleva marcas «ya inscrito»
         have = set()
         for i in range(0, len(ids), 1000):
             part = ids[i:i + 1000]
@@ -721,6 +766,9 @@ def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_e
         inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
         if inv:
             inv.used_at = utcnow()
+    if form.kind == PLEDGE_KIND:          # el compromiso del digitador no es una inscripción: no alimenta la base del evento (lo que hace con la cuenta lo decide app/pledge.py)
+        sub.fed = True
+        return False
     if get_settings(form)["feed"] == "realtime" and not sub.is_test:
         db.flush()
         jobs.enqueue(db, "form_feed", {"submission_id": sub.id}, dedupe_key=str(sub.id))
@@ -758,6 +806,9 @@ def public_state(db: Session, form: WebForm, held: Optional[int] = None) -> str:
     """Lo que ve el público: activo | pruebas | cerrado | cupo_lleno | finalizado. `cupo_lleno` se ve igual que
     `cerrado` (misma plantilla) pero se distingue para los reportes."""
     st = status_of(form)
+    if form.kind == PLEDGE_KIND and st in ("activo", "pruebas"):
+        from app import pledge
+        return pledge.public_state(db, form, st)
     if st == "activo" and is_full(db, form, held):
         return "cupo_lleno"
     return st
