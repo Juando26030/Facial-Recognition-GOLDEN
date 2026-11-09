@@ -70,3 +70,29 @@ Solo eventos, clientes y cuentas del personal; ningún dato de asistentes. Los c
 
 ### Gráficos
 SVG propio (barras horizontales, columnas 0-10, líneas mensuales), sin librerías ni costo; colores con tokens `--gw-*` (claro/oscuro) y cada barra/punto con `<title>` y su valor escrito; junto a cada gráfico hay tabla o cifras.
+
+## C. Panel de gastos — pestaña «Infraestructura» (hecha, sin probar en la nube)
+
+Pantalla `/gastos` (solo admin y super_admin; el enlace «Gastos» del menú solo lo ven ellos). Tiene dos pestañas: «Infraestructura» (esta pieza) y «Eventos» (pieza D, se incluye con `_gastos_eventos.html` y `gastos-eventos.js`; la carcasa dispara el evento `gastos:tab` al cambiar de pestaña).
+
+**Qué muestra:** total del periodo, promedio por mes, promedio por evento, barras apiladas por mes y proveedor (Google Cloud, Neon, Microsoft, Cloudflare, Otros), tendencia del total, barras de costo por evento (parte fija y variable), tabla de gastos y descarga de Excel (hojas «Gastos», «Por evento», «Por mes», con protección contra fórmulas de Excel). Gráficos propios en SVG, sin librerías ni CDN, con tooltip, leyenda, vista como tabla y modo oscuro; colores validados para daltonismo con el validador de paletas.
+
+**De dónde salen los datos**
+1. **Registro manual** (siempre disponible): proveedor, mes, concepto, tipo (fijo o variable), moneda COP/USD con la TRM del día guardada en el registro (el histórico no cambia si el dólar se mueve), nota y soporte opcional (PDF/PNG/JPG ≤ 5 MB, por `app/storage.py`). Cada alta, cambio, borrado y adjunto queda en `audit_actions`.
+2. **Importación automática de Google (opcional):** solo si existe `GCP_BILLING_EXPORT_TABLE` (`proyecto.conjunto.tabla`). Una vez al mes (día `OPS_INFRA_DAY`=2, hora `OPS_INFRA_HOUR`=6, hora local) el Job de ops (paso `infra-costs`; a mano: tarea `infra-costs-import` o el botón «Importar Google ahora») lee el costo NETO (costo + créditos) del mes en curso y del anterior por servicio y lo guarda como gasto `gcp_export`. Es idempotente (clave `gcp:AAAA-MM:servicio`) y no pisa lo registrado a mano; un gasto importado que se edita pasa a manual. En USD usa la «TRM por defecto» del panel (sin ella omite la fila con aviso). No consulta nada de seguido (Neon puede apagarse). Requiere la librería `google-cloud-bigquery` en la imagen (no está en `requirements.txt`: se importa solo si se activa la variable) y que la cuenta de servicio del Job tenga lector de datos y ejecución de consultas en BigQuery.
+3. **Neon:** verificado en la documentación oficial (`GET /consumption_history/v2/projects`, plan Launch o superior, histórico mensual del último año): esa API entrega CONSUMO (segundos de cómputo, bytes), no dinero. Por eso el costo de Neon se registra a mano; con `NEON_API_KEY` y `NEON_ORG_ID` la pantalla muestra además las horas de cómputo del mes (informativo; falla en silencio).
+
+**Reparto por evento (también visible en pantalla, parámetro editable «Criterio de reparto»)**
+- Costos **variables** (Cloud Run, Storage, Neon…): `costo del mes × ingresos del evento en el mes ÷ ingresos de todos los eventos del mes` (tabla `access_logs`, hora de Colombia, sin la persona de prueba).
+- Costos **fijos** (dominio, Microsoft 365, GitHub, Cloudflare…): `costo del mes × días del evento dentro del mes ÷ suma de días de todos los eventos del mes` (eventos con fecha de inicio y que no estén en «creado»).
+- Criterios: `auto` (lo anterior, por defecto), `activity` (todo por ingresos), `days` (todo por días). Si el criterio no tiene datos ese mes se prueba el otro; si ninguno, el costo queda «sin asignar» y se muestra así. Los centavos del redondeo van al último evento: el reparto siempre suma el total. No hay datos de peticiones por evento, así que la actividad es solo ingresos registrados.
+- Promedio por evento = costo repartido ÷ eventos con costo.
+
+**Pasos de Juan David**
+1. Aplicar la migración `0121_infra_costs` (cadena: tras `0119_system_alerts`; verificar que no haya una 0120 pendiente) — solo con su autorización, igual que cualquier migración.
+2. Registrar los gastos de cada proveedor en `/gastos` (mensual).
+3. Para Google automático (opcional): en la consola de Facturación → «Exportación de facturación» → activar la **exportación estándar a BigQuery** (crear un conjunto de datos). Solo trae datos desde que se activa (y, en ubicación multirregional, desde el mes anterior); lo anterior se registra a mano. Luego poner `GCP_BILLING_EXPORT_TABLE=proyecto.conjunto.gcp_billing_export_v1_XXXXXX` en el Job de ops, agregar `google-cloud-bigquery` a la imagen y dar los permisos a la cuenta de servicio.
+4. Para ver el uso de Neon (opcional): crear `NEON_API_KEY` en Secret Manager y poner `NEON_ORG_ID`.
+
+**Pruebas:** `tests/test_gastos_infra.py` (validación, moneda, reparto, importación con consulta simulada, permisos, CRUD con auditoría y adjuntos, Excel). No se pudieron correr en el entorno de la pieza (sin base): solo `py_compile`, `ruff`, `node --check`, y la lógica pura se ejecutó a mano; los gráficos se revisaron en un navegador con datos de ejemplo (escritorio, celular, oscuro).
+

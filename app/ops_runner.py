@@ -225,6 +225,18 @@ def purge_reports() -> str:
                 f"{event_transfer_jobs.purge_expired(db)} paquete(s) de evento (a las 24 h) borrados")
 
 
+def import_infra_costs() -> str:
+    """Fase 9C: importa de la exportación de facturación de Google (BigQuery) el costo neto del mes en curso y del anterior a `infra_costs`. OPCIONAL: sin GCP_BILLING_EXPORT_TABLE no hace
+    nada. Corre UNA vez al mes (OPS_INFRA_DAY, por defecto el 2, a las OPS_INFRA_HOUR, por defecto las 6) o a mano (`infra-costs-import`); no consulta nada más de seguido. Solo conteos en el resultado."""
+    from app import infra_costs
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        r = infra_costs.import_google(db)
+    if not r["configured"]:
+        return "importación de Google apagada (sin GCP_BILLING_EXPORT_TABLE)"
+    return f"Google: {r['imported']} gasto(s) nuevo(s), {r['updated']} actualizado(s), {len(r['warnings'])} aviso(s)"
+
+
 def hourly(now=None) -> dict:
     now = now or _local_now()
     steps = [("backup", lambda: backup_db("hourly", now=now))]
@@ -234,6 +246,8 @@ def hourly(now=None) -> dict:
         steps.append(("purge", purge))
     if now.weekday() == int(os.getenv("OPS_WEEKLY_DAY", "6")) and now.hour == int(os.getenv("OPS_WEEKLY_HOUR", "5")):
         steps.append(("archive-events", archive_events))          # L7: UNA vez por semana (domingo 5 a. m.), para no despertar la base de Neon cada hora
+    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and now.day == int(os.getenv("OPS_INFRA_DAY", "2")) and now.hour == int(os.getenv("OPS_INFRA_HOUR", "6")):
+        steps.append(("infra-costs", import_infra_costs))          # Fase 9C: UNA vez al mes, y solo si el entorno activó la exportación de Google
     steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
@@ -370,7 +384,7 @@ def retry_face_jobs() -> str:
 
 
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "archive-events": archive_events, "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
+         "archive-events": archive_events, "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs, "infra-costs-import": import_infra_costs}
 
 
 def main(task: str) -> int:

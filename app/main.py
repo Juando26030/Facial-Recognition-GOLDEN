@@ -51,6 +51,7 @@ from app.routers import event_transfer as event_transfer_router      # exportar 
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
 from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
+from app.routers import gastos as gastos_router      # Fase 9C: panel de gastos, pestaña «Infraestructura» (solo admin)
 from app.routers import gastos_eventos as gastos_eventos_router      # Fase 9 D: panel de gastos, pestaña «Eventos» (solo admin)
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
@@ -327,6 +328,7 @@ _include(login_approval_router.router)      # S1: ingreso de digitadores autoriz
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
 _include(event_states.router, prefix="/api")
+_include(gastos_router.router, prefix="/api")      # Fase 9C: /api/gastos/infra/*
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
@@ -608,6 +610,19 @@ def inventario_page(request: Request):
     return templates.TemplateResponse(request=request, name="inventario.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+    })
+
+
+@app.get("/gastos")
+def gastos_page(request: Request):
+    """Fase 9C: panel de gastos (solo admin y super_admin). Pestaña «Infraestructura» (esta pieza) y «Eventos» (otra pieza: `_gastos_eventos.html` + `gastos-eventos.js`, se cargan solo si existen)."""
+    denied = _require_page_role(request, "admin")
+    if denied:
+        return denied
+    role = request.session.get("staff_role")
+    return templates.TemplateResponse(request=request, name="gastos.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+        "sidebar_active": "gastos", "has_eventos_js": os.path.exists(os.path.join("static", "js", "gastos-eventos.js")),
     })
 
 
