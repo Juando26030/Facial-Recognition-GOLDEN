@@ -25,7 +25,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import brandcolor, crypto, formlib, formsvc, jobs, pledge, security, timing, uploads, wompi, safe_limits
+from app import brandcolor, crypto, formlib, formsvc, jobs, pledge, security, timing, uploads, wompi, safe_limits, payment_accounts
 from app.safeeq import safe_eq
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
@@ -746,7 +746,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
         if quote["amount"] > 0:
             if quote["amount"] < formlib.MIN_PAYMENT_COP:
                 return JSONResponse({"detail": f"El monto a pagar (${quote['amount']}) es menor al mínimo de ${formlib.MIN_PAYMENT_COP} COP por transacción. Avisa a los organizadores."}, status_code=422)
-            cfg = wompi.config(is_test)
+            cfg = payment_accounts.cfg_for_form(db, form, is_test)
             if not cfg:
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
             charge = quote["amount"]
@@ -828,7 +828,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                 clean[fid]["stored"] = stored
             sub.data_json = json.dumps(clean)
         if charge:
-            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"],
+            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"], account_id=form.payment_account_id,
                               reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)

@@ -19,12 +19,12 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi
-from app.auth import get_event_for_staff, require_role
+from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, EventAttendee, EventStaffPledge, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
+from app.models import Event, EventAttendee, EventStaffPledge, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, PaymentAccount, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
@@ -106,12 +106,39 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
     }
 
 
+def _assign_account(db: Session, form: WebForm, value, staff: StaffUser) -> None:
+    """Asigna (o quita, con null) la cuenta de cobro. No se cambia si el formulario ya tiene pagos que no sean de prueba: sus reembolsos y su conciliación usan la cuenta con la que se cobró,
+    pero mezclar cuentas en un mismo formulario confunde el cuadre."""
+    new_id = None if value in (None, "", 0) else int(value)
+    if new_id == form.payment_account_id:
+        return
+    if new_id is not None:
+        acc = db.get(PaymentAccount, new_id)
+        if acc is None or not acc.active:
+            raise HTTPException(status_code=400, detail="Esa cuenta de cobro no existe o está desactivada")
+    if db.query(FormPayment.id).filter(FormPayment.form_id == form.id, FormPayment.is_test == False, FormPayment.status.in_(("approved", "refunded", "pending"))).first():  # noqa: E712
+        raise HTTPException(status_code=409, detail="Este formulario ya tiene pagos reales o pendientes: no se le puede cambiar la cuenta de cobro")
+    audit_actions.record(db, staff, "payment_account_assign", "web_form", form.id, form.name, f"cuenta {form.payment_account_id or 'Golden'} → {new_id or 'Golden'}")
+    form.payment_account_id = new_id
+
+
+def _payments_info(db: Session, form: WebForm) -> dict:
+    """Qué cuenta de Wompi cobra este formulario: la de Golden (variables de entorno) o una cuenta de cobro de un tercero (Fase 8)."""
+    acc_id = form.payment_account_id
+    if acc_id:
+        cfg = payment_accounts.cfg_of(db.get(PaymentAccount, acc_id))
+        sandbox, prod = bool(cfg and cfg["test"]), bool(cfg and not cfg["test"])
+    else:
+        sandbox, prod = bool(wompi.config(True)), bool((wompi.config(False) or {}).get("test") is False)
+    return {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": sandbox, "production_configured": prod, "account_id": acc_id}
+
+
 def _detail(db: Session, form: WebForm, request: Request) -> dict:
     return {**_summary(db, form, request), "design": formsvc.get_design(form), "settings": formsvc.get_settings(form),
             "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None,
             "quota_status": formsvc.quota_status(db, form),
             "digital_badge_enabled": bool(getattr(db.query(Event).filter(Event.id == form.event_id).first(), "digital_badge_enabled", False)),
-            "payments": {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": bool(wompi.config(True)), "production_configured": bool((wompi.config(False) or {}).get("test") is False)}}
+            "payments": _payments_info(db, form)}
 
 
 # ------------------------------------------------------------------ CRUD
@@ -184,6 +211,10 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
         if db.query(WebForm).filter(WebForm.event_id == event.id, WebForm.slug == slug, WebForm.id != form.id).first():
             raise HTTPException(status_code=400, detail="Ya hay otro formulario con esa dirección en este evento")
         form.slug = slug
+    if "payment_account_id" in data:
+        if max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["admin"]:
+            raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar la cuenta de cobro")
+        _assign_account(db, form, data["payment_account_id"], staff)
     try:
         if "design" in data:
             design = formlib.sanitize_design(data["design"], _optional_keys(event))
@@ -1197,7 +1228,7 @@ def _auto_refund_possible(p: FormPayment) -> bool:
     """¿Hay reembolso automático por API para este pago? Tarjeta (anulación) siempre; otros medios solo con la API V2 (sandbox)."""
     if (p.payment_method or "").upper() == "CARD":
         return True
-    cfg = wompi.config(p.is_test)
+    cfg = payment_accounts.cfg_for_payment(None, p)
     return bool(cfg and wompi.refunds_v2_enabled(cfg))
 
 

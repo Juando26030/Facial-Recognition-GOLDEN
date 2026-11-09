@@ -677,9 +677,9 @@ def superseded_is_safe(db: Session, old: FormSubmission) -> bool:
     """D1: el intento anterior de la MISMA sesión solo se descarta si Wompi no tiene ninguna transacción viva (pendiente o aprobada) para sus referencias. Si no se pudo
     consultar («unknown») se asume que sí hay una: perder una inscripción pagada es peor que pedirle esperar unos minutos a quien reintenta. Hace llamadas a Wompi: se invoca
     ANTES de tomar el bloqueo del formulario."""
-    from app import wompi
+    from app import payment_accounts, wompi
     for p in db.query(FormPayment).filter(FormPayment.submission_id == old.id, FormPayment.status == "pending").all():
-        cfg = wompi.config(p.is_test)
+        cfg = payment_accounts.cfg_for_payment(db, p)
         state = wompi.reference_state(cfg, p.reference) if cfg else "unknown"
         if state in ("pending", "approved", "unknown"):
             return False

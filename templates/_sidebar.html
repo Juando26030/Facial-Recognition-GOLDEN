@@ -26,8 +26,10 @@
     <a href="/inventario"{% if sidebar_active == "inventario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Inventario</a>
     {% if local_server %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>
     <a href="/sincronizacion"{% if sidebar_active == "sincronizacion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg> Sincronización</a>{% endif %}
+    {% if staff_role in ["admin", "super_admin"] %}<a href="/cuentas-de-cobro"{% if sidebar_active == "cuentas_cobro" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Cuentas de cobro</a>{% endif %}
     <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>
-    {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}
+    {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>
+    <a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}
   </nav>
 </aside>
 <script>

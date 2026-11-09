@@ -560,6 +560,7 @@ class WebForm(Base):
     `manual_status` o, con `use_schedule`, del calendario `schedule_json` (ver app/formlib.py)."""
     __tablename__ = 'web_forms'
     id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): con qué cuenta de cobro de Wompi cobra este formulario; NULL = la de Golden
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False)
@@ -619,6 +620,26 @@ class FormDiscountCode(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class PaymentAccount(Base):
+    """Cuenta de cobro de Wompi de un TERCERO (Fase 8, 0118): alguien nos presta su comercio de Wompi y un formulario cobra con SUS llaves; el dinero entra a SU cuenta. La de Golden NO está aquí: sigue en
+    variables de entorno. `public_key` es pública (pub_…); la privada, el secreto de integridad y el de eventos van CIFRADOS (Fernet, PAYMENT_KEYS_ENCRYPTION_KEY: app/payment_accounts.py) y nunca salen por la API.
+    `ref` = identificador opaco para la URL de eventos de ESA cuenta (/webhooks/wompi/<ref>)."""
+    __tablename__ = 'payment_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ref = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
+    holder = Column(String, nullable=True)                 # quién es el titular del comercio (solo texto, para reconocerla)
+    public_key = Column(String, nullable=False)
+    private_enc = Column(Text, nullable=True)
+    integrity_enc = Column(Text, nullable=False)
+    events_enc = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, default=True, server_default='true')
+    note = Column(Text, nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class FormPayment(Base):
     """Un intento de pago de un formulario con campo «Pago» (Wompi). `reference` codifica evento + formulario +
     inscripción y es única: es la trazabilidad por evento (Wompi no organiza por proyecto). El registro de pago se
@@ -643,6 +664,7 @@ class FormPayment(Base):
     confirmed_at = Column(DateTime, nullable=True)
     refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
     origin = Column(String(16), nullable=True)   # 0074: 'importado' = registro histórico traído de otro entorno (no es un pago de este)
+    account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): cuenta de cobro de Wompi con la que se cobró; NULL = la de Golden (variables de entorno)
 
 
 class FormRefund(Base):
@@ -1202,6 +1224,29 @@ class AppSetting(Base):
     updated_at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class InfraCost(Base):
+    """0121 (Fase 9C): gasto de infraestructura de un mes (Google, Neon, Microsoft, Cloudflare, dominio…). Solo admin/super_admin (app/infra_costs.py). `amount_cop` ya viene en pesos con la TRM del
+    día guardada en `trm`, así el histórico no cambia si el dólar se mueve. `source_key` único = importación automática de Google idempotente."""
+    __tablename__ = 'infra_costs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    month = Column(String(7), nullable=False, index=True)             # AAAA-MM
+    provider = Column(String(20), nullable=False)
+    concept = Column(String(160), nullable=False)
+    kind = Column(String(10), nullable=False, default='variable')      # fixed | variable
+    currency = Column(String(3), nullable=False, default='COP')
+    amount = Column(Numeric(14, 2), nullable=False)
+    trm = Column(Numeric(12, 2), nullable=True)
+    amount_cop = Column(Numeric(14, 2), nullable=False)
+    source = Column(String(12), nullable=False, default='manual')      # manual | gcp_export
+    source_key = Column(String(160), nullable=True, unique=True)
+    note = Column(String(300), nullable=True)
+    attachment_key = Column(String(300), nullable=True)
+    attachment_name = Column(String(160), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class SessionAudit(Base):
     """0072: sesiones cerradas, rechazadas o forzadas. Solo lo necesario (Ley 1581): cuenta, hora, tipo de dispositivo, navegador y resultado; sin IP. Se borra a los 90 días (ops_runner.purge)."""
     __tablename__ = 'session_audit'
@@ -1545,3 +1590,39 @@ class ExhibitorLead(Base):
     user_id = Column(String, nullable=False)
     scanned_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (UniqueConstraint('exhibitor_id', 'tenant_id', 'user_id', name='uq_exhibitor_lead'),)
+
+
+class AlertRecipient(Base):
+    """0119 (Fase 9-A): quién recibe las alertas del sistema (borrado masivo). `kind='email'` = correo externo; `kind='staff'` = cuenta de la plataforma (campana + su correo registrado)."""
+    __tablename__ = 'alert_recipients'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(10), nullable=False)
+    email = Column(String(200), nullable=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class SystemAlert(Base):
+    """0119: historial de alertas del sistema ya disparadas (sin datos personales de asistentes)."""
+    __tablename__ = 'system_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(40), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False)
+    event_id = Column(Integer, nullable=True)
+    actor_id = Column(Integer, nullable=True)
+    actor_label = Column(String(120), nullable=True)
+    dedupe_key = Column(String(160), nullable=True, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class MassDeleteLog(Base):
+    """0119: cuántas filas borró cada acción grande (≥10) y quién; sirve para la regla «≥N en M minutos». Se limpia sola (solo se consulta la última hora)."""
+    __tablename__ = 'mass_delete_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow, index=True)
+    actor_id = Column(Integer, nullable=True)
+    label = Column(String(40), nullable=False)
+    rows = Column(Integer, nullable=False)
+    event_id = Column(Integer, nullable=True)

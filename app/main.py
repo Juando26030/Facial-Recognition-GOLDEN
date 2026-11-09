@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
 from app import node_sync
-from app import bodylimit, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -31,6 +31,7 @@ from app.routers import contacts as contacts_router      # Fase 8: contactos par
 from app.routers import event_lease as event_lease_router
 from app.routers import selfreg as selfreg_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
+from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
@@ -40,7 +41,7 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -50,6 +51,8 @@ from app.routers import event_transfer as event_transfer_router      # exportar 
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
 from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
+from app.routers import gastos as gastos_router      # Fase 9C: panel de gastos, pestaña «Infraestructura» (solo admin)
+from app.routers import gastos_eventos as gastos_eventos_router      # Fase 9 D: panel de gastos, pestaña «Eventos» (solo admin)
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
@@ -325,6 +328,7 @@ _include(login_approval_router.router)      # S1: ingreso de digitadores autoriz
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
 _include(event_states.router, prefix="/api")
+_include(gastos_router.router, prefix="/api")      # Fase 9C: /api/gastos/infra/*
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
@@ -348,10 +352,12 @@ _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(queue_router.router, prefix="/api")
 _include(queue_router.public_router)   # Fase 8: turnos y filas (personal) — las rutas públicas /turno/... van en el mismo router
+_include(system_alerts_router.router, prefix="/api")      # Fase 9-A: destinatarios y umbral de la alerta de borrado masivo (admin)
 _include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
 _include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
 _include(analytics.router, prefix="/api")
+_include(gastos_eventos_router.router, prefix="/api")      # Fase 9 D: /api/gastos/eventos/* (satisfacción y tiempos; solo admin)
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
 _include(form_client_router.router, prefix="/api")      # estadísticas de un formulario + acceso de cliente por formulario (solo agregados)
@@ -382,6 +388,7 @@ _include(public_link_router.router, prefix="/api")      # D2.5k: nombre del enla
 _include(event_lease_router.router, prefix="/api")
 _include(selfreg_router.router, prefix="/api")          # Fase 8: autorregistro sin base de datos en el kiosco (app/selfreg.py)
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
+_include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(local_server_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
@@ -604,6 +611,30 @@ def inventario_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
+
+
+@app.get("/gastos")
+def gastos_page(request: Request):
+    """Fase 9C: panel de gastos (solo admin y super_admin). Pestaña «Infraestructura» (esta pieza) y «Eventos» (otra pieza: `_gastos_eventos.html` + `gastos-eventos.js`, se cargan solo si existen)."""
+    denied = _require_page_role(request, "admin")
+    if denied:
+        return denied
+    role = request.session.get("staff_role")
+    return templates.TemplateResponse(request=request, name="gastos.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+        "sidebar_active": "gastos", "has_eventos_js": os.path.exists(os.path.join("static", "js", "gastos-eventos.js")),
+    })
+
+
+@app.get("/cuentas-de-cobro")
+def cuentas_de_cobro_page(request: Request):
+    """Fase 8: cuentas de Wompi de terceros, asignación a formularios y QR de cobro. Solo admin y super_admin."""
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    role = request.session.get("staff_role")
+    return templates.TemplateResponse(request=request, name="cuentas_cobro.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "sidebar_active": "cuentas_cobro"})
 
 
 @app.get("/sincronizacion")

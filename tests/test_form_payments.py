@@ -322,7 +322,7 @@ def test_payment_field_state_is_reported_to_the_editor(client, factory, keys, mo
     ev = _event(client, factory)
     form = _with_payment(client, ev)
     _staff(client)
-    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"] == {"has_field": True, "sandbox_configured": True, "production_configured": True}
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"] == {"has_field": True, "sandbox_configured": True, "production_configured": True, "account_id": None}
     for k in SANDBOX:
         monkeypatch.delenv(k)
     assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"]["sandbox_configured"] is False

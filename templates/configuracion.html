@@ -73,6 +73,7 @@
         <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
         {% if is_super %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
+        <button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
       </div>
@@ -147,6 +148,44 @@
           <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite"></div>
         </section>
 
+        <section class="gw-tabpanel" role="tabpanel" id="alertas" aria-labelledby="tab_alertas" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Alertas del sistema</h2><p class="gw-tabpanel__lead">Si alguien borra muchos registros de golpe (eventos, formularios, inscripciones, personas, archivos), el sistema envía un correo al instante. El correo dice quién, qué, cuántos y cuándo, y <strong>nunca</strong> incluye datos de los asistentes. La limpieza automática de privacidad no cuenta como alerta.</p></div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>¿Desde cuántos registros se avisa?</h4>{% call ayuda('ay_alsettings', 'Umbral de la alerta') %}Se avisa cuando UNA acción borra al menos «registros en una acción», o cuando la misma cuenta acumula al menos «registros acumulados» dentro de los minutos indicados. Si no sabe qué poner, deje los valores que vienen.{% endcall %}</div>
+            <form id="alSettingsForm" class="gw-stack">
+              <label class="gw-check"><input type="checkbox" id="alEnabled"> Enviar alertas de borrado masivo</label>
+              <div class="gw-field"><label class="gw-label" for="alPerAction">Registros en una sola acción</label><input class="gw-input" type="number" id="alPerAction" inputmode="numeric" min="5" step="1"></div>
+              <div class="gw-field"><label class="gw-label" for="alWindowCount">Registros acumulados por una cuenta</label><input class="gw-input" type="number" id="alWindowCount" inputmode="numeric" min="10" step="1"></div>
+              <div class="gw-field"><label class="gw-label" for="alWindowMinutes">…dentro de estos minutos</label><input class="gw-input" type="number" id="alWindowMinutes" inputmode="numeric" min="1" max="60" step="1"></div>
+              <button type="submit" class="gw-btn gw-btn--primary" id="alSettingsBtn">{{ ic('check', 'gw-icon--sm') }} Guardar umbral</button>
+            </form>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>¿Quién recibe la alerta?</h4>{% call ayuda('ay_alrecipients', 'Destinatarios') %}Puede agregar correos de personas que no tienen cuenta en la plataforma, o cuentas de la plataforma (reciben el aviso en la campana y en su correo registrado). Pause un destinatario sin borrarlo con «Desactivar».{% endcall %}</div>
+            <div class="gw-cards" id="alList" aria-live="polite"></div>
+            <form id="alEmailForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="alEmail">Agregar un correo</label><input class="gw-input" type="email" id="alEmail" maxlength="200" autocomplete="off" placeholder="nombre@empresa.com"></div>
+              <button type="submit" class="gw-btn gw-btn--secondary" id="alEmailBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar correo</button>
+            </form>
+            <form id="alStaffForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="alStaff">Agregar una cuenta de la plataforma</label><select class="gw-input" id="alStaff"></select></div>
+              <button type="submit" class="gw-btn gw-btn--secondary" id="alStaffBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar cuenta</button>
+            </form>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Probar</h4>{% call ayuda('ay_altest', 'Alerta de prueba') %}Envía un mensaje de prueba a todos los destinatarios activos para confirmar que llega. No borra nada.{% endcall %}</div>
+            <button type="button" class="gw-btn gw-btn--secondary" id="alTestBtn">{{ ic('mail', 'gw-icon--sm') }} Enviar alerta de prueba</button>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Últimas alertas</h4></div>
+            <div class="gw-cards" id="alRecent" aria-live="polite"></div>
+          </div>
+        </section>
+
         {% if is_super %}
         <section class="gw-tabpanel" role="tabpanel" id="inventario" aria-labelledby="tab_inventario" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Inventario</h2><p class="gw-tabpanel__lead">El catálogo que usan Almacén y los eventos. Los productos activos aparecen solos en el inventario de cada evento nuevo o editado. Lo que hagas aquí actúa al instante.</p></div>
@@ -207,7 +246,8 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 </script>
 <script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
 {% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
-<script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>
+<script src="{{ url_for('static', path='js/system-alerts-admin.js') }}"></script>{% endif %}
 {% if is_super %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
 </body>
 </html>
