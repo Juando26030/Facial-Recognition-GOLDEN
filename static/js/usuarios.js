@@ -43,7 +43,7 @@
             ? (u.has_email
                 ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="resend" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Reenviar correo</span></button>`
                 : `<button type="button" class="gw-btn gw-btn--secondary" data-act="setmail" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Agregar correo</span></button>`) : '';
-        return `<article class="gw-card-row gw-usr__row">
+        return `<article class="gw-card-row gw-usr__row${PL && u.role === 'digitador' && PL.hasAlert && PL.hasAlert(u.id) ? ' gw-usr__row--alert' : ''}">
             <div class="gw-card-row__head gw-usr__head">
                 <span class="gw-card-row__title gw-usr__c-user" title="${esc(u.username)}">${esc(u.username)}</span>
                 <span class="gw-rowact gw-usr__badges"><span class="gw-badge gw-badge--info gw-usr__c-role">${esc(rol)}</span><span class="gw-usr__c-state">${estado}</span></span>

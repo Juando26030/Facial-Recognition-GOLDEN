@@ -529,3 +529,13 @@ def test_recreated_account_can_sign_after_its_old_evidence_is_kept(client, facto
     db.expire_all()
     rows = db.query(EventStaffPledge).filter_by(event_id=ev.id).order_by(EventStaffPledge.id).all()
     assert len(rows) == 2 and rows[0].staff_id is None and rows[1].staff_id == dig.id             # la evidencia vieja sigue, la nueva firma es de la cuenta nueva
+
+
+def test_pledge_keeps_which_health_questions_were_yes_for_the_alert(client, factory, db):
+    ev, path, _ = _setup(client, factory)
+    assert _send(client, path, _values(p_q_med="Sí", p_q_drug="No", p_q_support="Sí", p_q_attend="No")).status_code == 200
+    [p] = _pledges(db, ev.id)
+    assert p.health_flags == "med,support" and p.has_health_info and p.attendance_confirmed is False
+    login(client, "coord1")
+    acct = client.get(f"/api/events/{ev.id}/pledge/state").json()["accounts"][0]
+    assert acct["health_flags"] == ["med", "support"] and acct["attendance_confirmed"] is False

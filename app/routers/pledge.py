@@ -4,7 +4,7 @@
   POST   /api/events/{id}/pledge/link             crear el formulario del evento / reabrir su enlace; {"regenerate": true} cambia el enlace (el anterior deja de existir)
   DELETE /api/events/{id}/pledge/link             revocar el enlace público (el compromiso se sigue exigiendo al ingresar)
   PUT    /api/events/{id}/pledge/enabled          {"enabled": bool}: exigir o no el compromiso en este evento
-  GET    /api/events/{id}/pledge/state            por digitador del evento: firmó o no, cuándo, avisos (sin detalles de salud)
+  GET    /api/events/{id}/pledge/state            por digitador del evento: firmó o no, cuándo, avisos (solo cuáles preguntas de salud respondió «Sí»; el detalle se abre aparte)
   GET    /api/events/{id}/pledge/{pid}/document   el compromiso firmado (HTML imprimible, sin datos sensibles)
   GET    /api/events/{id}/pledge/{pid}/health     el detalle sensible (descifrado): queda en audit_actions quién y cuándo, sin datos
   POST   /api/events/{id}/pledge/{pid}/allow-resign   permite que esa persona firme de nuevo (la firma anterior queda como historial)
@@ -84,7 +84,7 @@ def pledge_state(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
         accounts.append({"id": sid, "signed": p is not None, "blocked": bool(required and p is None), "pledge_id": p.id if p else None,
                          "signed_at": p.signed_at.isoformat() + "Z" if p else None, "attendance_confirmed": p.attendance_confirmed if p else None,
                          "understands_terms": p.understands_terms if p else None, "has_health_info": bool(p and p.has_health_info and p.health_purged_at is None),
-                         "health_purged": bool(p and p.health_purged_at), "resign_allowed": bool(p and p.resign_allowed_at)})
+                         "health_purged": bool(p and p.health_purged_at), "health_flags": [x for x in (p.health_flags or "").split(",") if x] if p and p.health_purged_at is None else [], "resign_allowed": bool(p and p.resign_allowed_at)})
     return JSONResponse({"required": required, "accounts": accounts}, headers=NO_STORE)
 
 

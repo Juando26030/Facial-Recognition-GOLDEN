@@ -73,3 +73,6 @@
 .gw-usr__listhead .gw-btn[hidden] { display: none; }
 @media (max-width: 40rem) { .gw-usr__listhead .gw-btn { width: 100%; white-space: normal; } }
 .gw-msg--lines { white-space: pre-line; }
+
+/* Cuenta con alertas del compromiso (salud / condiciones / asistencia): se ve en amarillo (9-nov-2026) */
+.gw-usr__row--alert { background: var(--gw-warn-bg); border-color: var(--gw-warn-line); color: var(--gw-warn-text); }

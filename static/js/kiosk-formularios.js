@@ -81,8 +81,8 @@
     if (e.target.closest('[data-retry]')) { load(); return; }
     const copy = e.target.closest('[data-copy]');
     if (copy) {
-      try { await navigator.clipboard.writeText(copy.dataset.copy); } catch (err) { /* sin portapapeles: se avisa igual */ }
-      showToast('Enlace copiado (el formulario público solo abre cuando está en estado Activo)', 'success');
+      if (await window.copyText(copy.dataset.copy)) showToast('Enlace copiado (el formulario público solo abre cuando está en estado Activo)', 'success');
+      else showToast('No se pudo copiar solo. Copia el enlace a mano desde el menú del formulario.', 'info');
       return;
     }
     const dup = e.target.closest('[data-dup]');

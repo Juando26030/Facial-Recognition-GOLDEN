@@ -54,6 +54,19 @@
 
     const fmt = (iso) => { try { return new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
 
+    // Alertas en amarillo por cada respuesta que merece atención (solo cuáles; el detalle sensible se abre aparte y queda auditado).
+    const alertIcon = () => { const el = document.querySelector('script[data-icons]'); return `<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc((el && el.dataset.icons) || '/static/img/icons.svg')}#i-alert"/></svg>`; };
+    const HEALTH_LABEL = { med: 'Respondió Sí a: condición médica especial', drug: 'Respondió Sí a: toma medicamento', support: 'Respondió Sí a: requiere apoyo' };
+    function alerts(a) {
+        const out = [];
+        const flags = a.health_flags || [];
+        flags.forEach((k) => { if (HEALTH_LABEL[k]) out.push(HEALTH_LABEL[k]); });
+        if (a.has_health_info && !flags.length) out.push('Respondió Sí en preguntas de salud');          // firmas anteriores a la alerta detallada
+        if (a.understands_terms === false) out.push('Respondió No a: tiene claras las condiciones del contrato');
+        if (a.attendance_confirmed === false) out.push('Respondió No a: confirma su asistencia');
+        return out;
+    }
+
     // Lo que usuarios.js pega en cada tarjeta de digitador. Solo banderas: lo sensible se abre aparte y queda auditado.
     window.UsuariosCompromiso = {
         active: () => !!(info && (info.enabled || Object.values(byStaff).some((a) => a.signed))),
@@ -63,11 +76,9 @@
             if (!a || !info) return '';
             if (!a.signed) return info.enabled ? ' <span class="gw-badge gw-badge--warn">Sin compromiso firmado</span>' : '';
             let h = ` <span class="gw-badge gw-badge--ok" title="${esc(fmt(a.signed_at))}">Compromiso firmado</span>`;
-            if (a.attendance_confirmed === false) h += ' <span class="gw-badge gw-badge--err">No confirmó asistencia</span>';
-            if (a.understands_terms === false) h += ' <span class="gw-badge gw-badge--err">No tiene claras las condiciones</span>';
-            if (a.has_health_info) h += ' <span class="gw-badge gw-badge--warn">Tiene información de salud</span>';
-            return h;
+            return h + alerts(a).map((t) => ` <span class="gw-badge gw-badge--warn">${alertIcon()}${esc(t)}</span>`).join('');
         },
+        hasAlert: (id) => !!(byStaff[id] && byStaff[id].signed && alerts(byStaff[id]).length),
         actions(id) {
             const a = byStaff[id];
             if (!a || !a.signed) return '';
@@ -81,8 +92,8 @@
         if (!btn) return;
         try {
             if (btn.hasAttribute('data-pl-copy')) {
-                await navigator.clipboard.writeText(info.link);
-                showToast('Enlace copiado', 'success');
+                if (await window.copyText(info.link)) showToast('Enlace copiado', 'success');
+                else { const box = $('input[readonly], input'); if (box) { box.focus(); box.select(); } showToast('No se pudo copiar solo: el enlace quedó seleccionado, cópialo con Ctrl+C', 'info'); }
             } else if (btn.hasAttribute('data-pl-make')) {
                 if (btn.dataset.plRegen && !(await showConfirm('Al cambiar el enlace, el anterior deja de funcionar. ¿Continuar?'))) return;
                 info = await call(api + '/link', 'POST', { regenerate: !!btn.dataset.plRegen });

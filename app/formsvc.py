@@ -99,7 +99,7 @@ def purge_sensitive(db: Session, now: Optional[datetime] = None, batch: int = 50
         if not ids:
             break
         db.query(FormSubmission).filter(FormSubmission.id.in_(ids)).update({FormSubmission.sensitive_json: None}, synchronize_session=False)
-        db.query(EventStaffPledge).filter(EventStaffPledge.submission_id.in_(ids)).update({EventStaffPledge.health_purged_at: now}, synchronize_session=False)
+        db.query(EventStaffPledge).filter(EventStaffPledge.submission_id.in_(ids)).update({EventStaffPledge.health_purged_at: now, EventStaffPledge.health_flags: None}, synchronize_session=False)
         db.commit()
         total += len(ids)
     return total

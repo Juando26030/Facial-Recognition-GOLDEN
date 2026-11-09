@@ -394,7 +394,8 @@ def on_confirmed(db: Session, form: WebForm, sub: FormSubmission, design: dict, 
         sensitive_auth_version=T.SENSITIVE_AUTH_VERSION if sensitive_enabled() else None,
         content_hash=content_hash(design, answers, event.id, cedula, hashlib.sha256(signature).hexdigest()), signature_key=signature_key,
         attendance_confirmed=answers.get(FID_ATTEND) == T.YES, understands_terms=answers.get(FID_CONTRACT) == T.YES,
-        has_health_info=any(answers.get(f) == T.YES for f in HEALTH_FIDS), ip_masked=ip_masked)
+        has_health_info=any(answers.get(f) == T.YES for f in HEALTH_FIDS), ip_masked=ip_masked,
+        health_flags=",".join(k for k, f in (("med", FID_MED), ("drug", FID_DRUG), ("support", FID_SUPPORT)) if answers.get(f) == T.YES) or None)
     db.add(row)
     db.flush()
     row.doc_key = signature_key.rsplit("/", 1)[0] + f"/pledge_{row.id}.html"

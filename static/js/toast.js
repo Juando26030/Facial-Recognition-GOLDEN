@@ -404,3 +404,16 @@
     if (window.GW && window.GW.poll) window.GW.poll(pingNow, 8000); else setInterval(pingNow, 8000);      // pestaña sin uso 60 s: no consulta la base; al volver, ping inmediato
   }
 })();
+
+// Copiar texto al portapapeles (9-nov-2026): el navegador puede negar `navigator.clipboard` (permiso, ventana incrustada); entonces se usa el método antiguo con un campo oculto. Devuelve true/false.
+window.copyText = async function (text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* se prueba el otro método */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  } catch (e) { return false; }
+};

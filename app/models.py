@@ -1254,6 +1254,7 @@ class EventStaffPledge(Base):
     attendance_confirmed = Column(Boolean, nullable=False, default=False)
     understands_terms = Column(Boolean, nullable=False, default=False)
     has_health_info = Column(Boolean, nullable=False, default=False)
+    health_flags = Column(String(30), nullable=True)      # 0104: cuáles de med,drug,support respondió «Sí» (solo para la alerta del coordinador; se borra con la purga de lo sensible)
     ip_masked = Column(String(64), nullable=True)
     resign_allowed_at = Column(DateTime, nullable=True)
     superseded_at = Column(DateTime, nullable=True)
