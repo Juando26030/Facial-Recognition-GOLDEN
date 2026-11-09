@@ -127,6 +127,19 @@ def require_role(minimum_role: str):
     return checker
 
 
+def require_platform_role(minimum_role: str):
+    """Como require_role, pero además exige personal GLOBAL (sin `tenant_id`) cuando ENFORCE_STAFF_TENANT=1: para paneles que cruzan a todos los clientes
+    (gastos de la plataforma, satisfacción y comentarios de todos los clientes). Un admin de otra empresa no los ve (F5-9 E)."""
+    base = require_role(minimum_role)
+
+    def checker(staff: StaffUser = Depends(base)) -> StaffUser:
+        if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
 def require_role_or_any(minimum_role: str, extra_roles: tuple):
     """Como require_role, pero además deja pasar a quien tenga alguno de `extra_roles` aunque su rango sea menor (p. ej. almacén/contabilidad para el inventario)."""
     minimum_level = ROLE_HIERARCHY[minimum_role]

@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app import infra_costs as ic
-from app.auth import require_role
+from app.auth import require_platform_role
 from app.database import get_db
 from app.models import AuditAction, InfraCost, StaffUser
 from app.storage import get_storage
@@ -27,7 +27,7 @@ from app.timeutil import utcnow
 
 log = logging.getLogger("golden.gastos")
 router = APIRouter()
-ADMIN = require_role("admin")
+ADMIN = require_platform_role("admin")          # admin y super_admin GLOBALES (F5-9 E)
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 

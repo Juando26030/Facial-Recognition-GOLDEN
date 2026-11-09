@@ -125,7 +125,10 @@ payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
 SECRETS_WEB="$APP_SECRETS"
 SECRETS_PUBLICO="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*
 wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET wompi-events-secret:WOMPI_EVENTS_SECRET
-wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET"
+wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
+# ↑ F5-9 E: `publico` sirve /f/ (firma del pago) y /webhooks/ (firma de eventos): con cuentas de cobro de terceros (0118) necesita descifrar sus secretos de
+#   integridad y de eventos. Sin esta llave, con SPLIT_SERVICE_ACCOUNTS=1 esos cobros fallaban. Ojo: la misma llave abre también la llave PRIVADA cifrada de esas cuentas.
 SECRETS_BIOMETRIA="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*"
 service_secrets() {   # nombre corto del servicio -> lista «nombre:VARIABLE[*]» que recibe
   if [ "$SPLIT_SERVICE_ACCOUNTS" != 1 ]; then echo "$APP_SECRETS"; return; fi

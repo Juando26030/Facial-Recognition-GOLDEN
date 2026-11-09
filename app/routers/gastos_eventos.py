@@ -14,7 +14,7 @@ from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
 from app import event_analytics as ea, xlsafe
-from app.auth import require_role
+from app.auth import require_platform_role
 from app.database import get_db
 from app.models import Event, EventDeliveryLink, StaffUser, SurveyAnswer, SurveyResponse, Tenant
 from app.timeutil import to_local, utcnow
@@ -26,7 +26,7 @@ TEST_EVENT_PREFIXES = ("LOAD-",)          # eventos de las pruebas de carga: nun
 DEFAULT_MONTHS = 12
 MAX_COMMENTS = 20
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-admin_only = require_role("admin")
+admin_only = require_platform_role("admin")      # admin y super_admin GLOBALES: ven comentarios de todos los clientes (F5-9 E)
 
 
 def _staff_name(s: Optional[StaffUser]) -> Optional[str]:
