@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import audit_actions, security, status_changes, warmup
+from app import audit_actions, jobs, security, staff_credentials, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc
@@ -47,6 +47,7 @@ class EventStaffIn(BaseModel):
     full_name: Optional[str] = None
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
+    email: Optional[str] = None  # Fase 4: correo donde recibe los datos de ingreso y del evento (opcional)
 
     _u = username_validator("username")
     _t = text_validator("full_name")
@@ -57,7 +58,7 @@ class AssignExistingIn(BaseModel):
 
 
 def _serialize_staff(s: StaffUser) -> dict:
-    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active}
+    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip())}
 
 
 # Código del evento (orden del 21-oct-2026). Va en direcciones públicas: /aceptar/<código>, el QR del cartel y los enlaces personales ya enviados por correo.
@@ -633,17 +634,23 @@ def create_event_staff(
     if phone and db.query(StaffUser).filter(StaffUser.phone == phone).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
 
+    raw_email = (data.email or "").strip()
+    if raw_email and not staff_credentials.valid_email(raw_email):
+        raise HTTPException(status_code=400, detail="Correo con formato inválido")
     new_user = StaffUser(
         username=data.username, password_hash=hash_password(password),
         full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
-        phone=phone,
+        phone=phone, email=staff_credentials.valid_email(raw_email) or None,
         must_change_password=security.must_change_on_set_by_other(data.role),       # Fase 4: el cliente de evento cambia la contraseña inicial; el digitador temporal no
     )
     db.add(new_user)
     db.flush()  # para obtener new_user.id antes de commitear
     db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
+    mail_queued = staff_credentials.enqueue_for_event(db, new_user, "created", event)          # Fase 4: un correo (sin contraseña) con el evento y el enlace de ingreso; respeta el interruptor del evento
     db.commit()
-    return _serialize_staff(new_user)
+    if mail_queued:
+        jobs.kick()
+    return {**_serialize_staff(new_user), "credentials_mail": "queued" if mail_queued else ("disabled" if not event.staff_mail_enabled else "no_email")}
 
 
 @router.post("/events/{event_id}/staff-users/assign-existing")
@@ -666,8 +673,12 @@ def assign_existing_staff(
     if existing:
         return {"message": "Ya estaba autorizado para este evento"}
     db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
+    event = db.get(Event, event_id)
+    mail_queued = staff_credentials.enqueue_for_event(db, target, "assigned", event)          # Fase 4: aviso de la asignación (una sola vez por persona y evento)
     db.commit()
-    return _serialize_staff(target)
+    if mail_queued:
+        jobs.kick()
+    return {**_serialize_staff(target), "credentials_mail": "queued" if mail_queued else ("disabled" if not event.staff_mail_enabled else "no_email")}
 
 
 # ---------------------------------------------------------------- Usuarios temporales: Excel y borrado en bloque (6-nov-2026)
@@ -699,18 +710,19 @@ def staff_users_template(event_id: int, db: Session = Depends(get_db), staff: St
     wb = Workbook()
     ws = wb.active
     ws.title = "Usuarios"
-    ws.append(["Identificación", "Nombres", "Apellidos"])
+    ws.append(["Identificación", "Nombres", "Apellidos", "Correo (opcional)"])
     for c in ws[1]:
         c.font = Font(color="FFFFFF", bold=True)
         c.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
         c.alignment = Alignment(horizontal="center")
-    ws.append(["1012345678", "María Camila", "Pérez Gómez"])
-    ws.append(["80123456", "Juan Carlos", "Rojas Díaz"])
-    for col, w in (("A", 20), ("B", 28), ("C", 28)):
+    ws.append(["1012345678", "María Camila", "Pérez Gómez", "maria@ejemplo.com"])
+    ws.append(["80123456", "Juan Carlos", "Rojas Díaz", ""])
+    for col, w in (("A", 20), ("B", 28), ("C", 28), ("D", 32)):
         ws.column_dimensions[col].width = w
     note = wb.create_sheet("Instrucciones")
     for line in ("Una persona por fila. Borra las dos filas de ejemplo antes de subir el archivo.",
                  "Identificación: la cédula. Será el usuario y también la contraseña de la cuenta.",
+                 "Correo (opcional): si lo pones, la persona recibe por correo cómo ingresar y los datos del evento (sin contraseñas).",
                  "Si la cédula ya tiene cuenta, solo se asigna a este evento. Si no, se crea y se asigna.",
                  f"Máximo {STAFF_IMPORT_MAX_ROWS} personas por archivo."):
         note.append([line])
@@ -751,11 +763,12 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
     c_id = col("identificacion", "cedula", "id", "documento", "usuario")
     c_first = col("nombres", "nombre")
     c_last = col("apellidos", "apellido")
+    c_mail = col("correo", "correo (opcional)", "email", "correo electronico")
     if c_id is None:
         raise HTTPException(status_code=400, detail="Falta la columna «Identificación». Descarga la plantilla y úsala tal cual")
     data_rows = rows[1:]          # xlsx_rows ya quitó las vacías y cortó en STAFF_IMPORT_MAX_ROWS
 
-    created, assigned_existing, already, problems, seen = 0, 0, 0, [], set()
+    created, assigned_existing, already, mails, problems, seen = 0, 0, 0, 0, [], set()
     for n, r in enumerate(data_rows, start=2):
         def cell(i):
             return str(r[i]).strip() if i is not None and i < len(r) and r[i] is not None else ""
@@ -782,8 +795,13 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
         seen.add(ident)
         target = db.query(StaffUser).filter(StaffUser.username == ident).first()
         is_new = target is None
+        mail_cell = cell(c_mail)
+        mail_ok = staff_credentials.valid_email(mail_cell)
+        if mail_cell and not mail_ok:
+            problems.append({"row": n, "detail": "Correo con formato inválido (la fila no se cargó)"})
+            continue
         if is_new:
-            target = StaffUser(username=ident, password_hash=_temp_password_hash(ident), full_name=full_name, role="digitador", tenant_id=event.tenant_id, created_by_id=staff.id)
+            target = StaffUser(username=ident, password_hash=_temp_password_hash(ident), full_name=full_name, role="digitador", tenant_id=event.tenant_id, created_by_id=staff.id, email=mail_ok or None)
             db.add(target)
             db.flush()          # autoflush=False: hace falta el id antes de la autorización
         elif target.role != "digitador" or (target.tenant_id != event.tenant_id and not (effective_roles(staff) & {"admin", "super_admin"})):
@@ -794,13 +812,19 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
             continue
         if not is_new and not target.is_active:
             target.is_active = True          # un digitador que quedó desactivado (no se pudo borrar, D3) vuelve a servir al asignarlo de nuevo
+        if not is_new and mail_ok and not (target.email or "").strip():
+            target.email = mail_ok          # a una cuenta que ya existía solo se le completa el correo si no tenía; nunca se reemplaza
         db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
+        if staff_credentials.enqueue_for_event(db, target, "created" if is_new else "assigned", event):
+            mails += 1
         if is_new:
             created += 1
         else:
             assigned_existing += 1
     db.commit()
-    return {"created": created, "assigned_existing": assigned_existing, "already": already, "problems": problems[:100], "problems_total": len(problems)}
+    if mails:
+        jobs.kick()
+    return {"mails_queued": mails, "created": created, "assigned_existing": assigned_existing, "already": already, "problems": problems[:100], "problems_total": len(problems)}
 
 
 @router.post("/events/{event_id}/staff-users/purge-temporary")

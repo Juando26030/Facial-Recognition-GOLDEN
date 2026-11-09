@@ -262,6 +262,7 @@ class Event(Base):
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
     certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
+    staff_mail_enabled = Column(Boolean, default=True, server_default='true', nullable=False)   # 0100 (Fase 4): al asignar un digitador temporal a este evento se le envía un correo con los datos del evento y el enlace de ingreso (si tiene correo); se apaga desde «Usuarios del evento»
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     digital_badge_fields = Column(Text, nullable=True)  # 0099: lista JSON de claves de datos de la persona visibles en la escarapela digital pública (app/digital_fields.py); NULL = solo lo que usa la plantilla
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
