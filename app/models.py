@@ -1261,3 +1261,54 @@ class EventStaffPledge(Base):
     health_purged_at = Column(DateTime, nullable=True)
 
     __table_args__ = (Index('uq_pledge_active', 'event_id', 'staff_id', unique=True, postgresql_where=text("superseded_at IS NULL")),)
+
+
+class EventDeliveryLink(Base):
+    """Enlace de ENTREGA al cliente de un evento Facturado (Fase 5, 0106; app/delivery.py): /entrega/<token>. El token se DERIVA (HMAC con SECRET_KEY) de `nonce`, así el personal puede volver a ver el
+    enlace sin guardar el token; en la base solo queda su SHA-256 (`token_hash`) para buscarlo. Sin vencimiento corto: vale hasta que se revoque o se regenere (regenerar revoca el anterior)."""
+    __tablename__ = 'event_delivery_links'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    nonce = Column(String(32), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    last_opened_at = Column(DateTime, nullable=True)
+
+
+class SurveyResponse(Base):
+    """Una encuesta de satisfacción contestada (Fase 5, 0106), guardada APARTE de los formularios (`form_submissions`) y SIN purga biométrica: es la base de la analítica de gerencia (promedios por
+    mes, evento, cliente y pregunta). Sin datos personales de quien responde. Una por evento (índice único). El detalle por pregunta está en `survey_answers`. Ver docs/FASE_5_ENTREGA_ENCUESTA.md."""
+    __tablename__ = 'survey_responses'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    survey_version = Column(Integer, nullable=False)
+    submitted_at = Column(DateTime, nullable=False, default=utcnow)
+    nps_score = Column(Integer, nullable=True)            # 0-10
+    avg_score = Column(Float, nullable=True)              # promedio 1-3 de las preguntas de calidad contestadas
+    delivery_link_id = Column(Integer, ForeignKey('event_delivery_links.id', ondelete='SET NULL'), nullable=True)
+    comment_count = Column(Integer, nullable=False, default=0, server_default='0')
+    ip_hash = Column(String(16), nullable=True)           # solo antiabuso: SHA-256 TRUNCADO de la IP con SECRET_KEY (no es la IP)
+
+    answers = relationship("SurveyAnswer", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (Index('uq_survey_responses_event', 'event_id', unique=True), Index('ix_survey_responses_tenant_at', 'tenant_id', 'submitted_at'))
+
+
+class SurveyAnswer(Base):
+    """Una fila por pregunta contestada (normalizado para analítica). `score` numérico (calidad 1-3, recomendación 0-10) o NULL (sin puntaje / «No aplica»). event_id, tenant_id y submitted_at se
+    repiten de la respuesta a propósito: así promediar por mes/evento/cliente/pregunta no necesita unir tablas."""
+    __tablename__ = 'survey_answers'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    response_id = Column(Integer, ForeignKey('survey_responses.id', ondelete='CASCADE'), nullable=False, index=True)
+    event_id = Column(Integer, nullable=False)
+    tenant_id = Column(String, nullable=False)
+    submitted_at = Column(DateTime, nullable=False)
+    survey_version = Column(Integer, nullable=False)
+    question_id = Column(String(40), nullable=False)
+    score = Column(Integer, nullable=True)
+    choice_text = Column(String(60), nullable=True)
+    comment = Column(Text, nullable=True)
+
+    __table_args__ = (Index('ix_survey_answers_question', 'question_id', 'submitted_at'), Index('ix_survey_answers_event', 'event_id'), Index('ix_survey_answers_tenant_at', 'tenant_id', 'submitted_at'))

@@ -114,6 +114,25 @@
             <p class="gw-hint">Sube el informe ya corregido y autorizado, en PDF o Excel. Se marca como enviado y se le manda por correo a la comercial del evento. Es una acción aparte: no depende de «Guardar cambios».</p>
           </div>
         </details>
+
+        {# Entrega al cliente (Fase 5): solo comercial/admin/super_admin y solo con el evento Facturado. Se muestra tras consultar /api/events/{id}/delivery; son acciones aparte de «Guardar cambios». #}
+        {% if staff_role in ("comercial", "admin", "super_admin") %}
+        <details class="gw-form-group" id="eeDeliveryGroup" open hidden>
+          <summary class="gw-form-group__summary">Entrega al cliente</summary>
+          <div class="gw-form-group__body ee-delivery">
+            <p class="gw-hint">El evento está Facturado. Comparta este enlace con el cliente: primero diligencia una encuesta de satisfacción y luego puede descargar la base de datos final.</p>
+            <div class="ee-delivery__row">
+              <label class="gw-sr-only" for="eeDeliveryLink">Enlace de entrega al cliente</label>
+              <input class="gw-input" type="text" id="eeDeliveryLink" readonly>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryCopy">{{ ic('link', 'gw-icon--sm') }} Copiar</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryRegen">Regenerar enlace</button>
+            </div>
+            <p class="gw-hint" id="eeDeliveryInfo" role="status"></p>
+            <label class="gw-check"><input type="checkbox" id="eeDeliveryMailChk"> <span>Enviar al correo del cliente <span id="eeDeliveryTo"></span></span></label>
+            <div class="ee-delivery__row"><button type="button" class="gw-btn gw-btn--primary" id="eeDeliverySend" disabled>Enviar</button></div>
+          </div>
+        </details>
+        {% endif %}
       </div>
 
       <div class="gw-modal__foot">
@@ -314,6 +333,73 @@
     });
   });
 
+  /* ---------- Entrega al cliente (Fase 5): enlace /entrega/<token>, copiar, regenerar y enviar por correo. Acciones aparte de «Guardar cambios». ---------- */
+  const deliveryGroup = document.getElementById('eeDeliveryGroup');
+  const dEl = (id) => document.getElementById(id);
+  let deliveryEvent = null;
+  if (deliveryGroup) {
+    ['input', 'change'].forEach((t) => deliveryGroup.addEventListener(t, (e) => e.stopPropagation()));          // no cuentan como «cambios sin guardar»
+    const syncSend = () => { dEl('eeDeliverySend').disabled = !dEl('eeDeliveryMailChk').checked; };
+    dEl('eeDeliveryMailChk').addEventListener('change', syncSend);
+  }
+  function paintDelivery(d) {
+    deliveryGroup.hidden = !d.eligible;
+    if (!d.eligible) return;
+    dEl('eeDeliveryLink').value = d.link || '';
+    dEl('eeDeliveryCopy').disabled = !d.link;
+    const bits = [];
+    bits.push(d.has_final_db ? 'Base final: ' + (d.final_db_name || 'subida') : 'Aún no se ha subido la base final: el cliente no tendría qué descargar.');
+    bits.push(d.survey_done ? 'El cliente ya envió la encuesta.' : 'El cliente aún no envía la encuesta.');
+    if (d.last_opened_at) bits.push('Último ingreso al enlace: ' + new Date(d.last_opened_at).toLocaleString() + '.');
+    dEl('eeDeliveryInfo').textContent = bits.join(' ');
+    dEl('eeDeliveryTo').textContent = d.recipient ? '(' + d.recipient + ')' : '(sin correo de contacto registrado)';
+    dEl('eeDeliveryMailChk').checked = false;
+    dEl('eeDeliveryMailChk').disabled = !d.recipient || !d.link;
+    dEl('eeDeliverySend').disabled = true;
+  }
+  async function loadDelivery(ev) {
+    if (!deliveryGroup) return;
+    deliveryEvent = ev; deliveryGroup.hidden = true;
+    try {
+      let res = await fetch(`/api/events/${ev.id}/delivery`);
+      if (!res.ok) return;
+      let d = await res.json();
+      if (deliveryEvent !== ev) return;                       // se abrió otro evento mientras tanto
+      if (d.eligible && !d.link && d.public_url_ready) {         // Facturado y sin enlace todavía: se genera
+        res = await fetch(`/api/events/${ev.id}/delivery/link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (res.ok) d = await res.json();
+      }
+      paintDelivery(d);
+    } catch (e) { /* sin red: el bloque simplemente no aparece */ }
+  }
+  if (deliveryGroup) {
+    dEl('eeDeliveryCopy').addEventListener('click', async () => {
+      const ok = await window.copyText(dEl('eeDeliveryLink').value);
+      showToast(ok ? 'Enlace copiado' : 'No se pudo copiar: selecciónalo y cópialo a mano', ok ? 'success' : 'error');
+    });
+    dEl('eeDeliveryRegen').addEventListener('click', async (e) => {
+      const ok = await showConfirm('El enlace actual dejará de funcionar y se creará uno nuevo. Si el cliente ya envió la encuesta no tendrá que repetirla. ¿Regenerar el enlace?', { variant: 'warning', confirmLabel: 'Sí, regenerar' });
+      if (!ok) return;
+      await busy(e.currentTarget, async () => {
+        const res = await fetch(`/api/events/${current.id}/delivery/link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ regenerate: true }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.detail || 'No se pudo regenerar el enlace', 'error'); return; }
+        paintDelivery(data);
+        showToast('Enlace nuevo creado. El anterior ya no funciona', 'success');
+      });
+    });
+    dEl('eeDeliverySend').addEventListener('click', async (e) => {
+      if (!dEl('eeDeliveryMailChk').checked) return;
+      await busy(e.currentTarget, async () => {
+        const res = await fetch(`/api/events/${current.id}/delivery/send-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.detail || 'No se pudo enviar el correo', 'error'); return; }
+        dEl('eeDeliveryMailChk').checked = false; dEl('eeDeliverySend').disabled = true;
+        showToast('Correo en camino a ' + (data.recipient || 'el cliente'), 'success');
+      });
+    });
+  }
+
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
@@ -341,6 +427,7 @@
     renderExtra(ev, tpl);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
+    loadDelivery(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
     document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
     markClean();
