@@ -764,9 +764,15 @@
     users.forEach(user => tbody.appendChild(buildRow(user)));
   }
 
+  // Mientras llega la lista: filas esqueleto con las columnas de la tabla (static/js/gw-carga.js); sin él, la fila de texto de siempre.
+  function loadingRows(tbody) {
+    if (window.GW && window.GW.skeleton) window.GW.skeleton(tbody, { kind: 'table', rows: 8, label: 'Cargando la lista de personas…' });
+    else tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+  }
+
   async function loadRows(tbodyId) {
     const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+    loadingRows(tbody);
     try {
       const res = await fetch(withEvent('/api/users'));
       const users = await res.json();
@@ -1120,7 +1126,7 @@
       const GC0 = GCref();
       if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
       if (localMode) { setLocalMode(false); allUsers = []; }
-      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+      if (!allUsers.length) loadingRows(tbody);
       T('directory:loading-row-shown');
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.

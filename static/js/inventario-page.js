@@ -30,6 +30,7 @@
     currentId = id;
     document.getElementById('invPanelTitle').textContent = name;
     panel.hidden = false;
+    if (window.GW && window.GW.skeleton) window.GW.skeleton(box, { kind: 'list', rows: 4, label: 'Cargando el inventario del evento…' });
     ctrl = await window.GWInvPlan.mount(box, { eventId: id, icons, onChange: () => {} });
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }

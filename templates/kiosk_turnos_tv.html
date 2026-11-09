@@ -1,5 +1,6 @@
 {# Pantalla de TV de turnos (Fase 8): se abre en pantalla completa en el televisor, con la sesión del personal. Solo tokens --gw-*. #}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es" data-theme="dark">
 <head>
     <meta charset="UTF-8">
@@ -16,7 +17,7 @@
 <body class="gw-page" data-event-id="{{ event.id }}">
 <main class="tq-tv">
   <h1 class="tq-tv__title">{{ event.name }}</h1>
-  <section id="tvLanes" class="tq-tv__lanes" aria-live="polite"></section>
+  <section id="tvLanes" class="tq-tv__lanes" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando los turnos…') }}</section>
   <section id="tvRecent" class="tq-tv__recent" aria-label="Últimos llamados"></section>
   <button type="button" id="tvSound" class="gw-btn gw-btn--secondary gw-btn--sm tq-tv__sound">Activar sonido</button>
 </main>

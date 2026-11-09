@@ -8,6 +8,7 @@
 {% set is_cert = (template_kind == 'certificate') %}
 {% set kind_name = 'Certificado' if is_cert else 'Escarapela' %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -245,7 +246,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     <div class="gw-modal__body">
       <p class="gw-modal__text">Copia el diseño de una plantilla de tu librería a este evento. No queda vinculada: puedes seguir editando aquí sin afectar la original.</p>
       {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="savedTplArchived"> Ver archivadas</label>{% endif %}
-      <div id="savedTplList" aria-live="polite"><p class="gw-ed-state">Cargando…</p></div>
+      <div id="savedTplList" aria-live="polite">{{ skeleton('list', rows=3, label='Cargando plantillas…') }}</div>
     </div>
     <div class="gw-modal__foot">
       <button type="button" class="gw-btn gw-btn--secondary" id="importCancelBtn" data-gw-close>Cerrar</button>
@@ -462,7 +463,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   }
   async function openImportModal() {                  // la ventana se abre sola (data-gw-open="importModal" en gw-ui.js); aquí se carga la lista
     const listEl = document.getElementById('savedTplList');
-    stateLine(listEl, 'Cargando…');
+    if (window.GW && GW.skeleton) GW.skeleton(listEl, { kind: 'list', rows: 3, label: 'Cargando plantillas…' }); else stateLine(listEl, 'Cargando…');
     const archBox = document.getElementById('savedTplArchived');
     const showArch = !!(archBox && archBox.checked);          // «Ver archivadas» (coordinador+, Fase 3): se pueden restaurar (y, super_admin, borrar del todo)
     try {

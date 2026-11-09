@@ -10,6 +10,7 @@
 {% set can_archive = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
 {% set n_categories = ((event.categories | fromjson) | length) if event.categories else 0 %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -303,7 +304,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             {% if not can_change_reprint %}<p class="gw-alert" role="note">{{ ic('lock') }}<span class="gw-alert__body">Solo un administrador cambia esta opción.</span></p>{% endif %}
             <div class="gw-sub"><h5>Solicitudes de permiso de este evento</h5></div>
-            <div id="reprintHistory" aria-live="polite"><p class="gw-msg">Cargando…</p></div>
+            <div id="reprintHistory" aria-live="polite">{{ skeleton('list', rows=2, label='Cargando las solicitudes…') }}</div>
           </div>
 
           <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
@@ -318,7 +319,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div id="stationsCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Puestos de impresión</h4>{% call ayuda('ay_puestos', 'Puestos de impresión') %}Por cada cuenta: si es «Puesto de impresión», si usa «Solo lector» en «Registro touch» y si en su Registro se muestra o se esconde el menú de impresión (Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».{% endcall %}</div>
             <p class="gw-hint">Elige qué cuentas son puesto de impresión y qué ven en su Registro.</p>
-            <div id="stationsTable" data-psave="stations">Cargando…</div>
+            <div id="stationsTable" data-psave="stations">{{ skeleton('list', rows=3, label='Cargando los puestos…') }}</div>
           </div>
 
           <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel de impresión del Registro. app/routers/print_settings.py -->
@@ -419,7 +420,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=3, label='Cargando zonas…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
                 <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
@@ -438,7 +439,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=6, label='Cargando ítems…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
                 <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
@@ -520,7 +521,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-group__item" id="personFormCard">
             <div class="gw-item-head"><h4 id="personFormTitle">Formulario de persona</h4></div>
             <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos y textos. Funciona igual sin conexión. Se guarda con «Guardar cambios».</p>
-            <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
+            <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">{{ skeleton('text', rows=5, label='Cargando el formulario de persona…') }}</div>
           </div>
           <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
           <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
@@ -534,7 +535,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
           <div id="privacyCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Datos del rostro</h4>{% call ayuda('ay_privacidad', 'Datos del rostro') %}El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan. Para autorizar el rostro en los formularios web, crea en «Campos» un campo de consentimiento aparte y en «Insertar texto tipo» elige «Autorización del dato biométrico»; debe ser una casilla separada de la autorización general de datos.{% endcall %}</div>
-            <p id="privInfo" class="gw-msg" role="status">Cargando…</p>
+            <div id="privInfo" class="gw-msg" role="status">{{ skeleton('text', rows=2, label='Cargando…') }}</div>
             {% if is_admin_plus %}<div class="gw-danger-zone">
               <h4>{{ ic('alert') }} Borrar rostros (no se puede deshacer)</h4>
               <div class="gw-field"><label class="gw-label" for="privCedula">Cédula de la persona a la que se le borrará el rostro</label><input class="gw-input" type="text" id="privCedula" aria-label="Cédula de la persona a la que se le borrará el rostro"></div>
@@ -747,7 +748,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked });
         document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
-    loadAreas().catch(() => {}); loadItems().catch(() => {});
+    const failBox = (id) => () => { const b = document.getElementById(id); if (b && b.querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error(b, { text: 'Recarga la página para intentarlo de nuevo.' }); };
+    loadAreas().catch(failBox('areasBody')); loadItems().catch(failBox('itemsBody'));
 
 
 

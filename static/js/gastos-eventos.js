@@ -137,6 +137,7 @@
   }
 
   function render(d) {
+    skeletons(false);
     $('gw-ge-summary').textContent = d.events_total ? d.summary_text : 'No hay eventos en este periodo. Cambie las fechas o los filtros.';
     renderKpis(d.kpis);
     var s = d.satisfaction, t = d.times, a = d.alerts;
@@ -174,8 +175,17 @@
     ['desde', 'hasta', 'cliente', 'comercial', 'low', 'overdue', 'wait'].forEach(function (k) { var v = (fd.get(k) || '').toString().trim(); if (v) p.set(k, v); });
     return p.toString();
   }
+  // Esqueletos (static/js/gw-carga.js) en las cifras y en cada tarjeta mientras se calcula; render() los reemplaza (clear) y, si falla, se quitan.
+  function skeletons(on) {
+    var sk = window.GW && window.GW.skeleton;
+    if (!sk) return;
+    if (!on) { root.querySelectorAll('[data-gw-sk]').forEach(function (n) { n.remove(); }); return; }
+    $('gw-ge-kpis').innerHTML = sk.html({ kind: 'stats', rows: 4, label: 'Calculando el análisis…' });
+    root.querySelectorAll('.gw-ge__grid .gw-card > div[id]').forEach(function (n) { n.innerHTML = sk.html({ kind: 'text', rows: 3, label: '' }); });
+  }
   function load() {
     $('gw-ge-summary').textContent = 'Calculando…';
+    skeletons(true);
     fetch(API + '/panel?' + query(), { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
       if (r.status === 403 || r.status === 401) throw new Error('Solo los administradores pueden ver este análisis.');
       if (!r.ok) return r.json().then(function (j) { throw new Error(j.detail || 'No se pudo calcular el análisis.'); });
@@ -184,7 +194,7 @@
       if (!form.desde.value) form.desde.value = d.range.from;
       if (!form.hasta.value) form.hasta.value = d.range.to;
       render(d);
-    }).catch(function (e) { $('gw-ge-summary').textContent = e.message; toast(e.message); });
+    }).catch(function (e) { skeletons(false); $('gw-ge-summary').textContent = e.message; toast(e.message); });
   }
   function fillSelect(sel, items) {
     items.forEach(function (i) { var o = el('option', null, i.name); o.value = i.id; sel.appendChild(o); });

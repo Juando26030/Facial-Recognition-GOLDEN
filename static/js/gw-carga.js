@@ -9,11 +9,12 @@
    3) Esqueletos: GW.skeleton(contenedor, { kind: 'table'|'cards'|'list'|'stats'|'block'|'text', rows, cols }) pinta la forma del contenido mientras llega; GW.skeleton.html(opts) da el
       marcado (el mismo de templates/_gw_skeleton.html); GW.skeleton.error(contenedor, { title, text }) deja `.gw-state--error` con «Reintentar». Red de seguridad: si una petición
       falla y queda algún esqueleto a la vista cuando ya no hay nada en curso, se cambia por el estado de error (nunca un esqueleto eterno).
-   NUNCA se activa con los sondeos: lo que corre dentro de setInterval / GW.poll / GW.onResume, las peticiones con encabezado X-Gw-Passive o keepalive, y /health, /ready, /api/session/*.
+   NUNCA se activa con los sondeos: lo que corre dentro de setInterval / GW.poll / GW.onResume o de un setTimeout de 2 s o más, las peticiones con encabezado X-Gw-Passive
+   o keepalive, y /health, /ready, /api/session/*. Para callar algo a mano: GW.quiet(() => fetch(...)).
    La lógica (createTracker, skeletonHtml) se prueba con Node sin DOM: tests/js/gw_carga_check.js. */
 (function (root) {
     'use strict';
-    const GESTURE_MS = 1000, MIN_VISIBLE_MS = 300, BAR_DELAY_MS = 400, NAV_TIMEOUT_MS = 10000, PAGE_SETTLE_MS = 1500, ERROR_SETTLE_MS = 1500;
+    const GESTURE_MS = 1000, MIN_VISIBLE_MS = 300, BAR_DELAY_MS = 400, NAV_TIMEOUT_MS = 10000, PAGE_SETTLE_MS = 1500, ERROR_SETTLE_MS = 1500, POLL_TIMEOUT_MS = 2000;
     const ACTION_SEL = 'button, .gw-btn, [role="button"], input[type="submit"], input[type="button"], a[data-gw-action]';
     const QUIET_URL = /\/(health|ready|healthz|readyz)(\?|$)|\/api\/session\//;
     const FILE_URL = /\.(xlsx|xls|csv|pdf|zip|png|jpe?g|docx|txt|json|ics|vcf|pkpass)(\?|#|$)|\/(export|descargar|download)\b/i;
@@ -295,12 +296,18 @@
             return send.apply(this, arguments);
         };
     }
-    // Sondeos: lo que corre dentro de un setInterval no enciende nada (GW.poll lo usa por dentro).
-    const si = root.setInterval;
+    // Sondeos: lo que corre dentro de un setInterval no enciende nada (GW.poll lo usa por dentro); tampoco un setTimeout de 2 s o más (sondeos encadenados
+    // como Turnos, TV o el turno público, y reintentos). Un setTimeout corto (buscador con espera de 300 ms) sí cuenta como parte del gesto.
+    const si = root.setInterval, st = root.setTimeout;
     root.setInterval = function (fn) {
         const args = Array.prototype.slice.call(arguments);
         if (typeof fn === 'function') args[0] = function () { return tracker.quiet(fn, this, arguments); };
         return si.apply(root, args);
+    };
+    root.setTimeout = function (fn, ms) {
+        const args = Array.prototype.slice.call(arguments);
+        if (typeof fn === 'function' && Number(ms) >= POLL_TIMEOUT_MS) args[0] = function () { return tracker.quiet(fn, this, arguments); };
+        return st.apply(root, args);
     };
 
     function actionOf(target) { return target && target.closest ? target.closest(ACTION_SEL) : null; }
@@ -330,7 +337,7 @@
         const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
         if (!a || a.hasAttribute('download') || (a.target && a.target !== '_self') || a.closest('[data-gw-busy-off]')) return;
         const href = a.getAttribute('href') || '';
-        if (!href || href[0] === '#' || /^(javascript|mailto|tel|sms|blob|data):/i.test(href) || FILE_URL.test(href)) return;
+        if (!href || href[0] === '#' || /^(javascript|mailto|tel|sms|blob|data):/i.test(href) || /^\/api\//.test(href) || FILE_URL.test(href)) return;     // /api/… desde un enlace = descarga
         try { const u = new URL(a.href, location.href); if (u.origin !== location.origin || (u.pathname === location.pathname && u.search === location.search && u.hash)) return; } catch (err) { return; }
         tracker.navigate(a.matches(ACTION_SEL) ? a : null);
     });

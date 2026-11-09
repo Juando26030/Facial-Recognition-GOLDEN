@@ -6,7 +6,7 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const wrap = document.createElement('div');
   wrap.className = 'gw-bell'; wrap.id = 'gwBell';
-  wrap.innerHTML = '<button type="button" class="gw-btn gw-btn--secondary gw-bell__btn" id="gwBellBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="gwBellPanel" aria-label="Notificaciones">' +
+  wrap.innerHTML = '<button type="button" class="gw-btn gw-btn--secondary gw-bell__btn" id="gwBellBtn" data-gw-busy-off aria-haspopup="dialog" aria-expanded="false" aria-controls="gwBellPanel" aria-label="Notificaciones">' +
     '<svg class="gw-icon" aria-hidden="true"><use href="/static/img/icons.svg#i-bell"/></svg><span class="gw-bell__n" id="gwBellN" hidden>0</span></button>' +
     '<div class="gw-bell__panel" id="gwBellPanel" role="dialog" aria-label="Notificaciones" hidden><div class="gw-bell__head"><strong>Notificaciones</strong>' +
     '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" id="gwBellAll">Marcar todas como leídas</button></div><div id="gwBellList" aria-live="polite"></div></div>';
@@ -15,6 +15,7 @@
 
   function paintCount(n) { badge.textContent = n > 99 ? '99+' : String(n); badge.hidden = !n; btn.setAttribute('aria-label', n ? `Notificaciones: ${n} sin leer` : 'Notificaciones'); }
   async function load() {
+    if (!list.firstChild && window.GW && window.GW.skeleton) window.GW.skeleton(list, { kind: 'list', rows: 3, label: 'Cargando notificaciones…' });      // abre y carga: la campana no se ve vacía
     try {
       const res = await fetch('/api/notifications?limit=20');
       if (res.status === 401) { wrap.remove(); return; }
