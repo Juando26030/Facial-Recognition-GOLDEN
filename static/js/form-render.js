@@ -122,6 +122,8 @@
         width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #c9ccd6; border-radius:10px; font:inherit; background:#fff; color:#111; }
       .fr-item input:focus, .fr-item select:focus, .fr-item textarea:focus { outline:2px solid ${accent}; border-color:${accent}; }
       .fr-item .fr-ro { background:#eef0f4 !important; color:#555 !important; }
+      .fr-sig__pad { display:block; width:100%; max-width:420px; aspect-ratio:3/1; touch-action:none; border:2px dashed #8a8fa0; border-radius:10px; background:#fff; cursor:crosshair; }
+      .fr-sig__clear { flex:none; width:auto; padding:6px 14px; font-size:.8rem; margin-right:6px; }
       .fr-opts label { display:flex; gap:8px; align-items:center; font-weight:400; margin:4px 0; cursor:pointer; }
       .fr-err { color:#c0392b; font-size:.76rem; margin-top:3px; } .fr-item.has-err input, .fr-item.has-err select, .fr-item.has-err textarea { border-color:#c0392b; }
       .fr-prog { margin:0 0 14px; } .fr-prog-t { font-size:.8rem; font-weight:700; margin-bottom:4px; } .fr-prog-b { height:6px; border-radius:6px; background:rgba(0,0,0,.1); overflow:hidden; } .fr-prog-b i { display:block; height:100%; background:${accent}; transition:width .2s; }
@@ -350,7 +352,12 @@
         case 'radio': control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="radio" ${name} value="${esc(o)}" ${String(val) === o ? 'checked' : ''} ${ro || quotaLeft(f, o) === 0 ? 'disabled' : ''}> ${esc(o)}${quotaNote(f, o)}</label>`).join('')}</div>`; break;
         case 'multiselect': { const sel = asList(val); control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="checkbox" ${name} value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(o)}</label>`).join('')}</div>`; break; }
         case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> <span${tAttr}>${ttlHtml(f)}</span></label></div>${help}<div class="fr-err"></div>`;
-        case 'file': control = `<input type="file" ${name} accept="${(f.accept || []).map((a) => '.' + a).join(',')}" style="width:100%;"><div class="fr-help">Formatos: ${esc((f.accept || []).join(', '))} · máximo ${f.max_mb || 10} MB</div>`; break;
+        case 'file':
+          if (f.capture === 'signature') {   // firma dibujada (compromiso del digitador): el lienzo escribe un PNG en el input de archivo, así el envío es el de cualquier archivo
+            control = `<canvas class="fr-sig__pad" width="600" height="200" role="img" aria-label="Espacio para firmar con el dedo o el mouse"></canvas><input type="file" ${name} accept=".png" hidden><div class="fr-help"><button type="button" class="fr-navbtn fr-sig__clear" data-sig-clear>Borrar firma</button> Firma dentro del recuadro.</div>`;
+            break;
+          }
+          control = `<input type="file" ${name} accept="${(f.accept || []).map((a) => '.' + a).join(',')}" style="width:100%;"><div class="fr-help">Formatos: ${esc((f.accept || []).join(', '))} · máximo ${f.max_mb || 10} MB</div>`; break;
         default: {
           const docs = f.type === 'text_short' ? (f.doc_types || []).map((c) => docByCode[c]).filter(Boolean) : [];
           if (docs.length) {   // documento de identidad: tipo (si hay varios) + número validado según el tipo elegido
@@ -588,6 +595,49 @@
       cur = b.dataset.cur;
       try { localStorage.setItem('gw_cur', cur); } catch (err) { /* opcional */ }
       paintPay();
+    });
+
+    // Firma dibujada: trazos con puntero (dedo, lápiz o mouse) → PNG en el input de archivo oculto del mismo campo.
+    let sigDraw = null;
+    const sigInput = (cv) => cv.parentElement.querySelector('input[type=file]');
+    function sigPoint(cv, e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; }
+    form.addEventListener('pointerdown', (e) => {
+      const cv = e.target.closest && e.target.closest('.fr-sig__pad');
+      if (!cv) return;
+      e.preventDefault();
+      try { cv.setPointerCapture(e.pointerId); } catch (err) { /* opcional */ }
+      const ctx = cv.getContext('2d'), [x, y] = sigPoint(cv, e);
+      ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.1, y + 0.1); ctx.stroke();
+      sigDraw = cv;
+    });
+    form.addEventListener('pointermove', (e) => {
+      if (!sigDraw) return;
+      const ctx = sigDraw.getContext('2d'), [x, y] = sigPoint(sigDraw, e);
+      ctx.lineTo(x, y); ctx.stroke();
+    });
+    const sigEnd = () => {
+      const cv = sigDraw; sigDraw = null;
+      if (!cv) return;
+      cv.toBlob((blob) => {
+        if (!blob) return;
+        try {
+          const dt = new DataTransfer(), inp = sigInput(cv);
+          dt.items.add(new File([blob], 'firma.png', { type: 'image/png' }));
+          inp.files = dt.files;
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (err) { /* navegador sin DataTransfer: el campo queda sin firma y el servidor lo pedirá */ }
+      }, 'image/png');
+    };
+    form.addEventListener('pointerup', sigEnd);
+    form.addEventListener('pointercancel', sigEnd);
+    form.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-sig-clear]');
+      if (!b) return;
+      const cv = b.closest('.fr-item').querySelector('.fr-sig__pad'), inp = sigInput(cv);
+      cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+      inp.value = '';
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
     const codeBox = () => form.querySelector('[data-code]');

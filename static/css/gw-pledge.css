@@ -1,0 +1,13 @@
+/* Compromiso digital del digitador firmado (templates/pledge_document.html) y panel del coordinador (kiosk_usuarios.html). Solo tokens --gw-*. */
+.pledge-doc { padding-block: var(--gw-sp-5); }
+.pledge-doc__data { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-1) var(--gw-sp-4); margin: 0; }
+.pledge-doc__data dt { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.pledge-doc__data dd { margin: 0 0 var(--gw-sp-2); font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
+.pledge-doc__hash { font-family: ui-monospace, Consolas, monospace; font-size: var(--gw-fs-sm); }
+.pledge-doc__sig { max-width: 100%; height: auto; background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); }
+.pledge-doc__text ul { margin: 0 0 var(--gw-sp-3); padding-left: var(--gw-sp-5); }
+@media (min-width: 40rem) { .pledge-doc__data { grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr); } }
+@media print { .pledge-doc__noprint { display: none; } .pledge-doc { padding: 0; } }
+
+.pledge-panel__link { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
+.pledge-panel__url { flex: 1 1 16rem; min-width: 0; }

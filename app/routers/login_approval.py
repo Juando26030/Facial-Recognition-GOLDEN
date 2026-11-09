@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app import login_control, security, staticver
+from app import login_control, pledge, security, staticver
 from app.auth import effective_roles, get_event_for_staff, require_role
 from app.database import get_db
 from app.models import EventStaffAuthorization, StaffUser
@@ -154,6 +154,10 @@ def decide_login(event_id: int, staff_id: int, data: dict, db: Session = Depends
         raise HTTPException(status_code=409, detail="La solicitud cambió mientras la mirabas: revisa de nuevo quién está pidiendo entrar")
     if allow and event.status != "en_proceso":
         raise HTTPException(status_code=400, detail="Solo se puede autorizar el ingreso desde un evento en proceso")
+    if allow:
+        blocked = pledge.blocked_message(db, target)          # Fase 4: sin el compromiso firmado del evento no se autoriza el ingreso
+        if blocked:
+            raise HTTPException(status_code=409, detail=blocked)
     target.login_req_status = login_control.APPROVED if allow else login_control.DENIED
     db.commit()
     return {"status": target.login_req_status, "message": "Ingreso autorizado" if allow else "Ingreso no autorizado"}

@@ -19,15 +19,20 @@
     }
 
     function cardHtml(u) {
+        const PL = window.UsuariosCompromiso;
         const rol = ROLES[u.role] || u.role;
         const nombre = u.full_name || 'Sin nombre';
         const st = loginState[u.id] || {};
         const estado = (u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>')
             + (st.locked ? ' <span class="gw-badge gw-badge--err">Bloqueada</span>' : '')
-            + (st.login_pending ? ' <span class="gw-badge gw-badge--warn">Está intentando ingresar</span>' : '');
+            + (st.login_pending ? ' <span class="gw-badge gw-badge--warn">Está intentando ingresar</span>' : '')
+            + (PL && u.role === 'digitador' ? PL.badges(u.id) : '');
         // S1: ingreso autorizado por el coordinador y desbloqueo (app/routers/login_approval.py). Solo lo ve quien administra las cuentas temporales de este evento.
+        const PLG = PL && u.role === 'digitador';      // compromiso digital (usuarios-compromiso.js): sin firmar no se ofrece «Permitir»; el servidor también lo rechaza
+        const allowBtn = PLG && PL.blocked(u.id) ? ''
+            : `<button type="button" class="gw-btn gw-btn--primary" data-act="allow" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Permitir</span></button>`;
         const loginBtns = !canManage || u.role !== 'digitador' ? '' : (st.login_pending
-            ? `<button type="button" class="gw-btn gw-btn--primary" data-act="allow" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Permitir</span></button>`
+            ? allowBtn
               + `<button type="button" class="gw-btn gw-btn--danger-outline" data-act="deny" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>No permitir</span></button>`
             : '') + (st.locked
             ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="unlock" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Desbloquear</span></button>`
@@ -42,6 +47,7 @@
             <p class="gw-card-row__meta gw-usr__c-name" title="${esc(u.full_name || '')}">${esc(nombre)}</p>
             <div class="gw-card-row__actions gw-usr__actions gw-usr__c-act">
                 ${loginBtns}
+                ${PLG ? PL.actions(u.id) : ''}
                 ${reset}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
@@ -78,6 +84,7 @@
     const tickLoginState = () => { if (document.visibilityState === 'visible') loadLoginState(); };
     if (window.GW && window.GW.poll) window.GW.poll(tickLoginState, LOGIN_STATE_MS); else setInterval(tickLoginState, LOGIN_STATE_MS);      // sin uso 60 s no consulta la base (toast.js, GW.idle)
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadLoginState(); });
+    document.addEventListener('compromiso:cambio', () => { if (!listEl.querySelector('.gw-menu__panel:not([hidden])')) drawUsers(); });      // usuarios-compromiso.js: firmas nuevas o cambios
     const PAGER_KEY = 'usuarios';
     const pagerEl = document.getElementById('tempUsersPager');
     const purgeBtn = document.getElementById('purgeTempBtn');

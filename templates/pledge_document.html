@@ -1,0 +1,52 @@
+{# Compromiso digital del digitador, FIRMADO: documento de solo lectura que se guarda en el almacenamiento en el momento de la firma (app/pledge.py `render_document`). No lleva nada sensible
+   (ni contacto de emergencia ni respuestas de salud). Se imprime o se guarda como PDF desde el navegador. Solo tokens --gw-* (static/css/design-system.css y gw-pledge.css). #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compromiso firmado | {{ event_name }}</title>
+    <link rel="stylesheet" href="/static/css/design-system.css">
+    <link rel="stylesheet" href="/static/css/gw-pledge.css">
+</head>
+<body class="gw-page">
+<main class="gw-container gw-container--narrow gw-stack pledge-doc">
+    <header class="gw-stack">
+        <p class="gw-eyebrow">Golden Eventos y Logística S.A.S.</p>
+        <h1 class="gw-page-head__title">Compromiso del digitador firmado</h1>
+        <p class="gw-page-head__sub">{{ info }}</p>
+    </header>
+    <section class="gw-card gw-stack" aria-labelledby="pdDatos">
+        <h2 class="gw-sub" id="pdDatos">Datos de quien firma</h2>
+        <dl class="pledge-doc__data">
+            <dt>Identificación (C.C.)</dt><dd>{{ cedula }}</dd>
+            <dt>Nombre completo</dt><dd>{{ name }}</dd>
+            <dt>Celular</dt><dd>{{ phone }}</dd>
+            <dt>{{ contract[0] }}</dt><dd>{{ contract[1] }}</dd>
+            <dt>{{ attendance[0] }}</dt><dd>{{ attendance[1] }}</dd>
+        </dl>
+    </section>
+    <section class="gw-card gw-stack pledge-doc__text" aria-label="Texto del compromiso aceptado">
+        {% for b in blocks %}{% if b.kind == 'heading' %}<h2 class="gw-sub">{{ b.html|safe }}</h2>{% else %}<div>{{ b.html|safe }}</div>{% endif %}{% endfor %}
+        <p class="pledge-doc__decl"><strong>{{ declaration }}</strong></p>
+        <p class="gw-hint">{{ footer }}</p>
+    </section>
+    <section class="gw-card gw-stack" aria-labelledby="pdFirma">
+        <h2 class="gw-sub" id="pdFirma">Firma del digitador(a) — RECIBIDO</h2>
+        <img class="pledge-doc__sig" src="{{ signature }}" alt="Firma dibujada por {{ name }}" width="300" height="100">
+        <p class="gw-hint">Firmado el {{ signed_local }} (hora de Colombia) · {{ signed_at }}</p>
+    </section>
+    <section class="gw-card gw-stack" aria-labelledby="pdEvid">
+        <h2 class="gw-sub" id="pdEvid">Constancia</h2>
+        <dl class="pledge-doc__data">
+            <dt>Versión del texto</dt><dd>{{ version }}</dd>
+            <dt>Huella SHA-256 del contenido aceptado</dt><dd class="pledge-doc__hash">{{ content_hash }}</dd>
+            <dt>Origen</dt><dd>{{ 'Enlace público del evento' if source == 'link' else 'Al ingresar con la cédula' }}</dd>
+            <dt>Dirección IP (enmascarada)</dt><dd>{{ ip }}</dd>
+        </dl>
+    </section>
+    <div class="gw-actions pledge-doc__noprint"><button type="button" class="gw-btn gw-btn--primary" data-print>Imprimir o guardar como PDF</button></div>
+</main>
+<script src="/static/js/pledge-doc.js" defer></script>
+</body>
+</html>

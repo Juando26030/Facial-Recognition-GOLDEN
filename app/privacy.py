@@ -261,7 +261,7 @@ def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
             for stored in _stored_files(data_json):
                 from app.storage import form_file_key
                 result["versions_not_deleted"] += get_storage().delete_all_versions(form_file_key(tenant, form_id, stored))
-        result["submissions_emptied"] = db.execute(text(f"UPDATE form_submissions SET data_json = '{{}}', person_id = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).rowcount  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
+        result["submissions_emptied"] = db.execute(text(f"UPDATE form_submissions SET data_json = '{{}}', sensitive_json = NULL, person_id = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).rowcount  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
         forms_of_tenant = f"(SELECT id FROM web_forms WHERE event_id IN {events_of_tenant})"  # nosec B608 - subconsulta fija en el código
         db.execute(text(f"DELETE FROM form_people WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
         db.execute(text(f"DELETE FROM form_invites WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)

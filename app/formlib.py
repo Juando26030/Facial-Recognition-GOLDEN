@@ -281,6 +281,10 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                     clean["max_mb"] = max(1, min(20, int(f.get("max_mb") or 10)))
                 except (TypeError, ValueError):
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
+                if f.get("capture") == "signature":      # firma dibujada en un lienzo (compromiso digital): es un PNG pequeño que el navegador entrega como si fuera un archivo
+                    clean.update({"capture": "signature", "accept": ["png"], "max_mb": 1})
+            if f.get("sensitive"):      # dato sensible (Ley 1581): el servidor lo guarda CIFRADO aparte de data_json y lo borra por retención (formsvc.split_sensitive / purge_sensitive)
+                clean["sensitive"] = True
         elif kind in ("heading", "paragraph"):
             clean["content"] = richtext.clean_text(f.get("content"), 2000)
         elif kind == PAYMENT_TYPE:

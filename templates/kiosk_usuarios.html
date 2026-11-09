@@ -18,9 +18,11 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-usuarios.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-usuarios.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-pledge.css') }}">
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/usuarios-compromiso.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
 </head>
 <body class="gw-page gw-shell has-sidebar">
@@ -147,6 +149,24 @@
         </form>
       </div>
     </details>
+    {% endif %}
+
+    {% if staff_role != "comercial" %}
+    <section class="gw-stack" id="pledgePanel" aria-labelledby="tituloCompromiso" hidden>
+      <h2 class="gw-sub" id="tituloCompromiso">Compromiso digital del digitador</h2>
+      <p class="gw-hint">Cada digitador firma un compromiso por evento. Comparte este enlace: al firmarlo se crea su cuenta (usuario y contraseña inicial: su cédula) y queda asignada a este evento. Tú solo la autorizas.</p>
+      <div class="pledge-panel__link">
+        <label class="gw-sr-only" for="pledgeUrl">Enlace del compromiso</label>
+        <input class="gw-input pledge-panel__url" type="text" id="pledgeUrl" data-pl-url readonly placeholder="Todavía no hay enlace">
+        <button type="button" class="gw-btn gw-btn--secondary" data-pl-copy disabled>Copiar</button>
+        <button type="button" class="gw-btn gw-btn--primary" data-pl-make>Generar el enlace</button>
+        <button type="button" class="gw-btn gw-btn--danger-outline" data-pl-revoke hidden>Revocar</button>
+      </div>
+      <label class="gw-check"><input type="checkbox" data-pl-enabled> Exigir el compromiso en este evento</label>
+      <p class="gw-hint" data-pl-note></p>
+      <p class="gw-msg gw-msg--err" data-pl-unavailable hidden role="note">El texto de autorización de datos de salud aún no está aprobado por la auditora: el enlace no se puede publicar todavía.</p>
+      <p class="gw-hint" data-pl-draft hidden>Aviso: se está usando un texto en borrador (solo pruebas).</p>
+    </section>
     {% endif %}
 
     <section class="gw-stack" aria-labelledby="tituloCuentas" data-gw-tour-step="2" data-gw-tour-title="2. Cuentas y roles" data-gw-tour-text="Aquí ves cada cuenta con su rol y su estado. Las acciones de cada una están en su misma tarjeta.">

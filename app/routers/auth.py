@@ -14,7 +14,7 @@ from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
 from app.auth import get_current_staff, hash_password, verify_password
-from app import idle, login_control, security, sessions
+from app import idle, login_control, pledge, security, sessions
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -98,6 +98,16 @@ def login_submit(
         # S1 (a): sin un evento EN PROCESO asignado, el mismo error genérico (la cédula sola no abre nada). El intento queda anotado como fallido.
         if not login_control.has_event_in_progress(db, staff):
             return _login_page(request, GENERIC_LOGIN_ERROR, 401)
+        # Fase 4: si la cuenta está en un evento en proceso que exige el compromiso digital y no lo ha firmado, ANTES de la fila de espera va al formulario del compromiso (el del motor de formularios, ya identificada).
+        missing = pledge.missing_for_login(db, staff)
+        if missing is not None:
+            link = pledge.begin_session_flow(request, db, staff, missing, request.session.get("sid"))
+            if link is None:
+                return _login_page(request, "Debes firmar el compromiso de tu evento, pero todavía no está disponible. Avisa a tu coordinador.", 403)
+            login_control.reset_fails(staff)
+            db.commit()
+            security.clear_events(db, "login_fail", username)
+            return RedirectResponse(link, status_code=303)
         # S1 (c): la contraseña es correcta, pero la sesión NO se crea todavía: queda una solicitud que el coordinador permite o no («Usuarios del evento»).
         login_control.reset_fails(staff)
         token = login_control.new_request(staff)

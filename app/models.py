@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import event as sa_event
-from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint, Index, text
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
@@ -264,6 +264,7 @@ class Event(Base):
     certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     digital_badge_fields = Column(Text, nullable=True)  # 0099: lista JSON de claves de datos de la persona visibles en la escarapela digital pública (app/digital_fields.py); NULL = solo lo que usa la plantilla
+    pledge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0100: el evento exige el compromiso digital del digitador (app/pledge.py); sin firmarlo no entra a la fila de autorización. El enlace público es el formulario web `kind='pledge'` del evento
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
@@ -546,6 +547,7 @@ class WebForm(Base):
     fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
     archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas y cerrado al público; conserva respuestas y pagos)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    kind = Column(String(20), nullable=False, default='registration', server_default='registration')  # 0100: 'registration' (inscripción, de siempre) | 'pledge' (compromiso digital del digitador, app/pledge.py: no alimenta la base del evento ni sale en la lista de formularios)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
@@ -571,6 +573,7 @@ class FormSubmission(Base):
     # `confirmed` = inscripción real. `awaiting_payment` = transitoria mientras se espera a Wompi: NUNCA se ve en listas,
     # reportes, analítica ni se carga a la base del evento (solo aparta cupo unos minutos). Ver app/routers/form_payments.py.
     status = Column(String, nullable=False, default='confirmed', server_default='confirmed')
+    sensitive_json = deferred(Column(EncryptedText, nullable=True))   # 0100 (deferred: no se carga ni descifra al listar inscripciones): respuestas de campos marcados `sensitive` (salud, contacto de emergencia), CIFRADAS con app/crypto.py y fuera de data_json; se borran por retención (formsvc.purge_sensitive)
     quota_keys = Column(Text, nullable=True)   # `|firma|firma|` de los cupos por variables que esta inscripción cumple (se cuentan en SQL, sin leer el JSON de todas)
     discount_code_id = Column(Integer, ForeignKey('form_discount_codes.id'), nullable=True)   # código de descuento con el que se inscribió (cuenta como un uso)
     created_at = Column(DateTime, default=utcnow, nullable=False)
@@ -1227,3 +1230,31 @@ class AuditAction(Base):
     entity_id = Column(String(64), nullable=False)
     entity_name = Column(String(200), nullable=True)
     detail = Column(String(500), nullable=True)
+
+
+class EventStaffPledge(Base):
+    """Evidencia del compromiso digital del digitador POR EVENTO (0100, app/pledge.py). La escribe el motor de formularios al recibir el envío del formulario `kind='pledge'`; las respuestas viven en
+    `form_submissions` (lo sensible, cifrado en `sensitive_json`) y aquí queda la prueba: huella SHA-256 del texto aceptado + respuestas, versión del texto, firma y documento en el almacenamiento.
+    Solo se INSERTA; las únicas marcas que cambian después son `resign_allowed_at` (el coordinador permite firmar de nuevo), `superseded_at` (una firma nueva la reemplazó; queda como historial) y
+    `health_purged_at` (se borró lo sensible por retención). Las columnas booleanas son avisos sin detalle."""
+    __tablename__ = 'event_staff_pledges'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    submission_id = Column(Integer, ForeignKey('form_submissions.id'), nullable=False)
+    signed_at = Column(DateTime, nullable=False, default=utcnow)
+    source = Column(String(10), nullable=False, default='link')      # link (enlace público) | session (al ingresar con la cédula)
+    text_version = Column(String(40), nullable=False)
+    sensitive_auth_version = Column(String(60), nullable=True)      # versión del texto de datos sensibles aceptado (NULL = no se pidieron datos sensibles)
+    content_hash = Column(String(64), nullable=False)      # SHA-256 del texto aceptado + las respuestas
+    signature_key = Column(String(300), nullable=False)
+    doc_key = Column(String(300), nullable=True)      # documento firmado (HTML imprimible; no hay librería de PDF instalada)
+    attendance_confirmed = Column(Boolean, nullable=False, default=False)
+    understands_terms = Column(Boolean, nullable=False, default=False)
+    has_health_info = Column(Boolean, nullable=False, default=False)
+    ip_masked = Column(String(64), nullable=True)
+    resign_allowed_at = Column(DateTime, nullable=True)
+    superseded_at = Column(DateTime, nullable=True)
+    health_purged_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index('uq_pledge_active', 'event_id', 'staff_id', unique=True, postgresql_where=text("superseded_at IS NULL")),)

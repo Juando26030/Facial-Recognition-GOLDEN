@@ -142,7 +142,7 @@ def _load_handlers() -> None:
 
 def purge() -> str:
     """Retención biométrica (app/privacy.py): solo conteos en el resultado y en el log. Con errores el paso FALLA (alerta) y se reintenta la hora siguiente."""
-    from app import acceptmail, privacy, sessions
+    from app import acceptmail, formsvc, privacy, sessions
     _load_handlers()
     from app.database import SessionLocal
     db = SessionLocal()
@@ -150,6 +150,7 @@ def purge() -> str:
         r = privacy.purge_expired(db)
         r["mail_log_rows"] = acceptmail.purge_log(db)       # registro de envíos de enlaces personales (misma retención que lo biométrico)
         r["session_audit_rows"] = sessions.purge_audit(db)     # auditoría de sesiones cerradas/rechazadas/forzadas: 90 días (Ley 1581)
+        r["sensitive_rows"] = formsvc.purge_sensitive(db)      # respuestas sensibles del compromiso del digitador: FORM_PLEDGE_HEALTH_RETENTION_DAYS (30) después de finalizado el evento
     finally:
         db.close()
     log.info("purga biométrica: %s", json.dumps(r))
