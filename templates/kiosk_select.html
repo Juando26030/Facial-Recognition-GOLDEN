@@ -97,6 +97,9 @@
         {% if event.areas_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/areas" % event.id, "lock", "Control de áreas", "Entradas y salidas por zona (cédula, QR o facial)") }}
         {% endif %}
+        {% if event.queue_enabled and staff_role != "comercial" %}
+        {{ tile("/kiosk/%s/turnos" % event.id, "badge", "Turnos y filas", "Llama al siguiente; la gente ve su turno en el celular") }}
+        {% endif %}
         {% if event.inventory_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
         {% endif %}

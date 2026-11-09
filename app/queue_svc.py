@@ -58,7 +58,7 @@ def invalidate(event_id: int) -> None:
 
 
 def _name_for(user: Optional[User]) -> str:
-    if user is None or not user.first_name or minors.is_minor(user.birth_date) or user.is_biometric_enabled is False:
+    if user is None or not user.first_name or minors.is_minor(user.birth_date):
         return ""                                                    # menores (o sin dato fiable): nunca su nombre
     return " ".join(str(user.first_name).split()[:1]).title()
 

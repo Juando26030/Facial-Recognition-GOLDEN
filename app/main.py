@@ -38,7 +38,7 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, queue as queue_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -344,6 +344,8 @@ _include(event_docs.router, prefix="/api")
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
+_include(queue_router.router, prefix="/api")
+_include(queue_router.public_router)   # Fase 8: turnos y filas (personal) — las rutas públicas /turno/... van en el mismo router
 _include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
 _include(analytics.router, prefix="/api")
@@ -937,6 +939,18 @@ def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(ge
 def kiosk_areas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Control de Áreas (ítem 9a): entrada/salida por zona. digitador+ (comercial excluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_areas.html", min_role="digitador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/turnos")
+def kiosk_turnos(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Turnos y filas (Fase 8): consola del operador (llamar, repetir, saltar, ver fila). digitador+ (comercial excluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_turnos.html", min_role="digitador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/turnos/tv")
+def kiosk_turnos_tv(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pantalla de TV de turnos: el turno llamado en grande y los últimos llamados."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_turnos_tv.html", min_role="digitador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/inventario")
