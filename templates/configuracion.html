@@ -51,7 +51,7 @@
         <p class="gw-page-head__sub">Ajusta cómo se ve el sistema en este computador{% if is_admin_plus %} y las reglas de sesión y cuentas del personal{% endif %}.</p>
       </div>
       <div class="gw-page-head__actions">
-        <a href="/cambiar-contrasena" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('lock', 'gw-icon--sm') }} Cambiar mi contraseña</a>
+        {% if local_server %}<span class="gw-hint">La contraseña solo se cambia en la nube.</span>{% else %}<a href="/cambiar-contrasena" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('lock', 'gw-icon--sm') }} Cambiar mi contraseña</a>{% endif %}
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="configuracion">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>

@@ -61,7 +61,7 @@
                 </div>
                 <button type="submit" class="gw-btn gw-btn--primary gw-btn--block">Ingresar</button>
             </form>
-            <p class="login__links"><a href="/olvide-contrasena">¿Olvidaste tu contraseña?</a></p>
+            {% if local_server %}<p class="login__links gw-hint">Las contraseñas solo se cambian en la nube.</p>{% else %}<p class="login__links"><a href="/olvide-contrasena">¿Olvidaste tu contraseña?</a></p>{% endif %}
         </div>
     </main>
 {% include "_legal_footer.html" %}

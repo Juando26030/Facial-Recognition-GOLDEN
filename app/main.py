@@ -24,6 +24,7 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebFor
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
+from app.routers import node_accounts as node_accounts_router      # Fase 6: cuentas hacia los servidores locales (X-Node-Token)
 from app.routers import event_lease as event_lease_router      # Fase 6: arrendamiento del evento por un servidor local
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
@@ -291,6 +292,7 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 templates.env.globals["golden_logo_attrs"] = golden_logo_attrs
@@ -360,6 +362,7 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(node_accounts_router.router, prefix="/api")
 _include(event_lease_router.router, prefix="/api")      # Fase 6: evento en servidor local (solo lectura en la nube)
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
