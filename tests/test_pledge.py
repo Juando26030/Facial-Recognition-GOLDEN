@@ -511,3 +511,21 @@ def test_front_end_pieces_follow_the_rules():
     assert "usuarios-compromiso.js" in tpl and "gw-pledge.css" in tpl and "url_for('static'" in tpl
     css = (ROOT / "static/css/gw-pledge.css").read_text(encoding="utf-8")
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css)                                              # solo tokens --gw-*
+
+
+def test_recreated_account_can_sign_after_its_old_evidence_is_kept(client, factory, db):
+    """Bug 9-nov: la firma de una cuenta eliminada se conserva con la cédula; al crear de nuevo la cuenta, firmar daba «Ya estás inscrito»."""
+    from app.models import EventStaffPledge
+
+    ev, path, coord = _setup(client, factory)
+    assert _send(client, path, _values()).status_code == 200
+    login(client, "coord1")
+    assert client.post(f"/api/events/{ev.id}/staff-users/purge-temporary").json()["deleted"] == 1
+    client.post("/logout")
+    dig = factory.staff("digitador", CED, password=CED, tenant_id=ev.tenant_id)           # misma cédula, cuenta nueva y sin firma
+    factory.authorize(ev, dig)
+    r = _send(client, path, _values(), sid="otra")
+    assert r.status_code == 200 and not r.json().get("already"), r.text
+    db.expire_all()
+    rows = db.query(EventStaffPledge).filter_by(event_id=ev.id).order_by(EventStaffPledge.id).all()
+    assert len(rows) == 2 and rows[0].staff_id is None and rows[1].staff_id == dig.id             # la evidencia vieja sigue, la nueva firma es de la cuenta nueva

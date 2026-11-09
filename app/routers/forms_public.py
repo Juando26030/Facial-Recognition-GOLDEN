@@ -675,6 +675,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
         return JSONResponse({"detail": "La identificación del formulario debe ser la misma con la que ingresaste. Si necesitas cambiarla, vuelve a empezar."}, status_code=403)
     if form.kind == formsvc.PLEDGE_KIND:
         person_id = pledge.normalize_cedula(clean.get(pledge.FID_ID)) or person_id
+        if person_id and access != "pruebas" and pledge.release_stale(db, form, person_id):
+            db.commit()          # una firma anterior que ya no cuenta (cuenta eliminada, reemplazada o con nueva firma permitida) no bloquea firmar: ver pledge.release_stale
     is_test = access == "pruebas"
     sid = str(payload.get("sid") or "")[:40] or None
 

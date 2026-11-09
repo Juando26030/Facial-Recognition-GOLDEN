@@ -440,6 +440,22 @@ def render_document(event: Event, design: dict, answers: dict, signature: bytes,
 
 
 # ---------------------------------------------------------------------------------------------------- puerta del ingreso (Camino B/C) y aprobación
+def release_stale(db: Session, form: WebForm, cedula: str) -> int:
+    """Libera la cédula de los envíos ANTERIORES que ya no respaldan una firma vigente, para que el motor de formularios no responda «Ya estás inscrito» (9-nov-2026, bug de Juan David).
+    El motor impide dos envíos con la misma cédula en un formulario (uq_form_person), pero en el compromiso lo que cuenta es si la CUENTA tiene su firma vigente (`active_pledge`), no si alguna vez
+    hubo un envío con esa cédula (por ejemplo, el de una cuenta que se eliminó y se volvió a crear). Solo se conserva con cédula el envío que respalda una firma vigente de una cuenta que existe
+    y a la que el coordinador no le ha permitido firmar de nuevo; los demás envíos reales de esa cédula pierden SOLO la cédula del envío (`person_id` = NULL). La evidencia (huella, firma,
+    documento y respuestas) no se toca. Una firma vigente de una cuenta que existe NO se libera: ese caso sí es «ya firmaste». Devuelve cuántos liberó (no hace commit)."""
+    if not cedula:
+        return 0
+    keep = db.query(EventStaffPledge.submission_id).filter(
+        EventStaffPledge.event_id == form.event_id, EventStaffPledge.staff_id.isnot(None),
+        EventStaffPledge.superseded_at.is_(None), EventStaffPledge.resign_allowed_at.is_(None))
+    return db.query(FormSubmission).filter(
+        FormSubmission.form_id == form.id, FormSubmission.person_id == cedula, FormSubmission.is_test == False,        # noqa: E712
+        ~FormSubmission.id.in_(keep)).update({"person_id": None}, synchronize_session=False)
+
+
 def active_pledge(db: Session, event_id: int, staff_id: int) -> Optional[EventStaffPledge]:
     return db.query(EventStaffPledge).filter(EventStaffPledge.event_id == event_id, EventStaffPledge.staff_id == staff_id, EventStaffPledge.superseded_at.is_(None)).first()
 
