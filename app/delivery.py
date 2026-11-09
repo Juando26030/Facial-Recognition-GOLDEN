@@ -163,12 +163,73 @@ def submit_survey(db: Session, link: EventDeliveryLink, event: Event, payload: d
     resp = SurveyResponse(event_id=event.id, tenant_id=event.tenant_id, survey_version=survey_def.SURVEY_VERSION, submitted_at=now, delivery_link_id=link.id, ip_hash=ip_hash(ip), **summary)
     resp.answers = [SurveyAnswer(event_id=event.id, tenant_id=event.tenant_id, submitted_at=now, survey_version=survey_def.SURVEY_VERSION, **r) for r in rows]
     db.add(resp)
+    queued_next = wants_next_event(rows) and enqueue_next_event_notice(db, event)       # plan §12: interés en otro evento → correo a la comercial (misma transacción)
     try:
         db.commit()
     except IntegrityError:                          # dos envíos a la vez: gana uno solo (índice único por evento)
         db.rollback()
         raise AlreadySubmitted() from None
+    resp.next_event_queued = bool(queued_next)        # atributo solo en memoria: el router despierta la cola si hay correo
     return resp
+
+
+# ------------------------------------------------------------------------------------------------ «¿próximo evento?» → aviso a la comercial
+NEXT_KIND = "next_event_mail"
+NEXT_QUESTION = "q8_next_event"
+
+
+def wants_next_event(rows: list) -> bool:
+    """True si la encuesta validada respondió «Sí» a la pregunta del próximo evento."""
+    return any(r.get("question_id") == NEXT_QUESTION and (r.get("choice_text") or "").strip().lower() in ("sí", "si") for r in rows)
+
+
+def enqueue_next_event_notice(db: Session, event: Event) -> bool:
+    """Encola el aviso a la comercial del evento (sin datos en la cola: solo el id). False si el evento no tiene comercial con correo válido."""
+    commercial = getattr(event, "commercial", None)
+    if commercial is None or not valid_email(commercial.email):
+        return False
+    jobs.enqueue(db, NEXT_KIND, {"event_id": int(event.id)}, max_attempts=4, dedupe_key=f"{NEXT_KIND}:{event.id}")
+    return True
+
+
+def render_next_event_mail(*, event_name: str, client_name: str, commercial_name: str, comment: Optional[str], link: str) -> dict:
+    nombre = (commercial_name or "").strip()
+    saludo = f"Hola {nombre}:" if nombre else "Hola:"
+    frase = (f"El cliente {client_name} respondió en la encuesta de satisfacción del evento «{event_name}» que tiene un próximo evento "
+             "(la encuesta le ofrece un 2 % de descuento si lo programa con nosotros). Contáctalo pronto.")
+    lines = [saludo, "", frase]
+    if comment:
+        lines += ["", f"Comentario del cliente: {comment}"]
+    if link:
+        lines += ["", f"Abre el evento: {link}"]
+    e = html.escape
+    body = (f"<div style=\"font-family:Agrandir,Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#222;line-height:1.5\"><p>{e(saludo)}</p><p>{e(frase)}</p>"
+            + (f"<p><strong>Comentario del cliente:</strong> {e(comment)}</p>" if comment else "")
+            + (f"<p><a href=\"{e(link)}\">Abrir el evento</a></p>" if link else "") + "</div>")
+    return {"subject": clean_subject(f"Oportunidad: el cliente de «{event_name}» tiene un próximo evento"), "text": "\n".join(lines), "html": body}
+
+
+@jobs.handler("next_event_mail")
+def run_next_event_mail(payload: dict) -> None:
+    from app import final_db                                   # import perezoso: reusa el enlace a la edición del evento
+    with SessionLocal() as db:
+        event = db.get(Event, int(payload["event_id"]))
+        if event is None:
+            return
+        commercial = getattr(event, "commercial", None)
+        to = valid_email(commercial.email) if commercial is not None else ""
+        if not to or not commercial.is_active:
+            return                                             # sin comercial activa con correo: no es un error
+        answer = db.query(SurveyAnswer).filter(SurveyAnswer.event_id == event.id, SurveyAnswer.question_id == NEXT_QUESTION).order_by(SurveyAnswer.id.desc()).first()
+        tenant = db.get(Tenant, event.tenant_id) if event.tenant_id else None
+        mail = render_next_event_mail(event_name=event.name, client_name=(tenant.name if tenant else "del evento"), commercial_name=commercial.full_name or "",
+                                      comment=(answer.comment if answer else None), link=final_db.event_link(event))
+        result = send_mail(to, mail["subject"], mail["text"], html=mail["html"])
+        if not result.get("sent"):
+            if "quedó guardado" in str(result.get("detail")):
+                log.warning("próximo evento: el correo no está configurado; quedó guardado")
+                return
+            raise RuntimeError("no se pudo enviar el aviso de próximo evento")
 
 
 def downloads_last_hour(db: Session, link_id: int) -> int:

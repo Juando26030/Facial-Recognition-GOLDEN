@@ -384,3 +384,35 @@ def test_ip_limit_on_the_public_page(client, env, monkeypatch):
     monkeypatch.setattr(delivery_router, "PAGE_MAX", 3)
     codes = [client.get("/entrega/" + "z" * 43).status_code for _ in range(5)]
     assert codes[:3] == [404, 404, 404] and codes[3:] == [429, 429]
+
+
+# ------------------------------------------------------------------------------------------------ «¿próximo evento?» → correo a la comercial (plan §12)
+def test_next_event_yes_sends_one_mail_to_the_commercial(client, env, mails, db):
+    token = _staff_link(client, env["event"])
+    assert client.post(f"/entrega/{token}/encuesta", json=_answers()).status_code == 200
+    sent = [m for m in mails if m["to"] == "com1@golden.test"]
+    assert len(sent) == 1
+    assert env["event"].name in sent[0]["subject"] and "próximo evento" in sent[0]["body"] and "En marzo" in sent[0]["body"]
+    job = db.query(Job).filter_by(kind="next_event_mail").one()
+    assert "com1@golden.test" not in job.payload_json and "marzo" not in job.payload_json          # la cola solo lleva el id del evento
+
+
+@pytest.mark.parametrize("q8", [{"choice": "No"}, None])
+def test_next_event_no_or_blank_sends_nothing(client, env, mails, db, q8):
+    token = _staff_link(client, env["event"])
+    body = _answers()
+    if q8 is None:
+        body["answers"].pop("q8_next_event")
+    else:
+        body["answers"]["q8_next_event"] = q8
+    assert client.post(f"/entrega/{token}/encuesta", json=body).status_code == 200
+    assert db.query(Job).filter_by(kind="next_event_mail").count() == 0
+    assert not [m for m in mails if m["to"] == "com1@golden.test"]
+
+
+def test_next_event_helpers_are_pure():
+    assert delivery.wants_next_event([{"question_id": "q8_next_event", "choice_text": "Sí"}]) is True
+    assert delivery.wants_next_event([{"question_id": "q8_next_event", "choice_text": "No"}]) is False
+    assert delivery.wants_next_event([]) is False
+    mail = delivery.render_next_event_mail(event_name="Feria <b>", client_name="ACME", commercial_name="Ana", comment="<script>x</script>", link="https://app.test/eventos?editar=1")
+    assert "<script>" not in mail["html"] and "&lt;script&gt;" in mail["html"] and "Hola Ana:" in mail["text"]

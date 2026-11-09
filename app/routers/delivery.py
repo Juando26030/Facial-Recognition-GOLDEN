@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from app import delivery, publicurl, security, survey_def
+from app import delivery, jobs, publicurl, security, survey_def
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import Event, StaffUser, Tenant
@@ -85,7 +85,6 @@ def post_send_email(event_id: int, request: Request, data: dict = None, db: Sess
         raise HTTPException(status_code=429, detail="El correo ya se envió hace menos de una hora. Si no llegó, revise el spam o espere un momento.")
     delivery.enqueue_mail(db, event, link, base, staff)
     db.commit()
-    from app import jobs
     jobs.kick()
     return JSONResponse({"ok": True, "queued": True, "recipient": contact["email"]}, headers=NO_STORE)
 
@@ -142,12 +141,14 @@ def submit(token: str, data: dict, request: Request, db: Session = Depends(get_d
     if not state["ok"]:
         return _json(state["message"], 404)
     try:
-        delivery.submit_survey(db, link, event, data, security.limit_ip(request))
+        resp = delivery.submit_survey(db, link, event, data, security.limit_ip(request))
     except survey_def.SurveyError as exc:
         return _json(str(exc), 400)
     except delivery.AlreadySubmitted:
         return _json(delivery.MSG_ALREADY, 409, survey_done=True, can_download=delivery.final_db(event) is not None)       # no se reemplaza: la primera respuesta es la válida
     log.info("encuesta de entrega recibida (evento %s)", event.id)
+    if getattr(resp, "next_event_queued", False):
+        jobs.kick()                                            # aviso «próximo evento» a la comercial
     return JSONResponse({"ok": True, "survey_done": True, "can_download": delivery.final_db(event) is not None, "has_db": delivery.final_db(event) is not None}, headers=NO_STORE)
 
 

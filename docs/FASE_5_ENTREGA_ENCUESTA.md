@@ -101,3 +101,6 @@ Al cambiar a la versión 2 de la encuesta, filtrar por `survey_version` o por `q
 
 ## Pendiente / no verificado
 No se corrió pytest ni la migración (sin base de datos aquí): verificado con `py_compile` y `ruff`. Falta probar en navegador el bloque del modal y la página pública en celular/tema oscuro. La rama A debe llamar (opcional) a `delivery.ensure_link(db, event, staff)` al marcar Facturado; si no, el modal crea el enlace al abrir el evento.
+
+## Aviso «próximo evento» a la comercial (plan §12, revisión 9-nov-2026)
+Si el cliente responde **«Sí»** a la pregunta 8 («¿Tienes próximamente un evento?… 2 % de descuento»), al guardar la encuesta se encola `next_event_mail` (cola general, módulo `app.delivery`) a la **comercial del evento** (`events.commercial_staff_id`), con el nombre del cliente, el evento, el comentario de la pregunta 8 (escapado) y el enlace a la edición del evento. Uno por evento (`dedupe_key`); la cola solo lleva el id del evento. Sin comercial activa con correo válido no se encola ni falla. Pruebas: `tests/test_entrega_encuesta.py::test_next_event_*`.
