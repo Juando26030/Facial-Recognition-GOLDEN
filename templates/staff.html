@@ -49,6 +49,8 @@
       </div>
       <div class="gw-page-head__actions">
         <button type="button" class="gw-btn gw-btn--primary" data-open-group="newStaffGroup">{{ ic('user-plus', 'gw-icon--sm') }} Crear usuario</button>
+        {% if can_dl_digitadores %}<a class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/staff/export?kind=digitadores&format=xlsx" title="Excel con cédula, nombre, teléfono, eventos y estado de los digitadores temporales">{{ ic('download', 'gw-icon--sm') }} Base de digitadores</a>{% endif %}
+        {% if can_dl_clientes %}<a class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/tenants/export?format=xlsx" title="Excel con los clientes, sus datos de contacto y sus cuentas">{{ ic('download', 'gw-icon--sm') }} Base de clientes</a>{% endif %}
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="staff">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
