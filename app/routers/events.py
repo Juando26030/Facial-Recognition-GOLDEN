@@ -18,7 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
-from app import event_history
+from app import event_history, event_lease
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
@@ -162,6 +162,7 @@ def _serialize(e: Event) -> dict:
         "bandana_color_name": e.bandana_color_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "data_archived": e.data_archived_at is not None, "data_archived_at": e.data_archived_at.isoformat() if e.data_archived_at else None, "archived": e.archived_at is not None, "archived_at": e.archived_at.isoformat() if e.archived_at else None, "archived_auto": e.archived_at is not None and e.archived_by_id is None,
+        "local": event_lease.serialize(e),          # Fase 6: «en servidor local» (solo lectura en la nube) y última subida
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
@@ -514,6 +515,7 @@ def update_event(
     assert_event_scope(event, staff, db)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo para editarlo")
+    event_lease.assert_editable(event)          # Fase 6: en un servidor local es de solo lectura aquí
     new_state = None
     if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
         new_state = db.get(EventState, data.state_id)

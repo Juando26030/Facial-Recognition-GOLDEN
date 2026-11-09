@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app import event_rules, idle, sessions
+from app import event_lease, event_rules, idle, sessions
 from app.database import get_db
 from app.timeutil import utcnow
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
@@ -267,5 +267,6 @@ def require_event_in_progress(event: Event) -> None:
     (recognize/register/bulk_register) — a diferencia del acceso general al evento, esto aplica a
     TODOS los roles por igual, incluido admin/super_admin: si el evento no está 'en_proceso', nadie
     registra, solo se puede ver/editar el evento y gestionar sus usuarios."""
+    event_lease.assert_editable(event)          # Fase 6: en un servidor local el evento es de solo lectura en la nube
     if not event_rules.allowed(event, "registration"):
         raise HTTPException(status_code=403, detail=_closed_detail(event, "No se puede registrar: este evento"))

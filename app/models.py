@@ -312,12 +312,17 @@ class Event(Base):
     final_db_name = Column(String, nullable=True)      # nombre original del archivo (solo para mostrarlo)
     final_db_uploaded_at = Column(DateTime, nullable=True)
     final_db_uploaded_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    local_node_name = Column(String, nullable=True)      # 0111 (Fase 6): nombre del servidor local que TIENE el evento (arrendamiento: un solo escritor). NULL = el evento vive en la nube. Mientras esté puesto, la nube lo muestra en solo lectura
+    local_since = Column(DateTime, nullable=True)        # desde cuándo está en ese servidor local
+    local_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso en local
+    local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
     billed_by = relationship("StaffUser", foreign_keys=[billed_by_id])
+    local_by = relationship("StaffUser", foreign_keys=[local_by_id])
     final_db_uploaded_by = relationship("StaffUser", foreign_keys=[final_db_uploaded_by_id])
     super_event = relationship("SuperEvent", back_populates="events")
     state = relationship("EventState")

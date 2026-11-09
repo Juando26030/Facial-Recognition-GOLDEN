@@ -24,6 +24,7 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebFor
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
+from app.routers import event_lease as event_lease_router      # Fase 6: arrendamiento del evento por un servidor local
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
@@ -238,6 +239,7 @@ from app import staticver  # noqa: E402
 
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
+templates.env.filters["local_dt"] = lambda dt: dt.replace(tzinfo=__import__("datetime").timezone.utc).astimezone(__import__("app.timeutil", fromlist=["_TZ"])._TZ).strftime("%d/%m/%Y %I:%M %p") if dt else ""
 
 REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
 LOCAL_LOGO_FILE = os.path.join("static", "img", "logo-golden.png")          # copia PROPIA del logo: se sirve desde /static y el service worker del quiosco la guarda, así el logo se ve sin red
@@ -358,6 +360,7 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(event_lease_router.router, prefix="/api")      # Fase 6: evento en servidor local (solo lectura en la nube)
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema

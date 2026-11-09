@@ -117,6 +117,19 @@
           </div>
         </details>
 
+        {# Servidor local (Fase 6): el evento puede vivir en un servidor local sin internet; mientras tanto la nube lo muestra en solo lectura. #}
+        <details class="gw-form-group" open id="eeLocalGroup">
+          <summary class="gw-form-group__summary">Servidor local (sin internet)</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head"><span class="gw-hint" id="eeLocalInfo"></span></div>
+            <div class="ee-report__row">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalTake">Llevar a un servidor local</button>
+              <button type="button" class="gw-btn gw-btn--primary" id="eeLocalRelease" hidden>Pasar a internet</button>
+            </div>
+            <p class="gw-hint">Mientras el evento esté en un servidor local, aquí solo se puede ver. «Pasar a internet» deja el evento editable otra vez en la nube; el servidor local sube antes todo lo que tenga pendiente.</p>
+          </div>
+        </details>
+
         {# Historial de cambios del evento por campo (Fase 5, solo lectura; static/js/event-history-panel.js). Lo ve quien edita el evento: coordinador, comercial, admin y super_admin. #}
         <details class="gw-form-group" id="eeHistoryGroup" hidden>
           <summary class="gw-form-group__summary">Historial de cambios</summary>
@@ -435,6 +448,44 @@
     });
   });
 
+  /* ---------- servidor local (Fase 6) ---------- */
+  function paintLocal(ev) {
+    const l = ev.local || {};
+    const info = document.getElementById('eeLocalInfo');
+    info.textContent = l.leased
+      ? `En el servidor local «${l.node_name}» desde ${new Date(l.since + 'Z').toLocaleString()}. ${l.last_upload_at ? 'Última subida a la nube: ' + new Date(l.last_upload_at + 'Z').toLocaleString() + '.' : 'Aún no ha subido nada a la nube.'}`
+      : 'El evento está en la nube (se edita aquí).';
+    document.getElementById('eeLocalTake').hidden = !!l.leased;
+    document.getElementById('eeLocalRelease').hidden = !l.leased;
+  }
+  async function leaseCall(path, body) {
+    const res = await fetch(`/api/events/${current.id}/lease${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo completar la acción', 'error'); return null; }
+    return data;
+  }
+  document.getElementById('eeLocalTake').addEventListener('click', async (e) => {
+    const name = await showPrompt('¿A qué servidor local se lleva el evento? Escribe su nombre (el que tiene el servidor, por ejemplo «Portátil bodega 1»). Desde ese momento aquí solo se podrá ver.', { title: 'Llevar a un servidor local', confirmLabel: 'Llevar a local' });
+    if (!name || !String(name).trim()) return;
+    await busy(e.currentTarget, async () => {
+      const data = await leaseCall('', { node_name: String(name).trim() });
+      if (!data) return;
+      current.local = data; paintLocal(current);
+      showToast('El evento quedó en el servidor local. Aquí se ve en solo lectura.', 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
+  document.getElementById('eeLocalRelease').addEventListener('click', async (e) => {
+    if (!(await showConfirm('El evento volverá a editarse en la nube. Antes, el servidor local debe haber subido todo lo pendiente (sincronizar con la nube). ¿Pasarlo a internet ahora?', { variant: 'warning', confirmLabel: 'Sí, pasar a internet' }))) return;
+    await busy(e.currentTarget, async () => {
+      const data = await leaseCall('/release');
+      if (!data) return;
+      current.local = data; paintLocal(current);
+      showToast('El evento volvió a internet: ya se puede editar en la nube.', 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
+
   function paintReport(ev) {
     document.getElementById('eeReportBulb').innerHTML = window.reportBulbHtml(ev);
     document.getElementById('eeReportInfo').textContent = ev.report_uploaded
@@ -592,6 +643,7 @@
     paintReport(ev);
     document.getElementById('eeFinalDbFile').value = '';
     paintFinalDb(ev);
+    paintLocal(ev);
     loadDelivery(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
     document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;

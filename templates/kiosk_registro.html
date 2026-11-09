@@ -107,6 +107,13 @@
       </div>
       {% endif %}
 
+      {% if event.local_node_name %}
+      <div class="gw-alert gw-alert--warn gw-registro__notice" role="status">
+        <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
+        <div>Este evento está en el servidor local <strong>«{{ event.local_node_name }}»</strong>{% if event.local_last_upload_at %} (última subida a la nube: {{ event.local_last_upload_at|local_dt }}){% endif %}. Aquí solo se puede ver: no se registra ni se edita hasta pasarlo a internet.</div>
+      </div>
+      {% endif %}
+
       {% if event.status != "en_proceso" and staff_role != "cliente" %}
       <div class="gw-alert gw-alert--warn gw-registro__notice" role="status">
         <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
