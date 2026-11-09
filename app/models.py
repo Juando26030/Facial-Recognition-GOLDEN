@@ -316,6 +316,13 @@ class Event(Base):
     local_since = Column(DateTime, nullable=True)        # desde cuándo está en ese servidor local
     local_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso en local
     local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
+    # --- Lado del SERVIDOR LOCAL (0112, Fase 6): solo se usan cuando este evento es una copia bajada de la nube (LOCAL_SERVER=1); en la nube quedan NULL ---
+    cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
+    sync_log_id = Column(Integer, nullable=True)         # marca de agua: último AccessLog.id local ya CONFIRMADO por la nube
+    sync_persons_at = Column(DateTime, nullable=True)    # marca de agua: último alta local (EventAttendee.created_at) ya confirmada por la nube
+    sync_package_at = Column(DateTime, nullable=True)    # cuándo se bajó el paquete del evento desde la nube
+    sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
+    sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
@@ -923,6 +930,22 @@ class InventoryProduct(Base):
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     category = relationship('InventoryCategory')
+
+
+class LocalNode(Base):
+    """Servidor local autorizado a subir datos a la nube (0112, Fase 6). El token (`gwn_…`) se muestra UNA sola vez al crearlo y aquí solo queda su hash SHA-256; revocar = poner `revoked_at`.
+    `created_by_id` es la cuenta de admin/super_admin que lo creó: con su alcance (cliente/empresa) se aplican los lotes que sube el nodo. Sin datos personales."""
+    __tablename__ = 'local_nodes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(60), nullable=False, unique=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    last_version = Column(String(80), nullable=True)      # commit/esquema que reportó la última vez
+
+    created_by = relationship("StaffUser", foreign_keys=[created_by_id])
 
 
 class Notification(Base):
