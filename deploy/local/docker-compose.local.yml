@@ -1,0 +1,44 @@
+# Servidor local de un evento SIN internet (Fase 6; diseño en docs/FASE_6_SERVIDOR_LOCAL.md y docs/17_SERVIDOR_LOCAL.md).
+# Dos contenedores: la MISMA imagen que la nube en modo «web» (sin reconocimiento facial: no carga dlib) + PostgreSQL. Pensado para una laptop i5 de 8 GB: límites de memoria bajos.
+#   docker compose -f deploy/local/docker-compose.local.yml --env-file deploy/local/.env.local run --rm migrate      (solo la primera vez y al actualizar)
+#   docker compose -f deploy/local/docker-compose.local.yml --env-file deploy/local/.env.local up -d
+# El evento se baja de la nube con el paquete de «Exportar evento» (docs/18_EXPORTAR_EVENTOS.md) y se importa aquí. Las variables salen de .env.local (NO se versiona; plantilla .env.local.example).
+x-app: &app
+  image: golden-app:local
+  env_file: .env.local
+  environment: &env
+    APP_MODULE: app.entrypoints.web:app
+    DATABASE_URL: postgresql://golden:${LOCAL_DB_PASSWORD}@db:5432/golden
+    STORAGE_BACKEND: local
+    JOBS_BACKEND: db
+    JOBS_WORKER: "on"
+    BULK_BACKEND: thread
+    WEB_CONCURRENCY: "2"
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: golden, POSTGRES_PASSWORD: "${LOCAL_DB_PASSWORD}", POSTGRES_DB: golden }
+    volumes: ["golden-db:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U golden -d golden"], interval: 5s, timeout: 3s, retries: 10 }
+    mem_limit: 1g
+    restart: unless-stopped
+  web:
+    <<: *app
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["8443:8080"]
+    volumes: ["golden-data:/app/data"]
+    mem_limit: 2g
+    cpus: 2
+  migrate:
+    <<: *app
+    environment: { <<: *env }
+    command: ["alembic", "upgrade", "head"]
+    depends_on: { db: { condition: service_healthy } }
+    profiles: ["job"]
+    restart: "no"
+
+volumes:
+  golden-db: {}
+  golden-data: {}
