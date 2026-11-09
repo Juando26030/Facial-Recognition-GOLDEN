@@ -305,6 +305,29 @@ def _attrs(line: Optional[EventInventoryItem]) -> dict:
         return {}
 
 
+@router.get("/inventory/events")
+def list_inventory_events(q: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(VIEWER)):
+    """Eventos del cliente para la pantalla /inventario (cuentas solo de almacén o contabilidad, que no tienen el listado de eventos): id, nombre, estado y fechas. Máximo 300, los más recientes primero."""
+    query = db.query(Event).filter(Event.archived_at.is_(None))
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        query = query.filter((Event.name.ilike(like)) | (Event.event_code.ilike(like)))
+    rows, wide = [], bool(effective_roles(staff) & WIDE_ROLES)
+    for e in query.order_by(Event.start_date.desc().nullslast(), Event.id.desc()).limit(600).all():
+        try:
+            assert_event_tenant(e, staff)
+            if not wide:
+                assert_event_scope(e, staff, db)
+        except HTTPException:
+            continue
+        rows.append({"id": e.id, "name": e.name, "code": e.event_code, "status": e.status,
+                     "start_date": e.start_date.isoformat() if e.start_date else None, "end_date": e.end_date.isoformat() if e.end_date else None})
+        if len(rows) >= 300:
+            break
+    return {"events": rows}
+
+
 @router.get("/events/{event_id}/inventory-plan")
 def get_plan(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(VIEWER)):
     return _plan_json(db, _event(db, event_id, staff), staff)

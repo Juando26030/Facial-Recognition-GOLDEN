@@ -1,4 +1,4 @@
-"""Fase 5 · roles «almacen» y «contabilidad»: solo EXTRA (se suman a coordinador/comercial), fuera de la escalera de STAFF_ROLES, sin tocar la jerarquía ni la gestión de cuentas."""
+"""Fase 5 · roles «almacen» y «contabilidad»: fuera de la escalera de STAFF_ROLES; sirven como rol PRINCIPAL (cuenta solo de almacén o solo de contabilidad) y como extra (se suman a coordinador/comercial y entre ellos). Sin tocar la jerarquía."""
 import pytest
 from fastapi import HTTPException
 
@@ -14,7 +14,7 @@ def test_extra_only_roles_are_outside_the_ladder():
     assert STAFF_ROLES == ("cliente", "digitador", "coordinador", "comercial", "admin", "super_admin")
     assert set(EXTRA_ONLY_ROLES) == {"almacen", "contabilidad"} and EXTRA_ONLY_ROLES["almacen"] == "Almacén"
     assert all(ROLE_HIERARCHY[r] < ROLE_HIERARCHY["cliente"] for r in EXTRA_ONLY_ROLES)          # nunca suben ni bajan el rango de la cuenta
-    assert {"almacen", "contabilidad"} <= set(auth.EXTRA_ROLE_CHOICES) and "almacen" not in auth.EXTRA_ROLE_PRIMARIES
+    assert {"almacen", "contabilidad"} <= set(auth.EXTRA_ROLE_CHOICES) and {"almacen", "contabilidad"} <= set(auth.EXTRA_ROLE_PRIMARIES) and set(auth.STANDALONE_ROLES) == {"almacen", "contabilidad"}
     assert split_roles("almacen, contabilidad,bodega,almacen") == ["almacen", "contabilidad"]
 
 
@@ -49,9 +49,13 @@ def test_admin_gives_the_roles_as_extras_and_only_super_admin_gives_admin(client
     assert r.status_code == 200 and r.json()["secondary_role"] == "comercial" and r.json()["extra_roles"] == ["comercial", "almacen"]
     assert client.put(f"/api/staff/{cid}/roles", json={"extra_roles": ["almacen", "admin"]}).status_code == 403          # «admin» sigue siendo solo del Super Admin
     assert client.put(f"/api/staff/{cid}/roles", json={"extra_roles": ["bodega"]}).status_code == 400
-    # no son roles principales
-    assert client.patch(f"/api/staff/{cid}/role", json={"role": "almacen"}).status_code == 400
-    assert client.post("/api/staff", json={"username": "nuevo_alm", "password": "Clave#Segura2026x", "role": "almacen", "full_name": "N", "phone": "+573119998877"}).status_code == 400
+    # también son roles principales (cuentas solo de almacén / solo de contabilidad)
+    assert client.patch(f"/api/staff/{cid}/role", json={"role": "bodega"}).status_code == 400
+    r = client.post("/api/staff", json={"username": "nuevo_alm", "password": "Clave#Segura2026x", "role": "almacen", "full_name": "N", "phone": "+573119998877"})
+    assert r.status_code == 200 and r.json()["role"] == "almacen"
+    r = client.post("/api/staff", json={"username": "nuevo_con", "password": "Clave#Segura2026x", "role": "contabilidad", "full_name": "C", "phone": "+573119998866"})
+    assert r.status_code == 200 and r.json()["role"] == "contabilidad"
+    assert client.post("/api/staff", json={"username": "x_bodega", "password": "Clave#Segura2026x", "role": "bodega", "full_name": "N", "phone": "+573119998855"}).status_code == 400
     db.expire_all()
     assert effective_roles(db.get(StaffUser, cid)) == {"coordinador", "comercial", "almacen"}
     # un admin no le quita a alguien un admin sumado, pero sí puede manejar los extras normales de una cuenta sin admin
@@ -114,3 +118,57 @@ def test_they_do_not_open_attendee_data(client, factory):
     # el extra no agrega nada: lo que ya NO podía una comercial pura sigue igual (p. ej. no es admin) y las rutas de cuentas siguen cerradas
     assert client.get("/api/staff").status_code == 403
     assert client.put("/api/staff/1/roles", json={"extra_roles": ["almacen"]}).status_code == 403
+
+
+# ---------------------------------------------------------------- cuentas solo de almacén / solo de contabilidad (decisión de Juan David, 9-nov-2026)
+@pytest.mark.parametrize("role", ["almacen", "contabilidad"])
+def test_standalone_account_lands_on_inventory_and_nothing_else(client, factory, role):
+    factory.staff(role, "solo")
+    login(client, "solo")
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/inventario"
+    assert client.get("/inventario").status_code == 200
+    assert client.get("/clientes", follow_redirects=False).status_code in (302, 303, 307)          # sin panel de clientes
+    assert client.get("/eventos", follow_redirects=False).status_code in (302, 303, 307)
+    assert client.get("/api/staff").status_code == 403
+    assert client.get("/api/inventory/events").status_code == 200
+
+
+def test_standalone_almacen_edits_and_contabilidad_only_reads(client, factory, db):
+    from app.models import InventoryProduct
+    ev = factory.event("creado")
+    prod = InventoryProduct(name="Carpa", unit="und")
+    db.add(prod)
+    db.commit()
+    factory.staff("almacen", "alm")
+    factory.staff("contabilidad", "con")
+    login(client, "con")
+    assert client.get(f"/api/events/{ev.id}/inventory-plan").status_code == 200
+    r = client.put(f"/api/events/{ev.id}/inventory-plan", json={"lines": [{"product_id": prod.id, "assigned": 3}]})
+    assert r.status_code == 403
+    client.post("/logout")
+    login(client, "alm")
+    r = client.put(f"/api/events/{ev.id}/inventory-plan", json={"lines": [{"product_id": prod.id, "assigned": 3}]})
+    assert r.status_code == 200, r.text
+    assert any(e["id"] == ev.id for e in client.get("/api/inventory/events").json()["events"])
+
+
+def test_roles_mix_freely_over_a_standalone_account(client, factory, db):
+    factory.staff("admin", "adm")
+    alm = factory.staff("almacen", "alm2")
+    login(client, "adm")
+    r = client.put(f"/api/staff/{alm.id}/roles", json={"extra_roles": ["contabilidad", "comercial"]})
+    assert r.status_code == 200 and r.json()["extra_roles"] == ["contabilidad", "comercial"]
+    db.expire_all()
+    got = db.get(StaffUser, alm.id)
+    assert effective_roles(got) == {"almacen", "contabilidad", "comercial"} and not auth.is_inventory_only(got)          # con comercial ya tiene panel
+    assert client.put(f"/api/staff/{alm.id}/roles", json={"extra_roles": ["almacen"]}).status_code == 400          # no se repite el principal
+    assert client.put(f"/api/staff/{alm.id}/roles", json={"extra_roles": ["admin"]}).status_code == 403          # admin sigue siendo del Super Admin
+    assert auth.is_inventory_only({"almacen", "contabilidad"}) and not auth.is_inventory_only({"almacen", "coordinador"})
+
+
+def test_admin_cannot_promote_or_manage_beyond_rank_with_standalone_roles(client, factory):
+    factory.staff("coordinador", "coord")
+    alm = factory.staff("almacen", "alm3")
+    login(client, "coord")
+    assert client.put(f"/api/staff/{alm.id}/roles", json={"extra_roles": ["contabilidad"]}).status_code == 403          # solo admin+ da roles

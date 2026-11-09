@@ -375,8 +375,10 @@
     }
     const wasBilling = !!ev.billed;
     stateSel.innerHTML = info.list.map((st) => {
-      const blocked = st.billing && (!info.canBill || (ev.status !== 'finalizado' && ev.state_id !== st.id));
-      const why = !info.canBill ? ' (solo comercial o administrador)' : ' (solo si está Finalizado)';
+      const needsFinal = ev.status !== 'finalizado' && ev.state_id !== st.id;
+      const needsDb = !ev.final_db_uploaded && ev.state_id !== st.id;
+      const blocked = st.billing && (!info.canBill || needsFinal || needsDb);
+      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (primero adjunte la base de datos final)');
       return `<option value="id:${st.id}" data-base="${esc(st.base_status)}"${blocked ? ' disabled' : ''}>${esc(st.name)}${st.billing && blocked ? why : ''}</option>`;
     }).join('');
     let sel = ev.state_id && info.list.some((st) => st.id === ev.state_id) ? 'id:' + ev.state_id : null;
@@ -427,6 +429,7 @@
       current.final_db_uploaded = true; current.final_db_name = data.final_db_name; current.final_db_uploaded_at = data.final_db_uploaded_at; current.final_db_uploaded_by_name = data.final_db_uploaded_by_name;
       document.getElementById('eeFinalDbFile').value = '';
       paintFinalDb(current);
+      if (typeof paintState === 'function') { const keep = stateSel.value; await paintState(current); if (stateSel.querySelector(`option[value="${keep}"]`)) stateSel.value = keep; }          // habilita «Facturado» ahora que hay base final
       showToast(`${data.message}. ${data.notice || ''}`.trim(), 'success');
       if (savedCallback) savedCallback();
     });

@@ -11,10 +11,11 @@ from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
 ROLE_HIERARCHY = {role: i for i, role in enumerate(STAFF_ROLES)}
 
-# Roles SOLO EXTRA (Fase 5, 9-nov-2026): «almacén» y «contabilidad» NO son un escalón de la escalera cliente < … < super_admin: solo se SUMAN (extra_roles) a una cuenta coordinador/comercial y
-# dan únicamente sus permisos propios (inventario). Van en ROLE_HIERARCHY con rango -1 para que `max(ROLE_HIERARCHY[r] for r in effective_roles(...))` siga funcionando (el rango lo pone el rol
+# Roles de inventario (Fase 5, decisión de Juan David 9-nov-2026): «almacén» y «contabilidad» NO son un escalón de la escalera cliente < … < super_admin. Pueden ser el rol PRINCIPAL de una cuenta (una
+# persona solo de almacén o solo de contabilidad) o SUMARSE (extra_roles) a coordinador/comercial y entre ellos (se pueden mezclar los cuatro). Dan únicamente sus permisos propios (inventario). Van en ROLE_HIERARCHY con rango -1 para que `max(ROLE_HIERARCHY[r] for r in effective_roles(...))` siga funcionando (el rango lo pone el rol
 # principal; el extra nunca sube ni baja) y para que split_roles los reconozca; NO están en STAFF_ROLES (así ninguna lista de «roles que se crean/cambian» los ofrece como principal).
-EXTRA_ONLY_ROLES = {"almacen": "Almacén", "contabilidad": "Contabilidad"}
+EXTRA_ONLY_ROLES = {"almacen": "Almacén", "contabilidad": "Contabilidad"}          # (nombre histórico) roles de inventario
+STANDALONE_ROLES = tuple(EXTRA_ONLY_ROLES)          # también valen como rol principal de una cuenta
 for _r in EXTRA_ONLY_ROLES:
     ROLE_HIERARCHY[_r] = -1
 
@@ -71,7 +72,7 @@ def effective_roles(staff: StaffUser) -> set:
 # Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «almacen» y «contabilidad» (Fase 5) son SOLO extra (EXTRA_ONLY_ROLES).
 # Solo cuentas con rol principal en EXTRA_ROLE_PRIMARIES reciben roles extra; «admin» como extra solo lo da el Super Admin.
 EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin", "almacen", "contabilidad")
-EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial")
+EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial", "almacen", "contabilidad")          # rol principal que admite sumar otros
 
 
 def split_roles(value) -> list:
@@ -82,6 +83,12 @@ def split_roles(value) -> list:
         if r and r in ROLE_HIERARCHY and r not in out:
             out.append(r)
     return out
+
+
+def is_inventory_only(staff_or_roles) -> bool:
+    """¿Solo tiene roles de inventario (almacén/contabilidad)? Esas cuentas no tienen panel ni eventos: su única pantalla es /inventario."""
+    roles = staff_or_roles if isinstance(staff_or_roles, (set, list, tuple)) else effective_roles(staff_or_roles)
+    return bool(roles) and set(roles) <= set(STANDALONE_ROLES)
 
 
 def has_any_role(staff, *roles: str) -> bool:

@@ -97,7 +97,7 @@ def _setup(factory, db, who):
     coord = factory.staff("coordinador", "coord")
     dual = factory.staff("coordinador", "dual", secondary_role="comercial")
     factory.staff("admin", "root")
-    ev = factory.event("finalizado", coordinator=dual if who == "dual" else coord, commercial=com, state_id=final.id)
+    ev = factory.event("finalizado", coordinator=dual if who == "dual" else coord, commercial=com, state_id=final.id, final_db_key="acme/final_database/x/base_final.xlsx", final_db_name="Base final.xlsx")
     return ev, facturado, final
 
 
@@ -136,6 +136,21 @@ def test_only_a_finalized_event_can_be_billed(client, factory, db):
     login(client, "com")
     r = client.patch(f"/api/events/{ev.id}", json={"state_id": facturado.id})
     assert r.status_code == 400 and "Finalizado" in r.json()["detail"]
+
+
+def test_facturado_requires_the_final_database_attached(client, factory, db):
+    ev, facturado, final = _setup(factory, db, "coord")
+    ev.final_db_key = ev.final_db_name = None
+    db.commit()
+    login(client, "com")
+    r = client.patch(f"/api/events/{ev.id}", json={"state_id": facturado.id})
+    assert r.status_code == 400 and "base de datos final" in r.json()["detail"]
+    db.expire_all()
+    got = db.get(Event, ev.id)
+    assert got.state_id == final.id and got.billed_at is None and not _audit(db, "billed")
+    got.final_db_key = "acme/final_database/x/base_final.xlsx"
+    db.commit()
+    assert client.patch(f"/api/events/{ev.id}", json={"state_id": facturado.id}).status_code == 200
 
 
 def test_coordinator_can_still_edit_a_billed_event_without_touching_its_state_but_cannot_leave_it(client, factory, db):

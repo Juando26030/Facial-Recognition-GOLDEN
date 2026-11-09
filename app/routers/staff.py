@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
 from app import audit_actions, jobs, security, sessions, staff_credentials
 from app.inputcheck import check_text, check_username, text_validator, username_validator
-from app.auth import EXTRA_ROLE_CHOICES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
+from app.auth import EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
 from app.timeutil import utcnow
 
@@ -20,15 +20,15 @@ router = APIRouter()
 # ambos se crean desde dentro de un evento (ver app/routers/events.py, POST
 # /events/{id}/staff-users), donde quedan asociados a ese evento en el mismo paso.
 # "comercial" (Sprint 2.4, 2026-09-16): mismo flujo que coordinador, admin+ lo crea desde acá.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador", "comercial")
+ROLES_CREATABLE_BY_ADMIN = ("coordinador", "comercial", "almacen", "contabilidad")
 
 # Qué roles puede BORRAR PERMANENTEMENTE cada rol (siempre "todo lo que está por debajo de mí").
 # coordinador es el caso especial: solo temporales (digitador), nada más. "comercial" no borra a
 # nadie por ahora (no fue parte del pedido) — solo admin+ puede borrar cuentas comercial.
 DELETABLE_ROLES_BY = {
     "coordinador": ("digitador",),
-    "admin": ("comercial", "coordinador", "digitador", "cliente"),
-    "super_admin": ("admin", "comercial", "coordinador", "digitador", "cliente"),
+    "admin": ("comercial", "coordinador", "almacen", "contabilidad", "digitador", "cliente"),
+    "super_admin": ("admin", "comercial", "coordinador", "almacen", "contabilidad", "digitador", "cliente"),
 }
 
 
@@ -59,7 +59,7 @@ DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 def _rank(u: StaffUser) -> int:
     """Rango efectivo: el más alto entre el rol principal y los sumados (un coordinador con admin sumado pesa como admin)."""
-    return max(STAFF_ROLES.index(r) for r in effective_roles(u) if r in STAFF_ROLES)
+    return max(ROLE_HIERARCHY[r] for r in effective_roles(u) if r in ROLE_HIERARCHY)
 
 
 def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None:
@@ -141,7 +141,7 @@ def list_staff(include_archived: bool = False, db: Session = Depends(get_db), st
 def create_staff(
     data: StaffIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    if data.role not in STAFF_ROLES:
+    if data.role not in STAFF_ROLES and data.role not in STANDALONE_ROLES:
         raise HTTPException(status_code=400, detail="Rol inválido")
     if data.role == "super_admin":
         raise HTTPException(status_code=403, detail="No se puede crear otro Super Admin desde la app")
@@ -356,8 +356,8 @@ def change_staff_role(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     _assert_can_manage(db, staff, target)
     new_role = data.get("role")
-    if new_role not in ("coordinador", "comercial", "admin"):
-        raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial o admin")
+    if new_role not in ("coordinador", "comercial", "admin") + STANDALONE_ROLES:
+        raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial, almacén, contabilidad o admin")
     if target.id == staff.id:
         raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
     if target.role not in _manageable_roles(staff) or target.role in ("digitador", "cliente"):

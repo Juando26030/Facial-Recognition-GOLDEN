@@ -30,7 +30,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router
 from app import download_perms
-from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, split_roles
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
@@ -418,6 +418,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     if staff_user.role == "cliente" and form_client.is_form_client(db, staff_user):
         return RedirectResponse("/mi-formulario", status_code=302)       # cliente de FORMULARIO: su única pantalla son las estadísticas de ese formulario
 
+    if is_inventory_only(staff_user):
+        return RedirectResponse("/inventario", status_code=302)          # almacén / contabilidad sin otro rol: su única pantalla es el inventario
+
     if staff_user.role in ("digitador", "cliente"):
         # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
         # entra derecho ahí. Con 0 o >1 se le muestra la lista mínima (dashboard.html la maneja).
@@ -538,6 +541,21 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+    })
+
+
+@app.get("/inventario")
+def inventario_page(request: Request):
+    """Inventario de los eventos (Fase 5): pantalla de las cuentas de almacén y contabilidad (con o sin otros roles) y de coordinador+. Lo que cada rol puede editar lo decide el servidor (app/routers/inventory.py)."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not (roles & {"almacen", "contabilidad"}) and max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="inventario.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
 
 
