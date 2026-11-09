@@ -4,7 +4,9 @@ import pathlib
 import pytest
 
 from app import event_lease, node_auth, node_sync, versioning
-from app.models import AccessLog, Event, EventAttendee, LocalNode, User
+from app.models import AccessLog, Event, EventAttendee, LocalNode, PrintLog, User
+from datetime import timedelta
+
 from app.timeutil import utcnow
 from tests.conftest import login
 
@@ -171,6 +173,30 @@ def test_release_only_when_everything_is_uploaded(db, factory, monkeypatch, loca
     assert node_sync.release_event(db, ev2)["ok"] is False
     db.expire_all()
     assert db.get(Event, ev2_id).cloud_event_id == 77            # no se soltó
+
+
+def test_release_is_blocked_while_local_only_work_exists(db, factory, monkeypatch, local_env):
+    """Revisión 9-nov: la subida solo lleva altas e ingresos; lo demás hecho en el local (aquí una impresión) bloquea «Pasar a internet»."""
+    ev = _local_event(db, factory)
+    ev.sync_package_at = utcnow() - timedelta(hours=1)
+    db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, printed_at=utcnow()))
+    db.commit()
+    assert node_sync.local_only_changes(db, ev) == {"impresiones": 1}
+    out = node_sync.release_event(db, ev)
+    assert out["ok"] is False and "impresiones" in out["error"] and out["local_only"] == {"impresiones": 1}
+    assert not [c for c in local_env if c[1].endswith("/release")]
+    db.expire_all()
+    assert db.get(Event, ev.id).cloud_event_id == 77
+    monkeypatch.setenv("NODE_RELEASE_ALLOW_LOCAL_ONLY", "1")                              # válvula de emergencia
+    assert node_sync.release_event(db, db.get(Event, ev.id))["ok"] is True
+
+
+def test_work_from_before_the_download_does_not_block(db, factory, local_env):
+    ev = _local_event(db, factory)
+    db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, printed_at=utcnow() - timedelta(days=1)))
+    ev.sync_package_at = utcnow() - timedelta(hours=1)
+    db.commit()
+    assert node_sync.local_only_changes(db, ev) == {}
 
 
 def test_nothing_runs_in_the_cloud(db, factory, monkeypatch):

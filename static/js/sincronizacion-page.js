@@ -23,7 +23,8 @@
       const ver = v.configured && v.status && v.status !== 'igual' && v.status !== 'desconocida' ? `<div class="gw-alert gw-alert--warn" role="status">${esc(v.message)}</div>` : '';
       const rows = d.events.map((e) => `<li class="gw-list__item"><div><strong>${esc(e.name)}</strong> <span class="gw-hint">${esc(e.code)}</span><br>
         <span class="gw-hint">Bajado: ${esc(when(e.package_at))} · Última subida: ${esc(when(e.last_upload_at))} · Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos)</span>
-        ${e.error ? `<br><span class="gw-text-danger">${esc(e.error)}</span>` : ''}</div>
+        ${e.error ? `<br><span class="gw-text-danger">${esc(e.error)}</span>` : ''}
+        ${e.local_only && Object.keys(e.local_only).length ? `<br><span class="gw-text-danger">Hecho aquí que todavía no sube a la nube: ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Mientras exista, no se puede pasar a internet.</span>` : ''}</div>
         <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-release="${e.id}">Pasar a internet</button></li>`).join('');
       box.innerHTML = warn + ver + `<div class="gw-toolbar"><button type="button" class="gw-btn gw-btn--secondary" data-run>Subir ahora</button><span class="gw-hint">Pendientes en total: ${d.pending_total}. Se sube solo cada ${d.interval_minutes} min.</span></div>` +
         (rows ? `<ul class="gw-list">${rows}</ul>` : '<div class="gw-state" role="status"><p class="gw-state__title">No hay eventos bajados de la nube en este servidor</p></div>');

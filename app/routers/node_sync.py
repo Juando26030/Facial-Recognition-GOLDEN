@@ -22,7 +22,7 @@ def _event_row(db: Session, e: Event) -> dict:
             "package_at": e.sync_package_at.isoformat() if e.sync_package_at else None,
             "last_upload_at": e.local_last_upload_at.isoformat() if e.local_last_upload_at else None,
             "last_attempt_at": e.sync_attempt_at.isoformat() if e.sync_attempt_at else None,
-            "error": e.sync_error, "pending": node_sync.pending_counts(db, e)}
+            "error": e.sync_error, "pending": node_sync.pending_counts(db, e), "local_only": node_sync.local_only_changes(db, e)}
 
 
 @router.get("/node-sync/status")

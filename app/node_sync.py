@@ -17,6 +17,7 @@ import urllib.request
 from datetime import timedelta
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import versioning
@@ -109,6 +110,45 @@ def pending_counts(db: Session, event: Event) -> dict:
     persons = _persons_query(db, event).count()
     logs = _logs_query(db, event).filter(AccessLog.record_type == LOG_TYPE).count()
     return {"persons": persons, "logs": logs, "total": persons + logs}
+
+
+# Lo que se hace en el servidor local y TODAVÍA NO SUBE a la nube (la subida solo lleva personas nuevas e ingresos). Mientras exista algo así,
+# «Pasar a internet» NO libera el evento: se perdería sin aviso (revisión 9-nov-2026, docs/FASE_6_SERVIDOR_LOCAL.md). Nombres fijos (no vienen del usuario).
+LOCAL_ONLY = (
+    ("inventory_deliveries", "delivered_at", "entregas de inventario"),
+    ("event_inventory_items", "updated_at", "cambios del inventario del evento"),
+    ("area_movements", "timestamp", "movimientos de áreas"),
+    ("print_logs", "printed_at", "impresiones"),
+    ("person_changes", "at", "ediciones de personas"),
+    ("roulette_draws", "created_at", "sorteos de la ruleta"),
+    ("queue_turns", "created_at", "turnos"),
+    ("queue_calls", "called_at", "llamados de turnos"),
+    ("exhibitor_leads", "scanned_at", "contactos de expositores"),
+    ("web_acceptances", "created_at", "aceptaciones y firmas"),
+    ("audit_consent_logs", "consent_timestamp_utc", "autorizaciones de datos"),
+)
+
+
+def allow_local_only_loss() -> bool:
+    """Válvula de emergencia (variable de entorno del servidor local): liberar aunque se pierdan datos que no suben. Por defecto apagada."""
+    return os.getenv("NODE_RELEASE_ALLOW_LOCAL_ONLY", "").strip().lower() in ("1", "true", "si", "sí", "yes")
+
+
+def local_only_changes(db: Session, event: Event) -> dict:
+    """{etiqueta: cantidad} de lo hecho aquí DESPUÉS de bajar el evento que la subida no lleva. Vacío = se puede liberar sin perder nada."""
+    since = event.sync_package_at
+    if since is None:
+        return {}
+    out = {}
+    for table, column, label in LOCAL_ONLY:
+        try:
+            n = db.execute(text(f"SELECT count(*) FROM {table} WHERE event_id = :e AND {column} > :t"), {"e": event.id, "t": since}).scalar() or 0
+        except Exception:                                   # tabla ausente en una base vieja: no bloquea por eso
+            db.rollback()
+            continue
+        if n:
+            out[label] = int(n)
+    return out
 
 
 def synced_events(db: Session) -> list:
@@ -223,6 +263,12 @@ def release_event(db: Session, event: Event) -> dict:
     out = upload_event(db, event, force=True)
     if not out["ok"] or out["pending"] != 0:
         return {"ok": False, "error": out.get("error") or "Todavía hay datos pendientes de subir", "pending": out["pending"]}
+    local_only = local_only_changes(db, event)
+    if local_only and not allow_local_only_loss():
+        detail = ", ".join(f"{n} {label}" for label, n in local_only.items())
+        return {"ok": False, "pending": 0, "local_only": local_only,
+                "error": f"No se puede pasar a internet: en este servidor hay datos que todavía no se suben a la nube ({detail}). "
+                         "Si se libera ahora se perderían. Avise a soporte antes de liberar este evento."}
     try:
         _call("POST", f"/api/node/events/{event.cloud_event_id}/release", {"pending": 0})
     except SyncError as e:
