@@ -1,0 +1,37 @@
+{# Pantalla de ingreso para TV (Fase 8): se abre en el navegador del televisor o del computador conectado a él. Solo lectura: contador de ingresados, barra de avance y los últimos
+   ingresos (nombre e inicial del apellido + empresa; nunca cédula). También se ve bien en el celular como tablero en vivo. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md).
+   La lógica vive en static/js/tv-screen.js; los datos llegan por sondeo ligero cada {{ poll_s }} s desde una caché del servidor. #}
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ event.name }} | Ingreso en vivo</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/gw-tv.css') }}">
+  {% if brand_css %}<style>{{ brand_css | safe }}</style>{% endif %}
+</head>
+<body class="gw-page gw-tv" data-api="{{ tv_api }}" data-poll="{{ poll_s }}">
+  <main class="gw-tv__main" id="gwTv">
+    <header class="gw-tv__head">
+      {% if logo_url %}<img class="gw-tv__logo" src="{{ logo_url }}" alt="Logo del evento">{% endif %}
+      <h1 class="gw-tv__title">{{ event.name }}</h1>
+    </header>
+    <section class="gw-tv__count" aria-live="polite" aria-label="Personas ingresadas">
+      <p class="gw-tv__num"><span id="tvRegistered">—</span><span class="gw-tv__of"> / <span id="tvExpected">—</span></span></p>
+      <p class="gw-tv__label">personas han ingresado</p>
+      <div class="gw-tv__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="tvBar"><span id="tvFill"></span></div>
+      <p class="gw-tv__pct" id="tvPct">0 %</p>
+    </section>
+    <section class="gw-tv__recent" aria-label="Últimos ingresos">
+      <h2 class="gw-tv__sub">Últimos ingresos</h2>
+      <ol class="gw-tv__list" id="tvList"><li class="gw-tv__empty">Esperando los primeros ingresos…</li></ol>
+    </section>
+    <footer class="gw-tv__foot"><span id="tvStatus">Conectando…</span></footer>
+  </main>
+  <script src="{{ url_for('static', path='js/tv-screen.js') }}"></script>
+</body>
+</html>

@@ -44,7 +44,16 @@
     var btn = el('button', 'gw-btn gw-btn--secondary', 'Copiar enlace'); btn.type = 'button';
     btn.addEventListener('click', function () { copy(d.url).then(function (ok) { if (ok) toast('Enlace copiado', 'success'); else { input.focus(); input.select(); toast('Selecciona el enlace y cópialo', 'info'); } }); });
     line.append(input, btn);
-    box.append(line, el('p', 'gw-hint', 'Vence el ' + d.expires_local + '. Solo muestra estadísticas.'));
+    box.append(line);
+    if (d.tv_url) {          // la misma credencial abre la pantalla de TV (ingreso en vivo para proyectar)
+      var tvLine = el('div', 'gw-share__line');
+      var tvIn = el('input', 'gw-input'); tvIn.type = 'text'; tvIn.readOnly = true; tvIn.value = d.tv_url; tvIn.setAttribute('aria-label', 'Enlace de la pantalla de TV');
+      var tvBtn = el('button', 'gw-btn gw-btn--secondary', 'Copiar enlace de TV'); tvBtn.type = 'button';
+      tvBtn.addEventListener('click', function () { copy(d.tv_url).then(function (ok) { if (ok) toast('Enlace de TV copiado', 'success'); else { tvIn.focus(); tvIn.select(); toast('Selecciona el enlace y cópialo', 'info'); } }); });
+      tvLine.append(tvIn, tvBtn);
+      box.append(el('p', 'gw-hint', 'Para proyectar en un televisor (ingreso en vivo):'), tvLine);
+    }
+    box.append(el('p', 'gw-hint', 'Vence el ' + d.expires_local + '. Solo muestra estadísticas' + (d.tv_url ? ' y el ingreso en vivo' : '') + '.'));
     result.appendChild(box);
     input.focus(); input.select();
   }

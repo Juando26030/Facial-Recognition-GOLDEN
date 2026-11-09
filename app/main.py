@@ -821,6 +821,22 @@ def kiosk_usuarios_hoja(event_id: int, request: Request, db: Session = Depends(g
                                               "coordinator_name": staff_credentials.event_info(db, db.get(Event, event_id))["coordinator"] if db.get(Event, event_id) is not None else ""})
 
 
+@app.get("/kiosk/{event_id}/tv")
+def kiosk_tv(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pantalla de ingreso para proyectar en un televisor (Fase 8): con la sesión de quien la abre (coordinador+). Sin sesión, el mismo contenido sale con un enlace de solo lectura (/ver/tv/<token>)."""
+    from app.routers.stats_links import tv_context
+    staff_user = _page_staff(request, db)
+    if not staff_user:
+        return RedirectResponse("/login", status_code=302)
+    try:
+        event = get_event_for_staff(event_id, db, staff_user)
+    except HTTPException:
+        return RedirectResponse("/", status_code=302)
+    if max(ROLE_HIERARCHY[r] for r in effective_roles(staff_user)) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
+    return templates.TemplateResponse(request=request, name="kiosk_tv.html", headers={"Cache-Control": "no-store"}, context=tv_context(event, f"/api/events/{event.id}/tv", event_logo_url(event)))
+
+
 @app.get("/kiosk/{event_id}/estadisticas")
 def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Reporte + gráficos del evento (Sprint 2.2 Fase B, 2026-09-16) — antes vivía como pestaña
