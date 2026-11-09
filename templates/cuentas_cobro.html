@@ -13,6 +13,9 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
     <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/cuentas-cobro-page.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 {# Revisión visual F5-9: el menú lateral (como en el resto del panel) para coordinador en adelante; las cuentas solo de almacén o contabilidad siguen sin él (sus enlaces no les sirven). #}
 {% set gw_side = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}

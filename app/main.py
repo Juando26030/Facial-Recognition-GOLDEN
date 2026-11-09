@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -444,6 +445,17 @@ def _require_page_role(request: Request, minimum_role: str):
     if max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY[minimum_role]:
         return RedirectResponse("/", status_code=302)
     return None
+
+
+_FAVICON = {}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Ícono de la pestaña (logo de Golden). Las páginas lo enlazan desde /static; esta ruta cubre a los navegadores que lo piden en la raíz. Sin base."""
+    if "ico" not in _FAVICON:
+        _FAVICON["ico"] = (Path(__file__).resolve().parent.parent / "static" / "favicon.ico").read_bytes()
+    return Response(_FAVICON["ico"], media_type="image/x-icon", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/")

@@ -20,6 +20,9 @@
     {% if local_server %}<meta name="gw-local-server" content="1">{% endif %}
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell{% if not embed %} has-sidebar{% endif %}">
 {% if not embed %}{% include "_sidebar.html" %}

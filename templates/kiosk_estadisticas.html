@@ -24,6 +24,9 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell{% if embed %} gw-stats-embed{% elif staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 <a class="gw-skip" href="#gwStatsMain">Ir a las estadísticas</a>

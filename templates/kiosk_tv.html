@@ -13,6 +13,9 @@
   <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/gw-tv.css') }}">
   {% if brand_css %}<style>{{ brand_css | safe }}</style>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-tv" data-api="{{ tv_api }}" data-poll="{{ poll_s }}">
   <main class="gw-tv__main" id="gwTv">

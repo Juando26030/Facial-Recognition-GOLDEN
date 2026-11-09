@@ -11,6 +11,9 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     {% if not public_view %}<script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>{% endif %}
     <script src="{{ url_for('static', path='js/form-stats.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page">
 <a class="gw-skip" href="#fs-root">Ir a las estadísticas</a>

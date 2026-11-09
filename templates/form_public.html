@@ -24,6 +24,9 @@
       .tr-lang.on { background:#1a237e; color:#fff; border-color:#1a237e; }
     </style>
     {% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body>
 <button id="tr-btn" type="button" translate="no" style="display:none; position:fixed; top:10px; right:10px; z-index:40; background:#fff; border:1px solid #c9ccd6; border-radius:20px; padding:7px 14px; font:inherit; font-size:.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15);">🌐 Translate</button>

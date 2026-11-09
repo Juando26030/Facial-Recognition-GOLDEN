@@ -19,7 +19,7 @@ EXEMPT_HOURS_DEFAULT = 12             # vigencia de la exención (IDLE_EXEMPT_HO
 PASSIVE_HEADER = "x-gw-passive"
 TOUCH_PATH = "/api/session/touch"
 # No se exige ni se renueva en: archivos estáticos, salud, tareas internas (token de Google), formularios y páginas públicas, webhooks, cierre/inicio de sesión.
-EXEMPT_PREFIXES = ("/static/", "/health", "/ready", "/internal/", "/f/", "/b/", "/c/", "/r/", "/aceptar", "/api/aceptar/", "/reimpresion/", "/entrega/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/login", "/logout", "/cambiar-contrasena")
+EXEMPT_PREFIXES = ("/static/", "/favicon.ico", "/health", "/ready", "/internal/", "/f/", "/b/", "/c/", "/r/", "/aceptar", "/api/aceptar/", "/reimpresion/", "/entrega/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/login", "/logout", "/cambiar-contrasena")
 
 _current: contextvars.ContextVar = contextvars.ContextVar("gw_idle_session", default=None)
 

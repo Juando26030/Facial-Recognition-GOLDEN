@@ -32,6 +32,9 @@
   .minor .error { font-size:.9rem; color:var(--muted); margin-top:16px; }
 </style>
 {% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body>
 <main>
