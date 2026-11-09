@@ -38,3 +38,17 @@ Nada de esta fase se prueba sin una laptop real con Docker y un router: el kit e
 5. Cada vez que el servidor tiene internet **sube lo que tenga, cada ~30 minutos**, como una copia en producción.
 6. **Instalación:** un archivo que se abre con doble clic e instala TODO (incluida la base de datos), sin Docker ni comandos.
 7. El servidor **no se apaga solo nunca**: un turno puede durar de 6 a.m. a 6 p.m. o de 6 p.m. a 6 a.m. y se pueden editar más de 12 horas; solo se apaga a mano. (Las «12 horas» eran solo la duración típica del día.)
+
+## Aclaraciones de Juan David (9-nov-2026, 13:54) — decisiones firmes
+1. **Solo lectura en la nube mientras el evento está en local**, pero debe poder **volver a internet** cuando se quiera: la acción «Pasar a internet» **sincroniza lo del local hacia la nube** y deja el evento editable otra vez en la nube (y el local lo suelta).
+2. **Cuentas:** se entra al local con el **mismo usuario y contraseña de la nube**. Cada vez que el servidor se conecta, **actualiza las cuentas** (cambios de contraseña, altas, bajas, roles, desactivaciones) para que **nunca queden contraseñas distintas** en el servidor y en internet. Regla por defecto (propuesta): la nube es la fuente; si alguien cambia la clave en el local con internet, se sube a la nube en la misma sincronización; si hay dos cambios, gana el más reciente.
+3. **Devolver** = **sincronizar con la nube** (misma acción de arriba): sube todo lo pendiente y libera el evento.
+4. **Quién puede poner en local o subir:** cualquier coordinador (y los demás roles de la lista) sobre **cualquier evento**, no solo los suyos. (Reemplaza «solo sus eventos» de la etapa E1.)
+5. **Instalación:** el camino que sea mejor, con la condición de que quien instale **no use comandos ni cosas complejas** (personas sin conocimientos de sistemas): doble clic, asistente, listo. Se adopta la **instalación directa en Windows sin Docker**.
+6. **Actualización y versión:** la estructura debe dejar **fácil actualizar los servidores locales** cuando cambie producción, y **el servidor local avisa si su versión no es la de producción**.
+
+## Diseño de actualización y versión (nuevo)
+- Cada servidor local conoce su **versión** (commit y revisión de migraciones, como ya expone la nube) y, al tener internet, la compara con la de producción (`/health` o un endpoint de versión).
+- Si difiere: **franja visible y permanente** («Este servidor tiene la versión X; producción tiene Y») y, según la diferencia, el sistema **recomienda o exige** actualizar. Una subida a la nube con versión incompatible se rechaza con un mensaje claro (nunca se mezclan esquemas distintos).
+- **Actualizar = un botón** («Actualizar ahora»): descarga el paquete de la versión de producción, para el servicio, aplica el cambio y las migraciones de la base local, y vuelve a arrancar; **nunca en medio de un turno sin confirmar** y siempre con copia previa de la base local.
+- El instalador y el paquete de actualización salen del **mismo proceso de publicación** que producción: así no hay dos versiones que mantener.
