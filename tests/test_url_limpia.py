@@ -1,4 +1,4 @@
-"""URL limpia de las inscripciones públicas (D2.5k, docs/20): nombre único del evento, validación y reservadas, historial con 301, rutas /<evento>/<formulario>, enlaces con PUBLIC_FORMS_BASE_URL."""
+"""URL limpia de las inscripciones públicas (D2.5k, docs/20): nombre único del evento, validación y reservadas, historial con 301, rutas /inscripciones/<evento>/<formulario>, enlaces con PUBLIC_FORMS_BASE_URL."""
 import pathlib
 
 import pytest
@@ -108,13 +108,13 @@ def test_clean_urls_serve_the_same_page_and_old_urls_keep_working(client, factor
     from app import formsvc
     ev, f = _open_form(client, factory, "feria-limpia-2026")
     formsvc.invalidate_public_cache()
-    r = client.get(f"/feria-limpia-2026/{f['slug']}")
+    r = client.get(f"/inscripciones/feria-limpia-2026/{f['slug']}")
     assert r.status_code == 200 and f"/f/{ev.id}/{f['slug']}" in r.text
-    r = client.get("/feria-limpia-2026")                                      # un solo formulario abierto: ese es el principal
+    r = client.get("/inscripciones/feria-limpia-2026")                                      # un solo formulario abierto: ese es el principal
     assert r.status_code == 200 and f"/f/{ev.id}/{f['slug']}" in r.text
     assert client.get(_url(ev, f)).status_code == 200                         # /f/... sigue para siempre
-    assert client.get("/feria-limpia-2026/no-existe").status_code == 404
-    assert client.get("/no-existe-2026").status_code == 404
+    assert client.get("/inscripciones/feria-limpia-2026/no-existe").status_code == 404
+    assert client.get("/inscripciones/no-existe-2026").status_code == 404
     assert client.get("/api/algo").status_code == 404 and client.get("/static").status_code in (404, 307)
 
 
@@ -126,11 +126,11 @@ def test_old_slug_redirects_301_and_primary_form_is_respected(client, factory, d
     assert client.put(f"/api/events/{ev.id}/public-link", json={"slug": "segunda-2026", "primary_form_id": f["id"]}).status_code == 200
     client.post("/logout")
     formsvc.invalidate_public_cache()
-    r = client.get(f"/primera-2026/{f['slug']}", follow_redirects=False)
-    assert r.status_code == 301 and r.headers["location"] == f"/segunda-2026/{f['slug']}"
-    r = client.get("/primera-2026", follow_redirects=False)
-    assert r.status_code == 301 and r.headers["location"] == "/segunda-2026"
-    assert client.get("/segunda-2026").status_code == 200
+    r = client.get(f"/inscripciones/primera-2026/{f['slug']}", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == f"/inscripciones/segunda-2026/{f['slug']}"
+    r = client.get("/inscripciones/primera-2026", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/inscripciones/segunda-2026"
+    assert client.get("/inscripciones/segunda-2026").status_code == 200
 
 
 def test_unpublished_forms_are_404_on_the_clean_url(client, factory, db):
@@ -143,8 +143,8 @@ def test_unpublished_forms_are_404_on_the_clean_url(client, factory, db):
     client.put(f"/api/events/{ev.id}/public-link", json={"slug": "solo-pruebas-2026"})
     client.post("/logout")
     formsvc.invalidate_public_cache()
-    assert client.get(f"/solo-pruebas-2026/{f['slug']}").status_code == 404
-    assert client.get(f"/solo-pruebas-2026/{f['slug']}", params={"k": f["test_key"]}).status_code == 200
+    assert client.get(f"/inscripciones/solo-pruebas-2026/{f['slug']}").status_code == 404
+    assert client.get(f"/inscripciones/solo-pruebas-2026/{f['slug']}", params={"k": f["test_key"]}).status_code == 200
 
 
 # ------------------------------------------------------------------ enlaces que salen del sistema
@@ -156,26 +156,34 @@ def test_form_links_are_clean_only_when_the_forms_host_is_configured(client, fac
     ev_row = db.get(Event, ev.id)
     ev_row.public_slug = "feria-2026"
     db.commit()
-    monkeypatch.setenv("PUBLIC_FORMS_BASE_URL", "https://inscripciones.golden-eventos.com/")
+    monkeypatch.setenv("PUBLIC_FORMS_BASE_URL", "https://app.golden-eventos.com/inscripciones/")
     urls = client.get(f"/api/events/{ev.id}/forms").json()[0]
-    assert urls["public_url"] == f"https://inscripciones.golden-eventos.com/feria-2026/{f['slug']}" and urls["test_url"].startswith(urls["public_url"] + "?k=")
+    assert urls["public_url"] == f"https://app.golden-eventos.com/inscripciones/feria-2026/{f['slug']}" and urls["test_url"].startswith(urls["public_url"] + "?k=")
 
 
-def test_hosting_config_for_the_forms_site_sends_everything_to_publico(tmp_path):
+def test_hosting_config_sends_the_inscripciones_prefix_to_publico_and_web_does_not_serve_it(tmp_path):
     import importlib.util
+    import json
+    from app import appmode
     spec = importlib.util.spec_from_file_location("make_config", SRC / "deploy" / "firebase" / "make_config.py")
     mc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mc)
-    out = mc.build_forms("production", "proj", "us-east4", "golden-inscripciones", out_dir=str(tmp_path / "f"))
-    import json
-    cfg = json.loads((pathlib.Path(out) / "firebase.json").read_text())["hosting"]
-    assert cfg["site"] == "golden-inscripciones" and cfg["rewrites"] == [{"source": "**", "run": {"serviceId": "golden-publico", "region": "us-east4"}}]
-    assert (pathlib.Path(out) / "public" / "static").exists()
+    out = mc.build("production", "proj", "us-east4", "golden-app", out_dir=str(tmp_path / "f"))
+    rewrites = {r["source"]: r["run"]["serviceId"] for r in json.loads((pathlib.Path(out) / "firebase.json").read_text())["hosting"]["rewrites"]}
+    assert rewrites["/inscripciones/**"] == "golden-publico" and rewrites["/inscripciones"] == "golden-publico"
+    assert appmode.route_allowed("/inscripciones/feria-2026", mode="publico") and not appmode.route_allowed("/inscripciones/feria-2026", mode="web")
+    assert not appmode.route_allowed("/inscripciones/feria-2026", mode="biometria")
 
 
-def test_csrf_accepts_the_forms_host_origin(client, factory, monkeypatch):
-    monkeypatch.setenv("PUBLIC_FORMS_BASE_URL", "https://inscripciones.golden-eventos.com")
-    r = client.post("/f/1/x/beacon", json={}, headers={"Origin": "https://inscripciones.golden-eventos.com"})
+def test_there_are_no_root_level_event_routes(client):
+    """Ya no existe /<evento>: un nombre suelto en la raíz no lo sirve la URL limpia (queda 404 como cualquier ruta desconocida)."""
+    assert client.get("/feria-2026").status_code == 404
+    assert client.get("/feria-2026/algo").status_code == 404
+
+
+def test_csrf_still_rejects_foreign_origins_and_accepts_the_app_host(client, factory, monkeypatch):
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.golden-eventos.com")
+    r = client.post("/f/1/x/beacon", json={}, headers={"Origin": "https://app.golden-eventos.com"})
     assert r.status_code != 403
     r = client.post("/f/1/x/beacon", json={}, headers={"Origin": "https://otro.example.com"})
     assert r.status_code == 403

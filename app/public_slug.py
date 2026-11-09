@@ -1,4 +1,4 @@
-"""URL limpia de las inscripciones públicas (docs/15 D2.5k, docs/20): `<host de inscripciones>/<evento>` y `/<evento>/<formulario>`.
+"""URL limpia de las inscripciones públicas (docs/15 D2.5k, docs/20): `<app>/inscripciones/<evento>` y `/inscripciones/<evento>/<formulario>` (mismo host de la app).
 
 Un evento tiene un `public_slug` ÚNICO en todo el sistema (índice único en minúsculas): se genera de «nombre + año» y lo edita admin/comercial/super_admin. Al renombrar, el viejo
 queda en `slug_history` y responde 301 al nuevo; no se reasigna a otro evento durante 12 meses (nadie secuestra un enlace ya enviado). `/f/{id}/{slug}` sigue funcionando siempre.
@@ -20,7 +20,7 @@ from app.timeutil import utcnow
 MIN_LEN, MAX_LEN = 3, 60
 HOLD_DAYS = 365                                  # un slug viejo no se reasigna a otro evento durante 12 meses
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-# Rutas y nombres de la aplicación que un evento no puede usar como slug (el host de inscripciones es exclusivo, pero en `all` conviven con el resto).
+# Rutas y nombres de la aplicación que un evento no puede usar como slug (las páginas viven bajo `/inscripciones/`, así que no chocan; la lista se conserva por claridad y por si algún día cambia el prefijo).
 RESERVED = frozenset({
     "static", "api", "health", "ready", "healthz", "readyz", "webhooks", "f", "b", "c", "r", "login", "logout", "kiosk", "sistema", "admin", "privacidad", "terminos", "reembolsos",
     "inscripciones", "www", "app", "aceptar", "entrega", "internal", "ver", "dashboard", "eventos", "clientes", "calendario", "configuracion", "staff", "inventario", "sincronizacion",
@@ -134,7 +134,7 @@ def resolve(db: Session, slug: str, form_slug: Optional[str] = None) -> dict:
 
 # ------------------------------------------------------------------ enlaces que salen del sistema
 def forms_host_base() -> str:
-    """`PUBLIC_FORMS_BASE_URL` (p. ej. https://inscripciones.golden-eventos.com) sin «/» final; vacío = no configurada (todo sigue saliendo como /f/...)."""
+    """`PUBLIC_FORMS_BASE_URL` (p. ej. https://app.golden-eventos.com/inscripciones) sin «/» final; vacío = no configurada (todo sigue saliendo como /f/...)."""
     return (os.getenv("PUBLIC_FORMS_BASE_URL") or "").strip().rstrip("/")
 
 
@@ -143,7 +143,7 @@ def forms_host() -> str:
 
 
 def form_link(request_base: str, event: Event, form: WebForm) -> str:
-    """Enlace público de un formulario: limpio si hay host de inscripciones configurado y el evento ya tiene slug; si no, el de siempre (`/f/<id>/<slug>`)."""
+    """Enlace público de un formulario: limpio si hay `PUBLIC_FORMS_BASE_URL` configurada y el evento ya tiene slug; si no, el de siempre (`/f/<id>/<slug>`)."""
     base = forms_host_base()
     if base and event is not None and event.public_slug:
         return f"{base}/{event.public_slug}/{form.slug}"

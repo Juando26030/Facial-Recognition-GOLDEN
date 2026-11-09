@@ -46,27 +46,7 @@ def build(env: str, project: str, region: str, site: str, out_dir: str = os.path
     return out_dir
 
 
-def build_forms(env: str, project: str, region: str, site: str, out_dir: str = os.path.join(ROOT, "build", "firebase-inscripciones")) -> str:
-    """Segundo sitio de Hosting (D2.5k, docs/20): el host de inscripciones (inscripciones.golden-eventos.com) manda TODO al servicio `publico` —las páginas limpias `/<evento>/<formulario>`, `/f/**`,
-    `/b/**`… — y solo `/static/**` sale de la CDN de Firebase. No sirve nada del personal: el panel vive en el otro sitio. Sin proxy de Cloudflare delante (solo DNS)."""
-    suffix = "" if env == "production" else f"-{env}"
-    public = os.path.join(out_dir, "public")
-    shutil.rmtree(out_dir, ignore_errors=True)
-    shutil.copytree(os.path.join(ROOT, "static"), os.path.join(public, "static"))
-    config = {"hosting": {
-        "site": site, "public": "public", "trailingSlash": False,
-        "headers": [{"source": "/static/**", "headers": [{"key": "Cache-Control", "value": "public, max-age=3600"}]}],
-        "rewrites": [{"source": "**", "run": {"serviceId": f"golden-publico{suffix}", "region": region}}],
-    }}
-    with open(os.path.join(out_dir, "firebase.json"), "w", encoding="utf8") as fh:
-        json.dump(config, fh, indent=2)
-    with open(os.path.join(out_dir, ".firebaserc"), "w", encoding="utf8") as fh:
-        json.dump({"projects": {"default": project}}, fh)
-    return out_dir
-
-
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--inscripciones"]
-    if len(args) != 4 or args[0] not in ("staging", "production"):
-        sys.exit("Uso: make_config.py staging|production <proyecto> <región> <sitio> [--inscripciones]")
-    print((build_forms if "--inscripciones" in sys.argv else build)(*args))
+    if len(sys.argv) != 5 or sys.argv[1] not in ("staging", "production"):
+        sys.exit("Uso: make_config.py staging|production <proyecto> <región> <sitio>")
+    print(build(*sys.argv[1:]))

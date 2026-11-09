@@ -116,7 +116,7 @@ Fuera del piloto (después): paridad de búsqueda sin red y el error de recarga 
 
 ## N6 · URL limpia para las inscripciones públicas
 **Estado (9-nov-2026):** programada, a pedido de Juan David (ya no espera al piloto): docs/20_URL_LIMPIA_INSCRIPCIONES.md. Faltan los pasos de nube.
-Diseño y tamaño en `docs/15` **D2.5k**: host propio `inscripciones.golden-eventos.com/<evento>`, `public_slug` único global con reservadas, redirección 301 al renombrar, `/f/{id}/{slug}` se conserva, segundo sitio de Firebase y sin proxy de Cloudflare. **M (4-5 días)** + pasos de nube de J. Va después del piloto.
+**Hecho (9-nov-2026, código en f5/integracion, sin desplegar).** Decisión de Juan David: en el mismo host de la app, `app.golden-eventos.com/inscripciones/<evento>` y `/<evento>/<formulario>` (sin sitio de Firebase ni DNS nuevos); `public_slug` único global con reservadas, 301 al renombrar, `/f/{id}/{slug}` se conserva. Falta solo definir `PUBLIC_FORMS_BASE_URL` al desplegar: ver `docs/20_URL_LIMPIA_INSCRIPCIONES.md`.
 
 ## Aprobados por J (2026-10-05), AL FINAL de la cola
 **7a** «✅ Acreditar» en todas las filas con «Deshacer»: la regla propuesta (solo quien acreditó, hace menos de ~15 s verificado en el servidor; interfaz ~8 s) queda **aprobada**. **7b** logo por defecto editable desde Configuración: **aprobado**. Orden de trabajo: A y B (nube) → 1 (recarga) → 2 a 5 → 7a y 7b al final.
