@@ -17,6 +17,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app import event_template as et
+from app.auth import staff_with_role
 from app import event_template_svc, jobs, publicurl
 from app.database import SessionLocal
 from app.mailer import clean_subject, send_mail
@@ -162,9 +163,13 @@ def kick_after(rows: list) -> None:
 
 
 def recipients(db: Session, event: Event, actor: Optional[StaffUser]) -> list:
-    """Ids de la comercial y el coordinador del evento: sin repetir, sin quien hizo el cambio, activos, no archivados y con un correo válido."""
+    """Ids de quienes reciben el aviso de cambio de campos clave: la comercial y el coordinador del evento, más TODAS las cuentas de almacén y de contabilidad (plan de la Fase 5). Sin repetir, sin
+    quien hizo el cambio, activos, no archivados y con un correo válido."""
     out = []
-    for sid in (event.commercial_staff_id, event.coordinator_staff_id):
+    candidates = [event.commercial_staff_id, event.coordinator_staff_id]
+    for role in ("almacen", "contabilidad"):
+        candidates += [s.id for s in staff_with_role(db, role)]
+    for sid in candidates:
         if not sid or sid in out or (actor is not None and sid == actor.id):
             continue
         s = db.get(StaffUser, sid)

@@ -240,3 +240,15 @@ def test_route_is_gated_by_coordinator_role_and_event_access():
     from app.routers import event_history as router
     src = inspect.getsource(router.get_change_history)
     assert 'require_role("coordinador")' in src and "get_event_for_staff(event_id, db, staff)" in src
+
+
+def test_recipients_include_every_almacen_and_contabilidad_account(factory, db):
+    """Plan de la Fase 5: el aviso de campos clave también llega a almacén y contabilidad (rol principal o sumado), con correo y sin repetir."""
+    com = factory.staff("comercial", "com_r", email="com_r@example.com")
+    solo_alm = factory.staff("almacen", "alm_r", email="alm_r@example.com")
+    conta_extra = factory.staff("coordinador", "con_r", email="con_r@example.com", extra_roles="contabilidad")
+    factory.staff("contabilidad", "sinmail_r")
+    ev = factory.event("creado", coordinator=conta_extra, commercial=com)
+    got = eh.recipients(db, ev, None)
+    assert got == [com.id, conta_extra.id, solo_alm.id]          # la coordinadora que además es contabilidad no se repite; quien no tiene correo no entra
+    assert eh.recipients(db, ev, solo_alm) == [com.id, conta_extra.id]
