@@ -87,8 +87,10 @@ def update_account(account_id: int, data: dict, request: Request, db: Session = 
         problem = pa.validate_keys(public, private, integrity, events)
         if problem:
             raise HTTPException(status_code=400, detail=problem)
-        if pa.is_test_key(public) != pa.is_test_key(acc.public_key) and db.query(FormPayment.id).filter(FormPayment.account_id == acc.id).first():
-            raise HTTPException(status_code=409, detail="Esta cuenta ya cobró: no se puede pasar de pruebas a producción (o al revés). Crea otra cuenta")
+        if public != acc.public_key and db.query(FormPayment.id).filter(FormPayment.account_id == acc.id).first():
+            # F5-9 C3: con pagos, la llave pública (= el comercio) queda fija. Cambiarla por la de OTRO comercio mandaba los reembolsos, la conciliación y los webhooks de lo ya
+            # cobrado al comercio equivocado. Rotar los secretos del MISMO comercio (misma pública) sí se puede.
+            raise HTTPException(status_code=409, detail="Esta cuenta ya cobró: su llave pública (el comercio) no se puede cambiar; solo rotar los secretos del mismo comercio. Para otro comercio crea otra cuenta")
         acc.public_key, acc.integrity_enc, acc.events_enc = public, pa.encrypt(integrity), pa.encrypt(events)
         acc.private_enc = pa.encrypt(private) if private else None
         changes.append("llaves")

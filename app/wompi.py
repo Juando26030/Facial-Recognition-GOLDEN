@@ -218,9 +218,24 @@ def fetch_transaction(cfg: dict, transaction_id: str) -> Optional[dict]:
         return None
 
 
-def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
-    """La transacción MÁS RELEVANTE de una referencia (`GET /transactions?reference=…`): una aprobada si la hay; si no, la más reciente. Sirve para conciliar
-    pagos cuando el webhook se perdió (una caída del servidor o de la red). None si Wompi no tiene ninguna o no se pudo consultar."""
+def _merchant_key(txn: dict) -> Optional[str]:
+    m = txn.get("merchant") if isinstance(txn, dict) else None
+    pk = m.get("public_key") if isinstance(m, dict) else None
+    return str(pk) if pk else None
+
+
+def belongs(cfg: dict, txn: dict, scoped: bool) -> bool:
+    """F5-9 C1: ¿la transacción es del comercio de `cfg`? `GET /transactions/<id>` NO pide autenticación y devuelve transacciones de CUALQUIER comercio de Wompi: quien paga
+    podía crear en SU propio comercio una transacción con nuestra referencia y el mismo monto, pagarse a sí mismo y «confirmar» con ese id. Si Wompi trae `merchant.public_key` se
+    compara con la llave pública de la cuenta; si no, solo vale una respuesta `scoped` (el listado por referencia, que exige la llave privada y por eso es del propio comercio)."""
+    pk = _merchant_key(txn)
+    if pk is not None:
+        return safe_eq(pk, cfg.get("public_key") or "")
+    return bool(scoped and cfg.get("private_key"))
+
+
+def _rows_by_reference(cfg: dict, reference: str) -> Optional[list]:
+    """Transacciones del comercio con esa referencia (`GET /transactions?reference=…`, llave privada). None si no se pudo consultar."""
     if not _safe_id(reference):
         return None
     try:
@@ -228,7 +243,27 @@ def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
             rows = (json.loads(res.read().decode()) or {}).get("data") or []
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None
-    if not isinstance(rows, list) or not rows:
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else None
+
+
+def fetch_own_transaction(cfg: dict, transaction_id: str, reference: str) -> Optional[dict]:
+    """La transacción `transaction_id` SOLO si es del comercio de `cfg` (ver `belongs`). Para la confirmación del navegador, que trae un id que no controlamos."""
+    txn = fetch_transaction(cfg, transaction_id)
+    if not txn:
+        return None
+    if _merchant_key(txn) is not None:
+        return txn if belongs(cfg, txn, scoped=False) else None
+    if not cfg.get("private_key"):
+        return None          # sin forma de saber de qué comercio es: lo resuelve el webhook (firmado) o la conciliación
+    return next((r for r in (_rows_by_reference(cfg, reference) or []) if str(r.get("id")) == str(txn.get("id"))), None)
+
+
+def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
+    """La transacción MÁS RELEVANTE de una referencia (`GET /transactions?reference=…`): una aprobada si la hay; si no, la más reciente. Sirve para conciliar
+    pagos cuando el webhook se perdió (una caída del servidor o de la red). None si Wompi no tiene ninguna o no se pudo consultar."""
+    rows = _rows_by_reference(cfg, reference)
+    rows = [r for r in (rows or []) if belongs(cfg, r, scoped=True)]          # F5-9 C1: nunca la de otro comercio
+    if not rows:
         return None
     approved = [r for r in rows if str(r.get("status")).upper() == "APPROVED"]
     return approved[0] if approved else sorted(rows, key=lambda r: str(r.get("created_at") or ""))[-1]

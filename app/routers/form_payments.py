@@ -190,7 +190,7 @@ def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session 
     txn_id = str(data.get("transaction_id") or "").strip()
     if pay.status not in ("approved", "refunded") and txn_id:
         cfg = payment_accounts.cfg_for_payment(db, pay)
-        txn = wompi.fetch_transaction(cfg, txn_id) if cfg else None
+        txn = wompi.fetch_own_transaction(cfg, txn_id, pay.reference) if cfg else None          # F5-9 C1: solo una transacción del comercio con el que se cobró
         if txn and txn.get("reference") == pay.reference and int(txn.get("amount_in_cents") or -1) == pay.amount_cents and txn.get("currency") == pay.currency:
             pay = apply_result(db, pay.id, txn.get("status", ""), txn.get("id"), txn.get("payment_method_type"))
     return _result(db, form, pay)
@@ -231,7 +231,7 @@ def _process_webhook(db: Session, event: dict, checksum: Optional[str], ref: Opt
     account = None
     if ref:
         account = payment_accounts.by_ref(db, ref)
-        cfg = payment_accounts.cfg_of(account)
+        cfg = payment_accounts.cfg_of(account, for_new_charges=False)          # F5-9 C2: una cuenta DESACTIVADA sigue recibiendo los eventos de lo que ya cobró
         if cfg is None:
             raise HTTPException(status_code=404, detail="Cuenta de cobro desconocida")
         env = wompi.verify_event_cfg(event, checksum, cfg)

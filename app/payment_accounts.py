@@ -35,15 +35,22 @@ def _fernet() -> Optional[MultiFernet]:
     return MultiFernet([Fernet(k.strip().encode()) for k in raw.split(",") if k.strip()])
 
 
-def enabled() -> bool:
+def _fernet_or_none() -> Optional[MultiFernet]:
+    """F5-9 C4: una PAYMENT_KEYS_ENCRYPTION_KEY mal copiada (no es una llave Fernet) cuenta como «sin llave»: antes lanzaba ValueError y tumbaba con un 500 el webhook y el envío
+    de TODOS los formularios con cuenta de tercero."""
     try:
-        return _fernet() is not None
+        return _fernet()
     except ValueError:
-        return False
+        log.error("PAYMENT_KEYS_ENCRYPTION_KEY no es una llave Fernet válida: las cuentas de cobro de terceros quedan sin poder usarse")
+        return None
+
+
+def enabled() -> bool:
+    return _fernet_or_none() is not None
 
 
 def encrypt(value: str) -> str:
-    f = _fernet()
+    f = _fernet_or_none()
     if f is None:
         raise KeyMissing("Falta PAYMENT_KEYS_ENCRYPTION_KEY: no se pueden guardar llaves de cobro")
     return PREFIX + f.encrypt(value.encode()).decode()
@@ -55,7 +62,7 @@ def decrypt(token: Optional[str]) -> str:
         return ""
     if not token.startswith(PREFIX):
         return ""
-    f = _fernet()
+    f = _fernet_or_none()
     if f is None:
         return ""
     try:
@@ -91,9 +98,11 @@ def validate_keys(public: str, private: Optional[str], integrity: str, events: s
     return None
 
 
-def cfg_of(acc: PaymentAccount) -> Optional[dict]:
-    """Llaves de la cuenta, listas para el widget y la API (mismo formato que `wompi.config`). None si está inactiva o no se pueden leer."""
-    if acc is None or not acc.active:
+def cfg_of(acc: PaymentAccount, for_new_charges: bool = True) -> Optional[dict]:
+    """Llaves de la cuenta, listas para el widget y la API (mismo formato que `wompi.config`). None si no se pueden leer, o si está inactiva y se piden para un cobro NUEVO.
+    F5-9 C2: desactivar una cuenta solo frena cobros nuevos; lo que YA cobró (webhook, confirmación, conciliación, reembolsos) sigue usando sus llaves (`for_new_charges=False`).
+    Antes «Desactívala» —lo que la propia pantalla recomienda— dejaba los PSE pendientes sin confirmar nunca y los pagos sin poder reembolsarse."""
+    if acc is None or (for_new_charges and not acc.active):
         return None
     integrity, events, private = decrypt(acc.integrity_enc), decrypt(acc.events_enc), decrypt(acc.private_enc)
     if not integrity or not events:
@@ -122,7 +131,7 @@ def cfg_for_payment(db: Session, pay: FormPayment) -> Optional[dict]:
     """Llaves de la cuenta con la que SE COBRÓ ese pago (para reembolsar, conciliar, consultar): nunca la de otra."""
     if getattr(pay, "account_id", None):
         db = db or object_session(pay)
-        return cfg_of(db.get(PaymentAccount, pay.account_id))
+        return cfg_of(db.get(PaymentAccount, pay.account_id), for_new_charges=False)
     return wompi.config(pay.is_test)
 
 
@@ -138,6 +147,6 @@ def serialize(acc: PaymentAccount, base_url: str, forms: int = 0) -> dict:
     """Lo único que sale por la API: nada secreto."""
     return {"id": acc.id, "name": acc.name, "holder": acc.holder, "active": bool(acc.active), "note": acc.note,
             "public_key_masked": mask(acc.public_key), "env": "test" if is_test_key(acc.public_key) else "prod",
-            "has_private": bool(acc.private_enc), "keys_readable": bool(cfg_of(PaymentAccount(active=True, public_key=acc.public_key, integrity_enc=acc.integrity_enc, events_enc=acc.events_enc, private_enc=acc.private_enc))),
+            "has_private": bool(acc.private_enc), "keys_readable": bool(cfg_of(acc, for_new_charges=False)),
             "webhook_url": f"{base_url}/webhooks/wompi/{acc.ref}" if base_url else f"/webhooks/wompi/{acc.ref}", "forms": forms,
             "created_at": acc.created_at.isoformat() if acc.created_at else None}

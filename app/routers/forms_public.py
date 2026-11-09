@@ -729,7 +729,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
     """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
-    quote = charge = cfg = code_row = None
+    quote = charge = cfg = code_row = charge_account_id = None
     pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
     if pay_field:
         if formsvc.normalize_code(payload.get("code")):
@@ -746,6 +746,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
         if quote["amount"] > 0:
             if quote["amount"] < formlib.MIN_PAYMENT_COP:
                 return JSONResponse({"detail": f"El monto a pagar (${quote['amount']}) es menor al mínimo de ${formlib.MIN_PAYMENT_COP} COP por transacción. Avisa a los organizadores."}, status_code=422)
+            charge_account_id = form.payment_account_id          # F5-9 C5: la cuenta cuyas llaves firman el cobro es la que queda en el pago (aunque alguien la cambie a la vez)
             cfg = payment_accounts.cfg_for_form(db, form, is_test)
             if not cfg:
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
@@ -828,7 +829,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                 clean[fid]["stored"] = stored
             sub.data_json = json.dumps(clean)
         if charge:
-            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"], account_id=form.payment_account_id,
+            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"], account_id=charge_account_id,
                               reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)
