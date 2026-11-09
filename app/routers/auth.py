@@ -63,7 +63,7 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["staff_username"] = staff.username
     request.session["tours_off"] = bool(staff.tours_auto_off)   # preferencia de la CUENTA: vale igual en cualquier dispositivo
     idle.start(request.session, db, staff)           # inactividad: marca la última actividad (y exime a los puestos de impresión)
-    if staff.must_change_password:
+    if staff.must_change_password and staff.role != "digitador":       # el digitador temporal nunca cambia contraseña (Fase 4)
         request.session["must_change_password"] = True
         return "/cambiar-contrasena", None
     return "/", None

@@ -306,6 +306,12 @@ def password_rules(password: str, username: Optional[str] = None, strict: bool =
     return rules
 
 
+def must_change_on_set_by_other(role: str) -> bool:
+    """Fase 4 (8-nov-2026): la cuenta cuya contraseña inicial (la cédula o una temporal) la puso OTRA persona debe elegir la suya en el primer ingreso. Única excepción: el
+    digitador temporal, que entra solo con su cédula y nunca usa ni cambia contraseña. Sin interruptor: no es opcional."""
+    return role != "digitador"
+
+
 def password_problem(password: str, username: Optional[str] = None, strict: bool = False) -> Optional[str]:
     """Primer requisito que NO se cumple (mensaje en español para la persona), o None si la contraseña sirve. Ver `password_rules`."""
     for r in password_rules(password, username, strict):

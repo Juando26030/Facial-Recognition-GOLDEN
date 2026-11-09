@@ -98,7 +98,7 @@ app = FastAPI(
 )
 
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
-_ALLOWED_WHEN_MUST_CHANGE = ("/cambiar-contrasena", "/logout", "/static/", "/login")
+_ALLOWED_WHEN_MUST_CHANGE = ("/cambiar-contrasena", "/logout", "/static/", "/login", "/api/password-policy")
 
 
 @app.middleware("http")
