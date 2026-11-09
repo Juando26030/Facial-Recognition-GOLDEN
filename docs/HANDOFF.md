@@ -1,6 +1,9 @@
 # Handoff — migración a Cloud Run + Neon (estado al 2026-09-29)
 
-> ## ESTADO ACTUAL (7-nov-2026, noche) — léelo primero
+> ## ESTADO ACTUAL (8-nov-2026, noche) — léelo primero
+> **Fase 4 (Equipo del evento) CERRADA por Juan David** en `f4/integracion` (staging, despliegue 61). Resumen y pendientes: [`CIERRE_FASE_4.md`](CIERRE_FASE_4.md). Producción sigue en `main` sin Fase 2, 3 ni 4. **Siguiente: Fase 5 (Crear y configurar eventos).** Falta antes de producción: suite completa con base de datos sobre el SHA final (`scripts/pruebas_cloudshell.sh`, la corre Juan David) y su autorización del commit exacto. Migraciones nuevas de esta fase: `0100` a `0104`.
+>
+> ## ESTADO ANTERIOR (7-nov-2026, noche)
 > **Fase 1 cerrada; Fase 2 entregada en staging; Fase 3 en curso.** Producción corre `main` (`1951bea`, 7-nov 02:16) y **no tiene nada de la Fase 2 ni de la Fase 3**. Resumen para Juan David: [`CIERRE_FASE_2.md`](CIERRE_FASE_2.md).
 >
 > | Qué | Estado |
