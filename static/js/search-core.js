@@ -27,7 +27,7 @@
   const MIN_PREFIX_DIGITS = 3;      // desde aquí la cédula se busca por prefijo (filas con cédula en claro)
   const MIN_CEDULA_DIGITS = 5;      // desde aquí la cédula se considera completa (huella exacta sin red)
   const MOTIVOS = { cedula: 'Cédula exacta', lector: 'Código del lector',
-    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', contiene: (digits) => 'Cédula (contiene ' + digits + ')', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
+    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', nombreContiene: 'Nombre (contiene lo escrito)', contiene: (digits) => 'Cédula (contiene ' + digits + ')', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
 
   function stripAccents(text) {
     return String(text == null ? '' : text).normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -81,6 +81,9 @@
       const digits = text.replace(/\D/g, '');
       if (digits.length >= MIN_CEDULA_DIGITS && /^0\d/.test(digits)) {       // ceros a la izquierda: así rellena el número el lector de códigos
         return { kind: 'lector', raw, cedula: cedulaKey(digits), words: [], completa: true };
+      }
+      if (digits.length >= 1 && digits.length < MIN_PREFIX_DIGITS && /^\d+$/.test(text)) {       // 1-2 dígitos: ya se busca por el inicio de la cédula (no se acredita con Enter)
+        return { kind: 'cedula', raw, cedula: cedulaKey(digits), words: [], completa: false, corta: true };
       }
       if (digits.length >= MIN_PREFIX_DIGITS) {
         const completa = digits.length >= MIN_CEDULA_DIGITS;
@@ -173,6 +176,21 @@
     return fuzzy ? 1 : 2;
   }
 
+  /* Cada palabra escrita (3 letras o más) está DENTRO de alguna palabra guardada. Solo se usa cuando no hubo coincidencia por inicio de palabra. */
+  function containsMatch(haystack, queryWords) {
+    if (!queryWords.length) return false;
+    const used = new Array(haystack.length).fill(false);        // cada palabra escrita corresponde a una palabra DISTINTA
+    for (let q = 0; q < queryWords.length; q++) {
+      const w = queryWords[q];
+      if (w.length < 3 || /^\d+$/.test(w)) return false;
+      let found = -1;
+      for (let i = 0; i < haystack.length && found < 0; i++) if (!used[i] && haystack[i].includes(w)) found = i;
+      if (found < 0) return false;
+      used[found] = true;
+    }
+    return true;
+  }
+
   const NO = { coincide: false, motivo: '', orden: 9 };
   const hit = (motivo, orden) => ({ coincide: true, motivo, orden });
   function matchPerson(persona, consulta, opts) {
@@ -204,6 +222,7 @@
     if (inName && inEntity) return hit(MOTIVOS.ambos, exact);
     if (inName) return hit(MOTIVOS.nombre, inName === 2 ? 2 : 2.5);
     if (inEntity) return hit(MOTIVOS.empresa, inEntity === 2 ? 2 : 2.5);
+    if (containsMatch(k.name.concat(k.entity), q.words)) return hit(MOTIVOS.nombreContiene, 3);        // un tramo del medio de una palabra («lex» en «Alexander»): al final, para que nunca parezca que la búsqueda falla
     return NO;
   }
 

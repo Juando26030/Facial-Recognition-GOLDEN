@@ -672,6 +672,8 @@
 
   function pollSignal(ok) { try { window.dispatchEvent(new CustomEvent('gw:poll', { detail: { ok: !!ok } })); } catch (e) { /* sin ventana de eventos (pruebas): nada */ } }          // la pantalla muestra «Sin conexión» si el último sondeo falló
   let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «Acreditar» en TODAS las filas
+  /* La cédula se MUESTRA sin ceros a la izquierda («0000349220» -> «349220»); el valor guardado y el que se usa para buscar o editar no cambian. Un documento con letras no se toca. */
+  function shownId(v) { const t = String(v == null ? '' : v); return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t; }
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
@@ -716,7 +718,7 @@
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
-      td.innerText = user[field] || '';
+      td.innerText = field === 'id' ? shownId(user[field]) : (user[field] || '');
       tr.appendChild(td);
     });
 
@@ -1472,7 +1474,7 @@
           if (!raw) return;
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
             const q = SC.classifyQuery(raw);
-            const doc = q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr'
+            const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
               || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
           }
