@@ -351,14 +351,14 @@
         purgeBtn.addEventListener('click', () => {
             const n = allUsers.filter((u) => u.role === 'digitador').length;
             return busy(purgeBtn, async () => {
-                const ok = await showConfirm(`Se van a ELIMINAR las ${n} cuentas de digitador de este evento. <strong>No se pueden recuperar.</strong> Si alguna también está en otro evento, a esa solo se le quita este evento; y las que ya firmaron su compromiso quedan archivadas (sin acceso) porque la firma es evidencia y no se borra. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
+                const ok = await showConfirm(`Se van a ELIMINAR las ${n} cuentas de digitador de este evento. <strong>No se pueden recuperar.</strong> Si alguna también está en otro evento, a esa solo se le quita este evento; y el compromiso firmado de cada una queda guardado como evidencia del evento, sin la cuenta. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
                 if (!ok) return;
                 const res = await fetch(`/api/events/${eventId}/staff-users/purge-temporary`, { method: 'POST' });
                 const d = await res.json().catch(() => ({}));
                 if (res.ok) {
                     pageIdx = 0;
                     loadTempUsers();
-                    showToast(`${d.deleted} cuenta(s) eliminada(s)` + (d.kept_archived ? ` · ${d.kept_archived} quedaron archivadas (tienen registros, como su compromiso firmado)` : '') + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
+                    showToast(`${d.deleted} cuenta(s) eliminada(s)` + (d.kept_archived ? ` · ${d.kept_archived} quedaron archivadas (tienen otros registros que no se pueden soltar)` : '') + (d.only_unassigned ? ` · ${d.only_unassigned} solo se quitaron de este evento (están en otros)` : ''), 'success');
                 } else showToast(d.detail || 'No se pudieron eliminar las cuentas', 'error');
             }).catch(() => showToast('No se pudo completar la acción. Revisa la conexión.', 'error'));
         });

@@ -373,6 +373,25 @@ def test_session_flow_accepts_a_short_document_but_the_public_link_does_not():
     assert pledge.FID_ID in pledge.extra_errors(form, {pledge.FID_ID: "12"}, {"pc": 7})            # nunca menos de 3 (el mínimo de un usuario)
 
 
+def test_deleting_temporary_users_also_deletes_signed_accounts_and_keeps_the_evidence(client, factory, db):
+    from app.models import EventStaffPledge, StaffUser
+
+    ev, path, coord = _setup(client, factory)
+    assert _send(client, path, _values()).status_code == 200
+    db.expire_all()
+    acct = db.query(StaffUser).filter_by(username=CED).one()
+    acct_id = acct.id
+    assert _pledges(db, ev.id)
+    login(client, "coord1")
+    r = client.post(f"/api/events/{ev.id}/staff-users/purge-temporary")
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 1 and r.json()["kept_archived"] == 0                              # firmó y aun así se elimina
+    db.expire_all()
+    assert db.get(StaffUser, acct_id) is None
+    rows = db.query(EventStaffPledge).filter_by(event_id=ev.id).all()
+    assert len(rows) == 1 and rows[0].staff_id is None and rows[0].content_hash                    # la evidencia queda en el evento, sin la cuenta
+
+
 def test_pledge_not_required_does_not_change_login(client, factory, db, monkeypatch):
     monkeypatch.setenv("DIGITADOR_LOGIN_CONTROL", "1")
     coord = factory.staff("coordinador", "coord1")

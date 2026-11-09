@@ -1241,7 +1241,7 @@ class EventStaffPledge(Base):
     __tablename__ = 'event_staff_pledges'
     id = Column(Integer, primary_key=True, autoincrement=True)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
-    staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # 0102: NULL cuando la cuenta se elimina (la evidencia queda en el evento)
     submission_id = Column(Integer, ForeignKey('form_submissions.id'), nullable=False)
     signed_at = Column(DateTime, nullable=False, default=utcnow)
     source = Column(String(10), nullable=False, default='link')      # link (enlace público) | session (al ingresar con la cédula)

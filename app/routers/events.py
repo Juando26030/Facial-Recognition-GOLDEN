@@ -834,7 +834,7 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
 def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """«Eliminar los usuarios temporales» de este evento: BORRA de verdad las cuentas de digitador (decisión de Juan David, 8-nov-2026; antes solo se archivaban). A cada una se le quita el acceso
     a este evento y a sus equipos de impresión y luego se borra la cuenta soltando lo que la menciona (app/staff_refs.py). Dos excepciones, sin borrar: (1) una cuenta que además está asignada a OTRO
-    evento solo se quita de este; (2) una cuenta con registros que no se pueden soltar (p. ej. su compromiso firmado, que es evidencia) queda ARCHIVADA y desactivada, no borrada. Queda UN registro
+    evento solo se quita de este; (2) una cuenta con registros que no se pueden soltar (p. ej. una carga masiva suya) queda ARCHIVADA y desactivada, no borrada. El compromiso firmado NO impide borrar: su evidencia queda en el evento sin la cuenta (0102). Queda UN registro
     en `audit_actions` con los totales (nunca los usuarios: el del digitador es su cédula)."""
     _can_manage_temp(staff)
     event = get_event_for_staff(event_id, db, staff)
