@@ -911,12 +911,30 @@ class InventoryProduct(Base):
     unit = Column(String, nullable=False, default='unidad', server_default='unidad')
     sku = Column(String, nullable=True)
     fields_json = Column(Text, nullable=True)
+    qty_total = Column(Integer, nullable=True)      # 0110: existencias de Golden (NULL = no se controla); con ellas se avisa cuando lo asignado a eventos que se cruzan en fechas las supera (app/inventory_alerts.py)
     position = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     category = relationship('InventoryCategory')
+
+
+class Notification(Base):
+    """Notificación dentro de la aplicación para UNA cuenta del personal (Fase 5, 0110): se ve en la campana y, además, sale por correo (app/notifications.py). `dedupe_key` evita repetir el mismo aviso a la
+    misma cuenta. No lleva datos personales de asistentes: solo texto del aviso, el evento y un enlace."""
+    __tablename__ = 'notifications'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    url = Column(String, nullable=True)
+    event_id = Column(Integer, nullable=True)
+    dedupe_key = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    read_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint('staff_user_id', 'dedupe_key', name='uq_notification_dedupe'), Index('ix_notifications_user_unread', 'staff_user_id', 'read_at'))
 
 
 class EventInventoryItem(Base):

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import audit_actions, inventory, inventory_svc
+from app import audit_actions, inventory, inventory_alerts, inventory_svc, jobs
 from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any, require_super_admin
 from app.database import get_db
 from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, StaffUser
@@ -57,7 +57,7 @@ def _category_json(c: InventoryCategory, products: int = 0) -> dict:
 def _product_json(p: InventoryProduct) -> dict:
     cat = p.category
     return {"id": p.id, "name": p.name, "unit": p.unit, "sku": p.sku, "category_id": p.category_id, "category_name": cat.name if cat else None,
-            "fields": inventory.load_fields(p.fields_json), "position": p.position, "archived": p.archived_at is not None}
+            "fields": inventory.load_fields(p.fields_json), "position": p.position, "archived": p.archived_at is not None, "stock": p.qty_total}
 
 
 def _catalog(db: Session, include_archived: bool) -> dict:
@@ -198,6 +198,12 @@ def _apply_product(db: Session, p: InventoryProduct, data: dict, creating: bool)
         p.sku = _wrap(lambda: inventory.clean_sku(data.get("sku")))
     if creating or "category_id" in data:
         p.category_id = _active_category_id(db, data.get("category_id"))
+    if "stock" in data:          # existencias de Golden; vacío = no se controla (sin aviso de falta de material)
+        raw = data.get("stock")
+        if raw in (None, ""):
+            p.qty_total = None
+        else:
+            p.qty_total = _wrap(lambda: inventory.clean_qty(raw, f"Las existencias de «{p.name or 'el producto'}»"))
     if creating or "fields" in data:
         p.fields_json = inventory.dump_fields(_wrap(lambda: inventory.clean_product_fields(data.get("fields"))))
 
@@ -294,7 +300,7 @@ def _plan_json(db: Session, event: Event, staff: StaffUser) -> dict:
     rep = inventory.check_balance(inventory_svc.to_rows(list(lines.values())), inventory.stage_for_status(event.status))
     return {"event_id": event.id, "status": event.status, "lines": out, "balance": rep.as_dict(), "totals": inventory.summary(inventory_svc.to_rows(list(lines.values()))),
             "can_edit_plan": can_edit_plan(staff) and event.archived_at is None, "can_edit_movement": can_edit_movement(staff) and event.archived_at is None,
-            "gate_enabled": inventory_svc.gate_enabled()}
+            "gate_enabled": inventory_svc.gate_enabled(), "warnings": [w["message"] for w in inventory_alerts.warnings_for_event(db, event)]}          # avisos: nunca bloquean
 
 
 def _attrs(line: Optional[EventInventoryItem]) -> dict:
@@ -393,5 +399,9 @@ def put_plan(event_id: int, data: dict, db: Session = Depends(get_db), staff: St
         line.attrs_json = json.dumps(attrs, ensure_ascii=False) if attrs else None
         line.updated_by_id, line.updated_at = staff.id, now
     audit_actions.record(db, staff, "update", "event_inventory", event.id, event.name, f"{len(staged)} línea(s)")
+    db.flush()
+    alerts = inventory_alerts.notify_event(db, event, staff, inventory_alerts.warnings_for_event(db, event))          # avisa (campana + correo) si falta anticipación o material; NUNCA bloquea
     db.commit()
+    if alerts:
+        jobs.kick()
     return _plan_json(db, event, staff)

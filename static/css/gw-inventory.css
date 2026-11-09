@@ -36,3 +36,5 @@
 .gw-inv-plan__field { margin: 0; min-width: 0; }
 .gw-inv-plan__balance { margin-bottom: var(--gw-sp-3); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-info-bg); }
 .gw-inv-plan__issues { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); }
+
+.gw-inv-plan__warnings { display: grid; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-warn-bg); color: var(--gw-warn-text); }

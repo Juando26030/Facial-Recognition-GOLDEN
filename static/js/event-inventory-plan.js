@@ -76,7 +76,9 @@
       const head = b.ok ? (b.balanced ? '<span class="gw-badge gw-badge--ok">' + icon('check') + 'Cuadra</span>' : '<span class="gw-badge gw-badge--warn">' + icon('info') + 'Con avisos</span>') : '<span class="gw-badge gw-badge--err">' + icon('alert') + 'No cuadra</span>';
       const t = data.totals;
       const tot = t ? `<span class="gw-hint">Asignado ${t.assigned} · Salió ${t.out} · Volvió ${t.returned} · Consumido ${t.consumed} · Pendiente ${t.pending}</span>` : '';
-      return `<div class="gw-inv-plan__balance" role="status">${head} ${tot}${items ? `<ul class="gw-inv-plan__issues">${items}</ul>` : ''}</div>`;
+      const warn = (data.warnings || []).map((m) => `<li>${esc(m)}</li>`).join('');          // avisos de anticipación y de falta de material: nunca bloquean
+      const warnBox = warn ? `<div class="gw-inv-plan__warnings" role="alert"><span class="gw-badge gw-badge--warn">${icon('alert')}Aviso (no bloquea)</span><ul class="gw-inv-plan__issues">${warn}</ul></div>` : '';
+      return `<div class="gw-inv-plan__balance" role="status">${head} ${tot}${items ? `<ul class="gw-inv-plan__issues">${items}</ul>` : ''}</div>${warnBox}`;
     }
     function paint() {
       if (!data) { box.innerHTML = ''; ctrl.visible = false; ctrl.empty = true; return; }

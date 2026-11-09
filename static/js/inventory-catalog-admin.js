@@ -48,7 +48,7 @@
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-prod-restore="${p.id}" aria-label="Restaurar ${esc(p.name)}">${icon('undo')} Restaurar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-prod-del="${p.id}" data-name="${esc(p.name)}" aria-label="Eliminar definitivamente ${esc(p.name)}">${icon('trash')} Eliminar definitivamente</button>`);
     }
-    const meta = [p.category_name ? esc(p.category_name) : '<span class="gw-badge gw-badge--warn">Sin categoría</span>', esc(p.unit), p.sku ? 'SKU ' + esc(p.sku) : '']
+    const meta = [p.category_name ? esc(p.category_name) : '<span class="gw-badge gw-badge--warn">Sin categoría</span>', esc(p.unit), p.sku ? 'SKU ' + esc(p.sku) : '', p.stock != null ? 'Existencias ' + esc(p.stock) : '']
       .concat((p.fields || []).length ? ['Campos: ' + p.fields.map((f) => esc(f.label)).join(', ')] : []).filter(Boolean).join(' · ');
     return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(p.name)}</span>${p.archived ? '<span class="gw-badge">Archivado</span>' : ''}</div>
       <p class="gw-card-row__meta">${meta}</p><div class="gw-card-row__actions">${btns.join('')}</div></article>`;
@@ -76,7 +76,7 @@
 
   function resetProductForm() {
     editing = null;
-    $('invProdName').value = ''; $('invProdSku').value = ''; $('invProdFields').value = ''; $('invProdUnit').value = 'unidad'; $('invProdCat').value = '';
+    $('invProdName').value = ''; $('invProdSku').value = ''; $('invProdStock').value = ''; $('invProdFields').value = ''; $('invProdUnit').value = 'unidad'; $('invProdCat').value = '';
     $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = 'Productos';
   }
 
@@ -89,7 +89,7 @@
 
   $('invProdForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const body = { name: $('invProdName').value.trim(), unit: $('invProdUnit').value.trim(), sku: $('invProdSku').value.trim(), category_id: $('invProdCat').value || null, fields: parseFields($('invProdFields').value) };
+    const body = { name: $('invProdName').value.trim(), unit: $('invProdUnit').value.trim(), sku: $('invProdSku').value.trim(), stock: $('invProdStock').value.trim(), category_id: $('invProdCat').value || null, fields: parseFields($('invProdFields').value) };
     if (!body.name) { showToast('Escribe el nombre del producto', 'error'); return; }
     try {
       await busy($('invProdBtn'), () => (editing ? send(`/api/inventory/products/${editing}`, 'PATCH', body) : send('/api/inventory/products', 'POST', body)));
@@ -120,7 +120,7 @@
       const p = catalog.products.find((x) => String(x.id) === b.dataset.prodEdit);
       if (!p) return;
       editing = p.id;
-      $('invProdName').value = p.name; $('invProdSku').value = p.sku || ''; $('invProdUnit').value = p.unit; $('invProdCat').value = p.category_id == null ? '' : String(p.category_id); $('invProdFields').value = fieldsToText(p.fields);
+      $('invProdName').value = p.name; $('invProdSku').value = p.sku || ''; $('invProdStock').value = p.stock == null ? '' : String(p.stock); $('invProdUnit').value = p.unit; $('invProdCat').value = p.category_id == null ? '' : String(p.category_id); $('invProdFields').value = fieldsToText(p.fields);
       $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false; $('invProdFormTitle').textContent = `Editando «${p.name}»`;
       $('invProdName').focus();
     } else if ((b = t('[data-prod-archive]'))) {
