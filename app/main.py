@@ -18,13 +18,16 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
+from app import node_sync
 from app import bodylimit, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
-from app.routers import event_lease as event_lease_router      # Fase 6: arrendamiento del evento por un servidor local
+from app.routers import event_lease as event_lease_router
+from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
+from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
@@ -83,12 +86,14 @@ async def lifespan(_app: FastAPI):
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    node_sync.start()                     # servidor LOCAL (LOCAL_SERVER=1 con token): sube a la nube cada ~30 min; en la nube no hace nada
     publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
     yield
     log.info("apagando: deteniendo trabajos en segundo plano")
     if worker:
         worker.stop()
+    node_sync.stop()
     faces.shutdown()
     interrupted = bulk_jobs.mark_interrupted()
     if interrupted:
@@ -360,7 +365,9 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
-_include(event_lease_router.router, prefix="/api")      # Fase 6: evento en servidor local (solo lectura en la nube)
+_include(event_lease_router.router, prefix="/api")
+_include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
+_include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
@@ -561,6 +568,24 @@ def inventario_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
+
+
+@app.get("/sincronizacion")
+def sincronizacion_page(request: Request):
+    """Fase 6: en el servidor LOCAL, estado de la subida a la nube; en la nube, alta y revocación de servidores locales (solo admin y super_admin)."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    local = node_sync.is_local_server()
+    if local:
+        allowed = bool(roles & {"almacen", "contabilidad"}) or max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]
+    else:
+        allowed = max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["admin"]
+    if not allowed:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="sincronizacion.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "local_server": local})
 
 
 @app.get("/configuracion/plantilla-evento")
