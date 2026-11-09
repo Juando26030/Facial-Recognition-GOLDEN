@@ -13,7 +13,8 @@
         .draft { background: #fff3cd; border: 2px solid #e0a800; color: #664d03; border-radius: 12px; padding: 10px 14px; font-size: .9rem; margin-bottom: 1.2rem; }
         .reviewed { background: #e8f5e9; border: 2px solid #2e7d32; color: #1b5e20; border-radius: 12px; padding: 8px 14px; font-size: .9rem; margin-bottom: 1.2rem; }
         .pending { background: #fff3cd; padding: 0 4px; border-radius: 4px; }
-        table { border-collapse: collapse; width: 100%; font-size: .9rem; } th, td { border: 1px solid #d5d8e3; padding: 6px 8px; text-align: left; vertical-align: top; }
+        table { border-collapse: collapse; width: 100%; font-size: .9rem; } th, td { border: 1px solid #d5d8e3; padding: 6px 8px; text-align: left; vertical-align: top; } @media (max-width: 40rem) { table { display: block; max-width: 100%; overflow-x: auto; } th, td { overflow-wrap: anywhere; } }
+        .draft, .reviewed, .pending { overflow-wrap: anywhere; }
         nav.legal-nav { font-size: .9rem; margin-bottom: 14px; } nav.legal-nav a { margin-right: 14px; }
         @media (max-width: 600px) { article { padding: 18px 16px; } }
     </style>
