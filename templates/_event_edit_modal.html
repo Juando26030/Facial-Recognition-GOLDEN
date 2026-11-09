@@ -97,6 +97,12 @@
           </div>
         </details>
 
+        {# Inventario del evento (Fase 5): productos del catálogo con cantidades y estado del cuadre; lo que cada rol puede editar lo decide el servidor. Se guarda con «Guardar cambios» o con su propio botón. #}
+        <details class="gw-form-group" id="eeInvGroup" open hidden>
+          <summary class="gw-form-group__summary">Inventario</summary>
+          <div class="gw-form-group__body"><div id="eeInvBox"></div></div>
+        </details>
+
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
         <details class="gw-form-group" open>
           <summary class="gw-form-group__summary">Informe final</summary>
@@ -139,6 +145,7 @@
 <script src="{{ url_for('static', path='js/gw-geo.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-map.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-inventory-plan.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script>
 (function () {
@@ -314,6 +321,17 @@
     });
   });
 
+  /* Inventario del evento (Fase 5): se pinta con event-inventory-plan.js; si el rol no puede verlo o el catálogo está vacío, la sección no aparece. */
+  const invGroup = document.getElementById('eeInvGroup');
+  let invCtrl = null;
+  async function mountInventory(ev) {
+    invCtrl = null; invGroup.hidden = true;
+    if (!window.GWInvPlan) return;
+    let ctrl = null;
+    try { ctrl = await GWInvPlan.mount(document.getElementById('eeInvBox'), { eventId: ev.id, icons: ICONS, onChange: markDirty }); } catch (e) { ctrl = null; }
+    if (ctrl && ctrl.visible && !ctrl.empty) { invCtrl = ctrl; invGroup.hidden = false; }
+  }
+
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
@@ -339,6 +357,7 @@
     form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
+    mountInventory(ev);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
@@ -394,6 +413,10 @@
       const got = collectExtra();
       if (got.error) { setStatus('error', got.error); showToast(got.error, 'error'); return; }
       if (Object.keys(got.extra).length) payload.extra = got.extra;
+    }
+    if (invCtrl && invCtrl.dirty()) {          // primero el inventario: si el cuadre impide el cambio de estado, ya quedó guardado lo que escribiste
+      const inv = await invCtrl.save();
+      if (!inv.ok) { setStatus('error', inv.error); showToast(inv.error, 'error'); return; }
     }
     const statusSel = document.getElementById('modalStatusSelect');
     if (payload.status === 'finalizado' && statusSel && statusSel.dataset.initial !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
