@@ -371,6 +371,36 @@ def test_pledge_not_required_does_not_change_login(client, factory, db, monkeypa
     assert r.status_code == 303 and r.headers["location"] == "/ingreso/espera"
 
 
+def test_new_events_require_the_pledge_by_default_with_the_link_ready(client, factory, db):
+    from tests.test_coordinador_crea_eventos import _payload
+
+    factory.tenant("acme")
+    coord = factory.staff("coordinador", "coord")
+    login(client, "coord")
+    eid = client.post("/api/events", json=_payload(coord.id)).json()["id"]
+    state = client.get(f"/api/events/{eid}/pledge").json()
+    assert state["enabled"] is True and state["link_active"] is True and state["link"]        # exigido por defecto y con el enlace ya publicado
+    assert client.put(f"/api/events/{eid}/pledge/enabled", json={"enabled": False}).json()["enabled"] is False          # se puede apagar
+
+
+def test_pledge_does_not_lock_the_event_when_the_text_is_not_approved(client, factory, db, monkeypatch):
+    from app import pledge
+
+    coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso", coordinator=coord)
+    ev.pledge_enabled = True
+    dig = factory.staff("digitador", CED, password=CED, tenant_id=ev.tenant_id)
+    factory.authorize(ev, dig)
+    db.commit()
+    assert pledge.missing_for_login(db, dig) is None                                               # sin formulario publicado no hay nada que firmar
+    login(client, "coord1")
+    assert client.post(f"/api/events/{ev.id}/pledge/link").status_code == 200
+    db.expire_all()
+    assert pledge.missing_for_login(db, dig).id == ev.id                                           # con el enlace publicado sí se exige
+    monkeypatch.setattr(pledge, "text_available", lambda: False)
+    assert pledge.missing_for_login(db, dig) is None                                               # texto aún no aprobado: no se bloquea el ingreso
+
+
 # ----------------------------------------------------------------------------------------------------- retención
 def test_sensitive_purge_30_days_after_the_event(client, factory, db):
     from app import formsvc

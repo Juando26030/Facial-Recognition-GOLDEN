@@ -20,7 +20,7 @@ from app.database import get_db
 from app import event_archive, event_rules, formsvc
 from app import event_template as event_tpl
 from app import event_template_svc
-from app import testperson
+from app import pledge, testperson
 from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
@@ -477,6 +477,7 @@ def create_event(
     event_data = data.dict(exclude={"extra", *event_tpl.SWITCH_KEYS})
     event_data["commercial_staff_id"] = commercial_id
     event_data.setdefault("accept_no_birth_mode", "require_personal_link")      # D5: los eventos nuevos exigen el enlace personal si la base no trae fecha de nacimiento (los existentes quedan en 'any'; se cambia en Parámetros)
+    event_data["pledge_enabled"] = True          # Fase 4: todo evento nuevo EXIGE el compromiso digital de sus digitadores (se puede apagar en «Usuarios temporales»); los existentes no cambian
     event_data.update(prepared["columns"])          # pañoleta normalizada e interruptores: las MISMAS columnas que cambia «Parámetros del evento»
     initial = event_rules.default_state(db, event_data.get("status") or "creado")
     if initial is not None:
@@ -488,6 +489,8 @@ def create_event(
     db.flush()
     event_template_svc.after_create(db, event)
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
+    if pledge.text_available():
+        pledge.create_or_regenerate(db, event, staff)          # el enlace del compromiso queda listo desde el primer día (sin texto aprobado no se publica: ver pledge.missing_for_login)
     db.commit()
     db.refresh(event)
     return _serialize(event)

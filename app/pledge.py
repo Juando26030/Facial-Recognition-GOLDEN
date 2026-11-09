@@ -446,6 +446,8 @@ def missing_for_login(db: Session, staff: StaffUser) -> Optional[Event]:
     events = (db.query(Event).join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id)
               .filter(EventStaffAuthorization.staff_user_id == staff.id, Event.status == "en_proceso", Event.pledge_enabled.is_(True), Event.archived_at.is_(None)).order_by(Event.id).all())
     for event in events:
+        if form_for(db, event) is None or not text_available():
+            continue          # nunca se publicó el formulario, o el texto de la auditora aún no está aprobado: no se puede firmar, así que no se bloquea la operación del evento
         if active_pledge(db, event.id, staff.id) is None:
             return event
     return None
