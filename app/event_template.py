@@ -71,6 +71,7 @@ TYPES = {
     "contact": {"label": "Contacto del evento", "creatable": True},
     "bandana_colors": {"label": "Colores de pañoletas", "creatable": True},
     "inventory": {"label": "Inventario", "creatable": True},
+    "workday": {"label": "Jornada (calculada)", "creatable": False},
     "switch": {"label": "Interruptor", "creatable": False},
     "client": {"label": "Cliente", "creatable": False},
     "super_event": {"label": "Superevento", "creatable": False},
@@ -136,6 +137,9 @@ BASE_FIELDS = [
     _b("setup_date", "date", "Fecha montaje", True, "fechas"),
     _b("setup_time_start", "time", "Hora inicio montaje", True, "fechas"),
     _b("setup_time_end", "time", "Hora fin montaje", True, "fechas"),
+    # Fase 5: campo INFORMATIVO calculado (app/workday.py). No es una columna ni un valor guardado: se deduce de event_time_start/event_time_end. De fábrica no está en ninguna vista;
+    # el administrador decide si lo agrega a «Nuevo evento»/«Editar evento» y si sale en la tarjeta del calendario (colocándolo en una zona).
+    _b("workday", "workday", "Jornada", False, None, help="Se calcula sola con la hora de inicio y la de fin del evento. No se edita."),
     _b("coordinator_staff_id", "coordinator", "Coordinador asignado", True, "responsables"),
     _b("commercial_staff_id", "commercial", "Comercial asignada", True, "responsables"),
     _b("super_event_id", "super_event", "Superevento", False, "responsables", help="Opcional: agrupa eventos hermanos de este cliente."),
@@ -151,7 +155,8 @@ BOUND_KEYS = BASE_KEYS + SWITCH_FIELD_KEYS            # los que NO viven en extr
 # columnas de events que escribe cada campo base (para armar el Event al crear)
 BASE_COLUMNS = {"client": ("tenant_id",), "bandana": ("bandana_color", "bandana_color_name")}
 for _f in BASE_FIELDS:
-    BASE_COLUMNS.setdefault(_f["key"], (_f["key"],))
+    if _f["type"] != "workday":          # la jornada no tiene columna: se calcula
+        BASE_COLUMNS.setdefault(_f["key"], (_f["key"],))
 for _s in SWITCH_KEYS:
     BASE_COLUMNS[switch_field_key(_s)] = (_s,)
 
@@ -429,7 +434,7 @@ def _clean_field(rf) -> dict:
             type_, config = "switch", {"switch": sw}
         locked = key in LOCKED_KEYS
         required = True if locked else bool(rf.get("required")) and type_ != "switch"
-        if type_ == "switch":
+        if type_ in ("switch", "workday"):          # el interruptor y la jornada (calculada) nunca son obligatorios
             required = False
         return {"key": key, "type": type_, "title": title, "required": required, "options": [], "config": config, "help": helptext, "retired": False}
     if not KEY_RE.match(key):
@@ -510,6 +515,8 @@ def clean_value(field: dict, raw):
         if not isinstance(raw, bool):
             raise TemplateError(f"«{title}» debe ser sí o no")
         return raw
+    if t == "workday":          # calculado: nunca se recibe ni se guarda un valor
+        return None
     if is_empty(raw):
         return None
     w = f"«{title}»"
@@ -627,6 +634,8 @@ def raw_values_from_payload(payload: dict, extra: dict) -> dict:
     """Pone en una sola forma {clave de campo: valor} lo que manda «Nuevo evento»: las columnas de siempre (nivel superior), los interruptores (por el nombre de su columna) y `extra` (personalizados)."""
     raw = {}
     for key in BASE_KEYS:
+        if key == "workday":
+            continue
         if key == "bandana":
             if payload.get("bandana_color") or payload.get("bandana_color_name"):
                 raw[key] = [{"name": payload.get("bandana_color_name") or "", "hex": payload.get("bandana_color") or ""}] if payload.get("bandana_color") else None
