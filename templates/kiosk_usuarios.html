@@ -60,6 +60,7 @@
       </div>
       <div class="gw-page-head__actions">
         <button type="button" class="gw-btn gw-btn--primary" data-open-group="grpNueva">{{ ic('user-plus', 'gw-icon--sm') }} Crear usuario</button>
+        {% if staff_role != "comercial" %}<a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/usuarios/hoja">{{ ic('printer', 'gw-icon--sm') }} Hoja de ingreso para imprimir</a>{% endif %}
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="usuarios">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
@@ -103,6 +104,11 @@
               <label class="gw-label" for="uPhone">Teléfono (opcional, para notificaciones por WhatsApp)</label>
               <input class="gw-input" type="tel" id="uPhone" name="phone" placeholder="Ej. +57 300 1234567" autocomplete="tel">
             </div>
+            <div class="gw-field">
+              <label class="gw-label" for="uEmail">Correo (opcional)</label>
+              <input class="gw-input" type="email" id="uEmail" name="email" placeholder="persona@ejemplo.com" autocomplete="email" autocapitalize="none">
+              <p class="gw-hint">Si lo pones, recibe por correo cómo ingresar y los datos del evento. Nunca lleva contraseñas.</p>
+            </div>
           </div>
           <div class="gw-actions">
             <button type="submit" data-gw-submit class="gw-btn gw-btn--primary">{{ ic('user-plus', 'gw-icon--sm') }} Crear y asignar a este evento</button>
@@ -112,6 +118,7 @@
     </details>
 
     {% if staff_role != "comercial" %}
+    <label class="gw-check gw-check--top"><input type="checkbox" id="staffMailToggle" {% if event.staff_mail_enabled %}checked{% endif %}> <span>Avisar por correo a los digitadores que se asignan a este evento (si tienen correo)</span></label>
     <details class="gw-group" id="grpExistente">
       <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuentas ya existentes</span><span class="gw-group__hint">Dos formas: buscar una por una o cargar un Excel.</span></summary>
       <div class="gw-group__body gw-stack">

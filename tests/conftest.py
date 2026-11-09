@@ -186,6 +186,7 @@ def outbox(monkeypatch):
     monkeypatch.setattr("app.acceptmail.send_mail", fake_send_mail)
     monkeypatch.setattr("app.consent_receipt.send_mail", fake_send_mail)
     monkeypatch.setattr("app.reprint.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.staff_credentials.send_mail", fake_send_mail)
     return sent
 
 

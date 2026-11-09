@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import audit_actions, security, sessions
+from app import audit_actions, jobs, security, sessions, staff_credentials
 from app.inputcheck import text_validator, username_validator
 from app.auth import assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
@@ -167,11 +167,16 @@ def create_staff(
         created_by_id=staff.id,
         phone=phone,
         email=(data.email or "").strip() or None,
+        must_change_password=True,          # Fase 4: la contraseña inicial la conoce quien creó la cuenta (o es el documento): la persona debe elegir la suya al primer ingreso
     )
     db.add(new_staff)
+    db.flush()          # autoflush=False: hace falta el id para el trabajo en cola
+    mail_queued = staff_credentials.enqueue(db, new_staff, "created", pw=staff_credentials.password_mode(new_staff, data.password))      # el correo (sin contraseña) sale en segundo plano, en la misma transacción
     db.commit()
+    if mail_queued:
+        jobs.kick()
     db.refresh(new_staff)
-    return _serialize(new_staff)
+    return {**_serialize(new_staff), "credentials_mail": "queued" if mail_queued else "no_email"}
 
 
 @router.patch("/staff/{staff_id}/email")
@@ -286,9 +291,13 @@ def reset_staff_password(
     target.password_hash = hash_password(new_password)
     target.must_change_password = must_change
     sessions.revoke_all(target)             # S2: las sesiones abiertas con la contraseña anterior dejan de valer
+    mail_queued = staff_credentials.enqueue(db, target, "reset", pw=staff_credentials.password_mode(target, new_password), nonce=str(target.session_epoch))      # Fase 4: aviso por correo, sin la contraseña (una vez por restablecimiento)
     db.commit()
+    if mail_queued:
+        jobs.kick()
     security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
-    return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")}
+    return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")
+            + (". Se le envió un correo con las instrucciones" if mail_queued else ". No tiene correo registrado: entrégale la hoja impresa"), "credentials_mail": "queued" if mail_queued else "no_email"}
 
 
 @router.patch("/staff/{staff_id}/deactivate")

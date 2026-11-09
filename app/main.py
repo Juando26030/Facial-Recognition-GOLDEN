@@ -23,6 +23,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
+from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
@@ -332,6 +333,7 @@ _include(form_payments.router)  # cotización y confirmación del pago Wompi + w
 _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
+_include(staff_credentials_router.router, prefix="/api")      # reenviar credenciales / correo del digitador / interruptor del evento (coordinador+)
 _include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
 _include(stats_links_router.router, prefix="/api")      # crear/ver/revocar enlaces de estadísticas (coordinador+)
 _include(stats_links_router.public_router)      # /ver/e/<token>, /ver/f/<token> y /api/ver/<token>/...: solo lectura, sin sesión
@@ -711,6 +713,21 @@ def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db
     propia ruta, mismo patrón que "Escarapelas"/"Adjuntar Base de Datos". Mismo mínimo de rol que
     antes (coordinador+ para crear digitador, admin+ dentro del template para cliente/asignar)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/usuarios/hoja")
+def kiosk_usuarios_hoja(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Hoja IMPRESA (A4, cuadro de impresión normal del navegador) con las cuentas temporales del evento: nombre, cédula como usuario e instrucciones. Sin contraseñas. No es la impresión de escarapelas."""
+    from app import staff_credentials
+    staff_user = _page_staff(request, db)
+    rows = []
+    if staff_user is not None and effective_roles(staff_user) - {"comercial"}:
+        rows = (db.query(StaffUser).join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
+                .filter(EventStaffAuthorization.event_id == event_id, StaffUser.role == "digitador", StaffUser.is_active == True, StaffUser.archived_at.is_(None))      # noqa: E712
+                .order_by(StaffUser.full_name, StaffUser.username).limit(500).all())
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios_hoja.html", min_role="coordinador", exclude_roles=["comercial"],
+                               extra_context={"sheet_rows": [{"name": r.full_name or "", "username": r.username} for r in rows], "login_url": staff_credentials.login_url(str(request.base_url)),
+                                              "coordinator_name": staff_credentials.event_info(db, db.get(Event, event_id))["coordinator"] if db.get(Event, event_id) is not None else ""})
 
 
 @app.get("/kiosk/{event_id}/estadisticas")

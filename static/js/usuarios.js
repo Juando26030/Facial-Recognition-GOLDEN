@@ -34,6 +34,10 @@
             : '');
         const reset = u.role === 'digitador'
             ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Restablecer contraseña</span></button>` : '';
+        const resend = canManage && u.role === 'digitador'
+            ? (u.has_email
+                ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="resend" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Reenviar correo</span></button>`
+                : `<button type="button" class="gw-btn gw-btn--secondary" data-act="setmail" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Agregar correo</span></button>`) : '';
         return `<article class="gw-card-row gw-usr__row">
             <div class="gw-card-row__head gw-usr__head">
                 <span class="gw-card-row__title gw-usr__c-user" title="${esc(u.username)}">${esc(u.username)}</span>
@@ -43,6 +47,7 @@
             <div class="gw-card-row__actions gw-usr__actions gw-usr__c-act">
                 ${loginBtns}
                 ${reset}
+                ${resend}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
                     <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>Archivar cuenta</span></button></div></div>
@@ -231,6 +236,40 @@
         });
     }
 
+    async function resendCredentials(btn, staffId) {
+        await busy(btn, async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/resend-credentials`, { method: 'POST' });
+            const d = await res.json().catch(() => ({}));
+            showToast(res.ok ? (d.message || 'Correo en camino') : (typeof d.detail === 'string' ? d.detail : 'No se pudo reenviar el correo'), res.ok ? 'success' : 'error');
+        });
+    }
+
+    async function setStaffMail(btn, staffId) {
+        const email = await showPrompt('Correo de la persona (recibirá cómo ingresar, sin contraseñas)', { title: 'Agregar correo', confirmLabel: 'Guardar' });
+        if (email == null || !String(email).trim()) return;
+        await busy(btn, async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/email`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: String(email).trim() }) });
+            const d = await res.json().catch(() => ({}));
+            if (res.ok) { loadTempUsers(); showToast('Correo guardado', 'success'); }
+            else showToast(typeof d.detail === 'string' ? d.detail : 'No se pudo guardar el correo', 'error');
+        });
+    }
+
+    const mailToggle = document.getElementById('staffMailToggle');
+    if (mailToggle) {
+        mailToggle.addEventListener('change', async () => {
+            const want = mailToggle.checked;
+            try {
+                const res = await fetch(`/api/events/${eventId}/staff-mail`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: want }) });
+                if (!res.ok) throw new Error('http ' + res.status);
+                showToast(want ? 'Se avisará por correo a quienes se asignen' : 'No se enviarán correos al asignar', 'success');
+            } catch (e) {
+                mailToggle.checked = !want;
+                showToast('No se pudo guardar el cambio', 'error');
+            }
+        });
+    }
+
     async function decideLogin(btn, staffId, username, allow) {
         await busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}/login-request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow, req: (loginState[staffId] || {}).req }) });
@@ -347,6 +386,8 @@
         const run = act === 'reload' ? loadTempUsers()
             : act === 'revoke' ? revokeTempUser(btn, id)
             : act === 'reset' ? resetTempPassword(btn, id, user)
+            : act === 'resend' ? resendCredentials(btn, id)
+            : act === 'setmail' ? setStaffMail(btn, id)
             : act === 'delete' ? deleteTempUser(btn, id, user)
             : act === 'allow' ? decideLogin(btn, id, user, true)
             : act === 'deny' ? decideLogin(btn, id, user, false)

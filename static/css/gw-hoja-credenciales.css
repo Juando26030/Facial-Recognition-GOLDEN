@@ -1,0 +1,13 @@
+/* Hoja impresa de ingreso del personal temporal (Fase 4): hoja A4 normal por el cuadro de impresión del navegador. NO toca la impresión de escarapelas. Solo tokens --gw-*. */
+.gw-hoja__page { padding-top: var(--gw-sp-5); padding-bottom: var(--gw-sp-6); }
+.gw-hoja__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); justify-content: space-between; }
+.gw-hoja__steps { margin: 0; padding-left: var(--gw-sp-5); display: grid; gap: var(--gw-sp-2); }
+.gw-hoja__firma { min-width: 8rem; }
+@media print {
+  @page { size: A4; margin: 15mm; }
+  .gw-noprint { display: none !important; }
+  .gw-page.gw-hoja { background: Canvas; color: CanvasText; }
+  .gw-hoja .gw-table-wrap { overflow: visible; border-color: currentColor; }
+  .gw-hoja .gw-table th, .gw-hoja .gw-table td { border-bottom: 1px solid currentColor; color: CanvasText; background: Canvas; }
+  .gw-hoja .gw-table tr { break-inside: avoid; }
+}
