@@ -882,6 +882,55 @@ class InventoryDelivery(Base):
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
 
 
+class InventoryCategory(Base):
+    """Categoría del CATÁLOGO de inventario (Fase 5, 0107): la define el Super Admin en Configuración. Archivable (conserva historial); no se repite el nombre (sin distinguir mayúsculas, lo valida app/inventory.py)."""
+    __tablename__ = 'inventory_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+
+class InventoryProduct(Base):
+    """Producto del catálogo de inventario (Fase 5, 0107): unidad de medida, SKU opcional y `fields_json` = campos propios que pide ese producto en cada evento ([{key,label,kind:'text'|'number'}]).
+    `category_id` puede ser NULL (sin categorizar): se permite con el evento en «creado» y NO para pasarlo a «en proceso» (app/inventory.py, regla de cuadre). Archivado = fuera del catálogo nuevo, las líneas viejas se conservan."""
+    __tablename__ = 'inventory_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category_id = Column(Integer, ForeignKey('inventory_categories.id'), nullable=True)
+    name = Column(String, nullable=False)
+    unit = Column(String, nullable=False, default='unidad', server_default='unidad')
+    sku = Column(String, nullable=True)
+    fields_json = Column(Text, nullable=True)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    category = relationship('InventoryCategory')
+
+
+class EventInventoryItem(Base):
+    """Un producto del catálogo en un evento (Fase 5, 0107): cantidad asignada (lo que pide el evento) y lo que mueve el almacén: salió, volvió, se consumió. Regla de cuadre: app/inventory.py.
+    Distinta de `InventoryItem` (insumos que el quiosco reparte a las personas del evento). `attrs_json` = valores de los campos propios del producto."""
+    __tablename__ = 'event_inventory_items'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    qty_assigned = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_out = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_returned = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_consumed = Column(Integer, nullable=False, default=0, server_default='0')
+    notes = Column(String, nullable=True)
+    attrs_json = Column(Text, nullable=True)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    product = relationship('InventoryProduct')
+    __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
+
+
 class Job(Base):
     """Trabajo en segundo plano (app/jobs.py): tabla en Postgres hoy, Cloud Tasks / Cloud Run Jobs después."""
     __tablename__ = 'jobs'

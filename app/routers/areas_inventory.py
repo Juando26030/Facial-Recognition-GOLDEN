@@ -25,7 +25,7 @@ from app import event_archive
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
-    AreaMovement, EventArea, EventAttendee, InventoryDelivery, InventoryItem, StaffUser, User,
+    AreaMovement, EventArea, EventAttendee, EventInventoryItem, InventoryDelivery, InventoryItem, StaffUser, User,
 )
 
 router = APIRouter()
@@ -51,6 +51,7 @@ def delete_event_modules(db: Session, event_id: int) -> None:
     db.query(EventArea).filter(EventArea.event_id == event_id).delete()
     db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event_id).delete()
     db.query(InventoryItem).filter(InventoryItem.event_id == event_id).delete()
+    db.query(EventInventoryItem).filter(EventInventoryItem.event_id == event_id).delete()          # Fase 5: líneas del catálogo de inventario
 
 
 @router.put("/events/{event_id}/modules")

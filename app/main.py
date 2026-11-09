@@ -27,7 +27,7 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, inventory as inventory_router, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -327,6 +327,7 @@ _include(event_docs.router, prefix="/api")
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
+_include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
 _include(analytics.router, prefix="/api")
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
