@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
+from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
@@ -54,8 +54,9 @@ def _base_url(request: Request) -> str:
     return publicurl.base(str(request.base_url))
 
 
-def _urls(request: Request, form: WebForm) -> dict:
-    base = f"{_base_url(request)}/f/{form.event_id}/{form.slug}"
+def _urls(request: Request, form: WebForm, db: Optional[Session] = None) -> dict:
+    ev = db.get(Event, form.event_id) if db is not None else None
+    base = public_slug.form_link(str(request.base_url), ev, form)          # D2.5k: con PUBLIC_FORMS_BASE_URL y el nombre del evento sale el enlace limpio; si no, /f/<id>/<slug> como siempre
     return {"public_url": base, "test_url": f"{base}?k={form.test_key}"}
 
 
@@ -101,7 +102,7 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
         "submissions": real, "test_submissions": tests,
         "preregistered": (marks := formsvc.mark_counts(db, form))["block"], "registered_hold": marks["hold"],      # «ya registradas»: solo bloquean | además ocupan cupo (ya van dentro de `submissions`) "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
-        "feed": formsvc.get_settings(form)["feed"], **_urls(request, form),
+        "feed": formsvc.get_settings(form)["feed"], **_urls(request, form, db),
     }
 
 
@@ -1316,9 +1317,9 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
     if bulk_jobs.active_job(db, event_id):
         raise HTTPException(status_code=409, detail="Ya hay un proceso en curso para este evento — espera a que termine")
     only_unsent = data.get("only_unsent", True)
-    base = _base_url(request)
+    invite_base = public_slug.form_link(str(request.base_url), event, form)          # el enlace personal también sale limpio cuando hay host de inscripciones
     job_id = bulk_jobs.create_job(db, event_id, staff.id)
-    form_id_, slug, ev_id, ev_name, name = form.id, form.slug, event.id, event.name, form.name
+    form_id_, ev_name, name = form.id, event.name, form.name
 
     def work(job_db, reporter):
         f = job_db.query(WebForm).filter(WebForm.id == form_id_).first()
@@ -1340,7 +1341,7 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
             if only_unsent and inv.sent_at:
                 skipped += 1
                 continue
-            link = f"{base}/f/{ev_id}/{slug}?i={inv.token}"
+            link = f"{invite_base}?i={inv.token}"
             res = send_mail(p["email"], f"Tu inscripción — {ev_name}",
                             f"Hola {p.get('first_name') or ''}, te invitamos a completar tu inscripción a {ev_name} ({name}).\n\nAbre tu enlace personal (ya trae tus datos):\n{link}\n\nEs personal: no lo compartas.")
             if res.get("sent"):

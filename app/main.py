@@ -25,6 +25,8 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebFor
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
+from app.routers import clean_url as clean_url_router      # D2.5k: /<evento>/<formulario> (se registra al final)
+from app.routers import public_link as public_link_router
 from app.routers import event_lease as event_lease_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
@@ -127,9 +129,9 @@ async def csrf_and_password_gate(request, call_next):
         origin = request.headers.get("origin")
         if origin and origin != "null":
             allowed = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
-            public = os.getenv("PUBLIC_BASE_URL")
-            if public:
-                allowed.add(urlsplit(public).netloc)
+            for public in (os.getenv("PUBLIC_BASE_URL"), os.getenv("PUBLIC_FORMS_BASE_URL")):          # el host de inscripciones (D2.5k) también es un origen propio
+                if public:
+                    allowed.add(urlsplit(public).netloc)
             if urlsplit(origin).netloc not in allowed:
                 return JSONResponse({"detail": "Origen no permitido"}, status_code=403)
         elif origin == "null":
@@ -195,7 +197,7 @@ async def security_headers(request, call_next):
     response = await call_next(request)
     h = response.headers
     h.setdefault("X-Content-Type-Options", "nosniff")
-    embeddable = request.url.path.startswith("/f/")      # los formularios públicos pueden incrustarse en el sitio del cliente
+    embeddable = request.url.path.startswith("/f/") or bool(request.scope.get("public_form"))      # los formularios públicos (también por la URL limpia) pueden incrustarse en el sitio del cliente
     if not embeddable:
         h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -370,6 +372,7 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(public_link_router.router, prefix="/api")      # D2.5k: nombre del enlace limpio de inscripciones y formulario principal (admin/comercial)
 _include(event_lease_router.router, prefix="/api")
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
@@ -1038,3 +1041,8 @@ def _apply_mode() -> None:
 
 
 _apply_mode()
+
+# URL limpia de las inscripciones (D2.5k): `/<evento>` y `/<evento>/<formulario>`. Va AL FINAL, después de todas las demás rutas y del filtro por modo, para no tapar ninguna; solo en
+# `all` y `publico` (el panel `web` y la biometría no sirven páginas públicas). Ver docs/20_URL_LIMPIA_INSCRIPCIONES.md.
+if appmode.MODE in ("all", "publico"):
+    app.include_router(clean_url_router.router)

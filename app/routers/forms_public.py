@@ -268,6 +268,11 @@ async def page(event_id: int, slug: str, request: Request, k: Optional[str] = No
     """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
     navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca.
     `async` a propósito: la caché se sirve en el bucle de eventos, sin pasar por el pool de hilos (ver `_cached_async`)."""
+    return await render_shell(request, event_id, slug, k)
+
+
+async def render_shell(request: Request, event_id: int, slug: str, k: Optional[str]) -> HTMLResponse:
+    """Arma el cascarón de la página pública de un formulario. Lo usan `/f/{id}/{slug}` y la URL limpia `/<evento>/<formulario>` (app/routers/clean_url.py): la página siempre habla con `/f/{id}/{slug}/...`."""
     from app.main import templates  # import tardio: main.py importa este modulo
     key = ("page", event_id, slug)
     try:
