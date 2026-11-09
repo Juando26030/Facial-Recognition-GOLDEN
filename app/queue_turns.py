@@ -109,7 +109,7 @@ def build_snapshot(lanes: list, turns: list, calls: list, show_name: bool = Fals
         called = [t for t in turns if t["lane"] == x and t["status"] == "called"]
         if called:
             t = max(called, key=lambda c: c.get("called_seq") or 0)
-            serving[x] = {"label": label(x, t["number"]), "desk": t.get("desk") or ""}
+            serving[x] = {"label": label(x, t["number"]), "desk": t.get("desk") or "", "seq": t.get("called_seq") or 0}
     tokens = {}
     for t in turns:
         ahead = sum(1 for r in waiting.get(t["lane"], []) if r < t["rank"]) if t["status"] == "waiting" else 0

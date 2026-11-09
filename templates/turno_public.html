@@ -1,0 +1,32 @@
+{# Turno en el celular (Fase 8): página pública, sin login. Sin cédulas; el nombre solo si el evento lo permite (el servidor decide). Solo tokens --gw-*. #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Tu turno</title>
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-turnos.css') }}">
+    <script>window.TQ = {{ {"event_id": event_id, "token": token} | tojson }};</script>
+    <script src="{{ url_for('static', path='js/turno-public.js') }}" defer></script>
+</head>
+<body class="gw-page">
+<main class="tq-pub" id="tqPub">
+  <p class="tq-pub__event">{{ event_name }}</p>
+  <section id="tqAsk" hidden>
+    <h1 class="gw-h2">Consulta tu turno</h1>
+    <form id="tqForm" class="gw-stack" autocomplete="off">
+      <div class="gw-field"><label class="gw-label" for="tqCed">Tu número de documento</label><input class="gw-input" id="tqCed" inputmode="numeric" autocomplete="off" required></div>
+      <button type="submit" class="gw-btn gw-btn--primary">Ver mi turno</button>
+    </form>
+    <p class="gw-hint" id="tqErr" role="alert"></p>
+  </section>
+  <section id="tqShow" hidden>
+    <div class="tq-pub__turn" id="tqLabel"></div>
+    <p class="tq-pub__msg" id="tqMsg" aria-live="polite"></p>
+    <p class="gw-hint" id="tqSub"></p>
+  </section>
+</main>
+</body>
+</html>
