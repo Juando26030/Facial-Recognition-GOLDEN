@@ -21,7 +21,7 @@ Alcance del plan maestro (docs/29 §11): servidor local con sincronización (doc
 | Etapa | Qué | Estado |
 |---|---|---|
 | **E0 · Kit del servidor** | `deploy/local/` (compose «web»+Postgres, `.env.local.example`), guía de preparación y HTTPS local (docs/17 §2) | Borrador escrito (sin probar: falta Docker y una laptop real) |
-| **E1 · Paquete y permiso** | Abrir exportar/importar evento a los roles de arriba (solo sus eventos); el servidor local importa el paquete sin biometría | Por programar |
+| **E1 · Paquete y permiso** | Abrir exportar/importar evento a los roles de arriba (sobre cualquier evento); el servidor local importa el paquete sin biometría | **Permisos hechos**: exportar abierto a coordinador/comercial/admin/super_admin/almacén/contabilidad; importar sigue solo super_admin en la nube y se abre a esos roles con `LOCAL_SERVER=1`. Falta: el paso único «Descargar a local» y la lista de eventos de la nube |
 | **E2 · Arrendamiento + subida** | Marca «en servidor local» en la nube; token por nodo; reenvío por lotes con confirmación; panel de estado (último paquete, última subida, pendientes) | **Arrendamiento hecho** (0111, `app/event_lease.py`, `/api/events/{id}/lease[/uploaded|/release]`, solo lectura 423 en la nube, banner en registro y grupo «Servidor local» en el modal del evento; sin probar: suite bloqueada). Falta: token por nodo, reenvío cada ~30 min, panel |
 | **E3 · R4 y R2** | PIN opcional / exportación de emergencia; foto y consentimiento sin red | Por programar |
 | **E4 · R3 y R5** | Edición sin red con conflictos; dos dispositivos | Por programar |

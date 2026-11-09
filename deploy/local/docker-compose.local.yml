@@ -14,6 +14,7 @@ x-app: &app
     JOBS_WORKER: "on"
     BULK_BACKEND: thread
     WEB_CONCURRENCY: "2"
+    LOCAL_SERVER: "1"
   restart: unless-stopped
 
 services:

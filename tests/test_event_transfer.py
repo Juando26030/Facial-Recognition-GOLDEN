@@ -295,13 +295,22 @@ def _zip_with_extra(data: bytes) -> bytes:
     return out.getvalue()
 
 
-def test_only_super_admin_can_use_the_endpoints(client, db, factory):
+def test_export_is_for_company_staff_and_import_is_super_admin_only_in_the_cloud(client, db, factory, monkeypatch):
+    """Fase 6: bajar un evento (exportar) lo puede hacer cualquiera de la empresa; importar en la NUBE sigue siendo solo del super_admin; en un servidor local (LOCAL_SERVER=1) también ellos."""
     factory.staff("admin", "adm")
+    factory.staff("digitador", "dig")
     factory.staff("super_admin", "root")
     ev = _build(db, factory)
-    login(client, "adm")
+    login(client, "dig")
     assert client.get(f"/api/event-transfer/export/{ev.id}").status_code == 403
+    client.get("/logout")
+    login(client, "adm")
+    assert client.get(f"/api/event-transfer/export/{ev.id}").status_code == 200
+    monkeypatch.delenv("LOCAL_SERVER", raising=False)
     assert client.post("/api/event-transfer/import/dry-run", files={"file": ("x.zip", b"x")}).status_code == 403
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    assert client.post("/api/event-transfer/import/dry-run", files={"file": ("x.zip", b"x")}).status_code != 403
+    monkeypatch.delenv("LOCAL_SERVER", raising=False)
     client.get("/logout")
     login(client, "root")
     r = client.get(f"/api/event-transfer/export/{ev.id}")
