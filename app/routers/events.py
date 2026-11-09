@@ -637,6 +637,7 @@ def create_event_staff(
         username=data.username, password_hash=hash_password(password),
         full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
         phone=phone,
+        must_change_password=security.must_change_on_set_by_other(data.role),       # Fase 4: el cliente de evento cambia la contraseña inicial; el digitador temporal no
     )
     db.add(new_user)
     db.flush()  # para obtener new_user.id antes de commitear

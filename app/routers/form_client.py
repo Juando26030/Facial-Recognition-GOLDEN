@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import audit_actions, form_client, form_stats
+from app import audit_actions, form_client, form_stats, security
 from app.auth import effective_roles, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.database import get_db
 from app.models import FormClientUser, StaffUser
@@ -61,6 +61,7 @@ def create_client_access(event_id: int, form_id: int, data: ClientAccessIn, db: 
         raise HTTPException(status_code=400, detail=f"La duración debe estar entre 1 y {form_client.MAX_DAYS} días")
     username, password = form_client.new_username(db, form), form_client.new_password()
     user = StaffUser(username=username, password_hash=hash_password(password), role="cliente", tenant_id=event.tenant_id, created_by_id=staff.id,
+                     must_change_password=security.must_change_on_set_by_other("cliente"),          # Fase 4: la contraseña temporal la entrega el comercial; el cliente elige la suya
                      full_name=(data.full_name or "").strip()[:120] or f"Cliente de «{form.name}»"[:120])
     db.add(user)
     db.flush()                                                  # `autoflush=False`: el id del usuario hace falta para la fila de acceso

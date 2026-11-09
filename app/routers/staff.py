@@ -167,6 +167,7 @@ def create_staff(
         created_by_id=staff.id,
         phone=phone,
         email=(data.email or "").strip() or None,
+        must_change_password=security.must_change_on_set_by_other(data.role),       # Fase 4: la contraseña inicial la puso el admin; la persona elige la suya al ingresar
     )
     db.add(new_staff)
     db.commit()
@@ -266,8 +267,8 @@ def reset_staff_password(
     staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de digitador; un
-    admin, las de abajo). Por defecto la persona debe elegir su propia contraseña al ingresar
-    (`must_change_password`)."""
+    admin, las de abajo). Salvo el digitador temporal, la persona debe elegir su propia contraseña al ingresar
+    (`must_change_password`, siempre; Fase 4)."""
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
@@ -279,7 +280,7 @@ def reset_staff_password(
     if data.get("use_username") and target.role == "digitador":
         new_password, must_change = target.username, False         # digitador temporal (6-nov-2026): vuelve a entrar con su cédula como contraseña; sin política de contraseña segura
     else:
-        new_password, must_change = str(data.get("new_password") or ""), bool(data.get("must_change", True))
+        new_password, must_change = str(data.get("new_password") or ""), security.must_change_on_set_by_other(target.role)      # Fase 4: ya no es opcional (se ignora `must_change` del cuerpo)
         problem = security.password_problem(new_password, target.username, strict=True)         # 0C (C11): la fija un administrador
         if problem:
             raise HTTPException(status_code=400, detail=problem)
