@@ -361,6 +361,18 @@ def test_approval_is_blocked_without_the_pledge(client, factory, db, monkeypatch
     assert client.post(url, json={"allow": True}).status_code == 200                               # firmado: ya se puede autorizar
 
 
+def test_session_flow_accepts_a_short_document_but_the_public_link_does_not():
+    from types import SimpleNamespace
+
+    from app import pledge
+
+    form = SimpleNamespace()
+    clean = {pledge.FID_ID: "1234"}
+    assert pledge.FID_ID not in pledge.extra_errors(form, clean, {"pc": 7})                        # cuenta ya creada a mano o por Excel: se acepta
+    assert pledge.FID_ID in pledge.extra_errors(form, clean, {})                                   # enlace público: mínimo 5
+    assert pledge.FID_ID in pledge.extra_errors(form, {pledge.FID_ID: "12"}, {"pc": 7})            # nunca menos de 3 (el mínimo de un usuario)
+
+
 def test_pledge_not_required_does_not_change_login(client, factory, db, monkeypatch):
     monkeypatch.setenv("DIGITADOR_LOGIN_CONTROL", "1")
     coord = factory.staff("coordinador", "coord1")

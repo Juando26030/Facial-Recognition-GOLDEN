@@ -262,12 +262,15 @@ def extra_errors(form: WebForm, clean: dict, claims: dict) -> dict:
     """Reglas del compromiso que el motor no conoce (se suman a sus errores por campo)."""
     errors = {}
     ced = normalize_cedula(clean.get(FID_ID))
+    # Camino B/C (sesión de espera): la cuenta YA existe y su usuario viene fijado, así que se acepta el que tenga (las cuentas creadas a mano o por Excel pueden tener menos de 5 caracteres;
+    # el campo no se puede editar y rechazarlo dejaba a la persona sin salida). Por el enlace público (Camino A, crea la cuenta) se mantiene el mínimo de 5.
+    minimum = 3 if claims.get("pc") else 5
     try:
         check_username(ced)
-        if not re.fullmatch(r"[0-9A-Za-z]{5,20}", ced):
+        if not re.fullmatch(r"[0-9A-Za-z]{%d,20}" % minimum, ced):
             raise ValueError("x")
     except ValueError:
-        errors[FID_ID] = "«Identificación (C.C.)»: escribe solo tu número de documento (5 a 20 letras o números)"
+        errors[FID_ID] = f"«Identificación (C.C.)»: escribe solo tu número de documento ({minimum} a 20 letras o números)"
     for fid in (FID_NAME, FID_EM_NAME):
         if clean.get(fid):
             try:
