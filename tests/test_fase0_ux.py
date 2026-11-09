@@ -100,7 +100,7 @@ def test_finalizing_an_event_asks_with_its_consequences_everywhere(client, facto
     for tpl in ("templates/eventos.html", "static/js/gw-clientes.js"):          # clientes: la lógica salió de la plantilla (Fase 1.5)
         assert "confirmStatusChange(newStatus" in open(tpl, encoding="utf-8").read()
     modal = open("templates/_event_edit_modal.html", encoding="utf-8").read()
-    assert "payload.status === 'finalizado'" in modal and "window.FINALIZE_CONFIRM" in modal and "dataset.initial" in modal
+    assert "base === 'finalizado'" in modal and "window.FINALIZE_CONFIRM" in modal and "dataset.initialBase" in modal          # Fase 5: el estado se elige por estado configurable; la confirmación sigue al pasar a un estado base «finalizado»
 
 
 def test_no_technical_jargon_is_visible_in_parameters_or_the_roster_card(client, factory, db):
