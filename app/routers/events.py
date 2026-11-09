@@ -142,6 +142,10 @@ def _serialize(e: Event) -> dict:
         "event_code": e.event_code, "name": e.name, "location": e.location, "address": e.address,
         "country": e.country, "city": e.city, "status": e.status,
         "state_id": e.state_id, "state_name": e.state.name if e.state else None, "state_color": e.state.color if e.state else None,
+        "billed": e.billed_at is not None, "billed_at": e.billed_at.isoformat() if e.billed_at else None,
+        "billed_by_name": (e.billed_by.full_name or e.billed_by.username) if e.billed_by else None,
+        "final_db_uploaded": bool(e.final_db_key), "final_db_name": e.final_db_name, "final_db_uploaded_at": e.final_db_uploaded_at.isoformat() if e.final_db_uploaded_at else None,
+        "final_db_uploaded_by_name": (e.final_db_uploaded_by.full_name or e.final_db_uploaded_by.username) if e.final_db_uploaded_by else None,
         "start_date": e.start_date.isoformat() if e.start_date else None,
         "end_date": e.end_date.isoformat() if e.end_date else None,
         "setup_date": e.setup_date.isoformat() if e.setup_date else None,
@@ -531,6 +535,16 @@ def update_event(
                 detail=("Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado' desde aquí. Un administrador puede hacerlo con «Devolver a Creado» (queda registrado quién y cuándo; "
                         "no se borra nada). Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero."),
             )
+    entering_billing = leaving_billing = False
+    if new_state is not None and new_state.id != event.state_id:          # Fase 5: «Facturado» (estado con la regla client_delivery) lo pone o quita SOLO una comercial (también con doble rol) o un administrador
+        entering_billing, leaving_billing = event_rules.is_billing_state(new_state), event_rules.is_billing_state(event.state)
+        if (entering_billing or leaving_billing) and not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
+            raise HTTPException(status_code=403, detail="Solo una comercial o un administrador puede poner el evento en «Facturado» o sacarlo de ese estado")
+        if entering_billing and event.status != "finalizado":
+            raise HTTPException(status_code=400, detail="Solo un evento «Finalizado» se puede pasar a «Facturado»")
+        if leaving_billing and entering_billing:
+            leaving_billing = False          # de un estado de facturación a otro: se conserva quién y cuándo lo facturó
+            entering_billing = False
     if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
     if data.coordinator_staff_id is not None and data.coordinator_staff_id != event.coordinator_staff_id:      # P8: misma validación que al crear (0C, N3)
@@ -574,6 +588,12 @@ def update_event(
         event.set_extra(extra_patch)
     if new_state is not None:
         event.state_id = new_state.id
+    if entering_billing:
+        event.billed_at, event.billed_by_id = utcnow(), staff.id
+        audit_actions.record(db, staff, "billed", "event", event.id, event.name, f"estado «{new_state.name}»")
+    elif leaving_billing:
+        event.billed_at = event.billed_by_id = None          # el historial (quién y cuándo lo facturó) queda en audit_actions
+        audit_actions.record(db, staff, "unbilled", "event", event.id, event.name, f"pasó a «{new_state.name}»")
     db.commit()
     if status_changed:
         warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora

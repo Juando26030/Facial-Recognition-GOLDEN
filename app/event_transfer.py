@@ -93,7 +93,7 @@ TABLES = [
 ]
 SPEC = {t["name"]: t for t in TABLES}
 PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "audit_consent_logs", "web_acceptances")
-STAFF_EVENT_COLUMNS = ("coordinator_staff_id", "commercial_staff_id", "created_by_id")
+STAFF_EVENT_COLUMNS = ("coordinator_staff_id", "commercial_staff_id", "created_by_id", "billed_by_id", "final_db_uploaded_by_id")
 TABLE_NAMES = tuple(t["name"] for t in TABLES)
 
 
@@ -679,6 +679,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
                 report["warnings"].append("El token de certificados ya existía en el destino: se dejó vacío (se genera de nuevo desde Parámetros).")
             logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
             d["logo_path"] = d["report_pdf_path"] = None
+            d["final_db_key"] = d["final_db_name"] = d["final_db_uploaded_at"] = None          # la base final (Fase 5) no viaja en el paquete: se vuelve a subir en el destino
             if logo and ("logo", logo) in file_by_ref:
                 d["logo_path"] = key_of(tenant_id, "event_logos", uuid.uuid4().hex + os.path.splitext(logo)[1])
                 writes.append((d["logo_path"], file_by_ref[("logo", logo)]["sha256"], "logo"))
@@ -872,7 +873,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 # ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
 # Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
 _VOLATILE = {
-    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id"},
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "final_db_key", "final_db_name", "final_db_uploaded_at"},
     "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
     "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
     "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},

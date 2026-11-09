@@ -306,11 +306,19 @@ class Event(Base):
     face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
     badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
     extra_json = Column(Text, nullable=True)   # 0087 (Fase 2): valores de los campos PERSONALIZADOS de la plantilla de evento {clave: valor} (app/event_template.py). Los campos base y los interruptores siguen en sus columnas
+    billed_at = Column(DateTime, nullable=True)      # 0105 (Fase 5): cuándo se puso el evento en un estado de facturación («Facturado», regla client_delivery); NULL si no lo está. El historial completo queda en audit_actions
+    billed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso (comercial o admin)
+    final_db_key = Column(String, nullable=True)      # 0105 (Fase 5): «base de datos final» procesada por humanos (xlsx/csv), clave en app/storage.py; NO es la base de estadísticas
+    final_db_name = Column(String, nullable=True)      # nombre original del archivo (solo para mostrarlo)
+    final_db_uploaded_at = Column(DateTime, nullable=True)
+    final_db_uploaded_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
+    billed_by = relationship("StaffUser", foreign_keys=[billed_by_id])
+    final_db_uploaded_by = relationship("StaffUser", foreign_keys=[final_db_uploaded_by_id])
     super_event = relationship("SuperEvent", back_populates="events")
     state = relationship("EventState")
 

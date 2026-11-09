@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import audit_actions, event_rules
-from app.auth import get_current_staff, require_role
+from app.auth import effective_roles, get_current_staff, require_role
 from app.database import get_db
 from app.models import Event, EventState, StaffUser
 from app.timeutil import utcnow
@@ -36,7 +36,7 @@ class StatePatch(BaseModel):
 
 def serialize_state(s: EventState, events_using: int = 0) -> dict:
     full = event_rules.DEFAULTS_BY_BASE.get(s.base_status, {}) | {k: v for k, v in s.get_rules().items() if k in event_rules.RULES}
-    return {"id": s.id, "name": s.name, "base_status": s.base_status, "color": s.color, "position": s.position, "is_active": s.is_active, "rules": full, "events_using": events_using, "archived": s.archived_at is not None}
+    return {"id": s.id, "name": s.name, "base_status": s.base_status, "color": s.color, "position": s.position, "is_active": s.is_active, "rules": full, "events_using": events_using, "archived": s.archived_at is not None, "billing": event_rules.is_billing_state(s)}
 
 
 def _check(name: Optional[str], base: Optional[str]) -> None:
@@ -59,7 +59,8 @@ def list_states(include_archived: bool = False, db: Session = Depends(get_db), s
     states = query.order_by(EventState.position, EventState.id).all()
     return {"states": [serialize_state(s, counts.get(s.id, 0)) for s in states],
             "rules": [{"key": k, "label": label, "help": hint} for k, (label, hint) in event_rules.RULES.items()],
-            "base_statuses": list(event_rules.BASE_STATUSES)}
+            "base_statuses": list(event_rules.BASE_STATUSES),
+            "can_set_billed": bool({"comercial", "admin", "super_admin"} & effective_roles(staff))}          # Fase 5: quién puede poner o quitar un estado de facturación («Facturado»)
 
 
 @router.post("/event-states")

@@ -2,7 +2,7 @@
 
 La regla efectiva de un evento sale de su estado (`events.state_id`); si no tiene estado (datos viejos) o al estado le falta una regla, vale el valor por defecto de su estado BASE
 (`events.status`), que reproduce el comportamiento de siempre. Las reglas que hoy se hacen cumplir: `client_access`, `temp_digitadores_enter`, `registration` y `client_stats_download`;
-las demás (`roulette`, `touch_registration`, `areas`, `inventory_control`, `certificates`) quedan declaradas para que cada módulo las consulte con `allowed()` al cablearlas."""
+`client_delivery` (Fase 5, estado «Facturado») decide además quién puede poner o quitar el estado (`is_billing_state`); las demás (`roulette`, `touch_registration`, `areas`, `inventory_control`, `certificates`) quedan declaradas para que cada módulo las consulte con `allowed()` al cablearlas."""
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -20,15 +20,16 @@ RULES = {
     "areas": ("Se puede usar el control de áreas", ""),
     "inventory_control": ("Se puede usar el control de inventario del evento", ""),
     "certificates": ("Se pueden descargar certificados", ""),
+    "client_delivery": ("Se puede entregar al cliente (base final y encuesta)", "Habilita la entrega al cliente. Es el estado «Facturado»: solo una comercial o un administrador puede poner o quitar un estado con esta regla."),
 }
 
 DEFAULTS_BY_BASE = {
     "creado": {"client_access": False, "client_stats_download": False, "temp_digitadores_enter": False, "registration": False, "roulette": True, "touch_registration": False,
-               "areas": True, "inventory_control": True, "certificates": False},
+               "areas": True, "inventory_control": True, "certificates": False, "client_delivery": False},
     "en_proceso": {"client_access": True, "client_stats_download": True, "temp_digitadores_enter": True, "registration": True, "roulette": True, "touch_registration": True,
-                   "areas": True, "inventory_control": True, "certificates": False},
+                   "areas": True, "inventory_control": True, "certificates": False, "client_delivery": False},
     "finalizado": {"client_access": False, "client_stats_download": False, "temp_digitadores_enter": False, "registration": False, "roulette": False, "touch_registration": False,
-                   "areas": True, "inventory_control": True, "certificates": True},
+                   "areas": True, "inventory_control": True, "certificates": True, "client_delivery": False},
 }
 BASE_STATUSES = tuple(DEFAULTS_BY_BASE)
 # Reglas que se apagan en un evento ARCHIVADO (Fase 3): nadie registra, entra como cliente/digitador ni usa ruleta o registro touch. Certificados, áreas e inventario (consulta) y los datos quedan como estaban.
@@ -77,6 +78,13 @@ def clean_rules(raw: Optional[dict]) -> dict:
 
 
 def default_state(db: Session, base_status: str) -> Optional[EventState]:
-    """Primer estado activo con ese estado base (el que se asigna cuando alguien cambia `status` sin elegir uno)."""
-    return (db.query(EventState).filter(EventState.base_status == base_status, EventState.is_active == True)  # noqa: E712
-            .order_by(EventState.position, EventState.id).first())
+    """Primer estado activo (y no archivado) con ese estado base que NO sea de facturación: el que se asigna cuando alguien cambia `status` sin elegir uno. «Facturado» nunca se asigna solo."""
+    states = (db.query(EventState).filter(EventState.base_status == base_status, EventState.is_active == True)  # noqa: E712
+              .order_by(EventState.position, EventState.id).all())
+    return next((s for s in states if not is_billing_state(s)), None)
+
+
+def is_billing_state(state: Optional[EventState]) -> bool:
+    """¿Es un estado de FACTURACIÓN (Fase 5)? Lo es el que tenga encendida la regla `client_delivery` (hoy «Facturado»). Poner un evento en un estado así, o sacarlo de él, es de una comercial
+    o un administrador (ver `app.routers.events.update_event`); el estado base de estos estados sigue siendo «finalizado»."""
+    return state is not None and bool(state.get_rules().get("client_delivery", False))
