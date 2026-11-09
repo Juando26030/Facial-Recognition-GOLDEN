@@ -26,7 +26,8 @@ from app import reprint as reprint_core
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 from app import brandcolor, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
@@ -306,6 +307,7 @@ _include(event_states.router, prefix="/api")
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
+_include(downloads.router, prefix="/api")      # Fase 4: bases de digitadores y de clientes (app/download_perms.py)
 _include(badges.router, prefix="/api")
 _include(cedula.router, prefix="/api")
 _include(stats.router, prefix="/api")
@@ -435,6 +437,8 @@ def clientes_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "clientes",
+        "can_dl_digitadores": download_perms.can_download_roles(request.session.get("staff_role"), request.session.get("staff_secondary_role"), download_perms.KIND_DIGITADORES),
+        "can_dl_clientes": download_perms.can_download_roles(request.session.get("staff_role"), request.session.get("staff_secondary_role"), download_perms.KIND_CLIENTES),
     })
 
 
@@ -877,6 +881,8 @@ def staff_page(request: Request):
         "staff_username": request.session.get("staff_username"),
         "sidebar_active": "configuracion",
         "embed": embed,
+        "can_dl_digitadores": download_perms.can_download_roles(request.session.get("staff_role"), request.session.get("staff_secondary_role"), download_perms.KIND_DIGITADORES),
+        "can_dl_clientes": download_perms.can_download_roles(request.session.get("staff_role"), request.session.get("staff_secondary_role"), download_perms.KIND_CLIENTES),
     })
 
 
