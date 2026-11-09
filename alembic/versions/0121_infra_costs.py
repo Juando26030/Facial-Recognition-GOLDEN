@@ -1,13 +1,13 @@
 """Gastos de infraestructura (Fase 9C): tabla infra_costs (solo admin).
 
 Revision ID: 0121_infra_costs
-Revises: 0116_queue_turns
+Revises: 0119_system_alerts
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0121_infra_costs"
-down_revision = "0116_queue_turns"
+down_revision = "0119_system_alerts"
 branch_labels = None
 depends_on = None
 

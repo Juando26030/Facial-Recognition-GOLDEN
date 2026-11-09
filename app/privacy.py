@@ -22,6 +22,7 @@ from datetime import timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import mass_delete
 from app.models import Event, EventAttendee, User
 from app.storage import get_storage, photo_key
 from app.timeutil import utcnow
@@ -85,6 +86,7 @@ def _in_other_open_facial_event(db: Session, user: User, event_id: int):
     return [(code, name) for eid, code, name in rows if consent.has_acceptance(db, user.tenant_id, user.id, eid)]      # solo cuentan los eventos donde aceptó
 
 
+@mass_delete.expected_call
 def purge_event(db: Session, event: Event) -> dict:
     """Borrado manual (admin+): lo biométrico de las personas de este evento, salvo quien sigue en otro evento ABIERTO con reconocimiento facial.
     Devuelve cuántas se borraron y cuántas se omitieron, con el motivo (nombres de eventos, nunca de personas)."""
@@ -141,6 +143,7 @@ LIMIT :batch
 """)
 
 
+@mass_delete.expected_call
 def purge_expired(db: Session, now=None, batch: int = 200, dry_run: bool = False) -> dict:
     """Aplica la retención (ver el encabezado). Idempotente, por lotes y sin bloquear eventos en curso (no toma bloqueos sobre `events`).
     Por persona: PRIMERO se borra la foto del almacenamiento; si eso falla se cuenta el error y NO se toca el encoding (se reintenta en la

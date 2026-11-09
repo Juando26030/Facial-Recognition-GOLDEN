@@ -9,7 +9,7 @@ from app.timeutil import utcnow
 
 from sqlalchemy.orm import Session
 
-from app import jobs, ops, wompi
+from app import jobs, ops, payment_accounts, wompi
 from app.database import SessionLocal
 from app.models import FormPayment
 
@@ -25,7 +25,7 @@ def reconcile_pending(db: Session, limit: int = 200) -> dict:
                .order_by(FormPayment.updated_at.asc().nullsfirst(), FormPayment.created_at).limit(limit).all())      # R3: los que llevan más tiempo SIN mirarse primero
     summary = {"checked": len(pending), "updated": 0, "not_found": 0, "unavailable": 0, "mismatch": 0}
     for pay in pending:
-        cfg = wompi.config(pay.is_test)
+        cfg = payment_accounts.cfg_for_payment(db, pay)
         if not cfg:
             summary["unavailable"] += 1
             pay.updated_at = utcnow()
