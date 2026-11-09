@@ -20,7 +20,7 @@ p.fields[0].title = 'x';
 assert.notStrictEqual(m.fields[0].title, 'x', 'toPayload debe copiar');
 
 // 2) Disponibles: los interruptores y nada más de fábrica
-assert.deepStrictEqual(D.unplaced(m).map((f) => f.type), Array(10).fill('switch'));
+assert.deepStrictEqual(D.unplaced(m).map((f) => f.type), ['workday', ...Array(10).fill('switch')]);          // la jornada (calculada) es opcional: de fábrica no está en ninguna vista
 assert.strictEqual(D.calUnplaced(m).length, m.fields.length - 10);          // 10 campos ya salen en la tarjeta de fábrica
 
 // 3) Agregar un campo de cada tipo creable: clave segura, título por defecto, configuración válida
