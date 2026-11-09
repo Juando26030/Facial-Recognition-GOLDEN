@@ -189,6 +189,30 @@ def test_retention_deletes_only_old_golden_copies(cfg):
     assert not any(c[0] == "DELETE" and ("carpeta" in c[1] or "otro" in c[1]) for c in g.calls)
 
 
+def test_planted_future_copies_cannot_make_the_real_copy_be_deleted(cfg):
+    """F5-9 E: con permiso de escritura en la carpeta, dejar copias con fecha futura hacía que cada copia real se borrara al subirse."""
+    planted = [f"golden_db_2099010{i}_0000.gwbk" for i in range(1, 6)] + ["golden_db_hack.gwbk"]
+    b = FakeBucket([FakeBlob("db/daily/x/golden_db_20261108_0300.sql.gz", b"d")])
+    g, client = _graph(existing=planted + ["golden_db_20261001_0300.gwbk"])
+    oc.run(now=datetime(2026, 11, 8, 12), bucket=b, graph=client)
+    assert "golden_db_20261108_0300.gwbk" in g.files and "golden_db_20261001_0300.gwbk" in g.files
+    assert all(p in g.files for p in planted)                         # lo ajeno no se cuenta ni se borra
+
+
+def test_foreign_next_link_does_not_receive_the_token(cfg):
+    calls = []
+
+    def http(method, url, headers, data):
+        calls.append((url, headers.get("Authorization")))
+        if url.endswith("/oauth2/v2.0/token"):
+            return 200, json.dumps({"access_token": "T"}).encode(), {}
+        return 200, json.dumps({"value": [], "@odata.nextLink": "https://evil.example/next"}).encode(), {}
+    client = oc.GraphClient(http=http, sleep=lambda s: None)
+    with pytest.raises(oc.GraphError):
+        client.list_copies()
+    assert not any(u.startswith("https://evil.example") for u, _ in calls)
+
+
 def test_retry_on_503_then_ok(cfg):
     b = FakeBucket([FakeBlob("db/daily/x/golden_db_20261108_0300.sql.gz", b"d")])
     g, client = _graph(fail_puts=2)

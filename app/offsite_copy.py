@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import struct
 import time
 import urllib.error
@@ -259,6 +260,8 @@ class GraphClient:
             js = json.loads(body.decode())
             out += [(v["id"], v["name"]) for v in js.get("value", []) if v.get("name", "").startswith(NAME_PREFIX) and v["name"].endswith(NAME_SUFFIX) and "folder" not in v]
             url = js.get("@odata.nextLink")
+            if url and not url.startswith(GRAPH + "/"):
+                raise GraphError("Graph devolvió un enlace de página fuera de graph.microsoft.com; no se le envía el token.")
         return out
 
     def delete(self, item_id: str) -> None:
@@ -372,15 +375,39 @@ def _copy_once(now: datetime, bucket, graph: GraphClient) -> dict:
     graph.upload(name, counted(), total)
     if sent[0] != total:
         raise RuntimeError(f"El tamaño cifrado ({sent[0]}) no coincide con el calculado ({total}).")
-    deleted = prune(graph, keep_n())
+    deleted = prune(graph, keep_n(), protect=name, now=now)
     return {"name": name, "size": total, "deleted": deleted}
 
 
-def prune(graph: GraphClient, keep: int) -> int:
-    """Deja las `keep` copias más nuevas (el nombre lleva la fecha) y borra el resto. Solo toca golden_db_*.gwbk dentro de la carpeta configurada."""
-    copies = sorted(graph.list_copies(), key=lambda t: t[1], reverse=True)
+_COPY_NAME = re.compile(r"golden_db_(\d{8})_(\d{4})\.gwbk")
+
+
+def _copy_date(name: str) -> Optional[datetime]:
+    m = _COPY_NAME.fullmatch(name or "")
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")
+    except ValueError:
+        return None
+
+
+def prune(graph: GraphClient, keep: int, protect: str = "", now: Optional[datetime] = None) -> int:
+    """Deja las `keep` copias más nuevas (el nombre lleva la fecha) y borra el resto. Solo toca `golden_db_AAAAmmdd_HHMM.gwbk` dentro de la carpeta configurada.
+    F5-9 E: nunca borra la copia recién subida (`protect`) y no cuenta nombres con fecha FUTURA ni con otro formato: alguien con permiso de escritura en la carpeta
+    podía dejar `golden_db_9999….gwbk` para que cada copia real se borrara justo después de subirse (la copia «salía bien» y no quedaba ninguna)."""
+    limit = (now or utcnow()) + timedelta(days=2)
+    ours = []
+    for item_id, name in graph.list_copies():
+        d = _copy_date(name)
+        if d is None or d > limit:
+            continue
+        ours.append((d, name, item_id))
+    ours.sort(reverse=True)
     n = 0
-    for item_id, _ in copies[keep:]:
+    for _, name, item_id in ours[keep:]:
+        if name == protect:
+            continue
         graph.delete(item_id)
         n += 1
     return n
