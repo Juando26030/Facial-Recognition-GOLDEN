@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import jobs, mass_delete
+from app import audit_actions, jobs, mass_delete
 from app.auth import require_role
 from app.database import get_db
 from app.models import AlertRecipient, StaffUser, SystemAlert
@@ -36,6 +36,16 @@ def _recipient(r: AlertRecipient, staff_by_id: dict) -> dict:
             "staff_user_id": r.staff_user_id, "label": (s.full_name or s.username) if s else None, "role": s.role if s else None}
 
 
+def _who(db: Session, r: AlertRecipient) -> str:
+    """Quién era el destinatario, para el aviso a los demás: el correo externo enmascarado o el usuario de la cuenta."""
+    if r.kind == "staff":
+        s = db.get(StaffUser, r.staff_user_id) if r.staff_user_id else None
+        return f"cuenta {s.username}" if s else "una cuenta"
+    email = r.email or ""
+    user, _, domain = email.partition("@")
+    return f"{user[:2]}…@{domain}" if domain else "un correo"
+
+
 @router.get("/system-alerts")
 def overview(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     rows = db.query(AlertRecipient).order_by(AlertRecipient.id).all()
@@ -52,8 +62,16 @@ def overview(db: Session = Depends(get_db), staff: StaffUser = Depends(require_r
 
 @router.put("/system-alerts/settings")
 def save_settings(body: SettingsIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
-    clean = mass_delete.save_settings(db, body.model_dump())
+    before = mass_delete.get_settings(db)
+    clean = mass_delete.clean_settings(body.model_dump())
+    if clean != before:
+        # Seguridad (F5-9 E): apagar la alerta o subir el umbral se avisa a los destinatarios actuales, para que no se pueda silenciar en secreto.
+        changes = ", ".join(f"{k}: {before.get(k)} → {clean[k]}" for k in ("enabled", "per_action", "window_count", "window_minutes") if before.get(k) != clean[k])
+        mass_delete.config_change(db, staff, f"cambió el umbral de la alerta de borrado masivo ({changes})")
+        audit_actions.record(db, staff, "settings", "system_alerts", "mass_delete", None, changes)
+    clean = mass_delete.save_settings(db, clean)
     db.commit()
+    jobs.kick()
     return {"settings": clean}
 
 
@@ -76,6 +94,8 @@ def add_recipient(body: RecipientIn, db: Session = Depends(get_db), staff: Staff
             raise HTTPException(status_code=409, detail="Ese correo ya está en la lista")
         row = AlertRecipient(kind="email", email=email, active=True)
     db.add(row)
+    db.flush()
+    audit_actions.record(db, staff, "create", "alert_recipient", row.id, None, row.kind)
     db.commit()
     return {"id": row.id}
 
@@ -85,8 +105,14 @@ def toggle_recipient(rid: int, body: RecipientPatch, db: Session = Depends(get_d
     row = db.get(AlertRecipient, rid)
     if row is None:
         raise HTTPException(status_code=404, detail="No existe ese destinatario")
+    if row.active and not body.active:
+        mass_delete.config_change(db, staff, f"pausó un destinatario de las alertas ({_who(db, row)})")
+        audit_actions.record(db, staff, "pause", "alert_recipient", row.id, None, row.kind)
+    elif body.active and not row.active:
+        audit_actions.record(db, staff, "resume", "alert_recipient", row.id, None, row.kind)
     row.active = body.active
     db.commit()
+    jobs.kick()
     return {"id": row.id, "active": row.active}
 
 
@@ -95,8 +121,11 @@ def delete_recipient(rid: int, db: Session = Depends(get_db), staff: StaffUser =
     row = db.get(AlertRecipient, rid)
     if row is None:
         raise HTTPException(status_code=404, detail="No existe ese destinatario")
+    mass_delete.config_change(db, staff, f"quitó un destinatario de las alertas ({_who(db, row)})")     # se avisa ANTES de quitarlo: también le llega a él
+    audit_actions.record(db, staff, "delete", "alert_recipient", row.id, None, row.kind)
     db.delete(row)
     db.commit()
+    jobs.kick()
     return {"ok": True}
 
 

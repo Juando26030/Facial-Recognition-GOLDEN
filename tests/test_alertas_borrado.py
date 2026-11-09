@@ -140,7 +140,9 @@ def test_admin_adds_validates_toggles_deletes_and_sends_test(client, db, factory
     assert client.post("/api/system-alerts/test").status_code == 422
     assert client.delete(f"/api/system-alerts/recipients/{rid}").json() == {"ok": True}
     data = client.get("/api/system-alerts").json()
-    assert data["recipients"] == [] and data["settings"]["per_action"] == 50 and len(data["recent"]) == 1
+    # prueba + aviso de «pausó un destinatario» + aviso de «quitó un destinatario» (F5-9 E: cambiar la configuración siempre deja rastro)
+    assert data["recipients"] == [] and data["settings"]["per_action"] == 50 and len(data["recent"]) == 3
+    assert [m["to"] for m in mails].count("nuevo@golden.test") == 2          # la prueba y el aviso de pausa (le llegó antes de pausarse)
 
 
 def test_staff_without_email_cannot_be_added_and_settings_are_saved_clamped(client, db, factory):
@@ -156,3 +158,53 @@ def test_privacy_purges_are_marked_as_expected():
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent / "app" / "privacy.py").read_text(encoding="utf-8")
     assert "@mass_delete.expected_call\ndef purge_event" in src and "@mass_delete.expected_call\ndef purge_expired" in src
+
+
+# ------------------------------------------------------------------ F5-9 E: no se puede silenciar ni esquivar la alerta
+def test_one_by_one_deletes_add_up_in_the_window(db, world, mails):
+    """Borrar de a 9 (debajo de EVALUATE_FROM) en muchas peticiones ya no esquiva la regla de la ventana."""
+    admin, ev = world
+    mass_delete.save_settings(db, {**CFG, "per_action": 100, "window_count": 40})
+    db.commit()
+    for _ in range(4):
+        _delete_attendees(db, admin, ev, 9)
+    assert mails == []
+    _delete_attendees(db, admin, ev, 9)                                   # 45 en la ventana
+    assert len(mails) == 1 and "últimos" in mails[0]["body"]
+    assert db.query(MassDeleteLog).count() == 5
+
+
+def test_old_mass_delete_log_rows_are_pruned(db, world, mails):
+    from datetime import timedelta
+
+    from app.timeutil import utcnow
+    admin, ev = world
+    db.add(MassDeleteLog(created_at=utcnow() - timedelta(days=3), actor_id=admin.id, label="EventAttendee", rows=5))
+    db.commit()
+    _delete_attendees(db, admin, ev, 1)
+    assert db.query(MassDeleteLog).count() == 1
+
+
+def test_disabling_alerts_or_removing_recipients_warns_current_recipients(client, db, factory, mails):
+    factory.staff("admin", username="adm4", email="a4@golden.test")
+    db.add(AlertRecipient(kind="email", email="vigia@golden.test", active=True))
+    db.commit()
+    login(client, "adm4")
+    assert client.put("/api/system-alerts/settings", json={"enabled": False, "per_action": 50, "window_count": 200, "window_minutes": 10}).status_code == 200
+    assert [m["to"] for m in mails] == ["vigia@golden.test"] and "adm4" in mails[0]["body"] and "enabled" in mails[0]["body"]
+    rid = db.query(AlertRecipient.id).filter_by(email="vigia@golden.test").scalar()
+    assert client.delete(f"/api/system-alerts/recipients/{rid}").json() == {"ok": True}
+    assert [m["to"] for m in mails] == ["vigia@golden.test", "vigia@golden.test"]
+    assert "vigia@" not in mails[1]["body"]                                   # el correo va enmascarado en el aviso
+    assert db.query(SystemAlert).filter_by(kind="alert_config").count() == 2
+    from app.models import AuditAction
+    assert db.query(AuditAction).filter_by(entity="system_alerts").count() == 1
+
+
+def test_saving_same_settings_does_not_warn(client, db, factory, mails):
+    factory.staff("admin", username="adm5", email="a5@golden.test")
+    db.add(AlertRecipient(kind="email", email="vigia2@golden.test", active=True))
+    db.commit()
+    login(client, "adm5")
+    client.put("/api/system-alerts/settings", json=dict(CFG))
+    assert mails == []

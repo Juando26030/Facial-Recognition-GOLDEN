@@ -24,7 +24,8 @@ log = logging.getLogger(__name__)
 SETTING_KEY = "alert_mass_delete"
 DEFAULTS = {"enabled": True, "per_action": 50, "window_count": 200, "window_minutes": 10}
 LIMITS = {"per_action": (5, 100000), "window_count": (10, 1000000), "window_minutes": (1, 60)}
-EVALUATE_FROM = 10                      # una acción que borra menos de esto no consulta nada
+EVALUATE_FROM = 10                      # una acción SIN cuenta identificada (Job, tarea) que borra menos de esto no consulta nada
+LOG_KEEP_HOURS = 24                     # mass_delete_log solo se consulta para la ventana (≤ 60 min): lo más viejo que esto se borra al escribir
 LABELS = {"Event": "eventos", "WebForm": "formularios", "FormSubmission": "inscripciones", "EventAttendee": "registros de asistentes",
           "User": "personas", "AccessLog": "registros de acceso", "EventDocument": "archivos de evento", "StaffUser": "cuentas del personal"}
 MAIL_KIND = "system_alert_mail"
@@ -153,7 +154,12 @@ def _event_of(st: dict) -> tuple:
 
 def _on_before_commit(session) -> None:
     st = session.info.get(_INFO)
-    if not st or st["busy"] or sum(st["counts"].values()) < EVALUATE_FROM:
+    if not st or st["busy"]:
+        return
+    total = sum(st["counts"].values())
+    # Con una cuenta identificada se cuenta TODO borrado (aunque sea de 1 fila): si no, borrar de a 9 por petición nunca sumaba en la ventana (evasión de la regla
+    # «≥N en M minutos»). Es solo un INSERT + una suma con índice en la misma transacción de un borrado (algo poco frecuente): nada periódico.
+    if total <= 0 or (total < EVALUATE_FROM and _actor(session)[0] is None):
         return
     st["busy"] = True
     try:
@@ -176,6 +182,7 @@ def _evaluate(session: Session, st: dict) -> None:
     now = utcnow()
     top = max(st["counts"], key=st["counts"].get)
     session.add(MassDeleteLog(created_at=now, actor_id=actor_id, label=top, rows=total, event_id=event_id))
+    session.query(MassDeleteLog).filter(MassDeleteLog.created_at < now - timedelta(hours=LOG_KEEP_HOURS)).delete(synchronize_session=False)
     session.flush()
     since = now - timedelta(minutes=cfg["window_minutes"])
     q = session.query(func.coalesce(func.sum(MassDeleteLog.rows), 0)).filter(MassDeleteLog.created_at >= since)
@@ -200,6 +207,23 @@ def _evaluate(session: Session, st: dict) -> None:
     session.flush()
     deliver(session, alert)
     st["alerted"] = True
+
+
+def config_change(db: Session, staff, what: str) -> SystemAlert:
+    """Cambio en la configuración de las alertas (umbral, apagarlas, quitar o pausar un destinatario): se avisa a los destinatarios ACTIVOS ANTES del cambio
+    (se llama antes de aplicarlo, en la misma transacción). Así una cuenta comprometida no puede silenciar la alerta en secreto y después borrar. No confirma."""
+    import uuid
+    now = utcnow()
+    who = f"{getattr(staff, 'username', None) or 'una cuenta'} ({getattr(staff, 'role', None) or '?'})"
+    alert = SystemAlert(kind="alert_config", title="Aviso: cambió la configuración de las alertas de borrado masivo",
+                        body=(f"{who} {what}. Fecha y hora (Bogotá): {_bogota(now)}. Si no fue usted o no era esperado, revise de inmediato: "
+                              f"cambie la contraseña de esa cuenta, revise Configuración → Alertas del sistema y avise a soporte."),
+                        actor_id=getattr(staff, "id", None), actor_label=(getattr(staff, "username", None) or "sistema")[:120],
+                        dedupe_key=f"cfg:{uuid.uuid4().hex}", created_at=now)
+    db.add(alert)
+    db.flush()
+    deliver(db, alert)
+    return alert
 
 
 def _bogota(moment) -> str:
