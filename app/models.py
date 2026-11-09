@@ -1567,3 +1567,39 @@ class ExhibitorLead(Base):
     user_id = Column(String, nullable=False)
     scanned_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (UniqueConstraint('exhibitor_id', 'tenant_id', 'user_id', name='uq_exhibitor_lead'),)
+
+
+class AlertRecipient(Base):
+    """0119 (Fase 9-A): quién recibe las alertas del sistema (borrado masivo). `kind='email'` = correo externo; `kind='staff'` = cuenta de la plataforma (campana + su correo registrado)."""
+    __tablename__ = 'alert_recipients'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(10), nullable=False)
+    email = Column(String(200), nullable=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class SystemAlert(Base):
+    """0119: historial de alertas del sistema ya disparadas (sin datos personales de asistentes)."""
+    __tablename__ = 'system_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(40), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False)
+    event_id = Column(Integer, nullable=True)
+    actor_id = Column(Integer, nullable=True)
+    actor_label = Column(String(120), nullable=True)
+    dedupe_key = Column(String(160), nullable=True, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class MassDeleteLog(Base):
+    """0119: cuántas filas borró cada acción grande (≥10) y quién; sirve para la regla «≥N en M minutos». Se limpia sola (solo se consulta la última hora)."""
+    __tablename__ = 'mass_delete_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow, index=True)
+    actor_id = Column(Integer, nullable=True)
+    label = Column(String(40), nullable=False)
+    rows = Column(Integer, nullable=False)
+    event_id = Column(Integer, nullable=True)

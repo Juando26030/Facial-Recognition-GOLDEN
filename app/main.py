@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
 from app import node_sync
-from app import bodylimit, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -41,7 +41,7 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -349,6 +349,7 @@ _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(queue_router.router, prefix="/api")
 _include(queue_router.public_router)   # Fase 8: turnos y filas (personal) — las rutas públicas /turno/... van en el mismo router
+_include(system_alerts_router.router, prefix="/api")      # Fase 9-A: destinatarios y umbral de la alerta de borrado masivo (admin)
 _include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
 _include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
