@@ -110,6 +110,24 @@ def matches(staff: StaffUser, token: Optional[str]) -> bool:
     return bool(token and staff.login_req_hash and hmac.compare_digest(token_hash(token), staff.login_req_hash))
 
 
+def approve_if_pending(db: Session, staff_id: int, req_hash: Optional[str]) -> bool:
+    """Autoriza el ingreso SOLO si la solicitud sigue siendo la misma que se miró (mismo hash), sigue pendiente y no venció: UPDATE condicionado por estado, así dos coordinadores
+    (o «autorizar a todos» y el botón individual) a la vez no se pisan ni autorizan una solicitud nueva a ciegas. No confirma: lo hace quien llama."""
+    if not req_hash:
+        return False
+    n = db.query(StaffUser).filter(
+        StaffUser.id == staff_id, StaffUser.login_req_status == PENDING, StaffUser.login_req_hash == req_hash,
+        StaffUser.login_req_at.isnot(None), StaffUser.login_req_at >= utcnow() - REQUEST_TTL,
+    ).update({StaffUser.login_req_status: APPROVED}, synchronize_session=False)
+    return n == 1
+
+
+def can_approve(db: Session, event: Event, target: StaffUser):
+    """GANCHO de reglas para autorizar el ingreso de un digitador en un evento (lo usan el botón individual y «Autorizar a todos»). Devuelve (True, "") o (False, motivo en español).
+    Hoy no pone condiciones; aquí se agrega, p. ej., «el compromiso del evento sigue pendiente»: quien no cumpla se OMITE con ese motivo en la autorización masiva."""
+    return True, ""
+
+
 def consume_approved(db: Session, staff: StaffUser, token: str) -> bool:
     """Usa la autorización UNA sola vez: borra la solicitud solo si sigue aprobada y con este mismo hash (UPDATE condicional; dos sondeos a la vez no entran dos veces). Confirma."""
     n = db.query(StaffUser).filter(StaffUser.id == staff.id, StaffUser.login_req_hash == token_hash(token), StaffUser.login_req_status == APPROVED).update(
