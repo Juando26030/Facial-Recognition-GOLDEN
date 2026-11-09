@@ -73,3 +73,23 @@ def test_edit_profile_changes_everything_and_respects_rank(client, factory, db):
     assert client.patch(f"/api/staff/{me.id}/profile", json={"username": "cambio"}).status_code == 400                  # el propio usuario no
     assert client.patch(f"/api/staff/{me.id}/profile", json={"full_name": "Yo"}).status_code == 200
     assert oid
+
+
+def test_account_with_extra_admin_is_protected_like_an_admin(client, factory, db):
+    """Ronda de seguridad F4: un admin no toca (correo, perfil, clave, desactivar, borrar) a un coordinador con admin sumado."""
+    factory.staff("admin", "adm")
+    factory.staff("super_admin", "sup")
+    coord = factory.staff("coordinador", "coordx")
+    cid = coord.id
+    login(client, "sup")
+    assert client.put(f"/api/staff/{cid}/roles", json={"extra_roles": ["admin"]}).status_code == 200
+    client.post("/logout")
+    login(client, "adm")
+    assert client.patch(f"/api/staff/{cid}/email", json={"email": "otro@example.com"}).status_code == 403
+    assert client.patch(f"/api/staff/{cid}/profile", json={"full_name": "Nuevo Nombre"}).status_code == 403
+    assert client.put(f"/api/staff/{cid}/password", json={"password": "NuevaClave#2026"}).status_code == 403
+    assert client.patch(f"/api/staff/{cid}/deactivate").status_code == 403
+    assert client.delete(f"/api/staff/{cid}").status_code == 403
+    client.post("/logout")
+    login(client, "sup")
+    assert client.patch(f"/api/staff/{cid}/profile", json={"full_name": "Nuevo Nombre"}).status_code == 200

@@ -30,7 +30,7 @@ KIND = "staff_credentials"
 RESEND_PER_DAY = 3
 RESEND_WINDOW = timedelta(hours=24)
 RESEND_ACTION = "resend_credentials"
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+_EMAIL = re.compile(r"^[A-Za-z0-9._%+\-']{1,64}@[A-Za-z0-9.\-]{1,190}\.[A-Za-z]{2,}$")          # sin comas, punto y coma, comillas ni espacios (un solo destinatario)
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
 ROLE_LABELS = {"digitador": "digitador", "coordinador": "coordinador", "comercial": "comercial", "admin": "administrador", "super_admin": "superadministrador", "cliente": "cliente"}

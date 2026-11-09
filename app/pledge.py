@@ -17,9 +17,10 @@ import logging
 import os
 import re
 import secrets
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -455,6 +456,9 @@ def render_document(event: Event, design: dict, answers: dict, signature: bytes,
 
 
 # ---------------------------------------------------------------------------------------------------- puerta del ingreso (Camino B/C) y aprobación
+RESIGN_WINDOW = timedelta(hours=48)
+
+
 def release_stale(db: Session, form: WebForm, cedula: str) -> int:
     """Libera la cédula de los envíos ANTERIORES que ya no respaldan una firma vigente, para que el motor de formularios no responda «Ya estás inscrito» (9-nov-2026, bug de Juan David).
     El motor impide dos envíos con la misma cédula en un formulario (uq_form_person), pero en el compromiso lo que cuenta es si la CUENTA tiene su firma vigente (`active_pledge`), no si alguna vez
@@ -465,7 +469,8 @@ def release_stale(db: Session, form: WebForm, cedula: str) -> int:
         return 0
     keep = db.query(EventStaffPledge.submission_id).filter(
         EventStaffPledge.event_id == form.event_id, EventStaffPledge.staff_id.isnot(None),
-        EventStaffPledge.superseded_at.is_(None), EventStaffPledge.resign_allowed_at.is_(None))
+        EventStaffPledge.superseded_at.is_(None),
+        or_(EventStaffPledge.resign_allowed_at.is_(None), EventStaffPledge.resign_allowed_at < datetime.utcnow() - RESIGN_WINDOW))      # el permiso de firmar de nuevo vence (F4 seguridad): pasada la ventana, la firma vuelve a estar protegida
     return db.query(FormSubmission).filter(
         FormSubmission.form_id == form.id, FormSubmission.person_id == cedula, FormSubmission.is_test == False,        # noqa: E712
         ~FormSubmission.id.in_(keep)).update({"person_id": None}, synchronize_session=False)
@@ -494,7 +499,7 @@ def session_link(db: Session, staff: StaffUser, event: Event) -> Optional[str]:
     if form is None or form.manual_status != "activo" or not text_available():
         return None
     from app.routers import forms_public
-    token = forms_public._issue(form, g=True, id_ok=True, typed_id=staff.username, pc=staff.id)
+    token = forms_public._issue(form, g=True, id_ok=True, pc=staff.id)          # sin la cédula en el token (viaja en la URL y la firma no cifra): la identidad sale de `pc`
     return f"/f/{event.id}/{form.slug}?t={token}"
 
 

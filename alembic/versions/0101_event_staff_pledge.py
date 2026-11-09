@@ -10,7 +10,7 @@
 Sin SET de sesión, sin advisory locks; compatible con el pooler de Neon. El código anterior ignora lo nuevo. Bajar la migración lo quita.
 
 Revision ID: 0101_event_staff_pledge
-Revises: 0099_digital_badge_fields
+Revises: 0100_event_staff_mail
 Create Date: 2026-11-08
 """
 from alembic import op

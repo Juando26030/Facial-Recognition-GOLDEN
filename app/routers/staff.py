@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -57,6 +57,11 @@ def _serialize(s: StaffUser) -> dict:
 DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 
+def _rank(u: StaffUser) -> int:
+    """Rango efectivo: el más alto entre el rol principal y los sumados (un coordinador con admin sumado pesa como admin)."""
+    return max(STAFF_ROLES.index(r) for r in effective_roles(u) if r in STAFF_ROLES)
+
+
 def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None:
     """Cierre de seguridad P1/P4 (6-nov-2026): además del rol, quien administra una cuenta debe poder alcanzarla.
     - Limitado a su cliente (ENFORCE_STAFF_TENANT): solo cuentas de su mismo cliente.
@@ -65,6 +70,9 @@ def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None
     404 (no 403) para no confirmar que la cuenta existe. Con los dos interruptores apagados no cambia nada."""
     if staff_tenant_enforced(actor) and target.tenant_id != actor.tenant_id:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    if target.id != actor.id and actor.role != "super_admin" and {"admin", "super_admin"} & effective_roles(target):
+        # Ronda de seguridad F4: una cuenta con el rol admin SUMADO (extra_roles) es admin a todos los efectos; solo el Super Admin la administra (antes solo se miraba el rol principal).
+        raise HTTPException(status_code=403, detail="Solo el Super Admin administra cuentas con rol Admin")
     if {"admin", "super_admin"} & effective_roles(actor):
         return
     event_ids = [eid for (eid,) in db.query(EventStaffAuthorization.event_id).filter(EventStaffAuthorization.staff_user_id == target.id)]
@@ -188,10 +196,10 @@ def set_staff_email(
     if not target or (staff.tenant_id is not None and target.tenant_id != staff.tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     # 0C (A1): el correo de una cuenta decide quién recibe el enlace de «olvidé mi contraseña»; cambiarlo equivale a tomar la cuenta. Solo sobre cuentas de rango INFERIOR (o la propia).
-    if target.id != staff.id and STAFF_ROLES.index(target.role) >= STAFF_ROLES.index(staff.role):
+    if target.id != staff.id and _rank(target) >= STAFF_ROLES.index(staff.role):
         raise HTTPException(status_code=403, detail="No puedes cambiar el correo de una cuenta de tu mismo rango o superior")
     email = str(data.get("email") or "").strip()
-    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+    if email and (len(email) > 120 or not re.fullmatch(r"[A-Za-z0-9._%+\-']+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", email)):
         raise HTTPException(status_code=400, detail="Correo con formato inválido")
     target.email = email or None
     db.commit()
@@ -217,6 +225,7 @@ def assign_secondary_role(
     keep = [r for r in all_extra_roles(target) if r not in DUAL_ROLE_PAIR]          # los extras que no son del par (p. ej. admin) no se tocan
     if secondary is None:
         _set_extra_roles(target, keep)
+        sessions.revoke_all(target)
         db.commit()
         return _serialize(target)
 
@@ -226,6 +235,7 @@ def assign_secondary_role(
         raise HTTPException(status_code=400, detail="El rol secundario debe ser el otro de coordinador/comercial")
 
     _set_extra_roles(target, [secondary] + keep)
+    sessions.revoke_all(target)
     db.commit()
     return _serialize(target)
 
@@ -280,7 +290,7 @@ def edit_staff_profile(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     _assert_can_manage(db, staff, target)
     own = target.id == staff.id
-    if not own and STAFF_ROLES.index(target.role) >= STAFF_ROLES.index(staff.role):
+    if not own and _rank(target) >= STAFF_ROLES.index(staff.role):
         raise HTTPException(status_code=403, detail="No puedes editar una cuenta de tu mismo rango o superior")
     changed = []
     if "username" in data:
@@ -291,7 +301,7 @@ def edit_staff_profile(
         if username != target.username:
             if own:
                 raise HTTPException(status_code=400, detail="Tu propio usuario no se cambia desde aquí")
-            if db.query(StaffUser.id).filter(StaffUser.username == username, StaffUser.id != target.id).first():
+            if db.query(StaffUser.id).filter(func.lower(StaffUser.username) == username.lower(), StaffUser.id != target.id).first():
                 raise HTTPException(status_code=400, detail="Ese usuario ya existe")
             target.username = username
             changed.append("usuario")
@@ -303,7 +313,7 @@ def edit_staff_profile(
         changed.append("nombre")
     if "email" in data:
         email = str(data.get("email") or "").strip()
-        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        if email and (len(email) > 120 or not re.fullmatch(r"[A-Za-z0-9._%+\-']+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", email)):
             raise HTTPException(status_code=400, detail="Correo con formato inválido")
         target.email = email or None
         changed.append("correo")
@@ -311,6 +321,8 @@ def edit_staff_profile(
         phone = str(data.get("phone") or "").strip()
         if not phone and target.role not in ("digitador", "cliente"):
             raise HTTPException(status_code=400, detail="El teléfono es obligatorio para esta cuenta")
+        if phone and not re.fullmatch(r"[0-9+() \-]{7,30}", phone):
+            raise HTTPException(status_code=400, detail="El celular solo admite números, espacios, + ( ) y -")
         if phone and db.query(StaffUser.id).filter(StaffUser.phone == phone, StaffUser.id != target.id).first():
             raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
         target.phone = phone or None
@@ -353,6 +365,7 @@ def change_staff_role(
     if new_role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede nombrar cuentas Admin")
     target.role = new_role
+    sessions.revoke_all(target)             # la sesión abierta recarga sus permisos (las páginas leen el rol guardado al entrar)
     _set_extra_roles(target, [r for r in all_extra_roles(target) if new_role in EXTRA_ROLE_PRIMARIES])          # lo que ya no encaja (o ya es el principal) se quita
     db.commit()
     return _serialize(target)

@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from datetime import timedelta
+from typing import Optional
 
 from app import audit_actions, login_control, security, staticver
 from app.auth import effective_roles, get_event_for_staff, require_role
@@ -194,20 +195,28 @@ def _approve_all_limited(db: Session, staff: StaffUser) -> bool:
 
 
 @router.post("/api/events/{event_id}/staff-users/approve-all")
-def approve_all_pending(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def approve_all_pending(event_id: int, data: Optional[dict] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Autoriza de una vez a TODOS los digitadores de ESTE evento que esperan su ingreso. Mismos permisos que el botón individual (coordinador+, no la comercial pura) y mismo requisito
     (evento en proceso). Cada autorización es `_approve_one`; las solicitudes que cambiaron entre medias (ya respondidas, vencidas, reemplazadas) no se tocan. Idempotente: la segunda llamada da 0.
-    Responde {approved, skipped, skipped_reasons:{motivo: n}, truncated}."""
+    Responde {approved, skipped, skipped_reasons:{motivo: n}, truncated}.
+    9-nov-2026 (ronda de ataque de la Fase 4): el cuerpo DEBE traer `{"reqs": {"<id de la cuenta>": "<código de la solicitud que el coordinador vio>"}}` (el `req` de login-state). Solo se autorizan las
+    solicitudes cuyo código sigue siendo ese: la cédula es el usuario y la contraseña inicial, así que cualquiera que la sepa puede pedir ingreso, y una solicitud NUEVA (otra persona, otro
+    dispositivo) que reemplazó a la que se estaba mirando no se autoriza a ciegas. Misma garantía que el botón individual (B6)."""
     if not _can_manage(staff):
         raise HTTPException(status_code=403, detail="Un comercial no puede administrar cuentas digitador")
     event = get_event_for_staff(event_id, db, staff)
     if event.status != "en_proceso":
         raise HTTPException(status_code=400, detail="Solo se puede autorizar el ingreso desde un evento en proceso")
+    seen = (data or {}).get("reqs")
+    if not isinstance(seen, dict):
+        raise HTTPException(status_code=400, detail="Falta la lista de solicitudes que estás viendo: recarga la pantalla e inténtalo de nuevo")
+    seen = {str(k): str(v) for k, v in seen.items()}
     if _approve_all_limited(db, staff):
         raise HTTPException(status_code=429, detail="Demasiadas autorizaciones seguidas. Espera un momento.")
     # Filas con bloqueo (orden por id: sin interbloqueos entre dos coordinadores); FOR UPDATE sí es compatible con el pooler de Neon.
     rows = (db.query(StaffUser).join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
             .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador", StaffUser.login_req_status == login_control.PENDING)
+            .filter(StaffUser.id.in_([int(k) for k in seen if k.isdigit()] or [0]))
             .order_by(StaffUser.id).limit(APPROVE_ALL_MAX + 1).with_for_update(of=StaffUser).all())
     truncated = len(rows) > APPROVE_ALL_MAX
     now = utcnow()
@@ -217,7 +226,9 @@ def approve_all_pending(event_id: int, db: Session = Depends(get_db), staff: Sta
         reasons[why] = reasons.get(why, 0) + 1
 
     for target in rows[:APPROVE_ALL_MAX]:
-        if not login_control.request_alive(target, now):
+        if seen.get(str(target.id)) != login_control.request_code(target):
+            skip("llegó o cambió una solicitud mientras mirabas")          # no se autoriza a ciegas una solicitud que el coordinador no vio
+        elif not login_control.request_alive(target, now):
             skip("solicitud vencida")
         elif login_control.is_locked(target):
             skip("cuenta bloqueada")

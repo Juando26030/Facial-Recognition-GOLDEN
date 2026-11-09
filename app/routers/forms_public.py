@@ -360,6 +360,8 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     form = _load(db, event_id, slug)
     access = _access(db, form, data.get("k"))
     _limit(db, request, "form_lookup", form, 60)
+    if form.kind == formsvc.PLEDGE_KIND:          # ronda de seguridad F4: el compromiso no confirma si una cédula está en la base del evento
+        return {"found": False}
     settings = formsvc.get_settings(form)
     claims = _read(data.get("t"), form)
     needs_code, _, _ = _needs(settings)
@@ -391,6 +393,8 @@ def check_registered(event_id: int, slug: str, data: dict, request: Request, db:
     form = _load(db, event_id, slug)
     access = _access(db, form, data.get("k"))
     _limit(db, request, "form_lookup", form, 60)
+    if form.kind == formsvc.PLEDGE_KIND:          # idem: sin sondeo de cédulas ya inscritas
+        return {"registered": False}
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
     _check_stage(settings, _read(data.get("t"), form))

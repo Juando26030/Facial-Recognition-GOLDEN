@@ -1,5 +1,5 @@
 """Fase 3, oleada 2 (7-nov-2026): usuarios del personal. Archivar = no inicia sesión y no sale en listas ni selectores (admin+, dentro de su alcance); restaurar; borrado definitivo solo super_admin, de una
-cuenta archivada y sin eventos asignados; todo deja rastro en audit_actions."""
+cuenta que el administrador puede administrar (sin pasar por archivar; no coordinadores/comerciales de un evento); todo deja rastro en audit_actions."""
 import inspect
 
 from app.models import AuditAction, StaffUser

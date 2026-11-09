@@ -124,6 +124,7 @@ ALLOW = {
     "event_docs.py": {"list_documents", "add_document", "_find_doc", "download_all_documents", "list_expenses", "add_expense", "_get_expense", "expenses_report"},          # documentos y gastos: no son personas
     "event_report.py": {"upload_final_report", "download_final_report"},
     "events.py": {"list_event_staff", "assign_existing_staff", "staff_users_template", "import_event_staff", "purge_event_staff", "delete_event_staff_account", "revoke_event_staff"},          # personal de la plataforma, no asistentes
+    "staff_credentials.py": {"resend_event_staff", "set_event_staff_email", "set_event_staff_mail"},          # cuentas del personal y su correo, no personas, respuestas ni pagos
     "form_client.py": {"_form_for_manager"},
     "form_transfer.py": {"export_form", "import_preview", "import_form", "transfer_allowed"},          # el diseño del formulario, sin respuestas
     "forms.py": {"list_forms", "create_form", "get_form", "update_form", "preview_registered", "registered_template", "clear_registered", "archive_form", "restore_form", "delete_form",

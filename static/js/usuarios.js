@@ -82,7 +82,9 @@
         approveAllBtn.disabled = true;
         approveAllBtn.setAttribute('aria-busy', 'true');
         try {
-            const res = await fetch(`/api/events/${eventId}/staff-users/approve-all`, { method: 'POST' });
+            const reqs = {};          // solo se autorizan las solicitudes que se están viendo (su código); una nueva que llegue después no se autoriza a ciegas
+            Object.values(loginState).forEach((a) => { if (a.login_pending && a.req) reqs[a.id] = a.req; });
+            const res = await fetch(`/api/events/${eventId}/staff-users/approve-all`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reqs }) });
             const d = await res.json().catch(() => ({}));
             if (!res.ok) {
                 showToast(typeof d.detail === 'string' ? d.detail : 'No se pudo autorizar a los pendientes', 'error');

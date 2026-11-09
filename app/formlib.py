@@ -42,7 +42,7 @@ FONTS = (
 )
 MAX_FIELDS, MAX_OPTIONS = 80, 200
 LANGUAGES = ("es", "en", "pt")
-_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}\Z")
 _PHONE = re.compile(r"^[+\d][\d\s().-]{5,19}$")
 _NUMBER = re.compile(r"^-?\d+([.,]\d+)?$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")

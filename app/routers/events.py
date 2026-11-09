@@ -814,7 +814,10 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
             already += 1
             continue
         if not is_new and not target.is_active:
-            target.is_active = True          # un digitador que quedó desactivado (no se pudo borrar, D3) vuelve a servir al asignarlo de nuevo
+            if not (effective_roles(staff) & {"admin", "super_admin"}):          # ronda de seguridad F4: un coordinador no reactiva con un Excel lo que un administrador desactivó o archivó
+                problems.append({"row": n, "detail": "Esa cuenta está desactivada: solo un administrador puede reactivarla"})
+                continue
+            target.is_active = True          # un digitador que quedó desactivado (no se pudo borrar, D3) lo reactiva un administrador al asignarlo de nuevo
         if not is_new and mail_ok and not (target.email or "").strip():
             target.email = mail_ok          # a una cuenta que ya existía solo se le completa el correo si no tenía; nunca se reemplaza
         db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
