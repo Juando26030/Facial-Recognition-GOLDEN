@@ -21,7 +21,7 @@ def ev(factory):
 def _digitadores(factory, db, ev, n, status=login_control.PENDING):
     out = []
     for i in range(n):
-        d = factory.staff("digitador", f"9000{i:04d}")
+        d = factory.staff("digitador", f"9{ev.id:03d}{i:04d}")          # único por evento (dos eventos en una misma prueba)
         factory.authorize(ev, d)
         db.query(StaffUser).filter_by(id=d.id).update({"login_req_hash": f"h{d.id}" * 3, "login_req_at": utcnow(), "login_req_status": status})
         out.append(d.id)
@@ -105,6 +105,7 @@ def test_roles(client, factory, db, ev):
 
 
 def test_foreign_tenant_event_is_refused(client, factory, db):
+    factory.tenant("acme")
     factory.staff("coordinador", "coord", tenant_id="acme")
     other = factory.event("en_proceso", tenant_id="otra")
     login(client, "coord")

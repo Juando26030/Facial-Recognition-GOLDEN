@@ -78,6 +78,12 @@ def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = Tru
     `cerrado` o `cupo_lleno`. `finalizado` y `pruebas` sin clave = como si la página no existiera (404).
     `check_full=False` salta el conteo de cupo (el envío lo comprueba después, ya con el formulario bloqueado)."""
     state = formsvc.public_state(db, form, held) if check_full else formsvc.status_of(form)
+    if not check_full and form.kind == formsvc.PLEDGE_KIND:          # el envío también respeta la vigencia del compromiso (evento finalizado/archivado, o texto aún sin aprobar)
+        ev = db.get(Event, form.event_id)
+        if not pledge.required(ev):
+            state = "finalizado"
+        elif not pledge.text_available():
+            state = "cerrado"
     if state == "finalizado":
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     if state == "pruebas" and not (k and safe_eq(str(k), form.test_key)):
