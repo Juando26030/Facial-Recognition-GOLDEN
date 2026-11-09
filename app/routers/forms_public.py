@@ -696,6 +696,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if full:
         return JSONResponse({"detail": formsvc.FULL_MSG, "stage": "closed"}, status_code=409)
     if duplicate:
+        if form.kind == formsvc.PLEDGE_KIND:          # compromiso: misma respuesta que un envío exitoso (no revela si la cédula ya firmó); nada se guarda
+            return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
         return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
     if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):          # identificador que no es la cédula (correo, teléfono…): adelanto SIN bloqueo; la autoridad es la de abajo
         db.rollback()

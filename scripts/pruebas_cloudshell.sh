@@ -19,7 +19,11 @@ grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/req-ci.txt
 uv pip install -q --python .venv/bin/python -r /tmp/req-ci.txt pytest httpx pyyaml 2>&1 | tail -3
 echo "== 4/6 pruebas de Python (esto tarda)"
 export DATABASE_URL=postgresql://postgres:postgres@localhost:55432/golden_db SECRET_KEY=ci-only-secret
-.venv/bin/python -m pytest -q -p no:cacheprovider 2>&1 | tail -60
+if [ -n "${PYTEST_ARGS:-}" ]; then   # modo diagnóstico: solo esas pruebas, con el detalle completo de cada falla (ej.: PYTEST_ARGS="tests/test_auth.py::test_x")
+  .venv/bin/python -m pytest -q -p no:cacheprovider -W ignore $PYTEST_ARGS 2>&1 | tail -400
+else
+  .venv/bin/python -m pytest -q -p no:cacheprovider 2>&1 | tail -60
+fi
 RES=${PIPESTATUS[0]}
 echo "== 5/6 pruebas de JS"
 ( command -v node >/dev/null && npm ci --silent 2>&1 | tail -2 && for f in tests/js/*_check.js; do node "$f" || { echo "FALLO JS: $f"; JSFAIL=1; }; done ) 

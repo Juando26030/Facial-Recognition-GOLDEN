@@ -145,7 +145,7 @@ def event_info(db: Session, event: Event) -> dict:
             "coordinator": ((coord.full_name or "").strip() if coord is not None else "")}
 
 
-@jobs.handler(KIND)
+@jobs.handler("staff_credentials")
 def run_mail(payload: dict) -> None:
     sid, mode, event_id = int(payload["staff_id"]), payload.get("mode"), int(payload.get("event_id") or 0)
     if mode not in MODES:

@@ -14,7 +14,7 @@ def test_sources_guard_roles():
     from app.routers import staff
     assert 'require_role("admin")' in inspect.getsource(staff.archive_staff)
     assert 'require_role("admin")' in inspect.getsource(staff.restore_staff)
-    assert 'require_role("super_admin")' in inspect.getsource(staff.delete_staff)
+    assert 'require_role("admin")' in inspect.getsource(staff.delete_staff)          # 8-nov-2026: el administrador elimina; el Super Admin nunca se elimina
 
 
 def test_archived_hidden_by_default_and_listed_on_request(client, factory):
