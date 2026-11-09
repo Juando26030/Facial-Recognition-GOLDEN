@@ -60,7 +60,7 @@
     const parts = [];
     const more = [];
     // A la vista lo de todos los días (restablecer contraseña, desactivar/reactivar); lo poco usado y lo irreversible va en el menú «Más acciones».
-    if (DELETABLE_ROLES.includes(s.role) && !window.LOCAL_SERVER) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));          // servidor local: las contraseñas solo se cambian en la nube
+    if (DELETABLE_ROLES.includes(s.role) && !(window.LOCAL_SERVER || document.querySelector('meta[name="gw-local-server"]'))) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));          // servidor local: las contraseñas solo se cambian en la nube
     parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check', 'gw-btn--ok'));
     if (isAdminPlus && ['coordinador', 'comercial', 'almacen', 'contabilidad', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol o añadir roles', 'user-plus', `data-current="${esc(s.role)}" data-extras="${esc((s.extra_roles || []).join(','))}"`));
     if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Eliminar cuenta', 'trash', '', true));          // 8-nov-2026: se elimina de verdad (para dejar sin acceso está «Desactivar»); nunca un super_admin

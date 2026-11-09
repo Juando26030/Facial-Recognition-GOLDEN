@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-autoregistro.css') }}">
 </head>
 <body class="gw-page gw-autoreg">
-<main class="gw-autoreg__box">
+<main class="gw-autoreg__box" data-selfreg-event="{{ event.id }}">
     <h1 class="gw-autoreg__title">{{ event.name }}</h1>
     <p class="gw-autoreg__sub">Regístrate tú mismo: escribe tus datos y listo.</p>
     <p id="notice" class="gw-autoreg__msg gw-autoreg__msg--warn" role="status" aria-live="polite" hidden></p>
@@ -22,7 +22,7 @@
     </section>
     <p class="gw-autoreg__legal">Tus datos se usan solo para tu acreditación en este evento. <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</p>
 </main>
-<script>window.SELFREG = { eventId: {{ event.id }}, backUrl: "/kiosk/{{ event.id }}/registro" };</script>
+<script src="{{ url_for('static', path='js/selfreg-boot.js') }}"></script>
 <script src="{{ url_for('static', path='js/toast.js') }}"></script>
 <script src="{{ url_for('static', path='js/selfreg.js') }}"></script>
 </body>

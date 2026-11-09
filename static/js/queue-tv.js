@@ -1,7 +1,7 @@
 /* Pantalla de TV de turnos (Fase 8). Sondeo cada 3 s; resalta y (si se activó el sonido) hace sonar un aviso cuando cambia el turno llamado. */
 (function () {
   var lanesEl = document.getElementById('tvLanes'), recentEl = document.getElementById('tvRecent'), soundBtn = document.getElementById('tvSound');
-  var url = '/api/events/' + window.EVENT_ID + '/queue/tv';
+  var url = '/api/events/' + (window.EVENT_ID || document.body.dataset.eventId) + '/queue/tv';
   var last = {}, sound = false, ctx = null;
   function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function beep() {

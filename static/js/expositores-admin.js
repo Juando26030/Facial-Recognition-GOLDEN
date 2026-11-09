@@ -1,7 +1,7 @@
 /* Expositores del evento (Fase 8, personal coordinador+): alta, enlaces, pausa, cambio de enlace y borrado. */
 (function () {
   'use strict';
-  const EV = window.EVENT_ID, api = '/api/events/' + EV + '/exhibitors';
+  const EV = window.EVENT_ID || document.querySelector('[data-event-id]').dataset.eventId, api = '/api/events/' + EV + '/exhibitors';
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const toast = (m, t) => { if (window.showToast) showToast(m, t); };

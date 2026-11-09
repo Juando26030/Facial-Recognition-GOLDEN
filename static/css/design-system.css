@@ -1064,3 +1064,23 @@
   .gw-page .golden-event-strip-inner > span + span::before { content: " \00b7  "; color: var(--gw-nav-accent); font-weight: var(--gw-fw-bold); }
   .gw-page .golden-event-strip strong { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
+
+/* ============================================================ Revisión visual F5-9 · piezas que el JS nuevo ya usaba sin estilo (muestrario: guia_visual.html#lista-filas)
+   - `.gw-list__item`: fila de lista con datos a la izquierda y acciones a la derecha (Servidor local, Sincronización, Inventario, Cuentas de cobro). En celular las acciones bajan.
+   - `.gw-section-title`: subtítulo de grupo dentro de una página (por cliente, por mes, nombre del evento abierto).
+   - `.gw-text-danger`: texto de error dentro de una fila o ventana (con palabras, no solo color). */
+.gw-list:has(> .gw-list__item) { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
+.gw-list > .gw-list__item + .gw-list__item { margin-top: 0; }
+.gw-list__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2) var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-list__item > :first-child { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; line-height: var(--gw-lh-body); }
+.gw-list__item > :not(:first-child) { flex: none; }
+.gw-list__item > .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
+.gw-list__item code { font-size: var(--gw-fs-sm); overflow-wrap: anywhere; word-break: break-all; }
+.gw-list__item .gw-badge { vertical-align: middle; }
+.gw-section-title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); }
+.gw-text-danger { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
+@media (max-width: 640px) {
+  .gw-list__item { padding: var(--gw-sp-3); }
+  .gw-list__item > :not(:first-child) { flex: 1 1 100%; }
+  .gw-list__item > .gw-btn { width: 100%; }
+}

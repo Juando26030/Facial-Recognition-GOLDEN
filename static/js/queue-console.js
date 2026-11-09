@@ -1,6 +1,6 @@
 /* Turnos y filas — consola del operador (Fase 8). Delegación de eventos; sondeo suave cada 4 s (pausado con la pestaña oculta). */
 (function () {
-  var EID = window.EVENT_ID;
+  var EID = window.EVENT_ID || document.querySelector('[data-event-id]').dataset.eventId;
   var base = '/api/events/' + EID + '/queue';
   var lanesBox = document.getElementById('tqLanes');
   if (!lanesBox) return;

@@ -34,9 +34,8 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }};</script>
 
-<main class="golden-main">
+<main class="golden-main" data-event-id="{{ event.id }}">
   <div class="gw-container gw-stack-lg">
     <div class="gw-page-head">
       <div class="gw-page-head__text">

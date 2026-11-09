@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-<!-- Iconos propios de GoldenWeb 2.0 (rejilla 24 px, trazo, sin librerías). Uso: <svg class="gw-icon" aria-hidden="true"><use href="/static/img/icons.svg#i-users"/><symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15L6 17z"/><path d="M10 21a2 2 0 0 0 4 0"/></symbol>
+<!-- Iconos propios de GoldenWeb 2.0 (rejilla 24 px, trazo, sin librerías). Uso: <svg class="gw-icon" aria-hidden="true"><use href="/static/img/icons.svg#i-users"/>
 </svg>
      El color y el grosor los pone .gw-icon (currentColor); acá solo van las formas. -->
 <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6"/><path d="M18 14.3c2.2.7 3.5 2.6 3.5 5.7"/></symbol>

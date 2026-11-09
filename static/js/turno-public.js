@@ -1,6 +1,6 @@
 /* Turno en el celular (Fase 8). Sondeo suave cada ~6 s con variación; se frena si la pestaña está oculta y se espacia si hay errores. No hay websockets. */
 (function () {
-  var cfg = window.TQ || {}, base = '/turno/' + cfg.event_id;
+  var cfg = window.TQ || { event_id: document.getElementById('tqPub').dataset.eventId, token: document.getElementById('tqPub').dataset.token || '' }, base = '/turno/' + cfg.event_id;
   var $ = function (id) { return document.getElementById(id); };
   var fails = 0, timer = null, wasCalled = false;
   try { cfg.token = cfg.token || localStorage.getItem('tq_' + cfg.event_id) || ''; } catch (e) {}

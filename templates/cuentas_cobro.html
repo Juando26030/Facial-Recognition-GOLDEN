@@ -14,8 +14,11 @@
     <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/cuentas-cobro-page.js') }}" defer></script>
 </head>
-<body class="gw-page gw-shell">
+{# Revisión visual F5-9: el menú lateral (como en el resto del panel) para coordinador en adelante; las cuentas solo de almacén o contabilidad siguen sin él (sus enlaces no les sirven). #}
+{% set gw_side = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+<body class="gw-page gw-shell{% if gw_side %} has-sidebar{% endif %}">
 <a class="gw-skip" href="#contenido">Ir al contenido</a>
+{% if gw_side %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
@@ -23,9 +26,11 @@
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
+      {% if not gw_side %}
       <a href="/configuracion" class="gw-btn gw-btn--ghost gw-btn--sm" aria-label="Configuración (Apariencia)" title="Configuración (Apariencia)">
         <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg>
       </a>
+      {% endif %}
       <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>
     </nav>

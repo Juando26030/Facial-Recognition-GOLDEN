@@ -8,11 +8,10 @@
     <title>Tu turno</title>
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-turnos.css') }}">
-    <script>window.TQ = {{ {"event_id": event_id, "token": token} | tojson }};</script>
     <script src="{{ url_for('static', path='js/turno-public.js') }}" defer></script>
 </head>
 <body class="gw-page">
-<main class="tq-pub" id="tqPub">
+<main class="tq-pub" id="tqPub" data-event-id="{{ event_id }}" data-token="{{ token }}">
   <p class="tq-pub__event">{{ event_name }}</p>
   <section id="tqAsk" hidden>
     <h1 class="gw-title tq-pub__title">Consulta tu turno</h1>

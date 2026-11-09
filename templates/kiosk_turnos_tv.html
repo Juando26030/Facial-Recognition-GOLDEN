@@ -8,10 +8,9 @@
     <title>Turnos | {{ event.name }}</title>
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-turnos.css') }}">
-    <script>window.EVENT_ID = {{ event.id }};</script>
     <script src="{{ url_for('static', path='js/queue-tv.js') }}" defer></script>
 </head>
-<body class="gw-page">
+<body class="gw-page" data-event-id="{{ event.id }}">
 <main class="tq-tv">
   <h1 class="tq-tv__title">{{ event.name }}</h1>
   <section id="tvLanes" class="tq-tv__lanes" aria-live="polite"></section>
