@@ -10,6 +10,7 @@ from app import cloud_client, event_lease, event_transfer
 from app.auth import require_role_or_any
 from app.database import get_db
 from app.models import Event, StaffUser
+from app.timeutil import utcnow
 
 log = logging.getLogger("golden.local_server")
 router = APIRouter()
@@ -29,6 +30,18 @@ def _fail(e: cloud_client.CloudError) -> HTTPException:
     return HTTPException(status_code=502 if e.status is None else (e.status if e.status in (400, 404, 409) else 502), detail=str(e))
 
 
+_last_accounts = {"at": 0.0}
+
+
+def _refresh_accounts_throttled(db: Session) -> None:
+    import time
+    from app import node_sync
+    if time.monotonic() - _last_accounts["at"] < 300:
+        return
+    _last_accounts["at"] = time.monotonic()
+    node_sync._refresh_accounts(db)
+
+
 @router.get("/local/cloud-events")
 def cloud_events(db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
     """Todos los eventos de la nube (metadatos) + si ya están aquí. Sin conexión devuelve `offline` y la lista vacía (la pantalla lo explica)."""
@@ -39,6 +52,7 @@ def cloud_events(db: Session = Depends(get_db), staff: StaffUser = Depends(_who)
         events = cloud_client.list_events()
     except cloud_client.CloudError as e:
         return {"configured": True, "offline": True, "error": str(e), "node_name": cloud_client.node_name(), "events": []}
+    _refresh_accounts_throttled(db)                    # hay conexión: se actualizan las cuentas de la nube (como máximo cada 5 min por aquí; el reloj de 30 min también lo hace)
     here = {(code or "").strip().lower(): eid for eid, code in db.query(Event.id, Event.event_code).all()}
     node = cloud_client.node_name()
     out = []
@@ -76,6 +90,11 @@ def download_event(cloud_event_id: int, db: Session = Depends(get_db), staff: St
         if newly_taken:
             _give_back(cloud_event_id, True)
         raise HTTPException(status_code=409, detail="No se importó nada: " + " ".join(report.get("conflicts") or ["hay conflictos."]))
+    local_event = db.get(Event, report.get("event_id"))
+    if local_event is not None:          # la subida (app/node_sync.py) solo sube eventos que sepan cuál es su evento en la nube
+        local_event.cloud_event_id = cloud_event_id
+        local_event.sync_package_at = utcnow()
+        db.commit()
     log.info("descarga a local ok (evento de la nube %s)", cloud_event_id)
     return {"ok": True, "event_id": report.get("event_id"), "event_code": report.get("event_code"), "name": report.get("name"), "warnings": report.get("warnings", []),
             "message": "El evento quedó en este servidor. En la nube ahora se ve en solo lectura."}

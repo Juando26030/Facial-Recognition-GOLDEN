@@ -24,7 +24,8 @@
        tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
        pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
     <a href="/inventario"{% if sidebar_active == "inventario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Inventario</a>
-    {% if local_server() %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>{% endif %}
+    {% if local_server %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>
+    <a href="/sincronizacion"{% if sidebar_active == "sincronizacion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg> Sincronización</a>{% endif %}
     <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>
     {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}
   </nav>

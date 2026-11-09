@@ -13,6 +13,7 @@ from app import publicurl, staticver
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
+from app import localmode
 from app.auth import all_extra_roles, get_current_staff, hash_password, verify_password
 from app import idle, login_control, pledge, security, sessions
 
@@ -63,7 +64,7 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["staff_username"] = staff.username
     request.session["tours_off"] = bool(staff.tours_auto_off)   # preferencia de la CUENTA: vale igual en cualquier dispositivo
     idle.start(request.session, db, staff)           # inactividad: marca la última actividad (y exime a los puestos de impresión)
-    if staff.must_change_password and staff.role != "digitador":       # el digitador temporal nunca cambia contraseña (Fase 4)
+    if staff.must_change_password and staff.role != "digitador" and not localmode.is_local_server():       # en un servidor local la contraseña no se cambia (solo en la nube): no se obliga       # el digitador temporal nunca cambia contraseña (Fase 4)
         request.session["must_change_password"] = True
         return "/cambiar-contrasena", None
     return "/", None
@@ -173,11 +174,14 @@ def password_policy(strict: int = 0):
 
 @router.get("/olvide-contrasena")
 def forgot_form(request: Request):
+    if localmode.is_local_server():
+        return _page(request, "forgot", error=localmode.PASSWORD_ONLY_CLOUD, status_code=403)
     return _page(request, "forgot")
 
 
 @router.post("/olvide-contrasena")
 def forgot_submit(request: Request, username: str = Form(...), db: Session = Depends(get_db)):
+    localmode.assert_passwords_allowed()
     """Manda un enlace de un solo uso al correo de la cuenta. La respuesta es SIEMPRE la misma (exista la
     cuenta, tenga o no correo) para no revelar qué usuarios existen; las cuentas sin correo (ej. los
     digitadores temporales) las restablece un admin/coordinador."""
@@ -205,6 +209,8 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
 
 @router.get("/restablecer/{token}")
 def reset_form(token: str, request: Request, db: Session = Depends(get_db)):
+    if localmode.is_local_server():
+        return _page(request, "invalid", error=localmode.PASSWORD_ONLY_CLOUD, status_code=403)
     if not security.find_valid_reset_token(db, token):
         return _page(request, "invalid", status_code=410)
     return _page(request, "reset", token=token)
@@ -214,6 +220,7 @@ def reset_form(token: str, request: Request, db: Session = Depends(get_db)):
 def reset_submit(
     token: str, request: Request, password: str = Form(...), confirm: str = Form(...), db: Session = Depends(get_db),
 ):
+    localmode.assert_passwords_allowed()
     row = security.find_valid_reset_token(db, token)
     if not row:
         return _page(request, "invalid", status_code=410)
@@ -233,6 +240,8 @@ def reset_submit(
 
 @router.get("/cambiar-contrasena")
 def change_form(request: Request):
+    if localmode.is_local_server():
+        return RedirectResponse("/", status_code=302)
     if not request.session.get("staff_user_id"):
         return RedirectResponse("/login", status_code=302)
     msg = "Debes elegir tu propia contraseña para continuar." if request.session.get("must_change_password") else None
@@ -243,6 +252,7 @@ def change_form(request: Request):
 def change_submit(
     request: Request, current: str = Form(...), password: str = Form(...), confirm: str = Form(...), db: Session = Depends(get_db),
 ):
+    localmode.assert_passwords_allowed()
     staff_id = request.session.get("staff_user_id")
     if not staff_id:
         return RedirectResponse("/login", status_code=302)

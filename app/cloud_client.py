@@ -89,5 +89,5 @@ def take_lease(cloud_event_id: int) -> dict:
     return _request("POST", f"/api/node/events/{int(cloud_event_id)}/lease", {"node_name": node_name()})
 
 
-def abort_lease(cloud_event_id: int) -> dict:
+def release_lease(cloud_event_id: int) -> dict:
     return _request("POST", f"/api/node/events/{int(cloud_event_id)}/abort", {"node_name": node_name()})

@@ -17,6 +17,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    {% if local_server %}<script>window.LOCAL_SERVER = true;</script>{% endif %}
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>

@@ -194,6 +194,15 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         return {"ok": False, "pending": pending_counts(db, ev)["total"], "error": str(e)}
 
 
+def _refresh_accounts(db: Session) -> None:
+    from app import account_sync
+    try:
+        account_sync.run_once(db)
+    except Exception:                                        # noqa: BLE001 — sin red o respuesta rara: nunca frena la subida
+        db.rollback()
+        log.warning("no se pudieron actualizar las cuentas desde la nube")
+
+
 def upload_all(db: Session, *, force: bool = False) -> dict:
     """Un ciclo: todos los eventos bajados de la nube. Un fallo en uno no detiene a los demás."""
     if not configured():
@@ -201,6 +210,7 @@ def upload_all(db: Session, *, force: bool = False) -> dict:
     if not _run_lock.acquire(blocking=False):
         return {"configured": True, "busy": True, "events": 0}
     try:
+        _refresh_accounts(db)                                # al conectarse y en cada ciclo de ~30 min: cuentas y contraseñas de la nube (la nube manda)
         res = [upload_event(db, ev, force=force) for ev in synced_events(db)]
         return {"configured": True, "events": len(res), "failed": sum(1 for r in res if not r["ok"]), "pending": sum(r["pending"] for r in res)}
     finally:

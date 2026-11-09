@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import audit_actions, jobs, security, sessions, staff_credentials
+from app import audit_actions, jobs, security, sessions, staff_credentials, localmode
 from app.inputcheck import check_text, check_username, text_validator, username_validator
 from app.auth import EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
@@ -152,6 +152,8 @@ def create_staff(
         )
     if data.role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
+    if localmode.is_local_server():
+        raise HTTPException(status_code=403, detail="Las cuentas se crean en la nube: aquí llegan solas al conectarse")          # Fase 6: la nube manda
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ese usuario ya existe")
     problem = security.password_problem(data.password, data.username, strict=True)         # 0C (C11)
@@ -378,6 +380,7 @@ def reset_staff_password(
     """Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de digitador; un
     admin, las de abajo). Salvo el digitador temporal, la persona debe elegir su propia contraseña al ingresar
     (`must_change_password`, siempre; Fase 4)."""
+    localmode.assert_passwords_allowed()          # Fase 6: en un servidor local las contraseñas solo se cambian en la nube
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")

@@ -31,6 +31,7 @@ from app.routers import nodes as nodes_router      # Fase 6: servidores locales 
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
 
+from app.routers import node_accounts as node_accounts_router      # Fase 6: cuentas hacia los servidores locales (X-Node-Token)
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
@@ -247,7 +248,6 @@ from app import staticver  # noqa: E402
 
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
-templates.env.globals["local_server"] = local_server_router.is_local_server          # Fase 6: la barra lateral muestra «Servidor local» solo en un servidor local
 templates.env.filters["local_dt"] = lambda dt: dt.replace(tzinfo=__import__("datetime").timezone.utc).astimezone(__import__("app.timeutil", fromlist=["_TZ"])._TZ).strftime("%d/%m/%Y %I:%M %p") if dt else ""
 
 REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
@@ -300,6 +300,7 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 templates.env.globals["golden_logo_attrs"] = golden_logo_attrs
@@ -375,6 +376,7 @@ _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y su
 _include(local_server_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
 
+_include(node_accounts_router.router, prefix="/api")
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
