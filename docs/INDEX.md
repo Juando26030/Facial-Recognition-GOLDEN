@@ -51,5 +51,5 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 - [`ux/`](ux/): análisis de flujo y UX, plan de la fase 1 visual, pendientes post-piloto.
 - `comp_de_check.py.txt`: script de comprobación de impresión guardado como texto (histórico).
 - **Cierre de las Fases 0 y 1 (5-nov-2026):** `CIERRE_FASES_0_1.md`.
-- **Cierre de la Fase 4 — Equipo del evento (8-nov-2026):** `CIERRE_FASE_4.md` (+ `FASE_4_*.md`, `FASE_4_SEGURIDAD.md`). Ramas ya integradas en `f4/integracion` y candidatas a borrar (con permiso): `4B_ramas_integradas_en_f4.txt`.
+- **Cierre de la Fase 4 — Equipo del evento (8-nov-2026):** `CIERRE_FASE_4.md` (+ `FASE_4_*.md`, `FASE_4_SEGURIDAD.md`). Ramas ya integradas y candidatas a borrar (con permiso): `4B_ramas_integradas_en_f4.txt` y `5_ramas_integradas_en_f5.txt` (9-nov).
 - Fase 0A/0B: `0B_inventario.md`, `0B_ramas_borradas.md` (+ lista) — limpieza del repositorio.
