@@ -28,6 +28,7 @@ from app.routers import event_history as event_history_router      # Fase 5: his
 from app.routers import clean_url as clean_url_router      # D2.5k: /inscripciones/<evento>/<formulario> (se registra al final)
 from app.routers import public_link as public_link_router
 from app.routers import event_lease as event_lease_router
+from app.routers import selfreg as selfreg_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
@@ -374,6 +375,7 @@ _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
 _include(public_link_router.router, prefix="/api")      # D2.5k: nombre del enlace limpio de inscripciones y formulario principal (admin/comercial)
 _include(event_lease_router.router, prefix="/api")
+_include(selfreg_router.router, prefix="/api")          # Fase 8: autorregistro sin base de datos en el kiosco (app/selfreg.py)
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(local_server_router.router, prefix="/api")
@@ -772,6 +774,12 @@ def kiosk_rostro(event_id: int, request: Request, db: Session = Depends(get_db))
     """B1: pantalla de autoservicio «Entrar con mi rostro» (la persona pulsa; el equipo está abierto con una cuenta del personal). Ver app/routers/door.py."""
     from app.routers.api import NOT_FOUND_FACE
     return _resolve_kiosk_page(event_id, request, db, "kiosk_rostro.html", extra_context={"not_found": NOT_FOUND_FACE})
+
+
+@app.get("/kiosk/{event_id}/autoregistro")
+def kiosk_autoregistro(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Fase 8: pantalla de autorregistro sin base de datos (la persona se crea sola; el equipo está abierto con una cuenta del personal). Ver app/selfreg.py."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_autoregistro.html")
 
 
 @app.get("/kiosk/{event_id}/facial")
