@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servidor local | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
+    <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/servidor-local.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
+</head>
+<body class="gw-page gw-shell">
+<a class="gw-skip" href="#contenido">Ir al contenido</a>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <a href="/configuracion" class="gw-btn gw-btn--ghost gw-btn--sm" aria-label="Configuración (Apariencia)" title="Configuración (Apariencia)">
+        <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg>
+      </a>
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<main class="golden-main" id="contenido">
+  <div class="gw-container gw-stack-lg">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Servidor local</p>
+        <h1 class="gw-page-head__title">Eventos de la nube</h1>
+        <p class="gw-page-head__sub">Aquí ves todos los eventos, sin su información. Con «Descargar a local» el evento baja completo a este servidor y en la nube queda en solo lectura. Servidor: <strong id="slNode">—</strong>.</p>
+      </div>
+    </div>
+    <div id="slAlert" role="status" hidden></div>
+    <div class="gw-toolbar">
+      <div class="gw-search gw-search--hero gw-toolbar__grow">
+        <div class="gw-search__row"><div class="gw-search__field">
+          <input class="gw-input" type="search" id="slSearch" placeholder="Buscar por evento, código o cliente" aria-label="Buscar evento" autocomplete="off" spellcheck="false">
+        </div></div>
+      </div>
+      <div class="gw-toolbar__actions" role="group" aria-label="Agrupar eventos">
+        <button type="button" class="gw-chip" data-group="client" aria-pressed="true">Por cliente</button>
+        <button type="button" class="gw-chip" data-group="calendar" aria-pressed="false">Por calendario</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="slReload">Actualizar lista</button>
+      </div>
+    </div>
+    <div id="slEvents" aria-busy="true"><p class="gw-hint">Cargando eventos de la nube...</p></div>
+    <p class="gw-hint">¿Sin conexión o prefieres hacerlo a mano? En la nube exporta el evento y aquí impórtalo (Parámetros del sistema). El resultado es el mismo.</p>
+  </div>
+</main>
+</body>
+</html>

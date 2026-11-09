@@ -25,6 +25,8 @@ from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
 from app.routers import event_lease as event_lease_router      # Fase 6: arrendamiento del evento por un servidor local
+from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
+from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
@@ -239,6 +241,7 @@ from app import staticver  # noqa: E402
 
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
+templates.env.globals["local_server"] = local_server_router.is_local_server          # Fase 6: la barra lateral muestra «Servidor local» solo en un servidor local
 templates.env.filters["local_dt"] = lambda dt: dt.replace(tzinfo=__import__("datetime").timezone.utc).astimezone(__import__("app.timeutil", fromlist=["_TZ"])._TZ).strftime("%d/%m/%Y %I:%M %p") if dt else ""
 
 REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
@@ -360,6 +363,8 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(local_server_router.router, prefix="/api")
+_include(node_api_router.router, prefix="/api")
 _include(event_lease_router.router, prefix="/api")      # Fase 6: evento en servidor local (solo lectura en la nube)
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
@@ -545,6 +550,23 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+    })
+
+
+@app.get("/servidor-local")
+def servidor_local_page(request: Request):
+    """Servidor local (Fase 6, solo con LOCAL_SERVER=1): todos los eventos de la nube y «Descargar a local». En la nube no existe esta pantalla."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    if not local_server_router.is_local_server():
+        return RedirectResponse("/", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not (roles & {"almacen", "contabilidad"}) and max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="servidor_local.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
 
 
