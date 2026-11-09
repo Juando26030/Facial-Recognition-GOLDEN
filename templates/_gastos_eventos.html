@@ -1,0 +1,61 @@
+{# Pestaña «Eventos» del panel de gastos (Fase 9, pieza D): satisfacción de los clientes y tiempos de cierre/facturación. Solo administradores.
+   La carcasa /gastos (pieza C) la incluye con `{% include "_gastos_eventos.html" ignore missing %}`. Los datos salen de /api/gastos/eventos/panel (static/js/gastos-eventos.js). #}
+<link rel="stylesheet" href="{{ url_for('static', path='css/gastos-eventos.css') }}">
+<section id="gw-gastos-eventos" class="gw-ge" aria-label="Análisis de eventos" data-api="/api/gastos/eventos">
+  <p id="gw-ge-summary" class="gw-ge__summary gw-lead" role="status">Cargando el análisis…</p>
+
+  <form id="gw-ge-filters" class="gw-toolbar gw-ge__filters" autocomplete="off">
+    <label class="gw-field gw-field--inline"><span class="gw-label">Desde</span><input class="gw-input" type="date" name="desde"></label>
+    <label class="gw-field gw-field--inline"><span class="gw-label">Hasta</span><input class="gw-input" type="date" name="hasta"></label>
+    <label class="gw-field gw-field--inline"><span class="gw-label">Cliente</span><select class="gw-input" name="cliente"><option value="">Todos</option></select></label>
+    <label class="gw-field gw-field--inline"><span class="gw-label">Comercial</span><select class="gw-input" name="comercial"><option value="">Todos</option></select></label>
+    <details class="gw-ge__settings">
+      <summary class="gw-btn gw-btn--ghost gw-btn--sm">Umbrales de las alertas</summary>
+      <div class="gw-form-grid">
+        <label class="gw-field"><span class="gw-label">Baja satisfacción: promedio (1-3) igual o menor a</span><input class="gw-input gw-input--short" type="number" name="low" min="1" max="3" step="0.1"></label>
+        <label class="gw-field"><span class="gw-label">Sin facturar después de (días desde Finalizado)</span><input class="gw-input gw-input--short" type="number" name="overdue" min="1" max="365"></label>
+        <label class="gw-field"><span class="gw-label">Encuesta sin responder después de (días desde Facturado)</span><input class="gw-input gw-input--short" type="number" name="wait" min="1" max="365"></label>
+      </div>
+    </details>
+    <button class="gw-btn gw-btn--primary" type="submit">Aplicar</button>
+    <button class="gw-btn gw-btn--secondary" type="button" id="gw-ge-export">Descargar Excel</button>
+  </form>
+
+  <div id="gw-ge-kpis" class="gw-stats-row" aria-live="polite"></div>
+
+  <div class="gw-ge__grid">
+    <article class="gw-card"><h3 class="gw-subtitle">Calidad por pregunta (1 = Malo, 3 = Excelente)</h3><div id="gw-ge-questions"></div></article>
+    <article class="gw-card"><h3 class="gw-subtitle">¿Recomendaría a Golden? (0-10)</h3><div id="gw-ge-nps"></div></article>
+    <article class="gw-card gw-ge__wide"><h3 class="gw-subtitle">Evolución mensual</h3><div id="gw-ge-monthly"></div></article>
+    <article class="gw-card"><h3 class="gw-subtitle">Mejor evaluados</h3><div id="gw-ge-best"></div></article>
+    <article class="gw-card"><h3 class="gw-subtitle">Peor evaluados</h3><div id="gw-ge-worst"></div></article>
+  </div>
+
+  <h3 class="gw-subtitle">Alertas</h3>
+  <div class="gw-ge__grid">
+    <article class="gw-card"><h4 class="gw-label">Baja satisfacción</h4><div id="gw-ge-low"></div></article>
+    <article class="gw-card"><h4 class="gw-label">Encuestas sin responder</h4><div id="gw-ge-pending"></div></article>
+    <article class="gw-card"><h4 class="gw-label">Clientes con evaluación a la baja</h4><div id="gw-ge-declining"></div></article>
+  </div>
+
+  <h3 class="gw-subtitle">Tiempos (en días)</h3>
+  <div class="gw-ge__grid">
+    <article class="gw-card gw-ge__wide"><div id="gw-ge-times"></div></article>
+    <article class="gw-card gw-ge__wide"><h4 class="gw-label">Facturación por mes (días desde el fin del evento)</h4><div id="gw-ge-times-monthly"></div></article>
+    <article class="gw-card gw-ge__wide"><h4 class="gw-label">Eventos finalizados sin facturar</h4><div id="gw-ge-overdue"></div></article>
+  </div>
+
+  <h3 class="gw-subtitle">Por comercial, coordinador, cliente y ciudad</h3>
+  <div class="gw-ge__grid">
+    <article class="gw-card"><h4 class="gw-label">Comercial</h4><div id="gw-ge-by-commercial"></div></article>
+    <article class="gw-card"><h4 class="gw-label">Coordinador</h4><div id="gw-ge-by-coordinator"></div></article>
+    <article class="gw-card"><h4 class="gw-label">Cliente</h4><div id="gw-ge-by-client"></div></article>
+    <article class="gw-card"><h4 class="gw-label">Ciudad</h4><div id="gw-ge-by-city"></div></article>
+    <article class="gw-card gw-ge__wide"><h4 class="gw-label">Tiempo de facturación por comercial</h4><div id="gw-ge-time-commercial"></div></article>
+    <article class="gw-card gw-ge__wide"><h4 class="gw-label">Tiempo de facturación por cliente</h4><div id="gw-ge-time-client"></div></article>
+  </div>
+
+  <h3 class="gw-subtitle">Comentarios recientes de los clientes</h3>
+  <p class="gw-hint">Texto libre escrito por el cliente en la encuesta; solo lo ven los administradores.</p>
+  <div id="gw-ge-comments"></div>
+</section>

@@ -1,0 +1,26 @@
+/* Pestaña «Eventos» del panel de gastos (Fase 9 D). Solo tokens --gw-*; los gráficos son SVG propios que heredan color de estas clases (claro/oscuro salen de los tokens). */
+.gw-ge { display: flex; flex-direction: column; gap: var(--gw-sp-4); }
+.gw-ge__summary { margin: 0; font-weight: var(--gw-fw-bold); }
+.gw-ge__filters { flex-wrap: wrap; align-items: end; gap: var(--gw-sp-3); }
+.gw-ge__settings { align-self: center; }
+.gw-ge__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: var(--gw-sp-4); }
+.gw-ge__wide { grid-column: 1 / -1; }
+.gw-ge__empty { color: var(--gw-text-muted); margin: 0; }
+.gw-ge__svg { width: 100%; height: auto; display: block; }
+.gw-ge__svg text { fill: var(--gw-text); font-family: var(--gw-font); font-size: 12px; }
+.gw-ge__svg .gw-ge__muted { fill: var(--gw-text-muted); }
+.gw-ge__axis { stroke: var(--gw-border-strong); stroke-width: 1; }
+.gw-ge__grid-line { stroke: var(--gw-border); stroke-width: 1; }
+.gw-ge__bar { fill: var(--gw-navy); }
+[data-theme="dark"] .gw-ge__bar { fill: var(--gw-gold-2); }
+.gw-ge__bar--bad { fill: var(--gw-err-line); }
+.gw-ge__bar--good { fill: var(--gw-warn-line); }
+.gw-ge__bar--excellent { fill: var(--gw-ok-line); }
+.gw-ge__line { fill: none; stroke: var(--gw-navy); stroke-width: 2.5; }
+[data-theme="dark"] .gw-ge__line { stroke: var(--gw-gold-2); }
+.gw-ge__line--alt { stroke: var(--gw-ok-line); stroke-dasharray: 6 4; }
+.gw-ge__dot { fill: var(--gw-surface); stroke: var(--gw-navy); stroke-width: 2; }
+.gw-ge__legend { display: flex; gap: var(--gw-sp-4); flex-wrap: wrap; margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-ge__comment { border-left: 4px solid var(--gw-gold-1); padding: var(--gw-sp-2) var(--gw-sp-4); margin: 0 0 var(--gw-sp-3); background: var(--gw-surface); border-radius: var(--gw-radius-sm); }
+.gw-ge__comment cite { display: block; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-style: normal; }
+.gw-ge__list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
