@@ -20,7 +20,7 @@ from app.database import get_db
 from app import event_archive, event_rules, formsvc
 from app import event_template as event_tpl
 from app import event_template_svc
-from app import pledge, testperson
+from app import pledge, testperson, workday
 from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
@@ -151,6 +151,7 @@ def _serialize(e: Event) -> dict:
         "setup_date": e.setup_date.isoformat() if e.setup_date else None,
         "event_time_start": e.event_time_start, "event_time_end": e.event_time_end,
         "setup_time_start": e.setup_time_start, "setup_time_end": e.setup_time_end,
+        **workday.serialize(e),          # Fase 5: jornada calculada (solo lectura): workday_key / workday_label / workday_hours
         "notes": e.notes,
         "coordinator_staff_id": e.coordinator_staff_id,
         "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,

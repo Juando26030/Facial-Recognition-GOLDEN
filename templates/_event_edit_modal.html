@@ -51,6 +51,8 @@
               <div class="gw-field"><label class="gw-label" for="eeSetupStart">Hora inicio montaje</label><input class="gw-input clock-time" type="text" id="eeSetupStart" name="setup_time_start" required></div>
               <div class="gw-field"><label class="gw-label" for="eeSetupEnd">Hora fin montaje</label><input class="gw-input clock-time" type="text" id="eeSetupEnd" name="setup_time_end" required></div>
             </div>
+            {# Fase 5: Jornada, campo informativo CALCULADO de las horas del evento (app/workday.py). Solo lectura (sin name: no viaja al guardar). Se muestra si la plantilla de evento lo incluye. #}
+            <div class="gw-field" id="eeWorkdayField" hidden><label class="gw-label" for="eeWorkday" id="eeWorkdayLabel">Jornada <span class="gw-hint">(calculada)</span></label><input class="gw-input" type="text" id="eeWorkday" readonly tabindex="-1" value="—" aria-live="polite"><small class="gw-hint">Se calcula sola con la hora de inicio y la de fin del evento.</small></div>
           </div>
         </details>
 
@@ -158,6 +160,7 @@
 <script src="{{ url_for('static', path='js/gw-geo.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-map.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/workday.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script>
 (function () {
@@ -261,6 +264,17 @@
     return tplCache;
   }
   if (EF) EF.bind(extraBody, { fields: extraFields });
+  // Jornada (Fase 5): solo lectura; se recalcula al cambiar las horas del evento. Se ve si el administrador la agregó a la plantilla (vista de creación o tarjeta del calendario).
+  const workdayField = document.getElementById('eeWorkdayField');
+  const workdayRefresh = EF && EF.bindWorkday ? EF.bindWorkday(form, { read: () => ({ start: form.event_time_start.value, end: form.event_time_end.value }), targets: '#eeWorkday' }) : null;
+  function paintWorkday(tpl) {
+    const f = tpl && (tpl.fields || []).find((x) => x.key === 'workday' && !x.retired);
+    const inCreation = f && ((tpl.creation_layout || {}).sections || []).some((s) => (s.keys || []).includes('workday'));
+    const inCalendar = f && Object.values((tpl.calendar_layout || {}).zones || {}).some((z) => (z || []).some((i) => i.key === 'workday'));
+    workdayField.hidden = !(inCreation || inCalendar) || !workdayRefresh;
+    if (f) document.getElementById('eeWorkdayLabel').firstChild.textContent = f.title + ' ';
+    if (workdayRefresh) workdayRefresh();
+  }
   function renderExtra(ev, tpl) {
     Object.keys(extraFields).forEach((k) => delete extraFields[k]);
     extraBody.innerHTML = '';
@@ -433,6 +447,7 @@
     form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
+    paintWorkday(tpl);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     document.getElementById('eeFinalDbFile').value = '';

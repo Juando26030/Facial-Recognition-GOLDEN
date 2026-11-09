@@ -114,7 +114,7 @@
   }
   function setRequired(m, key, on) {
     var f = field(m, key);
-    if (!f || f.type === 'switch' || isLocked(m, key)) return false;
+    if (!f || f.type === 'switch' || f.type === 'workday' || isLocked(m, key)) return false;          // el interruptor y la jornada (calculada) no se pueden marcar obligatorios
     f.required = !!on;
     if (on && sectionIndexOf(m, key) < 0) m.sections[m.sections.length - 1].keys.push(key);          // un obligatorio tiene que estar en la vista de creación
     return true;
@@ -277,7 +277,7 @@
     var q = function (id) { return host.querySelector('#' + id); };
     var dirty = function () { if (opts && opts.onChange) opts.onChange(); };
     var toast = function (msg, kind) { if (root.showToast) root.showToast(msg, kind || 'info'); };
-    var typeTag = function (f) { return f.type === 'switch' ? 'Interruptor' : model.typeLabel(m, f.type); };
+    var typeTag = function (f) { return f.type === 'switch' ? 'Interruptor' : f.type === 'workday' ? 'Calculado · solo lectura' : model.typeLabel(m, f.type); };
 
     function load(resp) { m = fromServer(resp); if (!sel || !model.field(m, sel)) sel = null; renderAll(); }
 
@@ -323,6 +323,8 @@
       if (sw) {
         var s = ((m.catalog.switches) || []).filter(function (x) { return x.field_key === f.key; })[0];
         html += '<div class="gw-alert">' + ic('info') + '<div class="gw-alert__body">Es la misma opción de «Parámetros del evento»' + (s && s.requires ? ' (necesita «' + esc(((m.catalog.switches.filter(function (x) { return x.key === s.requires; })[0]) || {}).title || '') + '» activo)' : '') + '. Si no la defines al crear el evento, la defines después en Parámetros.</div></div>';
+      } else if (f.type === 'workday') {
+        html += '<div class="gw-alert">' + ic('info') + '<div class="gw-alert__body">Campo informativo: se calcula solo con la hora de inicio y la de fin del evento y no se edita a mano. 0 a 6 h «Media jornada»; más de 6 y hasta 9 h «Jornada intermedia»; más de 9 y hasta 12 h «Jornada completa»; más de 12 h «Jornada extendida». Agrégalo a la vista de creación para verlo al crear y editar el evento, y a la vista del calendario para que salga como etiqueta en la tarjeta.</div></div>';
       } else {
         html += '<label class="gw-check"><input type="checkbox" data-tpl-prop="required"' + (f.required ? ' checked' : '') + (locked ? ' disabled' : '') + '> <span class="gw-choice__text">Obligatorio' + (locked ? ' (siempre)' : '') + '</span></label>';
       }

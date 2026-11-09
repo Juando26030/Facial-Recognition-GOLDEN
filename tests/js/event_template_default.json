@@ -67,6 +67,7 @@
    "setup_date",
    "setup_time_start",
    "setup_time_end",
+   "workday",
    "coordinator_staff_id",
    "commercial_staff_id",
    "super_event_id",
@@ -250,6 +251,11 @@
     "creatable": true,
     "label": "Inventario",
     "type": "inventory"
+   },
+   {
+    "creatable": false,
+    "label": "Jornada (calculada)",
+    "type": "workday"
    },
    {
     "creatable": false,
@@ -483,6 +489,16 @@
    "retired": false,
    "title": "Hora fin montaje",
    "type": "time"
+  },
+  {
+   "config": {},
+   "help": "Se calcula sola con la hora de inicio y la de fin del evento. No se edita.",
+   "key": "workday",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Jornada",
+   "type": "workday"
   },
   {
    "config": {},
