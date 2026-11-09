@@ -20,7 +20,6 @@
     super_admin: ['admin', 'comercial', 'coordinador', 'digitador', 'cliente'],
   }[staffRole] || [];
   // Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17): lo hace el administrador. Solo admite este único par, en cualquier orden.
-  const DUAL_ROLE_PAIR = { coordinador: 'comercial', comercial: 'coordinador' };
   const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente' };
   const roleLabel = (r) => ROLE_LABELS[r] || r;
 
@@ -29,13 +28,17 @@
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
   const apiError = async (res, fallback) => { const d = await res.json().catch(() => ({})); return typeof d.detail === 'string' ? d.detail : fallback; };
 
+  let staffList = [];          // la última lista cargada (el diálogo «Editar» lee de aquí)
+  const staffById = (id) => staffList.find((x) => String(x.id) === String(id));
+
   /* ---------------------------------------------------------------- Lista */
   async function loadStaff() {
     listEl.setAttribute('aria-busy', 'true');
     try {
       const res = await fetch('/api/staff' + (showArchived && isAdminPlus ? '?include_archived=true' : ''));
       if (!res.ok) throw new Error('http');
-      render(await res.json());
+      staffList = await res.json();
+      render(staffList);
     } catch (e) {
       listEl.innerHTML = '<div class="gw-alert gw-alert--err" role="alert">' + icon('error') + '<div class="gw-alert__body">No se pudieron cargar las cuentas. Revisa la conexión e inténtalo de nuevo.</div>' +
         '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-staff-action="reload">Reintentar</button></div>';
@@ -51,7 +54,6 @@
       return html;
     }
     if (s.role === 'super_admin' || s.username === staffUsername) return '<p class="gw-hint">Sin acciones disponibles para esta cuenta.</p>';
-    const otherRole = DUAL_ROLE_PAIR[s.role];
     const attrs = (action, extra) => `data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}`;
     const btn = (action, label, ico, cls, extra) => `<button type="button" class="gw-btn ${cls || 'gw-btn--secondary'}" ${attrs(action, extra)}>${ico ? icon(ico, 'gw-icon--sm') : ''}<span>${label}</span></button>`;
     const item = (action, label, ico, extra, danger) => `<button type="button" class="gw-menu__item${danger ? ' gw-menu__item--danger' : ''}" role="menuitem" ${attrs(action, extra)}>${icon(ico, 'gw-icon--sm')}<span>${label}</span></button>`;
@@ -60,12 +62,7 @@
     // A la vista lo de todos los días (restablecer contraseña, desactivar/reactivar); lo poco usado y lo irreversible va en el menú «Más acciones».
     if (DELETABLE_ROLES.includes(s.role)) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));
     parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check', 'gw-btn--ok'));
-    if (isAdminPlus && otherRole) {
-      more.push(s.secondary_role
-        ? item('secondary', `Quitar «${esc(roleLabel(otherRole))}»`, 'close', 'data-value=""')
-        : item('secondary', `También ${esc(roleLabel(otherRole))}`, 'plus', `data-value="${esc(otherRole)}"`));
-    }
-    if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol', 'user-plus', `data-current="${esc(s.role)}"`));
+    if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol o añadir roles', 'user-plus', `data-current="${esc(s.role)}" data-extras="${esc((s.extra_roles || []).join(','))}"`));
     if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Eliminar cuenta', 'trash', '', true));          // 8-nov-2026: se elimina de verdad (para dejar sin acceso está «Desactivar»); nunca un super_admin
     if (more.length) parts.push(`<div class="gw-menu gw-staff__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-staff-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(s.username)}">${icon('more')}</button><div class="gw-menu__panel" role="menu" hidden>${more.join('')}</div></div>`);
     return parts.join('');
@@ -79,7 +76,7 @@
       return;
     }
     listEl.innerHTML = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>' + list.map((s) => {
-      const roles = s.secondary_role ? `${roleLabel(s.role)} + ${roleLabel(s.secondary_role)}` : roleLabel(s.role);
+      const roles = [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).map(roleLabel).join(' + ');
       return `
       <article class="gw-card-row gw-staff__row">
         <div class="gw-card-row__head gw-staff__head">
@@ -88,7 +85,7 @@
         </div>
         <p class="gw-card-row__meta gw-staff__c-name" title="${esc(s.full_name || '')}">${esc(s.full_name || 'Sin nombre')}</p>
         <p class="gw-card-row__meta gw-staff__mail gw-staff__c-mail"><span class="gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}</span>
-          <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-staff-action="email" data-id="${esc(s.id)}" data-current="${esc(s.email || '')}" aria-label="Editar el correo de ${esc(s.username)}">${icon('edit', 'gw-icon--sm')}</button></p>
+          <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-staff-action="profile" data-id="${esc(s.id)}" aria-label="Editar el perfil de ${esc(s.username)}">${icon('edit', 'gw-icon--sm')}</button></p>
         <p class="gw-staff__c-role"><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
         <div class="gw-card-row__actions gw-staff__actions gw-staff__c-act">${actionsHtml(s)}</div>
       </article>`;
@@ -96,54 +93,88 @@
   }
 
   /* ---------------------------------------------------------------- Acciones */
-  async function editEmail(btn) {
-    const email = await showPrompt('Correo de esta cuenta (vacío para quitarlo):', { defaultValue: btn.dataset.current, confirmLabel: 'Guardar' });
-    if (email === null) return;
-    await busy(btn, async () => {
-      const res = await fetch(`/api/staff/${btn.dataset.id}/email`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-      if (res.ok) { showToast('Correo actualizado', 'success'); loadStaff(); } else showToast(await apiError(res, 'No se pudo actualizar el correo'), 'error');
+  // «Editar»: usuario, nombre, correo y celular de la cuenta en un solo cuadro (8-nov-2026).
+  function editProfile(btn) {
+    const s = staffById(btn.dataset.id);
+    if (!s) return;
+    const own = s.username === staffUsername;
+    const field = (id, label, value, extra) => `<div class="gw-field"><label class="gw-label" for="${id}">${label}</label><input class="gw-input" id="${id}" value="${esc(value || '')}" ${extra || ''}></div>`;
+    const d = openGwDialog({
+      title: 'Editar cuenta',
+      bodyHtml: '<form id="staffProfileForm" novalidate>' +
+        field('pfUser', 'Usuario', s.username, own ? 'disabled' : 'maxlength="64" autocomplete="off"') +
+        (own ? '' : '<p class="gw-hint">Si cambias el usuario, a esa persona se le cierra la sesión y debe entrar con el nuevo.</p>') +
+        field('pfName', 'Nombre completo', s.full_name, 'maxlength="120" autocomplete="off"') +
+        field('pfMail', 'Correo', s.email, 'type="email" maxlength="120" autocomplete="off"') +
+        field('pfPhone', 'Celular', s.phone, 'inputmode="tel" maxlength="30" autocomplete="off"') + '</form>',
+      buttons: [{ id: 'pfCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'pfOk', cls: 'gw-btn--primary', label: 'Guardar' }],
+      onEscape: () => d.close(),
     });
+    const q = (sel) => d.dlg.querySelector(sel);
+    q('#pfCancel').addEventListener('click', () => d.close());
+    q('#pfOk').addEventListener('click', () => busy(q('#pfOk'), async () => {
+      const body = { full_name: q('#pfName').value, email: q('#pfMail').value, phone: q('#pfPhone').value };
+      if (!own) body.username = q('#pfUser').value;
+      const res = await fetch(`/api/staff/${s.id}/profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.ok) { d.close(); showToast('Cuenta actualizada', 'success'); loadStaff(); } else showToast(await apiError(res, 'No se pudo guardar'), 'error');
+    }));
+    q('#pfName').focus();
   }
 
-  async function setSecondaryRole(btn) {
-    const secondaryRole = btn.dataset.value || null;
-    if (!secondaryRole && !(await showConfirm(`¿Quitarle el segundo rol a "${esc(btn.dataset.username)}"? Perderá los permisos que ese rol le daba.`, { confirmLabel: 'Quitar rol' }))) return;
-    await busy(btn, async () => {
-      const res = await fetch(`/api/staff/${btn.dataset.id}/secondary-role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secondary_role: secondaryRole }) });
-      if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${roleLabel(secondaryRole)}` : 'Rol secundario quitado', 'success'); }
-      else showToast(await apiError(res, 'No se pudo actualizar'), 'error');
-    });
-  }
-
-  // Cambio de rol: una lista con los roles permitidos (en vez de escribirlo) y un cuadro que dice a quién y de qué a qué.
+  // Roles de la cuenta: el principal (lista) y debajo «Añadir roles» (casillas): una persona puede tener uno, dos o más; sus permisos son la suma. «Admin» como rol extra solo lo da el Super Admin.
   function changeRole(btn) {
     const allowed = staffRole === 'super_admin' ? ['coordinador', 'comercial', 'admin'] : ['coordinador', 'comercial'];
     const current = btn.dataset.current;
     const username = btn.dataset.username;
+    const currentExtras = (btn.dataset.extras || '').split(',').filter(Boolean);
     const options = allowed.map((r) => `<option value="${r}" ${r === current ? 'selected' : ''}>${roleLabel(r)}</option>`).join('');
+    const extraChoices = ['coordinador', 'comercial'].concat(staffRole === 'super_admin' ? ['admin'] : []);
     const d = openGwDialog({
-      title: 'Cambiar rol',
-      bodyHtml: `<p class="gw-modal__text">Cuenta <strong>${esc(username)}</strong>: hoy es <strong>${esc(roleLabel(current))}</strong>. Elige el nuevo rol; sus permisos cambian en cuanto lo confirmes.</p>` +
-        '<div class="gw-field"><label class="gw-label" for="staffNewRole">Nuevo rol</label><select class="gw-select" id="staffNewRole">' + options + '</select></div>',
-      buttons: [{ id: 'staffRoleCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'staffRoleOk', cls: 'gw-btn--primary', label: 'Cambiar rol' }],
+      title: 'Roles de la cuenta',
+      bodyHtml: `<p class="gw-modal__text">Cuenta <strong>${esc(username)}</strong>. Los permisos cambian en cuanto confirmes; si tiene varios roles, recibe la suma de todos.</p>` +
+        '<div class="gw-field"><label class="gw-label" for="staffNewRole">Rol principal</label><select class="gw-select" id="staffNewRole">' + options + '</select></div>' +
+        '<fieldset class="gw-field" id="staffExtraBox"><legend class="gw-label">Añadir roles</legend>' +
+        extraChoices.map((r) => `<label class="gw-check" data-extra-row="${r}"><input type="checkbox" value="${r}" ${currentExtras.includes(r) ? 'checked' : ''}><span>${esc(roleLabel(r))}</span></label>`).join('') +
+        '<p class="gw-hint">Más adelante se podrán añadir también Bodega y Contabilidad.</p></fieldset>',
+      buttons: [{ id: 'staffRoleCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'staffRoleOk', cls: 'gw-btn--primary', label: 'Guardar roles' }],
       onEscape: () => d.close(),
     });
+    const sel = d.dlg.querySelector('#staffNewRole');
+    const box = d.dlg.querySelector('#staffExtraBox');
+    const syncBox = () => {          // el rol principal no se repite como extra; con «admin» como principal no hay extras
+      box.hidden = sel.value === 'admin';
+      box.querySelectorAll('[data-extra-row]').forEach((row) => {
+        const same = row.dataset.extraRow === sel.value;
+        row.hidden = same;
+        if (same) row.querySelector('input').checked = false;
+      });
+    };
+    sel.addEventListener('change', syncBox);
+    syncBox();
     d.dlg.querySelector('#staffRoleCancel').addEventListener('click', () => d.close());
-    const ok = d.dlg.querySelector('#staffRoleOk');
-    ok.addEventListener('click', () => {
-      const role = d.dlg.querySelector('#staffNewRole').value;
-      if (role === current) { d.close(); return; }
+    d.dlg.querySelector('#staffRoleOk').addEventListener('click', () => {
+      const role = sel.value;
+      const extras = role === 'admin' ? [] : Array.from(box.querySelectorAll('input:checked')).map((i) => i.value);
+      if (role === current && extras.slice().sort().join() === currentExtras.slice().sort().join()) { d.close(); return; }
       d.close();
-      showConfirm(`¿Cambiar el rol de "${esc(username)}" de ${esc(roleLabel(current))} a ${esc(roleLabel(role))}? Perderá de inmediato los permisos propios de ${esc(roleLabel(current))}.`, { confirmLabel: 'Sí, cambiar rol' }).then((yes) => { if (yes) applyRole(btn, role); });
+      const txt = role === current
+        ? `¿Dejar a "${esc(username)}" como ${esc(roleLabel(current))}${extras.length ? ' + ' + extras.map(roleLabel).map(esc).join(' + ') : ' solamente'}?`
+        : `¿Cambiar el rol principal de "${esc(username)}" de ${esc(roleLabel(current))} a ${esc(roleLabel(role))}${extras.length ? ', más ' + extras.map(roleLabel).map(esc).join(' + ') : ''}? Perderá de inmediato los permisos que ya no le correspondan.`;
+      showConfirm(txt, { confirmLabel: 'Sí, guardar' }).then((yes) => { if (yes) applyRoles(btn, role, current, extras); });
     });
-    d.dlg.querySelector('#staffNewRole').focus();
+    sel.focus();
   }
 
-  function applyRole(btn, role) {
-      busy(btn, async () => {
+  function applyRoles(btn, role, current, extras) {
+    busy(btn, async () => {
+      if (role !== current) {
         const res = await fetch(`/api/staff/${btn.dataset.id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
-        if (res.ok) { loadStaff(); showToast('Rol actualizado', 'success'); } else showToast(await apiError(res, 'No se pudo cambiar el rol'), 'error');
-      });
+        if (!res.ok) { showToast(await apiError(res, 'No se pudo cambiar el rol'), 'error'); return; }
+      }
+      const res2 = await fetch(`/api/staff/${btn.dataset.id}/roles`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extra_roles: extras }) });
+      loadStaff();
+      if (res2.ok) showToast('Roles actualizados', 'success'); else showToast(await apiError(res2, 'No se pudieron guardar los roles extra'), 'error');
+    });
   }
 
   async function resetPassword(btn) {
@@ -226,8 +257,7 @@
     if (btn.closest('.gw-staff__more')) closeMenus(null);
     const action = btn.dataset.staffAction;
     if (action === 'reload') loadStaff();
-    else if (action === 'email') editEmail(btn);
-    else if (action === 'secondary') setSecondaryRole(btn);
+    else if (action === 'profile') editProfile(btn);
     else if (action === 'role') changeRole(btn);
     else if (action === 'reset') resetPassword(btn);
     else if (action === 'deactivate') toggleStaff(btn, false);

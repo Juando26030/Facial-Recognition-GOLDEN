@@ -13,7 +13,7 @@ from app import publicurl, staticver
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
-from app.auth import get_current_staff, hash_password, verify_password
+from app.auth import all_extra_roles, get_current_staff, hash_password, verify_password
 from app import idle, login_control, pledge, security, sessions
 
 router = APIRouter()
@@ -58,7 +58,7 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["ep"] = int(staff.session_epoch or 0)         # S2: época de sesión de la cuenta (cambiar/restablecer la contraseña la sube)
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
-    request.session["staff_secondary_role"] = staff.secondary_role  # Sprint 2.4 Fase 15: doble rol coordinador+comercial
+    request.session["staff_secondary_role"] = ",".join(all_extra_roles(staff)) or None  # Fase 15 + 0103: los roles que se suman al principal (coma); las páginas lo leen con auth.split_roles
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username
     request.session["tours_off"] = bool(staff.tours_auto_off)   # preferencia de la CUENTA: vale igual en cualquier dispositivo

@@ -200,6 +200,7 @@ class StaffUser(Base):
     full_name = Column(String)
     role = Column(String, nullable=False)  # uno de STAFF_ROLES
     secondary_role = Column(String, nullable=True)  # Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden ser comerciales" — el ÚNICO doble rol permitido es coordinador+comercial (en cualquier orden), lo asigna admin+ desde Configuración > Staff (ver routers/staff.py: assign_secondary_role). Ver auth.py: effective_roles()/require_role()/require_role_excluding() para cómo se combina con la jerarquía normal.
+    extra_roles = Column(String, nullable=True)  # 0103 (8-nov-2026): roles que se SUMAN al principal, separados por coma (p. ej. 'comercial,admin'); la unión de permisos la resuelve auth.effective_roles. secondary_role queda como espejo del primero entre coordinador/comercial (consultas heredadas)
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)  # null = alcance global (super_admin)
     email = Column(String, nullable=True)  # correo para notificaciones (informe final del evento a la comercial) — reunión 2026-09-21, ítem 6
     phone = Column(String, nullable=True, unique=True)  # Sprint 2.4, 2026-09-16: WhatsApp; Fase 4: obligatorio+único salvo cliente/digitador (ver routers/staff.py, routers/events.py)

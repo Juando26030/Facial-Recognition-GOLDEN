@@ -57,7 +57,33 @@ def effective_roles(staff: StaffUser) -> set:
     roles = {staff.role}
     if staff.secondary_role:
         roles.add(staff.secondary_role)
+    roles.update(split_roles(getattr(staff, "extra_roles", None)))          # 8-nov-2026: varios roles a una misma cuenta (columna extra_roles)
     return roles
+
+
+# Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «bodega» y «contabilidad» se agregan aquí cuando existan.
+# Solo cuentas con rol principal en EXTRA_ROLE_PRIMARIES reciben roles extra; «admin» como extra solo lo da el Super Admin.
+EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin")
+EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial")
+
+
+def split_roles(value) -> list:
+    """'comercial,admin' -> ['comercial', 'admin'] (sin vacíos ni repetidos, solo roles que existen). También sirve para el valor guardado en la sesión."""
+    out = []
+    for r in str(value or "").split(","):
+        r = r.strip()
+        if r and r in ROLE_HIERARCHY and r not in out:
+            out.append(r)
+    return out
+
+
+def all_extra_roles(staff) -> list:
+    """Todos los roles que la cuenta tiene ADEMÁS del principal (secundario heredado + extras), en orden y sin repetir."""
+    out = split_roles(getattr(staff, "secondary_role", None))
+    for r in split_roles(getattr(staff, "extra_roles", None)):
+        if r not in out:
+            out.append(r)
+    return [r for r in out if r != staff.role]
 
 
 def require_role(minimum_role: str):

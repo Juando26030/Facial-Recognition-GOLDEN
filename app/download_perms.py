@@ -24,7 +24,8 @@ def can_download(staff, kind: str) -> bool:
 
 def can_download_roles(role, secondary_role, kind: str) -> bool:
     """Para las páginas (que solo traen los roles de la sesión)."""
-    return bool({r for r in (role, secondary_role) if r} & DOWNLOAD_ROLES.get(kind, set()))
+    from app.auth import split_roles
+    return bool(({role} | set(split_roles(secondary_role))) & DOWNLOAD_ROLES.get(kind, set()))
 
 
 def require_download(kind: str):

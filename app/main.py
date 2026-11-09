@@ -29,7 +29,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app import download_perms
-from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, split_roles
 from app import brandcolor, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
@@ -378,7 +378,9 @@ def _display_role(role: str, secondary_role: str = None) -> str:
     en toda la UI existente — así hereda visualmente todo lo que un coordinador ve, sin tener que
     tocar cada template. La distinción real de permisos (crear tenant/evento, reasignar comercial,
     etc.) ya se resuelve en el backend vía auth.effective_roles(), esto es solo para la UI."""
-    roles = {role} | ({secondary_role} if secondary_role else set())
+    roles = {role} | set(split_roles(secondary_role))
+    if role != "super_admin" and "admin" in roles:
+        return "admin"
     if {"coordinador", "comercial"} <= roles:
         return "coordinador"
     return role
@@ -394,7 +396,7 @@ def _require_page_role(request: Request, minimum_role: str):
     if not role:
         return RedirectResponse("/login", status_code=302)
     secondary_role = request.session.get("staff_secondary_role")
-    roles = [role] + ([secondary_role] if secondary_role else [])
+    roles = [role] + split_roles(secondary_role)
     if max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY[minimum_role]:
         return RedirectResponse("/", status_code=302)
     return None
@@ -449,7 +451,7 @@ def clientes_page(request: Request):
 def _nuevo_evento_response(request: Request, tenant: Optional[Tenant], sidebar_active: str, back_url: str):
     """Misma pantalla y mismo formulario para las dos entradas (Clientes -> «Nuevo evento» y pestaña Eventos -> «Nuevo evento»).
     Con `tenant` el cliente ya viene asignado (no se pide); con None la pantalla muestra el primer campo «Cliente» (lista con buscador)."""
-    _roles = {request.session.get("staff_role")} | {request.session.get("staff_secondary_role")}
+    _roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
     return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
         "pure_coordinator": not ({"comercial", "admin", "super_admin"} & _roles),
         "staff_name": request.session.get("staff_name"),
