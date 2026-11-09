@@ -8,18 +8,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # 9-nov-2026 (cierre Fase 4): form_public.html, legal_base.html y form-render.js cambiaron A PROPÓSITO (compromiso digital: ficha, secciones, avisos); hashes renovados.
+# 9-nov-2026 (revisión F5-9): digital_badge.html cambió A PROPÓSITO en la Fase 8 (QR dinámico, Wallet y enlace de contactos, orden de Juan David); y por ORDEN EXPRESA de
+# Juan David todas las páginas llevan el ícono de Golden en la pestaña (solo se agregaron las líneas <link rel="icon">). Hashes renovados.
 FROZEN = {
-    "templates/form_public.html": "ea04c1a55cf9734369cafac1be9e4619351c7069c461a95c803d145fdce79fd9",
-    "templates/aceptar.html": "4b17b85c8ae07ed355cdd86d048beeef5bf98ad5d3c94620e57b20a6e6c34cad",
-    "templates/aceptar_no_disponible.html": "c8f76e761f2d68d59898e2843a7582afe1204f3cc3988771f0ad4350cfd96e2c",
-    "templates/digital_badge.html": "f6490dc2cd932d13aa45a725e36fd80cafbd831c56b796a21b9a841a19f6062a",
-    "templates/certificate_public.html": "11e54fd3e40972b7faec3bbd0fe2d1822fe1f7a258ca4f33e5f51f1d3fb9bf80",
-    "templates/legal_base.html": "409d89e0a5cfb16c8a7f0b8eb522a920f2e73b75584d4e64dc47a8dfa48d5529",
+    "templates/form_public.html": "9d1070ae14611c4e2888cbbd00965e5c4f3f0ac4d8dccb3003aa4875b3414b6b",
+    "templates/aceptar.html": "b0b2d6f82dc3c8523bd43bfd9556500ce93a24b251260878ad66ed87b088f202",
+    "templates/aceptar_no_disponible.html": "a8de359cc787156269fb23be9d91729a0e1cf977168d1a4c7b5ee2131b2b01e4",
+    "templates/digital_badge.html": "0f34df53a792ab7eb6c1a3df6d3d1709269907dfa20d76e64181c81592c7d6a2",
+    "templates/certificate_public.html": "68e316e797bac84ff13d95d6e05b14f19fb8b210d1c0c6d21f9f03a78b787718",
+    "templates/legal_base.html": "3b9bd1eb2fabec5d3631ec3e8fa1f1fc384cadbb9d79e3099f8076b3c2dfc0b0",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
     "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
-    "templates/roulette_display.html": "434b88d72802742d43742a11dac347a273bdd4f0c687d4bb71b91264276b3917",
+    "templates/roulette_display.html": "b66d1a9f3f767b7b46b091ba0f6ea90f3db90b04c88433f23eaa4353fb7385ee",
     "templates/badge_print.html": "9e48e3062df12c53bb46c747f49a21ba0168af4f2343928f48b64c7530c49655",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
     "static/js/form-render.js": "44ab6b5b75382e6284642060169ac2c7ee0ea6916e587b0e90e856a475950ba3",

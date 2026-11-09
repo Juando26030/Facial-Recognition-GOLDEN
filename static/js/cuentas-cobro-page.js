@@ -40,7 +40,7 @@
     try {
       const d = await api('/api/payment-accounts');
       accounts = d.accounts;
-      const warn = d.encryption_ready ? '' : '<div class="gw-alert gw-alert--warn" role="status">Falta <code>PAYMENT_KEYS_ENCRYPTION_KEY</code> en el servidor: no se pueden guardar cuentas nuevas.</div>';
+      const warn = d.encryption_ready ? '' : '<div class="gw-alert gw-alert--warn" role="status">Falta la llave de cifrado de cuentas de cobro en el servidor: no se pueden guardar cuentas nuevas. Avísale al administrador técnico.</div>';
       accBox.innerHTML = warn + (accounts.length ? `<ul class="gw-list">${accounts.map(accountRow).join('')}</ul>` : '<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay cuentas de terceros</p></div>');
     } catch (err) { accBox.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(err.message)}</p></div>`; }
     finally { accBox.setAttribute('aria-busy', 'false'); }

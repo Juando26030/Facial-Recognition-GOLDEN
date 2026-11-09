@@ -205,12 +205,12 @@
     var opts = Object.keys(data.basis_labels).map(function (k) { return '<option value="' + k + '"' + (k === data.basis ? ' selected' : '') + '>' + esc(data.basis_labels[k]) + '</option>'; }).join('');
     var imp = data.gcp_export_configured
       ? '<button type="button" class="gw-btn gw-btn--secondary" data-act="import-google">Importar Google ahora</button><span class="gw-hint">La importación de Google corre sola cada mes en el Job de operaciones.</span>'
-      : '<span class="gw-hint">Importación automática de Google apagada: falta activar la exportación de facturación a BigQuery (ver guía en docs/FASE_9_PLATAFORMA.md). Mientras tanto, registra el gasto de Google a mano.</span>';
+      : '<span class="gw-hint">Importación automática de Google apagada: falta terminar de conectarla con la facturación de Google (lo hace el administrador técnico). Mientras tanto, registra el gasto de Google a mano.</span>';
     return '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Cómo se reparte entre eventos</h3><p class="gw-gx__formula"><strong>Fórmula:</strong> ' + esc(data.formula) + '</p>' +
       '<form class="gw-gx__settings" id="gxSettings"><div class="gw-field"><label class="gw-label" for="gxBasis">Criterio de reparto</label><select class="gw-select" id="gxBasis" name="basis">' + opts + '</select></div>' +
       '<div class="gw-field"><label class="gw-label" for="gxTrm">TRM por defecto (COP por USD)</label><input class="gw-input gw-input--short" id="gxTrm" name="trm_default" inputmode="decimal" value="' + (data.trm_default || '') + '" placeholder="Ej. 4100"></div>' +
       '<button type="submit" class="gw-btn gw-btn--primary">Guardar</button></form>' +
-      '<div class="gw-row">' + imp + '</div><div id="gxNeon" class="gw-hint">' + (data.neon_configured ? 'Uso de Neon: consultando…' : 'Neon: su API entrega solo uso (no dinero), así que su costo se registra a mano. Con NEON_API_KEY y NEON_ORG_ID se muestra aquí el uso.') + '</div></section>';
+      '<div class="gw-row">' + imp + '</div><div id="gxNeon" class="gw-hint">' + (data.neon_configured ? 'Uso de Neon: consultando…' : 'Neon solo informa el uso, no el dinero: su costo se registra a mano. Cuando el administrador técnico conecte Neon, aquí se verá también el uso.') + '</div></section>';
   }
 
   function costsTable() {
