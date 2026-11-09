@@ -37,6 +37,7 @@ from app.routers import form_transfer      # exportar / importar un formulario e
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
+from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
@@ -344,6 +345,8 @@ _include(staff_credentials_router.router, prefix="/api")      # reenviar credenc
 _include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
 _include(stats_links_router.router, prefix="/api")      # crear/ver/revocar enlaces de estadísticas (coordinador+)
 _include(stats_links_router.public_router)      # /ver/e/<token>, /ver/f/<token> y /api/ver/<token>/...: solo lectura, sin sesión
+_include(delivery_router.router, prefix="/api")      # Fase 5: enlace de entrega al cliente y correo (comercial+)
+_include(delivery_router.public_router)      # /entrega/<token>: encuesta y descarga de la base final (público, servicio `publico`)
 _include(reprint_router.public_router)      # /reimpresion/<token>: enlace de correo de un solo uso (el GET solo muestra)
 _include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)

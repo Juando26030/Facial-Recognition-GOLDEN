@@ -31,7 +31,7 @@ _LONG_NUMBER = re.compile(r"(?<![\w.])\+?\d[\d\s().-]{5,}\d(?![\w])")           
 _TOKEN = re.compile(r"(?<![\w-])[A-Za-z0-9_-]{28,}(?![\w-])")                    # tokens de enlaces, hashes, llaves
 # Parámetros de query que NUNCA se registran: claves/tokens, y (Fase 3, E16/C9) lo que identifica a una persona: id, email, q (búsquedas por nombre), cédula, documento, teléfono, nombre.
 _SENSITIVE_QUERY = re.compile(r"([?&](?:t|i|k|d|code|token|key|access_token|password|id|ids|email|correo|q|search|buscar|term|cedula|cc|document|documento|identificacion|phone|telefono|celular|name|nombre|nombres|apellido|apellidos|first_name|last_name)=)[^&\s]*", re.I)
-_PATH_TOKEN = re.compile(r"(/(?:b|c|r|reimpresion|restablecer|api/ver|ver/[ef])/)[^/\s?]+")      # S8: también el enlace de restablecer contraseña
+_PATH_TOKEN = re.compile(r"(/(?:b|c|r|entrega|reimpresion|restablecer|api/ver|ver/[ef])/)[^/\s?]+")      # S8: también el enlace de restablecer contraseña
 _PATH_FORM_SECRET = re.compile(r"(/f/\d+/)c[a-z0-9]{24}(?=/|\?|$)")      # el enlace del compromiso del digitador (app/pledge.py) es secreto
 _PATH_ID = re.compile(r"(?<=/)\d{5,}(?=/|\?|$)")
 # Segmento que lleva la cédula/pasaporte de una persona en la ruta, sea numérico o alfanumérico (`/api/users/AB123456`, `/events/3/users/CE-998877/badge-print-data`, `/attendees/<id>/purge-data`).
