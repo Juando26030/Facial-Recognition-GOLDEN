@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import formsvc, wompi
+from app import formsvc, payment_accounts, wompi
 from app.auth import get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
@@ -105,7 +105,7 @@ def refund_payment(event_id: int, form_id: int, payment_id: int, data: dict, db:
 
     # Reembolso automático por la API de Wompi: anulación (`void`, solo TARJETA, total o parcial) o reembolso V2 (`api`, otros medios,
     # hoy solo sandbox salvo WOMPI_REFUNDS_V2=1). Lo demás se registra como manual.
-    cfg = wompi.config(pay.is_test)
+    cfg = payment_accounts.cfg_for_payment(db, pay)
     method = (pay.payment_method or "").upper()
     via = "void" if method == "CARD" else ("v2" if cfg and wompi.refunds_v2_enabled(cfg) else None)
     if via is None:
@@ -184,7 +184,7 @@ def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_
     if action == "discard":
         if refund.kind == "void":
             # D16: una anulación de tarjeta que Wompi aceptó puede terminar sola. Antes de darla por perdida (y permitir un reembolso manual encima = doble devolución) se pregunta a Wompi.
-            cfg = wompi.config(pay.is_test)
+            cfg = payment_accounts.cfg_for_payment(db, pay)
             if cfg and pay.transaction_id:
                 txn = wompi.fetch_transaction(cfg, pay.transaction_id)
                 if txn is None:
@@ -196,7 +196,7 @@ def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_
         refund.status = "failed"
         db.commit()
         return {"status": "failed", "message": "Reembolso pendiente descartado", "warning": None}
-    cfg = wompi.config(pay.is_test)
+    cfg = payment_accounts.cfg_for_payment(db, pay)
     if refund.kind == "api" and cfg:
         wid = ((json.loads(refund.wompi_response or "{}").get("data") or {}).get("id")) if (refund.wompi_response or "").startswith("{") else None
         data = wompi.get_refund_v2(cfg, wid)

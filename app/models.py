@@ -557,6 +557,7 @@ class WebForm(Base):
     `manual_status` o, con `use_schedule`, del calendario `schedule_json` (ver app/formlib.py)."""
     __tablename__ = 'web_forms'
     id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): con qué cuenta de cobro de Wompi cobra este formulario; NULL = la de Golden
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False)
@@ -616,6 +617,26 @@ class FormDiscountCode(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class PaymentAccount(Base):
+    """Cuenta de cobro de Wompi de un TERCERO (Fase 8, 0118): alguien nos presta su comercio de Wompi y un formulario cobra con SUS llaves; el dinero entra a SU cuenta. La de Golden NO está aquí: sigue en
+    variables de entorno. `public_key` es pública (pub_…); la privada, el secreto de integridad y el de eventos van CIFRADOS (Fernet, PAYMENT_KEYS_ENCRYPTION_KEY: app/payment_accounts.py) y nunca salen por la API.
+    `ref` = identificador opaco para la URL de eventos de ESA cuenta (/webhooks/wompi/<ref>)."""
+    __tablename__ = 'payment_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ref = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
+    holder = Column(String, nullable=True)                 # quién es el titular del comercio (solo texto, para reconocerla)
+    public_key = Column(String, nullable=False)
+    private_enc = Column(Text, nullable=True)
+    integrity_enc = Column(Text, nullable=False)
+    events_enc = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, default=True, server_default='true')
+    note = Column(Text, nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class FormPayment(Base):
     """Un intento de pago de un formulario con campo «Pago» (Wompi). `reference` codifica evento + formulario +
     inscripción y es única: es la trazabilidad por evento (Wompi no organiza por proyecto). El registro de pago se
@@ -640,6 +661,7 @@ class FormPayment(Base):
     confirmed_at = Column(DateTime, nullable=True)
     refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
     origin = Column(String(16), nullable=True)   # 0074: 'importado' = registro histórico traído de otro entorno (no es un pago de este)
+    account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): cuenta de cobro de Wompi con la que se cobró; NULL = la de Golden (variables de entorno)
 
 
 class FormRefund(Base):

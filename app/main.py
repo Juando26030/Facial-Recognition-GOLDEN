@@ -29,6 +29,7 @@ from app.routers import clean_url as clean_url_router      # D2.5k: /inscripcion
 from app.routers import public_link as public_link_router
 from app.routers import event_lease as event_lease_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
+from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
@@ -375,6 +376,7 @@ _include(form_transfer.router, prefix="/api")      # exportar / importar un form
 _include(public_link_router.router, prefix="/api")      # D2.5k: nombre del enlace limpio de inscripciones y formulario principal (admin/comercial)
 _include(event_lease_router.router, prefix="/api")
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
+_include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(local_server_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
@@ -597,6 +599,17 @@ def inventario_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
+
+
+@app.get("/cuentas-de-cobro")
+def cuentas_de_cobro_page(request: Request):
+    """Fase 8: cuentas de Wompi de terceros, asignación a formularios y QR de cobro. Solo admin y super_admin."""
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    role = request.session.get("staff_role")
+    return templates.TemplateResponse(request=request, name="cuentas_cobro.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "sidebar_active": "cuentas_cobro"})
 
 
 @app.get("/sincronizacion")
