@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app import event_lease, event_rules, idle, sessions
+from app import event_lease, event_rules, idle, mass_delete, sessions
 from app.database import get_db
 from app.timeutil import utcnow
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
@@ -42,6 +42,7 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
     if not staff:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sesión inválida o usuario desactivado")
+    mass_delete.set_actor(db, staff)                     # Fase 9-A: quién hace los borrados de esta petición (para la alerta de borrado masivo)
     if sessions.is_replaced(db, request, staff):         # entró con esta cuenta en otro dispositivo (sesión única): el cliente detiene todo y lleva al inicio de sesión
         request.session.clear()
         raise HTTPException(status_code=401, detail="session_replaced")
