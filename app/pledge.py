@@ -112,6 +112,15 @@ def event_info(db: Optional[Session], event: Event) -> str:
     return " · ".join(parts)
 
 
+def event_info_html(db: Optional[Session], event: Event) -> str:
+    """Los mismos datos de `event_info`, uno por línea y con el rótulo en negrilla (se ve como una ficha del evento)."""
+    lines = []
+    for part in event_info(db, event).split(" · "):
+        label, _, value = part.partition(": ")
+        lines.append(f"<p><b>{html.escape(label, quote=False)}:</b> {html.escape(value, quote=False)}</p>")
+    return "".join(lines)
+
+
 def build_design(db: Optional[Session], event: Event) -> dict:
     """El diseño del formulario del compromiso, validado por el MISMO `formlib.sanitize_design` de cualquier formulario."""
     fields: dict = {}
@@ -126,16 +135,21 @@ def build_design(db: Optional[Session], event: Event) -> dict:
 
     row(add("t_title", "heading", content=T.TITLE + " — " + T.SUBTITLE))
     row(add("t_tag", "paragraph", content=_p(T.TAGLINE)))
-    row(add("t_event", "paragraph", content=_p(event_info(db, event))))
+    row(add("t_event", "paragraph", content=event_info_html(db, event)))
     row(add("t_intro", "paragraph", content=_p(T.INTRO)))
     n = 0
-    for title, blocks in T.SECTIONS:
+    last = len(T.SECTIONS)
+    for idx, (title, blocks) in enumerate(T.SECTIONS, start=1):
         n += 1
         row(add(f"t_h{n}", "heading", content=title))
         for block in blocks:
             n += 1
             if isinstance(block, str):
-                row(add(f"t_b{n}", "paragraph", content=(_p(block) if len(block) > 12 else f"<p><b>{html.escape(block, quote=False)}</b></p>")))
+                # ids por tipo de bloque (solo para darles estilo en la pantalla): t_sub = subtítulo corto (MUJERES/HOMBRES), t_k = aviso final (IMPACTO), t_b = párrafo y listas
+                if len(block) <= 12:
+                    row(add(f"t_sub{n}", "paragraph", content=f"<p><b>{html.escape(block, quote=False)}</b></p>"))
+                else:
+                    row(add(f"t_k{n}" if idx == last else f"t_b{n}", "paragraph", content=_p(block)))
             else:
                 row(add(f"t_b{n}", "paragraph", content=_ul(block)))
     row(add("t_data", "heading", content="Tus datos"))
