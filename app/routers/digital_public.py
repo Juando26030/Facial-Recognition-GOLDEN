@@ -48,6 +48,17 @@ def _extra_list(db: Session, event: Event, person: dict, keys: set) -> list:
     return digital_fields.display_list(keys, person, labels, digital_fields.allowed_keys(event.get_optional_labels()))
 
 
+@router.get("/b/{token}/contact")
+def digital_badge_contact(token: str, db: Session = Depends(get_db)):
+    """Fase 8: de la escarapela digital a «Compartir mis datos con expositores» (enlace privado de ESA persona y evento)."""
+    from fastapi.responses import RedirectResponse
+    from app import contacts
+    att, event, user = _resolve(db, token)
+    card = contacts.person_card(db, event, user.id)
+    db.commit()
+    return RedirectResponse(f"/contacto/{card.token}", status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
 @router.get("/b/{token}/data")
 def digital_badge_data(token: str, db: Session = Depends(get_db)):
     att, event, user = _resolve(db, token)

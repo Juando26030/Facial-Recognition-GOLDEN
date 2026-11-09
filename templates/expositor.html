@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <title>Contactos del expositor</title>
+  {% include "_contact_public_head.html" %}
+  <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+  <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+  <script src="{{ url_for('static', path='js/qr.js') }}"></script>
+  <script src="{{ url_for('static', path='js/contact-common.js') }}"></script>
+  <script src="{{ url_for('static', path='js/expositor-page.js') }}" defer></script>
+</head>
+<body class="gw-page">
+<main class="ct-wrap" data-token="{{ token }}">
+  {% if logo_url %}<div class="ct-logo"><img src="{{ logo_url }}" alt="Logo"></div>{% endif %}
+  <div class="gw-card gw-stack">
+    <p class="ct-muted">{{ event_name }}</p>
+    <h1 class="ct-name">{{ exhibitor_name }}</h1>
+    <button type="button" class="gw-btn gw-btn--primary gw-btn--block" id="scanBtn">Escanear asistente</button>
+    <div class="gw-field">
+      <label class="gw-label" for="cedulaIn">¿Sin cámara? Escribe la cédula</label>
+      <div class="ct-row"><input class="gw-input" id="cedulaIn" inputmode="numeric" autocomplete="off" style="flex:1"><button type="button" class="gw-btn gw-btn--secondary" id="cedulaBtn">Buscar</button></div>
+    </div>
+    <div class="gw-state" id="scanResult" role="status" aria-live="polite" hidden></div>
+  </div>
+  <div class="gw-card gw-stack">
+    <div class="gw-card__head"><h2 class="gw-card__title">Mis contactos (<span id="leadCount">0</span>)</h2>
+      <a class="gw-btn gw-btn--secondary gw-btn--sm" id="xlsxBtn" href="#">Bajar Excel</a></div>
+    <p class="ct-muted">Solo aparecen las personas que aceptaron compartir sus datos. Si alguien retira su autorización, desaparece de la lista.</p>
+    <ul class="ct-list" id="leadList"></ul>
+  </div>
+  <div class="gw-card gw-stack">
+    <h2 class="gw-card__title">Mi tarjeta (para que los asistentes me guarden)</h2>
+    <div class="ct-qr" id="qrHost"></div>
+    <p class="ct-muted" id="cardUrl"></p>
+    <div class="ct-row"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="copyBtn">Copiar enlace</button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="nfcBtn" hidden>Escribir etiqueta NFC</button></div>
+    <p class="ct-muted" id="nfcStatus" role="status"></p>
+  </div>
+</main>
+</body>
+</html>
