@@ -152,7 +152,9 @@
     <section class="gw-stack" aria-labelledby="tituloCuentas" data-gw-tour-step="2" data-gw-tour-title="2. Cuentas y roles" data-gw-tour-text="Aquí ves cada cuenta con su rol y su estado. Las acciones de cada una están en su misma tarjeta.">
       <div class="gw-usr__listhead">
         <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
-        {% if staff_role != "comercial" %}<button type="button" class="gw-btn gw-btn--danger gw-btn--xl" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Archivar los usuarios temporales de este evento</button>{% endif %}
+        {% if staff_role != "comercial" %}<button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="approveAllBtn" hidden aria-describedby="approveAllHint">{{ ic('check', 'gw-icon--sm') }} <span id="approveAllLabel">Autorizar a todos los pendientes</span></button>
+        <span class="gw-sr-only" id="approveAllHint">Autoriza el ingreso de todos los digitadores de este evento que están esperando en la fila.</span>
+        <button type="button" class="gw-btn gw-btn--danger gw-btn--xl" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Archivar los usuarios temporales de este evento</button>{% endif %}
       </div>
       <div id="tempUsersStatus" role="status" aria-live="polite" class="gw-msg"></div>
       <div id="tempUsersList" class="gw-cards gw-rows gw-usr__list" aria-busy="true" data-gw-tour-step="3" data-gw-tour-title="3. Quita el acceso al terminar" data-gw-tour-text="«Quitar de este evento» retira el acceso aquí. «Archivar cuenta» la deja sin acceso en todo el sistema (se puede restaurar).">

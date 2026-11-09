@@ -53,6 +53,44 @@
     let allUsers = [], pageIdx = 0;
     let loginState = {}, loginStateKey = '', canManage = false, prevPending = new Set();
     const LOGIN_STATE_MS = 10000;
+    let pendingCount = 0;
+    const approveAllBtn = document.getElementById('approveAllBtn');
+    const approveAllLabel = document.getElementById('approveAllLabel');
+
+    // «Autorizar a todos los pendientes»: solo se ve si hay alguien esperando (y quien lo ve puede administrar las cuentas y el evento está en proceso).
+    function updateApproveAll() {
+        if (!approveAllBtn) return;
+        approveAllBtn.hidden = pendingCount < 1;
+        if (approveAllLabel) approveAllLabel.textContent = pendingCount > 0 ? `Autorizar a todos los pendientes (${pendingCount})` : 'Autorizar a todos los pendientes';
+    }
+
+    async function approveAll() {
+        const n = pendingCount;
+        if (n < 1) return;
+        if (!(await showConfirm(`Se autorizará el ingreso de <strong>${n}</strong> ${n === 1 ? 'persona que está esperando' : 'personas que están esperando'} en este evento. ¿Autorizar?`, { confirmLabel: 'Autorizar a todos' }))) return;
+        approveAllBtn.disabled = true;
+        approveAllBtn.setAttribute('aria-busy', 'true');
+        try {
+            const res = await fetch(`/api/events/${eventId}/staff-users/approve-all`, { method: 'POST' });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                showToast(typeof d.detail === 'string' ? d.detail : 'No se pudo autorizar a los pendientes', 'error');
+            } else {
+                const why = Object.entries(d.skipped_reasons || {}).map(([k, v]) => `${v} por ${k}`).join(', ');
+                let msg = `${d.approved} autorizado(s)`;
+                if (d.skipped) msg += `. ${d.skipped} omitido(s)${why ? ' (' + why + ')' : ''}`;
+                if (d.truncated) msg += '. Quedan más pendientes: vuelve a pulsar el botón';
+                showToast(msg, d.approved ? 'success' : 'info');
+            }
+        } catch (e) {
+            showToast('No se pudo autorizar. Revisa la conexión.', 'error');
+        } finally {
+            approveAllBtn.disabled = false;
+            approveAllBtn.removeAttribute('aria-busy');
+            await loadLoginState();
+        }
+    }
+    if (approveAllBtn) approveAllBtn.addEventListener('click', approveAll);
 
     // Bloqueos e intentos de ingreso: se piden al cargar y cada ~10 s SOLO mientras la página está abierta y visible (document.visibilityState).
     async function loadLoginState() {
@@ -65,6 +103,8 @@
             const key = JSON.stringify([d.can_manage, (d.accounts || []).map((a) => [a.id, a.locked, a.login_pending, a.req])]);
             canManage = !!d.can_manage;
             loginState = map;
+            pendingCount = canManage && d.event_in_progress ? (d.accounts || []).filter((a) => a.login_pending).length : 0;
+            updateApproveAll();
             if (key !== loginStateKey) {
                 const firstPending = (d.accounts || []).some((a) => a.login_pending && !prevPending.has(a.id));
                 prevPending = new Set((d.accounts || []).filter((a) => a.login_pending).map((a) => a.id));
