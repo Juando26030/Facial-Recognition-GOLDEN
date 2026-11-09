@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from app import form_stats, security, stats_links
+from app import brandcolor, form_stats, security, stats_links, tv_screen
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import Event, StaffUser, StatsLink, WebForm
@@ -52,8 +52,15 @@ def create_link(event_id: int, data: dict, request: Request, db: Session = Depen
     db.commit()
     base = (str(request.base_url).rstrip("/"))
     url = f"{base}/ver/{'e' if scope == 'event' else 'f'}/{token}"
+    tv_url = f"{base}/ver/tv/{token}" if scope == "event" else ""          # la misma credencial de solo lectura también abre la pantalla de TV
     log.info("enlace de estadísticas %s creado (evento %s, alcance %s)", link.id, event.id, scope)
-    return {**_link_row(link, form.name if form else ""), "url": url}
+    return {**_link_row(link, form.name if form else ""), "url": url, "tv_url": tv_url}
+
+
+@router.get("/events/{event_id}/tv")
+def staff_tv_data(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Datos de la pantalla de TV para quien proyecta con su propia sesión (coordinador+)."""
+    return JSONResponse(tv_screen.snapshot(db, get_event_for_staff(event_id, db, staff)), headers=NO_STORE)
 
 
 @router.get("/events/{event_id}/stats-links")
@@ -115,6 +122,43 @@ def event_page(token: str, request: Request, db: Session = Depends(get_db)):
     from app.main import templates      # import tardio: main.py importa este módulo
     return templates.TemplateResponse(request=request, name="kiosk_estadisticas.html", headers=NO_STORE, context={
         "event": event, "staff_name": "", "staff_role": "cliente", "embed": True, "stats_base": f"/api/ver/{token}", "public_view": {"title": event.name, "until": to_local(link.expires_at).strftime("%d/%m/%Y %H:%M")}})
+
+
+def tv_context(event: Event, api_url: str, logo_url: str) -> dict:
+    return {"event": event, "tv_api": api_url, "logo_url": logo_url, "brand_css": brandcolor.css(getattr(event, "brand_color", None)), "poll_s": 10}
+
+
+@public_router.get("/ver/tv/{token}")
+def tv_page(token: str, request: Request, db: Session = Depends(get_db)):
+    """Pantalla de TV con el mismo enlace de solo lectura de las estadísticas del evento (sin usuario ni contraseña)."""
+    if _limited(request, "page", PAGE_MAX):
+        return _gone(429)
+    link = stats_links.resolve(db, token, "event")
+    event = _event_of(db, link) if link else None
+    if link is None or event is None:
+        return _gone()
+    _touch(db, link)
+    from app.main import templates
+    logo = f"/api/ver/{token}/logo" if event.logo_mode == "custom" and event.logo_path else ""
+    return templates.TemplateResponse(request=request, name="kiosk_tv.html", headers=NO_STORE, context=tv_context(event, f"/api/ver/{token}/tv", logo))
+
+
+@public_router.get("/api/ver/{token}/tv")
+def public_tv(token: str, request: Request, db: Session = Depends(get_db)):
+    event, err = _api_event(token, request, db)
+    return err or JSONResponse(tv_screen.snapshot(db, event), headers=NO_STORE)
+
+
+@public_router.get("/api/ver/{token}/logo")
+def public_logo(token: str, request: Request, db: Session = Depends(get_db)):
+    """El logo propio del evento para la vista pública (el de Golden y «sin logo» no pasan por aquí)."""
+    from app.storage import get_storage
+    event, err = _api_event(token, request, db)
+    if err is not None:
+        return err
+    if event.logo_mode != "custom" or not event.logo_path or not get_storage().exists(event.logo_path):
+        return _json_gone()
+    return get_storage().response(event.logo_path, headers={"Cache-Control": "private, max-age=300", "X-Robots-Tag": "noindex"})
 
 
 @public_router.get("/ver/f/{token}")

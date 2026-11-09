@@ -1,0 +1,30 @@
+/* Pantalla de ingreso para TV (templates/kiosk_tv.html, static/js/tv-screen.js). Pensada para 16:9 a distancia (textos muy grandes con clamp) y que, en el celular,
+   se apile en una columna. Solo tokens --gw-* del sistema de diseño. */
+.gw-tv { margin: 0; min-height: 100vh; background: var(--gw-surface); color: var(--gw-text); }
+.gw-tv__main { box-sizing: border-box; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-areas: "head head" "count recent" "foot foot"; gap: var(--gw-sp-5) var(--gw-sp-6); padding: clamp(1rem, 3vh, 3rem) clamp(1rem, 4vw, 4rem); }
+.gw-tv__head { grid-area: head; display: flex; align-items: center; gap: var(--gw-sp-4); min-width: 0; }
+.gw-tv__logo { max-height: clamp(3rem, 11vh, 7rem); max-width: 30vw; object-fit: contain; }
+.gw-tv__title { margin: 0; font-size: clamp(1.6rem, 4.4vw, 4.2rem); line-height: 1.05; overflow-wrap: anywhere; }
+.gw-tv__count { grid-area: count; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.gw-tv__num { margin: 0; font-size: clamp(4rem, 17vw, 16rem); line-height: 1; font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; background: var(--gw-gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.gw-tv__of { font-size: .42em; color: var(--gw-text-muted); -webkit-text-fill-color: var(--gw-text-muted); }
+.gw-tv__label { margin: 0 0 var(--gw-sp-4); font-size: clamp(1.1rem, 2.4vw, 2.2rem); color: var(--gw-text-muted); }
+.gw-tv__bar { height: clamp(.8rem, 2.2vh, 1.6rem); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); border: 1px solid var(--gw-border); overflow: hidden; }
+.gw-tv__bar > span { display: block; height: 100%; width: 0; background: var(--gw-gold-grad); transition: width .8s ease; }
+.gw-tv__pct { margin: var(--gw-sp-2) 0 0; font-size: clamp(1.2rem, 2.6vw, 2.4rem); font-weight: var(--gw-fw-bold); }
+.gw-tv__recent { grid-area: recent; min-width: 0; display: flex; flex-direction: column; }
+.gw-tv__sub { margin: 0 0 var(--gw-sp-3); font-size: clamp(1.2rem, 2.4vw, 2.2rem); color: var(--gw-text-muted); font-weight: var(--gw-fw-bold); }
+.gw-tv__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
+.gw-tv__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); border-left: .4rem solid var(--gw-gold-1); }
+.gw-tv__list li:first-child { background: var(--gw-ok-bg); border-left-color: var(--gw-ok-line); }
+.gw-tv__who { font-size: clamp(1.1rem, 2.5vw, 2.3rem); font-weight: var(--gw-fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-tv__at { font-size: clamp(.9rem, 1.7vw, 1.6rem); color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.gw-tv__ent { grid-column: 1 / -1; font-size: clamp(.9rem, 1.7vw, 1.5rem); color: var(--gw-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-tv__list .gw-tv__empty { display: block; color: var(--gw-text-muted); border-left-color: var(--gw-border); }
+.gw-tv__foot { grid-area: foot; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-tv__foot.is-off { color: var(--gw-warn-text, var(--gw-text)); }
+@media (max-width: 800px) {
+  .gw-tv__main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "count" "recent" "foot"; gap: var(--gw-sp-4); }
+  .gw-tv__logo { max-width: 40vw; }
+}
+@media (prefers-reduced-motion: reduce) { .gw-tv__bar > span { transition: none; } }
