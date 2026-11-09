@@ -15,7 +15,7 @@ Los tres números se cambian ahí mismo (con límites para no dejar la alerta in
 **Qué dice el correo.** Quién (usuario y rol), qué se borró y cuántos, evento (nombre y número), fecha y hora de Bogotá y qué hacer. **Nunca** lleva datos de asistentes (ni cédulas, ni nombres, ni correos).
 Además llega a la campana de las cuentas de la plataforma que estén en la lista.
 
-**Quién recibe.** Se siembra con `juando02603@gmail.com` y `callcenter@goldenlogisticas.com` (migración `0119_system_alerts`). En la pestaña se agregan o quitan correos externos y cuentas de la plataforma (con correo registrado), se pausan sin borrarlos y hay botón «Enviar alerta de prueba».
+**Quién recibe.** Se siembra con `callcenter@goldenlogisticas.com` y con los correos de la variable `SYSTEM_ALERT_SEED_EMAILS` si existe al migrar (migración `0119_system_alerts`). Los correos personales no van en el código (el repositorio es público): Juan David agrega el suyo en esta pestaña después del despliegue. En la pestaña se agregan o quitan correos externos y cuentas de la plataforma (con correo registrado), se pausan sin borrarlos y hay botón «Enviar alerta de prueba».
 
 **No es una alerta** (se marca como esperada): la purga programada de retención de biometría (`privacy.purge_expired`) y la de un evento finalizado (`privacy.purge_event`).
 

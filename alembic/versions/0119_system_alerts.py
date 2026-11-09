@@ -3,6 +3,8 @@
 Revision ID: 0119_system_alerts
 Revises: 0118_payment_accounts
 """
+import os
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -11,7 +13,18 @@ down_revision = "0118_payment_accounts"
 branch_labels = None
 depends_on = None
 
-SEED = ("juando02603@gmail.com", "callcenter@goldenlogisticas.com")
+# Destinatarios iniciales: el buzón de la empresa y, si se define al migrar, los de SYSTEM_ALERT_SEED_EMAILS (separados por coma).
+# Los correos personales NO van en el código (repo público): se agregan en Configuración › Alertas del sistema o por la variable.
+COMPANY_SEED = ("callcenter@goldenlogisticas.com",)
+
+
+def _seed():
+    extra = [e.strip().lower() for e in os.environ.get("SYSTEM_ALERT_SEED_EMAILS", "").split(",") if "@" in e]
+    out = []
+    for e in list(COMPANY_SEED) + extra:
+        if e not in out:
+            out.append(e)
+    return out
 
 
 def upgrade():
@@ -46,7 +59,7 @@ def upgrade():
         sa.Column("event_id", sa.Integer(), nullable=True),
     )
     op.create_index("ix_mass_delete_log_created_at", "mass_delete_log", ["created_at"])
-    op.bulk_insert(recipients, [{"kind": "email", "email": e, "active": True} for e in SEED])
+    op.bulk_insert(recipients, [{"kind": "email", "email": e, "active": True} for e in _seed()])
 
 
 def downgrade():
