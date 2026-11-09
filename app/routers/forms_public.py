@@ -78,6 +78,12 @@ def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = Tru
     `cerrado` o `cupo_lleno`. `finalizado` y `pruebas` sin clave = como si la página no existiera (404).
     `check_full=False` salta el conteo de cupo (el envío lo comprueba después, ya con el formulario bloqueado)."""
     state = formsvc.public_state(db, form, held) if check_full else formsvc.status_of(form)
+    if not check_full and form.kind == formsvc.PLEDGE_KIND:          # el envío también respeta la vigencia del compromiso (evento finalizado/archivado, o texto aún sin aprobar)
+        ev = db.get(Event, form.event_id)
+        if not pledge.required(ev):
+            state = "finalizado"
+        elif not pledge.text_available():
+            state = "cerrado"
     if state == "finalizado":
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     if state == "pruebas" and not (k and safe_eq(str(k), form.test_key)):
@@ -696,6 +702,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if full:
         return JSONResponse({"detail": formsvc.FULL_MSG, "stage": "closed"}, status_code=409)
     if duplicate:
+        if form.kind == formsvc.PLEDGE_KIND:          # compromiso: misma respuesta que un envío exitoso (no revela si la cédula ya firmó); nada se guarda
+            return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
         return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
     if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):          # identificador que no es la cédula (correo, teléfono…): adelanto SIN bloqueo; la autoridad es la de abajo
         db.rollback()

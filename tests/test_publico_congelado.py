@@ -7,13 +7,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 9-nov-2026 (cierre Fase 4): form_public.html, legal_base.html y form-render.js cambiaron A PROPÓSITO (compromiso digital: ficha, secciones, avisos); hashes renovados.
 FROZEN = {
-    "templates/form_public.html": "c0f72d282662dc58db9254b976173f179fa983be2b6da9a924bf9cf979b62c7f",
+    "templates/form_public.html": "ea04c1a55cf9734369cafac1be9e4619351c7069c461a95c803d145fdce79fd9",
     "templates/aceptar.html": "4b17b85c8ae07ed355cdd86d048beeef5bf98ad5d3c94620e57b20a6e6c34cad",
     "templates/aceptar_no_disponible.html": "c8f76e761f2d68d59898e2843a7582afe1204f3cc3988771f0ad4350cfd96e2c",
     "templates/digital_badge.html": "f6490dc2cd932d13aa45a725e36fd80cafbd831c56b796a21b9a841a19f6062a",
     "templates/certificate_public.html": "11e54fd3e40972b7faec3bbd0fe2d1822fe1f7a258ca4f33e5f51f1d3fb9bf80",
-    "templates/legal_base.html": "8e4a05d1c0d384f431b705f5ce8e364ba01b5e540089707910c7fb94e294655c",
+    "templates/legal_base.html": "409d89e0a5cfb16c8a7f0b8eb522a920f2e73b75584d4e64dc47a8dfa48d5529",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
@@ -21,7 +22,7 @@ FROZEN = {
     "templates/roulette_display.html": "434b88d72802742d43742a11dac347a273bdd4f0c687d4bb71b91264276b3917",
     "templates/badge_print.html": "9e48e3062df12c53bb46c747f49a21ba0168af4f2343928f48b64c7530c49655",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
-    "static/js/form-render.js": "b0bc5aa27855f132e3c289ed2a84a413e4e3ed415dc19ef72df40a27df1b3c06",
+    "static/js/form-render.js": "44ab6b5b75382e6284642060169ac2c7ee0ea6916e587b0e90e856a475950ba3",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
     "static/js/direct-upload.js": "9b22353dca8650e6b924aca2114aeba2eec713b875c8a996631affd5e3f500f3",
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",

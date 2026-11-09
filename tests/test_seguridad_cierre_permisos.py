@@ -23,7 +23,9 @@ def _body(module, name: str) -> str:
 # ------------------------------------------------------------------------------------------------ de fuente (sin base)
 def test_staff_management_endpoints_use_the_reach_check():
     from app.routers import staff
-    for fn in ("reset_staff_password", "delete_staff", "change_staff_role", "assign_secondary_role", "set_staff_roles", "edit_staff_profile", "deactivate_staff", "activate_staff"):
+    assert "_target_for_lifecycle(db, staff, staff_id)" in _body(staff, "delete_staff")          # eliminar/archivar/restaurar pasan por _target_for_lifecycle, que llama a _assert_can_manage
+    assert "_assert_can_manage(db, staff, target)" in _body(staff, "_target_for_lifecycle")
+    for fn in ("reset_staff_password", "change_staff_role", "assign_secondary_role", "set_staff_roles", "edit_staff_profile", "deactivate_staff", "activate_staff"):
         assert "_assert_can_manage(db, staff, target)" in _body(staff, fn), fn
     for fn in ("list_staff", "list_assignable_staff"):
         assert "staff_tenant_enforced(staff)" in _body(staff, fn), fn
