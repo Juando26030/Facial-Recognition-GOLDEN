@@ -17,7 +17,7 @@ import logging
 from app import audit_actions, jobs, security, staff_credentials, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
-from app import event_archive, event_rules, formsvc
+from app import event_archive, event_rules, formsvc, inventory_svc
 from app import event_history
 from app import event_template as event_tpl
 from app import event_template_svc
@@ -525,6 +525,8 @@ def update_event(
     if new_state is None and data.status is not None and data.status != event.status:
         new_state = event_rules.default_state(db, data.status)          # cambió solo el estado base: se usa el primer estado activo de ese tipo
     status_changed = data.status is not None and data.status != event.status
+    if status_changed and data.status == "en_proceso":
+        inventory_svc.assert_can_enter_in_progress(db, event)          # Fase 5: regla de cuadre del inventario (app/inventory.py); sin líneas de inventario no estorba
     # 2026-09-16, pedido explícito: si el evento ya tiene gente cargada (roster y/o registros en
     # vivo), no se puede "devolver" a 'creado' — 'creado' es preparación previa al evento, y
     # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,

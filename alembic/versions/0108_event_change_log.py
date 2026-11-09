@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0108_event_change_log"
-down_revision = "0106_survey_delivery"
+down_revision = "0107_inventory_catalog"
 branch_labels = None
 depends_on = None
 

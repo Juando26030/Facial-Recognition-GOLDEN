@@ -41,7 +41,7 @@
 </header>
 <div class="golden-content-spacer"></div>
 
-<main class="golden-main" id="nuevoEventoRoot" data-tenant-id="{{ tenant_id }}" data-tenant-name="{{ tenant_name }}" data-pick-tenant="{{ 'true' if pick_tenant else 'false' }}" data-after-url="{{ back_url }}" data-geo-url="{{ url_for('static', path='data/geo.json') }}" data-staff-role="{{ staff_role }}" data-pure-coordinator="{{ 'true' if pure_coordinator else 'false' }}" data-staff-id="{{ staff_id if staff_id is not none else '' }}">
+<main class="golden-main" id="nuevoEventoRoot" data-tenant-id="{{ tenant_id }}" data-tenant-name="{{ tenant_name }}" data-pick-tenant="{{ 'true' if pick_tenant else 'false' }}" data-after-url="{{ back_url }}" data-geo-url="{{ url_for('static', path='data/geo.json') }}" data-staff-role="{{ staff_role }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" data-pure-coordinator="{{ 'true' if pure_coordinator else 'false' }}" data-staff-id="{{ staff_id if staff_id is not none else '' }}">
   <div class="gw-container gw-nuevo" data-gw-tour="nuevo_evento" data-gw-tour-auto>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
@@ -84,6 +84,7 @@
 <script src="{{ url_for('static', path='js/workday.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-inventory-plan.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-super-eventos.js') }}"></script>
 <script src="{{ url_for('static', path='js/nuevo-evento.js') }}"></script>
 </body>

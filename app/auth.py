@@ -11,6 +11,13 @@ from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
 ROLE_HIERARCHY = {role: i for i, role in enumerate(STAFF_ROLES)}
 
+# Roles SOLO EXTRA (Fase 5, 9-nov-2026): «almacén» y «contabilidad» NO son un escalón de la escalera cliente < … < super_admin: solo se SUMAN (extra_roles) a una cuenta coordinador/comercial y
+# dan únicamente sus permisos propios (inventario). Van en ROLE_HIERARCHY con rango -1 para que `max(ROLE_HIERARCHY[r] for r in effective_roles(...))` siga funcionando (el rango lo pone el rol
+# principal; el extra nunca sube ni baja) y para que split_roles los reconozca; NO están en STAFF_ROLES (así ninguna lista de «roles que se crean/cambian» los ofrece como principal).
+EXTRA_ONLY_ROLES = {"almacen": "Almacén", "contabilidad": "Contabilidad"}
+for _r in EXTRA_ONLY_ROLES:
+    ROLE_HIERARCHY[_r] = -1
+
 
 FORM_CLIENT_OWN_PREFIXES = ("/api/form-client/", "/mi-formulario")          # sus propias rutas responden con su mensaje de acceso vencido (403, form_client.resolve)
 
@@ -61,9 +68,9 @@ def effective_roles(staff: StaffUser) -> set:
     return roles
 
 
-# Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «bodega» y «contabilidad» se agregan aquí cuando existan.
+# Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «almacen» y «contabilidad» (Fase 5) son SOLO extra (EXTRA_ONLY_ROLES).
 # Solo cuentas con rol principal en EXTRA_ROLE_PRIMARIES reciben roles extra; «admin» como extra solo lo da el Super Admin.
-EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin")
+EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin", "almacen", "contabilidad")
 EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial")
 
 
@@ -75,6 +82,19 @@ def split_roles(value) -> list:
         if r and r in ROLE_HIERARCHY and r not in out:
             out.append(r)
     return out
+
+
+def has_any_role(staff, *roles: str) -> bool:
+    """¿La cuenta tiene alguno de estos roles (principal o sumados)?"""
+    return bool(effective_roles(staff) & set(roles))
+
+
+def staff_with_role(db: Session, role: str) -> list:
+    """Cuentas ACTIVAS (no archivadas) que tienen este rol, principal o sumado (p. ej. 'almacen', 'contabilidad'): sirve para mandar un correo a todas (`[s.email for s in … if s.email]`).
+    Sin filtrar por correo: quien llama decide qué hacer con las que no tienen."""
+    rows = db.query(StaffUser).filter(StaffUser.is_active == True, StaffUser.archived_at.is_(None),  # noqa: E712
+                                      or_(StaffUser.role == role, StaffUser.extra_roles.like(f"%{role}%"), StaffUser.secondary_role == role)).order_by(StaffUser.id).all()
+    return [s for s in rows if role in effective_roles(s)]          # el LIKE solo preselecciona; la pertenencia exacta la decide effective_roles
 
 
 def all_extra_roles(staff) -> list:
@@ -93,6 +113,19 @@ def require_role(minimum_role: str):
 
     def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
         if max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < minimum_level:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
+def require_role_or_any(minimum_role: str, extra_roles: tuple):
+    """Como require_role, pero además deja pasar a quien tenga alguno de `extra_roles` aunque su rango sea menor (p. ej. almacén/contabilidad para el inventario)."""
+    minimum_level = ROLE_HIERARCHY[minimum_role]
+
+    def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+        roles = effective_roles(staff)
+        if max(ROLE_HIERARCHY[r] for r in roles) < minimum_level and not (roles & set(extra_roles)):
             raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
         return staff
 

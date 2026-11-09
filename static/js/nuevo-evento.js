@@ -63,7 +63,7 @@
       return '<section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT' + i + '"' + (i ? ' hidden' : '') + '>' +
         '<h3 class="gw-nuevo__panel-title" id="neT' + i + '" tabindex="-1">' + esc(s.title) + '</h3>' +
         '<div class="gw-fields-row gw-fields-row--2 gw-nuevo__cols3">' + s.keys.map((k) => EF.renderField(fields[k], { ctx: ctx })).join('') + '</div>' +
-        (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
+        (last ? '<div id="neInvWrap"><h4 class="gw-nuevo__section">Inventario</h4><p class="gw-hint">Productos del catálogo que pide este evento. Almacén registra después lo que sale, vuelve y se consume.</p><div id="neInventory"></div></div><h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
     const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl, fields: fields });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
@@ -71,9 +71,19 @@
     if (!workdayRefresh) workdayRefresh = EF.bindWorkday(form); else workdayRefresh();          // Jornada en vivo (Fase 5): se recalcula al digitar las horas; el enganche se hace UNA vez
     applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();
+    mountInventory();
     nextBtn.disabled = false;
     if (window.GW && GW.wizard) GW.wizard.go(form, 0);
     document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl, enhanced: mounted } }));
+  }
+  // Inventario (Fase 5): los productos activos del catálogo se piden aquí como cantidades; se guardan justo después de crear el evento (PUT /api/events/<id>/inventory-plan).
+  let invCtrl = null;
+  async function mountInventory() {
+    invCtrl = null;
+    const box = document.getElementById('neInventory'), wrap = document.getElementById('neInvWrap');
+    if (!box || !window.GWInvPlan) { if (wrap) wrap.hidden = true; return; }
+    try { invCtrl = await GWInvPlan.mount(box, { eventId: null, saveButton: false, icons: root.dataset.icons || undefined }); } catch (e) { invCtrl = null; }
+    if (!invCtrl || !invCtrl.visible || invCtrl.empty) { wrap.hidden = true; invCtrl = null; }
   }
   const control = (key, part) => form.querySelector('[data-evf-key="' + key + '"][data-evf-part="' + (part || 'v') + '"]');
   function setIfEmpty(key, value) { const c = control(key); if (c && !c.value) c.value = value; }
@@ -239,6 +249,15 @@
         res = await fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       } catch (e) { showToast('Sin conexión: no se pudo crear el evento. Revisa tu red e inténtalo de nuevo.', 'error'); return; }
       if (res.ok) {
+        const created = await res.json().catch(() => ({}));
+        if (invCtrl && created.id && invCtrl.dirty()) {
+          const inv = await invCtrl.save(created.id);
+          if (!inv.ok) {
+            showToast('El evento se creó, pero el inventario no se guardó: ' + inv.error + ' Ábrelo desde el calendario para reintentarlo.', 'error');
+            window.setTimeout(() => { window.location.href = AFTER_URL; }, 4000);
+            return;
+          }
+        }
         showToast('Evento creado', 'success');
         window.location.href = AFTER_URL;
         return;
