@@ -18,7 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
-from app import event_history, event_lease
+from app import event_history, event_lease, public_slug
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
@@ -494,6 +494,7 @@ def create_event(
         event.set_extra(prepared["extra"])
     db.add(event)
     db.flush()
+    public_slug.ensure(db, event)          # D2.5k: nombre del enlace limpio de inscripciones («nombre + año», único)
     event_template_svc.after_create(db, event)
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     if pledge.text_available():

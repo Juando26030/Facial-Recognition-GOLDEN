@@ -312,6 +312,7 @@ class Event(Base):
     final_db_name = Column(String, nullable=True)      # nombre original del archivo (solo para mostrarlo)
     final_db_uploaded_at = Column(DateTime, nullable=True)
     final_db_uploaded_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    public_slug = Column(String, nullable=True)      # 0113 (D2.5k): nombre del enlace limpio de inscripciones (/<evento>/<formulario>); ÚNICO en todo el sistema (índice en minúsculas). app/public_slug.py
     local_node_name = Column(String, nullable=True)      # 0111 (Fase 6): nombre del servidor local que TIENE el evento (arrendamiento: un solo escritor). NULL = el evento vive en la nube. Mientras esté puesto, la nube lo muestra en solo lectura
     local_since = Column(DateTime, nullable=True)        # desde cuándo está en ese servidor local
     local_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso en local
@@ -569,6 +570,7 @@ class WebForm(Base):
     fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
     archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas y cerrado al público; conserva respuestas y pagos)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False, server_default='false')  # 0113: el formulario que abre /<evento> (sin nombre de formulario); uno por evento (si ninguno, el único abierto)
     kind = Column(String(20), nullable=False, default='registration', server_default='registration')  # 0100: 'registration' (inscripción, de siempre) | 'pledge' (compromiso digital del digitador, app/pledge.py: no alimenta la base del evento ni sale en la lista de formularios)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
@@ -1430,3 +1432,12 @@ class SurveyAnswer(Base):
     comment = Column(Text, nullable=True)
 
     __table_args__ = (Index('ix_survey_answers_question', 'question_id', 'submitted_at'), Index('ix_survey_answers_event', 'event_id'), Index('ix_survey_answers_tenant_at', 'tenant_id', 'submitted_at'))
+
+
+class SlugHistory(Base):
+    """Nombres de enlace viejos de un evento (0113): responden 301 al nuevo y no se reasignan a otro evento hasta `hold_until` (12 meses). Ver app/public_slug.py."""
+    __tablename__ = 'slug_history'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String, nullable=False, index=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    hold_until = Column(DateTime, nullable=False)

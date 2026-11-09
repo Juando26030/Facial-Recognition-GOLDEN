@@ -54,5 +54,10 @@ if [ -n "$HOSTING_SITE" ]; then   # igual que el workflow: se publica Hosting si
   python3 deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$HOSTING_SITE" || exit 1
   npx -y firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase/firebase.json --non-interactive || { echo "ERROR en Hosting" >&2; exit 1; }
 fi
+if [ -n "${FORMS_SITE:-}" ]; then   # D2.5k (docs/20): segundo sitio de Hosting del host de inscripciones (todo → servicio publico); solo si se definió FORMS_SITE
+  say "4b. FIREBASE HOSTING · sitio de inscripciones ($FORMS_SITE)"
+  python3 deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$FORMS_SITE" --inscripciones || exit 1
+  npx -y firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase-inscripciones/firebase.json --non-interactive || { echo "ERROR en Hosting (inscripciones)" >&2; exit 1; }
+fi
 say "LISTO ($ENV_NAME, commit ${SHA:0:7})"
 gcloud run services list --region "$REGION" --format="table(metadata.name,status.latestReadyRevisionName)"

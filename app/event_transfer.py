@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy import Date, DateTime, Float, Numeric, select, text
 from sqlalchemy.orm import Session
 
-from app import consent, crypto, minors
+from app import consent, crypto, minors, public_slug
 from app import models as m
 from app.storage import badge_asset_key, form_file_key, get_storage, key_of, normalize_key, photo_key
 from app.timeutil import utcnow
@@ -680,6 +680,8 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
             d["logo_path"] = d["report_pdf_path"] = None
             d["local_node_name"] = d["local_since"] = d["local_by_id"] = d["local_last_upload_at"] = None          # Fase 6: el arrendamiento es de la nube; la copia importada no nace «en servidor local»
+            _sd = d.get("start_date")
+            d["public_slug"] = public_slug.unique_for(db, d.get("name") or ev_src.get("name") or "evento", getattr(_sd, "year", None) or (int(str(_sd)[:4]) if _sd and str(_sd)[:4].isdigit() else utcnow().year))          # D2.5k: el nombre del enlace es único en TODO el sistema: la copia recibe el suyo, no el del origen
             d["final_db_key"] = d["final_db_name"] = d["final_db_uploaded_at"] = None          # la base final (Fase 5) no viaja en el paquete: se vuelve a subir en el destino
             if logo and ("logo", logo) in file_by_ref:
                 d["logo_path"] = key_of(tenant_id, "event_logos", uuid.uuid4().hex + os.path.splitext(logo)[1])
@@ -874,7 +876,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 # ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
 # Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
 _VOLATILE = {
-    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at"},
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug"},
     "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
     "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
     "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},

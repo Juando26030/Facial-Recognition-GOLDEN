@@ -67,6 +67,11 @@ else
   FIREBASE_SITE=""; WEB_MODULE="app.main:app"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(run_url "golden-web${SUFFIX}")}"
 fi
 
+# Host propio de las inscripciones (D2.5k, docs/20): vacío = no se usa y todo sigue saliendo como /f/<evento>/<formulario>. Con valor (p. ej. https://inscripciones.golden-eventos.com), los enlaces de correos y
+# del panel salen limpios (/<evento>/<formulario>), entra al CORS del bucket y a los orígenes permitidos. FORMS_SITE = sitio de Firebase Hosting que lo sirve.
+PUBLIC_FORMS_BASE_URL="${PUBLIC_FORMS_BASE_URL:-}"
+FORMS_SITE="${FORMS_SITE:-}"
+
 # Orígenes que el bucket deja hacer PUT directo desde el navegador (CORS de la subida con URL firmada). UNA sola definición: la usan bootstrap.sh (la aplica) y
 # move_region.sh verify (comprueba EXACTAMENTE esta lista), calculada desde el proyecto y la región. Plantilla de la regla: deploy/gcs-app-cors.json (solo su
 # origin cambia). Producción: el dominio propio y los sitios de Firebase, sin run.app (salvo CORS_INCLUDE_RUN_URLS=1). Staging: además las dos URL run.app del servicio web (para probar directo).
@@ -83,6 +88,8 @@ print((meta.get("annotations") or {}).get("run.googleapis.com/urls", "[]"))' 2>/
 cors_origins() {
   {
     echo "$PUBLIC_BASE_URL"
+    [ -z "$PUBLIC_FORMS_BASE_URL" ] || echo "$PUBLIC_FORMS_BASE_URL"
+    [ -z "$FORMS_SITE" ] || { echo "https://${FORMS_SITE}.web.app"; echo "https://${FORMS_SITE}.firebaseapp.com"; }
     [ -z "$FIREBASE_SITE" ] || { echo "https://${FIREBASE_SITE}.web.app"; echo "https://${FIREBASE_SITE}.firebaseapp.com"; }
     # run.app: en staging siempre (se prueba directo); en producción NO (solo el dominio y Firebase) salvo CORS_INCLUDE_RUN_URLS=1 (p. ej. mientras se verifica por la URL de Cloud Run antes del dominio).
     if [ "$GOLDEN_ENV" != production ] || [ "${CORS_INCLUDE_RUN_URLS:-0}" = 1 ]; then run_urls "golden-web${SUFFIX}"; fi
