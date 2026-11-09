@@ -32,6 +32,7 @@
   let fields = {};                 // clave -> campo
   let sections = [];               // [{id, title, keys[]}] ya sin los campos ocultos para este usuario
   let ctx = {};
+  let workdayRefresh = null;
 
   async function citiesFor(country) {
     try {
@@ -67,6 +68,7 @@
     }).join('');
     const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl, fields: fields });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
     EF.bind(form, { fields: fields, loadCities: citiesFor });
+    if (!workdayRefresh) workdayRefresh = EF.bindWorkday(form); else workdayRefresh();          // Jornada en vivo (Fase 5): se recalcula al digitar las horas; el enganche se hace UNA vez
     applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();
     nextBtn.disabled = false;
@@ -184,6 +186,7 @@
   // ---- Resumen del último paso (todo escapado).
   function summaryText(f, key) {
     if (f.type === 'client') return (PICK_TENANT ? (control('client') && control('client').value || '') : (root.dataset.tenantName || '')).trim() || '—';
+    if (f.type === 'workday') return EF.workdayText(control('event_time_start') && control('event_time_start').value, control('event_time_end') && control('event_time_end').value);
     if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event') {
       const c = control(key); const o = c && c.options && c.options[c.selectedIndex];
       return c && c.value && o ? o.textContent.replace(/ \(\d+ eventos\)$/, '') : '—';

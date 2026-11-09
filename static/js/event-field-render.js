@@ -18,6 +18,7 @@
   var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var CURRENCY = { COP: '$', USD: 'US$', EUR: '€' };
   var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/, TIME_RE = /^(\d{1,2}):(\d{2})$/, HEX_RE = /^#[0-9a-fA-F]{6}$/;
+  var WD = root.Workday || (function () { try { return require('./workday.js'); } catch (e) { return null; } })();          // jornada (Fase 5): espejo de app/workday.py
   var EMPTY = function (v) { return v == null || v === '' || (Array.isArray(v) && !v.length); };
 
   /* base: clave del campo -> cómo se lee de un evento serializado (/api/events) */
@@ -30,8 +31,17 @@
     bandana: function (e) { return e.bandana_colors; }, notes: function (e) { return e.notes; },
   };
 
+  /* Jornada (campo calculado, solo lectura): se deduce de las horas del evento; si el evento no trae horas pero el servidor sí mandó workday_* se usan esos. */
+  function workdayOf(event) {
+    var w = WD ? WD.compute(event.event_time_start, event.event_time_end) : null;
+    if (w) return w;
+    return event.workday_label ? { key: event.workday_key, label: event.workday_label, hours: event.workday_hours, hours_text: event.workday_hours != null ? String(event.workday_hours).replace('.', ',') + ' h' : '' } : null;
+  }
+  function workdayText(start, end) { return (WD && WD.text(start, end)) || '—'; }
+
   function valueOf(field, event) {
     if (!field || !event) return null;
+    if (field.type === 'workday') return workdayOf(event);
     if (field.type === 'switch') return !!((event.switches || {})[(field.config || {}).switch]);
     if (BASE_EVENT[field.key]) return BASE_EVENT[field.key](event);
     var x = event.extra || {};
@@ -54,6 +64,7 @@
   }
   function formatValue(field, value, ctx) {
     if (field.type === 'switch') return value ? 'Sí' : 'No';
+    if (field.type === 'workday') return value && value.label ? value.label + (value.hours_text ? ' · ' + value.hours_text : '') : '';
     if (EMPTY(value)) return '';
     switch (field.type) {
       case 'money': return (CURRENCY[(field.config || {}).currency] || '$') + ' ' + formatNumber(value, Number(value) % 1 ? 2 : 0);
@@ -100,7 +111,7 @@
   /* ---------------------------------------------------------------------------------------------------- validación (espejo del servidor) */
   function validateValue(field, value) {
     var t = field.type, w = '«' + field.title + '»';
-    if (t === 'switch') return null;
+    if (t === 'switch' || t === 'workday') return null;
     if (EMPTY(value) || (typeof value === 'string' && !value.trim())) return field.required ? w + ' es obligatorio' : null;
     var cfg = field.config || {};
     switch (t) {
@@ -208,6 +219,7 @@
         return '<div data-evf-enhance="inventory"><div data-evf-lines>' + lines.map(function (l) { return inventoryRow(field, l); }).join('') + '</div>' +
           '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-evf-act="inv-add" data-evf-for="' + esc(field.key) + '">Agregar línea</button></div>';
       }
+      case 'workday': return '<input class="gw-input" type="text" readonly tabindex="-1"' + id + attrs(field, 'v', ' data-evf-workday') + ' value="' + esc(typeof value === 'string' ? value : (value && value.label ? formatValue(field, value) : '—')) + '" aria-live="polite">';
       case 'switch': return '<label class="gw-check"><input type="checkbox"' + id + attrs(field, 'v') + (value ? ' checked' : '') + '> <span class="gw-choice__text">' + esc(field.title) + '</span></label>';
       case 'client':
         if (ctx && ctx.pickTenant) return '<input class="gw-input"' + id + ' type="text" data-gw-combobox autocomplete="off" required placeholder="Elige o escribe el nombre del cliente" data-evf-key="client" data-evf-part="v">';
@@ -220,7 +232,7 @@
     opts = opts || {}; var ctx = opts.ctx || {};
     if (ctx.hidden && ctx.hidden[field.key]) return '';
     var k = ids(field, ctx), isSwitch = field.type === 'switch';
-    var labelHtml = isSwitch ? '' : '<label class="gw-label" for="' + esc(k.id) + '">' + esc(field.title) + (field.required ? ' <span class="gw-req" aria-hidden="true">*</span>' : ' <span class="gw-hint">(opcional)</span>') + '</label>';
+    var labelHtml = isSwitch ? '' : '<label class="gw-label" for="' + esc(k.id) + '">' + esc(field.title) + (field.required ? ' <span class="gw-req" aria-hidden="true">*</span>' : ' <span class="gw-hint">(' + (field.type === 'workday' ? 'calculada' : 'opcional') + ')</span>') + '</label>';
     var hint = field.help ? '<small class="gw-hint" id="' + esc(k.id) + '_h">' + esc(field.help) + '</small>' : '';
     var wide = { text_long: 1, address_map: 1, inventory: 1, bandana_colors: 1, contact: 1, datetime: 1 }[field.type] ? ' gw-evf--wide' : '';
     return '<div class="gw-field gw-evf' + wide + '" data-evf-field="' + esc(field.key) + '" data-evf-type="' + esc(field.type) + '">' + labelHtml + control(field, opts.value, ctx) + hint + '</div>';
@@ -237,7 +249,7 @@
     var p = partsOf(field, rootEl);
     switch (field.type) {
       case 'switch': return p.v && p.v[0] ? !!p.v[0].checked : null;
-      case 'client': return null;
+      case 'client': case 'workday': return null;
       case 'datetime': { var d = val(p.date && p.date[0]), t = val(p.time && p.time[0]); return d || t ? d + 'T' + t : null; }
       case 'address_map': {
         var text = val(p.text && p.text[0]), lat = val(p.lat && p.lat[0]), lng = val(p.lng && p.lng[0]);
@@ -257,6 +269,25 @@
       case 'commercial': case 'coordinator': case 'super_event': { var s = val(p.v && p.v[0]); return s === '' ? null : Number(s); }
       default: { var x = val(p.v && p.v[0]); return x === '' ? null : x; }
     }
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- jornada en vivo
+     bindWorkday(host, {read, targets}): al cambiar las horas dentro de `host` (input/change, también el reloj) reescribe los controles [data-evf-workday] (o `targets`) con «Jornada completa · 10 h» o «—».
+     `read()` devuelve {start, end}; por defecto lee los campos event_time_start/event_time_end de la plantilla dentro de `host`. Devuelve la función `refresh` (también se llama una vez al enganchar). */
+  function bindWorkday(host, opts) {
+    opts = opts || {};
+    var read = opts.read || function () {
+      var a = host.querySelector('[data-evf-key="event_time_start"][data-evf-part="v"]'), b = host.querySelector('[data-evf-key="event_time_end"][data-evf-part="v"]');
+      return { start: a ? a.value : '', end: b ? b.value : '' };
+    };
+    function refresh() {
+      var t = read(), text = workdayText(t.start, t.end), outs = host.querySelectorAll(opts.targets || '[data-evf-workday]');
+      for (var i = 0; i < outs.length; i++) outs[i].value = text;
+    }
+    host.addEventListener('input', refresh);
+    host.addEventListener('change', refresh);
+    refresh();
+    return refresh;
   }
 
   /* ---------------------------------------------------------------------------------------------------- edición de un evento (campos personalizados)
@@ -420,7 +451,7 @@
     });
   }
 
-  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, geoPair: geoPair, loadGeo: loadGeo, customFields: customFields, diffExtra: diffExtra, sameValue: sameValue, _geo: { codeOf: codeOf, citiesFor: citiesFor, state: geoState }, esc: esc, inventoryRow: inventoryRow };
+  var api = { renderField: renderField, readField: readField, validateValue: validateValue, formatValue: formatValue, valueOf: valueOf, displayValue: displayValue, calendarLayout: calendarLayout, cardModel: cardModel, bind: bind, afterMount: afterMount, geoPair: geoPair, loadGeo: loadGeo, customFields: customFields, workdayText: workdayText, bindWorkday: bindWorkday, diffExtra: diffExtra, sameValue: sameValue, _geo: { codeOf: codeOf, citiesFor: citiesFor, state: geoState }, esc: esc, inventoryRow: inventoryRow };
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; return; }
   root.EventFields = api;
 })(typeof window !== 'undefined' ? window : globalThis);
