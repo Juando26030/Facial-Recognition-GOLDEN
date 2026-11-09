@@ -160,6 +160,24 @@ def test_purge_temporary_deletes_for_real(client, factory, db):
     assert len(acts) == 1 and acts[0].action == "delete" and "55667788" not in f"{acts[0].entity_name}{acts[0].detail}"
 
 
+def test_delete_single_temporary_account(client, factory, db):
+    factory.staff("coordinador", "co")
+    ev = factory.event("en_proceso")
+    a, b = factory.staff("digitador", "11112222"), factory.staff("digitador", "33334444")
+    factory.authorize(ev, a)
+    factory.authorize(ev, b)
+    a_id, b_id = a.id, b.id
+    login(client, "co")
+    r = client.post(f"/api/events/{ev.id}/staff-users/{a_id}/delete-account")
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 1
+    db.expire_all()
+    assert db.get(StaffUser, a_id) is None and db.get(StaffUser, b_id) is not None                # solo se borró la elegida
+    assert client.post(f"/api/events/{ev.id}/staff-users/{a_id}/delete-account").status_code == 404   # ya no está en el evento
+    co = db.query(StaffUser).filter_by(username="co").one()
+    assert client.post(f"/api/events/{ev.id}/staff-users/{co.id}/delete-account").status_code == 404  # no se borran otros roles desde aquí
+
+
 def test_sources_guard_roles():
     from app.routers import api, event_states, forms
     for fn in (event_states.archive_state, event_states.restore_state):

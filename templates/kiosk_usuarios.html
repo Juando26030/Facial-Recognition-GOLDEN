@@ -73,7 +73,7 @@
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Asigna el rol</span>
         {% call ayuda('ay_paso2', 'Asigna el rol') %}El digitador registra y acredita personas en este evento. Para que un cliente vea estadísticas, usa un enlace de estadísticas con vencimiento (no una cuenta).{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Quita el acceso al terminar</span>
-        {% call ayuda('ay_paso3', 'Quita el acceso al terminar') %}«Quitar de este evento» solo retira el acceso aquí y la cuenta sigue existiendo. «Archivar cuenta» (administrador) la deja sin acceso en todo el sistema, sin borrar nada, y se puede restaurar.{% endcall %}</li>
+        {% call ayuda('ay_paso3', 'Quita el acceso al terminar') %}«Quitar de este evento» solo retira el acceso aquí y la cuenta sigue existiendo. «Eliminar cuenta» borra de verdad la cuenta del digitador (si está en otro evento, solo la quita de este).{% endcall %}</li>
     </ol>
 
     <details class="gw-group" id="grpNueva" open data-gw-tour-step="1" data-gw-tour-title="1. Agrega a alguien" data-gw-tour-text="Llena la cédula y el nombre. La cédula es también la contraseña.">
@@ -184,7 +184,7 @@
         <button type="button" class="gw-btn gw-btn--danger" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Eliminar los usuarios temporales de este evento</button>{% endif %}
       </div>
       <div id="tempUsersStatus" role="status" aria-live="polite" class="gw-msg"></div>
-      <div id="tempUsersList" class="gw-cards gw-rows gw-usr__list" aria-busy="true" data-gw-tour-step="3" data-gw-tour-title="3. Quita el acceso al terminar" data-gw-tour-text="«Quitar de este evento» retira el acceso aquí. «Archivar cuenta» la deja sin acceso en todo el sistema (se puede restaurar).">
+      <div id="tempUsersList" class="gw-cards gw-rows gw-usr__list" aria-busy="true" data-gw-tour-step="3" data-gw-tour-title="3. Quita el acceso al terminar" data-gw-tour-text="«Quitar de este evento» retira el acceso aquí. «Eliminar cuenta» borra de verdad la cuenta del digitador (si está en otro evento, solo la quita de este).">
         <div class="gw-card-row" aria-hidden="true"><span class="gw-skeleton"></span><span class="gw-skeleton"></span></div>
         <div class="gw-card-row" aria-hidden="true"><span class="gw-skeleton"></span><span class="gw-skeleton"></span></div>
       </div>

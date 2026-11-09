@@ -830,20 +830,15 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
     return {"mails_queued": mails, "created": created, "assigned_existing": assigned_existing, "already": already, "problems": problems[:100], "problems_total": len(problems)}
 
 
-@router.post("/events/{event_id}/staff-users/purge-temporary")
-def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """«Eliminar los usuarios temporales» de este evento: BORRA de verdad las cuentas de digitador (decisión de Juan David, 8-nov-2026; antes solo se archivaban). A cada una se le quita el acceso
-    a este evento y a sus equipos de impresión y luego se borra la cuenta soltando lo que la menciona (app/staff_refs.py). Dos excepciones, sin borrar: (1) una cuenta que además está asignada a OTRO
-    evento solo se quita de este; (2) una cuenta con registros que no se pueden soltar (p. ej. una carga masiva suya) queda ARCHIVADA y desactivada, no borrada. El compromiso firmado NO impide borrar: su evidencia queda en el evento sin la cuenta (0102). Queda UN registro
-    en `audit_actions` con los totales (nunca los usuarios: el del digitador es su cédula)."""
-    _can_manage_temp(staff)
-    event = get_event_for_staff(event_id, db, staff)
-    ids = [r[0] for r in db.query(EventStaffAuthorization.staff_user_id).join(StaffUser, StaffUser.id == EventStaffAuthorization.staff_user_id)
-           .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador")]
+def _delete_event_accounts(db: Session, actor: StaffUser, event: Event, ids: list) -> dict:
+    """Elimina de verdad las cuentas de digitador `ids` de este evento (lo usan «Eliminar los usuarios temporales» y «Eliminar cuenta» de una sola). A cada una se le quita el acceso a este evento
+    y a sus equipos de impresión y luego se borra la cuenta soltando lo que la menciona (app/staff_refs.py). Dos excepciones, sin borrar: (1) una cuenta que además está asignada a OTRO evento solo se
+    quita de este; (2) una cuenta con registros que no se pueden soltar (p. ej. una carga masiva suya) queda ARCHIVADA y desactivada. El compromiso firmado NO impide borrar: su evidencia queda en
+    el evento sin la cuenta (0102). No hace commit; deja UN registro en `audit_actions` con los totales (nunca los usuarios: el del digitador es su cédula)."""
     from app import sessions, staff_refs
     deleted, kept, only_unassigned = 0, 0, 0
     for sid in ids:
-        if sid == staff.id:
+        if sid == actor.id:
             continue
         elsewhere = db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == sid, EventStaffAuthorization.event_id != event.id).count()
         db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=sid).delete()
@@ -864,12 +859,37 @@ def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: Staff
             deleted += 1
         else:
             if target.archived_at is None:
-                target.archived_at, target.archived_by_id = utcnow(), staff.id
+                target.archived_at, target.archived_by_id = utcnow(), actor.id
             target.is_active = False
             kept += 1
-    audit_actions.record(db, staff, "delete", "staff_user", f"evento {event.id}", None, f"evento {event.id}: {deleted} cuenta(s) de digitador eliminada(s), {kept} archivada(s) por tener registros, {only_unassigned} solo quitada(s) del evento")
-    db.commit()
+    audit_actions.record(db, actor, "delete", "staff_user", f"evento {event.id}", None, f"evento {event.id}: {deleted} cuenta(s) de digitador eliminada(s), {kept} archivada(s) por tener registros, {only_unassigned} solo quitada(s) del evento")
     return {"deleted": deleted, "kept_archived": kept, "only_unassigned": only_unassigned}
+
+
+@router.post("/events/{event_id}/staff-users/purge-temporary")
+def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """«Eliminar los usuarios temporales» de este evento: BORRA de verdad las cuentas de digitador (decisión de Juan David, 8-nov-2026; antes solo se archivaban). Ver `_delete_event_accounts`."""
+    _can_manage_temp(staff)
+    event = get_event_for_staff(event_id, db, staff)
+    ids = [r[0] for r in db.query(EventStaffAuthorization.staff_user_id).join(StaffUser, StaffUser.id == EventStaffAuthorization.staff_user_id)
+           .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador")]
+    out = _delete_event_accounts(db, staff, event, ids)
+    db.commit()
+    return out
+
+
+@router.post("/events/{event_id}/staff-users/{staff_id}/delete-account")
+def delete_event_staff_account(event_id: int, staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """«Eliminar cuenta» de UN digitador temporal de este evento (la misma regla que eliminar a todos). Solo digitadores asignados a este evento; el resto de roles no se borran desde aquí."""
+    _can_manage_temp(staff)
+    event = get_event_for_staff(event_id, db, staff)          # 0C (N2)
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
+    if not target or not auth or target.role != "digitador":
+        raise HTTPException(status_code=404, detail="Esa cuenta de digitador no está en este evento")
+    out = _delete_event_accounts(db, staff, event, [staff_id])
+    db.commit()
+    return out
 
 
 @router.delete("/events/{event_id}/staff-users/{staff_id}")
