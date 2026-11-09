@@ -1155,6 +1155,21 @@ class EventStatusChange(Base):
     access_logs_count = Column(Integer, nullable=False, default=0, server_default='0')
 
 
+class EventChangeLog(Base):
+    """Fase 5 (0108): historial de cambios del EVENTO por campo (quién, cuándo, valor anterior y nuevo). Solo campos del evento: nunca datos de asistentes. Los valores sensibles
+    (p. ej. el contacto del evento) se guardan ocultos y los textos se recortan (`app/event_history.py`). `source`: edit | state | switch | import."""
+    __tablename__ = 'event_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, index=True)
+    field_key = Column(String(64), nullable=False)
+    field_label = Column(String(120), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    source = Column(String(16), nullable=False, default='edit', server_default='edit')
+
+
 class ReprintRequest(Base):
     """Fase 1B (0083): solicitud de permiso para reimprimir la escarapela de alguien que ya se imprimió, en un evento con la reimpresión DESHABILITADA (app/reprint.py).
     Estados: pending → approved | denied | expired; approved → used | expired. Las transiciones son UPDATE atómicos condicionados al estado. `expires_at` es el límite vigente:

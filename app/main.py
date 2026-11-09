@@ -23,6 +23,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
+from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
@@ -337,6 +338,7 @@ _include(form_payments.router)  # cotización y confirmación del pago Wompi + w
 _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
+_include(event_history_router.router, prefix="/api")      # GET /api/events/{id}/change-history (coordinador del evento, comercial, admin)
 _include(staff_credentials_router.router, prefix="/api")      # reenviar credenciales / correo del digitador / interruptor del evento (coordinador+)
 _include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
 _include(stats_links_router.router, prefix="/api")      # crear/ver/revocar enlaces de estadísticas (coordinador+)

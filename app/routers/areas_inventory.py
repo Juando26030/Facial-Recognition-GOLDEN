@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role, require_role_excluding
-from app import audit_actions, faces, heavy
+from app import audit_actions, event_history, faces, heavy
 from app import event_archive
 from app.database import get_db
 from app.timeutil import to_local
@@ -57,11 +57,14 @@ def delete_event_modules(db: Session, event_id: int) -> None:
 def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Switches por evento: `areas_enabled` / `inventory_enabled` (solo se cambian los que vengan)."""
     event = get_event_for_staff(event_id, db, staff)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     if "areas_enabled" in data:
         event.areas_enabled = bool(data["areas_enabled"])
     if "inventory_enabled" in data:
         event.inventory_enabled = bool(data["inventory_enabled"])
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled}
 
 
