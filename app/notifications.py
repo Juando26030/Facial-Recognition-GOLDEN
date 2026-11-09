@@ -25,6 +25,7 @@ MAX_TITLE, MAX_BODY = 160, 1500
 def notify(db: Session, staff_ids: Iterable[int], *, kind: str, title: str, body: str = "", url: Optional[str] = None, event_id: Optional[int] = None,
            dedupe_key: Optional[str] = None, mail: bool = True) -> int:
     created = 0
+    url = internal_url(url)
     for sid in dict.fromkeys(int(i) for i in staff_ids if i):
         if dedupe_key and db.query(Notification.id).filter(Notification.staff_user_id == sid, Notification.dedupe_key == dedupe_key).first():
             continue
@@ -35,6 +36,13 @@ def notify(db: Session, staff_ids: Iterable[int], *, kind: str, title: str, body
         if mail:
             jobs.enqueue(db, KIND, {"notification_id": int(row.id)}, max_attempts=4, dedupe_key=f"{KIND}:{row.id}")
     return created
+
+
+def internal_url(url: Optional[str]) -> Optional[str]:
+    """Solo rutas de la propia aplicación («/inventario»); «//otro-sitio», «/\\otro», esquemas o espacios se descartan (F5-9 D, D3: la campana y el correo no redirigen afuera)."""
+    if not isinstance(url, str) or not url.startswith("/") or url.startswith("//") or "\\" in url or any(c.isspace() for c in url) or len(url) > 500:
+        return None
+    return url
 
 
 def render_mail(title: str, body: str, url: str = "") -> dict:

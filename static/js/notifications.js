@@ -29,7 +29,7 @@
   async function readItem(el) {
     const id = el.dataset.id;
     try { const res = await fetch(`/api/notifications/${id}/read`, { method: 'POST' }); if (res.ok) { const d = await res.json(); paintCount(d.unread); el.classList.remove('gw-bell__item--new'); } } catch (e) { /* sin conexión: se queda sin leer */ }
-    if (el.dataset.url && el.dataset.url.charAt(0) === '/') window.location.href = el.dataset.url;
+    if (/^\/(?![\/\\])/.test(el.dataset.url || '')) window.location.href = el.dataset.url;          // solo rutas internas («//otro-sitio» o «/\otro» no)
   }
   btn.addEventListener('click', () => open(panel.hidden));
   wrap.querySelector('#gwBellAll').addEventListener('click', async () => { try { await fetch('/api/notifications/read-all', { method: 'POST' }); } catch (e) { /* nada */ } paintCount(0); list.querySelectorAll('.gw-bell__item--new').forEach((x) => x.classList.remove('gw-bell__item--new')); });

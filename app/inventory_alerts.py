@@ -15,7 +15,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app import notifications
-from app.auth import staff_with_role
+from app.auth import sees_event_tenant, staff_with_role
 from app.models import Event, EventInventoryItem, InventoryProduct, StaffUser
 from app.timeutil import utcnow
 
@@ -102,7 +102,7 @@ def recipients(db: Session, event: Event, actor: Optional[StaffUser]) -> list:
         if not sid or sid in out or (actor is not None and sid == actor.id):
             continue
         s = db.get(StaffUser, sid)
-        if s is not None and s.is_active and s.archived_at is None:
+        if s is not None and s.is_active and s.archived_at is None and sees_event_tenant(s, event):          # F5-9 D (D2): nada de avisos de eventos de otro cliente
             out.append(sid)
     return out
 

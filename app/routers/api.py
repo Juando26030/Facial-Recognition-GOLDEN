@@ -965,6 +965,9 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)               # P3 (cierre de seguridad, 6-nov-2026): mismo aislamiento por cliente y pertenencia que get_event_for_staff
+    from app.auth import is_inventory_only
+    if is_inventory_only(staff):                    # F5-9 D (D1): almacén/contabilidad solos no tocan registros de personas
+        raise HTTPException(status_code=403, detail="Tu rol solo tiene acceso al inventario de los eventos")
     assert_event_scope(event, staff, db)
     if staff.role in ("digitador", "cliente"):
         if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():

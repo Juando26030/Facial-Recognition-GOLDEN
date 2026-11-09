@@ -27,7 +27,7 @@ from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app import queue_svc
 from app.routers.areas_inventory import delete_event_modules
-from app.auth import assert_event_scope, assert_event_tenant, effective_roles, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
+from app.auth import assert_event_scope, assert_event_tenant, effective_roles, is_inventory_only, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
@@ -191,6 +191,8 @@ def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_curr
     más probable es justamente ese mensaje ambiguo. Este campo nuevo deja que el frontend
     distinga "no tienes ninguna asignación" de "tienes asignación(es) pero ningún evento está en
     proceso todavía" sin cambiar la forma de `events` (sigue siendo la lista de siempre)."""
+    if is_inventory_only(staff):          # F5-9 D (D1): almacén/contabilidad solos no entran a eventos (su pantalla es /inventario)
+        return {"events": [], "has_any_authorization": False}
     query = event_archive.active_only(db.query(Event).filter(Event.status == "en_proceso"))
     has_any_authorization = True
     if staff.role in ("digitador", "cliente"):

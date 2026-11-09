@@ -198,7 +198,7 @@ def set_staff_email(
     if not target or (staff.tenant_id is not None and target.tenant_id != staff.tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     # 0C (A1): el correo de una cuenta decide quién recibe el enlace de «olvidé mi contraseña»; cambiarlo equivale a tomar la cuenta. Solo sobre cuentas de rango INFERIOR (o la propia).
-    if target.id != staff.id and _rank(target) >= STAFF_ROLES.index(staff.role):
+    if target.id != staff.id and _rank(target) >= _rank(staff):
         raise HTTPException(status_code=403, detail="No puedes cambiar el correo de una cuenta de tu mismo rango o superior")
     email = str(data.get("email") or "").strip()
     if email and (len(email) > 120 or not re.fullmatch(r"[A-Za-z0-9._%+\-']+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", email)):
@@ -292,7 +292,7 @@ def edit_staff_profile(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     _assert_can_manage(db, staff, target)
     own = target.id == staff.id
-    if not own and _rank(target) >= STAFF_ROLES.index(staff.role):
+    if not own and _rank(target) >= _rank(staff):
         raise HTTPException(status_code=403, detail="No puedes editar una cuenta de tu mismo rango o superior")
     changed = []
     if "username" in data:

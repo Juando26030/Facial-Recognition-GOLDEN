@@ -200,6 +200,12 @@ def assert_event_tenant(event: Event, staff: StaffUser) -> None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
 
+def sees_event_tenant(staff: StaffUser, event: Event) -> bool:
+    """¿`assert_event_tenant` dejaría pasar a esta cuenta? Para elegir DESTINATARIOS de avisos sobre un evento (F5-9 D, D2): con ENFORCE_STAFF_TENANT=1 el personal de otro cliente no
+    recibe el nombre ni los cambios de un evento ajeno."""
+    return not (os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and event.tenant_id != staff.tenant_id)
+
+
 def assert_tenant_id(tenant_id: str, staff: StaffUser) -> None:
     """Como `assert_event_tenant`, para recursos que solo traen el id del cliente en la ruta (p. ej. imágenes de escarapela): con ENFORCE_STAFF_TENANT=1, el personal de un cliente no toca los de otro."""
     if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and tenant_id != staff.tenant_id:
@@ -247,6 +253,10 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    if is_inventory_only(staff):
+        # Revisión de seguridad F5-9 D (D1): una cuenta SOLO de almacén/contabilidad no es digitador ni cliente, así que antes pasaba como coordinador+ y veía el directorio de asistentes
+        # (/api/users), el formulario de persona, el quiosco… Su única puerta a un evento es el inventario (app/routers/inventory.py, que no usa esta función).
+        raise HTTPException(status_code=403, detail="Tu rol solo tiene acceso al inventario de los eventos")
     assert_event_scope(event, staff, db)
     idle.note_event(event)                      # tiempo de inactividad propio del evento (solo en proceso); ver app/idle.py
 

@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app import event_template as et
-from app.auth import staff_with_role
+from app.auth import sees_event_tenant, staff_with_role
 from app import event_template_svc, jobs, publicurl
 from app.database import SessionLocal
 from app.mailer import clean_subject, send_mail
@@ -173,7 +173,7 @@ def recipients(db: Session, event: Event, actor: Optional[StaffUser]) -> list:
         if not sid or sid in out or (actor is not None and sid == actor.id):
             continue
         s = db.get(StaffUser, sid)
-        if s is None or not s.is_active or s.archived_at is not None or not valid_email(s.email):
+        if s is None or not s.is_active or s.archived_at is not None or not valid_email(s.email) or not sees_event_tenant(s, event):          # F5-9 D (D2): ni de otro cliente
             continue
         out.append(sid)
     return out
