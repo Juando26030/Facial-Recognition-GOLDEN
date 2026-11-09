@@ -20,6 +20,8 @@
   button.primary { background:var(--gold); color:var(--on-gold, #111); }
   button.secondary { background:transparent; color:var(--ink); }
   button[disabled] { opacity:.5; cursor:not-allowed; }
+  /* 9-nov-2026, orden expresa de Juan David: estado de carga en botones (rueda en el botón pulsado mientras responde el servidor; sin cambiar textos ni flujo) */
+  button[aria-busy="true"] { opacity:1; cursor:progress; } button[aria-busy="true"]::after { content:""; display:inline-block; width:1em; height:1em; margin-left:.5em; vertical-align:-.15em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gw-pub-spin .8s linear infinite; } @keyframes gw-pub-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion: reduce) { button[aria-busy="true"]::after { animation:none; opacity:.6; } }
   .msg { margin-top:16px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fafbfd; }
   p.legal { white-space:pre-line; }
   .check { display:flex; gap:10px; align-items:flex-start; font-weight:600; margin:14px 0; }
@@ -102,7 +104,7 @@
   $('go').addEventListener('click', async () => {
     const needBirth = !$('birthRow').hidden;          // enlace personal: solo la cédula, salvo que la base no tenga la fecha de nacimiento de esa persona
     if (!$('cedula').value.trim() || (needBirth && !$('birth').value)) return say(needBirth ? 'Escribe tu documento y tu fecha de nacimiento.' : 'Escribe tu número de documento.', true);
-    $('go').disabled = true;
+    $('go').disabled = true; $('go').setAttribute('aria-busy', 'true');
     try {
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/check`, { method: 'POST', body: identity() });
       const j = await r.json().catch(() => ({}));
@@ -118,7 +120,7 @@
       if (block.adult_checkbox) { $('adultRow').hidden = false; $('adultText').textContent = block.adult_checkbox; }
       $('step1').hidden = true; $('step2').hidden = false; $('out').hidden = true; window.scrollTo(0, 0);
     } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); }
-    finally { $('go').disabled = false; }
+    finally { $('go').disabled = false; $('go').removeAttribute('aria-busy'); }
   });
   async function send(decision) {
     const fd = identity();
@@ -131,6 +133,7 @@
       fd.append('file', f, 'selfie.jpg');
     }
     $('yes').disabled = $('no').disabled = $('send').disabled = true;
+    const pressed = $(decision === 'accept' ? (needSelfie ? 'send' : 'yes') : 'no'); pressed.setAttribute('aria-busy', 'true');
     try {
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}`, { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
@@ -138,6 +141,7 @@
       if (r.ok) { $('step2').hidden = true; $('step3').hidden = true; say(j.message || 'Listo.'); cap.reset(); selfieBlob = null; f = null; fd.delete('file'); }          // la foto no queda colgada en la pestaña
       else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
     } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
+    finally { pressed.removeAttribute('aria-busy'); }
   }
   // Aceptar primero; la cámara (la selfie) aparece solo después de aceptar.
   $('yes').addEventListener('click', () => {

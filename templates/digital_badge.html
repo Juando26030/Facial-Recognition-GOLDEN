@@ -33,6 +33,8 @@
         .extra-list li { font-size:0.85rem; color:#d8def5; padding:2px 0; }
         .extra-list b { color:#9aa3c7; font-weight:600; }
         #error { color:#ff9aa8; text-align:center; margin-top:20vh; }
+        /* 9-nov-2026, orden expresa de Juan David: estado de carga en botones (rueda mientras se prepara la tarjeta de Google Wallet) */
+        button[aria-busy="true"] { cursor:progress; } button[aria-busy="true"]::after { content:""; display:inline-block; width:1em; height:1em; margin-left:.5em; vertical-align:-.15em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gw-pub-spin .8s linear infinite; } @keyframes gw-pub-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion: reduce) { button[aria-busy="true"]::after { animation:none; opacity:.6; } }
     </style>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -113,8 +115,8 @@ function showWalletButtons(w) {
     if (w.google) {
         const b = document.getElementById('walletGoogle'); b.style.display = 'inline-block';
         b.addEventListener('click', async () => {
-            b.disabled = true;
-            try { const r = await fetch(`${base}/wallet/google`, { cache: 'no-store' }); const d = await r.json(); if (r.ok && d.url) location.href = d.url; } finally { b.disabled = false; }
+            b.disabled = true; b.setAttribute('aria-busy', 'true');
+            try { const r = await fetch(`${base}/wallet/google`, { cache: 'no-store' }); const d = await r.json(); if (r.ok && d.url) location.href = d.url; } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
         });
     }
     if (w.apple) { const a = document.getElementById('walletApple'); a.style.display = 'inline-block'; a.href = `${base}/wallet/apple`; }

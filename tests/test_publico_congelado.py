@@ -10,11 +10,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # 9-nov-2026 (cierre Fase 4): form_public.html, legal_base.html y form-render.js cambiaron A PROPÓSITO (compromiso digital: ficha, secciones, avisos); hashes renovados.
 # 9-nov-2026 (revisión F5-9): digital_badge.html cambió A PROPÓSITO en la Fase 8 (QR dinámico, Wallet y enlace de contactos, orden de Juan David); y por ORDEN EXPRESA de
 # Juan David todas las páginas llevan el ícono de Golden en la pestaña (solo se agregaron las líneas <link rel="icon">). Hashes renovados.
+# 9-nov-2026, orden expresa de Juan David: estado de carga en botones («en ningún botón se pueda pensar que no funcionó»). form_public.html («Continuar» del código de
+# acceso y de la identificación), aceptar.html («Continuar», aceptar/no aceptar, enviar selfie) y digital_badge.html (Google Wallet) solo ganaron aria-busy + una rueda en
+# el botón pulsado; sin cambiar textos, validaciones ni flujo. El certificado y la ruleta ya mostraban «Buscando…»/«Girando…»: no se tocaron. Hashes renovados.
 FROZEN = {
-    "templates/form_public.html": "9d1070ae14611c4e2888cbbd00965e5c4f3f0ac4d8dccb3003aa4875b3414b6b",
-    "templates/aceptar.html": "b0b2d6f82dc3c8523bd43bfd9556500ce93a24b251260878ad66ed87b088f202",
+    "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
+    "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
     "templates/aceptar_no_disponible.html": "a8de359cc787156269fb23be9d91729a0e1cf977168d1a4c7b5ee2131b2b01e4",
-    "templates/digital_badge.html": "0f34df53a792ab7eb6c1a3df6d3d1709269907dfa20d76e64181c81592c7d6a2",
+    "templates/digital_badge.html": "24f47b02a31691c101c058524013fdf0e29d27e21c3af3ca22da216db6b8680b",
     "templates/certificate_public.html": "68e316e797bac84ff13d95d6e05b14f19fb8b210d1c0c6d21f9f03a78b787718",
     "templates/legal_base.html": "3b9bd1eb2fabec5d3631ec3e8fa1f1fc384cadbb9d79e3099f8076b3c2dfc0b0",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
