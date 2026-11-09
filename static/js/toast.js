@@ -349,7 +349,8 @@
       if (!g.idle) return;
       g.idle = false; emit("gw:resume");
       const once = g.once; g.once = [];
-      g.resume.concat(once).forEach((fn) => { try { fn(); } catch (e) { /* un refresco que falla no frena a los demás */ } });
+      // los refrescos del regreso son sondeos: no encienden la rueda ni la barra de carga (static/js/gw-carga.js)
+      g.resume.concat(once).forEach((fn) => { try { if (d.quiet) d.quiet(fn); else fn(); } catch (e) { /* un refresco que falla no frena a los demás */ } });
     };
     g.check = function () { if (!g.idle && d.now() - g.last >= g.idleMs) { g.idle = true; emit("gw:idle"); } };
     g.onResume = function (fn, once) { (once ? g.once : g.resume).push(fn); };
@@ -362,9 +363,10 @@
     now: () => Date.now(),
     setInterval: (fn, ms) => setInterval(fn, ms),
     emit: (name) => { if (typeof window.dispatchEvent === "function" && typeof Event === "function") window.dispatchEvent(new Event(name)); },
+    quiet: (fn) => (window.GWLoad && window.GWLoad.quiet ? window.GWLoad.quiet(fn) : fn()),
   });
   gate.createIdleGate = createGate;
-  window.GW = gate;
+  window.GW = Object.assign(gate, window.GW || {});      // conserva lo que ya puso gw-carga.js (GW.skeleton, GW.quiet), que carga antes
   if (hasDom) {
     ["click", "keydown", "pointerdown", "touchstart", "wheel", "scroll", "mousemove"].forEach((ev) => document.addEventListener(ev, () => gate.activity(), { capture: true, passive: true }));
     const t = setInterval(() => gate.check(), 5000);

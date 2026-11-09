@@ -1,6 +1,8 @@
 {# Cabeza común de las páginas que ya usan la base visual (clase gw-page en <body>): tipografías PROPIAS (sin CDN), base visual y tema.
    El <script> en línea es mínimo y va ANTES de pintar: si en este dispositivo se eligió el tema oscuro lo pone en <html data-theme="dark"> (sin parpadeo). La CSP del repo
-   no restringe scripts en línea (app/main.py: solo frame-ancestors, object-src y base-uri). Las pantallas que todavía no se rediseñan NO incluyen este archivo: siempre claras. #}
+   no restringe scripts en línea (app/main.py: solo frame-ancestors, object-src y base-uri). Las pantallas que todavía no se rediseñan NO incluyen este archivo: siempre claras.
+   gw-carga.js va de PRIMERO y SIN defer: envuelve fetch antes de que la pantalla pida sus datos (botón ocupado, barra de carga y esqueletos; docs/ux/CARGAS_Y_ESQUELETOS.md). #}
+<script src="{{ url_for('static', path='js/gw-carga.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
