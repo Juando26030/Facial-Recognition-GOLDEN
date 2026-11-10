@@ -169,10 +169,11 @@ def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
     """(prefill, readonly) para el navegador: los de solo lectura van ENMASCARADOS y el correo/teléfono editables NO se pre-llenan (X4)."""
     fields = design["fields"]
     prefill, readonly = {}, []
+    drives = formlib.condition_field_ids(design)          # campos que mandan en variantes, visibilidad o precio: el navegador los evalúa con el valor real (enmascarado, ninguna regla «igual a» se cumple)
     for fid, val in formsvc.prefill_values(design, person).items():
         f = fields[fid]
         if f.get("readonly_when_prefilled"):
-            prefill[fid] = mask_prefill_value(f, val)
+            prefill[fid] = val if fid in drives and f.get("type") not in ("email", "phone") else mask_prefill_value(f, val)
             readonly.append(fid)
         elif f.get("type") in ("email", "phone") or f.get("key") in ("email", "phone"):
             continue

@@ -187,3 +187,18 @@ def test_x7_badge_editor_escapes_categories_and_static_text():
     assert "`<option value=\"${window.escapeHtml(c)}\">${window.escapeHtml(c)}</option>`" in html
     assert "<textarea id=\"p_content\" rows=\"2\">${window.escapeHtml(el.content || '')}</textarea>" in html
     assert ">${c}</option>" not in html and ">${el.content || ''}</textarea>" not in html
+
+
+# ------------------------------- X4 + variantes: el campo que manda en una variante llega SIN máscara
+def test_x4_fields_that_drive_variants_or_visibility_are_not_masked():
+    design = {"fields": {
+        "ced": {"type": "text_short", "key": "id"},
+        "nom": {"type": "text_short", "key": "first_name", "readonly_when_prefilled": True},
+        "ciu": {"type": "text_short", "key": "city", "readonly_when_prefilled": True},
+        "mail": {"type": "email", "key": "email", "readonly_when_prefilled": True},
+        "txt": {"type": "paragraph", "content": "x", "variants": {"content": {"items": [{"when": {"field": "ciu", "op": "equals", "value": "Cali"}, "value": "Hola Cali"}]}}},
+    }}
+    person = {"id": "1001", "first_name": "Ana María", "city": "Cali", "email": "ana@empresa.com"}
+    assert forms_public.formlib.condition_field_ids(design) == {"ciu"}
+    prefill, _ = forms_public.public_prefill(design, person)
+    assert prefill["ciu"] == "Cali" and prefill["nom"] == "A** M****" and prefill["mail"] != "ana@empresa.com"
