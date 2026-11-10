@@ -53,3 +53,4 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 - **Cierre de las Fases 0 y 1 (5-nov-2026):** `CIERRE_FASES_0_1.md`.
 - **Cierre de la Fase 4 — Equipo del evento (8-nov-2026):** `CIERRE_FASE_4.md` (+ `FASE_4_*.md`, `FASE_4_SEGURIDAD.md`). Ramas ya integradas y candidatas a borrar (con permiso): `4B_ramas_integradas_en_f4.txt` y `5_ramas_integradas_en_f5.txt` (9-nov).
 - Fase 0A/0B: `0B_inventario.md`, `0B_ramas_borradas.md` (+ lista) — limpieza del repositorio.
+- **Fase 10 — Ajustes del 10-nov-2026:** `FASE_10_AJUSTES_NOV10.md` (una sección por bloque; el bloque D trae asteriscos configurables, prellenado del compromiso y Acta de novedades).
