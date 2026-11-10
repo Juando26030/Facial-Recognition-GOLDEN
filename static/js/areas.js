@@ -163,8 +163,10 @@
   $('scanInput').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const raw = e.target.value.trim(); e.target.value = '';
+    let raw = e.target.value.trim(); e.target.value = '';
     if (!raw) return;
+    raw = QrCode.collect(raw);                                                // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
+    if (raw === null) return;
     scanValue(raw);
   });
 

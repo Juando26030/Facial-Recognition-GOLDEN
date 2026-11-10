@@ -1508,6 +1508,12 @@
           e.preventDefault();
           let raw = cedulaInput.value.trim();
           if (!raw) return;
+          if (window.QrCode && QrCode.collect) {                       // QR en vCard con lector de mano: llega en varias líneas; se espera a que termine (Fase 10, C)
+            const whole = QrCode.collect(raw);
+            if (whole === null) { cedulaInput.value = ''; syncClearBtn(); return; }
+            raw = QrCode.unwrap(whole).trim();
+            if (!raw) { cedulaInput.value = ''; syncClearBtn(); return; }
+          }
           if (window.QrCode && QrCode.isDynamic && QrCode.isDynamic(raw)) {           // QR dinámico de la credencial digital: el servidor valida firma y vigencia y devuelve la persona
             QrCode.resolveDynamic(raw, window.EVENT_ID).then((resolved) => {
               const qr = QrCode.parse(resolved);

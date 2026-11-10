@@ -12,7 +12,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import consent, minors
+from app import consent, minors, qr_vcard
 from app.models import AuditContactShare, ContactCard, Event, EventAttendee, EventExhibitor, ExhibitorLead, User
 from app.timeutil import utcnow
 
@@ -166,7 +166,7 @@ _CARD_URL = re.compile(r"/tarjeta/([A-Za-z0-9_-]{16,})")
 
 def parse_scanned(text: str) -> dict:
     """Lo que leyó la cámara del expositor: la tarjeta pública de una persona (`…/tarjeta/<token>`), o la cédula del QR de la escarapela (como en Registro: `cédula` o `cédula|nombre|apellido`)."""
-    raw = str(text or "").strip()[:500]
+    raw = qr_vcard.unwrap(str(text or "")[:1500]).strip()[:500]          # QR en vCard (Fase 10, C): el código va en NOTE
     m = _CARD_URL.search(raw)
     if m:
         return {"kind": "card", "token": m.group(1)}

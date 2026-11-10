@@ -81,8 +81,10 @@
   $('scanInput').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const typed = e.target.value.trim(); e.target.value = '';
+    let typed = e.target.value.trim(); e.target.value = '';
     if (!typed) return;
+    typed = QrCode.collect(typed);                                             // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
+    if (typed === null) return;
     QrCode.resolveDynamic(typed, window.EVENT_ID, 'inventory').then((raw) => {          // QR dinámico de la credencial digital: lo valida el servidor
       const qr = QrCode.parse(raw);
       const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);

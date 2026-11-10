@@ -57,6 +57,7 @@
 {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
 {% if person_form_json != "null" %}<script src="{{ url_for('static', path='js/form-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/person-form.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/vcard.js') }}"></script>
 <script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
 <main class="golden-main">
@@ -712,8 +713,11 @@
             if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const raw = regScanCedulaInput.value.trim();
+                let raw = regScanCedulaInput.value.trim();
                 if (!raw) return;
+                raw = QrCode.collect(raw);                                                  // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
+                if (raw === null) { regScanCedulaInput.value = ''; return; }
+                raw = QrCode.unwrap(raw).trim();
                 const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
                 const qr = QrCode.parse(raw);
                 if (qr && qr.isQr) fillRegFormFromScan(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos });
