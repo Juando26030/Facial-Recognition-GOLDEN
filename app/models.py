@@ -635,6 +635,12 @@ class PaymentAccount(Base):
     events_enc = Column(Text, nullable=False)
     active = Column(Boolean, nullable=False, default=True, server_default='true')
     note = Column(Text, nullable=True)
+    # 0124 (Fase 10 B): a qué pertenece la cuenta. «general» = cualquier formulario; «evento» = formularios de ese evento (varias cuentas por evento); «formulario» = solo ese; «panelista» = cuenta de un
+    # panelista/expositor (texto libre en panelist_ref; event_id opcional). Solo limita las asignaciones NUEVAS: nada se asigna solo.
+    scope = Column(String(12), nullable=False, default='general', server_default='general')
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='SET NULL'), nullable=True, index=True)
+    form_id = Column(Integer, nullable=True)          # sin FK a propósito: web_forms ya apunta a payment_accounts y una llave en el otro sentido haría un ciclo al crear las tablas
+    panelist_ref = Column(String(120), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

@@ -15,13 +15,20 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy.orm import Session, object_session
 
 from app import wompi
-from app.models import FormPayment, PaymentAccount, WebForm
+from app.models import Event, FormPayment, PaymentAccount, WebForm
 
 log = logging.getLogger("golden.payment_accounts")
 PREFIX = "pk1:"
 PUBLIC_RE = re.compile(r"^pub_(test|prod)_[A-Za-z0-9]{8,80}$")
 PRIVATE_RE = re.compile(r"^prv_(test|prod)_[A-Za-z0-9]{8,80}$")
 SECRET_RE = re.compile(r"^(test|prod)_(integrity|events)_[A-Za-z0-9]{8,80}$")
+
+
+SCOPES = {"general": "De uso general", "evento": "De un evento", "formulario": "De un formulario", "panelista": "De un panelista"}
+
+
+class ScopeError(ValueError):
+    """Alcance de la cuenta mal armado (mensaje en español para quien la crea)."""
 
 
 class KeyMissing(RuntimeError):
@@ -139,13 +146,65 @@ def by_ref(db: Session, ref: str) -> Optional[PaymentAccount]:
     return db.query(PaymentAccount).filter(PaymentAccount.ref == ref).first() if ref else None
 
 
+def clean_scope(db: Session, data: dict, current: Optional[PaymentAccount] = None) -> dict:
+    """Alcance de una cuenta (Fase 10 B): a qué pertenece. Devuelve `scope`, `event_id`, `form_id`, `panelist_ref` ya validados.
+    general = sin dueño (cualquier formulario puede usarla) · evento = formularios de ese evento · formulario = solo ese · panelista = cuenta de un panelista/expositor (texto libre; evento opcional).
+    Una cuenta NUNCA se asigna sola a nada: el alcance solo limita a cuáles formularios se les puede asignar."""
+    d = data or {}
+    scope = str(d.get("scope") if "scope" in d else (current.scope if current else "general") or "general").strip().lower()
+    if scope not in SCOPES:
+        raise ScopeError("Elige a qué pertenece la cuenta: general, un evento, un formulario o un panelista")
+
+    def _int(key):
+        v = d.get(key) if key in d else (getattr(current, key, None) if current else None)
+        if v in (None, "", 0, "0"):
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            raise ScopeError("El evento o formulario elegido no es válido") from None
+
+    event_id, form_id = _int("event_id"), _int("form_id")
+    ref = str(d.get("panelist_ref") if "panelist_ref" in d else (getattr(current, "panelist_ref", None) if current else "") or "").strip()[:120]
+    if scope == "general":
+        return {"scope": "general", "event_id": None, "form_id": None, "panelist_ref": None}
+    if scope == "formulario":
+        form = db.get(WebForm, form_id) if form_id else None
+        if form is None:
+            raise ScopeError("Elige el formulario al que pertenece la cuenta")
+        return {"scope": "formulario", "event_id": form.event_id, "form_id": form.id, "panelist_ref": None}
+    if event_id is not None and db.get(Event, event_id) is None:
+        raise ScopeError("El evento elegido no existe")
+    if scope == "evento":
+        if event_id is None:
+            raise ScopeError("Elige el evento al que pertenece la cuenta")
+        return {"scope": "evento", "event_id": event_id, "form_id": None, "panelist_ref": None}
+    if not ref:
+        raise ScopeError("Escribe el nombre o el correo del panelista dueño de la cuenta")
+    return {"scope": "panelista", "event_id": event_id, "form_id": None, "panelist_ref": ref}
+
+
+def usable_for_form(acc: PaymentAccount, form: WebForm) -> bool:
+    """¿Se puede asignar esta cuenta a este formulario? general: sí · evento: si el formulario es de ese evento · formulario: solo ese · panelista: de cualquier evento, o del suyo si lo tiene."""
+    scope = getattr(acc, "scope", None) or "general"
+    if scope == "evento":
+        return acc.event_id is not None and acc.event_id == form.event_id
+    if scope == "formulario":
+        return acc.form_id is not None and acc.form_id == form.id
+    if scope == "panelista" and acc.event_id is not None:
+        return acc.event_id == form.event_id
+    return True
+
+
 def mask(public_key: str) -> str:
     return "…" + str(public_key)[-4:]
 
 
-def serialize(acc: PaymentAccount, base_url: str, forms: int = 0) -> dict:
+def serialize(acc: PaymentAccount, base_url: str, forms: int = 0, event_name: Optional[str] = None, form_name: Optional[str] = None) -> dict:
     """Lo único que sale por la API: nada secreto."""
-    return {"id": acc.id, "name": acc.name, "holder": acc.holder, "active": bool(acc.active), "note": acc.note,
+    scope = getattr(acc, "scope", None) or "general"
+    return {"scope": scope, "scope_label": SCOPES.get(scope, SCOPES["general"]), "event_id": acc.event_id, "event_name": event_name, "form_id": acc.form_id, "form_name": form_name,
+            "panelist_ref": acc.panelist_ref,"id": acc.id, "name": acc.name, "holder": acc.holder, "active": bool(acc.active), "note": acc.note,
             "public_key_masked": mask(acc.public_key), "env": "test" if is_test_key(acc.public_key) else "prod",
             "has_private": bool(acc.private_enc), "keys_readable": bool(cfg_of(acc, for_new_charges=False)),
             "webhook_url": f"{base_url}/webhooks/wompi/{acc.ref}" if base_url else f"/webhooks/wompi/{acc.ref}", "forms": forms,

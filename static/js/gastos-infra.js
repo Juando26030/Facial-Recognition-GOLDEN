@@ -67,14 +67,43 @@
   function range() { return { from: document.getElementById('gxFrom').value, to: document.getElementById('gxTo').value }; }
   function qs(r) { return '?from=' + encodeURIComponent(r.from) + '&to=' + encodeURIComponent(r.to); }
 
+  var status = null;         // /api/gastos/infra/status: conexiones y si la tabla existe
+
+  function connPanel() {
+    if (!status) return '';
+    var badge = { ok: ['gw-badge gw-badge--ok', 'Conectado'], missing: ['gw-badge gw-badge--warn', 'No conectado'], error: ['gw-badge gw-badge--err', 'Hay que revisarlo'] };
+    var rows = status.connections.map(function (c) {
+      var b = badge[c.state] || badge.missing, more = '';
+      if (c.state !== 'ok' && (c.steps.length || c.env.length || c.iam.length)) {
+        more = '<details class="gw-gx__help"><summary>Cómo conectarlo</summary>' +
+          (c.steps.length ? '<ol>' + c.steps.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ol>' : '') +
+          (c.env.length ? '<p class="gw-hint">Variables que faltan: ' + c.env.map(function (v) { return '<code>' + esc(v) + '</code>'; }).join(', ') + '</p>' : '') +
+          (c.iam.length ? '<p class="gw-hint">Permisos de Google Cloud: ' + c.iam.map(esc).join('; ') + '.</p>' : '') + '</details>';
+      }
+      return '<li class="gw-gx__conn"><div><strong>' + esc(c.title) + '</strong> <span class="' + b[0] + '">' + b[1] + '</span><br><span class="gw-hint">' + esc(c.summary) + '</span>' +
+        (c.last_import ? '<br><span class="gw-hint">Última importación: ' + esc(c.last_import.slice(0, 10)) + '</span>' : '') + more + '</div></li>';
+    }).join('');
+    var alert = status.table_ready ? '' : '<div class="gw-alert gw-alert--err" role="alert"><div class="gw-alert__body"><p class="gw-alert__title">La base de datos de este entorno no tiene la tabla de gastos</p><p>' + esc(status.table_message || '') + '</p></div></div>';
+    return alert + '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Conexiones</h3><p class="gw-hint">Ninguna es obligatoria: sin conexión puedes registrar los gastos a mano o subir un archivo de Excel (CSV). Columnas del archivo: ' + esc(status.csv_columns) + '.</p><ul class="gw-gx__conns">' + rows + '</ul></section>';
+  }
+  function loadStatus() {
+    var box = document.getElementById('gxConn');
+    return api('/api/gastos/infra/status').then(function (r) { status = r; box.innerHTML = connPanel(); }).catch(function (e) {
+      status = null;
+      box.innerHTML = '<div class="gw-alert gw-alert--warn" role="status"><div class="gw-alert__body"><p class="gw-alert__title">No se pudo revisar las conexiones</p><p>' + esc(e.message) + '</p></div></div>';
+    });
+  }
+
   function load() {
     var r = range();
     root.setAttribute('aria-busy', 'true');
+    var st = loadStatus();
     return Promise.all([api('/api/gastos/infra/summary' + qs(r)), api('/api/gastos/infra/costs' + qs(r))]).then(function (res) {
       data = res[0]; costs = res[1].costs; render();
     }).catch(function (e) {
-      document.getElementById('gxBody').innerHTML = '<div class="gw-state gw-state--error"><p class="gw-state__title">No se pudo cargar</p><p class="gw-state__text">' + esc(e.message) + '</p></div>';
-    }).then(function () { root.setAttribute('aria-busy', 'false'); });
+      var msg = e.status === 403 ? 'Tu cuenta no tiene permiso para ver los gastos de la plataforma.' : e.message;
+      document.getElementById('gxBody').innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar los gastos</p><p class="gw-state__text">' + esc(msg) + '</p></div>';
+    }).then(function () { return st; }).then(function () { root.setAttribute('aria-busy', 'false'); });
   }
 
   // ---------------------------------------------------------------- gráficos
@@ -205,12 +234,12 @@
     var opts = Object.keys(data.basis_labels).map(function (k) { return '<option value="' + k + '"' + (k === data.basis ? ' selected' : '') + '>' + esc(data.basis_labels[k]) + '</option>'; }).join('');
     var imp = data.gcp_export_configured
       ? '<button type="button" class="gw-btn gw-btn--secondary" data-act="import-google">Importar Google ahora</button><span class="gw-hint">La importación de Google corre sola cada mes en el Job de operaciones.</span>'
-      : '<span class="gw-hint">Importación automática de Google apagada: falta terminar de conectarla con la facturación de Google (lo hace el administrador técnico). Mientras tanto, registra el gasto de Google a mano.</span>';
+      : '<span class="gw-hint">Google no está conectado (mira «Conexiones» arriba). Mientras tanto, registra el gasto de Google a mano o sube un archivo.</span>';
     return '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Cómo se reparte entre eventos</h3><p class="gw-gx__formula"><strong>Fórmula:</strong> ' + esc(data.formula) + '</p>' +
       '<form class="gw-gx__settings" id="gxSettings"><div class="gw-field"><label class="gw-label" for="gxBasis">Criterio de reparto</label><select class="gw-select" id="gxBasis" name="basis">' + opts + '</select></div>' +
       '<div class="gw-field"><label class="gw-label" for="gxTrm">TRM por defecto (COP por USD)</label><input class="gw-input gw-input--short" id="gxTrm" name="trm_default" inputmode="decimal" value="' + (data.trm_default || '') + '" placeholder="Ej. 4100"></div>' +
       '<button type="submit" class="gw-btn gw-btn--primary">Guardar</button></form>' +
-      '<div class="gw-row">' + imp + '</div><div id="gxNeon" class="gw-hint">' + (data.neon_configured ? 'Uso de Neon: consultando…' : 'Neon solo informa el uso, no el dinero: su costo se registra a mano. Cuando el administrador técnico conecte Neon, aquí se verá también el uso.') + '</div></section>';
+      '<div class="gw-row">' + imp + '</div><div id="gxNeon" class="gw-hint">' + (data.neon_configured ? 'Uso de Neon: consultando…' : 'Neon solo informa el uso, no el dinero: su costo se registra a mano (mira «Conexiones» para conectar el uso).') + '</div></section>';
   }
 
   function costsTable() {
@@ -219,7 +248,7 @@
       var amt = c.currency === 'USD' ? 'US$ ' + nf.format(c.amount) + ' × ' + nf.format(c.trm) : '';
       return '<tr data-id="' + c.id + '"><td>' + esc(mlabel(c.month)) + '</td><td>' + esc(c.provider_label) + '</td><td>' + esc(c.concept) + (c.note ? '<br><span class="gw-muted">' + esc(c.note) + '</span>' : '') + '</td>' +
         '<td>' + (c.kind === 'fixed' ? 'Fijo' : 'Variable') + '</td><td class="gw-gx__num">' + cop(c.amount_cop) + (amt ? '<br><span class="gw-muted">' + esc(amt) + '</span>' : '') + '</td>' +
-        '<td>' + (c.source === 'gcp_export' ? '<span class="gw-badge gw-badge--info">Google</span>' : 'Manual') + '</td>' +
+        '<td>' + (c.source === 'gcp_export' ? '<span class="gw-badge gw-badge--info">Google</span>' : c.source === 'archivo' ? '<span class="gw-badge">Archivo</span>' : 'Manual') + '</td>' +
         '<td><div class="gw-gx__actions">' + (c.has_attachment ? '<a class="gw-btn gw-btn--ghost gw-btn--sm" href="/api/gastos/infra/costs/' + c.id + '/attachment" target="_blank" rel="noopener">Soporte</a>' : '') +
         '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-act="edit" data-id="' + c.id + '">Editar</button>' +
         '<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-act="delete" data-id="' + c.id + '">Borrar</button></div></td></tr>';
@@ -230,7 +259,7 @@
   function render() {
     var body = document.getElementById('gxBody');
     var empty = !costs.length;
-    body.innerHTML = (empty ? '<div class="gw-alert gw-alert--warn"><div class="gw-alert__body"><p class="gw-alert__title">Aún no hay gastos en este periodo</p><p>Registra los gastos de cada proveedor (o activa la importación de Google) y aquí aparecerán los gráficos.</p></div></div>' : '') +
+    body.innerHTML = (empty ? '<div class="gw-alert gw-alert--warn"><div class="gw-alert__body"><p class="gw-alert__title">Aún no hay gastos en este periodo</p><p>Registra los gastos de cada proveedor, sube un archivo o conecta Google, y aquí aparecerán los gráficos.</p></div></div>' : '') +
       kpis() +
       panel('month', 'Gasto por mes y proveedor', legend(GROUPS.map(function (g) { return [g, data.group_labels[g]]; })), null, monthTable()) +
       panel('trend', 'Tendencia del gasto total', '', null, trendTable()) +
@@ -348,6 +377,7 @@
         if (ok) api('/api/gastos/infra/costs/' + cid, { method: 'DELETE' }).then(function () { toast('Gasto borrado'); return load(); }).catch(function (er) { toast(er.message, 'error'); });
       });
     } else if (act === 'toggle-table') { var k = b.getAttribute('data-chart'); tableViews[k] = !tableViews[k]; render(); }
+    else if (act === 'upload') { var inp = document.getElementById('gxFile'); if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.id = 'gxFile'; inp.accept = '.csv,text/csv,text/plain'; inp.hidden = true; root.appendChild(inp); } inp.value = ''; inp.click(); }
     else if (act === 'export') { var r = range(); window.location.href = '/api/gastos/infra/export.xlsx' + qs(r); }
     else if (act === 'import-google') {
       b.disabled = true;
@@ -355,6 +385,16 @@
         toast('Google: ' + r.imported + ' nuevo(s), ' + r.updated + ' actualizado(s)' + (r.warnings && r.warnings.length ? '. ' + r.warnings[0] : ''), r.warnings && r.warnings.length ? 'error' : 'ok'); return load();
       }).catch(function (er) { toast(er.message, 'error'); b.disabled = false; });
     }
+  });
+
+  document.addEventListener('change', function (e) {
+    if (e.target.id !== 'gxFile' || !e.target.files[0]) return;
+    var fd = new FormData(); fd.append('file', e.target.files[0]);
+    api('/api/gastos/infra/import/csv', { method: 'POST', body: fd }).then(function (r) {
+      var warn = r.warnings && r.warnings.length;
+      toast('Archivo cargado: ' + r.imported + ' nuevo(s), ' + r.updated + ' actualizado(s)' + (r.skipped ? ', ' + r.skipped + ' omitido(s)' : '') + (warn ? '. ' + r.warnings[0] : ''), warn ? 'error' : 'ok');
+      return load();
+    }).catch(function (er) { toast(er.message, 'error'); });
   });
 
   // ---------------------------------------------------------------- arranque

@@ -116,6 +116,8 @@ def _assign_account(db: Session, form: WebForm, value, staff: StaffUser) -> None
         acc = db.get(PaymentAccount, new_id)
         if acc is None or not acc.active:
             raise HTTPException(status_code=400, detail="Esa cuenta de cobro no existe o está desactivada")
+        if not payment_accounts.usable_for_form(acc, form):
+            raise HTTPException(status_code=400, detail="Esa cuenta de cobro pertenece a otro evento u otro formulario. Créala como «de uso general» o para este evento")
     if db.query(FormPayment.id).filter(FormPayment.form_id == form.id, FormPayment.is_test == False, FormPayment.status.in_(("approved", "refunded", "pending"))).first():  # noqa: E712
         raise HTTPException(status_code=409, detail="Este formulario ya tiene pagos reales o pendientes: no se le puede cambiar la cuenta de cobro")
     audit_actions.record(db, staff, "payment_account_assign", "web_form", form.id, form.name, f"cuenta {form.payment_account_id or 'Golden'} → {new_id or 'Golden'}")

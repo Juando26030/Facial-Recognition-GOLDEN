@@ -46,3 +46,12 @@
 .gw-gx__err { margin: 0; color: var(--gw-err-text); background: var(--gw-err-bg); padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
 .gw-gx__err[hidden] { display: none; }
 @media (max-width: 520px) { .gw-gx__bar .gw-input { min-width: 0; width: 100%; } .gw-gx__settings .gw-select { min-width: 0; width: 100%; } }
+
+/* Conexiones (Fase 10 B): qué está conectado y qué falta, en lenguaje simple. */
+.gw-gx__conns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.gw-gx__conn { padding-top: var(--gw-sp-3); border-top: 1px solid var(--gw-border); min-width: 0; overflow-wrap: anywhere; }
+.gw-gx__conn:first-child { padding-top: 0; border-top: 0; }
+.gw-gx__help { margin-top: var(--gw-sp-2); }
+.gw-gx__help summary { cursor: pointer; font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-gx__help ol { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-gx__help code { font-size: var(--gw-fs-sm); }

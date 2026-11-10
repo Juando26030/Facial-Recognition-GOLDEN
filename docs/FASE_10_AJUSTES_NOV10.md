@@ -93,3 +93,32 @@ Ninguna prueba con base de datos (no hay Postgres aquí): correr las cuatro suit
 
 ### Para el integrador
 `down_revision` de 0127 apunta a `0126_event_acts` (bloque D); si el bloque A/B agregan 0122-0125 después, la cadena la ordena el integrador.
+
+## Bloque B · Cuentas de cobro abiertas y gastos de infraestructura (10-nov-2026)
+
+**Código:** `app/payment_accounts.py`, `app/routers/payment_accounts.py`, `static/js/cuentas-cobro-page.js`, `app/infra_costs.py`, `app/routers/gastos.py`, `static/js/gastos-infra.js`, `templates/gastos.html`. **Migración:** `0124_payment_acct_scope` (cadena global: 0123 del bloque A → 0124; mientras tanto apunta a `0121_infra_costs`, hay que repuntarla al integrar). **Pruebas:** `tests/test_cobros_gastos_f10b.py` (con base: correr en Cloud Shell) y `tests/test_cobros_gastos_f10b_texto.py` (corre sin base).
+
+### 1. Cuentas de cobro: abiertas
+- «Agregar cuenta de cobro» crea cuentas sin límite. Cada una dice **a qué pertenece**: a nada en particular (la puede usar cualquier formulario), a un **evento** (puede haber varias por evento), a un **formulario** o a un **panelista** (se escribe su nombre o correo; el evento es opcional). El botón «A qué pertenece» lo cambia después.
+- Nada es automático ni obligatorio: ninguna cuenta se crea sola (hay una prueba que lo vigila) y un formulario sin cuenta sigue cobrando con la de Golden. Al elegir la cuenta de un formulario solo salen las que le corresponden; el servidor lo vuelve a validar.
+- Llaves cifradas, webhook por cuenta, reembolsos y conciliación con la cuenta con que se cobró: sin cambios.
+- Datos existentes: la migración solo agrega columnas. Las cuentas que hoy usan formularios de un solo evento quedan «de ese evento» (y «de ese formulario» si es uno solo); las demás, generales. No cambia ninguna asignación. Bajada: quita las 4 columnas, no toca cuentas ni llaves.
+- Error real corregido: el cuadro de «Agregar cuenta» nunca se veía (faltaba `data-open`), así que el botón parecía no hacer nada. También se agregó `.gw-field[hidden]` al sistema de diseño.
+- **Decisión:** el «panelista» es un texto libre (en el código no existe aún una «cuenta panelista»). Si el bloque de panelistas crea una entidad, se cambia `panelist_ref` por su id. `form_id` no lleva llave foránea para no crear un ciclo con `web_forms`.
+
+### 2. Gastos › Infraestructura
+**Diagnóstico por código** (la sección nunca se oculta por falta de variable o tabla vacía; las causas posibles son):
+1. **La migración 0121 no está aplicada en staging** → `/api/gastos/infra/summary` daba error 500 y la pantalla decía solo «No se pudo completar la acción». Ahora responde 503 con un mensaje claro y la pantalla muestra un aviso rojo.
+2. **Permiso:** la pantalla y el enlace «Gastos» eran solo de `admin`/`super_admin` globales (un admin de una empresa con `ENFORCE_STAFF_TENANT=1` recibe 403; contabilidad era redirigida). Ahora entra también **contabilidad** (principal o sumado) a Infraestructura; la pestaña «Eventos» sigue solo para admin.
+3. **Variables que nunca llegaban:** el flujo de despliegue no pasaba `GCP_BILLING_EXPORT_TABLE` ni `ONEDRIVE_DRIVE_ID` a `deploy.sh`, y cada despliegue reemplaza todas las variables de Cloud Run (`--env-vars-file`), borrando lo puesto a mano. Además el botón «Importar Google ahora» corre en el servicio `web`, que no tenía la variable. Corregido: el flujo toma ambas de las **Variables de GitHub** y se las pasa a `web` y al Job de operaciones.
+
+**Nuevo:** panel **Conexiones** siempre visible (Google, Neon, manual) con «Conectado / No conectado / Hay que revisarlo», qué variable falta y pasos simples; **Subir archivo (CSV)** como alternativa manual (coma o punto y coma, números a la colombiana, también acepta la exportación de Google; se puede volver a subir sin duplicar; marca «Archivo»).
+
+**Qué falta en la nube (lo hace Juan David):**
+- Variables de GitHub (Settings → Environments → staging → Variables): `GCP_BILLING_EXPORT_TABLE` (`proyecto.conjunto.tabla`), opcional `ONEDRIVE_DRIVE_ID`. Luego volver a desplegar.
+- Activar en Facturación de Google la exportación estándar a BigQuery (solo trae datos desde que se activa).
+- IAM: `roles/bigquery.jobUser` (proyecto de la tabla) y `roles/bigquery.dataViewer` (conjunto `billing_export`) para la cuenta de servicio del servicio web (`golden-app-staging`, o `golden-svc-web-staging` con cuentas separadas) y la del Job de operaciones (`golden-ops-staging`).
+- Opcional (solo uso de Neon): `NEON_API_KEY` (secreto) y `NEON_ORG_ID` en el servicio web.
+- Aplicar la migración 0121 (y 0124) en staging si no está.
+
+**No se pudo probar:** nada con base de datos ni BigQuery real (solo `ruff`, `py_compile`, `node --check`, pruebas de texto y la lógica del CSV/conexiones con módulos simulados); pantallas revisadas en Chromium (claro/oscuro, computador y celular) con datos simulados.

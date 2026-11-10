@@ -6,6 +6,8 @@
   const accBox = document.getElementById('accounts');
   const frmBox = document.getElementById('forms');
   let accounts = [];
+  let formsData = [];
+  let eventsData = [];
   async function api(path, opts) {
     const res = await fetch(path, opts);
     const data = await res.json().catch(() => ({}));
@@ -22,15 +24,53 @@
     return qr.createSvgTag({ cellSize: size || 6, margin: 2, scalable: true });
   }
 
+  function scopeText(a) {
+    if (a.scope === 'evento') return 'Pertenece al evento: ' + (a.event_name || 'evento eliminado');
+    if (a.scope === 'formulario') return 'Pertenece al formulario: ' + (a.form_name || 'formulario eliminado') + (a.event_name ? ' (' + a.event_name + ')' : '');
+    if (a.scope === 'panelista') return 'Cuenta de panelista: ' + (a.panelist_ref || '') + (a.event_name ? ' · evento ' + a.event_name : '');
+    return 'De uso general: se puede asignar a cualquier formulario';
+  }
+  // Mismo criterio que app/payment_accounts.usable_for_form (el servidor vuelve a validar).
+  function usable(a, f) {
+    if (a.scope === 'evento') return a.event_id != null && a.event_id === f.event_id;
+    if (a.scope === 'formulario') return a.form_id != null && a.form_id === f.id;
+    if (a.scope === 'panelista' && a.event_id != null) return a.event_id === f.event_id;
+    return true;
+  }
+  const opt = (v, t, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(t)}</option>`;
+  function ownerFields(a) {
+    a = a || { scope: 'general' };
+    const ev = eventsData.map((e) => opt(e.id, e.name, a.event_id === e.id)).join('');
+    const fm = formsData.map((f) => opt(f.id, f.name + ' · ' + f.event, a.form_id === f.id)).join('');
+    return `<div class="gw-field"><label class="gw-label" for="ownScope">¿A qué pertenece esta cuenta?</label>
+      <select class="gw-input" id="ownScope" name="scope" data-scope>${[['general', 'A nada en particular (la puede usar cualquier formulario)'], ['evento', 'A un evento'], ['formulario', 'A un formulario'], ['panelista', 'A un panelista']].map((o) => opt(o[0], o[1], a.scope === o[0])).join('')}</select></div>
+      <div class="gw-field" data-own="evento panelista"><label class="gw-label" for="ownEvent">Evento</label><select class="gw-input" id="ownEvent" name="event_id"><option value="">Elige un evento</option>${ev}</select></div>
+      <div class="gw-field" data-own="formulario"><label class="gw-label" for="ownForm">Formulario</label><select class="gw-input" id="ownForm" name="form_id"><option value="">Elige un formulario</option>${fm}</select></div>
+      <div class="gw-field" data-own="panelista"><label class="gw-label" for="ownPanel">Panelista (nombre o correo)</label><input class="gw-input" id="ownPanel" name="panelist_ref" maxlength="120" value="${esc(a.panelist_ref || '')}"></div>`;
+  }
+  function syncOwner(root) {
+    const sc = root.querySelector('[data-scope]');
+    if (!sc) return;
+    root.querySelectorAll('[data-own]').forEach((el) => { el.hidden = !el.dataset.own.split(' ').includes(sc.value); });
+    const evSel = root.querySelector('#ownEvent');
+    if (evSel) evSel.required = sc.value === 'evento';
+    const fmSel = root.querySelector('#ownForm');
+    if (fmSel) fmSel.required = sc.value === 'formulario';
+    const pn = root.querySelector('#ownPanel');
+    if (pn) pn.required = sc.value === 'panelista';
+  }
+
   function accountRow(a) {
     const env = a.env === 'test' ? 'Pruebas' : 'Producción';
     const warn = !a.keys_readable ? '<br><span class="gw-text-danger">Las llaves no se pueden leer (cambió la llave de cifrado del servidor). Vuelve a pegarlas.</span>' : '';
     return `<li class="gw-list__item" data-id="${a.id}"><div><strong>${esc(a.name)}</strong> <span class="gw-badge">${env}</span> ${a.active ? '' : '<span class="gw-badge">Desactivada</span>'}
+      <br><span class="gw-hint">${esc(scopeText(a))}</span>
       <br><span class="gw-hint">${a.holder ? 'Titular: ' + esc(a.holder) + ' · ' : ''}Llave pública ${esc(a.public_key_masked)} · ${a.forms} formulario(s) · ${a.has_private ? 'con llave privada (reembolsos y enlaces)' : 'sin llave privada'}</span>
       <br><span class="gw-hint">URL de eventos para pegar en Wompi: <code>${esc(a.webhook_url)}</code></span>${warn}</div>
       <div class="gw-card-row__actions">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-check="${a.id}">Probar</button>
         ${a.has_private ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-link="${a.id}">Crear enlace de pago</button>` : ''}
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-owner="${a.id}">A qué pertenece</button>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-edit="${a.id}">Cambiar llaves</button>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-toggle="${a.id}">${a.active ? 'Desactivar' : 'Activar'}</button>
         <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-del="${a.id}" data-name="${esc(a.name)}">Borrar</button></div></li>`;
@@ -50,9 +90,11 @@
   async function loadForms() {
     try {
       const d = await api('/api/payment-accounts-forms');
-      const opts = (sel) => '<option value="">Cuenta de Golden</option>' + accounts.filter((a) => a.active || a.id === sel).map((a) => `<option value="${a.id}"${a.id === sel ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
+      formsData = d.forms;
+      eventsData = d.events || [];
+      const opts = (sel, f) => '<option value="">Cuenta de Golden</option>' + accounts.filter((a) => (a.active && usable(a, f)) || a.id === sel).map((a) => `<option value="${a.id}"${a.id === sel ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
       frmBox.innerHTML = d.forms.length ? `<ul class="gw-list">${d.forms.map((f) => `<li class="gw-list__item"><div><strong>${esc(f.name)}</strong> <span class="gw-hint">${esc(f.event)}</span></div>
-        <div class="gw-card-row__actions"><select class="gw-input gw-input--short" data-assign="${f.id}" data-event="${f.event_id}" aria-label="Cuenta de cobro de ${esc(f.name)}">${opts(f.payment_account_id)}</select>
+        <div class="gw-card-row__actions"><select class="gw-input gw-input--short" data-assign="${f.id}" data-event="${f.event_id}" aria-label="Cuenta de cobro de ${esc(f.name)}">${opts(f.payment_account_id, f)}</select>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qr="${esc(f.url)}" data-title="${esc(f.name)}">QR</button></div></li>`).join('')}</ul>`
         : '<div class="gw-state" role="status"><p class="gw-state__title">No hay formularios</p></div>';
     } catch (err) { frmBox.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(err.message)}</p></div>`; }
@@ -62,6 +104,7 @@
   function modal(title, bodyHtml, onSubmit, okLabel) {
     const back = document.createElement('div');
     back.className = 'gw-modal-backdrop';
+    back.setAttribute('data-open', 'true');      // sin esto el cuadro nunca se veía (el CSS lo deja oculto): «Agregar cuenta» parecía no hacer nada
     back.innerHTML = `<div class="gw-modal gw-modal--dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><form autocomplete="off"><div class="gw-modal__head"><h2>${esc(title)}</h2></div>
       <div class="gw-modal__body">${bodyHtml}<p class="gw-text-danger" data-err hidden></p></div>
       <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-cancel>Cerrar</button>${onSubmit ? `<button type="submit" class="gw-btn gw-btn--primary">${esc(okLabel || 'Guardar')}</button>` : ''}</div></form></div>`;
@@ -88,8 +131,12 @@
     try {
       if (b.hasAttribute('data-new')) {
         modal('Agregar cuenta de cobro', `<div class="gw-field"><label class="gw-label">Nombre</label><input class="gw-input" name="name" maxlength="80" required></div>
-          <div class="gw-field"><label class="gw-label">Titular (opcional)</label><input class="gw-input" name="holder" maxlength="120"></div>${keyFields}`,
-          async (v) => { await send('POST', '/api/payment-accounts', v); showToast('Cuenta guardada', 'success'); await load(); });
+          <div class="gw-field"><label class="gw-label">Titular (opcional)</label><input class="gw-input" name="holder" maxlength="120"></div>${ownerFields()}${keyFields}`,
+          async (v) => { await send('POST', '/api/payment-accounts', v); showToast('Cuenta guardada', 'success'); await load(); }).dispatchEvent(new Event('gw-sync'));
+      } else if (b.dataset.owner) {
+        const a = accounts.find((x) => String(x.id) === b.dataset.owner);
+        modal('A qué pertenece «' + a.name + '»', ownerFields(a),
+          async (v) => { await send('PUT', `/api/payment-accounts/${a.id}`, v); showToast('Cuenta actualizada', 'success'); await load(); }).dispatchEvent(new Event('gw-sync'));
       } else if (b.dataset.edit) {
         modal('Cambiar llaves', '<p class="gw-hint">Pega todas las llaves de nuevo; las anteriores se reemplazan.</p>' + keyFields,
           async (v) => { await send('PUT', `/api/payment-accounts/${b.dataset.edit}`, v); showToast('Llaves actualizadas', 'success'); await load(); });
@@ -121,7 +168,10 @@
     } catch (err) { b.disabled = false; fail(err); }
   });
 
+  document.addEventListener('gw-sync', (e) => { if (e.target && e.target.querySelector) syncOwner(e.target); }, true);
   document.addEventListener('change', async (e) => {
+    const own = e.target.closest('select[data-scope]');
+    if (own) { syncOwner(own.closest('.gw-modal') || document); return; }
     const s = e.target.closest('select[data-assign]');
     if (!s) return;
     try {

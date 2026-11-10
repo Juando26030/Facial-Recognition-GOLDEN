@@ -560,3 +560,181 @@ def neon_usage(month: str, fetch=None) -> dict:
             for c in per.get("consumption", []) or []:
                 compute += float(c.get("compute_time_seconds") or 0)
     return {"available": True, "month": month, "compute_hours": round(compute / 3600, 1), "projects": len(data.get("projects", []) or [])}
+
+
+# ------------------------------------------------------------------------------------------------ Fase 10 B: estado de las conexiones y carga por archivo
+TABLE_MISSING = ("Falta aplicar una actualización de la base de datos de este entorno (la migración 0121_infra_costs). "
+                 "Hasta entonces los gastos no se pueden guardar ni mostrar. Avísale al administrador técnico.")
+
+
+def table_ready(db: Session) -> bool:
+    """¿Existe la tabla `infra_costs` en esta base? (si la migración 0121 no se aplicó, el panel lo dice en vez de fallar con un error técnico)."""
+    from sqlalchemy import inspect
+    try:
+        return bool(inspect(db.get_bind()).has_table("infra_costs"))
+    except Exception:  # noqa: BLE001
+        log.warning("no se pudo comprobar la tabla infra_costs", exc_info=True)
+        return False
+
+
+def connections(db: Optional[Session] = None) -> list:
+    """Estado de cada fuente de datos de la pantalla de gastos, en lenguaje simple: `state` = ok | missing | error. Nunca revela valores (solo NOMBRES de variables).
+    Lo manual siempre está disponible: ninguna conexión es obligatoria para usar el panel."""
+    out = []
+    # --- Google Cloud (exportación de facturación a BigQuery)
+    raw = os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip()
+    google = {"key": "google", "title": "Google Cloud (facturación automática)", "env": ["GCP_BILLING_EXPORT_TABLE"],
+              "iam": ["BigQuery Job User (roles/bigquery.jobUser) en el proyecto de la tabla", "BigQuery Data Viewer (roles/bigquery.dataViewer) en el conjunto de datos de la exportación",
+                      "A la cuenta de servicio del servicio «web» y a la del Job de operaciones"]}
+    if not raw:
+        google.update(state="missing", summary="No conectado: falta la variable GCP_BILLING_EXPORT_TABLE.",
+                      steps=["En Google Cloud → Facturación → «Exportación de facturación», activa la exportación estándar a BigQuery.",
+                             "Copia el nombre de la tabla (proyecto.conjunto.tabla).",
+                             "Guárdalo como variable GCP_BILLING_EXPORT_TABLE del entorno y vuelve a desplegar.",
+                             "Dale a las cuentas de servicio los permisos de BigQuery indicados abajo.",
+                             "Mientras tanto puedes registrar el gasto de Google a mano o subir un archivo."])
+    elif not _GCP_TABLE_RE.fullmatch(raw):
+        google.update(state="error", summary="La variable GCP_BILLING_EXPORT_TABLE está mal escrita: debe verse como proyecto.conjunto.tabla.",
+                      steps=["Corrige el valor (tres partes separadas por puntos, sin comillas ni espacios) y vuelve a desplegar."])
+    else:
+        google.update(state="ok", summary="Conectado: la facturación de Google se importa sola cada mes y con el botón «Importar Google ahora».", steps=[])
+        if db is not None:
+            try:
+                last = db.query(func.max(InfraCost.updated_at)).filter(InfraCost.source == "gcp_export").scalar()
+                google["last_import"] = last.isoformat() if last else None
+            except Exception:  # noqa: BLE001
+                google["last_import"] = None
+    out.append(google)
+    # --- Neon (solo uso)
+    neon = {"key": "neon", "title": "Neon (uso de la base de datos)", "env": ["NEON_API_KEY", "NEON_ORG_ID"], "iam": []}
+    if neon_configured():
+        neon.update(state="ok", summary="Conectado: se ve el uso de cómputo. El dinero de Neon se registra a mano.", steps=[])
+    else:
+        missing = [k for k in ("NEON_API_KEY", "NEON_ORG_ID") if not os.getenv(k, "").strip()]
+        neon.update(state="missing", summary="No conectado: falta " + " y ".join(missing) + ". Es opcional: solo muestra el uso, no el dinero.",
+                    steps=["En Neon crea una llave de API y copia el id de la organización.", "Guárdalos como NEON_API_KEY (secreto) y NEON_ORG_ID del servicio «web»."])
+    out.append(neon)
+    # --- Manual / archivo
+    out.append({"key": "manual", "title": "Gastos a mano o por archivo", "state": "ok", "env": [], "iam": [],
+                "summary": "Siempre disponible: «Registrar gasto» o «Subir archivo» (CSV de Excel). Sirve para Microsoft, Neon, dominio, GitHub, Cloudflare y para Google si aún no está conectado.", "steps": []})
+    return out
+
+
+_COL = {"month": ("mes", "month", "invoice_month", "periodo"), "provider": ("proveedor", "provider"), "concept": ("concepto", "concept", "service", "servicio", "descripcion"),
+        "kind": ("tipo", "kind"), "currency": ("moneda", "currency"), "amount": ("monto", "amount", "net_cost", "costo", "valor", "total"), "trm": ("trm",), "note": ("nota", "note", "notas")}
+MAX_CSV_BYTES = 1024 * 1024
+MAX_CSV_ROWS = 1000
+
+
+def _norm(s) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().strip().lower()
+    return re.sub(r"[^a-z0-9]+", "_", t).strip("_")
+
+
+def _csv_number(v, decimal_comma: bool = False) -> str:
+    """Número como lo escribe Excel: con `;` de separador (Excel en español) el punto es de miles y la coma decimal («$ 1.234.567,89»); con `,` de separador el punto es decimal
+    y una coma es de miles («1,234.50»; «19,5» se lee 19.5). Devuelve texto con punto decimal y sin separadores de miles."""
+    t = re.sub(r"[^\d.,-]", "", str(v or ""))
+    if decimal_comma:
+        return t.replace(".", "").replace(",", ".")
+    if "," in t and "." in t:
+        return t.replace(",", "")
+    if "," in t:
+        parts = t.split(",")
+        return parts[0] + "." + parts[1] if len(parts) == 2 and len(parts[1]) != 3 else t.replace(",", "")
+    return t
+
+
+def _csv_month(v) -> str:
+    t = str(v or "").strip()
+    m = re.fullmatch(r"(\d{4})[-/]?(\d{2})", t)
+    if not m:
+        raise InfraError("el mes debe verse como 2026-11")
+    return valid_month(f"{m.group(1)}-{m.group(2)}")
+
+
+def parse_csv(text: str, trm_default: Optional[Decimal] = None) -> tuple:
+    """Archivo CSV (coma o punto y coma; el que guarda Excel) -> (gastos listos, avisos). Función pura. Columnas aceptadas (en español o inglés): mes, proveedor, concepto, tipo,
+    moneda, monto, trm, nota. Sirve también la exportación de Google (invoice_month, service, currency, net_cost): sin columna de proveedor se asume Google. Cada fila inválida
+    se omite con un aviso que dice cuál es; las demás se cargan."""
+    import csv
+    import hashlib
+    import io
+    text = (text or "").lstrip("﻿")
+    if not text.strip():
+        raise InfraError("El archivo está vacío")
+    head = text.splitlines()[0]
+    delim = ";" if head.count(";") > head.count(",") else ","
+    reader = csv.reader(io.StringIO(text), delimiter=delim)
+    header = [_norm(h) for h in next(reader, [])]
+    idx = {}
+    for field, names in _COL.items():
+        for n in names:
+            if n in header and field not in idx:
+                idx[field] = header.index(n)
+    if "month" not in idx or "amount" not in idx or "concept" not in idx:
+        raise InfraError("El archivo necesita al menos las columnas: mes, concepto y monto (la primera fila debe ser el encabezado)")
+    labels = {_norm(v[0]): k for k, v in PROVIDERS.items()}
+    labels.update({k: k for k in PROVIDERS})
+    items, warns, seen = [], [], {}
+    for n, row in enumerate(reader, start=2):
+        if not any(c.strip() for c in row):
+            continue
+        if n - 1 > MAX_CSV_ROWS:
+            warns.append(f"Solo se leen las primeras {MAX_CSV_ROWS} filas")
+            break
+
+        def cell(field):
+            i = idx.get(field)
+            return row[i].strip() if i is not None and i < len(row) else ""
+
+        try:
+            prov_raw = _norm(cell("provider"))
+            if prov_raw:
+                if prov_raw not in labels:
+                    raise InfraError("el proveedor no está en la lista (google, neon, microsoft, cloudflare, domain, github, other)")
+                provider = labels[prov_raw]
+            elif "provider" not in idx:
+                provider = "google"
+            else:
+                raise InfraError("falta el proveedor")
+            kind_raw = _norm(cell("kind"))
+            kind = {"fijo": "fixed", "fija": "fixed", "fixed": "fixed", "variable": "variable", "": "variable"}.get(kind_raw)
+            if kind is None:
+                raise InfraError("el tipo debe ser fijo o variable")
+            cur = cell("currency").upper() or "COP"
+            trm = _csv_number(cell("trm"), delim == ";") if cell("trm") else (str(trm_default) if cur == "USD" and trm_default else "")
+            entry = clean_entry({"month": _csv_month(cell("month")), "provider": provider, "concept": cell("concept"), "kind": kind, "currency": cur,
+                                 "amount": _csv_number(cell("amount"), delim == ";"), "trm": trm, "note": cell("note")})
+        except InfraError as e:
+            warns.append(f"Fila {n}: {e}")
+            continue
+        key = "archivo:%s:%s:%s" % (entry["month"], entry["provider"], hashlib.sha1(entry["concept"].lower().encode()).hexdigest()[:20])
+        if key in seen:
+            warns.append(f"Fila {n}: {entry['month']} {entry['concept']} está repetida; se usó la última")
+            items[seen[key]] = {**entry, "source_key": key}
+            continue
+        seen[key] = len(items)
+        items.append({**entry, "source_key": key})
+    return items, warns
+
+
+def import_csv(db: Session, text: str) -> dict:
+    """Carga los gastos de un CSV como `source='archivo'`. Idempotente: volver a subir el mismo archivo (o uno corregido) actualiza esos renglones, no los duplica; lo
+    registrado a mano o importado de Google no se toca."""
+    items, warns = parse_csv(text, get_trm_default(db))
+    imported = updated = 0
+    for it in items:
+        row = db.query(InfraCost).filter(InfraCost.source_key == it["source_key"]).first()
+        if row is None:
+            db.add(InfraCost(source="archivo", **it))
+            imported += 1
+        else:
+            for k, v in it.items():
+                if k != "source_key":
+                    setattr(row, k, v)
+            row.updated_at = utcnow()
+            updated += 1
+    db.commit()
+    return {"imported": imported, "updated": updated, "skipped": len([w for w in warns if w.startswith("Fila")]), "warnings": warns[:20]}

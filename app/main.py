@@ -631,14 +631,18 @@ def inventario_page(request: Request):
 
 @app.get("/gastos")
 def gastos_page(request: Request):
-    """Fase 9C: panel de gastos (solo admin y super_admin). Pestaña «Infraestructura» (esta pieza) y «Eventos» (otra pieza: `_gastos_eventos.html` + `gastos-eventos.js`, se cargan solo si existen)."""
-    denied = _require_page_role(request, "admin")
-    if denied:
-        return denied
+    """Fase 9C: panel de gastos (admin y super_admin; desde la Fase 10 B también contabilidad, sin la pestaña «Eventos»). Pestaña «Infraestructura» (esta pieza) y «Eventos» (otra pieza: `_gastos_eventos.html` + `gastos-eventos.js`, se cargan solo si existen)."""
     role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    is_admin = max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["admin"]
+    if not is_admin and "contabilidad" not in roles:          # Fase 10 B: contabilidad ve y registra los gastos de infraestructura; la pestaña «Eventos» sigue siendo solo de admin
+        return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(request=request, name="gastos.html", context={
         "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
-        "sidebar_active": "gastos", "has_eventos_js": os.path.exists(os.path.join("static", "js", "gastos-eventos.js")),
+        "sidebar_active": "gastos", "has_eventos_js": is_admin and os.path.exists(os.path.join("static", "js", "gastos-eventos.js")), "is_admin": is_admin,
+        "gw_side": bool(max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]),
     })
 
 

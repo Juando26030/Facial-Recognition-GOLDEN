@@ -3,6 +3,7 @@
 Solo admin y super_admin. Las llaves secretas se aceptan una vez, se guardan cifradas y NUNCA salen por la API (ni en logs ni en la auditoría).
 """
 import logging
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -31,7 +32,16 @@ def _clean(data: dict, key: str, limit: int = 200) -> str:
 
 def _row(db: Session, acc: PaymentAccount, request: Request) -> dict:
     n = db.query(WebForm).filter(WebForm.payment_account_id == acc.id).count()
-    return pa.serialize(acc, publicurl.base(str(request.base_url)), forms=n)
+    ev = db.get(Event, acc.event_id) if acc.event_id else None
+    form = db.get(WebForm, acc.form_id) if acc.form_id else None
+    return pa.serialize(acc, publicurl.base(str(request.base_url)), forms=n, event_name=ev.name if ev else None, form_name=form.name if form else None)
+
+
+def _scope(db: Session, data: dict, current: PaymentAccount = None) -> dict:
+    try:
+        return pa.clean_scope(db, data, current)
+    except pa.ScopeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.get("/payment-accounts")
@@ -52,7 +62,8 @@ def create_account(data: dict, request: Request, db: Session = Depends(get_db), 
     problem = pa.validate_keys(public, private, integrity, events)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
-    acc = PaymentAccount(ref=pa.new_ref(), name=name, holder=_clean(data, "holder", 120) or None, note=_clean(data, "note", 500) or None, public_key=public,
+    scope = _scope(db, data)
+    acc = PaymentAccount(ref=pa.new_ref(), name=name, **scope, holder=_clean(data, "holder", 120) or None, note=_clean(data, "note", 500) or None, public_key=public,
                          private_enc=pa.encrypt(private) if private else None, integrity_enc=pa.encrypt(integrity), events_enc=pa.encrypt(events), active=True, created_by_id=staff.id)
     db.add(acc)
     db.flush()
@@ -79,6 +90,15 @@ def update_account(account_id: int, data: dict, request: Request, db: Session = 
     if "active" in data:
         acc.active = bool(data["active"])
         changes.append("activa" if acc.active else "desactivada")
+    if any(k in data for k in ("scope", "event_id", "form_id", "panelist_ref")):
+        scope = _scope(db, data, acc)
+        in_use = db.query(WebForm).filter(WebForm.payment_account_id == acc.id).all()
+        probe = SimpleNamespace(**scope)
+        if any(not pa.usable_for_form(probe, f) for f in in_use):
+            raise HTTPException(status_code=409, detail="Hay formularios que ya usan esta cuenta y quedarían fuera del nuevo alcance. Quítale la cuenta a esos formularios primero")
+        for k, v in scope.items():
+            setattr(acc, k, v)
+        changes.append("a qué pertenece")
     if any(k in data for k in ("public_key", "integrity_secret", "events_secret", "private_key")):
         if not pa.enabled():
             raise HTTPException(status_code=503, detail="Falta configurar PAYMENT_KEYS_ENCRYPTION_KEY en el servidor")
@@ -158,10 +178,11 @@ def payment_link(account_id: int, data: dict, db: Session = Depends(get_db), sta
 
 @router.get("/payment-accounts-forms")
 def forms_overview(request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
-    """Formularios con cobro (no archivados) y su cuenta, para asignarla y sacar su QR."""
+    """Formularios (no archivados) y su cuenta, para asignarla y sacar su QR; más los eventos, para elegir a cuál pertenece una cuenta nueva."""
     out = []
     rows = db.query(WebForm, Event).join(Event, Event.id == WebForm.event_id).filter(WebForm.archived_at.is_(None)).order_by(Event.id.desc(), WebForm.id).limit(500).all()
     for form, ev in rows:
         out.append({"id": form.id, "event_id": ev.id, "event": ev.name, "name": form.name, "payment_account_id": form.payment_account_id,
                     "url": public_slug.form_link(str(request.base_url), ev, form)})
-    return {"forms": out, "generated_at": utcnow().isoformat()}
+    events = db.query(Event.id, Event.name).filter(Event.archived_at.is_(None)).order_by(Event.id.desc()).limit(500).all()
+    return {"forms": out, "events": [{"id": i, "name": n} for i, n in events], "generated_at": utcnow().isoformat()}

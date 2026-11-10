@@ -1,5 +1,7 @@
-"""Panel de gastos — pestaña «Infraestructura» (Fase 9C). TODO es solo admin y super_admin.
+"""Panel de gastos — pestaña «Infraestructura» (Fase 9C). TODO es solo admin y super_admin (y, desde la Fase 10 B, contabilidad).
 
+  GET    /api/gastos/infra/status                            qué está conectado y qué falta (siempre responde)
+  POST   /api/gastos/infra/import/csv                        cargar gastos desde un archivo CSV (alternativa manual)
   GET    /api/gastos/infra/summary?from=AAAA-MM&to=AAAA-MM   gráficos, tabla por evento, fórmula y parámetros
   GET    /api/gastos/infra/costs?from=&to=                    gastos registrados
   POST   /api/gastos/infra/costs                              registrar un gasto manual
@@ -19,7 +21,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app import infra_costs as ic
-from app.auth import require_platform_role
+from app.auth import require_platform_role_or_any
 from app.database import get_db
 from app.models import AuditAction, InfraCost, StaffUser
 from app.storage import get_storage
@@ -27,7 +29,7 @@ from app.timeutil import utcnow
 
 log = logging.getLogger("golden.gastos")
 router = APIRouter()
-ADMIN = require_platform_role("admin")          # admin y super_admin GLOBALES (F5-9 E)
+ADMIN = require_platform_role_or_any("admin", ("contabilidad",))          # admin y super_admin GLOBALES (F5-9 E) y, desde la Fase 10 B, contabilidad (principal o sumado): registra y consulta los gastos
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -59,8 +61,22 @@ def _get(db: Session, cost_id: int) -> InfraCost:
     return c
 
 
+def _need_table(db: Session) -> None:
+    """Si la migración 0121 no está aplicada, un mensaje claro (503) en vez de un error técnico."""
+    if not ic.table_ready(db):
+        raise HTTPException(status_code=503, detail=ic.TABLE_MISSING)
+
+
+@router.get("/gastos/infra/status")
+def status(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Qué está conectado y qué falta (sin valores, solo nombres de variables). Responde SIEMPRE, aunque la tabla de gastos aún no exista: la pantalla nunca queda en blanco."""
+    return {"table_ready": ic.table_ready(db), "table_message": None if ic.table_ready(db) else ic.TABLE_MISSING, "connections": ic.connections(db),
+            "csv_columns": "mes, concepto, monto (y opcionales: proveedor, tipo, moneda, trm, nota)"}
+
+
 @router.get("/gastos/infra/summary")
 def summary(from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    _need_table(db)
     first, last = _range(from_, to)
     s = ic.summary(db, first, last)
     s["from"], s["to"] = first, last
@@ -70,12 +86,14 @@ def summary(from_: Optional[str] = Query(None, alias="from"), to: Optional[str] 
 
 @router.get("/gastos/infra/costs")
 def list_costs(from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    _need_table(db)
     first, last = _range(from_, to)
     return {"costs": ic.export_rows(db, first, last), "from": first, "to": last}
 
 
 @router.post("/gastos/infra/costs")
 def create_cost(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    _need_table(db)
     try:
         f = ic.clean_entry(data)
     except ic.InfraError as e:
@@ -97,7 +115,7 @@ def update_cost(cost_id: int, data: dict, db: Session = Depends(get_db), staff: 
         raise _err(e) from None
     for k, v in f.items():
         setattr(c, k, v)
-    if c.source == "gcp_export":              # lo corregido a mano ya no lo pisa la importación automática
+    if c.source in ("gcp_export", "archivo"):              # lo corregido a mano ya no lo pisa la importación automática ni un archivo nuevo
         c.source, c.source_key = "manual", None
     c.updated_at = utcnow()
     _audit(db, staff, "edit", c, f"{c.kind} {c.currency}")
@@ -190,6 +208,7 @@ def put_settings(data: dict, db: Session = Depends(get_db), staff: StaffUser = D
 
 @router.post("/gastos/infra/import/google")
 def import_google(data: Optional[dict] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    _need_table(db)
     try:
         r = ic.import_google(db, (data or {}).get("month"))
     except ic.InfraError as e:
@@ -197,9 +216,31 @@ def import_google(data: Optional[dict] = None, db: Session = Depends(get_db), st
     except Exception as e:  # noqa: BLE001
         log.warning("importación de Google falló: %s", type(e).__name__)
         raise HTTPException(status_code=502, detail="No se pudo leer la exportación de facturación de Google (revisa la tabla y los permisos de la cuenta de servicio)") from None
+    if not r["configured"]:
+        raise HTTPException(status_code=409, detail="Google no está conectado: falta la variable GCP_BILLING_EXPORT_TABLE en este entorno. Mientras tanto registra el gasto a mano o sube un archivo.")
     if r["configured"]:
         _audit(db, staff, "import", None, f"google: {r['imported']} nuevos, {r['updated']} actualizados")
         db.commit()
+    return r
+
+
+@router.post("/gastos/infra/import/csv")
+def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Carga gastos desde un CSV (alternativa manual a la conexión con Google). Vuelve a subirse sin duplicar. Máximo 1 MB y 1.000 filas."""
+    _need_table(db)
+    raw = file.file.read(ic.MAX_CSV_BYTES + 1)
+    if len(raw) > ic.MAX_CSV_BYTES:
+        raise HTTPException(status_code=400, detail="El archivo es demasiado grande (máximo 1 MB)")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")          # Excel en Windows guarda «CSV» en ANSI
+    try:
+        r = ic.import_csv(db, text)
+    except ic.InfraError as e:
+        raise _err(e) from None
+    _audit(db, staff, "import", None, f"archivo: {r['imported']} nuevos, {r['updated']} actualizados, {r['skipped']} omitidos")
+    db.commit()
     return r
 
 

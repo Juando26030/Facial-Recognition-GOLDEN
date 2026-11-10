@@ -226,6 +226,7 @@
 
 /* ============================================================ Formularios: etiqueta arriba, ayuda corta, error que dice qué hacer */
 .gw-field { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-field[hidden] { display: none; }
 .gw-label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .gw-req { color: var(--gw-req); font-weight: var(--gw-fw-bold); }          /* el asterisco de «obligatorio»: naranja en TODAS las pantallas del personal (las páginas públicas no llevan asterisco) */
 .gw-input, .gw-select, .gw-textarea { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); transition: border-color var(--gw-dur), box-shadow var(--gw-dur); }
