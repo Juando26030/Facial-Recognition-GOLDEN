@@ -19,6 +19,9 @@ gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGIO
 echo "== 2. Imagen $IMAGE (la primera vez tarda 20-60 min por dlib; si se corta, repetir el mismo comando)"
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" -q
 docker image inspect "$IMAGE" >/dev/null 2>&1 || docker build --build-arg APP_COMMIT="$SHA" -t "$IMAGE" . || { echo "ERROR: falló la construcción" >&2; exit 1; }
+# Lección del 5-nov-2026 (manual_deploy.sh): desde Cloud Shell el push falla con «connection refused» si sube varias capas a la vez → una sola capa a la vez.
+printf '{"max-concurrent-uploads":1}\n' | sudo tee /etc/docker/daemon.json >/dev/null 2>&1 && { sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true; sleep 5; }
+gcloud auth configure-docker "${REGION}-docker.pkg.dev" -q
 OK=0
 for i in 1 2 3 4 5 6; do echo "subida, intento $i"; docker push "$IMAGE" && { OK=1; break; }; sleep 15; done
 [ "$OK" = 1 ] || { echo "ERROR: no se pudo subir la imagen (repetir el mismo comando)" >&2; exit 1; }
