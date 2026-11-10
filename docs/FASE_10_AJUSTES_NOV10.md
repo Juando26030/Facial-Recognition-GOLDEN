@@ -92,4 +92,4 @@ Cada bloque (A a E) agrega su sección al final. No reescribas las de otros.
 Ninguna prueba con base de datos (no hay Postgres aquí): correr las cuatro suites en Cloud Shell y `alembic upgrade head`. La carga masiva depende del formato exacto del Excel de prueba. Visualmente se revisó la pestaña con el arnés (claro/oscuro, escritorio y celular), no el grupo desplegable del modal de Editar persona con datos reales. La firma de URL de descarga con Cloud Storage real no se probó.
 
 ### Para el integrador
-`down_revision` de 0127 apunta hoy a `0121_infra_costs`; al integrar, repuntarla a la última migración del bloque D (0126).
+`down_revision` de 0127 apunta a `0126_event_acts` (bloque D); si el bloque A/B agregan 0122-0125 después, la cadena la ordena el integrador.

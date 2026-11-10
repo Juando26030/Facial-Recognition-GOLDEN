@@ -3,13 +3,13 @@
 Sin llaves foráneas (como person_changes): se borra con la persona y con el evento desde el código.
 
 Revision ID: 0127_person_change_log
-Revises: 0121_infra_costs  (al integrar: apuntar a la última migración del bloque D, 0126)
+Revises: 0126_event_acts
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0127_person_change_log"
-down_revision = "0121_infra_costs"
+down_revision = "0126_event_acts"
 branch_labels = None
 depends_on = None
 
