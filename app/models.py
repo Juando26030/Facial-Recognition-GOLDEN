@@ -836,6 +836,30 @@ class EventDocument(Base):
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
+class EventAct(Base):
+    """Acta de novedades del evento (Fase 10, 0126; app/routers/event_acts.py): lo ocurrido en el evento, en texto o lista, con la firma dibujada del coordinador y la del cliente (PNG en
+    el almacenamiento, por app/storage.py). Varias por evento. Queda «firmada» cuando están las dos firmas; entonces el texto ya no cambia (`content_hash` = SHA-256 del texto al firmar)."""
+    __tablename__ = 'event_acts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    title = Column(String(160), nullable=False)
+    format = Column(String(10), nullable=False, default='text', server_default='text')          # text (párrafo) | list (un punto por línea)
+    body = Column(Text, nullable=False, default='', server_default='')
+    coordinator_sig_key = Column(String(300), nullable=True)
+    coordinator_name = Column(String(160), nullable=True)
+    coordinator_signed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    coordinator_signed_at = Column(DateTime, nullable=True)
+    client_sig_key = Column(String(300), nullable=True)
+    client_name = Column(String(160), nullable=True)
+    client_signed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    client_signed_at = Column(DateTime, nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_event_acts_event', 'event_id', 'created_at'),)
+
+
 class EventExpense(Base):
     """Un gasto legalizado del evento (ítem 7): categoría, responsable, descripción, a quién aplica,
     valor y foto de evidencia (opcional). El reporte Excel suma el total."""

@@ -136,6 +136,7 @@
           {% if event.report_pdf_path %}
           {{ tile("/api/events/%s/final-report" % event.id, "download", "Descargar informe", "El informe final que se adjuntó al evento (el mismo que se envió a la comercial)", true) }}
           {% endif %}
+          {{ tile("/kiosk/%s/actas" % event.id, "form", "Acta de novedades", "Escribe lo ocurrido en el evento y recoge la firma del coordinador y del cliente") }}
           {{ tile("/kiosk/%s/legalizaciones" % event.id, "form", "Legalizaciones", "Gastos del evento con evidencia, y reporte con el total") }}
           {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
           {{ tile("/kiosk/%s/expositores" % event.id, "users", "Expositores", "Enlaces para que los expositores escaneen asistentes y guarden sus contactos") }}

@@ -42,7 +42,7 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -348,6 +348,7 @@ _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públi
 _include(event_report.router, prefix="/api")
 _include(final_database.router, prefix="/api")      # Fase 5: base de datos final del evento (subir/reemplazar/descargar; coordinador+)
 _include(event_docs.router, prefix="/api")
+_include(event_acts_router.router, prefix="/api")      # Fase 10: acta de novedades (texto + firma del coordinador y del cliente)
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
@@ -930,6 +931,12 @@ def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_
 def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Documentos del Evento (reunión 2026-09-21, ítem 8) — coordinador+ (comercial incluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_documentos.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/actas")
+def kiosk_acts(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Acta de novedades (Fase 10): coordinador+ y el cliente del evento (firma la suya); el digitador no entra."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_actas.html", exclude_roles=["digitador"])
 
 
 @app.get("/kiosk/{event_id}/ruleta")
