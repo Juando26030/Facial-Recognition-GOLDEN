@@ -309,6 +309,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
     names = _staff_names(db)
     states = {sid: n for sid, n in db.execute(select(m.EventState.id, m.EventState.name)).all()}
     supers = {sid: n for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name)).all()}
+    etypes = {tid: n for tid, n in db.execute(select(m.EventType.id, m.EventType.name)).all()}          # Fase 10 (C): la categoría (tipo de evento) viaja por NOMBRE
     ctx = {"people": _person_ids(db, event), "form_ids": [r[0] for r in db.execute(select(m.WebForm.id).where(m.WebForm.event_id == event.id)).all()], "payment_ids": []}
     ctx["payment_ids"] = [r[0] for r in db.execute(select(m.FormPayment.id).where(m.FormPayment.event_id == event.id)).all()] if ctx["form_ids"] else []
     tenant = db.get(m.Tenant, event.tenant_id)
@@ -346,7 +347,9 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                             extra["state_id"] = states.get(d["state_id"])
                         if d.get("super_event_id") is not None:
                             extra["super_event_id"] = supers.get(d["super_event_id"])
-                        d["state_id"] = d["super_event_id"] = None
+                        if d.get("event_type_id") is not None:
+                            extra["event_type_id"] = etypes.get(d["event_type_id"])
+                        d["state_id"] = d["super_event_id"] = d["event_type_id"] = None
                     if extra:
                         d["@names"] = extra
                     line = _line(d)
@@ -583,6 +586,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     staff_by_name = {un: sid for sid, un in db.execute(select(m.StaffUser.id, m.StaffUser.username)).all()}
     states = {n: sid for sid, n in db.execute(select(m.EventState.id, m.EventState.name)).all()}
     supers = {n: sid for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name).where(m.SuperEvent.tenant_id == tenant_id)).all()}
+    etypes = {n: tid for tid, n in db.execute(select(m.EventType.id, m.EventType.name)).all()}
     suppressed = {r[0] for r in db.execute(select(m.SuppressedPerson.cedula_hash).where(m.SuppressedPerson.tenant_id == tenant_id)).all()}
     log_row = m.EventTransferLog(kind="import", staff_username=staff_username, event_code=code, package_sha256=report["package_sha256"], status="done",
                                  options_json=json.dumps({"keep_original_state": keep_original_state, "source_env": manifest.get("source_env"), "tenant": tenant_id}))
@@ -614,7 +618,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 
     def staff_link(row, d, table, ref):
         for col, un in (row.get("@names") or {}).items():
-            if col in ("state_id", "super_event_id"):
+            if col in ("state_id", "super_event_id", "event_type_id"):
                 continue
             sid = staff_by_name.get(un)
             d[col] = sid
@@ -671,6 +675,9 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             names = ev_src.get("@names") or {}
             d["state_id"] = states.get(names.get("state_id")) if names.get("state_id") else None
             d["super_event_id"] = supers.get(names.get("super_event_id")) if names.get("super_event_id") else None
+            d["event_type_id"] = etypes.get(names.get("event_type_id")) if names.get("event_type_id") else None
+            if names.get("event_type_id") and d["event_type_id"] is None:
+                report["warnings"].append(f"La categoría (tipo de evento) «{names['event_type_id']}» no existe en el destino: el evento queda «Sin categoría».")
             if names.get("state_id") and d["state_id"] is None:
                 report["warnings"].append(f"El estado configurable «{names['state_id']}» no existe en el destino: el evento queda con su estado base.")
             if names.get("super_event_id") and d["super_event_id"] is None:
@@ -877,7 +884,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 # ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
 # Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
 _VOLATILE = {
-    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug"},
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "event_type_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug"},
     "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
     "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
     "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},

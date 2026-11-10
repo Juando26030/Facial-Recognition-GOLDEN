@@ -197,7 +197,7 @@
   function summaryText(f, key) {
     if (f.type === 'client') return (PICK_TENANT ? (control('client') && control('client').value || '') : (root.dataset.tenantName || '')).trim() || '—';
     if (f.type === 'workday') return EF.workdayText(control('event_time_start') && control('event_time_start').value, control('event_time_end') && control('event_time_end').value);
-    if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event') {
+    if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event' || f.type === 'event_type') {
       const c = control(key); const o = c && c.options && c.options[c.selectedIndex];
       return c && c.value && o ? o.textContent.replace(/ \(\d+ eventos\)$/, '') : '—';
     }
@@ -303,7 +303,9 @@
     }
     fields = {};
     tpl.fields.forEach((f) => { if (!f.retired) fields[f.key] = f; });
-    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], tenantName: root.dataset.tenantName || '', pickTenant: PICK_TENANT };
+    let eventTypes = [];          // lista de tipos de evento (Configuración › Tipos de evento); si no carga, el campo queda con «Sin categoría» y el evento se crea igual
+    try { const tr = await fetch('/api/event-types', { cache: 'no-store' }); if (tr.ok) eventTypes = (await tr.json()).types || []; } catch (e) { eventTypes = []; }
+    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], eventTypes: eventTypes, tenantName: root.dataset.tenantName || '', pickTenant: PICK_TENANT };
     loading.hidden = true;
     build();
     if (PICK_TENANT) setupTenantPicker();

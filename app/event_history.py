@@ -21,7 +21,7 @@ from app.auth import sees_event_tenant, staff_with_role
 from app import event_template_svc, jobs, publicurl
 from app.database import SessionLocal
 from app.mailer import clean_subject, send_mail
-from app.models import Event, EventChangeLog, EventState, StaffUser, SuperEvent
+from app.models import Event, EventChangeLog, EventState, EventType, StaffUser, SuperEvent
 from app.staff_credentials import valid_email
 from app.timeutil import to_local, utcnow
 
@@ -122,6 +122,8 @@ def snapshot(db: Session, event: Event) -> dict:
     snap["commercial_staff_id"] = _staff_name(db, event.commercial_staff_id)
     sup = db.get(SuperEvent, event.super_event_id) if event.super_event_id else None
     snap["super_event_id"] = sup.name if sup is not None else (f"#{event.super_event_id}" if event.super_event_id else None)
+    etype = db.get(EventType, event.event_type_id) if event.event_type_id else None
+    snap["event_type_id"] = etype.name if etype is not None else (f"#{event.event_type_id}" if event.event_type_id else None)          # Fase 10 (C): categoría (tipo de evento), con su nombre
     snap["bandana"] = " ".join(x for x in ((event.bandana_color_name or "").strip(), (event.bandana_color or "").strip()) if x) or None
     state = db.get(EventState, event.state_id) if event.state_id else None
     snap["state_id"] = state.name if state is not None else event.status

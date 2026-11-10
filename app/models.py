@@ -260,6 +260,7 @@ class Event(Base):
     shared_print_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # impresión compartida (22-oct-2026, 0069): APAGADA por defecto; app/routers/shared_print.py
     reprint_disabled = Column(Boolean, default=False, server_default='false', nullable=False)   # 0083 (Fase 1B): true = reimprimir a quien ya se imprimió exige permiso del coordinador (app/reprint.py); solo admin+ lo cambia
     print_settings_json = Column(Text, nullable=True)   # valores de impresión de escarapelas del evento (0070, app/routers/print_settings.py); NULL = de fábrica
+    event_type_id = Column(Integer, ForeignKey('event_types.id'), nullable=True)  # 0128 (Fase 10, C): «Categoría (tipo de evento)»; NULL = «Sin categoría». Lista en Configuración (super_admin)
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
     certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
@@ -343,6 +344,7 @@ class Event(Base):
     final_db_uploaded_by = relationship("StaffUser", foreign_keys=[final_db_uploaded_by_id])
     super_event = relationship("SuperEvent", back_populates="events")
     state = relationship("EventState")
+    event_type = relationship("EventType")
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -412,6 +414,19 @@ class EventState(Base):
 
     def get_rules(self) -> dict:
         return json.loads(self.rules_json) if self.rules_json else {}
+
+
+class EventType(Base):
+    """Tipo de evento (Feria, Congreso…): la categoría con la que el calendario filtra. La lista la administra el super_admin (agregar, renombrar, archivar, color opcional); archivar NO toca los eventos
+    que ya la tienen (siguen mostrándola), solo deja de ofrecerla al crear o editar."""
+    __tablename__ = 'event_types'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False, unique=True)
+    color = Column(String(9), nullable=True)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class EventStaffAuthorization(Base):

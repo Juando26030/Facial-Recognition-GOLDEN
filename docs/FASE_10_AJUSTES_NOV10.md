@@ -175,3 +175,55 @@ No hay base de datos en este entorno: las pruebas `tests/test_fase10_a_api.py` (
 
 ### Preguntas para Juan David
 Sin preguntas abiertas: las tres quedaron decididas el 10-nov (permisos del catálogo, entrada sin salida, estadística también en Control de áreas).
+
+## Bloque C — QR en vCard, ruleta y calendario
+
+Migración: solo `0128_event_types` (tipos de evento, ver 3). La ruleta y el QR no la necesitan (la configuración de la ruleta vive en `style_json`, que ya existía).
+
+### 1. QR de la escarapela como contacto (vCard)
+**Qué hace.** El QR de la escarapela impresa, de la escarapela virtual (credencial digital) y del pase de Wallet ahora es una tarjeta de contacto mínima: nombre, teléfono (solo si la persona lo comparte) y, escondido en el campo «Nota», el código de siempre (`NOTE:GW:…`). Al escanearlo con la cámara del celular, el teléfono ofrece «Guardar contacto». El código que usa Golden (la cédula del QR impreso o el código firmado `gwq1…` de la credencial digital y Wallet) no cambia.
+
+**Cómo se usa (en simple).** Nada cambia para quien registra: Registro, Control de Áreas, Inventario, el buscador del Directorio y la cámara de expositores leen el QR nuevo y el viejo. Las escarapelas ya impresas siguen sirviendo.
+
+**Cómo funciona por dentro.**
+- `static/js/vcard.js` (construir y leer) y `app/qr_vcard.py` (mismo código en Python; una prueba compara que den el mismo resultado).
+- Lectores: `qr.js` (`parse`, `classify`, `isDynamic`, `resolveDynamic` y la cámara entregan el código de adentro), `search-core.js`, y en el servidor `dynamic_qr.parse`/`looks_like` y `contacts.parse_scanned`. Una vCard ajena (otro formato) se deja igual.
+- Lector de mano (el que «teclea»): la vCard llega en varias líneas, cada una con su Enter; `QrCode.collect()` las junta (Directorio, Áreas, Inventario, Registro) y descarta lo que quede a medias a los 5 s.
+- Dibujo: `badge-render.js` (`drawQr`) y `digital_badge.html` usan nivel de corrección **L** (en vez de M) y UTF-8 (tildes y ñ). Wallet (`digital_public._wallet_args`) manda la vCard con el código estático firmado; `wallet.py` pasa el Apple Wallet a `utf-8`.
+- El teléfono solo entra al QR si el dato ya viene en la escarapela: en la digital pública, solo si el evento lo marcó como visible (mismo criterio de `/b/{token}/data`).
+
+**Densidad (parámetros de impresión intactos).** El tamaño del elemento QR y de la etiqueta no se tocó (`tests/test_impresion_parametros_fijos.py` pasa). Medido con la librería real (`tests/js/qr_vcard_check.js`): el QR anterior era versión 4 (33 módulos); la vCard típica queda en versión 8 (49 módulos) con nivel L, y el peor caso razonable (nombres larguísimos + teléfono con indicativo) en versión 10 (57). Con nivel M serían 1-2 versiones más. Recomendación: el elemento QR de la plantilla debe medir **25 mm o más** (0,45 mm por cuadrito en versión 8; en 20 mm baja a 0,36 mm y se vuelve exigente para la QL-800). **No pude probar la impresión física ni la lectura con celulares reales**: hay que imprimir una escarapela de prueba en la QL-800 y escanearla con un iPhone y un Android antes de usarlo en un evento.
+
+**Archivos congelados** renovados a propósito (huellas en `tests/test_publico_congelado.py`): `badge-render.js`, `digital_badge.html`, `badge_print.html`, `certificate_public.html` (solo se agregó el `<script>` de vcard.js).
+
+### 2. Ruleta
+**Qué hace / cómo se usa** (pantalla «Apariencia» de la ruleta, que ve el coordinador):
+- **Datos del ganador:** el nombre siempre sale. El coordinador marca lo demás: Empresa (marcada por defecto, como antes), Correo, Cargo, Tipo de asistente y cada campo opcional con nombre del evento (ahí vive la Ciudad u otros). Lo que la persona no tenga lleno no se muestra. Aviso en pantalla: lo marcado lo ve el público.
+- **Logos o banners de arriba:** hasta 4 imágenes en una franja arriba de la pantalla del sorteo (y de la vista previa). Se suben con el mismo cargador de imágenes de la ruleta (`upload-image` → `app/storage.py`).
+- **Cómo gira:** «Dura un tiempo fijo» (como antes) o «Giro libre»: un clic en «Girar» inicia, la ruleta gira sin parar y otro clic en «Detener» la frena sobre el ganador. Funciona en la ruleta circular y en el estilo casino, y también en la vista previa («Probar animación»).
+
+**Decisiones.**
+- No hay migración: `winner_fields`, `top_images` y `spin_mode` van en `style_json` (con valores por defecto, así las ruletas ya configuradas no cambian).
+- El ganador sigue decidiéndose en el servidor al pulsar «Girar»; «Detener» solo es la animación. No cambia la auditoría ni el sorteo real.
+- Seguridad: la pantalla pública sigue sin recibir la cédula; si el coordinador desmarca la empresa, ni siquiera viaja. Imágenes: solo del propio cliente, extensiones de imagen, máximo 4.
+- Para no dejar la pantalla colgada, el giro libre se frena solo a los 2 minutos. Si hay varios ganadores en un mismo sorteo, cada uno pide su «Detener». Un giro que se muestra en otra pantalla (no la que pulsó) usa el tiempo fijo.
+- La «Ciudad» no es una columna de la persona en la base; sale de los campos opcionales con nombre del evento (p. ej. uno llamado «Ciudad»).
+- `roulette_display.html` y `roulette-render.js` son archivos congelados: huellas renovadas con esta orden.
+
+**Probado.** Con Chromium (arnés con datos ficticios): giro libre circular y casino, «Detener», tarjeta con datos, franja de logos, pantalla angosta y la pantalla de Apariencia. Pruebas pytest con base (`tests/test_ruleta_fase10.py`) escritas pero no ejecutadas aquí.
+
+### 3. Calendario y «Categoría (tipo de evento)»
+**Qué hace.** Arriba del calendario hay chips clicables de «Categorías de evento» con cuántos eventos hay de cada una en el periodo. Se pueden activar varias; «Ver todas» las quita. Lo ve cualquiera que vea el calendario (mismo código para todos los roles) y funciona en Mes, Semana y Día. Se suma al selector «Estado del evento» (se aplican los dos).
+
+**Decisión de Juan David (10-nov).** Las categorías **no son los estados**: son el **tipo de evento**. Por eso existe el campo nuevo **«Categoría (tipo de evento)»** y los chips filtran por él. Un evento sin tipo cuenta como **«Sin categoría»** (chip al final).
+
+**Lista de tipos.** Tabla `event_types` (migración **`0128_event_types`**, a mano, `down_revision` `0127_person_change_log`, compatible con el pooler de Neon) + `events.event_type_id` (nullable, con índice). Siembra: Feria, Congreso, Corporativo, Social, Otro (con color). La administra el **super_admin** en **Configuración › Tipos de evento** (pestaña solo para él): agregar, renombrar, color opcional (o quitarlo), archivar y restaurar. No se borra: un tipo archivado deja de ofrecerse, pero los eventos que ya lo tienen lo conservan y el calendario lo sigue mostrando. Cada cambio queda en `audit_actions`.
+
+**API** (`app/routers/event_types.py`, prefijo `/api`): `GET /event-types` (coordinador o más; `include_archived` solo super_admin), `POST /event-types`, `PATCH /event-types/{id}`, `POST /event-types/{id}/archive` y `/restore` (super_admin). Nombres únicos sin importar mayúsculas (máx. 80); color `#RRGGBB`. Crear/editar evento valida con `check_assignable`: el tipo debe existir y no estar archivado (conservar el que ya tiene sí se permite).
+
+**Dónde aparece el campo.** Asistente «Nuevo evento» (sección Datos del evento, justo después del nombre; las plantillas guardadas antes lo reciben solas en `merge_missing_base`) y modal de edición (`?editar=`, selector `#eeEventType`; si la lista no carga, el selector se deshabilita y no se envía, para no borrar el tipo por accidente). Historial por campo: el snapshot guarda el **nombre** del tipo. Exportar/importar evento (`event_transfer`): viaja por **nombre**; si no existe en el destino, el evento queda «Sin categoría» con una advertencia en el informe.
+
+**Archivos.** `alembic/versions/0128_event_types.py`, `app/routers/event_types.py`, `app/models.py`, `app/routers/events.py`, `app/event_template.py`, `app/event_history.py`, `app/event_transfer.py`, `static/js/event-types-admin.js`, `static/js/event-field-render.js`, `static/js/nuevo-evento.js`, `static/js/calendar-cats.js` (solo cambió `categoryOf`), `templates/configuracion.html`, `templates/_event_edit_modal.html`, `templates/calendario.html`.
+
+### Pruebas del bloque
+`tests/test_qr_vcard.py`, `tests/js/qr_vcard_check.js`, `tests/test_ruleta_fase10.py`, `tests/js/calendar_cats_check.js`, `tests/test_tipos_evento.py`. Corren aquí las puras y las de texto/Node; las que usan base (resolver QR con vCard, ruleta con estilo y sorteo, pantalla pública) se corren en Cloud Shell.

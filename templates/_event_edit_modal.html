@@ -85,6 +85,9 @@
                 {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<button type="button" class="gw-btn gw-btn--secondary" id="eeManageSuper">Administrar</button>{% endif %}
               </div>
             </div>
+            {# Categoría (tipo de evento) — Fase 10 (C): la lista la administra el super_admin en Configuración › Tipos de evento. El calendario filtra por ella. #}
+            <div class="gw-field"><label class="gw-label" for="eeEventType">Categoría (tipo de evento)</label>
+              <select class="gw-select" name="event_type_id" id="eeEventType"><option value="">— Sin categoría —</option></select></div>
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="eeColor">Color de pañoleta</label><input class="gw-input" type="color" id="eeColor" name="bandana_color"></div>
               <div class="gw-field"><label class="gw-label" for="eeColorName">Nombre del color</label><input class="gw-input" type="text" id="eeColorName" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
@@ -678,6 +681,21 @@
     if (ctrl && ctrl.visible && !ctrl.empty) { invCtrl = ctrl; invGroup.hidden = false; }
   }
 
+  // Categoría (tipo de evento): si la lista no carga, el campo queda deshabilitado y NO se manda (así guardar otra cosa nunca borra la categoría que el evento ya tiene).
+  const typeSel = document.getElementById('eeEventType');
+  async function paintEventType(ev) {
+    typeSel.disabled = true; delete typeSel.dataset.loaded;
+    let list = null;
+    try { const r = await fetch('/api/event-types', { cache: 'no-store' }); if (r.ok) list = (await r.json()).types || []; } catch (e) { list = null; }
+    typeSel.innerHTML = '<option value="">— Sin categoría —</option>';
+    if (list === null) { typeSel.insertAdjacentHTML('beforeend', ev.event_type_id ? '<option value="' + esc(ev.event_type_id) + '" selected>' + esc(ev.event_type_name || '') + '</option>' : ''); return; }
+    const ids = new Set(list.map((t) => t.id));
+    if (ev.event_type_id && !ids.has(ev.event_type_id)) list.push({ id: ev.event_type_id, name: (ev.event_type_name || '') + ' (archivada)' });          // la que ya tiene sigue visible aunque se haya archivado
+    typeSel.insertAdjacentHTML('beforeend', list.map((t) => '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>').join(''));
+    typeSel.value = ev.event_type_id ? String(ev.event_type_id) : '';
+    typeSel.disabled = false; typeSel.dataset.loaded = '1';
+  }
+
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
@@ -699,6 +717,7 @@
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
     await paintState(ev);
+    await paintEventType(ev);
     form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
@@ -744,6 +763,7 @@
     const eventId = payload.event_id;
     delete payload.event_id;
     payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
+    if (typeSel.dataset.loaded) payload.event_type_id = payload.event_type_id ? parseInt(payload.event_type_id, 10) : null; else delete payload.event_type_id;
 
     if (payload.coordinator_label) {
       const id = coordinatorsByLabel[payload.coordinator_label];

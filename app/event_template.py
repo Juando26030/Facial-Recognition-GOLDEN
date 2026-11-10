@@ -75,6 +75,7 @@ TYPES = {
     "switch": {"label": "Interruptor", "creatable": False},
     "client": {"label": "Cliente", "creatable": False},
     "super_event": {"label": "Superevento", "creatable": False},
+    "event_type": {"label": "Categoría (tipo de evento)", "creatable": False},          # Fase 10 (C): lista que administra el super_admin (app/routers/event_types.py)
 }
 CREATABLE_TYPES = tuple(t for t, m in TYPES.items() if m["creatable"])
 CURRENCIES = ("COP", "USD", "EUR")
@@ -126,6 +127,7 @@ BASE_FIELDS = [
     _b("client", "client", "Cliente", True, "datos", locked=True),
     _b("event_code", "text_short", "Código interno", True, "datos", locked=True, help="Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026)."),
     _b("name", "text_short", "Nombre del evento", True, "datos", locked=True),
+    _b("event_type_id", "event_type", "Categoría (tipo de evento)", False, "datos", help="Opcional: el tipo de evento (Feria, Congreso…). Con él el calendario filtra por categoría."),
     _b("country", "country", "País", True, "datos"),
     _b("city", "city", "Ciudad", True, "datos", config={"country_key": "country"}),
     _b("location", "text_short", "Lugar", True, "datos"),
@@ -346,6 +348,12 @@ def merge_missing_base(tpl: dict) -> dict:
     for f in default_template()["fields"]:
         if f["key"] not in have:
             out["fields"].append(f)
+    if "event_type_id" not in have:          # Fase 10 (C): la categoría aparece SOLA en «Nuevo evento» (Datos del evento) de las plantillas guardadas antes; el administrador puede quitarla al guardar la plantilla
+        for sec in out.get("creation_layout", {}).get("sections", []):
+            if sec.get("id") == "datos" and "event_type_id" not in sec.get("keys", []):
+                keys = sec.setdefault("keys", [])
+                keys.insert(keys.index("name") + 1 if "name" in keys else len(keys), "event_type_id")
+                break
     return out
 
 
@@ -549,7 +557,7 @@ def clean_value(field: dict, raw):
         if cfg.get("max") is not None and d > Decimal(str(cfg["max"])):
             raise TemplateError(f"{w} no puede ser mayor que {cfg['max']}")
         return _num_out(d)
-    if t in ("commercial", "coordinator", "super_event"):
+    if t in ("commercial", "coordinator", "super_event", "event_type"):
         return _int(raw, w, 1, 2_147_483_647)
     if t == "date":
         return _date(raw, w)

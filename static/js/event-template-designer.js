@@ -250,7 +250,7 @@
   /* Valores de ejemplo para la vista previa de la tarjeta del calendario. */
   function sampleEvent(m) {
     var ev = { id: 0, tenant_name: 'Cliente S.A.S.', event_code: 'CONG-2026', name: 'Congreso Anual', country: 'Colombia', city: 'Bogotá', location: 'Corferias', address: 'Av. 24 # 38-47', start_date: '2026-11-12', end_date: '2026-11-14', setup_date: '2026-11-10',
-      event_time_start: '08:00', event_time_end: '18:00', setup_time_start: '06:00', setup_time_end: '07:00', coordinator_name: 'Ana Torres', commercial_name: 'Luis Rojas', super_event_name: 'Congresos 2026',
+      event_time_start: '08:00', event_time_end: '18:00', setup_time_start: '06:00', setup_time_end: '07:00', coordinator_name: 'Ana Torres', commercial_name: 'Luis Rojas', super_event_name: 'Congresos 2026', event_type_name: 'Congreso',
       bandana_colors: [{ name: 'Rojo Golden', hex: '#c0392b' }], notes: 'Entrada por la puerta 3', switches: {}, extra: {} };
     (m.catalog.switches || []).forEach(function (s) { ev.switches[s.key] = true; });
     m.fields.forEach(function (f) {

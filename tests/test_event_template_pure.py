@@ -40,10 +40,10 @@ def test_default_template_is_valid_and_round_trips():
 def test_default_reproduces_todays_new_event_form():
     t = _tpl()
     keys = [k for s in t["creation_layout"]["sections"] for k in s["keys"]]
-    assert keys == ["client", "event_code", "name", "country", "city", "location", "address", "start_date", "end_date", "event_time_start", "event_time_end", "setup_date", "setup_time_start", "setup_time_end",
+    assert keys == ["client", "event_code", "name", "event_type_id", "country", "city", "location", "address", "start_date", "end_date", "event_time_start", "event_time_end", "setup_date", "setup_time_start", "setup_time_end",
                     "coordinator_staff_id", "commercial_staff_id", "super_event_id", "bandana", "notes"]
     req = {f["key"] for f in t["fields"] if f["required"]}
-    assert req == set(keys) - {"super_event_id", "bandana", "notes"}
+    assert req == set(keys) - {"event_type_id", "super_event_id", "bandana", "notes"}
     assert len(t["creation_layout"]["sections"]) == 4
 
 

@@ -28,6 +28,7 @@
     setup_date: function (e) { return e.setup_date; }, event_time_start: function (e) { return e.event_time_start; }, event_time_end: function (e) { return e.event_time_end; },
     setup_time_start: function (e) { return e.setup_time_start; }, setup_time_end: function (e) { return e.setup_time_end; },
     coordinator_staff_id: function (e) { return e.coordinator_name; }, commercial_staff_id: function (e) { return e.commercial_name; }, super_event_id: function (e) { return e.super_event_name; },
+    event_type_id: function (e) { return e.event_type_name; },
     bandana: function (e) { return e.bandana_colors; }, notes: function (e) { return e.notes; },
   };
 
@@ -84,7 +85,7 @@
   }
   function displayValue(field, event, ctx) {
     var v = valueOf(field, event);
-    if (BASE_EVENT[field.key] && (field.key === 'coordinator_staff_id' || field.key === 'commercial_staff_id' || field.key === 'super_event_id' || field.key === 'client')) return v ? String(v) : '';
+    if (BASE_EVENT[field.key] && (field.key === 'coordinator_staff_id' || field.key === 'commercial_staff_id' || field.key === 'super_event_id' || field.key === 'event_type_id' || field.key === 'client')) return v ? String(v) : '';
     return formatValue(field, v, ctx);
   }
 
@@ -188,6 +189,7 @@
       case 'number': return '<input class="gw-input"' + id + ' type="text" inputmode="decimal"' + attrs(field, 'v') + ' value="' + esc(value) + '" autocomplete="off"' + req + '>';
       case 'commercial': case 'coordinator': return '<select class="gw-select"' + id + attrs(field, 'v', ' data-evf-enhance="combobox"') + req + (ro ? ' disabled' : '') + '>' + optionsHtml(peopleOptions(ctx, field.type), value, 'Elige…') + '</select>';
       case 'super_event': return '<select class="gw-select"' + id + attrs(field, 'v') + '>' + optionsHtml(((ctx && ctx.superEvents) || []).map(function (s) { return { value: s.id, label: s.name + (s.events != null ? ' (' + s.events + ' eventos)' : '') }; }), value, '— Ninguno —') + '</select>';
+      case 'event_type': return '<select class="gw-select"' + id + attrs(field, 'v') + req + '>' + optionsHtml(((ctx && ctx.eventTypes) || []).map(function (t) { return { value: t.id, label: t.name }; }), value, '— Sin categoría —') + '</select>';
       case 'date': return '<input class="gw-input"' + id + ' type="date"' + attrs(field, 'v') + ' value="' + esc(value) + '"' + req + '>';
       case 'time': return '<input class="gw-input clock-time"' + id + ' type="text"' + attrs(field, 'v') + ' value="' + esc(value) + '" autocomplete="off"' + req + '>';
       case 'datetime': {
@@ -266,7 +268,7 @@
         for (var j = 0; j < types.length; j++) lines.push({ type: val(types[j]), qty: val(qtys[j]) === '' ? null : Number(val(qtys[j])), ref: val(refs[j]) || null });
         return lines.length ? lines : null;
       }
-      case 'commercial': case 'coordinator': case 'super_event': { var s = val(p.v && p.v[0]); return s === '' ? null : Number(s); }
+      case 'commercial': case 'coordinator': case 'super_event': case 'event_type': { var s = val(p.v && p.v[0]); return s === '' ? null : Number(s); }
       default: { var x = val(p.v && p.v[0]); return x === '' ? null : x; }
     }
   }

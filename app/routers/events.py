@@ -23,6 +23,7 @@ from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
 from app.models import EventChangeLog, EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
+from app.routers import event_types as event_types_router
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app import queue_svc
@@ -95,6 +96,7 @@ class EventIn(BaseModel):
     bandana_color: Optional[str] = None  # Sprint 2.4 Fase 12: "Color de pañoleta", hex #rrggbb
     bandana_color_name: Optional[str] = None  # nombre libre para ese color (ej. "Rojo Golden")
     super_event_id: Optional[int] = None  # superevento al que pertenece (2026-09-23: también se elige al CREAR el evento)
+    event_type_id: Optional[int] = None  # Fase 10 (C): «Categoría (tipo de evento)» (app/routers/event_types.py); sin valor = «Sin categoría»
     notes: Optional[str] = None
     # Interruptores: la MISMA columna que cambia «Parámetros del evento» (una sola fuente de datos). Sin valor = no se toca (queda apagado, como siempre).
     facial_enabled: Optional[bool] = None
@@ -135,6 +137,7 @@ class EventUpdate(BaseModel):
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
+    event_type_id: Optional[int] = None  # Fase 10 (C): null explícito = dejarlo «Sin categoría»
     extra: Optional[Dict[str, Any]] = None      # Fase 2: valores de campos personalizados de la plantilla que se cambian (un valor null borra ese valor); los demás no se tocan
 
 
@@ -167,6 +170,7 @@ def _serialize(e: Event) -> dict:
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
+        "event_type_id": e.event_type_id, "event_type_name": e.event_type.name if e.event_type else None, "event_type_color": (e.event_type.color or None) if e.event_type else None,
         "super_event_id": e.super_event_id,
         "super_event_name": e.super_event.name if e.super_event else None,
         "extra": e.get_extra(),      # Fase 2: valores de los campos personalizados de la plantilla (los retirados también); {} en los eventos anteriores
@@ -477,6 +481,7 @@ def create_event(
         if not coord:
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
 
+    event_types_router.check_assignable(db, data.event_type_id)
     if data.super_event_id is not None:
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != data.tenant_id:
@@ -581,6 +586,7 @@ def update_event(
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
+    event_types_router.check_assignable(db, data.event_type_id, event.event_type_id)
     if data.super_event_id is not None:
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != event.tenant_id:

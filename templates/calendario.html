@@ -278,9 +278,11 @@ async function loadAndRender() {
 
 // Categorías de evento (Fase 10, C): chips clicables arriba del calendario, para cualquiera que lo vea. Lógica en calendar-cats.js.
 let activeCats = new Set();
+const knownCats = {};          // nombre y color de las categorías ya vistas (para que una activa siga con su nombre al cambiar de mes)
 const catBar = document.getElementById('catBar'), catChips = document.getElementById('catChips');
 function renderCatChips() {
-  const cats = CalendarCats.build(eventsCache, activeCats);
+  const cats = CalendarCats.build(eventsCache, activeCats, knownCats);
+  cats.forEach((c) => { if (c.count) knownCats[c.key] = { label: c.label, color: c.color }; });
   catBar.hidden = !cats.length;
   catChips.innerHTML = cats.map((c) => `<button type="button" class="gw-chip cal-cat" data-cat="${esc(c.key)}" aria-pressed="${c.active ? 'true' : 'false'}"><span class="cal-cat__dot" data-color="${esc(c.color)}" aria-hidden="true"></span><span class="cal-cat__name">${esc(c.label)}</span><span class="cal-cat__n">${c.count}</span></button>`).join('') +
     (activeCats.size ? '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-cat-clear>Ver todas</button>' : '');
