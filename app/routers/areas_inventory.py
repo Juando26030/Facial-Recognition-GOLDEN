@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role, require_role_excluding
-from app import audit_actions, event_history, faces, heavy
+from app import area_dwell_svc, audit_actions, event_history, faces, heavy
 from app import event_archive
 from app.database import get_db
 from app.timeutil import to_local
@@ -197,7 +197,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
         return {"result": "NOT_INSIDE", "direction": "out", "area": area.name, "data": data,
                 "details": f"{user.first_name or ''} {user.last_name or ''}".strip() + f" no figura adentro de «{area.name}»"}
 
-    if not event.auto_register and not confirm:
+    if not event.auto_register and not event.areas_autoscan and not confirm:          # Fase 10: «escanear = ingreso automático» registra sin pulsar «Acreditar»
         return {"result": "FOUND_PENDING", "direction": direction, "area": area.name, "data": data}
 
     now = utcnow()
@@ -311,7 +311,7 @@ def _delivered_by_item(db: Session, event_id: int) -> dict:
 def _item_json(item: InventoryItem, delivered: int) -> dict:
     return {
         "id": item.id, "name": item.name, "initial_qty": item.initial_qty, "allow_multiple": item.allow_multiple,
-        "allow_repeat_delivery": item.allow_repeat_delivery is not False,
+        "allow_repeat_delivery": item.allow_repeat_delivery is not False, "requires_dwell": bool(item.requires_dwell),
         "delivered": delivered, "available": item.initial_qty - delivered, "archived": item.archived_at is not None,
     }
 
@@ -352,7 +352,7 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
     if db.query(InventoryItem).filter(InventoryItem.event_id == event.id, func.lower(InventoryItem.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento (si no lo ves, está archivado: restáuralo)")
     item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")),
-                         allow_repeat_delivery=bool(data.get("allow_repeat_delivery", False)), created_at=utcnow())      # D7: los ítems NUEVOS no repiten la entrega a la misma persona salvo que se pida
+                         allow_repeat_delivery=bool(data.get("allow_repeat_delivery", False)), requires_dwell=bool(data.get("requires_dwell", False)), created_at=utcnow())      # D7: los ítems NUEVOS no repiten la entrega a la misma persona salvo que se pida
     db.add(item)
     db.commit()
     return _item_json(item, 0)
@@ -377,6 +377,8 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
             audit_actions.record(db, staff, "update", "inventory_item", item.id, item.name,
                                  f"allow_repeat_delivery {bool(item.allow_repeat_delivery)} -> {bool(data['allow_repeat_delivery'])}; evento {item.event_id}")
         item.allow_repeat_delivery = bool(data["allow_repeat_delivery"])
+    if "requires_dwell" in data:          # Fase 10: solo se entrega a quien llegó al porcentaje de estadía del evento
+        item.requires_dwell = bool(data["requires_dwell"])
     db.commit()
     return _item_json(item, delivered)
 
@@ -453,6 +455,8 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
             raise HTTPException(status_code=400, detail=f"«{item.name}» está archivado: restáuralo para entregarlo")
         if item_id in already and item.allow_repeat_delivery is False:
             raise HTTPException(status_code=409, detail=f"«{item.name}» ya se le entregó a esta persona y este ítem no se puede repetir. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
+        if item.requires_dwell and area_dwell_svc.prize_active(event) and not area_dwell_svc.qualifies(db, event, user.id):
+            raise HTTPException(status_code=409, detail=f"«{item.name}» solo se entrega a quien cumplió el {area_dwell_svc.threshold(event)} % de permanencia del evento y esta persona todavía no lo alcanza")
         if qty > 1 and not item.allow_multiple:
             raise HTTPException(status_code=400, detail=f"«{item.name}» solo se entrega de a 1 unidad por vez")
         available = item.initial_qty - delivered.get(item_id, 0)

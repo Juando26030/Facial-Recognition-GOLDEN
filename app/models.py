@@ -269,6 +269,12 @@ class Event(Base):
     pledge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0100: el evento exige el compromiso digital del digitador (app/pledge.py); sin firmarlo no entra a la fila de autorización. El enlace público es el formulario web `kind='pledge'` del evento
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    areas_dwell_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122 (Fase 10): contar el tiempo de permanencia en las zonas (entradas y salidas suman)
+    dwell_prize_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: «premio por porcentaje de estadía» (certificado / entrega solo a quien llegue al porcentaje)
+    dwell_reference_minutes = Column(Integer, nullable=True)  # 0122: el 100 % en minutos (lo define el coordinador); NULL = la duración del evento
+    dwell_threshold_pct = Column(Integer, nullable=True)  # 0122: porcentaje mínimo para cumplir (NULL = 80)
+    areas_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter registra la entrada o salida sin pulsar «Acreditar»
+    inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
     data_archived_at = Column(DateTime, nullable=True)      # 0090 (L7): la BASE DE DATOS del evento (personas y respuestas) quedó archivada a los 90 días de cerrado; el evento SIGUE en las listas. Solo un super_admin la desarchiva. Ver app/event_archive.py
@@ -938,6 +944,7 @@ class InventoryItem(Base):
     initial_qty = Column(Integer, nullable=False, default=0)
     allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
     allow_repeat_delivery = Column(Boolean, default=True, server_default='true', nullable=False)  # 0096 (D7): ¿se puede entregar de nuevo a la MISMA persona? Los existentes sí; el alta por la API nace en false
+    requires_dwell = Column(Boolean, default=False, server_default='false', nullable=False)  # 0123 (Fase 10): solo se entrega a quien llegó al porcentaje de estadía del evento
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
