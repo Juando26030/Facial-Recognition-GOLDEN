@@ -16,6 +16,8 @@ import re
 import time
 from typing import Optional
 
+from app import qr_vcard
+
 STEP_SECONDS = 30
 BACK_WINDOWS = 2          # un código sigue valiendo hasta 2 ventanas después (60-90 s en total, tiempo de leerlo)
 SKEW_WINDOWS = 1          # y se tolera un reloj del celular adelantado hasta 1 ventana
@@ -54,12 +56,12 @@ def batch(att_id: int, digital_token: str, now: Optional[float] = None) -> dict:
 
 
 def looks_like(text) -> bool:
-    return bool(_PARSE.match(str(text or "").strip().lower()))
+    return bool(_PARSE.match(qr_vcard.unwrap(text).strip().lower()))
 
 
 def parse(text) -> Optional[dict]:
     """{'kind': 'd'|'s', 'att_id': int, 'window': int|None, 'sig': str} o None si no tiene la forma."""
-    m = _PARSE.match(str(text or "").strip().lower())
+    m = _PARSE.match(qr_vcard.unwrap(text).strip().lower())          # el QR viene como vCard con el código en NOTE (Fase 10, C) o como texto suelto (formato anterior)
     if not m:
         return None
     static, att_id, window, sig = m.group(1) == "s", int(m.group(2)), m.group(3), m.group(4)

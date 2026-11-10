@@ -112,7 +112,7 @@ def apple_pass_json(*, att_id: int, person_name: str, event_name: str, code: str
         "description": "Credencial del evento",
         "logoText": "Golden Eventos",
         "backgroundColor": "rgb(10,14,46)", "foregroundColor": "rgb(255,255,255)", "labelColor": "rgb(212,175,55)",
-        "barcodes": [{"format": "PKBarcodeFormatQR", "message": code, "messageEncoding": "iso-8859-1"}],
+        "barcodes": [{"format": "PKBarcodeFormatQR", "message": code, "messageEncoding": "utf-8"}],
         "generic": {
             "primaryFields": [{"key": "name", "label": "NOMBRE", "value": (person_name or "Asistente")[:60]}],
             "secondaryFields": [{"key": "event", "label": "EVENTO", "value": (event_name or "")[:60]}],

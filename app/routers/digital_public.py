@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from app import crypto, digital_fields, dynamic_qr, publicurl, wallet
+from app import crypto, digital_fields, dynamic_qr, publicurl, qr_vcard, wallet
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
@@ -88,7 +88,10 @@ def digital_badge_qr(token: str, db: Session = Depends(get_db)):
 
 def _wallet_args(db: Session, token: str) -> dict:
     att, event, user = _resolve(db, token)
-    return {"att_id": att.id, "person_name": f"{user.first_name or ''} {user.last_name or ''}".strip(), "event_name": event.name, "code": dynamic_qr.make_static(att.id, att.digital_token)}
+    # El código del pase es una vCard (guardar contacto al escanear) con el código firmado en NOTE; el teléfono va solo si el evento lo muestra en la escarapela digital (mismo criterio que /data).
+    keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), set(), event.get_optional_labels())
+    code = qr_vcard.build(user.first_name, user.last_name, user.phone if "phone" in keys else "", note=dynamic_qr.make_static(att.id, att.digital_token))
+    return {"att_id": att.id, "person_name": f"{user.first_name or ''} {user.last_name or ''}".strip(), "event_name": event.name, "code": code}
 
 
 @router.get("/b/{token}/wallet/google")

@@ -69,8 +69,14 @@
     return found === undefined ? parts[0] : found;
   }
 
+  /* Fase 10 (C): el QR de la escarapela ahora es una vCard con el código en NOTE (static/js/vcard.js); si el lector la entrega entera se saca el código de adentro. Sin vcard.js cargado, no cambia nada. */
+  function unwrapVcard(text) {
+    const v = (typeof module !== 'undefined' && typeof require === 'function') ? (function () { try { return require('./vcard.js'); } catch (e) { return null; } })() : (typeof window !== 'undefined' ? window.GWVcard : null);
+    return v ? v.unwrap(text) : text;
+  }
+
   function classifyQuery(texto) {
-    const raw = String(texto == null ? '' : texto);
+    const raw = unwrapVcard(String(texto == null ? '' : texto));
     const text = raw.replace(/[\r\n\t]+/g, ' ').trim();
     if (!text) return { kind: 'vacio', raw, words: [], completa: false };
     const qr = parseQr(text);

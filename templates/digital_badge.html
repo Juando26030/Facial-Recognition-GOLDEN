@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <style>
         html, body { margin:0; min-height:100%; background:#0a0e2e; color:#fff; font-family:'Inter', system-ui, sans-serif; }
@@ -78,9 +79,15 @@ setInterval(tick, 250); tick();
 
 // ---------- QR dinámico ----------
 let qrCodes = [], qrStep = 30, qrShown = '', qrFetching = false;
+let qrPerson = null;          // nombre (y teléfono, solo si el evento lo muestra) para la vCard del QR
 function renderQr(code) {
     if (typeof qrcode === 'undefined') return;
-    const qr = qrcode(0, 'M'); qr.addData(code); qr.make();
+    // Fase 10 (C): vCard (guardar contacto desde el celular) con el código firmado en NOTE; nivel «L» y UTF-8. Los lectores de Golden sacan el código de NOTE.
+    const V = window.GWVcard, prev = qrcode.stringToBytes;
+    if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    const qr = qrcode(0, V ? V.QR_LEVEL : 'M');
+    qr.addData(V ? V.build({ first_name: qrPerson && qrPerson.first_name, last_name: qrPerson && qrPerson.last_name, phone: qrPerson && qrPerson.phone, note: code }) : code);
+    try { qr.make(); } finally { qrcode.stringToBytes = prev; }
     const box = document.getElementById('qrBox');
     box.innerHTML = qr.createSvgTag({ scalable: true });
     const svg = box.querySelector('svg'); if (svg) { svg.style.width = '180px'; svg.style.height = '180px'; }
@@ -135,6 +142,7 @@ async function load() {
     });
     ul.hidden = !ul.children.length;
     document.getElementById('stage').style.display = 'block';
+    qrPerson = person;
 
     // QR de entrada DINÁMICO (Fase 8): el servidor entrega los códigos de las próximas ventanas de 30 s y esta página los rota por su reloj; una captura de pantalla caduca en ~1 minuto.
     startDynamicQr();
