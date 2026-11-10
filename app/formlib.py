@@ -260,6 +260,8 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                 "readonly_when_prefilled": bool(f.get("readonly_when_prefilled")), "placeholder": _text(f.get("placeholder"), 120),
                 "sync": bool(f.get("sync")) and not key,      # pedir que se cree también en Parámetros del Evento
             })
+            if isinstance(f.get("mask_asterisks"), bool):      # decisión del diseñador; sin ella (diseños anteriores) manda `mask_wanted`
+                clean["mask_asterisks"] = f["mask_asterisks"] and bool(key)
             if kind == "text_short" and f.get("doc_types"):      # el campo es un documento de identidad: tipos permitidos (validación por tipo)
                 types = list(dict.fromkeys(str(c) for c in (f.get("doc_types") or []) if str(c) in ID_DOC_BY_CODE))
                 if types:
@@ -556,21 +558,43 @@ def cond_leaves(cond) -> list:
     return [cond]
 
 
-def condition_field_ids(design: dict) -> set:
-    """Ids de los campos de los que depende algo que el NAVEGADOR calcula: la visibilidad de un campo u hoja, sus variantes y las reglas de precio.
-    Si uno de esos campos viene pre-llenado, el navegador debe recibir su valor REAL (con la máscara de X4 ninguna condición «igual a» se cumpliría)."""
-    out: set = set()
-    for f in (design.get("fields") or {}).values():
-        trees = [f.get("show_if")] + [it.get("when") for v in variants_of(f).values() for it in (v.get("items") or [])]
-        pay = f.get("pay") or {}
-        if isinstance(pay, dict):
-            trees += [{"rules": [c for c in (r.get("when") or [])]} for r in (pay.get("rules") or []) if isinstance(r, dict)]
-            trees += [{"rules": [c for c in (d.get("when") or [])]} for d in (pay.get("discounts") or []) if isinstance(d, dict)]
-        for t in trees:
-            out.update(leaf.get("field") for leaf in cond_leaves(t) if isinstance(leaf, dict) and leaf.get("field"))
-    for sh in design.get("sheets") or []:
-        out.update(leaf.get("field") for leaf in cond_leaves(sh.get("show_if")) if isinstance(leaf, dict) and leaf.get("field"))
-    return out
+_COND_KEYS = ("show_if", "when", "rule", "conds")          # claves del diseño público (y de los cupos) que llevan condiciones
+
+
+def mask_wanted(f: dict) -> bool:
+    """¿Un campo de SOLO LECTURA que viene de la base se muestra con asteriscos? Si el diseñador lo decidió (`mask_asterisks` true/false) manda su decisión. Los diseños guardados antes de
+    este parámetro no lo traen: por defecto NO se enmascara, salvo el correo y el teléfono (política X4: quien escribe una cédula ajena no debe leer el contacto de esa persona)."""
+    v = f.get("mask_asterisks")
+    if isinstance(v, bool):
+        return v
+    return f.get("type") in ("email", "phone") or f.get("key") in ("email", "phone")
+
+
+def _freeze_node(node, real: dict):
+    if isinstance(node, list):
+        return [_freeze_node(n, real) for n in node]
+    if not isinstance(node, dict):
+        return node
+    if "rules" in node:
+        return {**node, "rules": [_freeze_node(r, real) for r in node["rules"]]}
+    fid = node.get("field")
+    if fid in real:          # la hoja se resuelve AQUÍ con el valor real y el navegador recibe solo el resultado (siempre cierta / siempre falsa), conservando el campo para que cuente su visibilidad
+        return {"field": fid, "op": "filled"} if condition_met(node, real) else {"field": fid, "op": "in", "value": []}
+    return node
+
+
+def freeze_conditions(obj, real: dict):
+    """Pone al navegador a evaluar condiciones SIN el valor real de los campos enmascarados. `real` = {id del campo: valor real} de los campos que el navegador ve con asteriscos. Cada hoja de
+    condición {field, op, value} sobre uno de esos campos se cambia por una constante (el campo es de solo lectura: su valor no cambia mientras se llena el formulario); así variantes, visibilidad,
+    reglas de precio, descuentos y cupos llenos se calculan igual que con el valor real, y lo único que se entrega es un sí/no por regla (nunca el dato). El servidor sigue evaluando con el
+    valor real al enviar. Recorre cualquier estructura (diseño público, cupos) y devuelve una copia."""
+    if not real:
+        return obj
+    if isinstance(obj, dict):
+        return {k: (_freeze_node(v, real) if k in _COND_KEYS else freeze_conditions(v, real)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [freeze_conditions(v, real) for v in obj]
+    return obj
 
 
 def cond_tree_met(node: dict, values: dict, is_visible: Callable) -> bool:

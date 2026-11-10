@@ -165,38 +165,47 @@ def mask_prefill_value(f: dict, value) -> object:
     return " ".join(_mask_word(w) for w in v.split())
 
 
-def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
-    """(prefill, readonly) para el navegador: los de solo lectura van ENMASCARADOS y el correo/teléfono editables NO se pre-llenan (X4)."""
+def _prefill_parts(design: dict, person: dict) -> Tuple[dict, list, dict]:
+    """(prefill, readonly, hidden_real). Un campo de solo lectura se enmascara SOLO si `formlib.mask_wanted` lo pide (opción «mostrar con asteriscos» del editor; por defecto no, salvo correo y
+    teléfono de diseños anteriores). `hidden_real` = {campo: valor real} de los que el navegador ve distintos del real: sirve para resolver en el servidor las condiciones que dependen de ellos."""
     fields = design["fields"]
-    prefill, readonly = {}, []
-    drives = formlib.condition_field_ids(design)          # campos que mandan en variantes, visibilidad o precio: el navegador los evalúa con el valor real (enmascarado, ninguna regla «igual a» se cumple)
+    prefill, readonly, hidden_real = {}, [], {}
     for fid, val in formsvc.prefill_values(design, person).items():
         f = fields[fid]
         if f.get("readonly_when_prefilled"):
-            prefill[fid] = val if fid in drives and f.get("type") not in ("email", "phone") else mask_prefill_value(f, val)
+            shown = mask_prefill_value(f, val) if formlib.mask_wanted(f) else val
+            prefill[fid] = shown
             readonly.append(fid)
+            if shown != val:
+                hidden_real[fid] = val
         elif f.get("type") in ("email", "phone") or f.get("key") in ("email", "phone"):
             continue
         else:
             prefill[fid] = val
+    return prefill, readonly, hidden_real
+
+
+def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
+    """(prefill, readonly) para el navegador. Los editables de correo/teléfono NO se pre-llenan (X4)."""
+    prefill, readonly, _ = _prefill_parts(design, person)
     return prefill, readonly
 
 
 def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] = None) -> dict:
     """Todo lo que el navegador necesita para dibujar el formulario (+ los datos ya conocidos de la persona, enmascarados si son de solo lectura)."""
     design = formsvc.get_design(form)
-    prefill, readonly = {}, []
+    prefill, readonly, hidden_real = {}, [], {}
     if claims.get("p"):
         person = formsvc.find_person(db, form, claims["p"])
         if person:
-            prefill, readonly = public_prefill(design, person)
+            prefill, readonly, hidden_real = _prefill_parts(design, person)
     if form.kind == formsvc.PLEDGE_KIND and claims.get("pc"):          # Camino B/C: ya viene identificado por su sesión de espera (no se vuelve a pedir la cédula)
         who = db.get(StaffUser, int(claims["pc"]))
         if who is not None:
-            prefill, readonly = {pledge.FID_ID: who.username, pledge.FID_NAME: who.full_name or ""}, [pledge.FID_ID]
-    quota = formsvc.quota_public(db, form)
+            prefill, readonly = pledge.prefill_for(db, form, who), [pledge.FID_ID]
+    quota = formlib.freeze_conditions(formsvc.quota_public(db, form), hidden_real)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
+    return {"design": formlib.freeze_conditions(formlib.public_design(design), hidden_real), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
 
 
 # ------------------------------------------------------------------ páginas y estado

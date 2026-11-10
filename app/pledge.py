@@ -341,6 +341,47 @@ def content_hash(design: dict, answers: dict, event_id: int, cedula: str, signat
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+# ---------------------------------------------------------------------------------------------------- prellenado (digitador que ya firmó antes)
+PREFILL_FROM_BEFORE = (FID_NAME, FID_PHONE, FID_EM_NAME, FID_EM_PHONE)      # nada de casillas de preguntas (salud, contrato, asistencia, declaración, autorización) ni la firma
+
+
+def previous_answers(db: Session, staff: StaffUser) -> dict:
+    """Respuestas de contacto del compromiso MÁS RECIENTE firmado con esta cédula. REGLA DE COINCIDENCIA (decisión de Juan David, 10-nov-2026): la misma cédula en TODOS los clientes y eventos
+    (la cuenta de un digitador es por cliente, pero la persona es la misma); solo aplica a quien es digitador. Se toma el dato más reciente. Solo nombre, celular, familiar y teléfono del familiar;
+    nunca las casillas. Lo sensible (familiar) solo si sigue guardado (no se purgó por retención) y el módulo de datos sensibles está activo. Solo se llama con la persona identificada por su sesión
+    (nunca con una cédula escrita en el enlace público: eso mostraría datos ajenos). Nada de esto se escribe en logs."""
+    if staff.role != "digitador":
+        return {}
+    row = (db.query(EventStaffPledge).join(StaffUser, StaffUser.id == EventStaffPledge.staff_id)
+           .filter(StaffUser.username == staff.username, StaffUser.role == "digitador")
+           .order_by(EventStaffPledge.signed_at.desc(), EventStaffPledge.id.desc()).first())
+    if row is None:
+        return {}
+    sub = db.get(FormSubmission, row.submission_id)
+    if sub is None or sub.is_test:
+        return {}
+    try:
+        data = json.loads(sub.data_json or "{}")
+        secret = json.loads(sub.sensitive_json) if (row.health_purged_at is None and sensitive_enabled() and sub.sensitive_json) else {}
+    except (ValueError, TypeError):
+        return {}
+    out = {}
+    for fid in PREFILL_FROM_BEFORE:
+        val = data.get(fid) if fid in data else secret.get(fid)
+        if isinstance(val, str) and val.strip():
+            out[fid] = val.strip()
+    return out
+
+
+def prefill_for(db: Session, form: WebForm, who: StaffUser) -> dict:
+    """Lo que el formulario del compromiso trae escrito para un digitador identificado: la cédula (bloqueada) y, si ya firmó antes con este cliente, sus datos de contacto (editables)."""
+    out = previous_answers(db, who)
+    out[FID_ID] = who.username
+    if not out.get(FID_NAME):
+        out[FID_NAME] = who.full_name or ""
+    return out
+
+
 # ---------------------------------------------------------------------------------------------------- cuenta temporal
 def _hash_password(ident: str) -> str:
     from app.routers.events import _temp_password_hash          # la MISMA función de la creación a mano y del Excel (contraseña inicial = cédula)

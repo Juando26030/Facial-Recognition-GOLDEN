@@ -394,6 +394,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 <script>
 const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
 const $ = (id) => document.getElementById(id);
+const maskOn = (f) => (typeof f.mask_asterisks === 'boolean' ? f.mask_asterisks : (['email', 'phone'].includes(f.type) || ['email', 'phone'].includes(f.key)));      // misma política que formlib.mask_wanted
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => 'f_' + Math.random().toString(36).slice(2, 10);
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
@@ -962,7 +963,9 @@ function renderProps() {
     if (!f.key) html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
     html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
       <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
-      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pMask" ${maskOn(f) ? 'checked' : ''} ${f.key && f.readonly_when_prefilled ? '' : 'disabled'}> Mostrarlo con asteriscos (ej. A** M****) para que nadie lea el dato completo</label>
+      <div class="hint gwe-mb-sp-2">Solo aplica al dato bloqueado que ya tenemos. Si lo dejas sin marcar se ve completo. En el correo y el celular viene marcado de fábrica, porque quien escribe una cédula ajena no debería leer el contacto de esa persona. Las reglas (variantes, visibilidad, precios) funcionan igual con o sin asteriscos.</div>`;
   }
   // variantes (cualquier elemento) y regla de visibilidad en árbol (Y/O anidados)
   html += variantsHtml(f);
@@ -986,7 +989,7 @@ function renderProps() {
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
   on('pKey', 'change', async () => {
-    f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false;
+    f.key = $('pKey').value || null; if (f.key) f.sync = false; else { f.readonly_when_prefilled = false; delete f.mask_asterisks; }
     markDirty();
     const ch = f.key ? FormSync.plan({ fields: { [f.id]: f } }, eventFields) : [];   // al enlazar un campo a Parámetros se ofrece heredar su tipo y opciones (nunca solo)
     if (ch.length && await showConfirm(`El campo del evento tiene otro tipo u opciones (${ch[0].changes.map(esc).join('; ')}). ¿Usar los de Parámetros?`, { confirmLabel: 'Sí, usarlos' })) FormSync.apply(design, ch);
@@ -998,7 +1001,7 @@ function renderProps() {
     f.doc_types = picked.length ? picked : ['CC']; markDirty(); renderCanvas(); renderProps();
   }));
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
-  on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
+  on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; })); on('pMask', 'change', upd(() => { f.mask_asterisks = $('pMask').checked; }));
   on('pImgAlt', 'input', () => { f.alt = $('pImgAlt').value; markDirty(); });
   on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
