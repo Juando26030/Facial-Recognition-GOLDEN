@@ -556,6 +556,23 @@ def cond_leaves(cond) -> list:
     return [cond]
 
 
+def condition_field_ids(design: dict) -> set:
+    """Ids de los campos de los que depende algo que el NAVEGADOR calcula: la visibilidad de un campo u hoja, sus variantes y las reglas de precio.
+    Si uno de esos campos viene pre-llenado, el navegador debe recibir su valor REAL (con la máscara de X4 ninguna condición «igual a» se cumpliría)."""
+    out: set = set()
+    for f in (design.get("fields") or {}).values():
+        trees = [f.get("show_if")] + [it.get("when") for v in variants_of(f).values() for it in (v.get("items") or [])]
+        pay = f.get("pay") or {}
+        if isinstance(pay, dict):
+            trees += [{"rules": [c for c in (r.get("when") or [])]} for r in (pay.get("rules") or []) if isinstance(r, dict)]
+            trees += [{"rules": [c for c in (d.get("when") or [])]} for d in (pay.get("discounts") or []) if isinstance(d, dict)]
+        for t in trees:
+            out.update(leaf.get("field") for leaf in cond_leaves(t) if isinstance(leaf, dict) and leaf.get("field"))
+    for sh in design.get("sheets") or []:
+        out.update(leaf.get("field") for leaf in cond_leaves(sh.get("show_if")) if isinstance(leaf, dict) and leaf.get("field"))
+    return out
+
+
 def cond_tree_met(node: dict, values: dict, is_visible: Callable) -> bool:
     """¿Se cumple la condición? Una hoja cuenta solo si su campo está visible (`is_visible(id)`) y se cumple con la normalización de P6; un grupo «all» pide todas, «any» alguna."""
     if "rules" in node:
