@@ -49,7 +49,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if event.auto_register else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if (event.auto_register or event.areas_autoscan) else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-ar" data-gw-tour="areas"{% if event.areas_enabled %} data-gw-tour-auto{% endif %}>
@@ -127,7 +127,7 @@
             </div>
           </div>
         </details>
-        <p class="gw-hint">Modo autoregistro: <strong id="autoregLabel"></strong>. Con «OFF» hay que confirmar cada movimiento con «Acreditar».</p>
+        <p class="gw-hint">Modo autoregistro: <strong id="autoregLabel"></strong>. Con «OFF» hay que confirmar cada movimiento con «Acreditar».{% if event.areas_autoscan %} <strong>Escaneo automático activo</strong>: escanear o dar Enter registra la entrada o salida sin pulsar «Acreditar».{% endif %}</p>
       </section>
 
       <div class="gw-stats-row" aria-label="Resumen de la zona">

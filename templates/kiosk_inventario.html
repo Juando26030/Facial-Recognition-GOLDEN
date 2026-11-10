@@ -49,7 +49,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }}; window.AUTOSCAN = {{ "true" if event.inventory_autoscan else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-inv" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
@@ -92,6 +92,7 @@
 
       <section class="gw-card gw-stack" aria-labelledby="invWhoTitle" data-gw-tour-step="1" data-gw-tour-title="1. Elige a quién" data-gw-tour-text="Escanea la cédula o el QR, o busca a la persona por nombre.">
         <h2 class="gw-card__title" id="invWhoTitle">1. ¿A quién se le entrega?</h2>
+        {% if event.inventory_autoscan %}<p class="gw-alert gw-alert--ok" id="autoscanNote" role="status">Entrega automática activa: marca abajo lo que se entrega y, al escanear o dar Enter a cada persona, se le entrega sin pulsar «Entregar».</p>{% endif %}
         <div class="gw-search gw-search--hero">
           <label class="gw-sr-only" for="scanInput">Cédula, QR o lector</label>
           <div class="gw-search__row">

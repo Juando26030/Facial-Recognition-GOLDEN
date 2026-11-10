@@ -122,3 +122,54 @@ Ninguna prueba con base de datos (no hay Postgres aquí): correr las cuatro suit
 - Aplicar la migración 0121 (y 0124) en staging si no está.
 
 **No se pudo probar:** nada con base de datos ni BigQuery real (solo `ruff`, `py_compile`, `node --check`, pruebas de texto y la lógica del CSV/conexiones con módulos simulados); pantallas revisadas en Chromium (claro/oscuro, computador y celular) con datos simulados.
+
+## Bloque A · Inventario, control de áreas y autoescaneo
+
+Migraciones: **0122** (`0122_dwell_autoscan`) y **0123** (`0123_item_requires_dwell`). Rama: `feat/inventario-areas`.
+
+### 1. Pantalla de Inventario (`/inventario`)
+**Qué hace.** Ya no lista todos los eventos. Tiene dos secciones:
+
+- **Catálogo.** Las categorías, los productos y las existencias que el Super Admin crea en Configuración › Inventario. Cada producto muestra sus existencias, lo que está *en uso hoy* (asignado a eventos que ocupan el día de hoy) y lo *disponible hoy*. Hay búsqueda por nombre o código y filtro por categoría.
+- **Dónde está cada equipo.** Un calendario con vista **Día, Semana y Mes**. No pinta el evento en sí sino **qué material tiene asignado cada evento** (equipos, cuántos, fechas) y cuánto queda **disponible** cada día. Se puede elegir «Ver un solo equipo» para ver, día por día, cuánto hay disponible de ese equipo. Al tocar un día se ve el detalle: por evento, lo asignado, lo que salió, lo que volvió y lo que falta por volver (si el evento ya terminó), y la tabla de disponibilidad por equipo. Desde ahí el botón «Abrir inventario del evento» abre el bloque de siempre para editar las cantidades de ese evento (así Almacén sigue registrando salidas y devoluciones).
+
+**Quién la usa.** Coordinador en adelante, Almacén y Contabilidad (lectura). **Admin y Almacén** pueden cambiar la **categoría** y las **existencias** de un producto (botón «Cambiar»). Crear, renombrar, archivar y eliminar productos o categorías sigue siendo solo del Super Admin (decisión de la Fase 5; ver preguntas abajo).
+
+**Cómo se calcula.** Un evento ocupa su material desde el montaje (si lo hay y es anterior) hasta su último día; si solo tiene una fecha, ese día. Un evento sin fecha de inicio no aparece en el calendario. Cuenta lo **asignado**. Los eventos archivados no cuentan. La disponibilidad cuenta los eventos de **todos** los clientes (el material es de Golden); los nombres de eventos solo se muestran a quien tiene permiso sobre ellos.
+
+**Técnico.** `app/inventory_calendar.py` (lógica pura), `GET /api/inventory/overview`, `GET /api/inventory/calendar?start=&end=` (máx. 100 días), `PATCH /api/inventory/products/{id}/manage`; `static/js/inventario-page.js`, `static/css/gw-inventory-calendar.css`. `inventory_svc.py` no cambió: se reutilizan `event_lines`/`to_rows` en el bloque por evento.
+
+### 2. Control de áreas: tiempo de permanencia y premio por estadía
+**Dónde se activa.** Parámetros del evento › **Zonas e inventario** › bloque «Permanencia, premio por estadía y escaneo automático» (tiene su propio botón Guardar).
+
+**Qué hace.**
+1. **Contar el tiempo de permanencia en las zonas.** Cada entrada y su salida se emparejan y los tiempos se **suman** (10 min + 5 min = 15 min). Si una persona tiene tiempos que se cruzan entre zonas (olvidó escanear una salida), el tiempo común se cuenta una sola vez.
+2. **Habilitar premio por porcentaje de estadía.** El coordinador define el **tiempo de referencia** (el 100 %, p. ej. 24 h) y el **porcentaje mínimo** (p. ej. 80 %). Si deja la referencia vacía se usa la duración del evento (según sus fechas y horas).
+3. **Estadística y lista.** Botón «Calcular»: cuántas personas llegan a 50/60/70/80/90/100 % y cuántas cumplen el porcentaje elegido (se puede probar otro porcentaje y filtrar por zona). Descargas: **Excel o CSV de quienes cumplen**, o Excel de todas las personas (cédula, nombre, entidad, tiempo, porcentaje, si cumple, si quedó sin salida).
+4. **Usar el resultado.**
+   - **Certificados:** botón «Habilitar certificado a quienes cumplen» marca «Certificado: Sí» a esas personas (no quita a nadie; la persona de prueba no se toca). Recuerda que el certificado se descarga cuando el evento está finalizado y los certificados del evento están activos.
+   - **Entregas de inventario:** en la tabla de ítems de Parámetros hay una columna «Solo a quien cumple la estadía». Un ítem así solo se entrega a quien ya llegó al porcentaje (si no, el sistema avisa con un mensaje claro y no entrega). Solo aplica con el conteo y el premio activos.
+
+**Persona PRUEBA.** Nunca cuenta en el conteo, ni en las cifras, ni en las descargas, ni recibe el cambio de certificado. En la puerta de entregas con estadía se deja pasar (ensaya el flujo).
+
+**Técnico.** `app/area_dwell.py` (puro), `app/area_dwell_svc.py` (base), `app/routers/areas_dwell.py`: `GET/PUT /api/events/{id}/areas-dwell/config`, `GET …/areas-dwell`, `GET …/areas-dwell/export?fmt=xlsx|csv&only=cumple|todos`, `POST …/areas-dwell/apply-certificates`. Rol: coordinador en adelante, sin comercial (igual que los reportes de áreas). Columnas nuevas en `events` (0122) e `inventory_items.requires_dwell` (0123). Cambios de configuración y descargas quedan en la auditoría.
+
+### 3. Autoescaneo («escanear/Enter = entrega o ingreso automático»)
+En los mismos Parámetros hay dos casillas:
+- **Control de áreas:** escanear o dar Enter registra la entrada o salida solo, sin pulsar «Acreditar» (por servidor: es como tener el autoregistro, pero solo para zonas, sin cambiar el «Modo autoregistro» del registro).
+- **Control de inventario:** el operador marca una vez qué se entrega; al escanear (o Enter, o cámara QR) a cada persona, se le entrega **lo marcado** de una vez, sin pulsar «Entregar». Lo marcado se conserva entre personas. Un segundo Enter mientras se entrega no duplica la entrega. Con «Repetir la entrega a la misma persona» apagado en un ítem, el sistema sigue bloqueando la repetición.
+
+### Decisiones que tomé
+- **Permisos del catálogo:** dejé crear/renombrar/archivar solo para Super Admin (las pruebas y la decisión de la Fase 5 lo fijan) y abrí a Admin y Almacén únicamente **categoría y existencias** con una ruta aparte. «Gestionan categorías» lo interpreté como poder mover productos entre categorías.
+- **Entrada sin salida:** cuenta hasta el fin del evento (o hasta ahora si sigue en curso) y se marca «Quedó sin salida» en la lista, para que el coordinador lo revise. Alternativa más estricta: no contarla.
+- **Calendario sobre lo asignado:** no resta lo «salido sin devolver» de eventos terminados; eso se avisa aparte como «falta por volver».
+- La persona que está en dos zonas a la vez no suma doble.
+- El historial por campo de eventos (`event_history`) solo cubre campos de la plantilla; los nuevos parámetros se auditan con `audit_actions`.
+
+### No pude probar
+No hay base de datos en este entorno: las pruebas `tests/test_fase10_a_api.py` (flujo completo con base) se corren el miércoles en Cloud Shell. Sí corrieron `ruff`, `node --check`, `tests/test_fase10_a_puras.py`, `tests/test_fase10_a_texto.py` y `node tests/js/inventario_page_check.js`. La revisión visual con Playwright se hizo con respuestas simuladas.
+
+### Preguntas para Juan David
+1. ¿Almacén y Admin deben poder también **crear** productos/categorías, o basta con ajustar categoría y existencias?
+2. Una persona que entró a una zona y nunca escaneó la salida: ¿se le cuenta hasta el fin del evento (como está) o no se le cuenta?
+3. ¿La estadística debe verse también en la pantalla de Control de áreas (hoy está en Parámetros)?
