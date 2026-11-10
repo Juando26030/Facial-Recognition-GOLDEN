@@ -94,7 +94,9 @@
               <div class="gw-field"><label class="gw-label" for="title">Título en pantalla</label><input type="text" class="gw-input" id="title" maxlength="80"></div>
               <div class="gw-field"><label class="gw-label" for="title_font">Fuente del título</label><select class="gw-select" id="title_font"></select></div>
               <div class="gw-field"><label class="gw-label" for="font_family">Fuente de los nombres</label><select class="gw-select" id="font_family"></select></div>
-              <div class="gw-field"><label class="gw-label" for="spin_seconds">Duración del giro (segundos)</label><input type="number" class="gw-input gw-input--short" id="spin_seconds" min="2" max="20"></div>
+              <div class="gw-field"><label class="gw-label" for="spin_mode">Cómo gira</label><select class="gw-select" id="spin_mode"><option value="fixed">Dura un tiempo fijo</option><option value="manual">Giro libre: un clic en «Girar» lo inicia y otro clic en «Detener» lo frena</option></select>
+                <p class="gw-hint">Con giro libre la ruleta gira sin parar hasta que alguien pulse «Detener» en la pantalla del sorteo; si nadie lo hace, se frena sola a los 2 minutos. El ganador ya está decidido desde que se pulsa «Girar»: detener no lo cambia.</p></div>
+              <div class="gw-field" id="spinSecondsField"><label class="gw-label" for="spin_seconds">Duración del giro (segundos)</label><input type="number" class="gw-input gw-input--short" id="spin_seconds" min="2" max="20"></div>
             </div>
           </div>
         </details>
@@ -116,13 +118,23 @@
           </div>
         </details>
 
+        <details class="gw-group" open>
+          <summary class="gw-group__sum"><span class="gw-group__title">Datos del ganador</span><span class="gw-group__hint">Qué sale bajo el nombre cuando alguien gana.</span></summary>
+          <div class="gw-group__body">
+            <p class="gw-hint">El nombre siempre sale. Marca lo demás que quieras mostrar; lo que la persona no tenga lleno no se muestra. Ojo: todo lo que marques lo verá el público en la pantalla del sorteo.</p>
+            <div class="gw-checklist" id="winnerFields" role="group" aria-label="Datos del ganador que se muestran"></div>
+          </div>
+        </details>
+
         <details class="gw-group">
-          <summary class="gw-group__sum"><span class="gw-group__title">Imágenes</span><span class="gw-group__hint">Imagen de fondo y logo (opcionales).</span></summary>
+          <summary class="gw-group__sum"><span class="gw-group__title">Imágenes</span><span class="gw-group__hint">Imagen de fondo, logo y logos o banners de arriba (opcionales).</span></summary>
           <div class="gw-group__body">
             <div class="gw-form-grid">
               <div class="gw-field"><label class="gw-label" for="bgFile">Imagen de fondo</label><input type="file" class="gw-input" id="bgFile" accept="image/*"><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="bgClear">Quitar imagen</button></div></div>
               <div class="gw-field"><label class="gw-label" for="logoFile">Logo (arriba del título)</label><input type="file" class="gw-input" id="logoFile" accept="image/*"><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="logoClear">Quitar logo</button></div></div>
             </div>
+            <div class="gw-field"><label class="gw-label" for="topFile">Logos o banners de arriba de la pantalla (hasta 4)</label><input type="file" class="gw-input" id="topFile" accept="image/*">
+              <ul class="gw-ruleta-toplist" id="topList" aria-label="Logos o banners cargados"></ul></div>
             <p class="gw-hint">Al elegir una imagen se ve en la vista previa; se conserva al guardar los cambios.</p>
           </div>
         </details>
@@ -130,6 +142,7 @@
 
       <div class="gw-ruleta-split__preview" data-gw-tour-step="2" data-gw-tour-title="2. Mira la vista previa y prueba" data-gw-tour-text="Así se verá la pantalla del sorteo. Prueba la animación con nombres de ejemplo.">
         <div class="gw-ruleta-preview gw-no-theme" id="preview">
+          <div class="rr-top" id="pTop" hidden></div>
           <p class="gw-ruleta-preview__title" id="pTitle"></p>
           <img class="gw-ruleta-preview__logo" id="pLogo" alt="" hidden>
           <div class="gw-ruleta-preview__stage" id="pStage"></div>
@@ -151,7 +164,7 @@ const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
 const $ = (id) => document.getElementById(id);
 const SAMPLE = ['Ana Pérez', 'Luis Gómez', 'Marta Ruiz', 'Juan Mora', 'Sofía Díaz', 'Pedro Cruz', 'Laura Vega', 'Diego Rey', 'Carla Sosa', 'Iván León', 'Elena Paz', 'Tomás Gil'];
 const NEW_COLOR = ['#', '8a8a8a'].join('');                 // gris neutro para un segmento nuevo (se cambia en el selector de color)
-let style = null, stage = null, busy = false;
+let style = null, stage = null, busy = false, choices = [], previewStop = null;
 const MANY = Array.from({ length: 200 }, (_, i) => `Asistente ${String(i + 1).padStart(3, "0")}`);
 const staffAsset = (p) => `/api/badge-assets/${p}`;
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
@@ -166,6 +179,7 @@ function paintPreview() {
   RouletteRender.applyBackground($('preview'), style, staffAsset);
   $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
   $('pLogo').hidden = !style.logo; if (style.logo) $('pLogo').src = staffAsset(style.logo);
+  RouletteRender.topImages($('pTop'), style, staffAsset);
   $('pStage').classList.toggle('gw-ruleta-preview__stage--wide', style.wheel_style === 'jackpot');
   stage = RouletteRender.stage($('pStage'), style, { logoUrl: style.logo ? staffAsset(style.logo) : '' });
   stage.idle(SAMPLE);
@@ -184,13 +198,60 @@ async function upload(input, key) {
   catch (e) { showToast(e.message, 'error'); }
   input.disabled = false;
 }
+// Datos del ganador (Fase 10, C): casillas con lo que el evento ofrece; el nombre siempre sale.
+const SAMPLE_VALUES = { entity: 'Ejemplo S.A.S.', email: 'ana.perez@ejemplo.co', role: 'Gerente', opt_1: 'Invitado' };
+function renderWinnerFields() {
+  const on = new Set(style.winner_fields || []);
+  $('winnerFields').innerHTML = `<label class="gw-check"><input type="checkbox" checked disabled><span>Nombre (siempre)</span></label>` +
+    choices.map((c, i) => `<label class="gw-check"><input type="checkbox" data-wf="${i}" ${on.has(c.key) ? 'checked' : ''}><span></span></label>`).join('');
+  $('winnerFields').querySelectorAll('[data-wf]').forEach((el) => { el.nextElementSibling.textContent = choices[+el.dataset.wf].label; });      // textContent: los nombres de campo los escribe el coordinador
+}
+$('winnerFields').addEventListener('change', (e) => {
+  const el = e.target.closest('[data-wf]'); if (!el) return;
+  const keys = choices.filter((_, i) => $('winnerFields').querySelector(`[data-wf="${i}"]`).checked).map((c) => c.key);
+  style.winner_fields = keys; pending();
+});
+function sampleWinner(name, entity) {
+  const fields = (style.winner_fields || []).map((k) => {
+    const c = choices.find((x) => x.key === k); if (!c) return null;
+    return { label: c.label, value: k === 'entity' ? entity : (SAMPLE_VALUES[k] || 'Dato de ejemplo'), entity: k === 'entity' };
+  }).filter(Boolean);
+  return { position: 1, name, fields };
+}
+function renderTopList() {
+  const list = style.top_images || [];
+  $('topList').innerHTML = list.map((p, i) => `<li><img src="${staffAsset(p)}" alt="" class="gw-ruleta-toplist__img"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-top-rm="${i}">Quitar</button></li>`).join('');
+  $('topFile').disabled = list.length >= 4;
+}
+$('topList').addEventListener('click', (e) => { const b = e.target.closest('[data-top-rm]'); if (!b) return; style.top_images.splice(+b.dataset.topRm, 1); renderTopList(); paintPreview(); pending(); });
+async function uploadTop() {
+  const input = $('topFile'), f = input.files[0]; if (!f) return;
+  if ((style.top_images || []).length >= 4) { showToast('Máximo 4 logos o banners', 'info'); input.value = ''; return; }
+  const fd = new FormData(); fd.append('file', f);
+  input.disabled = true;
+  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style.top_images = [...(style.top_images || []), d.storage_path]; renderTopList(); paintPreview(); pending(); showToast('Imagen cargada — guarda los cambios para conservarla', 'success'); }
+  catch (e) { showToast(e.message, 'error'); }
+  input.value = ''; input.disabled = (style.top_images || []).length >= 4;
+}
+function paintSpinMode() { $('spinSecondsField').hidden = style.spin_mode === 'manual'; }
+
 async function spin(btn, names, winner, entity) {
+  if (previewStop) { previewStop(); return; }                                  // segundo clic del giro libre: frenar
   if (busy) return; busy = true; $('pResult').innerHTML = '';
   try {
-    await GW.busy(btn, async () => {
-      await stage.spin(names, winner, style.spin_seconds);
-      RouletteRender.reveal($('pResult'), { position: 1, name: winner, entity }, style);
-    });
+    if (style.spin_mode === 'manual') {                                        // giro libre: el mismo botón inicia y detiene
+      let release; const stop = new Promise((r) => { release = r; });
+      const label = btn.textContent;
+      previewStop = () => { previewStop = null; release(); btn.disabled = true; btn.textContent = 'Frenando…'; };
+      btn.textContent = 'Detener';
+      try { await stage.spin(names, winner, style.spin_seconds, { stop }); } finally { previewStop = null; btn.disabled = false; btn.textContent = label; }
+      RouletteRender.reveal($('pResult'), sampleWinner(winner, entity), style);
+    } else {
+      await GW.busy(btn, async () => {
+        await stage.spin(names, winner, style.spin_seconds);
+        RouletteRender.reveal($('pResult'), sampleWinner(winner, entity), style);
+      });
+    }
   } catch (e) { showToast(e.message, 'error'); }
   busy = false;
 }
@@ -199,7 +260,7 @@ async function init() {
   $('initError').hidden = true;
   try {
     const cfg = await j(api);
-    style = cfg.style;
+    style = cfg.style; choices = cfg.winner_field_choices || [];
   } catch (e) {
     $('initErrorText').textContent = 'No se pudo cargar la apariencia (' + e.message + '). Revisa la conexión e inténtalo de nuevo.';
     $('initError').hidden = false;
@@ -211,13 +272,16 @@ async function init() {
   ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach((id) => { $(id).value = style[id]; });
   $('wheel_style').value = style.wheel_style || 'circular';
   $('spin_seconds').value = style.spin_seconds;
-  renderPalette(); paintPreview();
+  $('spin_mode').value = style.spin_mode || 'fixed'; paintSpinMode();
+  renderPalette(); renderWinnerFields(); renderTopList(); paintPreview();
   if (!init.bound) {
     init.bound = true;
     $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
     ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach((id) => $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }));
     $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });
     $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
+    $('spin_mode').addEventListener('change', () => { style.spin_mode = $('spin_mode').value; paintSpinMode(); });
+    $('topFile').addEventListener('change', uploadTop);
     $('addColor').addEventListener('click', () => { if (style.colors.length >= 12) { showToast('Máximo 12 colores', 'info'); return; } style.colors.push(NEW_COLOR); renderPalette(); paintPreview(); pending(); });
     $('bgFile').addEventListener('change', () => upload($('bgFile'), 'background_image')); $('logoFile').addEventListener('change', () => upload($('logoFile'), 'logo'));
     $('bgClear').addEventListener('click', () => { style.background_image = ''; $('bgFile').value = ''; paintPreview(); pending(); });

@@ -64,7 +64,15 @@ DEFAULT_STYLE = {
     "background_color": "#0A0E2E", "background_image": "", "logo": "", "pointer_color": "#FF4D6D",
     "winner_bg": "#D4AF37", "winner_color": "#0A0E2E", "spin_seconds": 6,
     "wheel_style": "circular",   # circular | jackpot (columna vertical estilo casino: para muchos nombres)
+    # Fase 10 (C), todo dentro de style_json (sin migración):
+    "winner_fields": ["entity"],   # datos que salen bajo el nombre del ganador (el nombre siempre sale); ver winner_field_choices()
+    "top_images": [],              # logos/banners arriba de la pantalla (hasta MAX_TOP_IMAGES), ruta "<cliente>/<archivo>" como el logo
+    "spin_mode": "fixed",          # fixed = dura `spin_seconds` · manual = giro libre: un clic en «Girar» lo inicia y otro en «Detener» lo frena
 }
+MAX_TOP_IMAGES = 4
+MAX_WINNER_FIELDS = 8
+SPIN_MODES = ("fixed", "manual")
+FIXED_WINNER_FIELDS = (("entity", "Empresa"), ("email", "Correo"), ("role", "Cargo"), ("opt_1", "Tipo de asistente"))     # la ciudad y demás datos propios del evento salen de sus campos opcionales con nombre
 DEFAULT_BEHAVIOR = {"mode": "single_fixed", "winners": [], "count": 1, "batch_size": 1,
                     "filter": {"conditions": []}, "exclude_previous_winners": True, "all_reset_at": None}
 
@@ -112,6 +120,7 @@ def candidates(db: Session, event: Event) -> list:
         a = att.get(u.id)
         out.append({
             "id": u.id, "name": _full_name(u), "entity": u.entity or "", "role": u.role or "", "opt_1": u.opt_1 or "",
+            "email": u.email or "",
             "extras": u.get_extras(), "categories": a.get_categories() if a else [],
             "registered_at": first_log.get(u.id), "status": "registrado" if u.id in first_log else "no_registrado",
         })
@@ -163,8 +172,33 @@ def _previous_winner_ids(db: Session, event: Event, since: Optional[datetime] = 
     return ids
 
 
-def _person_out(p: dict, position: int) -> dict:
-    return {"position": position, "id": p["id"], "name": p["name"], "entity": p["entity"]}
+def winner_field_choices(event: Event) -> list:
+    """Datos que el coordinador puede mostrar bajo el nombre del ganador: los fijos + cada campo opcional con nombre de ESTE evento (ahí vive la ciudad, etc.). El nombre siempre sale."""
+    out = [{"key": k, "label": label} for k, label in FIXED_WINNER_FIELDS]
+    for key, label in sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1])):
+        out.append({"key": f"extra:{key}", "label": label})
+    return out
+
+
+def _winner_fields(p: dict, keys: list, choices: list) -> list:
+    """[{key, label, value}] de lo que el coordinador marcó y la persona sí tiene (lo vacío no se muestra)."""
+    labels = {c["key"]: c["label"] for c in choices}
+    rows = []
+    for key in keys or []:
+        if key not in labels:
+            continue          # el campo ya no existe en el evento
+        value = p["extras"].get(key[6:], "") if key.startswith("extra:") else p.get(key, "")
+        value = str(value or "").strip()
+        if value:
+            rows.append({"key": key, "label": labels[key], "value": value})
+    return rows
+
+
+def _person_out(p: dict, position: int, keys: Optional[list] = None, choices: Optional[list] = None) -> dict:
+    out = {"position": position, "id": p["id"], "name": p["name"], "entity": p["entity"]}
+    if keys is not None:
+        out["fields"] = _winner_fields(p, keys, choices or [])          # Fase 10 (C): lo que el coordinador eligió mostrar
+    return out
 
 
 def _serialize_draw(d: RouletteDraw, staff_names: dict) -> dict:
@@ -186,7 +220,7 @@ def get_roulette(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     cfg = _get_config(db, event)
     people = candidates(db, event)
     return {
-        "behavior": _behavior(cfg), "style": _style(cfg), "fonts": ALLOWED_FONTS, "modes": MODES,
+        "behavior": _behavior(cfg), "style": _style(cfg), "fonts": ALLOWED_FONTS, "modes": MODES, "winner_field_choices": winner_field_choices(event),
         "has_display_link": bool(cfg.display_token), "candidates_total": len(people), "event_status": event.status, "authorized": bool(_authorization(cfg)),
     }
 
@@ -313,6 +347,27 @@ def save_style(event_id: int, data: dict, db: Session = Depends(get_db), staff: 
             if value and not value.startswith(event.tenant_id + "/"):
                 raise HTTPException(status_code=400, detail="Imagen no válida")
             style[key] = value
+    if "top_images" in data:          # logos/banners de arriba de la pantalla
+        imgs = data["top_images"]
+        if not isinstance(imgs, list) or len(imgs) > MAX_TOP_IMAGES:
+            raise HTTPException(status_code=400, detail=f"Puedes poner hasta {MAX_TOP_IMAGES} logos o banners arriba")
+        clean = []
+        for value in imgs:
+            value = str(value or "")
+            if not value.startswith(event.tenant_id + "/") or os.path.splitext(value)[1].lower() not in ALLOWED_IMAGE_EXT or ".." in value:
+                raise HTTPException(status_code=400, detail="Imagen no válida")
+            clean.append(value)
+        style["top_images"] = list(dict.fromkeys(clean))
+    if "winner_fields" in data:       # qué datos salen bajo el nombre (el nombre siempre sale)
+        keys = data["winner_fields"]
+        allowed = {c["key"] for c in winner_field_choices(event)}
+        if not isinstance(keys, list) or len(keys) > MAX_WINNER_FIELDS or not all(isinstance(k, str) and k in allowed for k in keys):
+            raise HTTPException(status_code=400, detail="Uno de los datos elegidos para mostrar no está disponible en este evento")
+        style["winner_fields"] = list(dict.fromkeys(keys))
+    if "spin_mode" in data:
+        if data["spin_mode"] not in SPIN_MODES:
+            raise HTTPException(status_code=400, detail="Forma de girar no válida (duración fija o giro libre)")
+        style["spin_mode"] = data["spin_mode"]
     cfg.style_json = json.dumps(style)
     db.commit()
     return style
@@ -397,7 +452,8 @@ def _run_draw(db: Session, event: Event, cfg: RouletteConfig, label: str, create
         chosen = _RNG.sample(pool, min(b["count"], len(pool)))
         is_random = True
 
-    winners = [_person_out(p, i) for i, p in enumerate(chosen, start=1)]
+    keys, choices = _style(cfg).get("winner_fields") or [], winner_field_choices(event)
+    winners = [_person_out(p, i, keys, choices) for i, p in enumerate(chosen, start=1)]
     if dry_run:
         return {"mode": mode, "is_random": is_random}
     draw = RouletteDraw(
@@ -532,11 +588,16 @@ def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
 
 
 # ------------------------------------------------------------------ pantalla pública (proyector)
-PUBLIC_WINNER_KEYS = ("position", "name", "entity")          # B15: a la pantalla pública NO sale la cédula del ganador (la pantalla solo pinta posición, nombre y entidad)
+PUBLIC_WINNER_KEYS = ("position", "name", "entity", "fields")          # B15: a la pantalla pública NO sale la cédula del ganador (la pantalla solo pinta posición, nombre y lo que el coordinador eligió mostrar: «fields», sin la clave interna)
 
 
 def public_winners(winners: list) -> list:
-    return [{k: w[k] for k in PUBLIC_WINNER_KEYS if k in w} for w in winners]
+    out = [{k: w[k] for k in PUBLIC_WINNER_KEYS if k in w} for w in winners]
+    for w in out:
+        if "fields" in w:
+            w.pop("entity", None)          # con «fields» manda la elección del coordinador: si desmarcó la empresa, ni siquiera viaja a la pantalla pública
+            w["fields"] = [{"label": f.get("label", ""), "value": f.get("value", ""), "entity": f.get("key") == "entity"} for f in w["fields"]]
+    return out
 
 
 def _cfg_by_token(db: Session, token: str) -> RouletteConfig:
