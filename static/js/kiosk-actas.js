@@ -44,17 +44,20 @@
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-open="${a.id}">${icon('form')} ${(isClient && !a.client_signed) || (canWrite && !a.coordinator_signed) ? 'Abrir y firmar' : 'Abrir'}</button>
           <a class="gw-btn gw-btn--secondary gw-btn--sm" href="${base}/${a.id}/print" target="_blank" rel="noopener">${icon('download')} Imprimir</a>
           <a class="gw-btn gw-btn--secondary gw-btn--sm" href="${base}/${a.id}/print?download=1">${icon('download')} Descargar</a>
+          ${a.status === 'firmada' && a.pdf ? `<a class="gw-btn gw-btn--primary gw-btn--sm" href="${base}/${a.id}/pdf">${icon('download')} Descargar PDF</a>` : ''}
+          ${a.status === 'firmada' && !a.pdf && canWrite ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-pdf="${a.id}">Generar PDF</button>` : ''}
         </div>
       </article>`).join(''), false);
   }
 
   function sigBlock(el, label, side, act) {
-    const signed = act[side + '_signed'], mine = (side === 'client') === isClient && (isClient || canWrite);
+    const signed = act[side + '_signed'], mine = isClient ? side === 'client' : canWrite;          // el coordinador firma la suya y, en su tableta, la del cliente sin cuenta
     let html = '<h3 class="gw-card__title">' + label + '</h3>';
     if (signed) {
       html += '<img class="gw-acta-img" alt="Firma del ' + label.toLowerCase() + '" src="' + base + '/' + act.id + '/signature/' + side + '?t=' + encodeURIComponent(act[side + '_signed_at'] || '') + '">' +
         '<p class="gw-acta-sig__name">' + esc(act[side + '_name'] || '') + ' · ' + esc(when(act[side + '_signed_at'])) + '</p>';
     } else if (mine) {
+      if (side === 'client' && !isClient) html += '<div class="gw-field"><label class="gw-label" for="signerName">Nombre de quien firma por el cliente *</label><input class="gw-input" type="text" id="signerName" maxlength="160" autocomplete="off"></div>';
       html += '<canvas class="gw-acta-pad" data-pad="' + side + '" role="img" aria-label="Espacio para dibujar tu firma con el dedo o el mouse"></canvas>' +
         '<div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-pad-clear>Borrar y repetir</button>' +
         '<button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-pad-sign="' + side + '">Firmar</button></div>' +
@@ -93,6 +96,8 @@
     $('actDetailActions').innerHTML =
       (canWrite && a.status !== 'firmada' ? '<button type="button" class="gw-btn gw-btn--secondary" data-edit="' + a.id + '">Editar el texto</button>' : '') +
       (canWrite && a.status === 'borrador' ? '<button type="button" class="gw-btn gw-btn--danger-outline" data-del="' + a.id + '">' + icon('trash') + ' Borrar el acta</button>' : '') +
+      (a.status === 'firmada' && a.pdf ? '<a class="gw-btn gw-btn--primary" href="' + base + '/' + a.id + '/pdf">' + icon('download') + ' Descargar PDF</a>' : '') +
+      (a.status === 'firmada' && !a.pdf && canWrite ? '<button type="button" class="gw-btn gw-btn--secondary" data-pdf="' + a.id + '">Generar el PDF</button>' : '') +
       '<button type="button" class="gw-btn gw-btn--secondary" data-close>Cerrar</button>';
     document.querySelectorAll('[data-pad]').forEach(initPad);
     $('actDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -129,6 +134,12 @@
     const t = e.target;
     if (!(t instanceof Element)) return;
     const open = t.closest('[data-open]'), edit = t.closest('[data-edit]'), del = t.closest('[data-del]'), clear = t.closest('[data-pad-clear]'), sign = t.closest('[data-pad-sign]');
+    const pdf = t.closest('[data-pdf]');
+    if (pdf) {
+      busy(pdf, () => api(base + '/' + pdf.dataset.pdf + '/pdf/regenerate', { method: 'POST' }))
+        .then(() => { showToast('PDF listo', 'success'); loadList(); if (openId) openAct(openId); }).catch((err) => showToast(err.message, 'error'));
+      return;
+    }
     if (t.closest('[data-retry]')) { loadList(); return; }
     if (open) { openAct(open.dataset.open); return; }
     if (t.closest('[data-close]')) { closeDetail(); return; }
@@ -147,9 +158,10 @@
     if (clear) { const c = clear.closest('.gw-acta-sig').querySelector('canvas'); if (c && c._clear) c._clear(); return; }
     if (sign) {
       const canvas = sign.closest('.gw-acta-sig').querySelector('canvas');
+      if (sign.dataset.padSign === 'client' && !isClient && $('signerName') && $('signerName').value.trim().length < 3) { showToast('Escribe el nombre de quien firma por el cliente', 'error'); $('signerName').focus(); return; }
       if (!drawn) { showToast('Dibuja tu firma en el recuadro antes de firmar', 'error'); return; }
       if (!(await showConfirm('Al firmar confirmas que el texto del acta es correcto. ¿Firmar ahora?', { confirmLabel: 'Sí, firmar' }))) return;
-      busy(sign, () => api(base + '/' + openId + '/sign', json('POST', { signature: canvas.toDataURL('image/png') })))
+      busy(sign, () => api(base + '/' + openId + '/sign', json('POST', { signature: canvas.toDataURL('image/png'), side: sign.dataset.padSign, signer_name: ($('signerName') || {}).value || '' })))
         .then(() => { showToast('Firma guardada', 'success'); loadList(); openAct(openId); })
         .catch((err) => showToast(err.message, 'error'));
     }

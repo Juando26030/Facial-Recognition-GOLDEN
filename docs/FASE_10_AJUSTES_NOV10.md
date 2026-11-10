@@ -43,15 +43,15 @@ Cada bloque (A a E) agrega su sección al final. No reescribas las de otros.
 **Reglas.** Si ya hay una firma y se cambia el texto, el sistema avisa y, si se confirma, quita la firma (hay que firmar de nuevo). Un acta firmada no se edita ni se borra (si hace falta corregir, se crea otra). Un borrador sin firmas se puede borrar. La firma se guarda como imagen PNG por `app/storage.py` (carpeta `<cliente>/event_acts/<evento>/`); en la base queda el nombre de quien firmó, la fecha y la huella SHA-256 del texto firmado.
 
 **Decisiones.**
-- No hay biblioteca de PDF instalada: el documento es HTML imprimible autónomo (las firmas van dentro). Si se quiere PDF directo hay que agregar una biblioteca.
-- La firma del cliente se hace con su cuenta (no hay enlace público aparte): evita abrir una puerta pública nueva. Si el cliente está presente sin cuenta, hoy no puede firmar (ver preguntas).
+- **PDF (decisión de Juan David, 10-nov).** Al quedar las dos firmas, el sistema genera y guarda un PDF con todo (título, evento, fecha, texto, firmas con nombre y fecha, huella) por `app/storage.py` (`<cliente>/event_acts/<evento>/<acta>_acta.pdf`), con reportlab (fijado en `requirements.txt`, import perezoso). Cada acta firmada tiene el botón «Descargar PDF». Si la generación falla, el acta queda guardada igual y aparece el botón «Generar PDF» para reintentar (coordinador). Si se cambia el texto de un acta con firma, las firmas y el PDF se quitan. El HTML imprimible sigue disponible.
+- **Cliente sin cuenta (decisión de Juan David).** Firma en la tableta del coordinador, sin enlace público: el coordinador abre el acta, escribe el nombre de quien firma por el cliente y le pasa la tableta para que dibuje su firma. El cliente con cuenta sigue firmando la suya con su sesión.
 - La firma es siempre negra sobre papel blanco, también en modo oscuro, para que se vea igual en el documento.
 - Los exportes de evento entre entornos (`event_transfer`) todavía no incluyen las actas ni sus firmas.
-- Migración `0126_event_acts` (tabla `event_acts`). Al integrar, su `down_revision` debe apuntar a la última migración de los bloques A/B (hoy apunta a `0121_infra_costs`).
+- Migración `0126_event_acts` (tabla `event_acts`, con `pdf_key` y `pdf_at`). Al integrar, su `down_revision` debe apuntar a la última migración de los bloques A/B (hoy apunta a `0121_infra_costs`).
 
 **Archivos.** `app/event_acts.py`, `app/routers/event_acts.py`, modelo `EventAct` en `app/models.py`, `templates/kiosk_actas.html`, `static/js/kiosk-actas.js`, `static/css/gw-actas.css`, `tests/test_event_acts.py`, `tests/test_pledge_prefill.py`.
 
-**No probado aquí.** Los endpoints con base de datos (las pruebas están escritas en `tests/test_event_acts.py`, para correr en Cloud Shell) y la firma en pantalla táctil real; sí se vio en Chromium con respuestas simuladas, en claro/oscuro y a 1200 y 390 px.
+**No probado aquí.** Que el PDF se vea bien en un lector real (sí se generó y se comprobó que empieza como PDF); los endpoints con base de datos (las pruebas están escritas en `tests/test_event_acts.py`, para correr en Cloud Shell) y la firma en pantalla táctil real; sí se vio en Chromium con respuestas simuladas, en claro/oscuro y a 1200 y 390 px.
 
 ## Bloque E · Historial de cambios por persona y descarga del instalador local (rama `feat/historial-instalador`, migración 0127)
 

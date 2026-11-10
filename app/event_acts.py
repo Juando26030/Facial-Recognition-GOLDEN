@@ -124,3 +124,55 @@ body{{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;padding:24px;li
 <div class="sigs">{_sig_box('Coordinador', act.coordinator_name, act.coordinator_signed_at, coordinator_png)}{_sig_box('Cliente', act.client_name, act.client_signed_at, client_png)}</div>
 <p class="foot">{('Huella del texto firmado: ' + html.escape(act.content_hash)) if act.content_hash else ''}</p>
 </div></body></html>"""
+
+
+def pdf_key(tenant_id: str, event_id: int, act_id: int) -> str:
+    from app.storage import key_of
+    return key_of(tenant_id, "event_acts", event_id, f"{act_id}_acta.pdf")
+
+
+def render_pdf(event, act, coordinator_png: Optional[bytes], client_png: Optional[bytes], company: str = "") -> bytes:
+    """El acta completa en PDF (título, evento, fecha, texto, las dos firmas con nombre y fecha, huella). reportlab se importa aquí (perezoso): sin la librería lanza ImportError y quien llama
+    deja el acta guardada igual (se puede regenerar)."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image as RLImage, KeepTogether, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    esc = html.escape
+    base = getSampleStyleSheet()
+    body = ParagraphStyle("body", parent=base["BodyText"], fontName="Helvetica", fontSize=11, leading=15, alignment=TA_LEFT)
+    small = ParagraphStyle("small", parent=body, fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
+    title = ParagraphStyle("title", parent=base["Title"], fontName="Helvetica-Bold", fontSize=18, alignment=TA_LEFT)
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title=act.title, author=company or "GoldenWeb")
+    flow = [Paragraph(esc(act.title), title), Paragraph("Acta de novedades" + (" - " + esc(company) if company else ""), small), Spacer(1, 4 * mm),
+            Paragraph(f"<b>Evento:</b> {esc(event.name)} &nbsp; <b>Código:</b> {esc(str(event.event_code or ''))}<br/><b>Fecha del acta:</b> {esc(_fmt(act.created_at))} &nbsp; <b>Estado:</b> {esc(STATUS_LABEL[status_of(act)])}", body),
+            Spacer(1, 6 * mm)]
+    if act.format == "list":
+        flow.append(ListFlowable([ListItem(Paragraph(esc(line), body)) for line in act.body.split("\n") if line.strip()], bulletType="bullet", leftIndent=14))
+    else:
+        for par in act.body.split("\n\n"):
+            if par.strip():
+                flow += [Paragraph(esc(par).replace("\n", "<br/>"), body), Spacer(1, 2 * mm)]
+    flow.append(Spacer(1, 14 * mm))
+
+    def cell(label, name, at, png):
+        parts = []
+        if png:
+            parts.append(RLImage(io.BytesIO(png), width=60 * mm, height=24 * mm, kind="proportional"))
+        else:
+            parts.append(Paragraph("<i>Pendiente de firma</i>", small))
+        parts += [Paragraph(f"<b>{label}</b>", body)]
+        if png:
+            parts += [Paragraph(esc(name or ""), small), Paragraph(esc(_fmt(at)), small)]
+        return parts
+    sigs = Table([[cell("Coordinador", act.coordinator_name, act.coordinator_signed_at, coordinator_png), cell("Cliente", act.client_name, act.client_signed_at, client_png)]], colWidths=[85 * mm, 85 * mm])
+    sigs.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LINEABOVE", (0, 0), (-1, 0), 0, colors.white)]))
+    flow.append(KeepTogether([sigs]))
+    if act.content_hash:
+        flow += [Spacer(1, 8 * mm), Paragraph("Huella del texto firmado (SHA-256): " + esc(act.content_hash), small)]
+    doc.build(flow)
+    return out.getvalue()

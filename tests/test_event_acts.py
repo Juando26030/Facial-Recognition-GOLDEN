@@ -62,12 +62,28 @@ def test_printable_html_escapes_and_embeds_signatures():
     assert "<script>" not in out and "&lt;script&gt;" in out and "&lt;b&gt;T" in out and "data:image/png;base64," in out and "Pendiente de firma" in out and out.count("<li>") == 2
 
 
+def test_pdf_is_generated_when_reportlab_is_available():
+    pytest.importorskip("reportlab")
+    act = SimpleNamespace(title="Acta ñandú <b>", format="list", body="uno áé\ndos & tres", created_at=None, coordinator_name="Ana", coordinator_signed_at=None, coordinator_sig_key="k",
+                          client_name="Cés", client_signed_at=None, client_sig_key="k", content_hash="ab" * 32)
+    png = event_acts.decode_signature(_png())
+    pdf = event_acts.render_pdf(SimpleNamespace(name="Ev <1>", event_code="E1"), act, png, png, "ACME")
+    assert pdf.startswith(b"%PDF-") and len(pdf) > 1500
+
+
+def test_pdf_failure_leaves_the_act_saved_and_reportlab_is_pinned(monkeypatch):
+    src = (ROOT / "app" / "routers" / "event_acts.py").read_text(encoding="utf-8")
+    body = src[src.index("def make_pdf"):src.index("def _delete_signatures")]
+    assert "except Exception" in body and "return False" in body and "from reportlab" not in (ROOT / "app" / "event_acts.py").read_text(encoding="utf-8").split("def render_pdf")[0]          # import perezoso
+    assert re.search(r"^reportlab==\d+\.\d+\.\d+$", (ROOT / "requirements.txt").read_text(encoding="utf-8"), re.M)
+
+
 # ------------------------------------------------------------------ texto (código fuente)
 def test_routes_are_sync_and_guard_archived_base():
     src = (ROOT / "app" / "routers" / "event_acts.py").read_text(encoding="utf-8")
     assert "async def" not in src and "require_data_open" in src and "get_event_for_staff" in src
     assert 'staff.role == "cliente"' in src          # el cliente firma solo la suya
-    assert "print(" not in src and "log." not in src and "logging" not in src
+    assert "print(" not in src and "act.body" not in src.split("def make_pdf")[1].split("def _delete_signatures")[0].split("log.warning")[1]          # el log del PDF no lleva el texto del acta
 
 
 def test_migration_0126_is_linked_and_page_has_no_inline_js():
@@ -118,6 +134,9 @@ def test_full_flow_two_signatures_lock_the_text(client, acta_env):
     assert client.get(base).json()["is_client"] is True
     r = client.post(f"{base}/{aid}/sign", json={"signature": _png()})
     assert r.status_code == 200 and r.json()["status"] == "firmada" and r.json()["client_name"] == "Cesar Cliente"
+    if r.json()["pdf"]:          # con reportlab instalado el PDF se guarda solo al quedar firmada
+        pdf = client.get(f"{base}/{aid}/pdf")
+        assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF-")
     assert client.get(f"{base}/{aid}/signature/client").headers["content-type"] == "image/png"
     assert "Cesar Cliente" in client.get(f"{base}/{aid}/print").text
     # firmada: ni se edita ni se borra
@@ -136,3 +155,17 @@ def test_digitador_has_no_access_and_unsigned_draft_can_be_deleted(client, acta_
     assert client.delete(f"{base}/{aid}").status_code == 200
     assert client.get(f"{base}/{aid}").status_code == 404
     assert client.get(f"/kiosk/{ev.id}/actas").status_code == 200
+
+
+def test_coordinator_collects_client_signature_on_his_tablet_and_pdf_can_be_regenerated(client, acta_env):
+    ev, coord, cli, dig = acta_env
+    base = f"/api/events/{ev.id}/acts"
+    _as(client, coord)
+    aid = client.post(base, json={"title": "Sin cuenta", "body": "texto"}).json()["id"]
+    assert client.post(f"{base}/{aid}/sign", json={"signature": _png(), "side": "client"}).status_code == 422          # falta el nombre de quien firma
+    assert client.post(f"{base}/{aid}/sign", json={"signature": _png(), "side": "client", "signer_name": "Luis Pérez"}).json()["client_name"] == "Luis Pérez"
+    r = client.post(f"{base}/{aid}/sign", json={"signature": _png()})
+    assert r.json()["status"] == "firmada"
+    assert client.get(f"{base}/{aid}/pdf").status_code in (200, 404)          # 404 solo si reportlab no está
+    if r.json()["pdf"]:
+        assert client.post(f"{base}/{aid}/pdf/regenerate").status_code == 200

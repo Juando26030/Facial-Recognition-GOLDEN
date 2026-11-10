@@ -31,6 +31,8 @@ def upgrade():
         sa.Column("client_signed_by_id", sa.Integer(), sa.ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("client_signed_at", sa.DateTime(), nullable=True),
         sa.Column("content_hash", sa.String(64), nullable=True),
+        sa.Column("pdf_key", sa.String(300), nullable=True),
+        sa.Column("pdf_at", sa.DateTime(), nullable=True),
         sa.Column("created_by_id", sa.Integer(), sa.ForeignKey("staff_users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),

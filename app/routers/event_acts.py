@@ -5,10 +5,12 @@
   GET    /api/events/{id}/acts/{aid}           detalle
   PUT    /api/events/{id}/acts/{aid}           cambia el texto; con firmas puestas exige {"confirm_reset": true} (las quita); firmada = no se cambia
   DELETE /api/events/{id}/acts/{aid}           borra un acta SIN firmas
-  POST   /api/events/{id}/acts/{aid}/sign      {"signature": "data:image/png;base64,…"}: firma quien llama — el cliente la suya, el coordinador la suya
+  POST   /api/events/{id}/acts/{aid}/sign      {"signature": "data:image/png;base64,…"[, "side": "client", "signer_name": …]}: el cliente firma la suya; el coordinador la suya o, en su tableta, la del cliente sin cuenta
+  GET    /api/events/{id}/acts/{aid}/pdf       PDF guardado al quedar firmada;  POST …/pdf/regenerate  lo vuelve a generar (coordinador)
   GET    /api/events/{id}/acts/{aid}/signature/{coordinator|client}   imagen PNG
   GET    /api/events/{id}/acts/{aid}/print     documento imprimible (HTML); ?download=1 lo descarga
 Nada de datos personales en logs: la auditoría guarda ids y nunca el texto del acta."""
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +24,7 @@ from app.models import Event, EventAct, StaffUser
 from app.storage import get_storage
 from app.timeutil import utcnow
 
+log = logging.getLogger("golden.event_acts")
 router = APIRouter()
 NO_STORE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
 WRITERS = {"coordinador", "admin", "super_admin"}          # la comercial «pura» ve el acta pero no la escribe ni la firma por el cliente (decisión: es del equipo de campo)
@@ -64,6 +67,7 @@ def _out(act: EventAct, full: bool = True) -> dict:
            "created_at": _iso(act.created_at), "updated_at": _iso(act.updated_at)}
     if full:
         out["body"] = act.body
+    out["pdf"] = bool(act.pdf_key)
     return out
 
 
@@ -71,6 +75,22 @@ def _event(event_id: int, db: Session, staff: StaffUser) -> Event:
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     return event
+
+
+def _read_png(key):
+    return get_storage().get(key) if key and get_storage().exists(key) else None
+
+
+def make_pdf(event: Event, act: EventAct) -> bool:
+    """Genera y guarda el PDF del acta firmada. Nunca lanza: si falla (sin reportlab, error al dibujar o al guardar) el acta queda como está y se puede regenerar con el botón. El log no lleva datos del acta."""
+    try:
+        data = event_acts.render_pdf(event, act, _read_png(act.coordinator_sig_key), _read_png(act.client_sig_key), company=event.tenant.name if event.tenant else "")
+        act.pdf_key = get_storage().put(event_acts.pdf_key(event.tenant_id, event.id, act.id), data)
+        act.pdf_at = utcnow()
+        return True
+    except Exception as exc:          # noqa: BLE001 - cualquier falla deja el acta guardada
+        log.warning("acta %s: no se pudo generar el PDF (%s)", act.id, type(exc).__name__)
+        return False
 
 
 def _delete_signatures(act: EventAct) -> None:
@@ -83,6 +103,7 @@ def _delete_signatures(act: EventAct) -> None:
     act.coordinator_signed_by_id = act.client_signed_by_id = None
     act.coordinator_signed_at = act.client_signed_at = None
     act.content_hash = None
+    act.pdf_key = act.pdf_at = None
 
 
 @router.get("/events/{event_id}/acts")
@@ -151,10 +172,17 @@ def delete_act(event_id: int, act_id: int, db: Session = Depends(get_db), staff:
 
 @router.post("/events/{event_id}/acts/{act_id}/sign")
 def sign_act(event_id: int, act_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_viewer)):
-    """Firma quien llama, nunca otra persona: el rol «cliente» pone la firma del cliente; el coordinador / admin / super_admin, la del coordinador."""
+    """El rol «cliente» firma la suya (con su nombre de cuenta). El coordinador / admin / super_admin firma la del coordinador y, si el cliente no tiene cuenta, puede recoger la firma del cliente en su
+    tableta (`side: "client"` + `signer_name`, el nombre de quien firma). Al quedar las dos firmas se genera y guarda el PDF; si falla, el acta queda guardada y se regenera."""
     event = _event(event_id, db, staff)
-    side = "client" if staff.role == "cliente" else ("coordinator" if _can_write(staff) else None)
-    if side is None:
+    if staff.role == "cliente":
+        side, signer = "client", (staff.full_name or staff.username)
+    elif _can_write(staff):
+        side = "client" if data.get("side") == "client" else "coordinator"
+        signer = " ".join(str(data.get("signer_name") or "").split()) if side == "client" else (staff.full_name or staff.username)
+        if side == "client" and len(signer) < 3:
+            raise HTTPException(status_code=422, detail="Escribe el nombre de quien firma por el cliente")
+    else:
         raise HTTPException(status_code=403, detail="Tu rol no firma el acta")
     try:
         blob = event_acts.decode_signature(data.get("signature"))
@@ -166,12 +194,38 @@ def sign_act(event_id: int, act_id: int, data: dict, db: Session = Depends(get_d
     key = event_acts.sig_key(event.tenant_id, event.id, act.id, side, uuid.uuid4().hex)
     get_storage().put(key, blob)
     setattr(act, f"{side}_sig_key", key)
-    setattr(act, f"{side}_name", (staff.full_name or staff.username)[:160])
+    setattr(act, f"{side}_name", signer[:160])
     setattr(act, f"{side}_signed_by_id", staff.id)
     setattr(act, f"{side}_signed_at", utcnow())
     act.content_hash = event_acts.content_hash(act.title, act.format, act.body)
     act.updated_at = utcnow()
+    db.flush()
+    if event_acts.status_of(act) == "firmada":
+        make_pdf(event, act)
     audit_actions.record(db, staff, "sign", "event_act", act.id, None, f"evento {event.id}, firma {side}")
+    db.commit()
+    return JSONResponse(_out(act), headers=NO_STORE)
+
+
+@router.get("/events/{event_id}/acts/{act_id}/pdf")
+def download_pdf(event_id: int, act_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_viewer)):
+    event = _event(event_id, db, staff)
+    act = _act(db, event, act_id)
+    if not act.pdf_key or not get_storage().exists(act.pdf_key):
+        raise HTTPException(status_code=404, detail="El PDF de esta acta todavía no está listo")
+    return get_storage().response(act.pdf_key, filename=f"acta_{act.id}.pdf", media_type="application/pdf", headers=NO_STORE)
+
+
+@router.post("/events/{event_id}/acts/{act_id}/pdf/regenerate")
+def regenerate_pdf(event_id: int, act_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_writer)):
+    event = _event(event_id, db, staff)
+    act = _act(db, event, act_id, lock=True)
+    if event_acts.status_of(act) != "firmada":
+        raise HTTPException(status_code=409, detail="El PDF se genera cuando las dos partes han firmado")
+    if not make_pdf(event, act):
+        db.rollback()
+        raise HTTPException(status_code=503, detail="No se pudo generar el PDF ahora. El acta sigue guardada; inténtalo de nuevo en un momento.")
+    audit_actions.record(db, staff, "pdf", "event_act", act.id, None, f"evento {event.id}")
     db.commit()
     return JSONResponse(_out(act), headers=NO_STORE)
 
@@ -192,10 +246,7 @@ def print_act(event_id: int, act_id: int, download: int = 0, db: Session = Depen
     event = _event(event_id, db, staff)
     act = _act(db, event, act_id)
 
-    def read(attr):
-        key = getattr(act, attr)
-        return get_storage().get(key) if key and get_storage().exists(key) else None
-    html_doc = event_acts.render_html(event, act, read("coordinator_sig_key"), read("client_sig_key"), company=event.tenant.name if event.tenant else "")
+    html_doc = event_acts.render_html(event, act, _read_png(act.coordinator_sig_key), _read_png(act.client_sig_key), company=event.tenant.name if event.tenant else "")
     headers = dict(NO_STORE)
     if download:
         headers["Content-Disposition"] = f'attachment; filename="acta_{act.id}.html"'

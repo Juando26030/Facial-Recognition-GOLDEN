@@ -866,6 +866,8 @@ class EventAct(Base):
     client_signed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
     client_signed_at = Column(DateTime, nullable=True)
     content_hash = Column(String(64), nullable=True)
+    pdf_key = Column(String(300), nullable=True)          # PDF generado al quedar firmada (reportlab); NULL = aún no / falló: se puede regenerar
+    pdf_at = Column(DateTime, nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
     created_at = Column(DateTime, nullable=False, default=utcnow)
     updated_at = Column(DateTime, nullable=False, default=utcnow)
