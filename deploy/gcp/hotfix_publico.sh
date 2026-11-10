@@ -10,9 +10,10 @@ cd "$(dirname "$0")/../.."
 PROJECT_ID="${1:?Uso: $0 <ID-del-proyecto>}"
 REGION="${REGION:-us-east4}"
 SERVICE="${SERVICE:-golden-publico}"
-SHA="$(git rev-parse HEAD)"
+SHA="${COMMIT:-$(git rev-parse HEAD 2>/dev/null)}"          # sin .git (código bajado como ZIP): COMMIT=6f16314... bash deploy/gcp/hotfix_publico.sh <proyecto>
+[ -n "$SHA" ] || { echo "ERROR: sin .git hace falta COMMIT=<hash del commit>" >&2; exit 1; }
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/golden/app:${SHA}"
-if [ -n "$(git status --porcelain)" ]; then echo "ERROR: hay cambios sin guardar; se despliega solo lo que está en un commit." >&2; exit 1; fi
+if [ -d .git ] && [ -n "$(git status --porcelain)" ]; then echo "ERROR: hay cambios sin guardar; se despliega solo lo que está en un commit." >&2; exit 1; fi
 echo "== 1. Revisión actual de $SERVICE (para volver atrás)"
 gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.latestReadyRevisionName)' || exit 1
 echo "== 2. Imagen $IMAGE (la primera vez tarda 20-60 min por dlib; si se corta, repetir el mismo comando)"
