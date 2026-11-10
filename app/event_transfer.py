@@ -86,13 +86,14 @@ TABLES = [
     {"name": "inventory_deliveries", "kind": "event", "remap": {"item_id": "inventory_items"}, "staff": ("delivered_by_staff_id",), "user": "user_id"},
     {"name": "print_logs", "kind": "event", "staff": ("printed_by_staff_id",), "user": "user_id"},
     {"name": "person_changes", "kind": "event", "staff": ("staff_user_id",), "user": "user_id"},
+    {"name": "person_change_log", "kind": "event", "staff": ("changed_by_id",), "user": "user_id"},
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
     {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id", "archived_by_id")},
     {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id")},
 ]
 SPEC = {t["name"]: t for t in TABLES}
-PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "audit_consent_logs", "web_acceptances")
+PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "person_change_log", "audit_consent_logs", "web_acceptances")
 STAFF_EVENT_COLUMNS = ("coordinator_staff_id", "commercial_staff_id", "created_by_id", "billed_by_id", "final_db_uploaded_by_id")
 TABLE_NAMES = tuple(t["name"] for t in TABLES)
 

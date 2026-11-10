@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import testperson
+from app import person_history, testperson
 from app.models import User, AccessLog, EventAttendee, Event, EventFieldConfig, StaffUser
 
 ORIGIN_LABELS = {"base": "Base (Excel)", "manual": "Creado nuevo", "autoregistro": "Autoregistro"}      # B1 (0073); sin dato = «Desconocido»
@@ -240,6 +240,22 @@ class ReportManager:
             last_data_row = header_row + len(df)
             ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_data_row}"
             ws.freeze_panes = f"A{header_row + 1}"
+
+            # Fase 10 E: segunda hoja con los datos que se modificaron después del registro (campo, anterior, nuevo, quién y cuándo). Solo si hubo cambios: sin ellos el libro queda como siempre.
+            changes = person_history.event_rows(db, event) if event else []
+            if changes:
+                hist_cols = ["Cédula", "Nombre", "Campo", "Valor anterior", "Valor nuevo", "Modificado por", "Fecha y hora", "Origen"]
+                hist = pd.DataFrame([[c["cedula"], c["name"], c["label"], c["old"], c["new"], c["by"], c["at_local"], c["source_label"]] for c in changes], columns=hist_cols)
+                safe_frame(hist).to_excel(writer, index=False, sheet_name="Historial de cambios")
+                hws = writer.sheets["Historial de cambios"]
+                for col_idx, header in enumerate(hist_cols, start=1):
+                    cell = hws.cell(row=1, column=col_idx)
+                    cell.fill = HEADER_FILL
+                    cell.font = HEADER_FONT
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    hws.column_dimensions[get_column_letter(col_idx)].width = min(max([len(header)] + [len(str(v)) for v in hist[header]]) + 3, 45)
+                hws.auto_filter.ref = f"A1:{get_column_letter(len(hist_cols))}{len(hist) + 1}"
+                hws.freeze_panes = "A2"
 
         progress("Excel listo", 95, 100, force=True)
         return output_path

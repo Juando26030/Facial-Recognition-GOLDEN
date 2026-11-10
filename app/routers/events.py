@@ -18,7 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
-from app import event_history, event_lease, public_slug
+from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
@@ -992,6 +992,7 @@ def delete_event(
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
     db.query(EventChangeLog).filter(EventChangeLog.event_id == event_id).delete()
+    person_history.delete_for_event(db, event_id)          # historial de datos modificados de las personas del evento
     for _form in db.query(WebForm).filter(WebForm.event_id == event_id).all():
         delete_form_rows(db, _form)
     db.query(RouletteDraw).filter(RouletteDraw.event_id == event_id).delete()

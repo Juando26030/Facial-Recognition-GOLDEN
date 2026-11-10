@@ -412,11 +412,41 @@
         </select>
         <p class="gw-hint">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
+      <details id="editModalHistory" class="gw-form-group">
+        <summary class="gw-form-group__summary">Historial de cambios de esta persona</summary>
+        <div id="editModalHistoryBody" class="gw-form-group__body gw-hint" aria-live="polite">Se carga al abrir.</div>
+      </details>
       <button type="button" id="editModalDelete" class="gw-btn gw-btn--danger gw-btn--block"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-trash"/></svg>Eliminar de este evento</button>
       ` : ''}
       </div>
     `;
     overlay.appendChild(box);
+    {                                                                   // Fase 10 E: historial de datos modificados de la persona (coordinador o superior; se pide solo al desplegar)
+      const det = box.querySelector('#editModalHistory');
+      if (det) {
+        let loaded = false;
+        det.addEventListener('toggle', async () => {
+          if (!det.open || loaded) return;
+          const body = box.querySelector('#editModalHistoryBody');
+          if (window.GW && GW.skeleton) GW.skeleton(body, { kind: 'list', rows: 3, label: 'Cargando el historial…' }); else body.textContent = 'Cargando…';
+          try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/change-history`);
+            if (!res.ok) throw new Error('http ' + res.status);
+            const d = await res.json();
+            loaded = true;
+            body.textContent = '';
+            if (!d.items.length) { body.textContent = 'Esta persona no tiene datos modificados.'; return; }
+            const ul = document.createElement('ul'); ul.className = 'gw-list';
+            d.items.forEach((r) => {
+              const li = document.createElement('li');
+              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: ${r.old || '(vacío)'} → ${r.new || '(vacío)'}`;
+              ul.appendChild(li);
+            });
+            body.appendChild(ul);
+          } catch (e) { body.textContent = 'No se pudo cargar el historial. Cierra y vuelve a abrir este grupo.'; showToast('No se pudo cargar el historial de la persona', 'error'); }
+        });
+      }
+    }
     document.body.appendChild(overlay);
     const pfCtl = pfDef ? window.PersonForm.mount(box.querySelector('#editModalForm'), pfDef) : null;          // grupos, columnas, obligatorios y «Texto al escribir» del formulario de persona
     window.FieldRender.watchEmail(box, () => user.id);

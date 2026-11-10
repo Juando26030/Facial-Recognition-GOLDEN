@@ -1145,6 +1145,24 @@ class PersonChange(Base):
     detail = Column(String, nullable=True)
 
 
+class PersonChangeLog(Base):
+    """Historial de datos modificados por persona (migración 0127, app/person_history.py): una fila por campo cambiado (campo, valor anterior, valor nuevo, quién y cuándo). Solo datos de texto de la
+    persona (nunca rostro, foto ni vector). Sin llaves foráneas, como `person_changes`: se borra con la persona (supresión, eliminarla del evento) y con el evento. `changed_by_id` NULL = lo hizo
+    la propia persona o un proceso (formulario público, autorregistro). `source`: edit | outbox | bulk | form | register | autoregistro."""
+    __tablename__ = 'person_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=True)
+    user_id = Column(String, nullable=False)
+    field_key = Column(String(64), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, nullable=True)
+    source = Column(String(16), nullable=False, default='edit')
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_person_change_log_person', 'tenant_id', 'user_id'), Index('ix_person_change_log_event', 'event_id'))
+
+
 class AcceptMailLog(Base):
     """Registro de cada envío del enlace personal de autorización (migración 0065, app/acceptmail.py): quién (cédula), cuándo y con qué resultado. SIN IP ni User-Agent (decisión de la auditora).
     `kind`: bulk (envío masivo) | test (envío de prueba, sin persona) | export (descarga de enlaces) | control (inicio/parada/fin de una tanda). `result`: reserving (reservado, aún sin respuesta)

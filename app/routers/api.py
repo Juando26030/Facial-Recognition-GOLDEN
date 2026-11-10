@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import event_archive, audit_actions
+from app import event_archive, audit_actions, person_history
 import re
 import json
 from typing import List, Optional
@@ -23,7 +23,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
+from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PersonChangeLog, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app import testperson
@@ -1231,12 +1231,14 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
         return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
     try:
         with db.begin_nested():
+            history_before = person_history.snapshot(user)
             for k, v in changes.items():
                 setattr(user, k, v)
             if extras:
                 merged = user.get_extras()
                 merged.update(extras)
                 user.set_extras(merged)
+            person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id, source="outbox")
             if categories is not None or contact is not None or certificate is not None:
                 _upsert_attendee(db, event.id, user.id, event.tenant_id, categories, certificate=certificate, digital_contact=contact)
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado", event_id=event.id, registered_by_staff_id=staff.id, client_id=op_id, timestamp=when))
@@ -1430,6 +1432,7 @@ def update_user(
         # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
         # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
         # `set_extras()`), no un dict crudo; asignarlo directo lo corrompería.
+        history_before = person_history.snapshot(user)          # historial de cambios por persona (Fase 10 E): lo de ANTES de editar
         categories = data.pop("categories", None)  # ítem 14: por evento (EventAttendee), no una columna de User
         if categories is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
@@ -1499,6 +1502,7 @@ def update_user(
             event_id=event.id, registered_by_staff_id=staff.id,
         )
         db.add(log)
+        person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id, source="edit")
         db.commit()
         result = {"message": "Actualizado correctamente"}
         if new_digital and event.digital_badge_enabled:
@@ -1564,6 +1568,8 @@ def update_user_cedula(
     db.query(PrintLog).filter(
         PrintLog.user_id == old_id, PrintLog.tenant_id == event.tenant_id
     ).update({"user_id": new_id}, synchronize_session=False)
+    db.query(PersonChangeLog).filter(PersonChangeLog.user_id == old_id, PersonChangeLog.tenant_id == event.tenant_id).update({"user_id": new_id}, synchronize_session=False)      # su historial de cambios la sigue
+    person_history.record_id_change(db, event.tenant_id, new_id, old_id, event_id=event.id, staff_id=staff.id)
     db.flush()
 
     db.delete(user)
@@ -1624,6 +1630,7 @@ def delete_user_from_event(
         db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.attendee_id.in_(att_ids)).delete(synchronize_session=False)
     for model in (PrintLog, AreaMovement, InventoryDelivery, AcceptMailLog, PersonChange, ReprintRequest):
         db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
+    person_history.delete_for_person(db, event.tenant_id, user_id, event_id)          # el historial de cambios de la persona en este evento (el de otros eventos se queda con ellos)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
     log.info("persona eliminada del evento %s por el usuario %s (se borran también su historial de impresión y sus permisos de reimpresión)", event_id, staff.id)      # sin datos personales
@@ -1642,6 +1649,7 @@ def delete_user_from_event(
         for model in (PrintLog, AreaMovement, InventoryDelivery):       # lo que tenga en otros eventos YA cerrados del cliente (sin inscripción ni ingresos) también apunta a la persona
             db.query(model).filter(model.tenant_id == event.tenant_id, model.user_id == user_id).delete(synchronize_session=False)
         get_storage().delete(photo_key(event.tenant_id, user_id))
+        person_history.delete_for_person(db, event.tenant_id, user_id)          # ya no está en ningún evento: no queda historial suyo
         db.delete(user)
         fully_deleted = True
 
@@ -2570,6 +2578,7 @@ def _bulk_register_impl(
                             # antes del de EventAttendee (que depende de él por llave foránea).
                             with (db.begin_nested() if isolate else contextlib.nullcontext()):
                                 user = users_by_id.get(identificador)
+                                history_before = person_history.snapshot(user) if user else None          # persona que YA existía: lo que cambie la recarga queda en su historial
                                 if not user:
                                     user = User(id=identificador, tenant_id=event.tenant_id)
                                     db.add(user)
@@ -2604,6 +2613,8 @@ def _bulk_register_impl(
                                     if norm and val:
                                         extras[norm] = val
                                 user.set_extras(extras)
+                                if history_before is not None:
+                                    person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id if staff else None, source="bulk")
 
                                 if face_enc_json:
                                     user.face_encoding = face_enc_json
@@ -2695,6 +2706,17 @@ def download_report(
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))
+
+
+@router.get("/events/{event_id}/users/{user_id}/change-history")
+def person_change_history(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Fase 10 E: historial de datos modificados de UNA persona de este evento (campo, anterior, nuevo, quién, cuándo; lo más reciente primero, hasta 100). Coordinador o superior. Solo texto: nunca biometría."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if not _person_of_event(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    items = person_history.history(db, event, user_id, limit=100)
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/events/{event_id}/incomplete-registrations")

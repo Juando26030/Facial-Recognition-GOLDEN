@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs, minors, privacy
+from app import formlib, jobs, minors, person_history, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, RateLimitEvent, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -977,6 +977,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     if is_new:
         user = User(id=person_id, tenant_id=event.tenant_id)
         db.add(user)
+    history_before = None if is_new else person_history.snapshot(user)          # Fase 10 E: lo que esta inscripción cambie en una persona que ya existía queda en su historial
     # 0C (A4/C3/C-N2): quien llena el formulario público solo conoce una cédula; el correo, el teléfono y la fecha de nacimiento que ya están en la base NO se sobrescriben desde ahí:
     # solo se completan los vacíos. Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
     # X2 (defensa en profundidad): nombre, apellido, rol y entidad de una persona que YA existe tampoco se reemplazan desde el formulario público (solo se completan si
@@ -995,6 +996,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     extras = user.get_extras()
     extras.update({k: str(v) for k, v in kv.items() if k.startswith("opcional_")})
     user.set_extras(extras)
+    if history_before is not None:
+        person_history.record(db, user, history_before, event_id=event.id, staff_id=None, source="form")
     db.flush()
     upsert_attendee(db, event.id, person_id, event.tenant_id)
     db.flush()          # autoflush=False: sin esto, el segundo upsert (correo de la escarapela) no vería la fila y la duplicaría
