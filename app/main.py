@@ -19,7 +19,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import node_sync
+from app import node_sync, local_installer
 from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
@@ -34,6 +34,7 @@ from app.routers import selfreg as selfreg_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
+from app.routers import local_installer as local_installer_router      # Fase 10 E: descarga del instalador del servidor local (tarjeta de Configuración)
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
 
@@ -393,6 +394,7 @@ _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_
 _include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(local_server_router.router, prefix="/api")
+_include(local_installer_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
 
 _include(node_accounts_router.router, prefix="/api")
@@ -591,6 +593,7 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+        "can_local_installer": local_installer.roles_allowed({request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))),      # tarjeta «Servidor local»: todos menos digitador y cliente
     })
 
 

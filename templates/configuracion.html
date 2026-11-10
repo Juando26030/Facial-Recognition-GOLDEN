@@ -72,6 +72,7 @@
     <div class="gw-tabs" id="paramsRoot" data-tabs-key="configuracion">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de configuración" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la pestaña" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves de qué trata.">
         <button type="button" class="gw-tab" role="tab" id="tab_apariencia" data-tab="apariencia" aria-controls="apariencia" aria-selected="true">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Apariencia</span><span class="gw-tab__sum">Color y tipografía de este computador</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        {% if can_local_installer %}<button type="button" class="gw-tab" role="tab" id="tab_servidor" data-tab="servidor" aria-controls="servidor" aria-selected="false" tabindex="-1">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Servidor local</span><span class="gw-tab__sum">Instalar el programa para trabajar sin internet</span></button>{% endif %}
         {% if is_admin_plus %}
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
@@ -116,6 +117,34 @@
             <button type="button" id="resetThemeBtn" class="gw-btn gw-btn--secondary">{{ ic('undo', 'gw-icon--sm') }} Restablecer</button>
           </div>
         </section>
+
+        {% if can_local_installer %}
+        <section class="gw-tabpanel" role="tabpanel" id="servidor" aria-labelledby="tab_servidor" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Servidor local</h2><p class="gw-tabpanel__lead">Un programa que se instala en un computador con Windows para atender un evento aunque se caiga el internet.</p></div>
+          <div class="gw-group__item" data-pnodirty id="localInstallerCard">
+            <div class="gw-item-head"><h4>Descargar el instalador</h4></div>
+            <div id="localInstallerBody" aria-live="polite">{{ skeleton('block', label='Revisando si el instalador está disponible…') }}</div>
+          </div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Cómo funciona, en pocas palabras</h4></div>
+            <div class="gw-stack">
+              <div class="gw-field"><h5 class="gw-label">¿Qué es?</h5><div>Una copia de GoldenWeb que vive en un computador del evento. El personal se conecta a ese computador con el wifi del lugar y trabaja como siempre, sin necesitar internet.</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Qué necesito?</h5><div>Un computador con Windows 10 u 11, 8 GB de memoria, un router o wifi propio para que los demás equipos se conecten, y internet <em>solo al principio</em> (para instalar y bajar el evento).</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Cómo se usa?</h5><div>
+                <ol class="gw-list">
+                  <li>Con internet, descarga el instalador de aquí y ábrelo con doble clic. Acepta los permisos y espera unos minutos.</li>
+                  <li>Entra con tu mismo usuario y contraseña de siempre.</li>
+                  <li>Elige tu evento y pulsa «Descargar a local». El evento queda en ese computador.</li>
+                  <li>El día del evento, conecta los demás equipos al mismo wifi y trabaja normalmente.</li>
+                </ol>
+              </div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Y el evento en internet?</h5><div>Mientras un evento está en el servidor local, en internet solo se puede <strong>ver</strong>, no cambiar. Así nunca se mezclan dos versiones. Un solo lugar manda a la vez.</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Qué pasa si no hay internet?</h5><div>Nada: todo sigue funcionando. Cuando vuelva el internet, el servidor sube solo lo que se hizo (cada 30 minutos). Al terminar, pulsa «Pasar a internet» para que el evento vuelva a poder editarse en la nube.</div></div>
+            </div>
+            <p class="gw-hint">Una explicación más larga, sin términos técnicos, está en el documento «Explicación del servidor local».</p>
+          </div>
+        </section>
+        {% endif %}
 
         {% if is_admin_plus %}
         <section class="gw-tabpanel" role="tabpanel" id="sesion" aria-labelledby="tab_sesion" hidden>
@@ -249,6 +278,7 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 });
 </script>
 <script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
+{% if can_local_installer %}<script src="{{ url_for('static', path='js/local-installer-card.js') }}"></script>{% endif %}
 {% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>
 <script src="{{ url_for('static', path='js/system-alerts-admin.js') }}"></script>{% endif %}

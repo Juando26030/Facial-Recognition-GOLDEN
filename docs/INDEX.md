@@ -44,6 +44,7 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 | Fase 7 · cliente | `20_URL_LIMPIA_INSCRIPCIONES.md` (el «20» de inscripciones) |
 | Fase 8 · vanguardia | `FASE_8_PANTALLA_TV.md`, `FASE_8_TURNOS.md`, `FASE_8_AUTORREGISTRO_KIOSCO.md`, `21_QR_DINAMICO_WALLET.md` (el «21» de QR), `22_CONTACTOS_EXPOSITORES.md` (el «22» de expositores), `23_COBROS_WOMPI_MULTICUENTA.md` |
 | Fase 9 · plataforma | `FASE_9_PLATAFORMA.md`, `24_COPIA_SEMANAL_ONEDRIVE.md` |
+| Fase 10 · ajustes 10-nov | `FASE_10_AJUSTES_NOV10.md`, `EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md` |
 | Otros «20–22» (Fases 3–4) | `20_CUENTAS_POR_SERVICIO.md`, `20_FORM_YA_INSCRITO.md`, `21_ESTADISTICAS_FORMULARIO_Y_CLIENTE.md`, `22_SESION_INACTIVIDAD.md` |
 
 ## Legal, UX y otros

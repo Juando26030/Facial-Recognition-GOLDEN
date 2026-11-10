@@ -52,3 +52,44 @@ Cada bloque (A a E) agrega su sección al final. No reescribas las de otros.
 **Archivos.** `app/event_acts.py`, `app/routers/event_acts.py`, modelo `EventAct` en `app/models.py`, `templates/kiosk_actas.html`, `static/js/kiosk-actas.js`, `static/css/gw-actas.css`, `tests/test_event_acts.py`, `tests/test_pledge_prefill.py`.
 
 **No probado aquí.** Los endpoints con base de datos (las pruebas están escritas en `tests/test_event_acts.py`, para correr en Cloud Shell) y la firma en pantalla táctil real; sí se vio en Chromium con respuestas simuladas, en claro/oscuro y a 1200 y 390 px.
+
+## Bloque E · Historial de cambios por persona y descarga del instalador local (rama `feat/historial-instalador`, migración 0127)
+
+### 1. Historial de datos modificados por persona
+**Qué hace.** Además del registro inicial (quién y cuándo se escaneó), cada vez que se **cambia un dato de una persona que ya existía** (la ciudad, el correo, el cargo, un campo opcional…) queda una fila: campo, valor anterior, valor nuevo, quién lo cambió, cuándo y por dónde (edición, bandeja sin conexión, carga masiva, formulario web).
+
+**Cómo se usa (Juan David).**
+- En el Directorio, abre **Editar persona** (coordinador o superior): al final hay un grupo desplegable **«Historial de cambios de esta persona»**.
+- En el **Excel del reporte del evento** aparece una segunda hoja **«Historial de cambios»** (cédula, nombre, campo, valor anterior, valor nuevo, quién, fecha y hora, origen). Si nadie modificó nada, el Excel queda igual que antes (una sola hoja).
+
+**Dónde se alimenta.** `PATCH /users/{id}` (Directorio), edición sin conexión (`_outbox_edit_person`, que también es lo que usa el servidor local), carga masiva/recarga de base (solo personas que ya existían), inscripción por formulario público (lo que completa en una persona existente), corrección de cédula (queda como cambio del campo «Cédula» y el historial la sigue). Módulo: `app/person_history.py`; tabla `person_change_log`.
+
+**Decisiones.**
+- Una persona recién creada no genera historial (eso es el registro inicial). El **autorregistro** nunca modifica a una persona existente, así que no escribe aquí.
+- **No se guarda biometría ni fecha de nacimiento** (la fecha ya tiene su historial en `person_changes`). Solo texto de la persona. Por eso la purga biométrica de 7/180 días no necesita tocarlo.
+- Se borra **con la persona**: supresión (`privacy.erase_person` scope `all`), «Eliminar de este evento» (lo de ese evento; si la persona queda sin eventos, todo) y al borrar el evento. Sin llaves foráneas, como `person_changes`.
+- La persona **PRUEBA** no deja historial ni sale en el Excel.
+- Valores solo en la base, nunca en logs. Viaja con «Exportar/Importar evento» (`event_transfer`).
+- Lectura: `GET /api/events/{evento}/users/{cédula}/change-history` (coordinador o superior).
+
+**No cubierto / a saber.** Las ediciones hechas en el servidor local quedan en su base local: la subida a la nube hoy solo lleva personas nuevas e ingresos (ver `FASE_6_SERVIDOR_LOCAL.md`), así que ese historial local no sube. El borrado de un campo del evento (Parámetros) no se registra por persona (queda en `person_changes`, `field_deleted`).
+
+### 2. Tarjeta «Servidor local» en Configuración
+**Qué hace.** Nueva pestaña **Configuración → Servidor local** para todos los roles **menos digitador temporal y cliente** (los clientes son externos y el instalador es el programa completo; coincide con la regla de `FASE_6_SERVIDOR_LOCAL.md`). Muestra un botón de descarga y una explicación corta (qué es, requisitos, pasos, arrendamiento, qué pasa sin internet).
+
+**Cómo funciona la descarga.** `GET /api/local-installer` (estado) y `GET /api/local-installer/download`, protegidos por rol. El archivo sale de `app/storage.py`, carpeta `system/local-installer/`, con nombre `GoldenLocal-Setup-<versión>.exe`; se ofrece el de versión más alta. Con Cloud Storage se redirige a una URL firmada de 10 minutos (el archivo pesa cientos de MB y Firebase corta a los 60 s); con disco local lo sirve la app. Cada descarga queda en `audit_actions`. Alternativa: variable `LOCAL_INSTALLER_URL` (HTTPS) si se publica en otro sitio.
+
+**Estado hoy: «Aún no disponible».** No hay instalador empaquetado: nadie ha corrido `deploy/windows/build_installer.ps1` (requiere Windows + Inno Setup). Para activarlo: (1) construirlo en un Windows (paso a paso en `FASE_6_SERVIDOR_LOCAL.md`); (2) subir el `.exe` a `gs://<bucket>/<prefijo>/system/local-installer/` con `gsutil cp` (lo hace Juan David; no se crean recursos desde aquí); (3) la tarjeta lo muestra sola. El bucket debe permitir que la cuenta de servicio firme URLs (ya lo hace para las cargas directas).
+
+**Explicación para Juan David:** `docs/EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md`.
+
+### Pruebas
+- `tests/test_historial_personas.py` (con base de datos): diff, edición, bandeja, carga masiva, cédula, PRUEBA, permisos, Excel, borrados.
+- `tests/test_instalador_local_descarga.py` (con base de datos): roles, no disponible, versión más nueva, descarga y auditoría, URL externa, tarjeta por rol.
+- `tests/test_historial_personas_texto.py` y `tests/test_instalador_local_texto.py`: de texto, corren sin base (`pytest --noconftest`).
+
+### Lo que NO se pudo verificar
+Ninguna prueba con base de datos (no hay Postgres aquí): correr las cuatro suites en Cloud Shell y `alembic upgrade head`. La carga masiva depende del formato exacto del Excel de prueba. Visualmente se revisó la pestaña con el arnés (claro/oscuro, escritorio y celular), no el grupo desplegable del modal de Editar persona con datos reales. La firma de URL de descarga con Cloud Storage real no se probó.
+
+### Para el integrador
+`down_revision` de 0127 apunta hoy a `0121_infra_costs`; al integrar, repuntarla a la última migración del bloque D (0126).
