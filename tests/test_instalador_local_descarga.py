@@ -74,3 +74,13 @@ def test_config_page_shows_card_only_to_allowed_roles(client, factory):
     client.post("/logout")
     login(client, "dig")
     assert 'id="tab_servidor"' not in client.get("/configuracion").text
+
+
+def test_publish_tutorial_visible_only_to_admins(client, factory):
+    factory.staff("coordinador", "coord")
+    factory.staff("admin", "adm")
+    login(client, "coord")
+    assert "localInstallerPublish" not in client.get("/configuracion").text
+    client.post("/logout")
+    login(client, "adm")
+    assert "localInstallerPublish" in client.get("/configuracion").text

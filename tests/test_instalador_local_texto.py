@@ -31,3 +31,13 @@ def test_explanation_doc_exists_without_jargon():
     d = src("docs/EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md")
     for word in ("Docker", "endpoint", "token", "migración"):
         assert word not in d
+
+
+def test_publish_tutorial_is_admin_only_and_complete():
+    t = src("templates/configuracion.html")
+    block = t.split('id="localInstallerPublish"')[1].split("Cómo funciona, en pocas palabras")[0]
+    assert "Cómo publicar el instalador" in block and "gsutil cp" in block and "build_installer.ps1" in block and "instalador-windows.yml" in block and "Disponible" in block
+    before = t.split('id="localInstallerPublish"')[0]
+    assert before.rfind("{% if is_admin_plus %}") > before.rfind("{% endif %}")          # el bloque está dentro de un `if is_admin_plus` abierto
+    d = src("docs/EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md")
+    assert "gsutil cp" in d and "build_installer.ps1" in d and "«Disponible»" in d

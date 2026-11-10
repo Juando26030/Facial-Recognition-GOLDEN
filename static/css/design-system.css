@@ -1134,3 +1134,8 @@
   :where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, .gw-btn[aria-busy="true"]::before, :where(.gw-page) button[aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before, :where(.gw-page) [role="button"][aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before { animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
   .gw-loadbar[data-active] .gw-loadbar__fill { width: 100%; transform: none; animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
 }
+
+/* Bloque de comandos copiables (tutoriales de Configuración, Fase 10 E): `.gw-code` en <pre>; el código en línea toma el mismo fondo. Solo tokens. */
+.gw-code { margin: var(--gw-sp-2) 0; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); font-family: ui-monospace, Consolas, monospace; font-size: var(--gw-fs-sm); overflow-x: auto; white-space: pre; }
+.gw-form-group__body code { background: var(--gw-surface-2); padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
+.gw-code code { background: none; padding: 0; }

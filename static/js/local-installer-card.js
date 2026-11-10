@@ -29,7 +29,11 @@
         body.appendChild(row('El instalador todavía no se ha publicado. Cuando el equipo de Golden lo suba, aparecerá aquí el botón de descarga.', 'gw-hint'));
         return;
       }
-      body.appendChild(row(d.version ? `Versión disponible: ${d.version}` : 'Instalador disponible', 'gw-hint'));
+      const ok = document.createElement('span');
+      ok.className = 'gw-badge gw-badge--ok';
+      ok.textContent = 'Disponible';
+      body.appendChild(ok);
+      body.appendChild(row(d.version ? `Versión: ${d.version}` : '', 'gw-hint'));
       const a = document.createElement('a');
       a.className = 'gw-btn gw-btn--primary';
       a.href = '/api/local-installer/download';

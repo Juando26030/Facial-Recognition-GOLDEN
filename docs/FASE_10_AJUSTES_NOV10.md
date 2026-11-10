@@ -81,6 +81,8 @@ Cada bloque (A a E) agrega su sección al final. No reescribas las de otros.
 
 **Estado hoy: «Aún no disponible».** No hay instalador empaquetado: nadie ha corrido `deploy/windows/build_installer.ps1` (requiere Windows + Inno Setup). Para activarlo: (1) construirlo en un Windows (paso a paso en `FASE_6_SERVIDOR_LOCAL.md`); (2) subir el `.exe` a `gs://<bucket>/<prefijo>/system/local-installer/` con `gsutil cp` (lo hace Juan David; no se crean recursos desde aquí); (3) la tarjeta lo muestra sola. El bucket debe permitir que la cuenta de servicio firme URLs (ya lo hace para las cargas directas).
 
+**Cómo publicar el instalador (decisión del 10-nov):** sección desplegable en la misma pestaña, visible solo para admin y super_admin, y repetida en el documento sencillo. Dos caminos para construirlo (GitHub Actions sin Windows, o `build_installer.ps1` en un Windows), subida con `gsutil cp` o por la consola web, y comprobación (la tarjeta pasa a «Disponible»). Los clientes ya no tendrán cuentas (usan enlaces): la exclusión del rol cliente queda.
+
 **Explicación para Juan David:** `docs/EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md`.
 
 ### Pruebas

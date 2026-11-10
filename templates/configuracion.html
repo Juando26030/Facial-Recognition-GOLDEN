@@ -125,6 +125,47 @@
             <div class="gw-item-head"><h4>Descargar el instalador</h4></div>
             <div id="localInstallerBody" aria-live="polite">{{ skeleton('block', label='Revisando si el instalador está disponible…') }}</div>
           </div>
+          {% if is_admin_plus %}
+          <div class="gw-group__item" data-pnodirty id="localInstallerPublish">
+            <div class="gw-item-head"><h4>Cómo publicar el instalador</h4></div>
+            <details class="gw-form-group">
+              <summary class="gw-form-group__summary">Cómo publicar el instalador (solo administradores)</summary>
+              <div class="gw-form-group__body">
+                <p>El botón de descarga aparece cuando el archivo del instalador está guardado en el almacenamiento de GoldenWeb. Hay que <strong>construirlo una vez</strong> y <strong>subirlo</strong>. Se repite cada vez que cambie la versión de producción.</p>
+                <h5 class="gw-label">Qué se necesita</h5>
+                <ul class="gw-list">
+                  <li>Acceso al repositorio de GitHub (para el camino A) o un computador con Windows 10/11 con internet (camino B).</li>
+                  <li>La herramienta de Google Cloud (<code>gcloud</code>, que trae <code>gsutil</code>) con tu cuenta de Golden, o la consola web de Google Cloud.</li>
+                  <li>El nombre del almacenamiento de la app (en <code>deploy/gcp/config.sh</code>: <code>APP_BUCKET</code> y <code>APP_PREFIX</code>). Abajo lo llamamos <code>BUCKET</code> y <code>PREFIJO</code>.</li>
+                </ul>
+                <h5 class="gw-label">Paso 1 · Construir el instalador</h5>
+                <p><strong>Camino A (sin Windows, con GitHub):</strong> en GitHub entra a Actions, elige «Instalador de Windows (servidor local)», pulsa «Run workflow», escribe la versión (por ejemplo <code>2026.11.10</code>) y espera unos 20 a 30 minutos. Al terminar, descarga el archivo comprimido <code>golden-local-windows</code> y ábrelo: dentro está <code>GoldenLocal-Setup-2026.11.10.exe</code>. También se puede con comandos:</p>
+                <pre class="gw-code"><code>gh workflow run instalador-windows.yml -f version=2026.11.10
+gh run watch
+gh run download -n golden-local-windows -D instalador</code></pre>
+                <p><strong>Camino B (en un Windows):</strong> instala Git, Python 3.13 e Inno Setup 6; abre PowerShell y escribe:</p>
+                <pre class="gw-code"><code>git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git
+cd Facial-Recognition-GOLDEN
+git checkout f5/integracion
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\build_installer.ps1 -Version 2026.11.10</code></pre>
+                <p>El archivo queda en <code>build\windows\out\GoldenLocal-Setup-2026.11.10.exe</code>.</p>
+                <h5 class="gw-label">Paso 2 · Subirlo al almacenamiento</h5>
+                <p>El nombre del archivo debe ser exactamente <code>GoldenLocal-Setup-&lt;versión&gt;.exe</code>. Con <code>gcloud</code> instalado:</p>
+                <pre class="gw-code"><code>gcloud auth login
+gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-installer/</code></pre>
+                <p>Si el entorno no usa prefijo, la ruta es <code>gs://BUCKET/system/local-installer/</code>. Sin comandos: en la consola web de Google Cloud, Cloud Storage, abre el almacenamiento, entra a la carpeta <code>system/local-installer</code> (créala si no existe) y arrastra el archivo.</p>
+                <h5 class="gw-label">Paso 3 · Comprobar</h5>
+                <ol class="gw-list">
+                  <li><code>gsutil ls gs://BUCKET/PREFIJO/system/local-installer/</code> debe mostrar el archivo.</li>
+                  <li>Recarga esta página y abre «Servidor local»: la tarjeta de arriba debe decir <strong>Disponible</strong> con la versión, en vez de «Aún no disponible».</li>
+                  <li>Pulsa «Descargar instalador para Windows» y confirma que baja el archivo.</li>
+                </ol>
+                <p class="gw-hint">Si hay varias versiones guardadas se ofrece la más alta. Para retirar una, bórrala de esa carpeta.</p>
+              </div>
+            </details>
+          </div>
+          {% endif %}
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Cómo funciona, en pocas palabras</h4></div>
             <div class="gw-stack">
