@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0126_event_acts"
-down_revision = "0121_infra_costs"
+down_revision = "0124_payment_acct_scope"
 branch_labels = None
 depends_on = None
 
