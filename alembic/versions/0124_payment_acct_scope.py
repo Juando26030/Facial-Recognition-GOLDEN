@@ -4,13 +4,13 @@ Solo AGREGA columnas con valor por defecto: todo lo que ya existía queda «gene
 (las cuentas, sus llaves y las asignaciones a formularios no se tocan).
 
 Revision ID: 0124_payment_acct_scope
-Revises: 0121_infra_costs
+Revises: 0123_item_requires_dwell
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0124_payment_acct_scope"
-down_revision = "0121_infra_costs"          # al integrar, la cadena global queda: 0123 (bloque A) -> 0124 (este)
+down_revision = "0123_item_requires_dwell"          # cadena global: 0123 (bloque A) -> 0124 (este)
 branch_labels = None
 depends_on = None
 
