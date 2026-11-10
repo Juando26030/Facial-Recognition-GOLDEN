@@ -13,6 +13,7 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="rr-display">
+<div class="rr-top" id="topImages" hidden></div>
 <main class="rr-layout">
     <section class="rr-info" aria-label="Sorteo">
         <img class="rr-logo" id="logo" alt="" hidden>
@@ -31,6 +32,8 @@ const TOKEN = "{{ token }}";
 const base = `/r/${TOKEN}`;
 const assetUrl = (p) => `${base}/asset/${p}`;
 let style = null, stage = null, lastSeen = null, busy = false, authorized = false, authLabel = "", idleNames = [];
+let freeStop = null;          // giro libre (Fase 10, C): mientras gira sin parar, aquí está la función que lo frena (el clic en «Detener»)
+const manual = () => !!style && style.spin_mode === 'manual';
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -40,6 +43,8 @@ function paintStyle(s) {
     $('title').textContent = s.title || '';
     $('title').style.fontFamily = `'${s.title_font}', sans-serif`; $('title').style.color = s.title_color;
     const logo = $('logo'); logo.hidden = !s.logo; if (s.logo) logo.src = assetUrl(s.logo);
+    RouletteRender.topImages($('topImages'), s, assetUrl);          // logos/banners de arriba
+    document.body.classList.toggle('rr-has-top', !$('topImages').hidden);
     $('stage').className = s.wheel_style === 'jackpot' ? 'rr-stage jackpot' : 'rr-stage';
     stage = RouletteRender.stage($('stage'), s, { logoUrl: s.logo ? assetUrl(s.logo) : '' });
     stage.idle(idleNames.length ? idleNames : ['?', '?', '?', '?', '?', '?']);
@@ -49,7 +54,8 @@ function paintStyle(s) {
 
 function paintButton() {
     const b = $('spinBtn');
-    if (busy) { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Girando…'; }
+    if (freeStop) { b.disabled = false; b.classList.add('ready'); b.textContent = 'Detener'; }
+    else if (busy) { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Girando…'; }
     else if (authorized) { b.disabled = false; b.classList.add('ready'); b.textContent = '¡Girar!'; }
     else { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Esperando autorización…'; }
     if (!busy && authorized && authLabel) $('label').textContent = authLabel;
@@ -68,12 +74,20 @@ async function poll() {
 }
 
 // Un giro por ganador; entre giro y giro se muestra a quien acaba de salir.
-async function run(draw) {
+async function run(draw, free) {
     busy = true; paintButton();
     $('label').textContent = draw.label || '';
     $('result').innerHTML = ''; $('result').className = 'rr-result ' + (draw.winners.length > 1 ? 'rr-result--multi' : 'rr-result--solo');
     for (const winner of draw.winners) {
-        await stage.spin(draw.pool, winner.name, style.spin_seconds);
+        if (free) {                                                  // giro libre: gira hasta que alguien pulse «Detener»
+            let release; const stop = new Promise((r) => { release = r; });
+            freeStop = () => { freeStop = null; release(); b_frenando(); };
+            paintButton();
+            await stage.spin(draw.pool, winner.name, style.spin_seconds, { stop });
+            freeStop = null;
+        } else {
+            await stage.spin(draw.pool, winner.name, style.spin_seconds);
+        }
         const card = document.createElement('div'); $('result').appendChild(card);
         RouletteRender.reveal(card, winner, style);
         if (draw.winners.length > 1) await sleep(2200);
@@ -81,8 +95,11 @@ async function run(draw) {
     busy = false; authorized = false; paintButton();
 }
 
+function b_frenando() { const b = $('spinBtn'); b.disabled = true; b.classList.remove('ready'); b.textContent = 'Frenando…'; }
+
 // El botón «Girar»: pide al servidor el giro autorizado (el ganador lo decide el servidor) y lo anima de inmediato.
 $('spinBtn').addEventListener('click', async () => {
+    if (freeStop) { freeStop(); return; }                           // segundo clic del giro libre: frenar
     if (busy || !authorized) return;
     busy = true; paintButton();
     try {
@@ -90,7 +107,7 @@ $('spinBtn').addEventListener('click', async () => {
         const draw = await res.json().catch(() => ({}));
         if (!res.ok) { busy = false; authorized = false; paintButton(); $('label').textContent = draw.detail || 'No se pudo girar'; return; }
         lastSeen = draw.draw_id;                                        // este giro ya lo vamos a animar aquí: que el sondeo no lo repita
-        busy = false; run(draw);
+        busy = false; run(draw, manual());
     } catch (e) { busy = false; paintButton(); }
 });
 

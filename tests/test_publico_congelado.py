@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # 9-nov-2026, orden expresa de Juan David: estado de carga en botones («en ningún botón se pueda pensar que no funcionó»). form_public.html («Continuar» del código de
 # acceso y de la identificación), aceptar.html («Continuar», aceptar/no aceptar, enviar selfie) y digital_badge.html (Google Wallet) solo ganaron aria-busy + una rueda en
 # el botón pulsado; sin cambiar textos, validaciones ni flujo. El certificado y la ruleta ya mostraban «Buscando…»/«Girando…»: no se tocaron. Hashes renovados.
-# 10-nov-2026 (Fase 10, bloque C), orden de Juan David: el QR de la escarapela (impresa y digital) y del pase de Wallet pasa a ser una vCard (guardar el contacto al escanear). Cambian badge-render.js
+# 10-nov-2026 (Fase 10, bloque C), orden de Juan David: la ruleta (roulette_display.html y roulette-render.js) gana datos del ganador a elección, logos/banners arriba y giro libre (Iniciar/Detener); el QR de la escarapela (impresa y digital) y del pase de Wallet pasa a ser una vCard (guardar el contacto al escanear). Cambian badge-render.js
 # (dibuja la vCard, nivel de corrección L), digital_badge.html (QR dinámico en vCard) y los <script> de vcard.js en badge_print/certificate_public. Tamaños y parámetros de impresión intactos. Hashes renovados.
 FROZEN = {
     "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
@@ -26,7 +26,7 @@ FROZEN = {
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
     "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
-    "templates/roulette_display.html": "b66d1a9f3f767b7b46b091ba0f6ea90f3db90b04c88433f23eaa4353fb7385ee",
+    "templates/roulette_display.html": "00ed83f08f9b9f76a26758f7c5f8abbb0feac35c6146cfbebbd7d1a1793eb5e0",
     "templates/badge_print.html": "6ed7e10d2dc70329eb20dccb1861e73eb167a27e2355d886617812e37f4e3f87",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
     "static/js/form-render.js": "44ab6b5b75382e6284642060169ac2c7ee0ea6916e587b0e90e856a475950ba3",
@@ -36,7 +36,7 @@ FROZEN = {
     "static/css/fonts-propias.css": "ac7d385e4523d16f1e096040af3ec024beb81e283f04805597cd945821ec93f0",
     "static/js/cookie-notice.js": "3ba161fa3e997046272fdba4dbcab23582579669995ebc3a64bdd281cab33990",
     "static/js/badge-render.js": "4b60e4ba9d0d2036f9851ddbf25a1f897c0218a47ffafe9d8e60e1f1b7d5182e",
-    "static/js/roulette-render.js": "73ae0ed6f3ee2b34c9265eba50cb04df1e9906df7b1a30094d0b3cc36d58abe4",
+    "static/js/roulette-render.js": "5e55b45fc40c1312df3013c7cfd6da85a4e5268a10c3fd1b0674a870bf43a328",
     "static/js/photo-capture.js": "d2d938ab04bba511f06b20981fb12e2a94321239e047a961d81eb41b88b55da4",
     "static/css/agrandir.css": "a3ca46e1a8b678f2f3a55b4663f529d6c975e81c9dc6bf5313b2c0c09ea4384d",
 }

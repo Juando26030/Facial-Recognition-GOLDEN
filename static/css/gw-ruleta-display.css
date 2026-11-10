@@ -30,6 +30,16 @@ html:has(.rr-display) { height: 100%; }
 .rr-spin.ready { animation: rr-pulse 1.4s ease-in-out infinite; }
 .rr-hint { position: fixed; bottom: .6rem; right: .9rem; z-index: 1; font-size: .8rem; opacity: .55; text-align: right; }
 
+/* logos/banners de arriba de la pantalla (Fase 10, C): la pantalla pasa a columna — franja de imágenes arriba y, debajo, la distribución de siempre con el alto que sobra */
+.rr-display.rr-has-top { display: flex; flex-direction: column; }
+.rr-top { position: relative; z-index: 2; flex: 0 0 auto; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1.2vh 3vw; padding: 2.4vh 4vw 0; box-sizing: border-box; }
+.rr-top[hidden] { display: none; }
+.rr-top img { max-height: 13vh; max-width: min(40vw, 38rem); object-fit: contain; }
+.rr-top--single img { max-width: 92vw; }
+.rr-has-top .rr-layout { flex: 1 1 auto; height: auto; min-height: 0; padding-top: 1.5vh; }
+.rr-has-top .rr-stage { width: min(70vh, 54vw); }
+.rr-has-top .rr-stage.jackpot { width: min(900px, 56vw); }
+
 /* escenario: la rueda circular es cuadrada y grande; la columna «casino» es ancha y pasa a una sola columna */
 .rr-stage { position: relative; width: min(88vh, 54vw); }
 .rr-stage::before { content: ""; position: absolute; inset: -8%; z-index: -1; border-radius: 50%; background: radial-gradient(circle, rgba(232, 194, 90, .28), rgba(232, 194, 90, 0) 68%); }
@@ -43,7 +53,8 @@ html:has(.rr-display) { height: 100%; }
 .rr-result--solo .rr-winner { padding: clamp(1.6rem, 4vh, 3.4rem) clamp(2rem, 5vw, 5rem); min-width: min(34rem, 86vw); max-width: 90vw; }
 .rr-result--solo .rr-winner__name { font-size: clamp(2.4rem, 6vw, 6rem); }
 .rr-result--solo .rr-winner__eyebrow { font-size: clamp(1rem, 1.8vw, 1.7rem); }
-.rr-result--solo .rr-winner__entity { font-size: clamp(1.1rem, 2.2vw, 2.1rem); }
+.rr-result--solo .rr-winner__fieldlabel { font-size: .72em; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .7; margin-right: .4em; }
+.rr-winner__entity { font-size: clamp(1.1rem, 2.2vw, 2.1rem); }
 .rr-result--multi .rr-winner { padding: 1rem 1.6rem; }
 .rr-result--multi .rr-winner__name { font-size: clamp(1.4rem, 2.6vw, 2.6rem); }
 
