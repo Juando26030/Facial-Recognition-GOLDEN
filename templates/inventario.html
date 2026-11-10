@@ -13,6 +13,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
     <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory-calendar.css') }}">
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/inventario-page.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
@@ -47,18 +48,50 @@
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">Inventario</p>
-        <h1 class="gw-page-head__title">Inventario de los eventos</h1>
-        <p class="gw-page-head__sub">Elige un evento para ver o registrar lo asignado, lo que sale del almacén, lo que regresa y lo que se consume.</p>
+        <h1 class="gw-page-head__title">Inventario</h1>
+        <p class="gw-page-head__sub">El catálogo de equipos y materiales de Golden, con lo que hay y lo que está en uso, y el calendario que muestra dónde está cada equipo.</p>
       </div>
     </div>
-    <div class="gw-search gw-search--hero">
-      <div class="gw-search__row"><div class="gw-search__field">
-        <input class="gw-input" type="search" id="invSearch" placeholder="Buscar evento por nombre o código" aria-label="Buscar evento" autocomplete="off" spellcheck="false">
-      </div></div>
+
+    <div class="gw-segment gw-invpg__tabs" role="tablist" aria-label="Secciones del inventario">
+      <button type="button" class="gw-segment__opt" role="tab" id="invTabCat" data-tab="cat" aria-controls="invPanelCat" aria-selected="true">Catálogo</button>
+      <button type="button" class="gw-segment__opt" role="tab" id="invTabCal" data-tab="cal" aria-controls="invPanelCal" aria-selected="false" tabindex="-1">Dónde está cada equipo</button>
     </div>
-    <div id="invEvents" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos…') }}</div>
+
+    <section class="gw-invpg__panel gw-stack" id="invPanelCat" role="tabpanel" aria-labelledby="invTabCat">
+      <div class="gw-invpg__toolbar">
+        <div class="gw-field gw-field--grow"><label class="gw-label" for="invSearch">Buscar un producto</label>
+          <input class="gw-input" type="search" id="invSearch" placeholder="Nombre o código del producto" autocomplete="off" spellcheck="false"></div>
+        <div class="gw-field"><label class="gw-label" for="invCatFilter">Categoría</label>
+          <select class="gw-select" id="invCatFilter"><option value="">Todas</option></select></div>
+        <a class="gw-btn gw-btn--secondary" id="invAdminLink" href="/configuracion" hidden>Administrar el catálogo completo</a>
+      </div>
+      <p class="gw-hint" id="invCatHint" hidden></p>
+      <div id="invCatalog" class="gw-stack-lg" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el catálogo…') }}</div>
+    </section>
+
+    <section class="gw-invpg__panel gw-stack" id="invPanelCal" role="tabpanel" aria-labelledby="invTabCal" hidden>
+      <div class="gw-invcal__nav">
+        <div class="gw-segment" role="group" aria-label="Vista del calendario">
+          <button type="button" class="gw-segment__opt" data-view="day" aria-pressed="false">Día</button>
+          <button type="button" class="gw-segment__opt" data-view="week" aria-pressed="false">Semana</button>
+          <button type="button" class="gw-segment__opt" data-view="month" aria-pressed="true">Mes</button>
+        </div>
+        <button type="button" class="gw-btn gw-btn--secondary" data-nav="prev" aria-label="Anterior">&lsaquo;</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-nav="today">Hoy</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-nav="next" aria-label="Siguiente">&rsaquo;</button>
+        <h2 class="gw-invcal__title" id="invCalTitle" aria-live="polite"></h2>
+        <div class="gw-field"><label class="gw-label" for="invCalProduct">Ver un solo equipo</label>
+          <select class="gw-select" id="invCalProduct"><option value="">Todos los equipos</option></select></div>
+      </div>
+      <p class="gw-hint">Cada día muestra qué material tiene asignado cada evento (desde el montaje hasta el último día) y cuánto queda disponible. Toca un día para ver el detalle.</p>
+      <div id="invCalBody" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el calendario…') }}</div>
+      <div class="gw-invcal__detail" id="invCalDetail"></div>
+    </section>
+
     <section id="invPanel" hidden aria-live="polite">
-      <h2 class="gw-section-title" id="invPanelTitle"></h2>
+      <div class="gw-row gw-row--between"><h2 class="gw-section-title" id="invPanelTitle"></h2>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="invPanelClose">Cerrar</button></div>
       <div id="invPlanBox"></div>
     </section>
   </div>
