@@ -626,6 +626,7 @@ def inventario_page(request: Request):
         return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(request=request, name="inventario.html", context={
         "staff_name": request.session.get("staff_name"),
+        "inv_manager": bool(roles & {"almacen", "admin", "super_admin"}),          # Fase 10: administran el catálogo (crear, renombrar, archivar)
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
 

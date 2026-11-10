@@ -135,7 +135,9 @@ Migraciones: **0122** (`0122_dwell_autoscan`) y **0123** (`0123_item_requires_dw
 - **Catálogo.** Las categorías, los productos y las existencias que el Super Admin crea en Configuración › Inventario. Cada producto muestra sus existencias, lo que está *en uso hoy* (asignado a eventos que ocupan el día de hoy) y lo *disponible hoy*. Hay búsqueda por nombre o código y filtro por categoría.
 - **Dónde está cada equipo.** Un calendario con vista **Día, Semana y Mes**. No pinta el evento en sí sino **qué material tiene asignado cada evento** (equipos, cuántos, fechas) y cuánto queda **disponible** cada día. Se puede elegir «Ver un solo equipo» para ver, día por día, cuánto hay disponible de ese equipo. Al tocar un día se ve el detalle: por evento, lo asignado, lo que salió, lo que volvió y lo que falta por volver (si el evento ya terminó), y la tabla de disponibilidad por equipo. Desde ahí el botón «Abrir inventario del evento» abre el bloque de siempre para editar las cantidades de ese evento (así Almacén sigue registrando salidas y devoluciones).
 
-**Quién la usa.** Coordinador en adelante, Almacén y Contabilidad (lectura). **Admin y Almacén** pueden cambiar la **categoría** y las **existencias** de un producto (botón «Cambiar»). Crear, renombrar, archivar y eliminar productos o categorías sigue siendo solo del Super Admin (decisión de la Fase 5; ver preguntas abajo).
+**Quién la usa.** Coordinador en adelante, Almacén y Contabilidad (lectura). **Admin y Almacén** (y Super Admin) cambian la categoría y las existencias de un producto (botón «Cambiar») y, desde la pestaña **«Administrar catálogo»** de esta misma pantalla, **crean, renombran, archivan, restauran y eliminan** categorías y productos. Admin también lo ve en Configuración › Inventario.
+
+**Cambio de permisos del catálogo (decisión de Juan David, 10-nov).** En la Fase 5 el catálogo lo editaba solo el Super Admin. Se abrió a Admin y Almacén porque son quienes realmente conocen y mueven la bodega. Código: las rutas de `/api/inventory/categories|products` usan ahora `MANAGER` (admin, almacén, super_admin) en vez de `require_super_admin`; coordinador, comercial y contabilidad siguen en solo lectura. Se movió el bloque de administración a `templates/_inventory_catalog_admin.html` (lo incluyen Configuración e `/inventario`). Se actualizaron las pruebas de la Fase 5 que fijaban «solo Super Admin» (`tests/test_inventario_catalogo.py`).
 
 **Cómo se calcula.** Un evento ocupa su material desde el montaje (si lo hay y es anterior) hasta su último día; si solo tiene una fecha, ese día. Un evento sin fecha de inicio no aparece en el calendario. Cuenta lo **asignado**. Los eventos archivados no cuentan. La disponibilidad cuenta los eventos de **todos** los clientes (el material es de Golden); los nombres de eventos solo se muestran a quien tiene permiso sobre ellos.
 
@@ -147,7 +149,7 @@ Migraciones: **0122** (`0122_dwell_autoscan`) y **0123** (`0123_item_requires_dw
 **Qué hace.**
 1. **Contar el tiempo de permanencia en las zonas.** Cada entrada y su salida se emparejan y los tiempos se **suman** (10 min + 5 min = 15 min). Si una persona tiene tiempos que se cruzan entre zonas (olvidó escanear una salida), el tiempo común se cuenta una sola vez.
 2. **Habilitar premio por porcentaje de estadía.** El coordinador define el **tiempo de referencia** (el 100 %, p. ej. 24 h) y el **porcentaje mínimo** (p. ej. 80 %). Si deja la referencia vacía se usa la duración del evento (según sus fechas y horas).
-3. **Estadística y lista.** Botón «Calcular»: cuántas personas llegan a 50/60/70/80/90/100 % y cuántas cumplen el porcentaje elegido (se puede probar otro porcentaje y filtrar por zona). Descargas: **Excel o CSV de quienes cumplen**, o Excel de todas las personas (cédula, nombre, entidad, tiempo, porcentaje, si cumple, si quedó sin salida).
+3. **Estadística y lista** (en Parámetros y TAMBIÉN en la pantalla de Control de áreas, panel «Permanencia», con `static/js/areas-dwell.js`; solo coordinador en adelante y con el conteo activo). Botón «Calcular»: cuántas personas llegan a 50/60/70/80/90/100 % y cuántas cumplen el porcentaje elegido (se puede probar otro porcentaje y filtrar por zona). Descargas: **Excel o CSV de quienes cumplen**, o Excel de todas las personas (cédula, nombre, entidad, tiempo, porcentaje, si cumple, si quedó sin salida).
 4. **Usar el resultado.**
    - **Certificados:** botón «Habilitar certificado a quienes cumplen» marca «Certificado: Sí» a esas personas (no quita a nadie; la persona de prueba no se toca). Recuerda que el certificado se descarga cuando el evento está finalizado y los certificados del evento están activos.
    - **Entregas de inventario:** en la tabla de ítems de Parámetros hay una columna «Solo a quien cumple la estadía». Un ítem así solo se entrega a quien ya llegó al porcentaje (si no, el sistema avisa con un mensaje claro y no entrega). Solo aplica con el conteo y el premio activos.
@@ -162,8 +164,8 @@ En los mismos Parámetros hay dos casillas:
 - **Control de inventario:** el operador marca una vez qué se entrega; al escanear (o Enter, o cámara QR) a cada persona, se le entrega **lo marcado** de una vez, sin pulsar «Entregar». Lo marcado se conserva entre personas. Un segundo Enter mientras se entrega no duplica la entrega. Con «Repetir la entrega a la misma persona» apagado en un ítem, el sistema sigue bloqueando la repetición.
 
 ### Decisiones que tomé
-- **Permisos del catálogo:** dejé crear/renombrar/archivar solo para Super Admin (las pruebas y la decisión de la Fase 5 lo fijan) y abrí a Admin y Almacén únicamente **categoría y existencias** con una ruta aparte. «Gestionan categorías» lo interpreté como poder mover productos entre categorías.
-- **Entrada sin salida:** cuenta hasta el fin del evento (o hasta ahora si sigue en curso) y se marca «Quedó sin salida» en la lista, para que el coordinador lo revise. Alternativa más estricta: no contarla.
+- **Permisos del catálogo:** abiertos a Admin y Almacén por decisión de Juan David (ver arriba).
+- **Entrada sin salida:** cuenta hasta el fin del evento (o hasta ahora si sigue en curso) y se marca «Quedó sin salida» (confirmado por Juan David).
 - **Calendario sobre lo asignado:** no resta lo «salido sin devolver» de eventos terminados; eso se avisa aparte como «falta por volver».
 - La persona que está en dos zonas a la vez no suma doble.
 - El historial por campo de eventos (`event_history`) solo cubre campos de la plantilla; los nuevos parámetros se auditan con `audit_actions`.
@@ -172,52 +174,4 @@ En los mismos Parámetros hay dos casillas:
 No hay base de datos en este entorno: las pruebas `tests/test_fase10_a_api.py` (flujo completo con base) se corren el miércoles en Cloud Shell. Sí corrieron `ruff`, `node --check`, `tests/test_fase10_a_puras.py`, `tests/test_fase10_a_texto.py` y `node tests/js/inventario_page_check.js`. La revisión visual con Playwright se hizo con respuestas simuladas.
 
 ### Preguntas para Juan David
-1. ¿Almacén y Admin deben poder también **crear** productos/categorías, o basta con ajustar categoría y existencias?
-2. Una persona que entró a una zona y nunca escaneó la salida: ¿se le cuenta hasta el fin del evento (como está) o no se le cuenta?
-3. ¿La estadística debe verse también en la pantalla de Control de áreas (hoy está en Parámetros)?
-
-## Bloque C — QR en vCard, ruleta y calendario
-
-Sin migración (la configuración de la ruleta vive en `style_json`, que ya existía).
-
-### 1. QR de la escarapela como contacto (vCard)
-**Qué hace.** El QR de la escarapela impresa, de la escarapela virtual (credencial digital) y del pase de Wallet ahora es una tarjeta de contacto mínima: nombre, teléfono (solo si la persona lo comparte) y, escondido en el campo «Nota», el código de siempre (`NOTE:GW:…`). Al escanearlo con la cámara del celular, el teléfono ofrece «Guardar contacto». El código que usa Golden (la cédula del QR impreso o el código firmado `gwq1…` de la credencial digital y Wallet) no cambia.
-
-**Cómo se usa (en simple).** Nada cambia para quien registra: Registro, Control de Áreas, Inventario, el buscador del Directorio y la cámara de expositores leen el QR nuevo y el viejo. Las escarapelas ya impresas siguen sirviendo.
-
-**Cómo funciona por dentro.**
-- `static/js/vcard.js` (construir y leer) y `app/qr_vcard.py` (mismo código en Python; una prueba compara que den el mismo resultado).
-- Lectores: `qr.js` (`parse`, `classify`, `isDynamic`, `resolveDynamic` y la cámara entregan el código de adentro), `search-core.js`, y en el servidor `dynamic_qr.parse`/`looks_like` y `contacts.parse_scanned`. Una vCard ajena (otro formato) se deja igual.
-- Lector de mano (el que «teclea»): la vCard llega en varias líneas, cada una con su Enter; `QrCode.collect()` las junta (Directorio, Áreas, Inventario, Registro) y descarta lo que quede a medias a los 5 s.
-- Dibujo: `badge-render.js` (`drawQr`) y `digital_badge.html` usan nivel de corrección **L** (en vez de M) y UTF-8 (tildes y ñ). Wallet (`digital_public._wallet_args`) manda la vCard con el código estático firmado; `wallet.py` pasa el Apple Wallet a `utf-8`.
-- El teléfono solo entra al QR si el dato ya viene en la escarapela: en la digital pública, solo si el evento lo marcó como visible (mismo criterio de `/b/{token}/data`).
-
-**Densidad (parámetros de impresión intactos).** El tamaño del elemento QR y de la etiqueta no se tocó (`tests/test_impresion_parametros_fijos.py` pasa). Medido con la librería real (`tests/js/qr_vcard_check.js`): el QR anterior era versión 4 (33 módulos); la vCard típica queda en versión 8 (49 módulos) con nivel L, y el peor caso razonable (nombres larguísimos + teléfono con indicativo) en versión 10 (57). Con nivel M serían 1-2 versiones más. Recomendación: el elemento QR de la plantilla debe medir **25 mm o más** (0,45 mm por cuadrito en versión 8; en 20 mm baja a 0,36 mm y se vuelve exigente para la QL-800). **No pude probar la impresión física ni la lectura con celulares reales**: hay que imprimir una escarapela de prueba en la QL-800 y escanearla con un iPhone y un Android antes de usarlo en un evento.
-
-**Archivos congelados** renovados a propósito (huellas en `tests/test_publico_congelado.py`): `badge-render.js`, `digital_badge.html`, `badge_print.html`, `certificate_public.html` (solo se agregó el `<script>` de vcard.js).
-
-### 2. Ruleta
-**Qué hace / cómo se usa** (pantalla «Apariencia» de la ruleta, que ve el coordinador):
-- **Datos del ganador:** el nombre siempre sale. El coordinador marca lo demás: Empresa (marcada por defecto, como antes), Correo, Cargo, Tipo de asistente y cada campo opcional con nombre del evento (ahí vive la Ciudad u otros). Lo que la persona no tenga lleno no se muestra. Aviso en pantalla: lo marcado lo ve el público.
-- **Logos o banners de arriba:** hasta 4 imágenes en una franja arriba de la pantalla del sorteo (y de la vista previa). Se suben con el mismo cargador de imágenes de la ruleta (`upload-image` → `app/storage.py`).
-- **Cómo gira:** «Dura un tiempo fijo» (como antes) o «Giro libre»: un clic en «Girar» inicia, la ruleta gira sin parar y otro clic en «Detener» la frena sobre el ganador. Funciona en la ruleta circular y en el estilo casino, y también en la vista previa («Probar animación»).
-
-**Decisiones.**
-- No hay migración: `winner_fields`, `top_images` y `spin_mode` van en `style_json` (con valores por defecto, así las ruletas ya configuradas no cambian).
-- El ganador sigue decidiéndose en el servidor al pulsar «Girar»; «Detener» solo es la animación. No cambia la auditoría ni el sorteo real.
-- Seguridad: la pantalla pública sigue sin recibir la cédula; si el coordinador desmarca la empresa, ni siquiera viaja. Imágenes: solo del propio cliente, extensiones de imagen, máximo 4.
-- Para no dejar la pantalla colgada, el giro libre se frena solo a los 2 minutos. Si hay varios ganadores en un mismo sorteo, cada uno pide su «Detener». Un giro que se muestra en otra pantalla (no la que pulsó) usa el tiempo fijo.
-- La «Ciudad» no es una columna de la persona en la base; sale de los campos opcionales con nombre del evento (p. ej. uno llamado «Ciudad»).
-- `roulette_display.html` y `roulette-render.js` son archivos congelados: huellas renovadas con esta orden.
-
-**Probado.** Con Chromium (arnés con datos ficticios): giro libre circular y casino, «Detener», tarjeta con datos, franja de logos, pantalla angosta y la pantalla de Apariencia. Pruebas pytest con base (`tests/test_ruleta_fase10.py`) escritas pero no ejecutadas aquí.
-
-### 3. Calendario
-**Qué hace.** Arriba del calendario hay chips clicables de «Categorías de evento» con cuántos eventos hay de cada una en el periodo. Se pueden activar varias; «Ver todas» las quita. Lo ve cualquiera que vea el calendario (mismo código para todos los roles, sin condiciones por rol) y funciona en Mes, Semana y Día.
-
-**Decisión.** Los eventos no tienen un campo «tipo/categoría» propio; la categoría que el equipo ya maneja con color es el **estado del evento** (Configuración › Estados de evento; si el evento no tiene uno propio, Creado / En proceso / Finalizado). Los chips usan eso, con su color. Se suma al selector «Estado del evento» que ya existía (se aplican los dos). **Pregunta para Juan David:** si «categorías» se refería a otra cosa (p. ej. tipo de evento: feria, congreso…), hay que crear ese campo en la plantilla de evento y los chips lo usarían con el mismo código (`static/js/calendar-cats.js`, solo cambia `categoryOf`).
-
-**Archivos.** `static/js/calendar-cats.js` (lógica pura, `tests/js/calendar_cats_check.js`), `templates/calendario.html`, `static/css/p-calendario.css`.
-
-### Pruebas del bloque
-`tests/test_qr_vcard.py`, `tests/js/qr_vcard_check.js`, `tests/test_ruleta_fase10.py`, `tests/js/calendar_cats_check.js`. Corren aquí las puras y las de texto/Node; las que usan base (resolver QR con vCard, ruleta con estilo y sorteo, pantalla pública) se corren en Cloud Shell.
+Sin preguntas abiertas: las tres quedaron decididas el 10-nov (permisos del catálogo, entrada sin salida, estadística también en Control de áreas).

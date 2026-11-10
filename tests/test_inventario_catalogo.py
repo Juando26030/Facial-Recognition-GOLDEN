@@ -104,24 +104,38 @@ def _catalog_with(client, cat="Equipos", prod="Computador"):
     return c.json(), p.json()
 
 
-def test_only_super_admin_edits_the_catalog_and_viewers_read_it(client, factory):
+def test_admin_almacen_and_super_admin_edit_the_catalog_and_viewers_only_read_it(client, factory):
+    """Fase 10 (10-nov-2026, decisión de Juan David): Admin y Almacén también crean, renombran y archivan; antes era solo del Super Admin."""
     factory.staff("super_admin", "sup")
     factory.staff("admin", "adm")
+    factory.staff("coordinador", "alm", extra_roles="almacen")
     factory.staff("coordinador", "coord")
     factory.staff("digitador", "7001234")
     login(client, "adm")
-    assert client.post("/api/inventory/categories", json={"name": "X"}).status_code == 403
-    assert client.get("/api/inventory/catalog").status_code == 200
-    assert client.get("/api/inventory/catalog?include_archived=true").status_code == 403
+    made = client.post("/api/inventory/categories", json={"name": "X"})
+    assert made.status_code == 200
+    assert client.patch(f"/api/inventory/categories/{made.json()['id']}", json={"name": "X2"}).status_code == 200
+    assert client.get("/api/inventory/catalog?include_archived=true").status_code == 200
+    assert client.post(f"/api/inventory/categories/{made.json()['id']}/archive").status_code == 200
+    client.post("/logout")
+    login(client, "alm")
+    cat = client.post("/api/inventory/categories", json={"name": "Equipos"}).json()
+    prod = client.post("/api/inventory/products", json={"name": "Computador", "unit": "unidad", "category_id": cat["id"], "sku": "PC-1", "fields": [{"label": "Marca"}]})
+    assert prod.status_code == 200 and prod.json()["category_name"] == "Equipos" and prod.json()["fields"][0]["key"] == "marca"
+    prod = prod.json()
+    assert client.patch(f"/api/inventory/products/{prod['id']}", json={"name": "Portátil"}).status_code == 200
+    assert client.post(f"/api/inventory/products/{prod['id']}/archive").status_code == 200
+    assert client.post(f"/api/inventory/products/{prod['id']}/restore").status_code == 200
     client.post("/logout")
     login(client, "sup")
-    cat, prod = _catalog_with(client)
-    assert prod["category_name"] == "Equipos" and prod["fields"][0]["key"] == "marca" and prod["sku"] == "PC-1"
+    assert client.post("/api/inventory/categories", json={"name": "Y"}).status_code == 200
     client.post("/logout")
     login(client, "coord")
     got = client.get("/api/inventory/catalog").json()
-    assert [p["name"] for p in got["products"]] == ["Computador"] and got["categories"][0]["products"] == 1
+    assert [p["name"] for p in got["products"]] == ["Portátil"] and got["categories"][0]["products"] == 1
+    assert client.post("/api/inventory/categories", json={"name": "Z"}).status_code == 403
     assert client.patch(f"/api/inventory/products/{prod['id']}", json={"name": "Otro"}).status_code == 403
+    assert client.get("/api/inventory/catalog?include_archived=true").status_code == 403
     client.post("/logout")
     login(client, "7001234")
     assert client.get("/api/inventory/catalog").status_code == 403
@@ -283,16 +297,25 @@ def test_archived_event_and_cleanup(client, factory, db):
 
 
 # ------------------------------------------------------------ pantallas
-def test_config_inventory_tab_only_for_super_admin_and_pages_load_the_block(client, factory):
+def test_config_inventory_tab_for_admin_plus_and_inventory_page_for_managers(client, factory):
     factory.staff("super_admin", "sup")
     factory.staff("admin", "adm")
-    login(client, "adm")
-    html = client.get("/configuracion").text
-    assert 'id="tab_inventario"' not in html and "inventory-catalog-admin.js" not in html
+    factory.staff("coordinador", "coord9")
+    factory.staff("coordinador", "alm9", extra_roles="almacen")
+    login(client, "coord9")
+    assert 'id="tab_inventario"' not in client.get("/configuracion").text
+    assert 'id="invProdForm"' not in client.get("/inventario").text
+    client.post("/logout")
+    for who in ("adm", "sup"):
+        login(client, who)
+        html = client.get("/configuracion").text
+        assert 'id="tab_inventario"' in html and 'id="invProdForm"' in html and "inventory-catalog-admin.js" in html
+        client.post("/logout")
+    login(client, "alm9")
+    page = client.get("/inventario").text
+    assert 'id="invProdForm"' in page and "inventory-catalog-admin.js" in page and "Administrar catálogo" in page
     client.post("/logout")
     login(client, "sup")
-    html = client.get("/configuracion").text
-    assert 'id="tab_inventario"' in html and 'id="invProdForm"' in html and "inventory-catalog-admin.js" in html
     assert "event-inventory-plan.js" in client.get("/eventos/nuevo").text
     for name in ("inventory-catalog-admin.js", "event-inventory-plan.js"):
         assert client.get(f"/static/js/{name}").status_code == 200

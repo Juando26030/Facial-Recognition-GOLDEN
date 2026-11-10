@@ -77,7 +77,7 @@
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
-        {% if is_super %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
+        {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
         <button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
@@ -260,39 +260,8 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           </div>
         </section>
 
-        {% if is_super %}
-        <section class="gw-tabpanel" role="tabpanel" id="inventario" aria-labelledby="tab_inventario" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Inventario</h2><p class="gw-tabpanel__lead">El catálogo que usan Almacén y los eventos. Los productos activos aparecen solos en el inventario de cada evento nuevo o editado. Lo que hagas aquí actúa al instante.</p></div>
-
-          <div class="gw-group__item" data-pnodirty>
-            <div class="gw-item-head"><h4>Categorías</h4>{% call ayuda('ay_invcat', 'Categorías') %}Agrupan los productos (por ejemplo «Computadores» o «Papelería»). Un evento no puede pasar a «En proceso» si tiene productos sin categoría. Una categoría con productos activos no se puede archivar.{% endcall %}</div>
-            <form id="invCatForm" class="gw-stack">
-              <div class="gw-field"><label class="gw-label" for="invCatName">Nombre de la categoría</label><input class="gw-input" type="text" id="invCatName" maxlength="80" required autocomplete="off"></div>
-              <button type="submit" class="gw-btn gw-btn--primary" id="invCatBtn">{{ ic('plus', 'gw-icon--sm') }} Crear categoría</button>
-            </form>
-            <div class="gw-cards gw-inv__cards" id="invCatList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando categorías…') }}</div>
-          </div>
-
-          <div class="gw-group__item" data-pnodirty>
-            <div class="gw-item-head"><h4 id="invProdFormTitle">Productos</h4>{% call ayuda('ay_invprod', 'Productos') %}Cada producto tiene una unidad de medida, un SKU opcional y, si lo necesita, campos propios que se piden en cada evento (por ejemplo «Marca» o «Voltaje»). Escribe un campo por línea; para que sea numérico agrega «:número» al final.{% endcall %}</div>
-            <form id="invProdForm" class="gw-stack">
-              <div class="gw-fields-row gw-fields-row--2">
-                <div class="gw-field"><label class="gw-label" for="invProdName">Nombre del producto</label><input class="gw-input" type="text" id="invProdName" maxlength="80" required autocomplete="off"></div>
-                <div class="gw-field"><label class="gw-label" for="invProdCat">Categoría</label><select class="gw-select" id="invProdCat"></select></div>
-                <div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>
-                <div class="gw-field"><label class="gw-label" for="invProdStock">Existencias de Golden <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="number" min="0" id="invProdStock" inputmode="numeric" autocomplete="off" aria-describedby="invProdStockHint"><p class="gw-hint" id="invProdStockHint">Cuánto tiene Golden de este producto. Si lo asignado a eventos que se cruzan en fechas lo supera, se avisa para alquilar; nunca se bloquea un evento. Vacío = no se controla.</p></div>
-                <div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>
-              </div>
-              <div class="gw-field"><label class="gw-label" for="invProdFields">Campos propios <span class="gw-hint">(opcional, uno por línea)</span></label><textarea class="gw-textarea" id="invProdFields" rows="3" placeholder="Marca&#10;Voltaje:número"></textarea></div>
-              <div class="gw-actions">
-                <button type="submit" class="gw-btn gw-btn--primary" id="invProdBtn">{{ ic('plus', 'gw-icon--sm') }} Crear producto</button>
-                <button type="button" class="gw-btn gw-btn--secondary" id="invProdCancel" hidden>Cancelar edición</button>
-              </div>
-            </form>
-            <label class="gw-check"><input type="checkbox" id="invShowArchived"> Ver archivados</label>
-            <div class="gw-cards gw-inv__cards" id="invProdList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando productos…') }}</div>
-          </div>
-        </section>
+        {% if is_admin_plus %}
+        {% include "_inventory_catalog_admin.html" %}
         {% endif %}
 
         <section class="gw-tabpanel" role="tabpanel" id="staff" aria-labelledby="tab_staff" hidden>
@@ -323,6 +292,6 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 {% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>
 <script src="{{ url_for('static', path='js/system-alerts-admin.js') }}"></script>{% endif %}
-{% if is_super %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
+{% if is_admin_plus %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
 </body>
 </html>

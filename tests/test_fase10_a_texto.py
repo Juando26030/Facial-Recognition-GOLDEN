@@ -99,6 +99,22 @@ def test_templates_still_parse():
         env.parse(read(f"templates/{name}"))
 
 
+def test_catalog_is_managed_by_admin_almacen_and_super_admin():
+    inv = read("app/routers/inventory.py")
+    assert "require_super_admin" not in inv and inv.count("Depends(MANAGER)") >= 11          # 10 rutas del catálogo + manage
+    cfg, page = read("templates/configuracion.html"), read("templates/inventario.html")
+    assert "_inventory_catalog_admin.html" in cfg and "_inventory_catalog_admin.html" in page and "inv_manager" in page
+    assert 'id="invProdForm"' in read("templates/_inventory_catalog_admin.html") and 'id="invProdForm"' not in cfg
+    assert '"inv_manager"' in read("app/main.py")
+
+
+def test_areas_kiosk_shows_the_dwell_statistics():
+    html, js = read("templates/kiosk_areas.html"), read("static/js/areas-dwell.js")
+    for needle in ('id="dwellPanel"', 'id="adwCalc"', 'id="adwXlsx"', 'id="adwCsv"', 'id="adwCerts"', "js/areas-dwell.js", "areas_dwell_enabled"):
+        assert needle in html, needle
+    assert "/areas-dwell" in js and "apply-certificates" in js and "export?" in js and "showConfirm" in js
+
+
 def test_doc_section_exists():
     doc = read("docs/FASE_10_AJUSTES_NOV10.md")
     assert "Bloque A" in doc and "0122" in doc and "0123" in doc

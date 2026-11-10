@@ -122,7 +122,10 @@ def test_kiosk_pages_expose_the_autoscan_flags(client, setup):
     ev, _ = setup
     _cfg(client, ev, inventory_autoscan=True, areas_autoscan=True)
     assert "window.AUTOSCAN = true" in client.get(f"/kiosk/{ev.id}/inventario").text
-    assert "Escaneo automático activo" in client.get(f"/kiosk/{ev.id}/areas").text
+    areas_html = client.get(f"/kiosk/{ev.id}/areas").text
+    assert "Escaneo automático activo" in areas_html and 'id="dwellPanel"' not in areas_html          # sin el conteo de permanencia no hay panel
+    _cfg(client, ev, dwell_enabled=True)
+    assert 'id="dwellPanel"' in client.get(f"/kiosk/{ev.id}/areas").text
     assert 'id="dwellBox"' in client.get(f"/kiosk/{ev.id}/parametros").text
 
 
@@ -164,7 +167,7 @@ def test_overview_calendar_and_manage(client, factory, db):
         client.post("/logout")
     login(client, "adm")
     assert client.get("/api/inventory/overview").json()["products"][0]["stock"] == 9
-    assert client.post("/api/inventory/products", json={"name": "Otro"}).status_code == 403          # crear sigue siendo del Super Admin
+    assert client.post("/api/inventory/products", json={"name": "Otro"}).status_code == 200          # Admin también crea (decisión del 10-nov)
     assert client.patch(f"/api/inventory/products/{prod['id']}/manage", json={"name": "x"}).status_code == 400
 
 

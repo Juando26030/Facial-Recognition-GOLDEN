@@ -1,0 +1,38 @@
+{# Administración del catálogo de inventario (categorías y productos). Lo incluyen Configuración (admin+) e /inventario (admin, almacén). Lo maneja static/js/inventory-catalog-admin.js. Necesita ic, ayuda y skeleton del llamador. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% from "_gw_skeleton.html" import skeleton %}
+        <section class="gw-tabpanel" role="tabpanel" id="inventario" aria-labelledby="tab_inventario" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Inventario</h2><p class="gw-tabpanel__lead">El catálogo que usan Almacén y los eventos. Los productos activos aparecen solos en el inventario de cada evento nuevo o editado. Lo que hagas aquí actúa al instante.</p></div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Categorías</h4>{% call ayuda('ay_invcat', 'Categorías') %}Agrupan los productos (por ejemplo «Computadores» o «Papelería»). Un evento no puede pasar a «En proceso» si tiene productos sin categoría. Una categoría con productos activos no se puede archivar.{% endcall %}</div>
+            <form id="invCatForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="invCatName">Nombre de la categoría</label><input class="gw-input" type="text" id="invCatName" maxlength="80" required autocomplete="off"></div>
+              <button type="submit" class="gw-btn gw-btn--primary" id="invCatBtn">{{ ic('plus', 'gw-icon--sm') }} Crear categoría</button>
+            </form>
+            <div class="gw-cards gw-inv__cards" id="invCatList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando categorías…') }}</div>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4 id="invProdFormTitle">Productos</h4>{% call ayuda('ay_invprod', 'Productos') %}Cada producto tiene una unidad de medida, un SKU opcional y, si lo necesita, campos propios que se piden en cada evento (por ejemplo «Marca» o «Voltaje»). Escribe un campo por línea; para que sea numérico agrega «:número» al final.{% endcall %}</div>
+            <form id="invProdForm" class="gw-stack">
+              <div class="gw-fields-row gw-fields-row--2">
+                <div class="gw-field"><label class="gw-label" for="invProdName">Nombre del producto</label><input class="gw-input" type="text" id="invProdName" maxlength="80" required autocomplete="off"></div>
+                <div class="gw-field"><label class="gw-label" for="invProdCat">Categoría</label><select class="gw-select" id="invProdCat"></select></div>
+                <div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>
+                <div class="gw-field"><label class="gw-label" for="invProdStock">Existencias de Golden <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="number" min="0" id="invProdStock" inputmode="numeric" autocomplete="off" aria-describedby="invProdStockHint"><p class="gw-hint" id="invProdStockHint">Cuánto tiene Golden de este producto. Si lo asignado a eventos que se cruzan en fechas lo supera, se avisa para alquilar; nunca se bloquea un evento. Vacío = no se controla.</p></div>
+                <div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>
+              </div>
+              <div class="gw-field"><label class="gw-label" for="invProdFields">Campos propios <span class="gw-hint">(opcional, uno por línea)</span></label><textarea class="gw-textarea" id="invProdFields" rows="3" placeholder="Marca&#10;Voltaje:número"></textarea></div>
+              <div class="gw-actions">
+                <button type="submit" class="gw-btn gw-btn--primary" id="invProdBtn">{{ ic('plus', 'gw-icon--sm') }} Crear producto</button>
+                <button type="button" class="gw-btn gw-btn--secondary" id="invProdCancel" hidden>Cancelar edición</button>
+              </div>
+            </form>
+            <label class="gw-check"><input type="checkbox" id="invShowArchived"> Ver archivados</label>
+            <div class="gw-cards gw-inv__cards" id="invProdList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando productos…') }}</div>
+          </div>
+        </section>

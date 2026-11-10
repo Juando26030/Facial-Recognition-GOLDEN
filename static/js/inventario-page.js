@@ -64,16 +64,21 @@
   const stateBox = (msg, err) => `<div class="gw-state${err ? ' gw-state--error' : ''}" role="${err ? 'alert' : 'status'}"><p class="gw-state__title">${esc(msg)}</p></div>`;
 
   /* ---- pestañas */
+  const TABS = { cat: ['invTabCat', 'invPanelCat'], cal: ['invTabCal', 'invPanelCal'], adm: ['tab_inventario', 'inventario'] };
   function showTab(name) {
-    ['cat', 'cal'].forEach((t) => {
+    Object.keys(TABS).forEach((t) => {
+      const tab = $(TABS[t][0]), panel = $(TABS[t][1]);
+      if (!tab || !panel) return;
       const on = t === name;
-      $(t === 'cat' ? 'invTabCat' : 'invTabCal').setAttribute('aria-selected', String(on));
-      $(t === 'cat' ? 'invTabCat' : 'invTabCal').tabIndex = on ? 0 : -1;
-      $(t === 'cat' ? 'invPanelCat' : 'invPanelCal').hidden = !on;
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+      panel.hidden = !on;
     });
     if (name === 'cal' && !cal.loaded) loadCalendar();
+    if (name === 'adm' && $('tab_inventario')) $('tab_inventario').dispatchEvent(new Event('gw:tabshow'));          // el administrador del catálogo carga al abrirse
+    if (name === 'cat' && catalog) loadCatalog();          // el catálogo pudo cambiar en «Administrar»
   }
-  doc.querySelector('.gw-invpg__tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+  doc.querySelector('.gw-invpg__container, .gw-container').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b && TABS[b.dataset.tab]) showTab(b.dataset.tab); });
 
   /* ---- catálogo */
   let catalog = null;
@@ -109,7 +114,7 @@
       const sel = $('invCatFilter'), cur = sel.value;
       sel.innerHTML = '<option value="">Todas</option>' + catalog.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
       sel.value = cur;
-      $('invAdminLink').hidden = !catalog.can_edit_catalog;
+      $('invAdminLink').hidden = !(catalog.can_edit_catalog && $('inventario'));
       const hint = $('invCatHint');
       hint.hidden = false;
       hint.textContent = catalog.can_manage ? 'Puedes cambiar la categoría y las existencias de cada producto. Crear, renombrar o archivar productos y categorías lo hace el Super Admin en Configuración.' : 'Solo consulta: las existencias y categorías las ajustan Admin y Almacén.';

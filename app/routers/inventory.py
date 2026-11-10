@@ -1,11 +1,11 @@
 """Inventario con catálogo (Fase 5): catálogo de categorías y productos (lo define el Super Admin en Configuración) y las líneas de inventario de cada evento (cantidades y regla de cuadre).
 
 Permisos (Fase 5; los roles «almacen» y «contabilidad» son solo EXTRA, ver app/auth.py):
-  - Catálogo: ver = coordinador+, almacén y contabilidad; crear / editar / archivar / eliminar = SOLO Super Admin.
+  - Catálogo: ver = coordinador+, almacén y contabilidad; crear / editar / archivar / eliminar = Admin, Almacén y Super Admin (hasta la Fase 9 era solo Super Admin).
   - Inventario de un evento: ver = coordinador+, almacén, contabilidad. Editar lo que PIDE el evento (asignado, notas, datos del producto) = coordinador+ y almacén; editar lo que MUEVE el
     almacén (salió, volvió, consumido) = almacén y admin+. Contabilidad es solo lectura. Ninguno de estos roles obtiene datos personales de asistentes ni administra cuentas por esta ruta.
 Fase 10 (10-nov-2026): la pantalla /inventario muestra el CATÁLOGO (no la lista de eventos) con lo que hay en uso hoy, y un calendario «dónde está cada equipo» (`/inventory/overview`, `/inventory/calendar`).
-Admin y almacén, además, ajustan la categoría y las existencias de un producto (`PATCH /inventory/products/{id}/manage`); crear, renombrar, archivar y eliminar siguen siendo del Super Admin.
+Cambio del 10-nov-2026 (decisión de Juan David): Admin y Almacén (y Super Admin) también CREAN, renombran, archivan, restauran y eliminan categorías y productos del catálogo; antes era solo del Super Admin. Además `PATCH /inventory/products/{id}/manage` (categoría y existencias).
 Este router no usa get_event_for_staff (no toca personas ni respuestas): valida cliente (assert_event_tenant) y, para quien no es almacén/contabilidad/admin, la pertenencia al evento.
 """
 from typing import Optional
@@ -15,7 +15,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
-from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any, require_super_admin
+from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any
 from app.database import get_db
 from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, StaffUser
 from app.timeutil import to_local, utcnow
@@ -75,9 +75,9 @@ def _catalog(db: Session, include_archived: bool) -> dict:
 
 @router.get("/inventory/catalog")
 def get_catalog(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(VIEWER)):
-    """Catálogo vigente. `include_archived=true` (con los archivados) es solo del Super Admin."""
-    if include_archived and staff.role != "super_admin":
-        _err("Solo el Super Admin ve el catálogo archivado", 403)
+    """Catálogo vigente. `include_archived=true` (con los archivados) es de Admin, Almacén y Super Admin."""
+    if include_archived and not _can_manage(staff):
+        _err("Solo Admin, Almacén y Super Admin ven el catálogo archivado", 403)
     return _catalog(db, include_archived)
 
 
@@ -125,7 +125,7 @@ def _active_category_id(db: Session, raw) -> Optional[int]:
 
 
 @router.post("/inventory/categories")
-def create_category(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def create_category(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     name = _wrap(lambda: inventory.clean_name(data.get("name"), "El nombre de la categoría"))
     _assert_free_category_name(db, name)
     c = InventoryCategory(name=name, position=_next_position(db, InventoryCategory))
@@ -137,7 +137,7 @@ def create_category(data: dict, db: Session = Depends(get_db), staff: StaffUser 
 
 
 @router.patch("/inventory/categories/{category_id}")
-def update_category(category_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def update_category(category_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     c = _category(db, category_id)
     if "name" in data:
         name = _wrap(lambda: inventory.clean_name(data.get("name"), "El nombre de la categoría"))
@@ -154,7 +154,7 @@ def update_category(category_id: int, data: dict, db: Session = Depends(get_db),
 
 
 @router.post("/inventory/categories/{category_id}/archive")
-def archive_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def archive_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     c = _category(db, category_id)
     if c.archived_at is None:
         n = db.query(InventoryProduct).filter(InventoryProduct.category_id == c.id, InventoryProduct.archived_at.is_(None)).count()
@@ -167,7 +167,7 @@ def archive_category(category_id: int, db: Session = Depends(get_db), staff: Sta
 
 
 @router.post("/inventory/categories/{category_id}/restore")
-def restore_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def restore_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     c = _category(db, category_id)
     if c.archived_at is not None:
         _assert_free_category_name(db, c.name, c.id)
@@ -178,7 +178,7 @@ def restore_category(category_id: int, db: Session = Depends(get_db), staff: Sta
 
 
 @router.delete("/inventory/categories/{category_id}")
-def delete_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def delete_category(category_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     c = _category(db, category_id)
     if c.archived_at is None:
         _err("Archiva la categoría antes de eliminarla")
@@ -212,7 +212,7 @@ def _apply_product(db: Session, p: InventoryProduct, data: dict, creating: bool)
 
 
 @router.post("/inventory/products")
-def create_product(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def create_product(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     p = InventoryProduct(position=_next_position(db, InventoryProduct))
     _apply_product(db, p, data, creating=True)
     db.add(p)
@@ -223,7 +223,7 @@ def create_product(data: dict, db: Session = Depends(get_db), staff: StaffUser =
 
 
 @router.patch("/inventory/products/{product_id}")
-def update_product(product_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def update_product(product_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     p = _product(db, product_id)
     if p.archived_at is not None:
         _err("El producto está archivado: restáuralo para editarlo")
@@ -239,7 +239,7 @@ def update_product(product_id: int, data: dict, db: Session = Depends(get_db), s
 
 
 @router.post("/inventory/products/{product_id}/archive")
-def archive_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def archive_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     p = _product(db, product_id)
     if p.archived_at is None:
         p.archived_at, p.archived_by_id = utcnow(), staff.id
@@ -249,7 +249,7 @@ def archive_product(product_id: int, db: Session = Depends(get_db), staff: Staff
 
 
 @router.post("/inventory/products/{product_id}/restore")
-def restore_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def restore_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     p = _product(db, product_id)
     if p.archived_at is not None:
         _assert_free_product_name(db, p.name, p.id)
@@ -262,7 +262,7 @@ def restore_product(product_id: int, db: Session = Depends(get_db), staff: Staff
 
 
 @router.delete("/inventory/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_super_admin)):
+def delete_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     p = _product(db, product_id)
     if p.archived_at is None:
         _err("Archiva el producto antes de eliminarlo")
@@ -445,7 +445,7 @@ def inventory_overview(db: Session = Depends(get_db), staff: StaffUser = Depends
         p["available"] = inventory_calendar.available(p["stock"], p["in_use"])
     cat["today"] = today.isoformat()
     cat["can_manage"] = _can_manage(staff)
-    cat["can_edit_catalog"] = staff.role == "super_admin"
+    cat["can_edit_catalog"] = _can_manage(staff)
     return cat
 
 

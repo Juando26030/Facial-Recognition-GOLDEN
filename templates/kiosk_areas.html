@@ -148,9 +148,29 @@
           <div class="gw-cards" id="presBody"></div>
         </div>
       </section>
+
+      {% if event.areas_dwell_enabled and staff_role != "digitador" %}
+      <section class="gw-card gw-stack" id="dwellPanel" aria-labelledby="adwTitle" data-event="{{ event.id }}" data-prize="{{ 'true' if event.dwell_prize_enabled else 'false' }}">
+        <h2 class="gw-card__title" id="adwTitle">Permanencia: quiénes llegan a un porcentaje</h2>
+        <p class="gw-hint">Suma el tiempo que cada persona estuvo en las zonas (sus entradas y salidas). La persona de prueba no cuenta. La referencia y el porcentaje mínimo se definen en Parámetros del evento.</p>
+        <div class="gw-actions">
+          <div class="gw-field"><label class="gw-label" for="adwPct">Porcentaje (%)</label><input class="gw-input gw-input--short" type="number" id="adwPct" min="1" max="100" placeholder="{{ event.dwell_threshold_pct or 80 }}"></div>
+          <div class="gw-field"><label class="gw-label" for="adwArea">Zona</label><select class="gw-select" id="adwArea"><option value="">Todas las zonas</option></select></div>
+          <button type="button" class="gw-btn gw-btn--secondary" id="adwCalc">Calcular</button>
+        </div>
+        <div id="adwResult" aria-live="polite"></div>
+        <div class="gw-actions" id="adwActions" hidden>
+          <a class="gw-btn gw-btn--secondary gw-btn--sm" id="adwXlsx" href="#">{{ ic('download', 'gw-icon--sm') }} Excel (quienes cumplen)</a>
+          <a class="gw-btn gw-btn--secondary gw-btn--sm" id="adwCsv" href="#">{{ ic('download', 'gw-icon--sm') }} CSV (quienes cumplen)</a>
+          <a class="gw-btn gw-btn--ghost gw-btn--sm" id="adwAll" href="#">{{ ic('download', 'gw-icon--sm') }} Excel (todas las personas)</a>
+          {% if event.dwell_prize_enabled %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="adwCerts">Habilitar certificado a quienes cumplen</button>{% endif %}
+        </div>
+      </section>
+      {% endif %}
     </div>
   </div>
 </main>
 <script src="{{ url_for('static', path='js/areas.js') }}"></script>
+{% if event.areas_dwell_enabled and staff_role != "digitador" %}<script src="{{ url_for('static', path='js/areas-dwell.js') }}"></script>{% endif %}
 </body>
 </html>
