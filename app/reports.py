@@ -2,6 +2,7 @@ from app.storage import get_storage, key_of
 from app.xlsafe import safe_cell, safe_frame
 from app.timeutil import to_local
 import io
+import logging
 import os
 
 import pandas as pd
@@ -10,9 +11,10 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import person_history, testperson
+from app import person_history, report_book, testperson
 from app.models import User, AccessLog, EventAttendee, Event, EventFieldConfig, StaffUser
 
+log = logging.getLogger("golden.reports")
 ORIGIN_LABELS = {"base": "Base (Excel)", "manual": "Creado nuevo", "autoregistro": "Autoregistro"}      # B1 (0073); sin dato = «Desconocido»
 
 # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): reemplaza el reporte de formato fijo/legacy
@@ -72,6 +74,16 @@ def _has_value(value) -> bool:
     if isinstance(value, str):
         return value.strip() != ""
     return True
+
+
+def _read_optional(key) -> "bytes | None":
+    """Bytes de un archivo del almacenamiento o None si no existe / no se puede leer (un logo que falta nunca rompe el reporte). Usa `get` directo: sin `exists` ni `list`."""
+    if not key:
+        return None
+    try:
+        return get_storage().get(key)
+    except Exception:
+        return None
 
 
 class ReportManager:
@@ -241,8 +253,12 @@ class ReportManager:
             ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_data_row}"
             ws.freeze_panes = f"A{header_row + 1}"
 
-            # Fase 10 E: segunda hoja con los datos que se modificaron después del registro (campo, anterior, nuevo, quién y cuándo). Solo si hubo cambios: sin ellos el libro queda como siempre.
+            # Fase 10 E: el libro queda «Portada» → «Reporte» → «Gráficos» → «Historial de cambios» (esta última solo si hubo cambios de datos después del registro).
             changes = person_history.event_rows(db, event) if event else []
+            try:
+                report_book.decorate(writer.book, event, tenant_name, tenant_id, df, {label: field_types.get(key) for key, label in optional_columns}, changes, _read_optional, key_of)
+            except Exception:          # la portada y los gráficos son un adorno: si fallan, el reporte (lo importante) sale igual
+                log.exception("no se pudo armar la portada o los gráficos del reporte")
             if changes:
                 hist_cols = ["Cédula", "Nombre", "Campo", "Valor anterior", "Valor nuevo", "Modificado por", "Fecha y hora", "Origen"]
                 hist = pd.DataFrame([[c["cedula"], c["name"], c["label"], c["old"], c["new"], c["by"], c["at_local"], c["source_label"]] for c in changes], columns=hist_cols)

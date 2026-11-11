@@ -86,7 +86,17 @@ Una sola firma no se acepta al crear: o las dos o ninguna.
 
 **Explicación para Juan David:** `docs/EXPLICACION_SERVIDOR_LOCAL_SIMPLE.md`.
 
+### 3. Excel del reporte: portada, gráficos e historial (reestructurado)
+**Qué cambia (Juan David, 10-nov).** El Excel del reporte del evento ahora trae, en este orden: **«Portada»** → **«Reporte»** (igual que siempre, mismo contenido) → **«Gráficos»** → **«Historial de cambios»** (solo si hubo cambios de datos). Al abrirlo se ve la Portada.
+- **Portada:** diseño con la paleta de Golden (azul noche y dorado), cuadrícula oculta, franja de logos, bloque azul con «REPORTE DEL EVENTO» y el nombre del evento, tarjetas con cliente, fechas, lugar/ciudad, tipo de evento, coordinador(a) y comercial; tarjetas con los totales (personas en la base, registradas, por registrar, % de asistencia, primer y último registro, hora con más registros, datos modificados) y un pie con la fecha y hora de generación (hora de Colombia) y una nota corta de privacidad (Ley 1581, sin biometría). Los totales **no cuentan a la persona PRUEBA**. Se imprime en una página.
+- **Logos:** Golden (siempre), cliente, evento y adicional, redimensionados con Pillow sin deformarlos; los que no existen se omiten **sin dejar hueco**, y uno dañado no rompe nada. Hoy solo existen el de Golden (`static/img/logo-golden.png`) y el del evento (si es «propio»). **El logo del cliente y el adicional todavía no tienen pantalla para subirse**: se leen de `<cliente>/branding/client-logo.png` y `<cliente>/branding/extra-logo-<evento>.png` en el almacenamiento; mientras no existan, no salen.
+- **Gráficos:** gráficos nativos de Excel (editables), 2 por fila, con título en español, etiquetas de datos y colores de Golden. Tipo según la variable: sí/no y pocas categorías (hasta 6) → dona; muchas (ciudad, empresa, cargo…) → barras horizontales con las 10 principales y «Otros»; numéricas → histograma; registros por hora → columnas; por día → línea; y del historial: cambios por campo y por día. No se grafican cédula, nombres, correo, teléfono, firmas ni textos casi únicos. Los datos de apoyo van en las columnas AA y AB, ocultas (clic derecho → Mostrar).
+- **Si algo falla** al armar portada o gráficos, el reporte sale igual (queda en el registro técnico, sin datos personales).
+- Código: `app/report_cover.py`, `app/report_charts.py`, `app/report_book.py` (todo sin base de datos), y la llamada en `app/reports.py`. Se ajustaron 2 pruebas viejas que leían «la hoja activa» (ahora leen «Reporte»).
+- **Verificado** con datos ficticios convertidos a PDF con LibreOffice (portada y gráficos revisados a la vista). **No verificado:** apertura en Excel de escritorio (LibreOffice pinta distinto), y la prueba con base de datos.
+
 ### Pruebas
+- `tests/test_reporte_portada_graficos.py` (sin base: hojas y orden, gráficos presentes y 2 por fila, tipo por variable, logos ausentes o dañados, tabla vacía, falla de gráficos) y `tests/test_reporte_portada_graficos_db.py` (con base, Cloud Shell).
 - `tests/test_historial_personas.py` (con base de datos): diff, edición, bandeja, carga masiva, cédula, PRUEBA, permisos, Excel, borrados.
 - `tests/test_instalador_local_descarga.py` (con base de datos): roles, no disponible, versión más nueva, descarga y auditoría, URL externa, tarjeta por rol.
 - `tests/test_historial_personas_texto.py` y `tests/test_instalador_local_texto.py`: de texto, corren sin base (`pytest --noconftest`).

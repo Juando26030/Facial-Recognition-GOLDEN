@@ -121,7 +121,7 @@ def test_registration_report_shows_local_time_not_utc(factory, db, tmp_path):
     db.commit()
     path = str(tmp_path / "r.xlsx")
     ReportManager.generate_excel_report(db, ev.id, ev.tenant_id, path)
-    rows = list(openpyxl.load_workbook(path).active.iter_rows(values_only=True))
+    rows = list(openpyxl.load_workbook(path)["Reporte"].iter_rows(values_only=True))
     header = next(r for r in rows if r and "Hora de Registro" in r)
     row = next(r for r in rows[rows.index(header) + 1:] if r[0] == "1001")
     assert row[header.index("Fecha de Registro")] == "2026-01-15"

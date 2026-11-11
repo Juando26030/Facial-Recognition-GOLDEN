@@ -117,7 +117,7 @@ def test_report_and_stats_show_origin_and_state(client, factory, db, tmp_path):
     client.post("/api/register", data={"event_id": ev.id, "id": "2001", "first_name": "Nuevo", "last_name": "Manual"})
     path = str(tmp_path / "r.xlsx")
     ReportManager.generate_excel_report(db, ev.id, ev.tenant_id, path)
-    ws = openpyxl.load_workbook(path).active
+    ws = openpyxl.load_workbook(path)["Reporte"]
     rows = [[c.value for c in r] for r in ws.iter_rows()]
     header = next(r for r in rows if r and "Origen de carga" in r)
     for col in ("Origen de carga", "Estado", "Fecha de Registro", "Hora de Registro", "Registrado por"):
