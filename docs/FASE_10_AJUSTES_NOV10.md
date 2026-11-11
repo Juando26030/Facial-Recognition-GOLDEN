@@ -323,3 +323,7 @@ Pedidos de Juan David tras ver producción (commit 25cccaa) en una ventana de na
 - **Qué se mantiene:** el bloqueo por intentos fallidos de `security` (por usuario+IP) sigue valiendo; el compromiso digital, la eliminación con «Eliminar los usuarios temporales», el alcance por evento y las puertas `get_event_for_staff` / `require_event_in_progress` son las del digitador.
 - **Decisiones (documentadas porque eran ambiguas):** no lleva correo (el correo nunca lleva contraseñas y su texto habla de la cédula); la contraseña no vence ni obliga a cambiarla (cuenta del evento); sin «Permitir / No permitir / Desbloquear» en su fila.
 - **Pruebas:** `tests/test_ajustes_nov12.py` (de texto, sin base de datos). Pendiente: prueba con base de datos (crear, ingresar sin autorización, restablecer) en la sesión de pruebas completas.
+
+### Archivos de formularios (11-nov-2026)
+- **Respuestas:** un botón «Descargar todos: <columna> (ZIP)» por cada columna de archivo (`GET /events/{e}/forms/{f}/files-zip?field=…`; nombres `cedula_Columna.ext`; sin pruebas salvo que la casilla esté marcada; tope 1.000 archivos / 300 MB; queda en auditoría).
+- **Editar persona:** los campos de archivo vinculados al registro (`opcional_N`) se muestran como enlace «Descargar <archivo>» (`GET /api/events/{e}/users/{id}/form-files`, coordinador+). Al cargar a la base ya no se guarda el diccionario como texto, solo el nombre (`formfiles.stored_text`). Lógica pura en `app/formfiles.py`.

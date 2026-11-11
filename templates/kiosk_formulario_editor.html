@@ -279,6 +279,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             {% call ayuda('ay_ans_rep', 'Descargar reporte (Excel)') %}Baja el Excel SOLO con las inscripciones reales: no incluye las de prueba, sin importar lo que tengas marcado en la casilla.{% endcall %}</div>
           <div class="gwe-inline-help"><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a>
             {% call ayuda('ay_ans_all', 'Con las de prueba') %}Baja el Excel con TODO: las inscripciones reales y también las de prueba. Es independiente de la casilla «Mostrar las de prueba»: esa solo cambia la tabla de abajo.{% endcall %}</div>
+          <div class="gwe-inline-help" id="ansFiles" hidden></div>
           </div>
         <div class="gwr-tools">
           <div class="gw-search__row gwr-search">
@@ -1655,6 +1656,9 @@ async function loadAnswers() {
   ans.page = d.page; ans.size = d.page_size; $('ansSize').value = String(d.page_size);
   ansRenderQuotas(d.quotas || []);
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
+  const fileCols = d.columns.filter((c) => c.type === 'file');          // un botón por columna de archivo: baja todos los archivos de esa columna en un ZIP
+  $('ansFiles').hidden = !fileCols.length;
+  $('ansFiles').innerHTML = fileCols.map((c) => `<a class="gw-btn gw-btn--secondary gw-btn--sm" href="${api}/files-zip?field=${encodeURIComponent(c.id)}&include_tests=${withTests}">Descargar todos: ${esc(c.label)} (ZIP)</a>`).join(' ');
   const filtered = Boolean(ans.q || ans.quota), from = d.total ? (d.page - 1) * d.page_size + 1 : 0, to = Math.min(d.total, d.page * d.page_size);
   $('ansInfo').textContent = d.total ? `Mostrando ${from}–${to} de ${d.total}${filtered ? ` (de ${d.total_all} sin filtros)` : ''}` : (filtered ? `Sin resultados (de ${d.total_all} sin filtros)` : '0 inscripciones');
   $('ansPager').hidden = d.total_all <= 20 && d.pages <= 1;

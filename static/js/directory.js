@@ -415,6 +415,31 @@
       </div>
     `;
     overlay.appendChild(box);
+    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (coordinador o superior; si no, queda el texto)
+      (async () => {
+        try {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/form-files`);
+          if (!res.ok) return;
+          const d = await res.json();
+          (d.items || []).forEach((it) => {
+            const input = box.querySelector(`[name="${it.key}"]`);
+            const row = input ? input.closest('.gw-registro__editfield') : null;
+            if (!row) return;
+            row.querySelectorAll('input, textarea, select').forEach((el) => el.remove());          // el archivo no se edita aquí: sin campo, no se vuelve a guardar como texto
+            const a = document.createElement('a');
+            a.className = 'gw-btn gw-btn--ghost gw-btn--sm';
+            a.href = it.url;
+            a.setAttribute('download', it.filename);
+            a.textContent = `Descargar ${it.filename}`;
+            const hint = document.createElement('p');
+            hint.className = 'gw-hint';
+            hint.textContent = 'Archivo subido por la persona en el formulario. Haz clic para descargarlo y revisarlo.';
+            row.appendChild(a);
+            row.appendChild(hint);
+          });
+        } catch (e) { /* sin archivos o sin permiso: se deja el campo como estaba */ }
+      })();
+    }
     {                                                                   // Fase 10 E: historial de datos modificados de la persona (coordinador o superior; se pide solo al desplegar)
       const det = box.querySelector('#editModalHistory');
       if (det) {

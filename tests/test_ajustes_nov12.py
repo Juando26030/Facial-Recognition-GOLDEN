@@ -63,3 +63,25 @@ def test_optional_label_is_bold():
 def test_list_rows_wrap_instead_of_overflowing():
     css = _t("static/css/p-formularios.css")
     assert "container: forms / inline-size" in css and "@container forms (min-width: 1240px)" in css
+
+
+def test_form_files_helpers():
+    from app import formfiles
+    design = {"rows": [{"items": ["a", "b", "c"]}], "fields": {"a": {"type": "file", "label": "PDF ARL", "key": "opcional_2"}, "b": {"type": "text_short", "label": "x"}, "c": {"type": "file", "label": "Certificado"}}}
+    assert formfiles.file_fields(design) == [("a", "PDF ARL"), ("c", "Certificado")]
+    assert formfiles.extras_key_for(design, "a") == "opcional_2" and formfiles.extras_key_for(design, "c") is None
+    assert formfiles.stored_text({"filename": "arl.pdf", "stored": "x"}) == "arl.pdf" and formfiles.stored_text("hola") == "hola"
+    used = set()
+    n1 = formfiles.zip_entry_name("1001", "PDF ARL", 1, "Mi Archivo.PDF", used)
+    n2 = formfiles.zip_entry_name("1001", "PDF ARL", 7, "otro.pdf", used)
+    assert n1 == "1001_PDF_ARL.pdf" and n2 != n1 and n2.endswith(".pdf")
+
+
+def test_form_files_routes_and_screens():
+    f = _t("app/routers/forms.py")
+    assert '/forms/{form_id}/files-zip' in f and "formfiles.MAX_FILES" in f
+    a = _t("app/routers/api.py")
+    assert "/users/{user_id}/form-files" in a and 'require_role("coordinador")' in a[a.index("def person_form_files"):a.index("def person_form_file_download")]
+    assert "formfiles.stored_text" in _t("app/formsvc.py")
+    assert "files-zip?field=" in _t("templates/kiosk_formulario_editor.html") and 'id="ansFiles"' in _t("templates/kiosk_formulario_editor.html")
+    assert "/form-files`" in _t("static/js/directory.js")

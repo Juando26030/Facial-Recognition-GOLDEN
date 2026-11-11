@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs, minors, person_history, privacy
+from app import formfiles, formlib, jobs, minors, person_history, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, RateLimitEvent, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -994,7 +994,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     elif birth is not None and minors.is_minor(birth):
         user.is_biometric_enabled = False                              # una fecha de menor siempre restringe; una de adulto nunca habilita
     extras = user.get_extras()
-    extras.update({k: str(v) for k, v in kv.items() if k.startswith("opcional_")})
+    extras.update({k: formfiles.stored_text(v) for k, v in kv.items() if k.startswith("opcional_")})        # archivo: solo el nombre (el archivo se ve y se baja en «Editar persona»)
     user.set_extras(extras)
     if history_before is not None:
         person_history.record(db, user, history_before, event_id=event.id, staff_id=None, source="form")

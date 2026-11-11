@@ -3,6 +3,8 @@ plantillas, respuestas, archivos, invitaciones, reporte y carga a la base. Todo 
 La página pública que llena la gente vive en `forms_public.py` (`/f/<evento>/<formulario>`, sin login)."""
 import io
 import json
+import tempfile
+import zipfile
 import os
 import re
 import secrets
@@ -19,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
+from app import audit_actions, bulk_jobs, formfiles, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
@@ -1158,6 +1160,52 @@ def download_file(event_id: int, form_id: int, submission_id: int, field_id: str
     if not isinstance(info, dict) or not info.get("stored"):
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     return get_storage().response(form_file_key(event.tenant_id, form.id, info["stored"]), filename=info.get("filename") or os.path.basename(info["stored"]))
+
+
+@router.get("/events/{event_id}/forms/{form_id}/files-zip")
+def download_files_zip(event_id: int, form_id: int, field: str, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Todos los archivos de UNA columna de archivo de «Respuestas» en un solo ZIP (`cedula_Columna.ext`). Sin pruebas por defecto. Topes: 1.000 archivos y 300 MB."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    form = _get_form(db, event, form_id)
+    design = formsvc.get_design(form)
+    labels = dict(formfiles.file_fields(design))
+    if field not in labels:
+        raise HTTPException(status_code=400, detail="Ese campo no es de archivo")
+    q = db.query(FormSubmission.id, FormSubmission.person_id, FormSubmission.data_json).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
+    if not include_tests:
+        q = q.filter(FormSubmission.is_test == False)  # noqa: E712
+    items = []
+    for sid, pid, raw in q.order_by(FormSubmission.id).yield_per(500):
+        try:
+            info = formfiles.file_info(json.loads(raw or "{}").get(field))
+        except ValueError:
+            info = None
+        if info:
+            items.append((sid, pid, info))
+    if not items:
+        raise HTTPException(status_code=404, detail="Todavía no hay archivos en esa columna")
+    if len(items) > formfiles.MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Son {len(items)} archivos: el máximo por descarga es {formfiles.MAX_FILES}")
+    storage = get_storage()
+    used, total = set(), 0
+    tmp = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as zf:          # los PDF/imágenes ya vienen comprimidos: sin recomprimir
+        for sid, pid, info in items:
+            key = form_file_key(event.tenant_id, form.id, info["stored"])
+            try:
+                content = storage.get(key)
+            except Exception:       # un archivo faltante no tumba la descarga de los demás
+                continue
+            total += len(content)
+            if total > formfiles.MAX_BYTES:
+                raise HTTPException(status_code=400, detail="Los archivos pesan más de 300 MB juntos: descárgalos con el buscador de Respuestas por partes")
+            zf.writestr(formfiles.zip_entry_name(pid, labels[field], sid, info.get("filename") or "", used), content)
+    tmp.seek(0)
+    audit_actions.record(db, staff, "export", "form_files", form.id, None, f"formulario {form.id}, columna {field}, {len(used)} archivos")
+    db.commit()
+    name = f"{formfiles.safe_part(getattr(form, 'title', None) or getattr(form, 'name', None) or 'formulario', 40)}_{formfiles.safe_part(labels[field], 40)}.zip"
+    return Response(content=tmp.read(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 @router.get("/events/{event_id}/forms/{form_id}/report")

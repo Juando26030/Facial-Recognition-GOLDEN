@@ -31,7 +31,7 @@ from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_eve
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.eventpeople import member_ids, person_of_event as _person_of_event      # nombre histórico; la regla vive en app/eventpeople.py
-from app import roster_dups, roster_text, personform, lastname
+from app import roster_dups, roster_text, personform, lastname, formfiles
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -2717,6 +2717,54 @@ def person_change_history(event_id: int, user_id: str, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Persona no encontrada")
     items = person_history.history(db, event, user_id, limit=100)
     return {"items": items, "count": len(items)}
+
+
+def _person_form_files(db: Session, event: Event, user_id: str) -> list:
+    """Archivos que la persona subió en los formularios de este evento, por campo del registro (`opcional_N`): el de la inscripción confirmada más reciente (sin pruebas)."""
+    import json as _json
+    from app.models import FormSubmission, WebForm
+    out, seen = [], set()
+    rows = (db.query(FormSubmission, WebForm).join(WebForm, WebForm.id == FormSubmission.form_id)
+            .filter(FormSubmission.event_id == event.id, FormSubmission.person_id == user_id, FormSubmission.status == "confirmed", FormSubmission.is_test == False)  # noqa: E712
+            .order_by(FormSubmission.id.desc()).all())
+    for sub, form in rows:
+        design = formsvc.get_design(form)
+        data = _json.loads(sub.data_json or "{}")
+        for fid, label in formfiles.file_fields(design):
+            key = formfiles.extras_key_for(design, fid)
+            info = formfiles.file_info(data.get(fid))
+            if not key or not info or key in seen:
+                continue
+            seen.add(key)
+            out.append({"key": key, "label": label, "filename": info.get("filename") or "archivo", "submission_id": sub.id, "form_id": form.id, "field_id": fid})
+    return out
+
+
+@router.get("/events/{event_id}/users/{user_id}/form-files")
+def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Coordinador o superior."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if not _person_of_event(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    items = _person_form_files(db, event, user_id)
+    for it in items:
+        it["url"] = f"/api/events/{event.id}/users/{user_id}/form-files/{it['submission_id']}/{it['field_id']}"
+    return {"items": items}
+
+
+@router.get("/events/{event_id}/users/{user_id}/form-files/{submission_id}/{field_id}")
+def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    import json as _json
+    from app.models import FormSubmission
+    from app.storage import form_file_key
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    sub = db.query(FormSubmission).filter_by(id=submission_id, event_id=event.id, person_id=user_id, status="confirmed").first()
+    info = formfiles.file_info(_json.loads(sub.data_json or "{}").get(field_id)) if sub else None
+    if not info:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return get_storage().response(form_file_key(event.tenant_id, sub.form_id, info["stored"]), filename=info.get("filename") or "archivo")
 
 
 @router.get("/events/{event_id}/incomplete-registrations")
