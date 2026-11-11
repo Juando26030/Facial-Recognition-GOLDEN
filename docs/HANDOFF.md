@@ -1,6 +1,13 @@
 # Handoff — migración a Cloud Run + Neon (estado al 2026-09-29)
 
-> ## ESTADO ACTUAL (8-nov-2026, noche) — léelo primero
+> ## ESTADO ACTUAL (11-nov-2026, noche) — léelo primero
+> **Producción y staging = commit `0899e02`** (migración `0129`; `main` sin fusionar). Punto de retorno completo: [`ESTADO_2026-11-11.md`](ESTADO_2026-11-11.md); reglas de Juan David: [`REGLAS_Y_FORMA_DE_TRABAJO.md`](REGLAS_Y_FORMA_DE_TRABAJO.md); visual: [`ux/LECCIONES_VISUALES_NOV11.md`](ux/LECCIONES_VISUALES_NOV11.md); prompt para sesión nueva: [`PROMPT_SESION_NUEVA_2026-11-11.md`](PROMPT_SESION_NUEVA_2026-11-11.md). Siguiente: versión local, llaves de gastos y CRM.
+>
+> ## ESTADO ANTERIOR (9-nov-2026, noche)
+> **Producción = Fase 4** (commit `2c8c4d7`, migración `0104`, desplegado el 9-nov con autorización de Juan David; `main` aún sin fusionar). **Fases 5 a 9 programadas en `f5/integracion`, sin probar con base ni desplegar** (Cloud Shell sin cuota hasta el 11-nov 14:05; GitHub Actions bloqueado por facturación). Migraciones nuevas `0105`–`0121` (sin 0117 ni 0120), cadena verificada por `tests/test_cadena_migraciones.py`.
+> Revisión del 9-nov: [`REVISION_F5-9_PLAN_VS_CODIGO.md`](REVISION_F5-9_PLAN_VS_CODIGO.md) (plan contra código), [`seguridad/F5-9_RESUMEN.md`](seguridad/F5-9_RESUMEN.md) (ronda de seguridad y decisiones abiertas), [`ux/REVISION_VISUAL_F5-9.md`](ux/REVISION_VISUAL_F5-9.md). Configuración de nube ya hecha por Juan David el 9-nov: secretos `golden-onedrive-*`, `golden-backup-copy-encryption-key`, `golden-payment-keys-encryption-key`; retraso de destrucción de 7 días en las llaves; sitio SharePoint «Respaldos GoldenWeb» + app Entra «GoldenWeb copia semanal» (Sites.Selected, rol write). Al desplegar: `PUBLIC_FORMS_BASE_URL`, `ONEDRIVE_DRIVE_ID`, `GCP_BILLING_EXPORT_TABLE` (no son secretos pero no van en este repo público: están en el documento 43 del proyecto de Claude).
+>
+> ## ESTADO ANTERIOR (8-nov-2026, noche)
 > **Fase 4 (Equipo del evento) CERRADA por Juan David** en `f4/integracion` (staging, despliegue 61). Resumen y pendientes: [`CIERRE_FASE_4.md`](CIERRE_FASE_4.md). Producción sigue en `main` sin Fase 2, 3 ni 4. **Siguiente: Fase 5 (Crear y configurar eventos).** Falta antes de producción: suite completa con base de datos sobre el SHA final (`scripts/pruebas_cloudshell.sh`, la corre Juan David) y su autorización del commit exacto. Migraciones nuevas de esta fase: `0100` a `0104`.
 >
 > ## ESTADO ANTERIOR (7-nov-2026, noche)

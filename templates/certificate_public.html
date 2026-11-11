@@ -10,6 +10,7 @@
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/html2canvas-1.4.1.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/jspdf-2.5.1.umd.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <style>
         html, body { margin:0; min-height:100%; background:#f4f5f9; color:#0a0e2e; font-family:'Inter', system-ui, sans-serif; }
@@ -35,6 +36,9 @@
         #host { transform-origin:top left; }
     </style>
     {% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body>
 <div class="brand">{{ company_name }}</div>

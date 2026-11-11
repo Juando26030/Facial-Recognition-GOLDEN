@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     {# 27-oct-2026: la ventana de impresión usa la MISMA etiqueta compuesta que el USB (recorte, giro y margen resueltos de Parámetros y de ⚙️): static/js/label-compose.js #}
     <meta name="gw-print-settings" content="{{ print_settings_json(event) }}">

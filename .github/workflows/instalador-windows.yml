@@ -1,0 +1,36 @@
+name: Instalador de Windows (servidor local)
+
+# Fase 6. SOLO MANUAL (workflow_dispatch): no corre con push ni con pull request, así que no gasta minutos de Actions por sí solo. Construye el instalador de doble clic
+# y el paquete de «Actualizar ahora» en un runner de Windows y los deja como artefactos descargables. NO publica nada ni toca la nube.
+# Ojo: usa minutos de GitHub Actions (ver facturación). Alternativa sin Actions: correr deploy/windows/build_installer.ps1 en un computador Windows.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión del instalador (vacío = fecha-commit)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Construir
+        shell: pwsh
+        run: ./deploy/windows/build_installer.ps1 -Version "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golden-local-windows
+          path: build/windows/out/*
+          retention-days: 14

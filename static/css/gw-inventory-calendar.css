@@ -1,0 +1,110 @@
+/* Pantalla /inventario (Fase 10): catálogo con existencias y calendario «dónde está cada equipo». Solo tokens --gw-* y clases .gw-* del diseño. */
+.gw-invpg__tabs { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-invpg__tabs .gw-segment__opt, .gw-invcal__nav .gw-segment__opt { flex: 0 1 auto; }
+.gw-invcal__nav .gw-segment { flex-wrap: nowrap; }
+.gw-invpg__panel[hidden] { display: none; }
+.gw-invpg__toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gw-sp-3); }
+.gw-invpg__toolbar .gw-field { margin: 0; min-width: 0; }
+.gw-invpg__cat { margin: 0; font-size: var(--gw-fs-lg); }
+.gw-invpg__prod { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(5.5rem, 0.5fr)) auto; gap: var(--gw-sp-2) var(--gw-sp-3); align-items: center; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-invpg__name { min-width: 0; overflow-wrap: anywhere; font-weight: var(--gw-fw-bold); }
+.gw-invpg__num { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; }
+.gw-invpg__lbl { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-invpg__val { font-weight: var(--gw-fw-bold); }
+.gw-invpg__val--short { color: var(--gw-danger); }
+.gw-invpg__edit { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: end; gap: var(--gw-sp-3); padding-top: var(--gw-sp-2); border-top: 1px solid var(--gw-border); }
+.gw-invpg__edit[hidden] { display: none; }
+.gw-invpg__edit .gw-field { margin: 0; min-width: 0; }
+
+.gw-invcal__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-invcal__title { margin: 0; font-size: var(--gw-fs-lg); flex: 1 1 10rem; }
+.gw-invcal__title::first-letter { text-transform: uppercase; }
+.gw-invcal__month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.gw-invcal__dow { padding: var(--gw-sp-1); text-align: center; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+.gw-invcal__cell { display: flex; flex-direction: column; align-items: stretch; gap: var(--gw-sp-1); min-width: 0; min-height: 6.5rem; padding: var(--gw-sp-1); font: inherit; text-align: left; color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); cursor: pointer; }
+.gw-invcal__cell:hover { background: var(--gw-surface-2); }
+.gw-invcal__cell:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-invcal__cell--out { background: var(--gw-surface-2); color: var(--gw-text-muted); }
+.gw-invcal__cell--today .gw-invcal__d { background: var(--gw-gold-grad); color: var(--gw-on-gold); }
+.gw-invcal__cell[aria-pressed="true"] { border-color: var(--gw-text); box-shadow: inset 0 0 0 2px var(--gw-gold-2); }
+.gw-invcal__d { align-self: flex-start; min-width: 1.6em; padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); text-align: center; }
+.gw-invcal__chip { display: block; padding: 0 var(--gw-sp-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-fs-sm); border-radius: var(--gw-radius-sm); background: var(--gw-info-bg); }
+.gw-invcal__chip--ok { background: var(--gw-ok-bg); }
+.gw-invcal__chip--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); }
+.gw-invcal__more { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-invcal__avail { margin-top: auto; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-invcal__avail--short { color: var(--gw-danger); }
+.gw-invcal__week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--gw-sp-2); }
+.gw-invcal__col { display: flex; flex-direction: column; gap: var(--gw-sp-2); min-width: 0; padding: var(--gw-sp-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-invcal__col[aria-current="date"] { border-color: var(--gw-gold-2); }
+.gw-invcal__evt { min-width: 0; padding: var(--gw-sp-2); border-radius: var(--gw-radius-sm); background: var(--gw-surface-2); overflow-wrap: anywhere; }
+.gw-invcal__evt strong { display: block; }
+.gw-invcal__evt ul { margin: var(--gw-sp-1) 0 0; padding-left: var(--gw-sp-4); font-size: var(--gw-fs-sm); }
+.gw-invcal__detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-3); }
+.gw-invcal__detail > *, .gw-invboard, .gw-invboard__card { min-width: 0; }
+.gw-invcal__detail .gw-table th:not(:first-child), .gw-invcal__detail .gw-table td:not(:first-child) { white-space: nowrap; }
+.gw-invcal__evhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-invcal__evtitle { margin: 0; font-size: var(--gw-fs-md); min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .gw-invcal__week { grid-template-columns: minmax(0, 1fr); }
+  .gw-invcal__cell { min-height: 4.5rem; }
+}
+/* Teléfono y tableta angosta: el mes pasa a ser una agenda (solo los días con material), con cada evento legible — ya no son puntos */
+@media (max-width: 760px) {
+  .gw-invcal__month { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); }
+  .gw-invcal__dow, .gw-invcal__cell--empty, .gw-invcal__cell--out { display: none; }
+  .gw-invcal__cell { min-height: 0; padding: var(--gw-sp-2) var(--gw-sp-3); }
+  .gw-invcal__dn { display: inline; }
+}
+@media (max-width: 760px) {
+  .gw-invpg__prod { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gw-invpg__name, .gw-invpg__edit { grid-column: 1 / -1; }
+}
+
+/* Planeación: panel de equipos para asignar, cintas «sin inventario aún» y destino de soltar (Fase 10). */
+.gw-invcal__cats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-invcal__cats[hidden], .gw-invassign[hidden] { display: none; }
+.gw-invassign__group { min-width: 0; }
+.gw-invassign__cat { margin: var(--gw-sp-2) 0 var(--gw-sp-1); font-size: var(--gw-fs-md); }
+.gw-invassign__chips { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-invassign__art { cursor: grab; text-align: left; }
+.gw-invassign__art[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: var(--gw-gold-2); }
+.gw-invassign__art--none { border-style: dashed; }
+.gw-invassign__art:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-invcal__chip--none { background: var(--gw-surface); border: 1px dashed var(--gw-border-strong); }
+.gw-invcal--drop { outline: 3px dashed var(--gw-gold-2); outline-offset: 1px; background: var(--gw-info-bg); }
+
+
+/* «Dónde está cada equipo» más visual (11-nov-2026): cintas legibles con su cantidad, total por día y tablero del día seleccionado. */
+.gw-invcal__top { display: flex; align-items: center; gap: var(--gw-sp-1); }
+.gw-invcal__dn { display: none; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); text-transform: capitalize; }
+.gw-invcal__tot { margin-left: auto; padding: 0 var(--gw-sp-2); border-radius: 999px; background: var(--gw-text); color: var(--gw-surface); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); white-space: nowrap; }
+.gw-invcal__cell { min-height: 8.5rem; }
+.gw-invcal__chip { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-2); font-size: var(--gw-fs-sm); line-height: 1.25; border-left: 4px solid var(--evc, var(--gw-gold-2)); white-space: normal; }
+.gw-invcal__chipname { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-weight: var(--gw-fw-bold); }
+.gw-invcal__chipn { flex: 0 0 auto; min-width: 1.8em; padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); text-align: center; font-size: var(--gw-fs-md); }
+.gw-invcal__chipn--none { font-size: var(--gw-fs-sm); color: var(--gw-warn-text); }
+
+.gw-invboard { display: grid; gap: var(--gw-sp-3); padding: var(--gw-sp-4); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); background: var(--gw-surface); }
+.gw-invboard__title { margin: 0; font-size: var(--gw-fs-xl, var(--gw-fs-lg)); }
+.gw-invboard__title::first-letter { text-transform: uppercase; }
+.gw-invboard__kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--gw-sp-3); }
+.gw-invboard__kpi { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); }
+.gw-invboard__kpi--bad { background: var(--gw-danger-bg, var(--gw-warn-bg)); color: var(--gw-danger); }
+.gw-invboard__n { font-size: var(--gw-fs-3xl); font-weight: var(--gw-fw-bold); line-height: 1; }
+.gw-invboard__l { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-invboard__kpi--bad .gw-invboard__l { color: inherit; }
+.gw-invboard__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--gw-sp-3); }
+.gw-invboard__card { display: flex; flex-direction: column; gap: var(--gw-sp-2); min-width: 0; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-top: 6px solid var(--evc, var(--gw-gold-2)); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-invboard__name { margin: 0; font-size: var(--gw-fs-md); overflow-wrap: anywhere; }
+.gw-invboard__big { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-invboard__num { font-size: var(--gw-fs-3xl); font-weight: var(--gw-fw-bold); line-height: 1; }
+.gw-invboard__unit { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-invboard__lines { margin: 0; padding-left: var(--gw-sp-4); font-size: var(--gw-fs-sm); }
+.gw-invboard__card .gw-btn { align-self: flex-start; margin-top: auto; }
+
+.gw-invcatday { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gw-sp-2); }
+.gw-invcatday .gw-field { margin: 0; }
+.gw-invcatday__text { align-self: center; }
+.gw-invcatday__text::first-letter { text-transform: uppercase; }
+@media (max-width: 760px) { .gw-invcal__cell { min-height: 0; } }

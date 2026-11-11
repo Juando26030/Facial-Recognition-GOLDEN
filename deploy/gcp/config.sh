@@ -67,6 +67,10 @@ else
   FIREBASE_SITE=""; WEB_MODULE="app.main:app"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(run_url "golden-web${SUFFIX}")}"
 fi
 
+# URL limpia de las inscripciones (D2.5k, docs/20): vacío = todo sigue saliendo como /f/<evento>/<formulario>. Con valor (https://app.golden-eventos.com/inscripciones) los enlaces de correos y del panel
+# salen limpios (/inscripciones/<evento>/<formulario>). Mismo host de la app: no hay sitio, dominio ni CORS aparte.
+PUBLIC_FORMS_BASE_URL="${PUBLIC_FORMS_BASE_URL:-}"
+
 # Orígenes que el bucket deja hacer PUT directo desde el navegador (CORS de la subida con URL firmada). UNA sola definición: la usan bootstrap.sh (la aplica) y
 # move_region.sh verify (comprueba EXACTAMENTE esta lista), calculada desde el proyecto y la región. Plantilla de la regla: deploy/gcs-app-cors.json (solo su
 # origin cambia). Producción: el dominio propio y los sitios de Firebase, sin run.app (salvo CORS_INCLUDE_RUN_URLS=1). Staging: además las dos URL run.app del servicio web (para probar directo).
@@ -112,7 +116,8 @@ APP_SECRETS="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-k
 wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET wompi-events-secret:WOMPI_EVENTS_SECRET wompi-private-key:WOMPI_PRIVATE_KEY
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET
 wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET wompi-sandbox-private-key:WOMPI_SANDBOX_PRIVATE_KEY
-azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER"
+azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
 # E8: secretos por servicio (solo cuentan con SPLIT_SERVICE_ACCOUNTS=1; sin él cada servicio recibe APP_SECRETS completo, como hasta hoy). `web` (panel, cobros y reembolsos, correos) los lleva todos.
 # `publico` (abierto a internet: formularios, pagos, aceptación, escarapela digital) NO lleva las credenciales de correo de Microsoft ni la llave PRIVADA de Wompi (reembolsos): solo base, claves de la app,
 # ops-token y las claves públicas/de firma de eventos de Wompi. `biometria` NO lleva Microsoft ni nada de Wompi (el correo y los pagos salen por la cola general, que ejecuta `web`).
@@ -120,11 +125,15 @@ azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-sec
 SECRETS_WEB="$APP_SECRETS"
 SECRETS_PUBLICO="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*
 wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET wompi-events-secret:WOMPI_EVENTS_SECRET
-wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET"
+wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
+# ↑ F5-9 E: `publico` sirve /f/ (firma del pago) y /webhooks/ (firma de eventos): con cuentas de cobro de terceros (0118) necesita descifrar sus secretos de
+#   integridad y de eventos. Sin esta llave, con SPLIT_SERVICE_ACCOUNTS=1 esos cobros fallaban. Ojo: la misma llave abre también la llave PRIVADA cifrada de esas cuentas.
 SECRETS_BIOMETRIA="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*"
 service_secrets() {   # nombre corto del servicio -> lista «nombre:VARIABLE[*]» que recibe
   if [ "$SPLIT_SERVICE_ACCOUNTS" != 1 ]; then echo "$APP_SECRETS"; return; fi
   case "$1" in publico) echo "$SECRETS_PUBLICO";; biometria) echo "$SECRETS_BIOMETRIA";; *) echo "$SECRETS_WEB";; esac
 }
 # El Job de operaciones también manda correos (avisos) y lee lo de la app que necesita la purga (llave de rostros).
-OPS_SECRETS="direct-database-url:DIRECT_DATABASE_URL* neon-api-key:NEON_API_KEY alert-email:ALERT_EMAIL"
+OPS_SECRETS="direct-database-url:DIRECT_DATABASE_URL* neon-api-key:NEON_API_KEY alert-email:ALERT_EMAIL
+onedrive-tenant-id:ONEDRIVE_TENANT_ID onedrive-client-id:ONEDRIVE_CLIENT_ID onedrive-client-secret:ONEDRIVE_CLIENT_SECRET onedrive-drive-user:ONEDRIVE_DRIVE_USER onedrive-folder:ONEDRIVE_FOLDER backup-copy-encryption-key:BACKUP_COPY_ENCRYPTION_KEY"

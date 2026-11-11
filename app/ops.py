@@ -208,6 +208,12 @@ def _check_backup_bucket(bucket_name: str, max_age: float, client=None) -> dict:
                 "" if level == "green" else "Revisa las ejecuciones del Job golden-ops en Cloud Run.", age_hours=round(age_h, 1), name=newest.name)
 
 
+def check_offsite_copy() -> dict:
+    """Fase 9-B: estado de la copia semanal a OneDrive (lo escribe el Job de operaciones en el bucket de respaldos; sin datos personales)."""
+    from app import offsite_copy
+    return offsite_copy.status_item()
+
+
 # ------------------------------------------------------------------ eventos y formularios
 def _next_form_openings(db: Session, hours: int = 24) -> List[dict]:
     """Formularios con calendario cuyo próximo tramo «activo» empieza en las próximas `hours` horas (hora local del calendario)."""
@@ -305,7 +311,7 @@ def check_client_ip() -> dict:
 
 # ------------------------------------------------------------------ estado completo / readiness
 def system_status(db: Session) -> dict:
-    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup, check_client_ip,
+    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup, check_offsite_copy, check_client_ip,
                                         lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_unfinished_events(db), lambda: check_emails(db), lambda: check_payments(db),
                                         lambda: check_errors(db)]
     results = []

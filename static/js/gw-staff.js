@@ -16,11 +16,11 @@
   // Debe reflejar DELETABLE_ROLES_BY en app/routers/staff.py: solo para no mostrar un botón que el backend va a rechazar; el permiso real siempre lo valida el servidor.
   const DELETABLE_ROLES = {
     coordinador: ['digitador'],
-    admin: ['comercial', 'coordinador', 'digitador', 'cliente'],
-    super_admin: ['admin', 'comercial', 'coordinador', 'digitador', 'cliente'],
+    admin: ['comercial', 'coordinador', 'almacen', 'contabilidad', 'digitador', 'cliente'],
+    super_admin: ['admin', 'comercial', 'coordinador', 'almacen', 'contabilidad', 'digitador', 'cliente'],
   }[staffRole] || [];
   // Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17): lo hace el administrador. Solo admite este único par, en cualquier orden.
-  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente' };
+  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente', almacen: 'Almacén', contabilidad: 'Contabilidad' };
   const roleLabel = (r) => ROLE_LABELS[r] || r;
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -60,9 +60,9 @@
     const parts = [];
     const more = [];
     // A la vista lo de todos los días (restablecer contraseña, desactivar/reactivar); lo poco usado y lo irreversible va en el menú «Más acciones».
-    if (DELETABLE_ROLES.includes(s.role)) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));
+    if (DELETABLE_ROLES.includes(s.role) && !(window.LOCAL_SERVER || document.querySelector('meta[name="gw-local-server"]'))) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));          // servidor local: las contraseñas solo se cambian en la nube
     parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check', 'gw-btn--ok'));
-    if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol o añadir roles', 'user-plus', `data-current="${esc(s.role)}" data-extras="${esc((s.extra_roles || []).join(','))}"`));
+    if (isAdminPlus && ['coordinador', 'comercial', 'almacen', 'contabilidad', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol o añadir roles', 'user-plus', `data-current="${esc(s.role)}" data-extras="${esc((s.extra_roles || []).join(','))}"`));
     if (isAdminPlus && DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Eliminar cuenta', 'trash', '', true));          // 8-nov-2026: se elimina de verdad (para dejar sin acceso está «Desactivar»); nunca un super_admin
     if (more.length) parts.push(`<div class="gw-menu gw-staff__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-staff-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(s.username)}">${icon('more')}</button><div class="gw-menu__panel" role="menu" hidden>${more.join('')}</div></div>`);
     return parts.join('');
@@ -123,19 +123,19 @@
 
   // Roles de la cuenta: el principal (lista) y debajo «Añadir roles» (casillas): una persona puede tener uno, dos o más; sus permisos son la suma. «Admin» como rol extra solo lo da el Super Admin.
   function changeRole(btn) {
-    const allowed = staffRole === 'super_admin' ? ['coordinador', 'comercial', 'admin'] : ['coordinador', 'comercial'];
+    const allowed = staffRole === 'super_admin' ? ['coordinador', 'comercial', 'almacen', 'contabilidad', 'admin'] : ['coordinador', 'comercial', 'almacen', 'contabilidad'];
     const current = btn.dataset.current;
     const username = btn.dataset.username;
     const currentExtras = (btn.dataset.extras || '').split(',').filter(Boolean);
     const options = allowed.map((r) => `<option value="${r}" ${r === current ? 'selected' : ''}>${roleLabel(r)}</option>`).join('');
-    const extraChoices = ['coordinador', 'comercial'].concat(staffRole === 'super_admin' ? ['admin'] : []);
+    const extraChoices = ['coordinador', 'comercial', 'almacen', 'contabilidad'].concat(staffRole === 'super_admin' ? ['admin'] : []);          // Almacén y Contabilidad: rol principal o sumados (inventario)
     const d = openGwDialog({
       title: 'Roles de la cuenta',
       bodyHtml: `<p class="gw-modal__text">Cuenta <strong>${esc(username)}</strong>. Los permisos cambian en cuanto confirmes; si tiene varios roles, recibe la suma de todos.</p>` +
         '<div class="gw-field"><label class="gw-label" for="staffNewRole">Rol principal</label><select class="gw-select" id="staffNewRole">' + options + '</select></div>' +
         '<fieldset class="gw-field" id="staffExtraBox"><legend class="gw-label">Añadir roles</legend>' +
         extraChoices.map((r) => `<label class="gw-check" data-extra-row="${r}"><input type="checkbox" value="${r}" ${currentExtras.includes(r) ? 'checked' : ''}><span>${esc(roleLabel(r))}</span></label>`).join('') +
-        '<p class="gw-hint">Más adelante se podrán añadir también Bodega y Contabilidad.</p></fieldset>',
+        '<p class="gw-hint">Almacén puede ver y editar el inventario de los eventos; Contabilidad solo lo consulta. Ninguno de los dos administra cuentas ni ve datos de asistentes.</p></fieldset>',
       buttons: [{ id: 'staffRoleCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'staffRoleOk', cls: 'gw-btn--primary', label: 'Guardar roles' }],
       onEscape: () => d.close(),
     });

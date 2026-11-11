@@ -4,12 +4,20 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app import event_rules, idle, sessions
+from app import event_lease, event_rules, idle, mass_delete, sessions
 from app.database import get_db
 from app.timeutil import utcnow
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
 ROLE_HIERARCHY = {role: i for i, role in enumerate(STAFF_ROLES)}
+
+# Roles de inventario (Fase 5, decisión de Juan David 9-nov-2026): «almacén» y «contabilidad» NO son un escalón de la escalera cliente < … < super_admin. Pueden ser el rol PRINCIPAL de una cuenta (una
+# persona solo de almacén o solo de contabilidad) o SUMARSE (extra_roles) a coordinador/comercial y entre ellos (se pueden mezclar los cuatro). Dan únicamente sus permisos propios (inventario). Van en ROLE_HIERARCHY con rango -1 para que `max(ROLE_HIERARCHY[r] for r in effective_roles(...))` siga funcionando (el rango lo pone el rol
+# principal; el extra nunca sube ni baja) y para que split_roles los reconozca; NO están en STAFF_ROLES (así ninguna lista de «roles que se crean/cambian» los ofrece como principal).
+EXTRA_ONLY_ROLES = {"almacen": "Almacén", "contabilidad": "Contabilidad"}          # (nombre histórico) roles de inventario
+STANDALONE_ROLES = tuple(EXTRA_ONLY_ROLES)          # también valen como rol principal de una cuenta
+for _r in EXTRA_ONLY_ROLES:
+    ROLE_HIERARCHY[_r] = -1
 
 
 FORM_CLIENT_OWN_PREFIXES = ("/api/form-client/", "/mi-formulario")          # sus propias rutas responden con su mensaje de acceso vencido (403, form_client.resolve)
@@ -34,6 +42,7 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
     if not staff:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sesión inválida o usuario desactivado")
+    mass_delete.set_actor(db, staff)                     # Fase 9-A: quién hace los borrados de esta petición (para la alerta de borrado masivo)
     if sessions.is_replaced(db, request, staff):         # entró con esta cuenta en otro dispositivo (sesión única): el cliente detiene todo y lleva al inicio de sesión
         request.session.clear()
         raise HTTPException(status_code=401, detail="session_replaced")
@@ -61,10 +70,10 @@ def effective_roles(staff: StaffUser) -> set:
     return roles
 
 
-# Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «bodega» y «contabilidad» se agregan aquí cuando existan.
+# Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «almacen» y «contabilidad» (Fase 5) son SOLO extra (EXTRA_ONLY_ROLES).
 # Solo cuentas con rol principal en EXTRA_ROLE_PRIMARIES reciben roles extra; «admin» como extra solo lo da el Super Admin.
-EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin")
-EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial")
+EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin", "almacen", "contabilidad")
+EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial", "almacen", "contabilidad")          # rol principal que admite sumar otros
 
 
 def split_roles(value) -> list:
@@ -75,6 +84,25 @@ def split_roles(value) -> list:
         if r and r in ROLE_HIERARCHY and r not in out:
             out.append(r)
     return out
+
+
+def is_inventory_only(staff_or_roles) -> bool:
+    """¿Solo tiene roles de inventario (almacén/contabilidad)? Esas cuentas no tienen panel ni eventos: su única pantalla es /inventario."""
+    roles = staff_or_roles if isinstance(staff_or_roles, (set, list, tuple)) else effective_roles(staff_or_roles)
+    return bool(roles) and set(roles) <= set(STANDALONE_ROLES)
+
+
+def has_any_role(staff, *roles: str) -> bool:
+    """¿La cuenta tiene alguno de estos roles (principal o sumados)?"""
+    return bool(effective_roles(staff) & set(roles))
+
+
+def staff_with_role(db: Session, role: str) -> list:
+    """Cuentas ACTIVAS (no archivadas) que tienen este rol, principal o sumado (p. ej. 'almacen', 'contabilidad'): sirve para mandar un correo a todas (`[s.email for s in … if s.email]`).
+    Sin filtrar por correo: quien llama decide qué hacer con las que no tienen."""
+    rows = db.query(StaffUser).filter(StaffUser.is_active == True, StaffUser.archived_at.is_(None),  # noqa: E712
+                                      or_(StaffUser.role == role, StaffUser.extra_roles.like(f"%{role}%"), StaffUser.secondary_role == role)).order_by(StaffUser.id).all()
+    return [s for s in rows if role in effective_roles(s)]          # el LIKE solo preselecciona; la pertenencia exacta la decide effective_roles
 
 
 def all_extra_roles(staff) -> list:
@@ -93,6 +121,44 @@ def require_role(minimum_role: str):
 
     def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
         if max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < minimum_level:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
+def require_platform_role(minimum_role: str):
+    """Como require_role, pero además exige personal GLOBAL (sin `tenant_id`) cuando ENFORCE_STAFF_TENANT=1: para paneles que cruzan a todos los clientes
+    (gastos de la plataforma, satisfacción y comentarios de todos los clientes). Un admin de otra empresa no los ve (F5-9 E)."""
+    base = require_role(minimum_role)
+
+    def checker(staff: StaffUser = Depends(base)) -> StaffUser:
+        if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
+def require_platform_role_or_any(minimum_role: str, extra_roles: tuple):
+    """`require_platform_role` que además deja pasar a quien tenga alguno de `extra_roles` (p. ej. contabilidad en los gastos de infraestructura). Sigue exigiendo personal GLOBAL con ENFORCE_STAFF_TENANT=1."""
+    base = require_role_or_any(minimum_role, extra_roles)
+
+    def checker(staff: StaffUser = Depends(base)) -> StaffUser:
+        if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
+def require_role_or_any(minimum_role: str, extra_roles: tuple):
+    """Como require_role, pero además deja pasar a quien tenga alguno de `extra_roles` aunque su rango sea menor (p. ej. almacén/contabilidad para el inventario)."""
+    minimum_level = ROLE_HIERARCHY[minimum_role]
+
+    def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+        roles = effective_roles(staff)
+        if max(ROLE_HIERARCHY[r] for r in roles) < minimum_level and not (roles & set(extra_roles)):
             raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
         return staff
 
@@ -159,6 +225,12 @@ def assert_event_tenant(event: Event, staff: StaffUser) -> None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
 
+def sees_event_tenant(staff: StaffUser, event: Event) -> bool:
+    """¿`assert_event_tenant` dejaría pasar a esta cuenta? Para elegir DESTINATARIOS de avisos sobre un evento (F5-9 D, D2): con ENFORCE_STAFF_TENANT=1 el personal de otro cliente no
+    recibe el nombre ni los cambios de un evento ajeno."""
+    return not (os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and event.tenant_id != staff.tenant_id)
+
+
 def assert_tenant_id(tenant_id: str, staff: StaffUser) -> None:
     """Como `assert_event_tenant`, para recursos que solo traen el id del cliente en la ruta (p. ej. imágenes de escarapela): con ENFORCE_STAFF_TENANT=1, el personal de un cliente no toca los de otro."""
     if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and tenant_id != staff.tenant_id:
@@ -206,6 +278,10 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    if is_inventory_only(staff):
+        # Revisión de seguridad F5-9 D (D1): una cuenta SOLO de almacén/contabilidad no es digitador ni cliente, así que antes pasaba como coordinador+ y veía el directorio de asistentes
+        # (/api/users), el formulario de persona, el quiosco… Su única puerta a un evento es el inventario (app/routers/inventory.py, que no usa esta función).
+        raise HTTPException(status_code=403, detail="Tu rol solo tiene acceso al inventario de los eventos")
     assert_event_scope(event, staff, db)
     idle.note_event(event)                      # tiempo de inactividad propio del evento (solo en proceso); ver app/idle.py
 
@@ -227,5 +303,6 @@ def require_event_in_progress(event: Event) -> None:
     (recognize/register/bulk_register) — a diferencia del acceso general al evento, esto aplica a
     TODOS los roles por igual, incluido admin/super_admin: si el evento no está 'en_proceso', nadie
     registra, solo se puede ver/editar el evento y gestionar sus usuarios."""
+    event_lease.assert_editable(event)          # Fase 6: en un servidor local el evento es de solo lectura en la nube
     if not event_rules.allowed(event, "registration"):
         raise HTTPException(status_code=403, detail=_closed_detail(event, "No se puede registrar: este evento"))

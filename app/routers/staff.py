@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import audit_actions, jobs, security, sessions, staff_credentials
+from app import audit_actions, jobs, security, sessions, staff_credentials, localmode, temp_client
 from app.inputcheck import check_text, check_username, text_validator, username_validator
-from app.auth import EXTRA_ROLE_CHOICES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
+from app.auth import EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
 from app.timeutil import utcnow
 
@@ -20,15 +20,15 @@ router = APIRouter()
 # ambos se crean desde dentro de un evento (ver app/routers/events.py, POST
 # /events/{id}/staff-users), donde quedan asociados a ese evento en el mismo paso.
 # "comercial" (Sprint 2.4, 2026-09-16): mismo flujo que coordinador, admin+ lo crea desde acá.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador", "comercial")
+ROLES_CREATABLE_BY_ADMIN = ("coordinador", "comercial", "almacen", "contabilidad")
 
 # Qué roles puede BORRAR PERMANENTEMENTE cada rol (siempre "todo lo que está por debajo de mí").
 # coordinador es el caso especial: solo temporales (digitador), nada más. "comercial" no borra a
 # nadie por ahora (no fue parte del pedido) — solo admin+ puede borrar cuentas comercial.
 DELETABLE_ROLES_BY = {
     "coordinador": ("digitador",),
-    "admin": ("comercial", "coordinador", "digitador", "cliente"),
-    "super_admin": ("admin", "comercial", "coordinador", "digitador", "cliente"),
+    "admin": ("comercial", "coordinador", "almacen", "contabilidad", "digitador", "cliente"),
+    "super_admin": ("admin", "comercial", "coordinador", "almacen", "contabilidad", "digitador", "cliente"),
 }
 
 
@@ -59,7 +59,7 @@ DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 def _rank(u: StaffUser) -> int:
     """Rango efectivo: el más alto entre el rol principal y los sumados (un coordinador con admin sumado pesa como admin)."""
-    return max(STAFF_ROLES.index(r) for r in effective_roles(u) if r in STAFF_ROLES)
+    return max(ROLE_HIERARCHY[r] for r in effective_roles(u) if r in ROLE_HIERARCHY)
 
 
 def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None:
@@ -141,7 +141,7 @@ def list_staff(include_archived: bool = False, db: Session = Depends(get_db), st
 def create_staff(
     data: StaffIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    if data.role not in STAFF_ROLES:
+    if data.role not in STAFF_ROLES and data.role not in STANDALONE_ROLES:
         raise HTTPException(status_code=400, detail="Rol inválido")
     if data.role == "super_admin":
         raise HTTPException(status_code=403, detail="No se puede crear otro Super Admin desde la app")
@@ -152,6 +152,8 @@ def create_staff(
         )
     if data.role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
+    if localmode.is_local_server():
+        raise HTTPException(status_code=403, detail="Las cuentas se crean en la nube: aquí llegan solas al conectarse")          # Fase 6: la nube manda
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ese usuario ya existe")
     problem = security.password_problem(data.password, data.username, strict=True)         # 0C (C11)
@@ -196,7 +198,7 @@ def set_staff_email(
     if not target or (staff.tenant_id is not None and target.tenant_id != staff.tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     # 0C (A1): el correo de una cuenta decide quién recibe el enlace de «olvidé mi contraseña»; cambiarlo equivale a tomar la cuenta. Solo sobre cuentas de rango INFERIOR (o la propia).
-    if target.id != staff.id and _rank(target) >= STAFF_ROLES.index(staff.role):
+    if target.id != staff.id and _rank(target) >= _rank(staff):
         raise HTTPException(status_code=403, detail="No puedes cambiar el correo de una cuenta de tu mismo rango o superior")
     email = str(data.get("email") or "").strip()
     if email and (len(email) > 120 or not re.fullmatch(r"[A-Za-z0-9._%+\-']+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", email)):
@@ -290,7 +292,7 @@ def edit_staff_profile(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     _assert_can_manage(db, staff, target)
     own = target.id == staff.id
-    if not own and _rank(target) >= STAFF_ROLES.index(staff.role):
+    if not own and _rank(target) >= _rank(staff):
         raise HTTPException(status_code=403, detail="No puedes editar una cuenta de tu mismo rango o superior")
     changed = []
     if "username" in data:
@@ -356,8 +358,8 @@ def change_staff_role(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     _assert_can_manage(db, staff, target)
     new_role = data.get("role")
-    if new_role not in ("coordinador", "comercial", "admin"):
-        raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial o admin")
+    if new_role not in ("coordinador", "comercial", "admin") + STANDALONE_ROLES:
+        raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial, almacén, contabilidad o admin")
     if target.id == staff.id:
         raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
     if target.role not in _manageable_roles(staff) or target.role in ("digitador", "cliente"):
@@ -378,6 +380,7 @@ def reset_staff_password(
     """Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de digitador; un
     admin, las de abajo). Salvo el digitador temporal, la persona debe elegir su propia contraseña al ingresar
     (`must_change_password`, siempre; Fase 4)."""
+    localmode.assert_passwords_allowed()          # Fase 6: en un servidor local las contraseñas solo se cambian en la nube
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
@@ -386,7 +389,13 @@ def reset_staff_password(
     if target.role not in _manageable_roles(staff):
         raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
     _assert_can_manage(db, staff, target)          # P1: el coordinador solo con digitadores de eventos a los que tiene acceso
-    if data.get("use_username") and target.role == "digitador":
+    generated = None
+    if data.get("generate") and getattr(target, "client_temp", False):
+        generated = temp_client.new_password(target.username)          # cliente temporal (12-nov-2026): contraseña aleatoria nueva, se muestra UNA vez a quien la restablece; no vence
+        new_password, must_change = generated, False
+    elif data.get("use_username") and target.role == "digitador" and getattr(target, "client_temp", False):
+        raise HTTPException(status_code=400, detail="El cliente temporal no usa la cédula: genera una contraseña nueva")
+    elif data.get("use_username") and target.role == "digitador":
         new_password, must_change = target.username, False         # digitador temporal (6-nov-2026): vuelve a entrar con su cédula como contraseña; sin política de contraseña segura
     else:
         new_password, must_change = str(data.get("new_password") or ""), security.must_change_on_set_by_other(target.role)      # Fase 4: ya no es opcional (se ignora `must_change` del cuerpo)
@@ -401,6 +410,8 @@ def reset_staff_password(
     if mail_queued:
         jobs.kick()
     security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
+    if generated:
+        return {"message": f"Contraseña de {target.username} restablecida: entrégale la nueva, no se vuelve a mostrar", "new_password": generated, "credentials_mail": "disabled"}
     return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")
             + (". Se le envió un correo con las instrucciones" if mail_queued else ". No tiene correo registrado: entrégale la hoja impresa"), "credentials_mail": "queued" if mail_queued else "no_email"}
 

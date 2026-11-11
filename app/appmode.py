@@ -20,8 +20,8 @@ BIOMETRIC_PATHS = {
     "/api/events/{event_id}/areas/{area_id}/movement-face", "/internal/faces/run",      # cola de cálculos faciales (Cloud Tasks → biometría)
 }
 # Rutas públicas (sin sesión): lo que miles de personas abren desde su teléfono.
-PUBLIC_PREFIXES = ("/f/", "/b/", "/c/", "/r/", "/aceptar/", "/api/aceptar/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
-ALWAYS = ("/health", "/ready", "/api/ops/")          # «/health» y «/ready» cubren también /healthz y /readyz
+PUBLIC_PREFIXES = ("/f/", "/inscripciones/", "/b/", "/turno/", "/contacto/", "/tarjeta/", "/expositor/", "/c/", "/r/", "/aceptar/", "/api/aceptar/", "/entrega/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
+ALWAYS = ("/health", "/ready", "/api/ops/", "/favicon.ico")          # «/health» y «/ready» cubren también /healthz y /readyz; el ícono lo sirven los tres servicios
 
 
 def loads_model() -> bool:

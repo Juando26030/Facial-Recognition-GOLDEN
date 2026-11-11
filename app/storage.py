@@ -244,6 +244,13 @@ class GcsStorage:
             version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=dict(headers), **kwargs)   # copia: la biblioteca le agrega «Host» a lo que recibe y eso no debe viajar al navegador
         return url, headers
 
+    def signed_get_url(self, key: str, filename: str, expires_seconds: int = 600) -> str:
+        """URL firmada v4 para que el NAVEGADOR descargue directo del bucket un archivo grande (el instalador del servidor local, app/local_installer.py): Cloud Run/Firebase cortan una respuesta
+        larga que pase por la app (60 s). Misma firma que `signed_put_url`. El archivo se descarga con el nombre `filename`."""
+        kwargs = self._signing_kwargs()
+        return self.bucket.blob(self._name(key)).generate_signed_url(
+            version="v4", method="GET", expiration=timedelta(seconds=expires_seconds), response_disposition=f'attachment; filename="{filename}"', **kwargs)
+
     def ping(self) -> None:
         """Lectura mínima del bucket (para /readyz; /readyz solo lo usa el arranque, nunca los chequeos frecuentes)."""
         next(iter(self.client.list_blobs(self.bucket, max_results=1)), None)

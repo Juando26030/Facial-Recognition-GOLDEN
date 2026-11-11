@@ -18,3 +18,23 @@
   .gw-inv__line { grid-template-columns: minmax(0, 1fr); padding-bottom: var(--gw-sp-3); border-bottom: 1px solid var(--gw-border); }
   .gw-inv__del { justify-self: start; }
 }
+
+/* Catálogo en Configuración y bloque «Inventario» del evento (Fase 5; static/js/inventory-catalog-admin.js y event-inventory-plan.js). Solo tokens --gw-*. */
+.gw-inv__cards { margin-top: var(--gw-sp-3); }
+.gw-inv-plan__group { min-width: 0; margin: 0 0 var(--gw-sp-3); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); }
+.gw-inv-plan__group legend { padding: 0 var(--gw-sp-2); font-weight: var(--gw-fw-bold); }
+.gw-inv-plan__row { display: grid; gap: var(--gw-sp-2); padding: var(--gw-sp-3) 0; border-bottom: 1px solid var(--gw-border); }
+.gw-inv-plan__row:last-child { border-bottom: 0; }
+.gw-inv-plan__name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.gw-inv-plan__cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); gap: var(--gw-sp-2) var(--gw-sp-3); align-items: end; }
+.gw-inv-plan__cell { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; }
+.gw-inv-plan__lbl { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-inv-plan__qty { min-height: var(--gw-tap); }
+.gw-inv-plan__pending { display: inline-flex; align-items: center; min-height: var(--gw-tap); font-weight: var(--gw-fw-bold); }
+.gw-inv-plan__more > summary { cursor: pointer; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-inv-plan__morebody { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--gw-sp-3); margin-top: var(--gw-sp-2); }
+.gw-inv-plan__field { margin: 0; min-width: 0; }
+.gw-inv-plan__balance { margin-bottom: var(--gw-sp-3); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-info-bg); }
+.gw-inv-plan__issues { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); }
+
+.gw-inv-plan__warnings { display: grid; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-warn-bg); color: var(--gw-warn-text); }

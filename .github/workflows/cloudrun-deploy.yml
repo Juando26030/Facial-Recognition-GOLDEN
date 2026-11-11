@@ -30,6 +30,9 @@ jobs:
       FIREBASE_SITE: ${{ vars.FIREBASE_SITE }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}      # dirección pública del entorno (staging: el sitio de Firebase; producción: https://app.golden-eventos.com); vacía = el valor por defecto de deploy/gcp/config.sh
       FORCE: ${{ inputs.force && '1' || '0' }}
+      # Gastos de infraestructura (Fase 10 B): NO son secretos. Antes no llegaban al despliegue y cada despliegue borraba lo puesto a mano en Cloud Run. Se definen en GitHub → Settings → Variables (del entorno).
+      GCP_BILLING_EXPORT_TABLE: ${{ vars.GCP_BILLING_EXPORT_TABLE }}      # proyecto.conjunto.tabla de la exportación de facturación a BigQuery; vacía = importación de Google apagada
+      ONEDRIVE_DRIVE_ID: ${{ vars.ONEDRIVE_DRIVE_ID }}                    # solo si la copia semanal usa una biblioteca de SharePoint en vez de ONEDRIVE_DRIVE_USER
     steps:
       - uses: actions/checkout@v7
 

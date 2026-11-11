@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import event_archive, audit_actions
+from app import event_archive, audit_actions, person_history
 import re
 import json
 from typing import List, Optional
@@ -23,7 +23,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
+from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PersonChangeLog, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app import testperson
@@ -31,7 +31,7 @@ from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_eve
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.eventpeople import member_ids, person_of_event as _person_of_event      # nombre histórico; la regla vive en app/eventpeople.py
-from app import roster_dups, roster_text, personform, lastname
+from app import roster_dups, roster_text, personform, lastname, formfiles
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -965,6 +965,9 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)               # P3 (cierre de seguridad, 6-nov-2026): mismo aislamiento por cliente y pertenencia que get_event_for_staff
+    from app.auth import is_inventory_only
+    if is_inventory_only(staff):                    # F5-9 D (D1): almacén/contabilidad solos no tocan registros de personas
+        raise HTTPException(status_code=403, detail="Tu rol solo tiene acceso al inventario de los eventos")
     assert_event_scope(event, staff, db)
     if staff.role in ("digitador", "cliente"):
         if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
@@ -975,6 +978,9 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
     if event.archived_at is not None:                # B4: ningún rol (ni coordinador+, que conserva su margen después de finalizar) escribe en un evento archivado
         raise HTTPException(status_code=403, detail="Este evento está archivado: no recibe registros")
+    from app import event_lease
+    if event_lease.is_leased(event) and getattr(staff, "via_node_name", None) != event.local_node_name:
+        event_lease.assert_editable(event)           # F5-9 A-09 (Fase 6): con el evento en un servidor local, solo ESE servidor sube (un solo escritor); los quioscos de la nube reciben 423
     event_archive.require_data_open(event, staff)    # ni con la base archivada (L7)
     event.sync_revert = status_changes.revert_info(db, event)     # (momento, ventana abierta) o None; atributo de paso, no se guarda
     return event
@@ -1225,12 +1231,14 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
         return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
     try:
         with db.begin_nested():
+            history_before = person_history.snapshot(user)
             for k, v in changes.items():
                 setattr(user, k, v)
             if extras:
                 merged = user.get_extras()
                 merged.update(extras)
                 user.set_extras(merged)
+            person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id, source="outbox")
             if categories is not None or contact is not None or certificate is not None:
                 _upsert_attendee(db, event.id, user.id, event.tenant_id, categories, certificate=certificate, digital_contact=contact)
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado", event_id=event.id, registered_by_staff_id=staff.id, client_id=op_id, timestamp=when))
@@ -1424,6 +1432,7 @@ def update_user(
         # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
         # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
         # `set_extras()`), no un dict crudo; asignarlo directo lo corrompería.
+        history_before = person_history.snapshot(user)          # historial de cambios por persona (Fase 10 E): lo de ANTES de editar
         categories = data.pop("categories", None)  # ítem 14: por evento (EventAttendee), no una columna de User
         if categories is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
@@ -1493,6 +1502,7 @@ def update_user(
             event_id=event.id, registered_by_staff_id=staff.id,
         )
         db.add(log)
+        person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id, source="edit")
         db.commit()
         result = {"message": "Actualizado correctamente"}
         if new_digital and event.digital_badge_enabled:
@@ -1558,6 +1568,8 @@ def update_user_cedula(
     db.query(PrintLog).filter(
         PrintLog.user_id == old_id, PrintLog.tenant_id == event.tenant_id
     ).update({"user_id": new_id}, synchronize_session=False)
+    db.query(PersonChangeLog).filter(PersonChangeLog.user_id == old_id, PersonChangeLog.tenant_id == event.tenant_id).update({"user_id": new_id}, synchronize_session=False)      # su historial de cambios la sigue
+    person_history.record_id_change(db, event.tenant_id, new_id, old_id, event_id=event.id, staff_id=staff.id)
     db.flush()
 
     db.delete(user)
@@ -1618,6 +1630,7 @@ def delete_user_from_event(
         db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.attendee_id.in_(att_ids)).delete(synchronize_session=False)
     for model in (PrintLog, AreaMovement, InventoryDelivery, AcceptMailLog, PersonChange, ReprintRequest):
         db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
+    person_history.delete_for_person(db, event.tenant_id, user_id, event_id)          # el historial de cambios de la persona en este evento (el de otros eventos se queda con ellos)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
     log.info("persona eliminada del evento %s por el usuario %s (se borran también su historial de impresión y sus permisos de reimpresión)", event_id, staff.id)      # sin datos personales
@@ -1636,6 +1649,7 @@ def delete_user_from_event(
         for model in (PrintLog, AreaMovement, InventoryDelivery):       # lo que tenga en otros eventos YA cerrados del cliente (sin inscripción ni ingresos) también apunta a la persona
             db.query(model).filter(model.tenant_id == event.tenant_id, model.user_id == user_id).delete(synchronize_session=False)
         get_storage().delete(photo_key(event.tenant_id, user_id))
+        person_history.delete_for_person(db, event.tenant_id, user_id)          # ya no está en ningún evento: no queda historial suyo
         db.delete(user)
         fully_deleted = True
 
@@ -1731,7 +1745,7 @@ def manual_register(
 
 
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional"):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
@@ -1785,11 +1799,11 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,
-            registration_method="tradicional",  # Fase 16: alta manual, formulario
+            registration_method=method,  # Fase 16: alta manual, formulario (Fase 8: «autoregistro» si la persona se creó sola en el kiosco)
             **regtime.measured(took_ms, ui_flow),
         )
         db.add(log)
-        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, touch=True)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, origin=origin, touch=True)
         db.commit()
         reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
         if contact_clean and event.digital_badge_enabled:
@@ -1858,11 +1872,11 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
         event_id=event.id, registered_by_staff_id=staff.id,
-        registration_method="tradicional",  # Fase 16: alta manual, formulario
+        registration_method=method,  # Fase 16: alta manual, formulario (Fase 8: «autoregistro» si la persona se creó sola en el kiosco)
         **regtime.measured(took_ms, ui_flow),
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, touch=True)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, origin=origin, touch=True)
     db.commit()
 
     if img_array is not None:
@@ -2564,6 +2578,7 @@ def _bulk_register_impl(
                             # antes del de EventAttendee (que depende de él por llave foránea).
                             with (db.begin_nested() if isolate else contextlib.nullcontext()):
                                 user = users_by_id.get(identificador)
+                                history_before = person_history.snapshot(user) if user else None          # persona que YA existía: lo que cambie la recarga queda en su historial
                                 if not user:
                                     user = User(id=identificador, tenant_id=event.tenant_id)
                                     db.add(user)
@@ -2598,6 +2613,8 @@ def _bulk_register_impl(
                                     if norm and val:
                                         extras[norm] = val
                                 user.set_extras(extras)
+                                if history_before is not None:
+                                    person_history.record(db, user, history_before, event_id=event.id, staff_id=staff.id if staff else None, source="bulk")
 
                                 if face_enc_json:
                                     user.face_encoding = face_enc_json
@@ -2689,6 +2706,65 @@ def download_report(
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))
+
+
+@router.get("/events/{event_id}/users/{user_id}/change-history")
+def person_change_history(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Fase 10 E: historial de datos modificados de UNA persona de este evento (campo, anterior, nuevo, quién, cuándo; lo más reciente primero, hasta 100). Coordinador o superior. Solo texto: nunca biometría."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if not _person_of_event(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    items = person_history.history(db, event, user_id, limit=100)
+    return {"items": items, "count": len(items)}
+
+
+def _person_form_files(db: Session, event: Event, user_id: str) -> list:
+    """Archivos que la persona subió en los formularios de este evento, por campo del registro (`opcional_N`): el de la inscripción confirmada más reciente (sin pruebas)."""
+    import json as _json
+    from app.models import FormSubmission, WebForm
+    out, seen = [], set()
+    rows = (db.query(FormSubmission, WebForm).join(WebForm, WebForm.id == FormSubmission.form_id)
+            .filter(FormSubmission.event_id == event.id, FormSubmission.person_id == user_id, FormSubmission.status == "confirmed", FormSubmission.is_test == False)  # noqa: E712
+            .order_by(FormSubmission.id.desc()).all())
+    for sub, form in rows:
+        design = formsvc.get_design(form)
+        data = _json.loads(sub.data_json or "{}")
+        for fid, label in formfiles.file_fields(design):
+            key = formfiles.extras_key_for(design, fid)
+            info = formfiles.file_info(data.get(fid))
+            if not key or not info or key in seen:
+                continue
+            seen.add(key)
+            out.append({"key": key, "label": label, "filename": info.get("filename") or "archivo", "submission_id": sub.id, "form_id": form.id, "field_id": fid})
+    return out
+
+
+@router.get("/events/{event_id}/users/{user_id}/form-files")
+def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Coordinador o superior."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if not _person_of_event(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    items = _person_form_files(db, event, user_id)
+    for it in items:
+        it["url"] = f"/api/events/{event.id}/users/{user_id}/form-files/{it['submission_id']}/{it['field_id']}"
+    return {"items": items}
+
+
+@router.get("/events/{event_id}/users/{user_id}/form-files/{submission_id}/{field_id}")
+def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    import json as _json
+    from app.models import FormSubmission
+    from app.storage import form_file_key
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    sub = db.query(FormSubmission).filter_by(id=submission_id, event_id=event.id, person_id=user_id, status="confirmed").first()
+    info = formfiles.file_info(_json.loads(sub.data_json or "{}").get(field_id)) if sub else None
+    if not info:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return get_storage().response(form_file_key(event.tenant_id, sub.form_id, info["stored"]), filename=info.get("filename") or "archivo")
 
 
 @router.get("/events/{event_id}/incomplete-registrations")

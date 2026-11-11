@@ -38,7 +38,7 @@ def enabled() -> bool:
 
 def applies(staff: Optional[StaffUser]) -> bool:
     """¿Esta cuenta sigue el ingreso controlado? Solo las de rol digitador."""
-    return staff is not None and staff.role == "digitador"
+    return staff is not None and staff.role == "digitador" and not getattr(staff, "client_temp", False)          # el cliente temporal (0129) ingresa con su usuario y contraseña, sin autorización del coordinador
 
 
 def token_hash(token: str) -> str:

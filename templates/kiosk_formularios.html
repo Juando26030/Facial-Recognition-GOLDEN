@@ -5,6 +5,7 @@
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -16,6 +17,9 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell has-sidebar">
 {% include "_kiosk_top.html" %}
@@ -58,7 +62,7 @@
             </div>
             <div class="gw-stack" id="tplManage" hidden>
               <label class="gw-check"><input type="checkbox" id="showArchivedTpls"> Ver archivadas</label>
-              <div class="gw-cards" id="tplList" aria-live="polite"></div>
+              <div class="gw-cards" id="tplList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando plantillas…') }}</div>
             </div>
           </div>
         </details>
@@ -83,7 +87,7 @@
     <section class="gw-stack" aria-labelledby="formsListTitle" data-gw-tour-step="2" data-gw-tour-title="2. Edita y prueba" data-gw-tour-text="Cada tarjeta es un formulario. «Editar», «Estadísticas» y «Copiar enlace» siempre están a la vista.">
       <h2 class="gw-card-row__title" id="formsListTitle">Formularios de este evento</h2>
       {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchivedForms"> Ver archivados</label>{% endif %}
-      <div id="body" class="gw-cards" aria-live="polite" aria-busy="true"><span class="gw-skeleton" role="status" aria-label="Cargando formularios"></span></div>
+      <div id="body" class="gw-cards" aria-live="polite" aria-busy="true">{{ skeleton('cards', rows=3, label='Cargando formularios…') }}</div>
     </section>
   </div>
 </main>

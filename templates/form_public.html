@@ -18,12 +18,17 @@
         .box input { width:100%; box-sizing:border-box; padding:12px; border:1px solid #c9ccd6; border-radius:10px; font:inherit; font-size:1.05rem; text-align:center; }
         .box button, .box a.btn { display:inline-block; margin-top:14px; padding:12px 30px; border:none; border-radius:26px; background:var(--gold, #D4AF37); color:var(--on-gold, #111); font:inherit; font-weight:800; cursor:pointer; text-decoration:none; }
         .msg { margin-top:10px; color:#c0392b; font-size:.88rem; min-height:1.2em; }
+        /* 9-nov-2026, orden expresa de Juan David: estado de carga en botones (rueda mientras se verifica; sin cambiar textos ni flujo) */
+        button[aria-busy="true"] { opacity:1; cursor:progress; } button[aria-busy="true"]::after { content:""; display:inline-block; width:1em; height:1em; margin-left:.5em; vertical-align:-.15em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gw-pub-spin .8s linear infinite; } @keyframes gw-pub-spin { to { transform:rotate(360deg); } } @media (prefers-reduced-motion: reduce) { button[aria-busy="true"]::after { animation:none; opacity:.6; } }
       .skiptranslate iframe, .goog-te-banner-frame, .VIpgJd-ZVi9od-ORHb-OEVmcd, .VIpgJd-ZVi9od-aZ2wEe-wOHMyf { display:none !important; }
       body { top:0 !important; } .goog-tooltip, .goog-tooltip:hover { display:none !important; } .goog-text-highlight { background:none !important; box-shadow:none !important; }
       .tr-lang { background:#fff; color:#222; border:1px solid #c9ccd6; border-radius:10px; padding:8px 6px; font:inherit; font-size:.85rem; cursor:pointer; margin:0; }
       .tr-lang.on { background:#1a237e; color:#fff; border-color:#1a237e; }
     </style>
     {% if brand_css %}<style>{{ brand_css }}</style>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body>
 <button id="tr-btn" type="button" translate="no" style="display:none; position:fixed; top:10px; right:10px; z-index:40; background:#fff; border:1px solid #c9ccd6; border-radius:20px; padding:7px 14px; font:inherit; font-size:.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15);">🌐 Translate</button>
@@ -159,9 +164,13 @@ function showGate() {
   box(`<h3 style="margin-top:0;">Este formulario tiene acceso restringido</h3><p style="opacity:.8;">Escribe la palabra o el código que te compartieron.</p>
     <input type="text" id="code" autocomplete="off" placeholder="Código de acceso"><div class="msg" id="msg"></div><button id="go">Continuar</button>`);
   const go = async () => {
-    const { res, data } = await api("/gate", { code: document.getElementById("code").value });
-    if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
-    token = data.token; load();
+    const b = document.getElementById("go"); if (b.getAttribute("aria-busy") === "true") return;          // verificando: sin doble envío
+    b.setAttribute("aria-busy", "true"); b.disabled = true;
+    try {
+      const { res, data } = await api("/gate", { code: document.getElementById("code").value });
+      if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
+      token = data.token; load();
+    } finally { b.removeAttribute("aria-busy"); b.disabled = false; }
   };
   document.getElementById("go").addEventListener("click", go);
   document.getElementById("code").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
@@ -175,9 +184,13 @@ function showIdentify(st) {
   box(`${idc.image ? `<img src="${esc(assetUrl(idc.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}<h3 style="margin-top:0;">${esc(idc.title || "Identifícate")}</h3>${idRich.rich ? `<div class="rt" style="opacity:.8;">${idRich.html}</div>` : `<p style="opacity:.8;">${idRich.html}</p>`}
     <input type="text" id="docid" inputmode="numeric" autocomplete="off" placeholder="Número de documento"><div class="msg" id="msg"></div><button id="go">${esc(idc.button || "Continuar")}</button>`);
   const go = async () => {
-    const { res, data } = await api("/lookup", { id: document.getElementById("docid").value });
-    if (!res.ok) { const m = document.getElementById("msg"); m.textContent = data.detail || "No se pudo verificar"; m.style.fontWeight = data.already ? "700" : ""; return; }
-    token = data.token; load();
+    const b = document.getElementById("go"); if (b.getAttribute("aria-busy") === "true") return;          // verificando: sin doble envío
+    b.setAttribute("aria-busy", "true"); b.disabled = true;
+    try {
+      const { res, data } = await api("/lookup", { id: document.getElementById("docid").value });
+      if (!res.ok) { const m = document.getElementById("msg"); m.textContent = data.detail || "No se pudo verificar"; m.style.fontWeight = data.already ? "700" : ""; return; }
+      token = data.token; load();
+    } finally { b.removeAttribute("aria-busy"); b.disabled = false; }
   };
   document.getElementById("go").addEventListener("click", go);
   document.getElementById("docid").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });

@@ -18,7 +18,8 @@ assert.strictEqual(cq('1.016.100.329').cedula, '1016100329');
 assert.strictEqual(cq('1 016 100-329').cedula, '1016100329');
 assert.strictEqual(cq('1234').kind, 'cedula');                                  // 3-4 dígitos: cédula PARCIAL (predictiva con red)
 assert.strictEqual(cq('1234').completa, false);
-assert.strictEqual(cq('12').kind, 'texto');                                     // 2 dígitos: texto
+assert.strictEqual(cq('12').kind, 'cedula');                                    // 2 dígitos: cédula por inicio (corta: Enter no acredita)
+assert.strictEqual(cq('12').corta, true);
 assert.strictEqual(cq('10161').completa, true);
 assert.strictEqual(cq('1016100329,A,B,C,D,1').completa, true);
 assert.strictEqual(cq('Juan').completa, false);
@@ -46,7 +47,8 @@ sin(juan, '10161003290');                                                       
 sin(juan, '1016100328');
 sin(juan, '12345');
 sin(juan, '123');
-sin(juan, '12');                                                                 // 2 dígitos: texto, no coincide con nada
+con(juan, '10', 'Cédula (empieza por 10…)');                                       // 1-2 dígitos: por el inicio de la cédula
+sin(juan, '12');                                                                 // no empieza por 12
 con(pasaporte, 'ab-123456', 'Cédula exacta');                                    // documento con letras: igual, exacto
 sin(pasaporte, '123456');
 sin(pasaporte, 'ab123');
@@ -77,7 +79,7 @@ con(juan, 'david juzga', 'Nombre');                                             
 con(maria, 'maria jose', 'Nombre');                                              // nombre compuesto
 con(maria, '  María   José  ', 'Nombre');                                        // espacios múltiples
 con(maria, 'jose', 'Nombre');
-sin(maria, 'ose');                                                               // no es prefijo de palabra
+con(maria, 'ose', 'Nombre (contiene lo escrito)');                               // tramo del medio: sale, al final
 sin(maria, 'maria maria');                                                       // no reutiliza la misma palabra
 sin(juan, 'juan perez');
 con(juan, 'nanez', 'Empresa');                                                   // «Ñañez» se encuentra sin la eñe

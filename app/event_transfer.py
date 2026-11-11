@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy import Date, DateTime, Float, Numeric, select, text
 from sqlalchemy.orm import Session
 
-from app import consent, crypto, minors
+from app import consent, crypto, minors, public_slug
 from app import models as m
 from app.storage import badge_asset_key, form_file_key, get_storage, key_of, normalize_key, photo_key
 from app.timeutil import utcnow
@@ -86,14 +86,15 @@ TABLES = [
     {"name": "inventory_deliveries", "kind": "event", "remap": {"item_id": "inventory_items"}, "staff": ("delivered_by_staff_id",), "user": "user_id"},
     {"name": "print_logs", "kind": "event", "staff": ("printed_by_staff_id",), "user": "user_id"},
     {"name": "person_changes", "kind": "event", "staff": ("staff_user_id",), "user": "user_id"},
+    {"name": "person_change_log", "kind": "event", "staff": ("changed_by_id",), "user": "user_id"},
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
     {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id", "archived_by_id")},
     {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id")},
 ]
 SPEC = {t["name"]: t for t in TABLES}
-PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "audit_consent_logs", "web_acceptances")
-STAFF_EVENT_COLUMNS = ("coordinator_staff_id", "commercial_staff_id", "created_by_id")
+PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "person_change_log", "audit_consent_logs", "web_acceptances")
+STAFF_EVENT_COLUMNS = ("coordinator_staff_id", "commercial_staff_id", "created_by_id", "billed_by_id", "final_db_uploaded_by_id")
 TABLE_NAMES = tuple(t["name"] for t in TABLES)
 
 
@@ -308,6 +309,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
     names = _staff_names(db)
     states = {sid: n for sid, n in db.execute(select(m.EventState.id, m.EventState.name)).all()}
     supers = {sid: n for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name)).all()}
+    etypes = {tid: n for tid, n in db.execute(select(m.EventType.id, m.EventType.name)).all()}          # Fase 10 (C): la categoría (tipo de evento) viaja por NOMBRE
     ctx = {"people": _person_ids(db, event), "form_ids": [r[0] for r in db.execute(select(m.WebForm.id).where(m.WebForm.event_id == event.id)).all()], "payment_ids": []}
     ctx["payment_ids"] = [r[0] for r in db.execute(select(m.FormPayment.id).where(m.FormPayment.event_id == event.id)).all()] if ctx["form_ids"] else []
     tenant = db.get(m.Tenant, event.tenant_id)
@@ -345,7 +347,9 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                             extra["state_id"] = states.get(d["state_id"])
                         if d.get("super_event_id") is not None:
                             extra["super_event_id"] = supers.get(d["super_event_id"])
-                        d["state_id"] = d["super_event_id"] = None
+                        if d.get("event_type_id") is not None:
+                            extra["event_type_id"] = etypes.get(d["event_type_id"])
+                        d["state_id"] = d["super_event_id"] = d["event_type_id"] = None
                     if extra:
                         d["@names"] = extra
                     line = _line(d)
@@ -582,6 +586,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     staff_by_name = {un: sid for sid, un in db.execute(select(m.StaffUser.id, m.StaffUser.username)).all()}
     states = {n: sid for sid, n in db.execute(select(m.EventState.id, m.EventState.name)).all()}
     supers = {n: sid for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name).where(m.SuperEvent.tenant_id == tenant_id)).all()}
+    etypes = {n: tid for tid, n in db.execute(select(m.EventType.id, m.EventType.name)).all()}
     suppressed = {r[0] for r in db.execute(select(m.SuppressedPerson.cedula_hash).where(m.SuppressedPerson.tenant_id == tenant_id)).all()}
     log_row = m.EventTransferLog(kind="import", staff_username=staff_username, event_code=code, package_sha256=report["package_sha256"], status="done",
                                  options_json=json.dumps({"keep_original_state": keep_original_state, "source_env": manifest.get("source_env"), "tenant": tenant_id}))
@@ -613,7 +618,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 
     def staff_link(row, d, table, ref):
         for col, un in (row.get("@names") or {}).items():
-            if col in ("state_id", "super_event_id"):
+            if col in ("state_id", "super_event_id", "event_type_id"):
                 continue
             sid = staff_by_name.get(un)
             d[col] = sid
@@ -670,6 +675,9 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             names = ev_src.get("@names") or {}
             d["state_id"] = states.get(names.get("state_id")) if names.get("state_id") else None
             d["super_event_id"] = supers.get(names.get("super_event_id")) if names.get("super_event_id") else None
+            d["event_type_id"] = etypes.get(names.get("event_type_id")) if names.get("event_type_id") else None
+            if names.get("event_type_id") and d["event_type_id"] is None:
+                report["warnings"].append(f"La categoría (tipo de evento) «{names['event_type_id']}» no existe en el destino: el evento queda «Sin categoría».")
             if names.get("state_id") and d["state_id"] is None:
                 report["warnings"].append(f"El estado configurable «{names['state_id']}» no existe en el destino: el evento queda con su estado base.")
             if names.get("super_event_id") and d["super_event_id"] is None:
@@ -679,6 +687,10 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
                 report["warnings"].append("El token de certificados ya existía en el destino: se dejó vacío (se genera de nuevo desde Parámetros).")
             logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
             d["logo_path"] = d["report_pdf_path"] = None
+            d["local_node_name"] = d["local_since"] = d["local_by_id"] = d["local_last_upload_at"] = None          # Fase 6: el arrendamiento es de la nube; la copia importada no nace «en servidor local»
+            _sd = d.get("start_date")
+            d["public_slug"] = public_slug.unique_for(db, d.get("name") or ev_src.get("name") or "evento", getattr(_sd, "year", None) or (int(str(_sd)[:4]) if _sd and str(_sd)[:4].isdigit() else utcnow().year))          # D2.5k: el nombre del enlace es único en TODO el sistema: la copia recibe el suyo, no el del origen
+            d["final_db_key"] = d["final_db_name"] = d["final_db_uploaded_at"] = None          # la base final (Fase 5) no viaja en el paquete: se vuelve a subir en el destino
             if logo and ("logo", logo) in file_by_ref:
                 d["logo_path"] = key_of(tenant_id, "event_logos", uuid.uuid4().hex + os.path.splitext(logo)[1])
                 writes.append((d["logo_path"], file_by_ref[("logo", logo)]["sha256"], "logo"))
@@ -872,7 +884,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 # ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
 # Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
 _VOLATILE = {
-    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id"},
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "event_type_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug"},
     "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
     "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
     "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},

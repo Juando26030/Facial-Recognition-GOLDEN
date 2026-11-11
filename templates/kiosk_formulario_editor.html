@@ -9,6 +9,7 @@
 {# Control de archivo propio: el <input type=file> queda oculto (mismos id/accept para el JS) y se ve un botón .gw-btn + el nombre, que se recorta con «…» sin desbordar la caja. #}
 {% macro archivo(id, accept, label='Seleccionar archivo') %}<label class="gwe-file"><input type="file" class="gwe-file__input" id="{{ id }}" accept="{{ accept }}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">{{ ic('upload', 'gw-icon--sm') }} {{ label }}</span><span class="gwe-file__name" data-gwe-file-name>Ningún archivo seleccionado</span></label>{% endmacro %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -35,6 +36,9 @@
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell gw-editor-form has-sidebar">
 {% include "_sidebar.html" %}
@@ -275,6 +279,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             {% call ayuda('ay_ans_rep', 'Descargar reporte (Excel)') %}Baja el Excel SOLO con las inscripciones reales: no incluye las de prueba, sin importar lo que tengas marcado en la casilla.{% endcall %}</div>
           <div class="gwe-inline-help"><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a>
             {% call ayuda('ay_ans_all', 'Con las de prueba') %}Baja el Excel con TODO: las inscripciones reales y también las de prueba. Es independiente de la casilla «Mostrar las de prueba»: esa solo cambia la tabla de abajo.{% endcall %}</div>
+          <div class="gwe-inline-help" id="ansFiles" hidden></div>
           </div>
         <div class="gwr-tools">
           <div class="gw-search__row gwr-search">
@@ -285,7 +290,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <select class="gw-select" id="ansQuota" aria-label="Filtrar por cupo"></select></label>
           <span class="gw-hint gwr-info" id="ansInfo" role="status" aria-live="polite"></span>
         </div>
-        <div class="gw-table-wrap gwe-table-wrap"><table class="gw-table gw-table-cards gwe-fit ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
+        <div class="gw-table-wrap gwe-table-wrap"><table class="gw-table gw-table-cards gwe-fit ans"><thead id="ansHead"></thead><tbody id="ansBody">{{ skeleton('table', rows=5, cols=5, label='Cargando respuestas…') }}</tbody></table></div>
         <nav class="gwr-pager" id="ansPager" aria-label="Paginación de respuestas" hidden>
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="ansPrev">&lsaquo; Anterior</button>
           <span class="gw-hint" id="ansPageInfo" aria-live="polite"></span>
@@ -352,7 +357,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
       <div class="gw-field"><label class="gw-label" for="clDays">Vigencia del acceso (días)</label><input type="number" class="gw-input gw-input--short" id="clDays" min="1" max="180" value="30"></div>
       <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--primary" id="clCreate">Crear acceso</button></div>
       <h3 class="gwe-h">Accesos de este formulario</h3>
-      <div id="clList" class="gw-hint">Cargando…</div>
+      <div id="clList" class="gw-hint">{{ skeleton('list', rows=2, label='Cargando accesos…') }}</div>
     </div>
     <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" id="clClose">Cerrar</button></div>
   </div>
@@ -390,6 +395,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 <script>
 const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
 const $ = (id) => document.getElementById(id);
+const maskOn = (f) => (typeof f.mask_asterisks === 'boolean' ? f.mask_asterisks : (['email', 'phone'].includes(f.type) || ['email', 'phone'].includes(f.key)));      // misma política que formlib.mask_wanted
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => 'f_' + Math.random().toString(36).slice(2, 10);
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
@@ -577,8 +583,8 @@ function itemHtml(f, prop, v, it, i) {
   const open = isOpen(v, it), q = (searchQ[`${f.id}:${prop}`] || '').toLowerCase(), sum = itemSummary(f, prop, it);
   const hay = `${sum} ${it.group || ''}`.toLowerCase();
   return `<div class="cv gwe-cv"${q && !hay.includes(q) ? ' hidden' : ''} data-uid="${it._uid}" data-hay="${esc(hay)}">
-    <div class="gwe-d-flex gwe-gap-sp-1 gwe-ai-center"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}">${open ? '▾' : '▸'}</button>
-      <span class="cvs gwe-flex-1 gwe-of-hidden gwe-to-ellipsis gwe-ws-nowrap gwe-fs-fs-sm" title="${esc(`${i + 1}. ${sum}`)}"><b>${i + 1}.</b> ${esc(sum)}</span>
+    <div class="gwe-d-flex gwe-gap-sp-1 gwe-ai-center gwe-cvh"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}">${open ? '▾' : '▸'}</button>
+      <span class="cvs gwe-cvs gwe-flex-1 gwe-fs-fs-sm" title="${esc(`${i + 1}. ${sum}`)}"><b>${i + 1}.</b> ${esc(sum)}</span>
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="up" data-vp="${prop}" data-vu="${it._uid}" aria-label="Subir la variante ${i + 1}" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="down" data-vp="${prop}" data-vu="${it._uid}" aria-label="Bajar la variante ${i + 1}" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-p-0-sp-2" data-vact="dup" data-vp="${prop}" data-vu="${it._uid}" aria-label="Duplicar la variante ${i + 1}" ${v.items.length >= 200 ? 'disabled' : ''}>⎘</button><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" data-vact="del" data-vp="${prop}" data-vu="${it._uid}" aria-label="Quitar la variante ${i + 1}">×</button></div>
     <div class="cvb" data-vu="${it._uid}">${open ? itemBodyHtml(f, prop, v, it) : ''}</div></div>`;
 }
@@ -958,7 +964,9 @@ function renderProps() {
     if (!f.key) html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
     html += `<label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
       <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
-      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>
+      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm"><input type="checkbox" id="pMask" ${maskOn(f) ? 'checked' : ''} ${f.key && f.readonly_when_prefilled ? '' : 'disabled'}> Mostrarlo con asteriscos (ej. A** M****) para que nadie lea el dato completo</label>
+      <div class="hint gwe-mb-sp-2">Solo aplica al dato bloqueado que ya tenemos. Si lo dejas sin marcar se ve completo. En el correo y el celular viene marcado de fábrica, porque quien escribe una cédula ajena no debería leer el contacto de esa persona. Las reglas (variantes, visibilidad, precios) funcionan igual con o sin asteriscos.</div>`;
   }
   // variantes (cualquier elemento) y regla de visibilidad en árbol (Y/O anidados)
   html += variantsHtml(f);
@@ -982,7 +990,7 @@ function renderProps() {
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
   on('pKey', 'change', async () => {
-    f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false;
+    f.key = $('pKey').value || null; if (f.key) f.sync = false; else { f.readonly_when_prefilled = false; delete f.mask_asterisks; }
     markDirty();
     const ch = f.key ? FormSync.plan({ fields: { [f.id]: f } }, eventFields) : [];   // al enlazar un campo a Parámetros se ofrece heredar su tipo y opciones (nunca solo)
     if (ch.length && await showConfirm(`El campo del evento tiene otro tipo u opciones (${ch[0].changes.map(esc).join('; ')}). ¿Usar los de Parámetros?`, { confirmLabel: 'Sí, usarlos' })) FormSync.apply(design, ch);
@@ -994,7 +1002,7 @@ function renderProps() {
     f.doc_types = picked.length ? picked : ['CC']; markDirty(); renderCanvas(); renderProps();
   }));
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
-  on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
+  on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; })); on('pMask', 'change', upd(() => { f.mask_asterisks = $('pMask').checked; }));
   on('pImgAlt', 'input', () => { f.alt = $('pImgAlt').value; markDirty(); });
   on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
@@ -1063,7 +1071,7 @@ function linkBox(item, what) {
 }
 function codeBox(d, i) {
   if (!d.id || dirty) return `<div class="hint gwe-bg-warn-bg gwe-p-sp-2-sp-2 gwe-r-radius-sm gwe-mt-sp-1">${gwIcon('badge')} Guarda el diseño para poder generar los códigos de este descuento.</div>`;
-  if (!codesLoaded) { loadCodes(); return '<div class="hint">Cargando códigos…</div>'; }
+  if (!codesLoaded) { loadCodes(); return window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'text', rows: 2, label: 'Cargando códigos…' }) : '<div class="hint">Cargando códigos…</div>'; }
   const mine = CODES.filter((c) => c.discount_id === d.id), used = mine.reduce((a, c) => a + c.used, 0), cap = mine.reduce((a, c) => a + c.max_uses, 0);
   return `<div class="gwe-bg-surface-2 gwe-p-sp-2 gwe-r-radius-sm gwe-mt-sp-1" data-codebox="${d.id}">
     <b class="gwe-fs-fs-sm">${gwIcon('badge')} Códigos de este descuento</b>
@@ -1591,7 +1599,7 @@ async function saveConfig(opts = {}) {
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
-  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(opts); showToast('Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
+  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(opts); showToast(form.feed_queued ? `Configuración guardada. Se están cargando a la base las ${form.feed_queued} inscripciones que ya estaban` : 'Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
 }
 // Lo editado en Configuración queda pendiente hasta el botón de guardar. [data-instant] = actúa al instante (subir lista, archivo de pre-llenado); [data-own-pending] = estado, cupo y calendario (su pendiente se calcula contra lo guardado)
 ['input', 'change'].forEach((ev) => $('pane-config').addEventListener(ev, (e) => {
@@ -1637,11 +1645,20 @@ async function loadAnswers() {
   if (ans.q) qs.set('q', ans.q);
   if (ans.quota) qs.set('quota', ans.quota);
   let d;
-  try { d = await j(`${api}/submissions?${qs}`); } catch (e) { if (mySeq === ans.seq) showToast(e.message || 'No se pudieron cargar las respuestas', 'error'); return; }
+  try { d = await j(`${api}/submissions?${qs}`); } catch (e) {
+    if (mySeq === ans.seq) {
+      showToast(e.message || 'No se pudieron cargar las respuestas', 'error');
+      if ($('ansBody').querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error($('ansBody'), { cols: 5, title: 'No se pudieron cargar las respuestas', text: e.message || 'Inténtalo de nuevo.' });
+    }
+    return;
+  }
   if (mySeq !== ans.seq) return;      // llegó tarde: ya hay una consulta más nueva
   ans.page = d.page; ans.size = d.page_size; $('ansSize').value = String(d.page_size);
   ansRenderQuotas(d.quotas || []);
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
+  const fileCols = d.columns.filter((c) => c.type === 'file');          // un botón por columna de archivo: baja todos los archivos de esa columna en un ZIP
+  $('ansFiles').hidden = !fileCols.length;
+  $('ansFiles').innerHTML = fileCols.map((c) => `<a class="gw-btn gw-btn--secondary gw-btn--sm" href="${api}/files-zip?field=${encodeURIComponent(c.id)}&include_tests=${withTests}">Descargar todos: ${esc(c.label)} (ZIP)</a>`).join(' ');
   const filtered = Boolean(ans.q || ans.quota), from = d.total ? (d.page - 1) * d.page_size + 1 : 0, to = Math.min(d.total, d.page * d.page_size);
   $('ansInfo').textContent = d.total ? `Mostrando ${from}–${to} de ${d.total}${filtered ? ` (de ${d.total_all} sin filtros)` : ''}` : (filtered ? `Sin resultados (de ${d.total_all} sin filtros)` : '0 inscripciones');
   $('ansPager').hidden = d.total_all <= 20 && d.pages <= 1;

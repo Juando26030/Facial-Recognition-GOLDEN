@@ -3,6 +3,8 @@ plantillas, respuestas, archivos, invitaciones, reporte y carga a la base. Todo 
 La página pública que llena la gente vive en `forms_public.py` (`/f/<evento>/<formulario>`, sin login)."""
 import io
 import json
+import tempfile
+import zipfile
 import os
 import re
 import secrets
@@ -19,12 +21,12 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
-from app.auth import get_event_for_staff, require_role
+from app import audit_actions, bulk_jobs, formfiles, jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, EventAttendee, EventStaffPledge, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
+from app.models import Event, EventAttendee, EventStaffPledge, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, PaymentAccount, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
@@ -54,8 +56,9 @@ def _base_url(request: Request) -> str:
     return publicurl.base(str(request.base_url))
 
 
-def _urls(request: Request, form: WebForm) -> dict:
-    base = f"{_base_url(request)}/f/{form.event_id}/{form.slug}"
+def _urls(request: Request, form: WebForm, db: Optional[Session] = None) -> dict:
+    ev = db.get(Event, form.event_id) if db is not None else None
+    base = public_slug.form_link(str(request.base_url), ev, form)          # D2.5k: con PUBLIC_FORMS_BASE_URL y el nombre del evento sale el enlace limpio; si no, /f/<id>/<slug> como siempre
     return {"public_url": base, "test_url": f"{base}?k={form.test_key}"}
 
 
@@ -101,8 +104,37 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
         "submissions": real, "test_submissions": tests,
         "preregistered": (marks := formsvc.mark_counts(db, form))["block"], "registered_hold": marks["hold"],      # «ya registradas»: solo bloquean | además ocupan cupo (ya van dentro de `submissions`) "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
-        "feed": formsvc.get_settings(form)["feed"], **_urls(request, form),
+        "feed": formsvc.get_settings(form)["feed"], **_urls(request, form, db),
     }
+
+
+def _assign_account(db: Session, form: WebForm, value, staff: StaffUser) -> None:
+    """Asigna (o quita, con null) la cuenta de cobro. No se cambia si el formulario ya tiene pagos que no sean de prueba: sus reembolsos y su conciliación usan la cuenta con la que se cobró,
+    pero mezclar cuentas en un mismo formulario confunde el cuadre."""
+    new_id = None if value in (None, "", 0) else int(value)
+    if new_id == form.payment_account_id:
+        return
+    if new_id is not None:
+        acc = db.get(PaymentAccount, new_id)
+        if acc is None or not acc.active:
+            raise HTTPException(status_code=400, detail="Esa cuenta de cobro no existe o está desactivada")
+        if not payment_accounts.usable_for_form(acc, form):
+            raise HTTPException(status_code=400, detail="Esa cuenta de cobro pertenece a otro evento u otro formulario. Créala como «de uso general» o para este evento")
+    if db.query(FormPayment.id).filter(FormPayment.form_id == form.id, FormPayment.is_test == False, FormPayment.status.in_(("approved", "refunded", "pending"))).first():  # noqa: E712
+        raise HTTPException(status_code=409, detail="Este formulario ya tiene pagos reales o pendientes: no se le puede cambiar la cuenta de cobro")
+    audit_actions.record(db, staff, "payment_account_assign", "web_form", form.id, form.name, f"cuenta {form.payment_account_id or 'Golden'} → {new_id or 'Golden'}")
+    form.payment_account_id = new_id
+
+
+def _payments_info(db: Session, form: WebForm) -> dict:
+    """Qué cuenta de Wompi cobra este formulario: la de Golden (variables de entorno) o una cuenta de cobro de un tercero (Fase 8)."""
+    acc_id = form.payment_account_id
+    if acc_id:
+        cfg = payment_accounts.cfg_of(db.get(PaymentAccount, acc_id))
+        sandbox, prod = bool(cfg and cfg["test"]), bool(cfg and not cfg["test"])
+    else:
+        sandbox, prod = bool(wompi.config(True)), bool((wompi.config(False) or {}).get("test") is False)
+    return {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": sandbox, "production_configured": prod, "account_id": acc_id}
 
 
 def _detail(db: Session, form: WebForm, request: Request) -> dict:
@@ -110,7 +142,7 @@ def _detail(db: Session, form: WebForm, request: Request) -> dict:
             "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None,
             "quota_status": formsvc.quota_status(db, form),
             "digital_badge_enabled": bool(getattr(db.query(Event).filter(Event.id == form.event_id).first(), "digital_badge_enabled", False)),
-            "payments": {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": bool(wompi.config(True)), "production_configured": bool((wompi.config(False) or {}).get("test") is False)}}
+            "payments": _payments_info(db, form)}
 
 
 # ------------------------------------------------------------------ CRUD
@@ -173,6 +205,7 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     form = _get_form(db, event, form_id)
     _not_archived(form)
     quota_before = formsvc.quota_sig_map(form)
+    feed_before = formsvc.get_settings(form)["feed"]
     if "name" in data:
         name = str(data["name"]).strip()[:120]
         if not name:
@@ -183,6 +216,10 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
         if db.query(WebForm).filter(WebForm.event_id == event.id, WebForm.slug == slug, WebForm.id != form.id).first():
             raise HTTPException(status_code=400, detail="Ya hay otro formulario con esa dirección en este evento")
         form.slug = slug
+    if "payment_account_id" in data:
+        if max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["admin"]:
+            raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar la cuenta de cobro")
+        _assign_account(db, form, data["payment_account_id"], staff)
     try:
         if "design" in data:
             design = formlib.sanitize_design(data["design"], _optional_keys(event))
@@ -198,9 +235,15 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     if ("design" in data or "settings" in data) and formsvc.quota_sig_map(form) != quota_before:
         formsvc.invalidate_quota_keys(db, form)
         formsvc.rebuild_quota_keys(db, form, formsvc.quota_rules(form))          # se recalculan aquí, una vez y guardadas con este mismo guardado (no en cada visita pública)
+    queued = formsvc.enqueue_pending_feed(db, form) if "settings" in data and feed_before != "realtime" and formsvc.get_settings(form)["feed"] == "realtime" else 0     # cambio a «tiempo real»: las que ya estaban inscritas también se cargan
     db.commit()
+    if queued:
+        jobs.kick()
     formsvc.invalidate_public_cache()
-    return _detail(db, form, request)
+    out = _detail(db, form, request)
+    if queued:
+        out["feed_queued"] = queued
+    return out
 
 
 def _registered_parse(db: Session, event: Event, form: WebForm, file: UploadFile, with_data: bool = False) -> dict:
@@ -1126,6 +1169,52 @@ def download_file(event_id: int, form_id: int, submission_id: int, field_id: str
     return get_storage().response(form_file_key(event.tenant_id, form.id, info["stored"]), filename=info.get("filename") or os.path.basename(info["stored"]))
 
 
+@router.get("/events/{event_id}/forms/{form_id}/files-zip")
+def download_files_zip(event_id: int, form_id: int, field: str, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Todos los archivos de UNA columna de archivo de «Respuestas» en un solo ZIP (`cedula_Columna.ext`). Sin pruebas por defecto. Topes: 1.000 archivos y 300 MB."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    form = _get_form(db, event, form_id)
+    design = formsvc.get_design(form)
+    labels = dict(formfiles.file_fields(design))
+    if field not in labels:
+        raise HTTPException(status_code=400, detail="Ese campo no es de archivo")
+    q = db.query(FormSubmission.id, FormSubmission.person_id, FormSubmission.data_json).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
+    if not include_tests:
+        q = q.filter(FormSubmission.is_test == False)  # noqa: E712
+    items = []
+    for sid, pid, raw in q.order_by(FormSubmission.id).yield_per(500):
+        try:
+            info = formfiles.file_info(json.loads(raw or "{}").get(field))
+        except ValueError:
+            info = None
+        if info:
+            items.append((sid, pid, info))
+    if not items:
+        raise HTTPException(status_code=404, detail="Todavía no hay archivos en esa columna")
+    if len(items) > formfiles.MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Son {len(items)} archivos: el máximo por descarga es {formfiles.MAX_FILES}")
+    storage = get_storage()
+    used, total = set(), 0
+    tmp = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as zf:          # los PDF/imágenes ya vienen comprimidos: sin recomprimir
+        for sid, pid, info in items:
+            key = form_file_key(event.tenant_id, form.id, info["stored"])
+            try:
+                content = storage.get(key)
+            except Exception:       # un archivo faltante no tumba la descarga de los demás
+                continue
+            total += len(content)
+            if total > formfiles.MAX_BYTES:
+                raise HTTPException(status_code=400, detail="Los archivos pesan más de 300 MB juntos: descárgalos con el buscador de Respuestas por partes")
+            zf.writestr(formfiles.zip_entry_name(pid, labels[field], sid, info.get("filename") or "", used), content)
+    tmp.seek(0)
+    audit_actions.record(db, staff, "export", "form_files", form.id, None, f"formulario {form.id}, columna {field}, {len(used)} archivos")
+    db.commit()
+    name = f"{formfiles.safe_part(getattr(form, 'title', None) or getattr(form, 'name', None) or 'formulario', 40)}_{formfiles.safe_part(labels[field], 40)}.zip"
+    return Response(content=tmp.read(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @router.get("/events/{event_id}/forms/{form_id}/report")
 def report(event_id: int, form_id: int, include_tests: bool = False, request: Request = None, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Reporte Excel del formulario (mismas convenciones que `app/reports.py`: título arriba, encabezado oscuro,
@@ -1196,7 +1285,7 @@ def _auto_refund_possible(p: FormPayment) -> bool:
     """¿Hay reembolso automático por API para este pago? Tarjeta (anulación) siempre; otros medios solo con la API V2 (sandbox)."""
     if (p.payment_method or "").upper() == "CARD":
         return True
-    cfg = wompi.config(p.is_test)
+    cfg = payment_accounts.cfg_for_payment(None, p)
     return bool(cfg and wompi.refunds_v2_enabled(cfg))
 
 
@@ -1316,9 +1405,9 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
     if bulk_jobs.active_job(db, event_id):
         raise HTTPException(status_code=409, detail="Ya hay un proceso en curso para este evento — espera a que termine")
     only_unsent = data.get("only_unsent", True)
-    base = _base_url(request)
+    invite_base = public_slug.form_link(str(request.base_url), event, form)          # el enlace personal también sale limpio cuando hay host de inscripciones
     job_id = bulk_jobs.create_job(db, event_id, staff.id)
-    form_id_, slug, ev_id, ev_name, name = form.id, form.slug, event.id, event.name, form.name
+    form_id_, ev_name, name = form.id, event.name, form.name
 
     def work(job_db, reporter):
         f = job_db.query(WebForm).filter(WebForm.id == form_id_).first()
@@ -1340,7 +1429,7 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
             if only_unsent and inv.sent_at:
                 skipped += 1
                 continue
-            link = f"{base}/f/{ev_id}/{slug}?i={inv.token}"
+            link = f"{invite_base}?i={inv.token}"
             res = send_mail(p["email"], f"Tu inscripción — {ev_name}",
                             f"Hola {p.get('first_name') or ''}, te invitamos a completar tu inscripción a {ev_name} ({name}).\n\nAbre tu enlace personal (ya trae tus datos):\n{link}\n\nEs personal: no lo compartas.")
             if res.get("sent"):

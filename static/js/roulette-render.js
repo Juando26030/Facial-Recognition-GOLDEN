@@ -3,13 +3,18 @@
 
    RouletteRender.wheel(canvas, style)            -> { draw(names, angle), spinTo(names, winnerIndex, seconds) : Promise }
    RouletteRender.buildSegments(pool, winner, n)  -> { names, winnerIndex }   (un segmento POR PERSONA, hasta n; siempre incluye al ganador)
-   RouletteRender.stage(host, style, opts?)       -> { idle(names), spin(pool, winner, seconds) : Promise, kind }
-                                                     dibuja la ruleta CIRCULAR o la columna vertical estilo casino («jackpot») según style.wheel_style
+   RouletteRender.stage(host, style, opts?)       -> { idle(names), spin(pool, winner, seconds, ctl?) : Promise, kind }
+                                                     dibuja la ruleta CIRCULAR o la columna vertical estilo casino («jackpot») según style.wheel_style.
+                                                     ctl = { stop: Promise } (Fase 10, C): GIRO LIBRE — gira sin parar hasta que `ctl.stop` se cumple (un clic en «Detener») y entonces frena sobre el
+                                                     ganador; sin `ctl` dura `seconds`. Sin clic en 2 minutos se detiene sola (MAX_FREE_MS).
+   RouletteRender.topImages(host, style, assetUrl) -> dibuja los logos/banners de arriba (style.top_images)
+   RouletteRender.fieldRows(winner)               -> [{label, value, entity}] lo que se muestra bajo el nombre (winner.fields; sin él, la entidad de siempre)
    RouletteRender.buildReelList(pool, winner)     -> { rows, winnerRow }   (lista que recorre la columna del estilo casino)
    RouletteRender.applyBackground(el, style, assetUrl)
    RouletteRender.reveal(container, winner, style)  -> pinta la tarjeta del ganador                                          */
 (function () {
   const TAU = Math.PI * 2;
+  const MAX_FREE_MS = 120000;          // giro libre: si nadie hace clic en «Detener», se frena sola a los 2 minutos
 
   function applyBackground(el, style, assetUrl) {
     el.style.backgroundColor = style.background_color || '#0A0E2E';
@@ -212,7 +217,40 @@
         requestAnimationFrame(frame);
       });
     }
-    return { draw, spinTo };
+    // Giro LIBRE (Fase 10, C): gira a velocidad constante hasta que `stop` se cumple; entonces frena con el segmento `winnerIndex` bajo el puntero. La duración del frenado se ajusta a la distancia para que
+    // la velocidad no pegue un salto al hacer clic (velocidad inicial del frenado cúbico = 3 · distancia / duración).
+    function spinFree(names, winnerIndex, stop) {
+      const n = names.length, step = TAU / n, calm = reduceMotion();
+      const cruise = calm ? 3 : 7;                                                  // rad/s (~1,1 vueltas por segundo)
+      let angle = current, v = 0, last = performance.now(), stopped = false;
+      const t0 = last;
+      Promise.resolve(stop).then(() => { stopped = true; }, () => { stopped = true; });
+      spinning = !calm;
+      return new Promise((resolve) => {
+        function cruiseFrame(now) {
+          if (stopped || now - t0 > MAX_FREE_MS) { brake(); return; }
+          const dt = Math.min(0.05, (now - last) / 1000); last = now;
+          v = Math.min(cruise, v + cruise * dt / 0.8);                              // arranque suave (0,8 s)
+          angle += v * dt; draw(names, angle);
+          requestAnimationFrame(cruiseFrame);
+        }
+        function brake() {
+          const target = -(winnerIndex + 0.5) * step + (Math.random() - 0.5) * step * 0.6;
+          const want = Math.max(v, cruise * 0.5) * 3.5 / 3;                         // distancia aproximada para ~3,5 s de frenado
+          const end = target + TAU * Math.ceil((angle + want - target) / TAU);
+          const dist = end - angle, duration = Math.max(1200, Math.min(7000, 3 * dist / Math.max(v, cruise * 0.5) * 1000));
+          const from = angle, t1 = performance.now();
+          (function frame(now) {
+            const p = Math.min(1, (now - t1) / duration);
+            draw(names, from + dist * (1 - Math.pow(1 - p, 3)));
+            if (p < 1) requestAnimationFrame(frame);
+            else { spinning = false; draw(names, end, winnerIndex); resolve(); }
+          })(t1);
+        }
+        requestAnimationFrame(cruiseFrame);
+      });
+    }
+    return { draw, spinTo, spinFree };
   }
 
   // ---- Estilo «casino» (jackpot): una columna vertical de nombres que pasa de arriba hacia abajo y frena con el ganador en la fila del centro.
@@ -289,7 +327,57 @@
         requestAnimationFrame(frame);
       });
     }
-    return { idle, spin };
+    // Giro LIBRE (Fase 10, C): la columna corre en bucle (3 copias de una vuelta de filas, de largo múltiplo del número de colores para que no se note el salto) hasta que `stop` se cumple;
+    // entonces el ganador se coloca unas filas más adelante y la columna frena sobre él con la velocidad con que venía.
+    function spinFree(pool, winner, stop) {
+      let others = Array.from(new Set((pool || []).filter((x) => x && x !== winner)));
+      for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+      others = others.slice(0, 150);
+      if (!others.length) others = [winner];
+      const L = colors.length * Math.ceil(36 / colors.length);
+      const loop = []; while (loop.length < L) loop.push(...others);
+      loop.length = L;
+      const rows = [].concat(loop, loop, loop);
+      strip.innerHTML = '';
+      rows.forEach((n, i) => strip.appendChild(rowEl(n, i)));
+      const calm = reduceMotion();
+      const speed = H * (calm ? 3 : 9);                                            // px/s
+      const base = centerOffset(1), loopPx = L * H;
+      let pos = 0, last = performance.now(), v = 0, stopped = false;
+      const t0 = last;
+      Promise.resolve(stop).then(() => { stopped = true; }, () => { stopped = true; });
+      return new Promise((resolve) => {
+        function cruiseFrame(now) {
+          if (stopped || now - t0 > MAX_FREE_MS) { brake(); return; }
+          const dt = Math.min(0.05, (now - last) / 1000); last = now;
+          v = Math.min(speed, v + speed * dt / 0.6);
+          pos = (pos + v * dt) % loopPx;
+          setY(base - pos, calm ? 0 : Math.min(5, v / 900));
+          requestAnimationFrame(cruiseFrame);
+        }
+        function brake() {
+          const vv = Math.max(v, speed * 0.5);
+          const curRow = pos / H + 1;                                              // fila (con decimales) que está en el centro ahora
+          const winnerRow = Math.round(curRow + vv * 4 / 3.4 / H);                 // ~4 s de frenado a la velocidad que traía
+          strip.replaceChild(rowEl(winner, winnerRow), strip.children[winnerRow]);
+          const from = base - pos, to = centerOffset(winnerRow), dist = from - to;
+          const duration = Math.max(1200, Math.min(7000, 3.4 * dist / vv * 1000));
+          const t1 = performance.now();
+          let prevY = from, prevT = t1;
+          (function frame(now) {
+            const p = Math.min(1, (now - t1) / duration);
+            const cur = from + (to - from) * (1 - Math.pow(1 - p, 3.4));
+            const sp = Math.abs(cur - prevY) / Math.max(1, now - prevT) * 1000;
+            prevY = cur; prevT = now;
+            setY(cur, calm ? 0 : Math.min(5, sp / 900));
+            if (p < 1) requestAnimationFrame(frame);
+            else { setY(to, 0); strip.children[winnerRow].classList.add('rr-reel__row--win'); strip.children[winnerRow].style.boxShadow = `inset 0 0 0 6px ${accent}`; resolve(); }
+          })(t1);
+        }
+        requestAnimationFrame(cruiseFrame);
+      });
+    }
+    return { idle, spin, spinFree };
   }
 
   // Un solo punto de entrada para las tres pantallas: dibuja el tipo de ruleta elegido en el estilo.
@@ -298,7 +386,7 @@
     host.innerHTML = '';
     if (style.wheel_style === 'jackpot') {
       const r = reel(host, style);
-      return { kind: 'jackpot', idle: r.idle, spin: async (pool, winner, seconds) => { await r.spin(pool, winner, seconds); } };
+      return { kind: 'jackpot', idle: r.idle, spin: async (pool, winner, seconds, ctl) => { if (ctl && ctl.stop) await r.spinFree(pool, winner, ctl.stop); else await r.spin(pool, winner, seconds); } };
     }
     const canvas = document.createElement('canvas');
     canvas.width = 1200; canvas.height = 1200; canvas.className = 'rr-canvas';
@@ -308,7 +396,10 @@
     return {
       kind: 'circular',
       idle: (names) => w.draw(names && names.length ? names.slice(0, 24) : ['?', '?', '?', '?'], 0),
-      spin: async (pool, winner, seconds) => { const seg = buildSegments(pool, winner, 24); w.draw(seg.names, 0); await w.spinTo(seg.names, seg.winnerIndex, seconds); },
+      spin: async (pool, winner, seconds, ctl) => {
+        const seg = buildSegments(pool, winner, 24); w.draw(seg.names, 0);
+        if (ctl && ctl.stop) await w.spinFree(seg.names, seg.winnerIndex, ctl.stop); else await w.spinTo(seg.names, seg.winnerIndex, seconds);
+      },
     };
   }
 
@@ -339,16 +430,40 @@
     setTimeout(() => layer.remove(), 6000);
   }
 
+  // Lo que va bajo el nombre del ganador: con `winner.fields` (Fase 10, C) lo que el coordinador eligió; sin él (sorteos viejos), la entidad de siempre.
+  function fieldRows(winner) {
+    if (Array.isArray(winner.fields)) return winner.fields.filter((f) => f && f.value).map((f) => ({ label: f.label || '', value: f.value, entity: !!f.entity }));
+    return winner.entity ? [{ label: '', value: winner.entity, entity: true }] : [];
+  }
+
   function reveal(container, winner, style) {
-    container.innerHTML = `<div class="rr-winner" style="--rr-win-bg:${esc(style.winner_bg)}; --rr-win-fg:${esc(style.winner_color)};">
+    const rows = fieldRows(winner).map((f) => `<div class="rr-winner__entity">${f.entity || !f.label ? '' : `<span class="rr-winner__fieldlabel">${esc(f.label)}</span> `}${esc(f.value)}</div>`).join('');
+    const scale = (v, d) => (Math.max(50, Math.min(400, Number(v) || d)) / 100).toFixed(2);
+    container.innerHTML = `<div class="rr-winner" style="--rr-win-bg:${esc(style.winner_bg)}; --rr-win-fg:${esc(style.winner_color)}; --rr-name-scale:${scale(style.name_scale, 100)}; --rr-fields-scale:${scale(style.fields_scale, 150)};">
       <svg class="rr-winner__star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1l2.6 7.4L22 11l-7.4 2.6L12 21l-2.6-7.4L2 11l7.4-2.6z"/></svg>
       <div class="rr-winner__eyebrow">${winner.position ? 'Ganador ' + esc(winner.position) : 'Ganador'}</div>
       <div class="rr-winner__name" style="font-family:'${esc(style.title_font)}', sans-serif;">${esc(winner.name)}</div>
-      ${winner.entity ? `<div class="rr-winner__entity">${esc(winner.entity)}</div>` : ''}
+      ${rows}
     </div>`;
     confetti(container, style);
   }
 
-  if (typeof window !== 'undefined') window.RouletteRender = { wheel, buildSegments, buildReelList, stage, applyBackground, reveal };
-  if (typeof module !== 'undefined') module.exports = { buildSegments, buildReelList };
+  // Logos/banners de arriba de la pantalla (hasta 4). `host` se vacía y se oculta si no hay ninguno.
+  function topImages(host, style, assetUrl) {
+    host.innerHTML = '';
+    const list = Array.isArray(style.top_images) ? style.top_images.filter(Boolean) : [];
+    host.hidden = !list.length;
+    host.classList.toggle('rr-top--single', list.length === 1);
+    const cfgs = Array.isArray(style.top_images_cfg) ? style.top_images_cfg : [];
+    list.forEach((p, i) => {
+      const img = document.createElement('img'), c = cfgs[i] || {};
+      const h = Math.max(4, Math.min(40, Number(c.height) || 18));
+      img.src = assetUrl(p); img.alt = ''; img.style.setProperty('--rr-top-h', h + 'vh');          // alto propio de cada logo; el ancho sigue su proporción
+      img.dataset.align = ['left', 'center', 'right'].includes(c.align) ? c.align : 'center';
+      host.appendChild(img);
+    });
+  }
+
+  if (typeof window !== 'undefined') window.RouletteRender = { wheel, buildSegments, buildReelList, stage, applyBackground, reveal, topImages, fieldRows };
+  if (typeof module !== 'undefined') module.exports = { buildSegments, buildReelList, fieldRows };
 })();

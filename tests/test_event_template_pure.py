@@ -40,10 +40,10 @@ def test_default_template_is_valid_and_round_trips():
 def test_default_reproduces_todays_new_event_form():
     t = _tpl()
     keys = [k for s in t["creation_layout"]["sections"] for k in s["keys"]]
-    assert keys == ["client", "event_code", "name", "country", "city", "location", "address", "start_date", "end_date", "event_time_start", "event_time_end", "setup_date", "setup_time_start", "setup_time_end",
+    assert keys == ["client", "event_code", "name", "event_type_id", "country", "city", "location", "address", "start_date", "end_date", "event_time_start", "event_time_end", "setup_date", "setup_time_start", "setup_time_end",
                     "coordinator_staff_id", "commercial_staff_id", "super_event_id", "bandana", "notes"]
     req = {f["key"] for f in t["fields"] if f["required"]}
-    assert req == set(keys) - {"super_event_id", "bandana", "notes"}
+    assert req == set(keys) - {"event_type_id", "super_event_id", "bandana", "notes"}
     assert len(t["creation_layout"]["sections"]) == 4
 
 
@@ -159,11 +159,12 @@ def test_config_by_type_is_sanitised():
     assert "mínimo" in _raises(et.validate_template, _with(_tpl(), f))
     f = _custom(key="c_m", type_="money", title="Valor", config={"currency": "XXX"})
     _raises(et.validate_template, _with(_tpl(), f))
-    f = _custom(key="c_i", type_="inventory", title="Inv", config={"inventory_types": []})
-    _raises(et.validate_template, _with(_tpl(), f))
     inv = {"inventory_types": [{"key": "panoletas", "label": "Pañoletas", "refs": ["Roja", "Azul"]}]}
-    out = et.validate_template(_with(_tpl(), _custom(key="c_i", type_="inventory", title="Inv", config={**inv, "basura": 1})))
-    assert [x for x in out["fields"] if x["key"] == "c_i"][0]["config"] == inv
+    f = _custom(key="c_i", type_="inventory", title="Inv", config=inv)
+    assert "catálogo" in _raises(et.validate_template, _with(_tpl(), f))          # Fase 5: el campo viejo ya no se crea ni se deja activo (el inventario es el catálogo)
+    out = et.validate_template(_with(_tpl(), {**f, "retired": True}))          # …pero uno retirado (migración 0109) sigue pasando sin romper la plantilla
+    assert [x for x in out["fields"] if x["key"] == "c_i"][0]["retired"] is True
+    assert not et.TYPES["inventory"]["creatable"]
 
 
 def test_clean_value_by_type():

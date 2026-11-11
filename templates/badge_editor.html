@@ -8,6 +8,7 @@
 {% set is_cert = (template_kind == 'certificate') %}
 {% set kind_name = 'Certificado' if is_cert else 'Escarapela' %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -19,6 +20,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    <script src="{{ url_for('static', path='js/gw-carga.js') }}"></script>
     <script src="{{ url_for('static', path='js/gw-busy.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/gw-ui.js') }}" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-disenador.css') }}">
@@ -32,10 +34,14 @@
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-geometry.js') }}"></script>
     <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell gw-disenador has-sidebar editor-page">
 {% include "_sidebar.html" %}
@@ -241,7 +247,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     <div class="gw-modal__body">
       <p class="gw-modal__text">Copia el diseño de una plantilla de tu librería a este evento. No queda vinculada: puedes seguir editando aquí sin afectar la original.</p>
       {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="savedTplArchived"> Ver archivadas</label>{% endif %}
-      <div id="savedTplList" aria-live="polite"><p class="gw-ed-state">Cargando…</p></div>
+      <div id="savedTplList" aria-live="polite">{{ skeleton('list', rows=3, label='Cargando plantillas…') }}</div>
     </div>
     <div class="gw-modal__foot">
       <button type="button" class="gw-btn gw-btn--secondary" id="importCancelBtn" data-gw-close>Cerrar</button>
@@ -458,7 +464,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   }
   async function openImportModal() {                  // la ventana se abre sola (data-gw-open="importModal" en gw-ui.js); aquí se carga la lista
     const listEl = document.getElementById('savedTplList');
-    stateLine(listEl, 'Cargando…');
+    if (window.GW && GW.skeleton) GW.skeleton(listEl, { kind: 'list', rows: 3, label: 'Cargando plantillas…' }); else stateLine(listEl, 'Cargando…');
     const archBox = document.getElementById('savedTplArchived');
     const showArch = !!(archBox && archBox.checked);          // «Ver archivadas» (coordinador+, Fase 3): se pueden restaurar (y, super_admin, borrar del todo)
     try {

@@ -3,6 +3,7 @@
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,7 +16,12 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
+    <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/dashboard.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell">
 <!-- Sin menú lateral: digitador/cliente son cuentas temporales sin panel (Sprint 2.3, 2026-09-16)
@@ -67,7 +73,7 @@
       <p class="gw-hint" id="eventSearchInfo" role="status" aria-live="polite"></p>
     </div>
     <div id="myEventsList" aria-busy="true">
-      <p class="gw-hint">Cargando tus eventos...</p>
+      <div class="gw-cards">{{ skeleton('cards', rows=3, label='Cargando tus eventos…') }}</div>
     </div>
   </div>
 </main>

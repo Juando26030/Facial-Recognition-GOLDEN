@@ -216,6 +216,7 @@ class StaffUser(Base):
     login_req_at = Column(DateTime, nullable=True)
     login_req_status = Column(String(12), nullable=True)
     session_epoch = Column(Integer, default=0, server_default='0', nullable=False)
+    client_temp = Column(Boolean, default=False, server_default='false', nullable=False)  # 0129 (12-nov-2026): cliente temporal del evento = digitador (mismos permisos) con usuario y contraseña aleatorios, sin solicitud de ingreso (app/temp_client.py)
     archived_at = Column(DateTime, nullable=True)  # 0089 (Fase 3): NULL = normal; con fecha = archivada (no inicia sesión, no sale en listas ni selectores; se restaura). Ver app/routers/staff.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -260,6 +261,7 @@ class Event(Base):
     shared_print_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # impresión compartida (22-oct-2026, 0069): APAGADA por defecto; app/routers/shared_print.py
     reprint_disabled = Column(Boolean, default=False, server_default='false', nullable=False)   # 0083 (Fase 1B): true = reimprimir a quien ya se imprimió exige permiso del coordinador (app/reprint.py); solo admin+ lo cambia
     print_settings_json = Column(Text, nullable=True)   # valores de impresión de escarapelas del evento (0070, app/routers/print_settings.py); NULL = de fábrica
+    event_type_id = Column(Integer, ForeignKey('event_types.id'), nullable=True)  # 0128 (Fase 10, C): «Categoría (tipo de evento)»; NULL = «Sin categoría». Lista en Configuración (super_admin)
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
     certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
@@ -269,6 +271,12 @@ class Event(Base):
     pledge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0100: el evento exige el compromiso digital del digitador (app/pledge.py); sin firmarlo no entra a la fila de autorización. El enlace público es el formulario web `kind='pledge'` del evento
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    areas_dwell_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122 (Fase 10): contar el tiempo de permanencia en las zonas (entradas y salidas suman)
+    dwell_prize_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: «premio por porcentaje de estadía» (certificado / entrega solo a quien llegue al porcentaje)
+    dwell_reference_minutes = Column(Integer, nullable=True)  # 0122: el 100 % en minutos (lo define el coordinador); NULL = la duración del evento
+    dwell_threshold_pct = Column(Integer, nullable=True)  # 0122: porcentaje mínimo para cumplir (NULL = 80)
+    areas_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter registra la entrada o salida sin pulsar «Acreditar»
+    inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
     data_archived_at = Column(DateTime, nullable=True)      # 0090 (L7): la BASE DE DATOS del evento (personas y respuestas) quedó archivada a los 90 días de cerrado; el evento SIGUE en las listas. Solo un super_admin la desarchiva. Ver app/event_archive.py
@@ -300,19 +308,44 @@ class Event(Base):
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
+    selfreg_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0115 (Fase 8): «Autorregistro sin base de datos»: pantalla de kiosco para que la persona se cree sola (app/selfreg.py). APAGADO por defecto
     face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)
     accept_no_birth_mode = Column(String, default='any', server_default='any', nullable=False)   # 0096 (D5): con la base SIN fecha de nacimiento, /aceptar acepta 'any' (cualquier fecha adulta, como antes) o 'require_personal_link' (solo con el enlace personal del correo); los eventos nuevos nacen con el segundo
     idle_minutes = Column(Integer, nullable=True)   # 0081: minutos de inactividad antes de cerrar la sesión del personal que trabaja en este evento (5-60), SOLO mientras está en proceso; NULL = el general (SESSION_IDLE_MINUTES, 10). app/idle.py
     face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
     badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
     extra_json = Column(Text, nullable=True)   # 0087 (Fase 2): valores de los campos PERSONALIZADOS de la plantilla de evento {clave: valor} (app/event_template.py). Los campos base y los interruptores siguen en sus columnas
+    billed_at = Column(DateTime, nullable=True)      # 0105 (Fase 5): cuándo se puso el evento en un estado de facturación («Facturado», regla client_delivery); NULL si no lo está. El historial completo queda en audit_actions
+    billed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso (comercial o admin)
+    final_db_key = Column(String, nullable=True)      # 0105 (Fase 5): «base de datos final» procesada por humanos (xlsx/csv), clave en app/storage.py; NO es la base de estadísticas
+    final_db_name = Column(String, nullable=True)      # nombre original del archivo (solo para mostrarlo)
+    final_db_uploaded_at = Column(DateTime, nullable=True)
+    final_db_uploaded_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    public_slug = Column(String, nullable=True)      # 0113 (D2.5k): nombre del enlace limpio de inscripciones (/<evento>/<formulario>); ÚNICO en todo el sistema (índice en minúsculas). app/public_slug.py
+    local_node_name = Column(String, nullable=True)      # 0111 (Fase 6): nombre del servidor local que TIENE el evento (arrendamiento: un solo escritor). NULL = el evento vive en la nube. Mientras esté puesto, la nube lo muestra en solo lectura
+    local_since = Column(DateTime, nullable=True)        # desde cuándo está en ese servidor local
+    local_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)      # quién lo puso en local
+    queue_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0116 (Fase 8): «Turnos y filas» activado desde Parámetros (app/queue_turns.py)
+    queue_config_json = Column(Text, nullable=True)      # configuración de los turnos: orden, filas (letras), mostrar nombre… (queue_turns.clean_config); NULL = la de fábrica
+    local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
+    # --- Lado del SERVIDOR LOCAL (0112, Fase 6): solo se usan cuando este evento es una copia bajada de la nube (LOCAL_SERVER=1); en la nube quedan NULL ---
+    cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
+    sync_log_id = Column(Integer, nullable=True)         # marca de agua: último AccessLog.id local ya CONFIRMADO por la nube
+    sync_persons_at = Column(DateTime, nullable=True)    # marca de agua: último alta local (EventAttendee.created_at) ya confirmada por la nube
+    sync_package_at = Column(DateTime, nullable=True)    # cuándo se bajó el paquete del evento desde la nube
+    sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
+    sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
+    billed_by = relationship("StaffUser", foreign_keys=[billed_by_id])
+    local_by = relationship("StaffUser", foreign_keys=[local_by_id])
+    final_db_uploaded_by = relationship("StaffUser", foreign_keys=[final_db_uploaded_by_id])
     super_event = relationship("SuperEvent", back_populates="events")
     state = relationship("EventState")
+    event_type = relationship("EventType")
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -382,6 +415,19 @@ class EventState(Base):
 
     def get_rules(self) -> dict:
         return json.loads(self.rules_json) if self.rules_json else {}
+
+
+class EventType(Base):
+    """Tipo de evento (Feria, Congreso…): la categoría con la que el calendario filtra. La lista la administra el super_admin (agregar, renombrar, archivar, color opcional); archivar NO toca los eventos
+    que ya la tienen (siguen mostrándola), solo deja de ofrecerla al crear o editar."""
+    __tablename__ = 'event_types'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False, unique=True)
+    color = Column(String(9), nullable=True)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
 class EventStaffAuthorization(Base):
@@ -536,6 +582,7 @@ class WebForm(Base):
     `manual_status` o, con `use_schedule`, del calendario `schedule_json` (ver app/formlib.py)."""
     __tablename__ = 'web_forms'
     id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): con qué cuenta de cobro de Wompi cobra este formulario; NULL = la de Golden
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False)
@@ -549,6 +596,7 @@ class WebForm(Base):
     fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
     archived_at = Column(DateTime, nullable=True)  # 0091 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas y cerrado al público; conserva respuestas y pagos)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False, server_default='false')  # 0113: el formulario que abre /<evento> (sin nombre de formulario); uno por evento (si ninguno, el único abierto)
     kind = Column(String(20), nullable=False, default='registration', server_default='registration')  # 0100: 'registration' (inscripción, de siempre) | 'pledge' (compromiso digital del digitador, app/pledge.py: no alimenta la base del evento ni sale en la lista de formularios)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
@@ -594,6 +642,32 @@ class FormDiscountCode(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class PaymentAccount(Base):
+    """Cuenta de cobro de Wompi de un TERCERO (Fase 8, 0118): alguien nos presta su comercio de Wompi y un formulario cobra con SUS llaves; el dinero entra a SU cuenta. La de Golden NO está aquí: sigue en
+    variables de entorno. `public_key` es pública (pub_…); la privada, el secreto de integridad y el de eventos van CIFRADOS (Fernet, PAYMENT_KEYS_ENCRYPTION_KEY: app/payment_accounts.py) y nunca salen por la API.
+    `ref` = identificador opaco para la URL de eventos de ESA cuenta (/webhooks/wompi/<ref>)."""
+    __tablename__ = 'payment_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ref = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
+    holder = Column(String, nullable=True)                 # quién es el titular del comercio (solo texto, para reconocerla)
+    public_key = Column(String, nullable=False)
+    private_enc = Column(Text, nullable=True)
+    integrity_enc = Column(Text, nullable=False)
+    events_enc = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, default=True, server_default='true')
+    note = Column(Text, nullable=True)
+    # 0124 (Fase 10 B): a qué pertenece la cuenta. «general» = cualquier formulario; «evento» = formularios de ese evento (varias cuentas por evento); «formulario» = solo ese; «panelista» = cuenta de un
+    # panelista/expositor (texto libre en panelist_ref; event_id opcional). Solo limita las asignaciones NUEVAS: nada se asigna solo.
+    scope = Column(String(12), nullable=False, default='general', server_default='general')
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='SET NULL'), nullable=True, index=True)
+    form_id = Column(Integer, nullable=True)          # sin FK a propósito: web_forms ya apunta a payment_accounts y una llave en el otro sentido haría un ciclo al crear las tablas
+    panelist_ref = Column(String(120), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class FormPayment(Base):
     """Un intento de pago de un formulario con campo «Pago» (Wompi). `reference` codifica evento + formulario +
     inscripción y es única: es la trazabilidad por evento (Wompi no organiza por proyecto). El registro de pago se
@@ -618,6 +692,7 @@ class FormPayment(Base):
     confirmed_at = Column(DateTime, nullable=True)
     refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
     origin = Column(String(16), nullable=True)   # 0074: 'importado' = registro histórico traído de otro entorno (no es un pago de este)
+    account_id = Column(Integer, ForeignKey('payment_accounts.id', ondelete='SET NULL'), nullable=True)      # 0118 (Fase 8): cuenta de cobro de Wompi con la que se cobró; NULL = la de Golden (variables de entorno)
 
 
 class FormRefund(Base):
@@ -789,6 +864,32 @@ class EventDocument(Base):
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
+class EventAct(Base):
+    """Acta de novedades del evento (Fase 10, 0126; app/routers/event_acts.py): lo ocurrido en el evento, en texto o lista, con la firma dibujada del coordinador y la del cliente (PNG en
+    el almacenamiento, por app/storage.py). Varias por evento. Queda «firmada» cuando están las dos firmas; entonces el texto ya no cambia (`content_hash` = SHA-256 del texto al firmar)."""
+    __tablename__ = 'event_acts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    title = Column(String(160), nullable=False)
+    format = Column(String(10), nullable=False, default='text', server_default='text')          # text (párrafo) | list (un punto por línea)
+    body = Column(Text, nullable=False, default='', server_default='')
+    coordinator_sig_key = Column(String(300), nullable=True)
+    coordinator_name = Column(String(160), nullable=True)
+    coordinator_signed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    coordinator_signed_at = Column(DateTime, nullable=True)
+    client_sig_key = Column(String(300), nullable=True)
+    client_name = Column(String(160), nullable=True)
+    client_signed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    client_signed_at = Column(DateTime, nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    pdf_key = Column(String(300), nullable=True)          # PDF generado al quedar firmada (reportlab); NULL = aún no / falló: se puede regenerar
+    pdf_at = Column(DateTime, nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_event_acts_event', 'event_id', 'created_at'),)
+
+
 class EventExpense(Base):
     """Un gasto legalizado del evento (ítem 7): categoría, responsable, descripción, a quién aplica,
     valor y foto de evidencia (opcional). El reporte Excel suma el total."""
@@ -861,6 +962,7 @@ class InventoryItem(Base):
     initial_qty = Column(Integer, nullable=False, default=0)
     allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
     allow_repeat_delivery = Column(Boolean, default=True, server_default='true', nullable=False)  # 0096 (D7): ¿se puede entregar de nuevo a la MISMA persona? Los existentes sí; el alta por la API nace en false
+    requires_dwell = Column(Boolean, default=False, server_default='false', nullable=False)  # 0123 (Fase 10): solo se entrega a quien llegó al porcentaje de estadía del evento
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -880,6 +982,89 @@ class InventoryDelivery(Base):
     delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
+
+
+class InventoryCategory(Base):
+    """Categoría del CATÁLOGO de inventario (Fase 5, 0107): la define el Super Admin en Configuración. Archivable (conserva historial); no se repite el nombre (sin distinguir mayúsculas, lo valida app/inventory.py)."""
+    __tablename__ = 'inventory_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+
+class InventoryProduct(Base):
+    """Producto del catálogo de inventario (Fase 5, 0107): unidad de medida, SKU opcional y `fields_json` = campos propios que pide ese producto en cada evento ([{key,label,kind:'text'|'number'}]).
+    `category_id` puede ser NULL (sin categorizar): se permite con el evento en «creado» y NO para pasarlo a «en proceso» (app/inventory.py, regla de cuadre). Archivado = fuera del catálogo nuevo, las líneas viejas se conservan."""
+    __tablename__ = 'inventory_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category_id = Column(Integer, ForeignKey('inventory_categories.id'), nullable=True)
+    name = Column(String, nullable=False)
+    unit = Column(String, nullable=False, default='unidad', server_default='unidad')
+    sku = Column(String, nullable=True)
+    fields_json = Column(Text, nullable=True)
+    qty_total = Column(Integer, nullable=True)      # 0110: existencias de Golden (NULL = no se controla); con ellas se avisa cuando lo asignado a eventos que se cruzan en fechas las supera (app/inventory_alerts.py)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    category = relationship('InventoryCategory')
+
+
+class LocalNode(Base):
+    """Servidor local autorizado a subir datos a la nube (0112, Fase 6). El token (`gwn_…`) se muestra UNA sola vez al crearlo y aquí solo queda su hash SHA-256; revocar = poner `revoked_at`.
+    `created_by_id` es la cuenta de admin/super_admin que lo creó: con su alcance (cliente/empresa) se aplican los lotes que sube el nodo. Sin datos personales."""
+    __tablename__ = 'local_nodes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(60), nullable=False, unique=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    last_version = Column(String(80), nullable=True)      # commit/esquema que reportó la última vez
+
+    created_by = relationship("StaffUser", foreign_keys=[created_by_id])
+
+
+class Notification(Base):
+    """Notificación dentro de la aplicación para UNA cuenta del personal (Fase 5, 0110): se ve en la campana y, además, sale por correo (app/notifications.py). `dedupe_key` evita repetir el mismo aviso a la
+    misma cuenta. No lleva datos personales de asistentes: solo texto del aviso, el evento y un enlace."""
+    __tablename__ = 'notifications'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    kind = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    url = Column(String, nullable=True)
+    event_id = Column(Integer, nullable=True)
+    dedupe_key = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    read_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint('staff_user_id', 'dedupe_key', name='uq_notification_dedupe'), Index('ix_notifications_user_unread', 'staff_user_id', 'read_at'))
+
+
+class EventInventoryItem(Base):
+    """Un producto del catálogo en un evento (Fase 5, 0107): cantidad asignada (lo que pide el evento) y lo que mueve el almacén: salió, volvió, se consumió. Regla de cuadre: app/inventory.py.
+    Distinta de `InventoryItem` (insumos que el quiosco reparte a las personas del evento). `attrs_json` = valores de los campos propios del producto."""
+    __tablename__ = 'event_inventory_items'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    qty_assigned = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_out = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_returned = Column(Integer, nullable=False, default=0, server_default='0')
+    qty_consumed = Column(Integer, nullable=False, default=0, server_default='0')
+    notes = Column(String, nullable=True)
+    attrs_json = Column(Text, nullable=True)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    product = relationship('InventoryProduct')
+    __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
 
 
 class Job(Base):
@@ -991,6 +1176,24 @@ class PersonChange(Base):
     detail = Column(String, nullable=True)
 
 
+class PersonChangeLog(Base):
+    """Historial de datos modificados por persona (migración 0127, app/person_history.py): una fila por campo cambiado (campo, valor anterior, valor nuevo, quién y cuándo). Solo datos de texto de la
+    persona (nunca rostro, foto ni vector). Sin llaves foráneas, como `person_changes`: se borra con la persona (supresión, eliminarla del evento) y con el evento. `changed_by_id` NULL = lo hizo
+    la propia persona o un proceso (formulario público, autorregistro). `source`: edit | outbox | bulk | form | register | autoregistro."""
+    __tablename__ = 'person_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=True)
+    user_id = Column(String, nullable=False)
+    field_key = Column(String(64), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, nullable=True)
+    source = Column(String(16), nullable=False, default='edit')
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_person_change_log_person', 'tenant_id', 'user_id'), Index('ix_person_change_log_event', 'event_id'))
+
+
 class AcceptMailLog(Base):
     """Registro de cada envío del enlace personal de autorización (migración 0065, app/acceptmail.py): quién (cédula), cuándo y con qué resultado. SIN IP ni User-Agent (decisión de la auditora).
     `kind`: bulk (envío masivo) | test (envío de prueba, sin persona) | export (descarga de enlaces) | control (inicio/parada/fin de una tanda). `result`: reserving (reservado, aún sin respuesta)
@@ -1094,6 +1297,29 @@ class AppSetting(Base):
     updated_at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class InfraCost(Base):
+    """0121 (Fase 9C): gasto de infraestructura de un mes (Google, Neon, Microsoft, Cloudflare, dominio…). Solo admin/super_admin (app/infra_costs.py). `amount_cop` ya viene en pesos con la TRM del
+    día guardada en `trm`, así el histórico no cambia si el dólar se mueve. `source_key` único = importación automática de Google idempotente."""
+    __tablename__ = 'infra_costs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    month = Column(String(7), nullable=False, index=True)             # AAAA-MM
+    provider = Column(String(20), nullable=False)
+    concept = Column(String(160), nullable=False)
+    kind = Column(String(10), nullable=False, default='variable')      # fixed | variable
+    currency = Column(String(3), nullable=False, default='COP')
+    amount = Column(Numeric(14, 2), nullable=False)
+    trm = Column(Numeric(12, 2), nullable=True)
+    amount_cop = Column(Numeric(14, 2), nullable=False)
+    source = Column(String(12), nullable=False, default='manual')      # manual | gcp_export
+    source_key = Column(String(160), nullable=True, unique=True)
+    note = Column(String(300), nullable=True)
+    attachment_key = Column(String(300), nullable=True)
+    attachment_name = Column(String(160), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class SessionAudit(Base):
     """0072: sesiones cerradas, rechazadas o forzadas. Solo lo necesario (Ley 1581): cuenta, hora, tipo de dispositivo, navegador y resultado; sin IP. Se borra a los 90 días (ops_runner.purge)."""
     __tablename__ = 'session_audit'
@@ -1153,6 +1379,21 @@ class EventStatusChange(Base):
     reason = Column(String(500), nullable=True)
     attendees_count = Column(Integer, nullable=False, default=0, server_default='0')
     access_logs_count = Column(Integer, nullable=False, default=0, server_default='0')
+
+
+class EventChangeLog(Base):
+    """Fase 5 (0108): historial de cambios del EVENTO por campo (quién, cuándo, valor anterior y nuevo). Solo campos del evento: nunca datos de asistentes. Los valores sensibles
+    (p. ej. el contacto del evento) se guardan ocultos y los textos se recortan (`app/event_history.py`). `source`: edit | state | switch | import."""
+    __tablename__ = 'event_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, index=True)
+    field_key = Column(String(64), nullable=False)
+    field_label = Column(String(120), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    source = Column(String(16), nullable=False, default='edit', server_default='edit')
 
 
 class ReprintRequest(Base):
@@ -1261,3 +1502,200 @@ class EventStaffPledge(Base):
     health_purged_at = Column(DateTime, nullable=True)
 
     __table_args__ = (Index('uq_pledge_active', 'event_id', 'staff_id', unique=True, postgresql_where=text("superseded_at IS NULL")),)
+
+
+class EventDeliveryLink(Base):
+    """Enlace de ENTREGA al cliente de un evento Facturado (Fase 5, 0106; app/delivery.py): /entrega/<token>. El token se DERIVA (HMAC con SECRET_KEY) de `nonce`, así el personal puede volver a ver el
+    enlace sin guardar el token; en la base solo queda su SHA-256 (`token_hash`) para buscarlo. Sin vencimiento corto: vale hasta que se revoque o se regenere (regenerar revoca el anterior)."""
+    __tablename__ = 'event_delivery_links'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    nonce = Column(String(32), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    last_opened_at = Column(DateTime, nullable=True)
+
+
+class SurveyResponse(Base):
+    """Una encuesta de satisfacción contestada (Fase 5, 0106), guardada APARTE de los formularios (`form_submissions`) y SIN purga biométrica: es la base de la analítica de gerencia (promedios por
+    mes, evento, cliente y pregunta). Sin datos personales de quien responde. Una por evento (índice único). El detalle por pregunta está en `survey_answers`. Ver docs/FASE_5_ENTREGA_ENCUESTA.md."""
+    __tablename__ = 'survey_responses'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    survey_version = Column(Integer, nullable=False)
+    submitted_at = Column(DateTime, nullable=False, default=utcnow)
+    nps_score = Column(Integer, nullable=True)            # 0-10
+    avg_score = Column(Float, nullable=True)              # promedio 1-3 de las preguntas de calidad contestadas
+    delivery_link_id = Column(Integer, ForeignKey('event_delivery_links.id', ondelete='SET NULL'), nullable=True)
+    comment_count = Column(Integer, nullable=False, default=0, server_default='0')
+    ip_hash = Column(String(16), nullable=True)           # solo antiabuso: SHA-256 TRUNCADO de la IP con SECRET_KEY (no es la IP)
+
+    answers = relationship("SurveyAnswer", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (Index('uq_survey_responses_event', 'event_id', unique=True), Index('ix_survey_responses_tenant_at', 'tenant_id', 'submitted_at'))
+
+
+class SurveyAnswer(Base):
+    """Una fila por pregunta contestada (normalizado para analítica). `score` numérico (calidad 1-3, recomendación 0-10) o NULL (sin puntaje / «No aplica»). event_id, tenant_id y submitted_at se
+    repiten de la respuesta a propósito: así promediar por mes/evento/cliente/pregunta no necesita unir tablas."""
+    __tablename__ = 'survey_answers'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    response_id = Column(Integer, ForeignKey('survey_responses.id', ondelete='CASCADE'), nullable=False, index=True)
+    event_id = Column(Integer, nullable=False)
+    tenant_id = Column(String, nullable=False)
+    submitted_at = Column(DateTime, nullable=False)
+    survey_version = Column(Integer, nullable=False)
+    question_id = Column(String(40), nullable=False)
+    score = Column(Integer, nullable=True)
+    choice_text = Column(String(60), nullable=True)
+    comment = Column(Text, nullable=True)
+
+    __table_args__ = (Index('ix_survey_answers_question', 'question_id', 'submitted_at'), Index('ix_survey_answers_event', 'event_id'), Index('ix_survey_answers_tenant_at', 'tenant_id', 'submitted_at'))
+
+
+class SlugHistory(Base):
+    """Nombres de enlace viejos de un evento (0113): responden 301 al nuevo y no se reasignan a otro evento hasta `hold_until` (12 meses). Ver app/public_slug.py."""
+    __tablename__ = 'slug_history'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String, nullable=False, index=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    hold_until = Column(DateTime, nullable=False)
+
+
+class QueueTurn(Base):
+    """Un turno de «Turnos y filas» (Fase 8, 0116): una persona, una fila (letra) y un número. `rank` ordena la fila (menor se llama primero; «saltar»/«volver a la fila» solo lo cambian).
+    `token` es el enlace secreto de la persona (/turno/<evento>/<token>): solo muestra SU turno. Sin cédulas en lo que se muestra a otros."""
+    __tablename__ = 'queue_turns'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    user_id = Column(String, nullable=False)
+    lane = Column(String(1), nullable=False)
+    number = Column(Integer, nullable=False)
+    rank = Column(Integer, nullable=False)
+    token = Column(String, nullable=False, unique=True)
+    status = Column(String(10), nullable=False, default='waiting', server_default='waiting')      # waiting | called | done | skipped
+    desk = Column(String(40), nullable=True)        # puesto que lo llamó («Caja 2»)
+    called_seq = Column(Integer, nullable=True)     # orden global del último llamado (para saber cuál es «el que están llamando»)
+    called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    called_at = Column(DateTime, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    source = Column(String(10), nullable=False, default='arrival', server_default='arrival')      # arrival | form | alpha | manual
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('event_id', 'lane', 'number', name='uq_queue_turn_number'), UniqueConstraint('event_id', 'user_id', name='uq_queue_turn_user'),
+                      Index('ix_queue_turn_event_status', 'event_id', 'status'))
+
+
+class QueueCall(Base):
+    """Cada vez que se llama un turno (solo se INSERTA): la pantalla de TV muestra los últimos."""
+    __tablename__ = 'queue_calls'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    turn_id = Column(Integer, ForeignKey('queue_turns.id', ondelete='CASCADE'), nullable=False)
+    lane = Column(String(1), nullable=False)
+    number = Column(Integer, nullable=False)
+    desk = Column(String(40), nullable=True)
+    called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    called_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (Index('ix_queue_call_event', 'event_id', 'id'),)
+
+
+class ContactCard(Base):
+    """Tarjeta de contacto de UNA persona en UN evento (Fase 8, 0114): `token` = enlace PRIVADO donde la persona decide si comparte sus datos con expositores; `share_token` = lo que lleva el QR/NFC que ve el expositor.
+    Los dos son aleatorios (nada de cédulas en la URL: las direcciones quedan en los registros del proveedor). Sin datos personales aquí: solo quién (llave de la persona) y los tokens."""
+    __tablename__ = 'contact_cards'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(String, nullable=False)
+    token = Column(String, nullable=False, unique=True)
+    share_token = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('event_id', 'tenant_id', 'user_id', name='uq_contact_card_person'),)
+
+
+class AuditContactShare(Base):
+    """Constancia INMUTABLE (solo INSERT) de que una persona aceptó o retiró compartir sus datos de contacto con los expositores (Ley 1581: autorización previa, expresa e informada). Vigente = el ÚLTIMO registro
+    de la persona en el evento. Guarda la versión y la huella del texto exacto que vio; la cédula solo como huella (HMAC)."""
+    __tablename__ = 'audit_contact_shares'
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(String, nullable=False)
+    cedula_hash = Column(String, nullable=False)
+    at = Column(DateTime, default=utcnow, nullable=False)
+    version = Column(String, nullable=False)
+    text_hash = Column(String, nullable=False)
+    shared = Column(Boolean, nullable=False)
+    adult_confirmed = Column(Boolean, nullable=False, default=False)
+    reason = Column(String, nullable=False)          # consent | revocation
+    __table_args__ = (Index('ix_contact_share_person', 'event_id', 'tenant_id', 'user_id', 'at'),)
+
+
+class EventExhibitor(Base):
+    """Un expositor del evento (Fase 8, 0114). `token` = su enlace PRIVADO (escanear asistentes y ver su lista); `card_token` = su tarjeta pública (QR/NFC que escanean los asistentes para guardarlo). Los datos de la tarjeta
+    los pone el organizador con el expositor (son datos del expositor, publicados por él)."""
+    __tablename__ = 'event_exhibitors'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)          # empresa / stand
+    contact_name = Column(String, nullable=True)
+    title = Column(String, nullable=True)          # cargo
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    token = Column(String, nullable=False, unique=True)
+    card_token = Column(String, nullable=False, unique=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (Index('ix_exhibitor_event', 'event_id'),)
+
+
+class ExhibitorLead(Base):
+    """Persona escaneada por un expositor (Fase 8, 0114). Solo la llave de la persona: lo que se muestra se lee en el momento y SOLO si la persona sigue compartiendo (retirar la autorización oculta el contacto)."""
+    __tablename__ = 'exhibitor_leads'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    exhibitor_id = Column(Integer, ForeignKey('event_exhibitors.id', ondelete='CASCADE'), nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    scanned_at = Column(DateTime, default=utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint('exhibitor_id', 'tenant_id', 'user_id', name='uq_exhibitor_lead'),)
+
+
+class AlertRecipient(Base):
+    """0119 (Fase 9-A): quién recibe las alertas del sistema (borrado masivo). `kind='email'` = correo externo; `kind='staff'` = cuenta de la plataforma (campana + su correo registrado)."""
+    __tablename__ = 'alert_recipients'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(10), nullable=False)
+    email = Column(String(200), nullable=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class SystemAlert(Base):
+    """0119: historial de alertas del sistema ya disparadas (sin datos personales de asistentes)."""
+    __tablename__ = 'system_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(40), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False)
+    event_id = Column(Integer, nullable=True)
+    actor_id = Column(Integer, nullable=True)
+    actor_label = Column(String(120), nullable=True)
+    dedupe_key = Column(String(160), nullable=True, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class MassDeleteLog(Base):
+    """0119: cuántas filas borró cada acción grande (≥10) y quién; sirve para la regla «≥N en M minutos». Se limpia sola (solo se consulta la última hora)."""
+    __tablename__ = 'mass_delete_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow, index=True)
+    actor_id = Column(Integer, nullable=True)
+    label = Column(String(40), nullable=False)
+    rows = Column(Integer, nullable=False)
+    event_id = Column(Integer, nullable=True)

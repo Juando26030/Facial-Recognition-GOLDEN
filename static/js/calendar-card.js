@@ -107,6 +107,10 @@
         '<span class="cal-card__sw-ic" aria-hidden="true">' + (on ? '✓' : '✕') + '</span>' +
         '<span class="cal-card__sw-tx">' + esc(it.title) + ': <strong class="cal-card__sw-st">' + esc(it.text) + '</strong></span></span>';
     }
+    if (it.type === 'workday') {          // jornada (Fase 5): insignia informativa; con «mostrar el nombre del campo» lleva su título delante
+      return '<span class="cal-card__f cal-card__wd" data-field="' + esc(it.key) + '">' + (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') +
+        '<span class="gw-badge gw-badge--info cal-card__wd-b">' + esc(it.text) + '</span></span>';
+    }
     var cls = 'cal-card__f' + (strong ? ' cal-card__f--strong' : '') + (it.type === 'text_long' ? ' cal-card__f--long' : '');
     return '<span class="' + cls + '" data-field="' + esc(it.key) + '">' +
       (it.label ? '<span class="cal-card__k">' + esc(it.title) + '</span> ' : '') + '<span class="cal-card__v">' + esc(it.text) + '</span></span>';

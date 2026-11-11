@@ -23,13 +23,17 @@
           <summary class="gw-form-group__summary">Datos del evento</summary>
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeName">Nombre del evento</label><input class="gw-input" type="text" id="eeName" name="name" required></div>
+            {# Categoría (tipo de evento) — Fase 10 (C): la lista se ve SIEMPRE en «Datos del evento», también en eventos viejos; vacío = «Sin categoría». La lista sale del mismo catálogo que las opciones del diseñador de plantilla. El calendario filtra por ella. #}
+            <div class="gw-field"><label class="gw-label" for="eeEventType">Categoría (tipo de evento)</label>
+              <select class="gw-select" name="event_type_id" id="eeEventType"><option value="">— Sin categoría —</option></select></div>
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="modalStatusSelect">Estado del evento</label>
-                <select class="gw-select" name="status" id="modalStatusSelect">
-                  <option value="creado">Creado</option>
-                  <option value="en_proceso">En Proceso</option>
-                  <option value="finalizado">Finalizado</option>
+                <select class="gw-select" name="state" id="modalStatusSelect">
+                  <option value="st:creado">Creado</option>
+                  <option value="st:en_proceso">En Proceso</option>
+                  <option value="st:finalizado">Finalizado</option>
                 </select>
+                <p class="gw-hint" id="eeBilledInfo" hidden></p>
               </div>
               <div class="gw-field"><label class="gw-label" for="eeNotes">Observaciones</label><input class="gw-input" type="text" id="eeNotes" name="notes"></div>
             </div>
@@ -50,6 +54,8 @@
               <div class="gw-field"><label class="gw-label" for="eeSetupStart">Hora inicio montaje</label><input class="gw-input clock-time" type="text" id="eeSetupStart" name="setup_time_start" required></div>
               <div class="gw-field"><label class="gw-label" for="eeSetupEnd">Hora fin montaje</label><input class="gw-input clock-time" type="text" id="eeSetupEnd" name="setup_time_end" required></div>
             </div>
+            {# Fase 5: Jornada, campo informativo CALCULADO de las horas del evento (app/workday.py). Solo lectura (sin name: no viaja al guardar). Se muestra si la plantilla de evento lo incluye. #}
+            <div class="gw-field" id="eeWorkdayField" hidden><label class="gw-label" for="eeWorkday" id="eeWorkdayLabel">Jornada <span class="gw-hint">(calculada)</span></label><input class="gw-input" type="text" id="eeWorkday" readonly tabindex="-1" value="—" aria-live="polite"><small class="gw-hint">Se calcula sola con la hora de inicio y la de fin del evento.</small></div>
           </div>
         </details>
 
@@ -97,6 +103,75 @@
           </div>
         </details>
 
+        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
+        <details class="gw-form-group" open id="eeFinalDbGroup">
+          <summary class="gw-form-group__summary">Base de datos final</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head">
+              <span class="gw-hint" id="eeFinalDbInfo"></span>
+              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
+            </div>
+            <div class="ee-report__row">
+              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
+              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
+            </div>
+            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
+          </div>
+        </details>
+
+        {# Enlace limpio de inscripciones (D2.5k): nombre del evento en la dirección pública y formulario principal. Solo comercial, admin y super_admin. #}
+        {% if staff_role in ("comercial", "admin", "super_admin") %}
+        <details class="gw-form-group" open id="eeLinkGroup">
+          <summary class="gw-form-group__summary">Enlace de inscripciones</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-field"><label class="gw-label" for="eeLinkSlug">Nombre del evento en el enlace</label><input class="gw-input" type="text" id="eeLinkSlug" autocomplete="off" maxlength="60" spellcheck="false"><small class="gw-hint" id="eeLinkHint"></small></div>
+            <div class="gw-field"><label class="gw-label" for="eeLinkPrimary">Formulario principal</label><select class="gw-select" id="eeLinkPrimary"><option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option></select></div>
+            <p class="gw-hint" id="eeLinkPreview"></p>
+            <div class="ee-report__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeLinkSave">Guardar enlace</button></div>
+            <p class="gw-hint">Solo letras minúsculas sin tildes, números y guiones. Si lo cambias, el enlace anterior sigue funcionando (redirige al nuevo) y los enlaces ya enviados no se rompen.</p>
+          </div>
+        </details>
+        {% endif %}
+
+        {# Servidor local (Fase 6): el evento puede vivir en un servidor local sin internet; mientras tanto la nube lo muestra en solo lectura. #}
+        <details class="gw-form-group" open id="eeLocalGroup">
+          <summary class="gw-form-group__summary">Servidor local (sin internet)</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head"><span class="gw-hint" id="eeLocalInfo"></span></div>
+            <div class="ee-report__row">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalTake">Llevar a un servidor local</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalRelease" hidden>Pasar a internet</button>
+            </div>
+            <p class="gw-hint">Mientras el evento esté en un servidor local, aquí solo se puede ver. «Pasar a internet» deja el evento editable otra vez en la nube; el servidor local sube antes todo lo que tenga pendiente.</p>
+          </div>
+        </details>
+
+        {# Historial de cambios del evento por campo (Fase 5, solo lectura; static/js/event-history-panel.js). Lo ve quien edita el evento: coordinador, comercial, admin y super_admin. #}
+        <details class="gw-form-group" id="eeHistoryGroup" hidden>
+          <summary class="gw-form-group__summary">Historial de cambios</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-field"><label class="gw-label" for="eeHistoryField">Filtrar por campo</label><select class="gw-select" id="eeHistoryField" data-eh="field"><option value="">Todos los campos</option></select></div>
+            <div class="gw-table-wrap">
+              <table class="gw-table ee-history">
+                <thead><tr><th>Cuándo</th><th>Quién</th><th>Campo</th><th>Cambio</th></tr></thead>
+                <tbody data-eh="body"></tbody>
+              </table>
+            </div>
+            <div class="gw-pager">
+              <span class="gw-pager__info" data-eh="info" aria-live="polite"></span>
+              <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="prev">Anterior</button>
+              <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-eh="next">Siguiente</button>
+            </div>
+          </div>
+        </details>
+
+        {# Inventario del evento (Fase 5): productos del catálogo con cantidades y estado del cuadre; lo que cada rol puede editar lo decide el servidor. Se guarda con «Guardar cambios» o con su propio botón. #}
+        <details class="gw-form-group" id="eeInvGroup" open hidden>
+          <summary class="gw-form-group__summary">Inventario</summary>
+          <div class="gw-form-group__body"><div id="eeInvBox"></div></div>
+        </details>
+
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
         <details class="gw-form-group" open>
           <summary class="gw-form-group__summary">Informe final</summary>
@@ -114,6 +189,25 @@
             <p class="gw-hint">Sube el informe ya corregido y autorizado, en PDF o Excel. Se marca como enviado y se le manda por correo a la comercial del evento. Es una acción aparte: no depende de «Guardar cambios».</p>
           </div>
         </details>
+
+        {# Entrega al cliente (Fase 5): solo comercial/admin/super_admin y solo con el evento Facturado. Se muestra tras consultar /api/events/{id}/delivery; son acciones aparte de «Guardar cambios». #}
+        {% if staff_role in ("comercial", "admin", "super_admin") %}
+        <details class="gw-form-group" id="eeDeliveryGroup" open hidden>
+          <summary class="gw-form-group__summary">Entrega al cliente</summary>
+          <div class="gw-form-group__body ee-delivery">
+            <p class="gw-hint">El evento está Facturado. Comparta este enlace con el cliente: primero diligencia una encuesta de satisfacción y luego puede descargar la base de datos final.</p>
+            <div class="ee-delivery__row">
+              <label class="gw-sr-only" for="eeDeliveryLink">Enlace de entrega al cliente</label>
+              <input class="gw-input" type="text" id="eeDeliveryLink" readonly>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryCopy">{{ ic('link', 'gw-icon--sm') }} Copiar</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryRegen">Regenerar enlace</button>
+            </div>
+            <p class="gw-hint" id="eeDeliveryInfo" role="status"></p>
+            <label class="gw-check"><input type="checkbox" id="eeDeliveryMailChk"> <span>Enviar al correo del cliente <span id="eeDeliveryTo"></span></span></label>
+            <div class="ee-delivery__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeDeliverySend" disabled>Enviar</button></div>
+          </div>
+        </details>
+        {% endif %}
       </div>
 
       <div class="gw-modal__foot">
@@ -133,13 +227,17 @@
 <datalist id="modalCommercialList"></datalist>
 
 <script src="{{ url_for('static', path='js/gw-busy.js') }}"></script>
+<script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-super-eventos.js') }}"></script>
 <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-combobox.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-geo.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-map.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/workday.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-inventory-plan.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-history-panel.js') }}"></script>
 <script>
 (function () {
   const ROLE = {{ staff_role|tojson }};
@@ -242,6 +340,17 @@
     return tplCache;
   }
   if (EF) EF.bind(extraBody, { fields: extraFields });
+  // Jornada (Fase 5): solo lectura; se recalcula al cambiar las horas del evento. Se ve si el administrador la agregó a la plantilla (vista de creación o tarjeta del calendario).
+  const workdayField = document.getElementById('eeWorkdayField');
+  const workdayRefresh = EF && EF.bindWorkday ? EF.bindWorkday(form, { read: () => ({ start: form.event_time_start.value, end: form.event_time_end.value }), targets: '#eeWorkday' }) : null;
+  function paintWorkday(tpl) {
+    const f = tpl && (tpl.fields || []).find((x) => x.key === 'workday' && !x.retired);
+    const inCreation = f && ((tpl.creation_layout || {}).sections || []).some((s) => (s.keys || []).includes('workday'));
+    const inCalendar = f && Object.values((tpl.calendar_layout || {}).zones || {}).some((z) => (z || []).some((i) => i.key === 'workday'));
+    workdayField.hidden = !(inCreation || inCalendar) || !workdayRefresh;
+    if (f) document.getElementById('eeWorkdayLabel').firstChild.textContent = f.title + ' ';
+    if (workdayRefresh) workdayRefresh();
+  }
   function renderExtra(ev, tpl) {
     Object.keys(extraFields).forEach((k) => delete extraFields[k]);
     extraBody.innerHTML = '';
@@ -275,6 +384,176 @@
       ? `<a class="gw-badge gw-badge--ok gw-bulb" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Clic para descargar el informe">${icon('check')}Informe enviado</a>`
       : `<span class="gw-badge gw-badge--warn gw-bulb">${icon('info')}Informe pendiente</span>`;
   };
+
+  /* ---------- estado del evento (estados configurables + «Facturado», Fase 5) ---------- */
+  const stateSel = document.getElementById('modalStatusSelect');
+  let statesInfo = null;
+  async function loadStates() {
+    if (statesInfo) return statesInfo;
+    try {
+      const res = await fetch('/api/event-states');
+      if (res.ok) { const d = await res.json(); statesInfo = { list: (d.states || []).filter((st) => st.is_active), canBill: !!d.can_set_billed }; }
+    } catch (e) { /* sin lista: quedan los tres estados de siempre */ }
+    return statesInfo;
+  }
+  async function paintState(ev) {
+    const info = await loadStates();
+    stateSel.disabled = false; stateSel.title = '';
+    if (!info || !info.list.length) {          // sin estados configurados: los tres de siempre (por estado base)
+      stateSel.value = 'st:' + (ev.status || 'creado'); stateSel.dataset.initial = stateSel.value; stateSel.dataset.initialBase = ev.status || 'creado'; paintBilled(ev); return;
+    }
+    const wasBilling = !!ev.billed;
+    stateSel.innerHTML = info.list.map((st) => {
+      const needsFinal = ev.status !== 'finalizado' && ev.state_id !== st.id;
+      const needsDb = !ev.final_db_uploaded && ev.state_id !== st.id;
+      const blocked = st.billing && (!info.canBill || needsFinal || needsDb);
+      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (primero adjunte la base de datos final)');
+      return `<option value="id:${st.id}" data-base="${esc(st.base_status)}"${blocked ? ' disabled' : ''}>${esc(st.name)}${st.billing && blocked ? why : ''}</option>`;
+    }).join('');
+    let sel = ev.state_id && info.list.some((st) => st.id === ev.state_id) ? 'id:' + ev.state_id : null;
+    if (!sel) {
+      const fallback = info.list.find((st) => st.base_status === (ev.status || 'creado') && !st.billing);
+      if (fallback) sel = 'id:' + fallback.id;
+      else { stateSel.insertAdjacentHTML('afterbegin', `<option value="st:${esc(ev.status || 'creado')}" data-base="${esc(ev.status || 'creado')}">${esc(ev.state_name || ev.status || 'creado')}</option>`); sel = 'st:' + (ev.status || 'creado'); }
+    }
+    stateSel.value = sel;
+    stateSel.dataset.initial = sel;
+    stateSel.dataset.initialBase = ev.status || 'creado';
+    if (wasBilling && !info.canBill) { stateSel.disabled = true; stateSel.title = 'Solo una comercial o un administrador puede sacar el evento de «Facturado»'; }
+    paintBilled(ev);
+  }
+  function paintBilled(ev) {
+    const el = document.getElementById('eeBilledInfo');
+    el.hidden = !ev.billed;
+    el.textContent = ev.billed ? `Facturado${ev.billed_by_name ? ' por ' + ev.billed_by_name : ''}${ev.billed_at ? ' el ' + new Date(ev.billed_at + 'Z').toLocaleString() : ''}` : '';
+  }
+
+  /* ---------- base de datos final (Fase 5) ---------- */
+  const FINAL_DB_DIRECT_OVER = 20 * 1024 * 1024;          // por encima de esto el archivo va directo al almacenamiento (Cloud Run corta las peticiones grandes)
+  function paintFinalDb(ev) {
+    document.getElementById('eeFinalDbInfo').textContent = ev.final_db_uploaded
+      ? `Subida${ev.final_db_name ? ': ' + ev.final_db_name : ''}${ev.final_db_uploaded_by_name ? ' por ' + ev.final_db_uploaded_by_name : ''}${ev.final_db_uploaded_at ? ' el ' + new Date(ev.final_db_uploaded_at + 'Z').toLocaleString() : ''} (subir otra la reemplaza)`
+      : 'Pendiente de subir';
+    const dl = document.getElementById('eeFinalDbDownload');
+    dl.hidden = !ev.final_db_uploaded;
+    dl.href = `/api/events/${ev.id}/final-database`;
+  }
+  document.getElementById('eeFinalDbUpload').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const file = document.getElementById('eeFinalDbFile').files[0];
+    if (!file) { showToast('Elige primero el archivo de la base de datos final (Excel o CSV)', 'error'); return; }
+    if (!/\.(xlsx|csv)$/i.test(file.name)) { showToast('La base de datos final debe ser un archivo Excel (.xlsx) o CSV (.csv)', 'error'); return; }
+    const who = current.commercial_name ? ` a ${esc(current.commercial_name)}` : ' a la comercial del evento';
+    const msg = current.final_db_uploaded ? `Ya hay una base final subida: se reemplazará y se avisará por correo${who}. ¿Continuar?` : `Se subirá la base final y se avisará por correo${who} para que revise si ya se puede facturar. ¿Continuar?`;
+    if (!(await showConfirm(msg, { variant: 'warning', confirmLabel: 'Sí, subir' }))) return;
+    await busy(btn, async () => {
+      const fd = new FormData();
+      try {
+        if (file.size > FINAL_DB_DIRECT_OVER && window.DirectUpload) fd.append('upload_token', await DirectUpload.upload(file, { body: { purpose: 'final_database', event_id: current.id } }));
+        else fd.append('file', file);
+      } catch (err) { showToast(err.message || 'No se pudo subir el archivo', 'error'); return; }
+      const res = await fetch(`/api/events/${current.id}/final-database`, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo subir la base de datos final', 'error'); return; }
+      current.final_db_uploaded = true; current.final_db_name = data.final_db_name; current.final_db_uploaded_at = data.final_db_uploaded_at; current.final_db_uploaded_by_name = data.final_db_uploaded_by_name;
+      document.getElementById('eeFinalDbFile').value = '';
+      paintFinalDb(current);
+      if (typeof paintState === 'function') { const keep = stateSel.value; await paintState(current); if (stateSel.querySelector(`option[value="${keep}"]`)) stateSel.value = keep; }          // habilita «Facturado» ahora que hay base final
+      showToast(`${data.message}. ${data.notice || ''}`.trim(), 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
+
+  /* ---------- enlace limpio de inscripciones (D2.5k) ---------- */
+  let linkTimer = null, linkInfo = null;
+  function linkPreview() {
+    const slug = (document.getElementById('eeLinkSlug').value || '').trim().toLowerCase();
+    const sel = document.getElementById('eeLinkPrimary');
+    const base = linkInfo ? linkInfo.base : location.origin;
+    const clean = linkInfo && linkInfo.clean_enabled;
+    const formSlug = (linkInfo && (linkInfo.forms.find((f) => String(f.id) === sel.value) || {}).slug) || '<formulario>';
+    document.getElementById('eeLinkPreview').textContent = clean ? `Enlace: ${base}/${slug || '<evento>'}${sel.value ? '' : '/' + formSlug}${sel.value ? '  (abre el formulario principal)' : ''}` : 'El enlace limpio se activa cuando el sistema tenga su dirección de inscripciones configurada; mientras tanto los enlaces siguen como siempre.';
+  }
+  async function paintLink(ev) {
+    const grp = document.getElementById('eeLinkGroup');
+    if (!grp) return;
+    linkInfo = null;
+    const res = await fetch(`/api/events/${ev.id}/public-link`);
+    if (!res.ok) { grp.hidden = true; return; }
+    grp.hidden = false;
+    linkInfo = await res.json();
+    document.getElementById('eeLinkSlug').value = linkInfo.slug || '';
+    document.getElementById('eeLinkHint').textContent = '';
+    const sel = document.getElementById('eeLinkPrimary');
+    sel.innerHTML = '<option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option>' + linkInfo.forms.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+    const prim = linkInfo.forms.find((f) => f.is_primary);
+    sel.value = prim ? String(prim.id) : '';
+    linkPreview();
+  }
+  if (document.getElementById('eeLinkGroup')) {
+    document.getElementById('eeLinkSlug').addEventListener('input', () => {
+      clearTimeout(linkTimer);
+      linkPreview();
+      linkTimer = setTimeout(async () => {
+        const v = document.getElementById('eeLinkSlug').value;
+        const res = await fetch(`/api/events/${current.id}/public-link?slug=${encodeURIComponent(v)}`);
+        const d = await res.json().catch(() => ({}));
+        document.getElementById('eeLinkHint').textContent = d.ok ? 'Disponible' : (d.error || '');
+      }, 350);
+    });
+    document.getElementById('eeLinkPrimary').addEventListener('change', linkPreview);
+    document.getElementById('eeLinkSave').addEventListener('click', async (e) => {
+      const slug = document.getElementById('eeLinkSlug').value.trim().toLowerCase();
+      const primary = document.getElementById('eeLinkPrimary').value;
+      await busy(e.currentTarget, async () => {
+        const body = { slug };
+        if (primary) body.primary_form_id = Number(primary); else body.clear_primary = true;
+        const res = await fetch(`/api/events/${current.id}/public-link`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el enlace', 'error'); return; }
+        linkInfo = data; linkPreview();
+        showToast('Enlace de inscripciones guardado', 'success');
+      });
+    });
+  }
+
+  /* ---------- servidor local (Fase 6) ---------- */
+  function paintLocal(ev) {
+    const l = ev.local || {};
+    const info = document.getElementById('eeLocalInfo');
+    info.textContent = l.leased
+      ? `En el servidor local «${l.node_name}» desde ${new Date(l.since + 'Z').toLocaleString()}. ${l.last_upload_at ? 'Última subida a la nube: ' + new Date(l.last_upload_at + 'Z').toLocaleString() + '.' : 'Aún no ha subido nada a la nube.'}`
+      : 'El evento está en la nube (se edita aquí).';
+    document.getElementById('eeLocalTake').hidden = !!l.leased;
+    document.getElementById('eeLocalRelease').hidden = !l.leased;
+  }
+  async function leaseCall(path, body) {
+    const res = await fetch(`/api/events/${current.id}/lease${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo completar la acción', 'error'); return null; }
+    return data;
+  }
+  document.getElementById('eeLocalTake').addEventListener('click', async (e) => {
+    const name = await showPrompt('¿A qué servidor local se lleva el evento? Escribe su nombre (el que tiene el servidor, por ejemplo «Portátil bodega 1»). Desde ese momento aquí solo se podrá ver.', { title: 'Llevar a un servidor local', confirmLabel: 'Llevar a local' });
+    if (!name || !String(name).trim()) return;
+    await busy(e.currentTarget, async () => {
+      const data = await leaseCall('', { node_name: String(name).trim() });
+      if (!data) return;
+      current.local = data; paintLocal(current);
+      showToast('El evento quedó en el servidor local. Aquí se ve en solo lectura.', 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
+  document.getElementById('eeLocalRelease').addEventListener('click', async (e) => {
+    if (!(await showConfirm('El evento volverá a editarse en la nube. Antes, el servidor local debe haber subido todo lo pendiente (sincronizar con la nube). ¿Pasarlo a internet ahora?', { variant: 'warning', confirmLabel: 'Sí, pasar a internet' }))) return;
+    await busy(e.currentTarget, async () => {
+      const data = await leaseCall('/release');
+      if (!data) return;
+      current.local = data; paintLocal(current);
+      showToast('El evento volvió a internet: ya se puede editar en la nube.', 'success');
+      if (savedCallback) savedCallback();
+    });
+  });
 
   function paintReport(ev) {
     document.getElementById('eeReportBulb').innerHTML = window.reportBulbHtml(ev);
@@ -314,6 +593,109 @@
     });
   });
 
+  /* ---------- Historial de cambios (solo lectura; el servidor decide quién lo puede leer) ---------- */
+  const historyGroup = document.getElementById('eeHistoryGroup');
+  if (historyGroup && window.EventHistoryPanel) EventHistoryPanel.bind(historyGroup);
+  function paintHistory(ev) {
+    if (!historyGroup || !window.EventHistoryPanel) return;
+    historyGroup.hidden = !['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE);
+    historyGroup.open = false;
+    EventHistoryPanel.show(ev.id);
+  }
+
+  /* ---------- Entrega al cliente (Fase 5): enlace /entrega/<token>, copiar, regenerar y enviar por correo. Acciones aparte de «Guardar cambios». ---------- */
+  const deliveryGroup = document.getElementById('eeDeliveryGroup');
+  const dEl = (id) => document.getElementById(id);
+  let deliveryEvent = null;
+  if (deliveryGroup) {
+    ['input', 'change'].forEach((t) => deliveryGroup.addEventListener(t, (e) => e.stopPropagation()));          // no cuentan como «cambios sin guardar»
+    const syncSend = () => { dEl('eeDeliverySend').disabled = !dEl('eeDeliveryMailChk').checked; };
+    dEl('eeDeliveryMailChk').addEventListener('change', syncSend);
+  }
+  function paintDelivery(d) {
+    deliveryGroup.hidden = !d.eligible;
+    if (!d.eligible) return;
+    dEl('eeDeliveryLink').value = d.link || '';
+    dEl('eeDeliveryCopy').disabled = !d.link;
+    const bits = [];
+    bits.push(d.has_final_db ? 'Base final: ' + (d.final_db_name || 'subida') : 'Aún no se ha subido la base final: el cliente no tendría qué descargar.');
+    bits.push(d.survey_done ? 'El cliente ya envió la encuesta.' : 'El cliente aún no envía la encuesta.');
+    if (d.last_opened_at) bits.push('Último ingreso al enlace: ' + new Date(d.last_opened_at).toLocaleString() + '.');
+    dEl('eeDeliveryInfo').textContent = bits.join(' ');
+    dEl('eeDeliveryTo').textContent = d.recipient ? '(' + d.recipient + ')' : '(sin correo de contacto registrado)';
+    dEl('eeDeliveryMailChk').checked = false;
+    dEl('eeDeliveryMailChk').disabled = !d.recipient || !d.link;
+    dEl('eeDeliverySend').disabled = true;
+  }
+  async function loadDelivery(ev) {
+    if (!deliveryGroup) return;
+    deliveryEvent = ev; deliveryGroup.hidden = true;
+    try {
+      let res = await fetch(`/api/events/${ev.id}/delivery`);
+      if (!res.ok) return;
+      let d = await res.json();
+      if (deliveryEvent !== ev) return;                       // se abrió otro evento mientras tanto
+      if (d.eligible && !d.link && d.public_url_ready) {         // Facturado y sin enlace todavía: se genera
+        res = await fetch(`/api/events/${ev.id}/delivery/link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (res.ok) d = await res.json();
+      }
+      paintDelivery(d);
+    } catch (e) { /* sin red: el bloque simplemente no aparece */ }
+  }
+  if (deliveryGroup) {
+    dEl('eeDeliveryCopy').addEventListener('click', async () => {
+      const ok = await window.copyText(dEl('eeDeliveryLink').value);
+      showToast(ok ? 'Enlace copiado' : 'No se pudo copiar: selecciónalo y cópialo a mano', ok ? 'success' : 'error');
+    });
+    dEl('eeDeliveryRegen').addEventListener('click', async (e) => {
+      const ok = await showConfirm('El enlace actual dejará de funcionar y se creará uno nuevo. Si el cliente ya envió la encuesta no tendrá que repetirla. ¿Regenerar el enlace?', { variant: 'warning', confirmLabel: 'Sí, regenerar' });
+      if (!ok) return;
+      await busy(e.currentTarget, async () => {
+        const res = await fetch(`/api/events/${current.id}/delivery/link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ regenerate: true }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.detail || 'No se pudo regenerar el enlace', 'error'); return; }
+        paintDelivery(data);
+        showToast('Enlace nuevo creado. El anterior ya no funciona', 'success');
+      });
+    });
+    dEl('eeDeliverySend').addEventListener('click', async (e) => {
+      if (!dEl('eeDeliveryMailChk').checked) return;
+      await busy(e.currentTarget, async () => {
+        const res = await fetch(`/api/events/${current.id}/delivery/send-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.detail || 'No se pudo enviar el correo', 'error'); return; }
+        dEl('eeDeliveryMailChk').checked = false; dEl('eeDeliverySend').disabled = true;
+        showToast('Correo en camino a ' + (data.recipient || 'el cliente'), 'success');
+      });
+    });
+  }
+
+  /* Inventario del evento (Fase 5): se pinta con event-inventory-plan.js; si el rol no puede verlo o el catálogo está vacío, la sección no aparece. */
+  const invGroup = document.getElementById('eeInvGroup');
+  let invCtrl = null;
+  async function mountInventory(ev) {
+    invCtrl = null; invGroup.hidden = true;
+    if (!window.GWInvPlan) return;
+    let ctrl = null;
+    try { ctrl = await GWInvPlan.mount(document.getElementById('eeInvBox'), { eventId: ev.id, icons: ICONS, onChange: markDirty }); } catch (e) { ctrl = null; }
+    if (ctrl && ctrl.visible && !ctrl.empty) { invCtrl = ctrl; invGroup.hidden = false; }
+  }
+
+  // Categoría (tipo de evento): si la lista no carga, el campo queda deshabilitado y NO se manda (así guardar otra cosa nunca borra la categoría que el evento ya tiene).
+  const typeSel = document.getElementById('eeEventType');
+  async function paintEventType(ev) {
+    typeSel.disabled = true; delete typeSel.dataset.loaded;
+    let list = null;
+    try { const r = await fetch('/api/event-types', { cache: 'no-store' }); if (r.ok) list = (await r.json()).types || []; } catch (e) { list = null; }
+    typeSel.innerHTML = '<option value="">— Sin categoría —</option>';
+    if (list === null) { typeSel.insertAdjacentHTML('beforeend', ev.event_type_id ? '<option value="' + esc(ev.event_type_id) + '" selected>' + esc(ev.event_type_name || '') + '</option>' : ''); return; }
+    const ids = new Set(list.map((t) => t.id));
+    if (ev.event_type_id && !ids.has(ev.event_type_id)) list.push({ id: ev.event_type_id, name: (ev.event_type_name || '') + ' (archivada)' });          // la que ya tiene sigue visible aunque se haya archivado
+    typeSel.insertAdjacentHTML('beforeend', list.map((t) => '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>').join(''));
+    typeSel.value = ev.event_type_id ? String(ev.event_type_id) : '';
+    typeSel.disabled = false; typeSel.dataset.loaded = '1';
+  }
+
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
@@ -334,13 +716,21 @@
     form.notes.value = ev.notes || '';
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
-    form.status.value = ev.status || 'creado';
-    form.status.dataset.initial = form.status.value;          // para pedir confirmación solo si pasa a «Finalizado»
+    await paintState(ev);
+    await paintEventType(ev);
     form.bandana_color.value = ev.bandana_color || DEFAULT_BANDANA;
     form.bandana_color_name.value = ev.bandana_color_name || '';
     renderExtra(ev, tpl);
+    paintWorkday(tpl);
+    paintHistory(ev);
+    mountInventory(ev);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
+    document.getElementById('eeFinalDbFile').value = '';
+    paintFinalDb(ev);
+    paintLocal(ev);
+    paintLink(ev);
+    loadDelivery(ev);
     // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
     document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
     markClean();
@@ -373,6 +763,7 @@
     const eventId = payload.event_id;
     delete payload.event_id;
     payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
+    if (typeSel.dataset.loaded) payload.event_type_id = payload.event_type_id ? parseInt(payload.event_type_id, 10) : null; else delete payload.event_type_id;
 
     if (payload.coordinator_label) {
       const id = coordinatorsByLabel[payload.coordinator_label];
@@ -395,8 +786,18 @@
       if (got.error) { setStatus('error', got.error); showToast(got.error, 'error'); return; }
       if (Object.keys(got.extra).length) payload.extra = got.extra;
     }
-    const statusSel = document.getElementById('modalStatusSelect');
-    if (payload.status === 'finalizado' && statusSel && statusSel.dataset.initial !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
+    const stateValue = payload.state || '';
+    delete payload.state;
+    if (stateValue && stateValue !== stateSel.dataset.initial) {          // solo si cambió: así guardar otros campos nunca toca (ni pide permiso de) el estado
+      if (stateValue.startsWith('id:')) payload.state_id = parseInt(stateValue.slice(3), 10);
+      else if (stateValue.startsWith('st:')) payload.status = stateValue.slice(3);
+      const base = (stateSel.selectedOptions[0] && stateSel.selectedOptions[0].dataset.base) || (stateValue.startsWith('st:') ? stateValue.slice(3) : '');
+      if (base === 'finalizado' && stateSel.dataset.initialBase !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
+    }
+    if (invCtrl && invCtrl.dirty()) {          // primero el inventario: si el cuadre impide el cambio de estado, ya quedó guardado lo que escribiste
+      const inv = await invCtrl.save();
+      if (!inv.ok) { setStatus('error', inv.error); showToast(inv.error, 'error'); return; }
+    }
     setStatus('idle', 'Guardando…');
     await busy(saveBtn, async () => {
       let res;

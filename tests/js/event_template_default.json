@@ -56,6 +56,7 @@
    "client",
    "event_code",
    "name",
+   "event_type_id",
    "country",
    "city",
    "location",
@@ -67,6 +68,7 @@
    "setup_date",
    "setup_time_start",
    "setup_time_end",
+   "workday",
    "coordinator_staff_id",
    "commercial_staff_id",
    "super_event_id",
@@ -247,9 +249,14 @@
     "type": "bandana_colors"
    },
    {
-    "creatable": true,
-    "label": "Inventario",
+    "creatable": false,
+    "label": "Inventario (anterior)",
     "type": "inventory"
+   },
+   {
+    "creatable": false,
+    "label": "Jornada (calculada)",
+    "type": "workday"
    },
    {
     "creatable": false,
@@ -265,6 +272,11 @@
     "creatable": false,
     "label": "Superevento",
     "type": "super_event"
+   },
+   {
+    "creatable": false,
+    "label": "Categoría (tipo de evento)",
+    "type": "event_type"
    }
   ],
   "zones": [
@@ -294,6 +306,7 @@
      "client",
      "event_code",
      "name",
+     "event_type_id",
      "country",
      "city",
      "location",
@@ -367,6 +380,16 @@
    "retired": false,
    "title": "Nombre del evento",
    "type": "text_short"
+  },
+  {
+   "config": {},
+   "help": "Opcional: el tipo de evento (Feria, Congreso…). Con él el calendario filtra por categoría.",
+   "key": "event_type_id",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Categoría (tipo de evento)",
+   "type": "event_type"
   },
   {
    "config": {},
@@ -483,6 +506,16 @@
    "retired": false,
    "title": "Hora fin montaje",
    "type": "time"
+  },
+  {
+   "config": {},
+   "help": "Se calcula sola con la hora de inicio y la de fin del evento. No se edita.",
+   "key": "workday",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Jornada",
+   "type": "workday"
   },
   {
    "config": {},
@@ -658,24 +691,5 @@
    "title": "Impresión compartida",
    "type": "switch"
   }
- ],
- "is_default": true,
- "people": {
-  "commercial": [
-   {
-    "id": 1,
-    "name": "Luis"
-   }
-  ],
-  "coordinator": [
-   {
-    "id": 2,
-    "name": "Ana"
-   }
-  ]
- },
- "scope": "global",
- "updated_at": null,
- "updated_by": null,
- "version": 0
+ ]
 }

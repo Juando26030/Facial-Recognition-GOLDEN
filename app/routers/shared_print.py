@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import reprint
+from app import event_history, reprint
 from app.auth import get_event_for_staff, require_role_excluding
 from app.routers import print_settings
 from app.routers.print_stations import read_station
@@ -474,8 +474,11 @@ def config(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
 @router.put("/events/{event_id}/shared-print")
 def set_enabled(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG)):
     event = get_event_for_staff(event_id, db, staff)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     event.shared_print_enabled = bool(data.get("enabled"))
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"enabled": event.shared_print_enabled}
 
 

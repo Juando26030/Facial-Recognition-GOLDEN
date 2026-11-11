@@ -114,7 +114,7 @@
   }
   function setRequired(m, key, on) {
     var f = field(m, key);
-    if (!f || f.type === 'switch' || isLocked(m, key)) return false;
+    if (!f || f.type === 'switch' || f.type === 'workday' || isLocked(m, key)) return false;          // el interruptor y la jornada (calculada) no se pueden marcar obligatorios
     f.required = !!on;
     if (on && sectionIndexOf(m, key) < 0) m.sections[m.sections.length - 1].keys.push(key);          // un obligatorio tiene que estar en la vista de creación
     return true;
@@ -250,7 +250,7 @@
   /* Valores de ejemplo para la vista previa de la tarjeta del calendario. */
   function sampleEvent(m) {
     var ev = { id: 0, tenant_name: 'Cliente S.A.S.', event_code: 'CONG-2026', name: 'Congreso Anual', country: 'Colombia', city: 'Bogotá', location: 'Corferias', address: 'Av. 24 # 38-47', start_date: '2026-11-12', end_date: '2026-11-14', setup_date: '2026-11-10',
-      event_time_start: '08:00', event_time_end: '18:00', setup_time_start: '06:00', setup_time_end: '07:00', coordinator_name: 'Ana Torres', commercial_name: 'Luis Rojas', super_event_name: 'Congresos 2026',
+      event_time_start: '08:00', event_time_end: '18:00', setup_time_start: '06:00', setup_time_end: '07:00', coordinator_name: 'Ana Torres', commercial_name: 'Luis Rojas', super_event_name: 'Congresos 2026', event_type_name: 'Congreso',
       bandana_colors: [{ name: 'Rojo Golden', hex: '#c0392b' }], notes: 'Entrada por la puerta 3', switches: {}, extra: {} };
     (m.catalog.switches || []).forEach(function (s) { ev.switches[s.key] = true; });
     m.fields.forEach(function (f) {
@@ -277,7 +277,7 @@
     var q = function (id) { return host.querySelector('#' + id); };
     var dirty = function () { if (opts && opts.onChange) opts.onChange(); };
     var toast = function (msg, kind) { if (root.showToast) root.showToast(msg, kind || 'info'); };
-    var typeTag = function (f) { return f.type === 'switch' ? 'Interruptor' : model.typeLabel(m, f.type); };
+    var typeTag = function (f) { return f.type === 'switch' ? 'Interruptor' : f.type === 'workday' ? 'Calculado · solo lectura' : model.typeLabel(m, f.type); };
 
     function load(resp) { m = fromServer(resp); if (!sel || !model.field(m, sel)) sel = null; renderAll(); }
 
@@ -323,9 +323,12 @@
       if (sw) {
         var s = ((m.catalog.switches) || []).filter(function (x) { return x.field_key === f.key; })[0];
         html += '<div class="gw-alert">' + ic('info') + '<div class="gw-alert__body">Es la misma opción de «Parámetros del evento»' + (s && s.requires ? ' (necesita «' + esc(((m.catalog.switches.filter(function (x) { return x.key === s.requires; })[0]) || {}).title || '') + '» activo)' : '') + '. Si no la defines al crear el evento, la defines después en Parámetros.</div></div>';
+      } else if (f.type === 'workday') {
+        html += '<div class="gw-alert">' + ic('info') + '<div class="gw-alert__body">Campo informativo: se calcula solo con la hora de inicio y la de fin del evento y no se edita a mano. 0 a 6 h «Media jornada»; más de 6 y hasta 9 h «Jornada intermedia»; más de 9 y hasta 12 h «Jornada completa»; más de 12 h «Jornada extendida». Agrégalo a la vista de creación para verlo al crear y editar el evento, y a la vista del calendario para que salga como etiqueta en la tarjeta.</div></div>';
       } else {
         html += '<label class="gw-check"><input type="checkbox" data-tpl-prop="required"' + (f.required ? ' checked' : '') + (locked ? ' disabled' : '') + '> <span class="gw-choice__text">Obligatorio' + (locked ? ' (siempre)' : '') + '</span></label>';
       }
+      if (f.type === 'event_type') html += '<h3 class="gw-tpl-h2">Opciones de la categoría</h3><div data-evtype-options></div>';          // misma lista que Configuración › Tipos de evento (static/js/event-type-options.js)
       if (f.type === 'select') html += lab('tp_opts', 'Opciones (una por línea)', '<textarea class="gw-textarea" id="tp_opts" rows="6" data-tpl-prop="options">' + esc((f.options || []).join('\n')) + '</textarea>', 'Puedes agregar o quitar opciones cuando quieras: los eventos que ya tienen una opción la conservan.');
       if (f.type === 'money') html += lab('tp_cur', 'Moneda', '<select class="gw-select" id="tp_cur" data-tpl-prop="currency">' + (m.catalog.currencies || ['COP']).map(function (cu) { return '<option value="' + esc(cu) + '"' + (c.currency === cu ? ' selected' : '') + '>' + esc(cu) + '</option>'; }).join('') + '</select>');
       if (f.type === 'number') html += '<div class="gw-fields-row gw-fields-row--3">' + lab('tp_min', 'Mínimo', '<input class="gw-input" id="tp_min" type="number" value="' + esc(c.min == null ? '' : c.min) + '" data-tpl-prop="min">') + lab('tp_max', 'Máximo', '<input class="gw-input" id="tp_max" type="number" value="' + esc(c.max == null ? '' : c.max) + '" data-tpl-prop="max">') + lab('tp_dec', 'Decimales', '<input class="gw-input" id="tp_dec" type="number" min="0" max="4" value="' + esc(c.decimals || 0) + '" data-tpl-prop="decimals">') + '</div>';
@@ -353,6 +356,8 @@
       q('tplPaletteA').innerHTML = paletteHtml();
       q('tplCanvasA').innerHTML = m.sections.map(sectionHtml).join('') + '<button type="button" class="gw-btn gw-btn--secondary" data-tpl-act="sec-add"' + (m.sections.length >= LIMITS.sections ? ' disabled' : '') + '>' + ic('plus', 'gw-icon--sm') + ' Agregar paso</button>';
       q('tplPropsA').innerHTML = propsHtml();
+      var evBox = q('tplPropsA').querySelector('[data-evtype-options]');
+      if (evBox && root.EventTypeOptions) root.EventTypeOptions.mount(evBox, { canEdit: host.getAttribute('data-super') === '1', icons: icons });
     }
 
     /* ---- vista B: calendario */

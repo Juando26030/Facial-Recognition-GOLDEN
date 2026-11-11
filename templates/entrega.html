@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Entrega de su base de datos | Golden Eventos</title>
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-entrega.css') }}">
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page">
+<a class="gw-skip" href="#contenido">Ir al contenido</a>
+<main class="gw-container gw-container--narrow entrega" id="contenido">
+    <header class="entrega__brand">
+        <img class="entrega__logo" src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Eventos y Logística" width="72" height="72">
+        <p class="gw-hint">Golden Eventos y Logística S.A.S.</p>
+    </header>
+
+{% if unavailable %}
+    <section class="gw-card gw-card--raised gw-stack" role="alert">
+        <h1 class="entrega__title">Enlace no disponible</h1>
+        <p>{{ unavailable }}</p>
+    </section>
+{% else %}
+    <section class="gw-card gw-card--raised gw-stack">
+        <h1 class="entrega__title">Hola, gracias por confiar en nosotros</h1>
+        <p>El registro de <strong>{{ event_name }}</strong>{% if company %} ({{ company }}){% endif %} ya terminó. <strong>Para descargar su base de datos, primero diligencie esta encuesta</strong>: su opinión nos ayuda a mejorar cada evento y toma menos de 3 minutos.</p>
+        <div class="gw-fields-row gw-fields-row--3">
+            <div class="gw-field"><label class="gw-label" for="evCompany">Empresa u organización</label><input class="gw-input" id="evCompany" type="text" value="{{ company }}" readonly></div>
+            <div class="gw-field"><label class="gw-label" for="evName">Nombre del evento</label><input class="gw-input" id="evName" type="text" value="{{ event_name }}" readonly></div>
+            <div class="gw-field"><label class="gw-label" for="evDate">Fecha del evento</label><input class="gw-input" id="evDate" type="text" value="{{ event_date }}" readonly></div>
+        </div>
+    </section>
+
+    <section class="gw-card gw-card--raised gw-stack" id="doneCard" {% if not state.survey_done %}hidden{% endif %}>
+        <h2 class="entrega__title">¡Gracias por su opinión!</h2>
+        <p id="doneText">Ya recibimos su encuesta.</p>
+        <div id="downloadBox" {% if not state.has_db %}hidden{% endif %}>
+            <p>Ya puede descargar la base de datos final de su evento.</p>
+            <a class="gw-btn gw-btn--primary gw-btn--xl" id="downloadBtn" href="{{ download_url }}">Descargar base de datos</a>
+        </div>
+        <div class="gw-alert gw-alert--warn" id="noDbBox" {% if state.has_db %}hidden{% endif %}><p class="gw-alert__body">La base de datos final todavía no está disponible. Su asesor comercial de Golden se la hará llegar en cuanto esté lista.</p></div>
+    </section>
+
+    <form class="gw-stack-lg" id="surveyForm" data-submit-url="{{ submit_url }}" {% if state.survey_done %}hidden{% endif %} novalidate>
+        {% for q in survey.questions %}
+        <fieldset class="gw-card gw-card--raised gw-fieldset entrega__q" data-qid="{{ q.id }}" data-type="{{ q.type }}" data-required="{{ 'true' if q.required else 'false' }}">
+            <legend class="entrega__legend"><span class="entrega__num">{{ q.number }}.</span> {{ q.text }}</legend>
+            {% if q.type == 'rating' %}
+            <div class="gw-segment gw-segment--fit" role="radiogroup" aria-label="Pregunta {{ q.number }}">
+                {% for o in q.options %}<label class="gw-segment__opt"><input type="radio" name="{{ q.id }}" value="{{ o.key }}"><span>{{ o.label }}</span></label>{% endfor %}
+                {% if q.allow_na %}<label class="gw-segment__opt"><input type="radio" name="{{ q.id }}" value="na"><span>{{ survey.not_applicable }}</span></label>{% endif %}
+            </div>
+            {% elif q.type == 'nps' %}
+            <div class="gw-segment gw-segment--fit entrega__nps" role="radiogroup" aria-label="Pregunta {{ q.number }}: de {{ q.low_label }} (0) a {{ q.high_label }} (10)">
+                {% for n in range(q.min, q.max + 1) %}<label class="gw-segment__opt"><input type="radio" name="{{ q.id }}" value="{{ n }}"><span>{{ n }}</span></label>{% endfor %}
+            </div>
+            <p class="gw-hint entrega__scale"><span>0 = {{ q.low_label }}</span><span>10 = {{ q.high_label }}</span></p>
+            {% else %}
+            <div class="gw-segment gw-segment--fit" role="radiogroup" aria-label="Pregunta {{ q.number }}">
+                {% for c in q.choices %}<label class="gw-segment__opt"><input type="radio" name="{{ q.id }}" value="{{ c }}"><span>{{ c }}</span></label>{% endfor %}
+            </div>
+            {% endif %}
+            {% if q.comment %}
+            <div class="gw-field"><label class="gw-label" for="c_{{ q.id }}">{% if q.type == 'optional' %}Cuéntenos más (opcional){% else %}¿Por qué? / Comentarios (opcional){% endif %}</label>
+                <textarea class="gw-textarea" id="c_{{ q.id }}" name="c_{{ q.id }}" rows="2" maxlength="1000"></textarea></div>
+            {% endif %}
+        </fieldset>
+        {% endfor %}
+        <p class="gw-hint">No le pedimos su nombre ni datos personales: la encuesta es sobre el servicio del evento.</p>
+        <div class="gw-alert gw-alert--err" id="surveyError" role="alert" hidden><p class="gw-alert__body" id="surveyErrorText"></p></div>
+        <button type="submit" class="gw-btn gw-btn--primary gw-btn--xl gw-btn--block" id="surveySend">Enviar encuesta</button>
+    </form>
+{% endif %}
+    <p class="gw-hint entrega__foot">¡Gracias por su opinión! Nos ayuda a mejorar cada evento.</p>
+</main>
+<script src="{{ url_for('static', path='js/toast.js') }}"></script>
+<script src="{{ url_for('static', path='js/entrega.js') }}" defer></script>
+</body>
+</html>

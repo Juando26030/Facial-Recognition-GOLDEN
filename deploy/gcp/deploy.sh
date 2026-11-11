@@ -56,7 +56,7 @@ secrets_flag() {   # $1 = lista «nombre:VARIABLE[*]»; los de * son obligatorio
     if [ "${var%\*}" != "$var" ]; then required=1; var="${var%\*}"; fi
     s="$(secret_name "$name")"
     # Staging NUNCA manda correos reales ni cobra de verdad (Fase 0C): no se le conectan las credenciales de Microsoft Graph ni las llaves de producción de Wompi.
-    if [ "$GOLDEN_ENV" = staging ]; then case "$name" in azure-*|graph-sender|wompi-public-key|wompi-integrity-secret|wompi-events-secret|wompi-private-key) continue;; esac; fi
+    if [ "$GOLDEN_ENV" = staging ]; then case "$name" in azure-*|graph-sender|wompi-public-key|wompi-integrity-secret|wompi-events-secret|wompi-private-key|onedrive-*|backup-copy-encryption-key) continue;; esac; fi
     if gcloud secrets describe "$s" >/dev/null 2>&1; then out+="${var}=${s}:latest,"
     elif [ "$required" = 1 ] && [ "$PLACEHOLDER" = 0 ]; then echo "Falta el secreto obligatorio ${s} (corre bootstrap.sh)." >&2; exit 1
     fi
@@ -80,6 +80,7 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     echo "DEPLOY_ENV: \"$GOLDEN_ENV\""
     echo "PERSON_FORM_ENABLED: \"1\""   # Plan 4 (formulario de persona): encendido en staging y producción (5-nov-2026, orden de Juan David). Cada evento lo activa aparte en su diseño: sin activarlo, nada cambia.
     echo "PUBLIC_BASE_URL: \"$PUBLIC_BASE_URL\""
+    [ -z "${PUBLIC_FORMS_BASE_URL:-}" ] || echo "PUBLIC_FORMS_BASE_URL: \"$PUBLIC_FORMS_BASE_URL\""      # D2.5k: sin valor, los enlaces siguen siendo /f/<evento>/<formulario>
     echo "STORAGE_BACKEND: \"gcs\""
     echo "GCS_BUCKET: \"$APP_BUCKET\""
     echo "GCS_PREFIX: \"$APP_PREFIX\""
@@ -138,7 +139,7 @@ deploy_service() {   # nombre corto (web|publico|biometria), nombre, módulo, cp
     --env-vars-file "$TMP/$svc.yaml" ${secret_flags:+--set-secrets "$secret_flags"} "${probes[@]}" --quiet
 }
 # `web` (estaciones de cédula): límite alto con jitter grande para que los reciclajes de los procesos no coincidan bajo carga uniforme. Biometría: sin tocar (se mide en una prueba larga).
-deploy_service web       "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000
+deploy_service web       "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000 ${GCP_BILLING_EXPORT_TABLE:+"GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE"}      # Fase 10 B: el botón «Importar Google ahora» y el estado de «Conexiones» del panel de gastos corren en `web`
 # GUNICORN_MAX_REQUESTS=0 SOLO aquí (corrida 9: con el límite por defecto los 20 procesos de las 10 instancias se reciclaron casi a la vez en pleno pico y cortaron conexiones). El público no lleva
 # dlib; `web` y `biometria` conservan el reciclaje. Por ir aquí (y no en common.yaml, que es de los tres servicios) sobrevive a cada despliegue de CI. Vigilar la memoria: docs/15.
 deploy_service publico   "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=0
@@ -151,7 +152,7 @@ gcloud run jobs deploy "$JOB_BULK" --image "$IMAGE" --region "$REGION" --service
   --command python --args=-m,app.bulk_runner --tasks 1 --max-retries 0 --task-timeout 86400 --cpu 2 --memory 4Gi \
   --env-vars-file "$TMP/bulk.yaml" ${APP_SECRET_FLAGS:+--set-secrets "$APP_SECRET_FLAGS"} --quiet
 say "Job de operaciones ($JOB_OPS)"
-env_file "$TMP/ops.yaml" FACE_PROCESSES=0
+env_file "$TMP/ops.yaml" FACE_PROCESSES=0 ${ONEDRIVE_DRIVE_ID:+"ONEDRIVE_DRIVE_ID=$ONEDRIVE_DRIVE_ID"} ${GCP_BILLING_EXPORT_TABLE:+"GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE"}
 gcloud run jobs deploy "$JOB_OPS" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_OPS")" \
   --command python --args=-m,app.ops_runner,hourly --tasks 1 --max-retries 0 --task-timeout 1800 --cpu 1 --memory 1Gi \
   --env-vars-file "$TMP/ops.yaml" ${OPS_SECRET_FLAGS:+--set-secrets "$OPS_SECRET_FLAGS"} --quiet

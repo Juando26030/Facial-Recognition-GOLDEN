@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -18,24 +19,42 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import bodylimit, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import node_sync, local_installer
+from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
+from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
+from app.routers import clean_url as clean_url_router      # D2.5k: /inscripciones/<evento>/<formulario> (se registra al final)
+from app.routers import public_link as public_link_router
+from app.routers import contacts as contacts_router      # Fase 8: contactos para expositores
+from app.routers import event_lease as event_lease_router
+from app.routers import selfreg as selfreg_router
+from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
+from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
+from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
+from app.routers import local_installer as local_installer_router      # Fase 10 E: descarga del instalador del servidor local (tarjeta de Configuración)
+from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
+from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
+
+from app.routers import node_accounts as node_accounts_router      # Fase 6: cuentas hacia los servidores locales (X-Node-Token)
 from app.routers import staff_credentials as staff_credentials_router      # Fase 4: reenvío de credenciales por correo
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
-from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, split_roles
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
+from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
+from app.routers import gastos as gastos_router      # Fase 9C: panel de gastos, pestaña «Infraestructura» (solo admin)
+from app.routers import gastos_eventos as gastos_eventos_router      # Fase 9 D: panel de gastos, pestaña «Eventos» (solo admin)
 from app.routers import event_template as event_template_router      # Fase 2: plantilla de evento (GET personal con acceso; PUT admin+)
 
 jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
@@ -80,12 +99,14 @@ async def lifespan(_app: FastAPI):
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    node_sync.start()                     # servidor LOCAL (LOCAL_SERVER=1 con token): sube a la nube cada ~30 min; en la nube no hace nada
     publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
     yield
     log.info("apagando: deteniendo trabajos en segundo plano")
     if worker:
         worker.stop()
+    node_sync.stop()
     faces.shutdown()
     interrupted = bulk_jobs.mark_interrupted()
     if interrupted:
@@ -183,7 +204,7 @@ async def security_headers(request, call_next):
     response = await call_next(request)
     h = response.headers
     h.setdefault("X-Content-Type-Options", "nosniff")
-    embeddable = request.url.path.startswith("/f/")      # los formularios públicos pueden incrustarse en el sitio del cliente
+    embeddable = request.url.path.startswith("/f/") or bool(request.scope.get("public_form"))      # los formularios públicos (también por la URL limpia) pueden incrustarse en el sitio del cliente
     if not embeddable:
         h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -236,6 +257,7 @@ from app import staticver  # noqa: E402
 
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
+templates.env.filters["local_dt"] = lambda dt: dt.replace(tzinfo=__import__("datetime").timezone.utc).astimezone(__import__("app.timeutil", fromlist=["_TZ"])._TZ).strftime("%d/%m/%Y %I:%M %p") if dt else ""
 
 REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
 LOCAL_LOGO_FILE = os.path.join("static", "img", "logo-golden.png")          # copia PROPIA del logo: se sirve desde /static y el service worker del quiosco la guarda, así el logo se ve sin red
@@ -287,6 +309,7 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 templates.env.globals["golden_logo_attrs"] = golden_logo_attrs
@@ -307,6 +330,8 @@ _include(login_approval_router.router)      # S1: ingreso de digitadores autoriz
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
 _include(event_states.router, prefix="/api")
+_include(event_types_router.router, prefix="/api")          # Fase 10 (C): tipos de evento («Categoría» del calendario)
+_include(gastos_router.router, prefix="/api")      # Fase 9C: /api/gastos/infra/*
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
@@ -323,24 +348,38 @@ _include(privacy_requests_router.router, prefix="/api")
 _include(aceptar_router.router)      # /aceptar/<evento> y /api/aceptar/ (públicas)
 _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públicas)
 _include(event_report.router, prefix="/api")
+_include(final_database.router, prefix="/api")      # Fase 5: base de datos final del evento (subir/reemplazar/descargar; coordinador+)
 _include(event_docs.router, prefix="/api")
+_include(event_acts_router.router, prefix="/api")      # Fase 10: acta de novedades (texto + firma del coordinador y del cliente)
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
+_include(areas_dwell_router.router, prefix="/api")      # Fase 10: permanencia en zonas, premio por porcentaje de estadía y su lista descargable
+_include(queue_router.router, prefix="/api")
+_include(queue_router.public_router)   # Fase 8: turnos y filas (personal) — las rutas públicas /turno/... van en el mismo router
+_include(system_alerts_router.router, prefix="/api")      # Fase 9-A: destinatarios y umbral de la alerta de borrado masivo (admin)
+_include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
+_include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
+_include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
 _include(analytics.router, prefix="/api")
+_include(gastos_eventos_router.router, prefix="/api")      # Fase 9 D: /api/gastos/eventos/* (satisfacción y tiempos; solo admin)
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
 _include(form_client_router.router, prefix="/api")      # estadísticas de un formulario + acceso de cliente por formulario (solo agregados)
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
+_include(contacts_router.router)      # Fase 8: captura de contactos para expositores (/contacto, /tarjeta, /expositor y /api/events/{id}/exhibitors)
 _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
+_include(event_history_router.router, prefix="/api")      # GET /api/events/{id}/change-history (coordinador del evento, comercial, admin)
 _include(staff_credentials_router.router, prefix="/api")      # reenviar credenciales / correo del digitador / interruptor del evento (coordinador+)
 _include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
 _include(stats_links_router.router, prefix="/api")      # crear/ver/revocar enlaces de estadísticas (coordinador+)
 _include(stats_links_router.public_router)      # /ver/e/<token>, /ver/f/<token> y /api/ver/<token>/...: solo lectura, sin sesión
+_include(delivery_router.router, prefix="/api")      # Fase 5: enlace de entrega al cliente y correo (comercial+)
+_include(delivery_router.public_router)      # /entrega/<token>: encuesta y descarga de la base final (público, servicio `publico`)
 _include(reprint_router.public_router)      # /reimpresion/<token>: enlace de correo de un solo uso (el GET solo muestra)
 _include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
@@ -350,6 +389,17 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(public_link_router.router, prefix="/api")      # D2.5k: nombre del enlace limpio de inscripciones y formulario principal (admin/comercial)
+_include(event_lease_router.router, prefix="/api")
+_include(selfreg_router.router, prefix="/api")          # Fase 8: autorregistro sin base de datos en el kiosco (app/selfreg.py)
+_include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
+_include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
+_include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
+_include(local_server_router.router, prefix="/api")
+_include(local_installer_router.router, prefix="/api")
+_include(node_api_router.router, prefix="/api")
+
+_include(node_accounts_router.router, prefix="/api")
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
@@ -402,6 +452,17 @@ def _require_page_role(request: Request, minimum_role: str):
     return None
 
 
+_FAVICON = {}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Ícono de la pestaña (logo de Golden). Las páginas lo enlazan desde /static; esta ruta cubre a los navegadores que lo piden en la raíz. Sin base."""
+    if "ico" not in _FAVICON:
+        _FAVICON["ico"] = (Path(__file__).resolve().parent.parent / "static" / "favicon.ico").read_bytes()
+    return Response(_FAVICON["ico"], media_type="image/x-icon", headers={"Cache-Control": "public, max-age=604800"})
+
+
 @app.get("/")
 def dashboard(request: Request, db: Session = Depends(get_db)):
     staff_user = _page_staff(request, db)
@@ -410,6 +471,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
     if staff_user.role == "cliente" and form_client.is_form_client(db, staff_user):
         return RedirectResponse("/mi-formulario", status_code=302)       # cliente de FORMULARIO: su única pantalla son las estadísticas de ese formulario
+
+    if is_inventory_only(staff_user):
+        return RedirectResponse("/inventario", status_code=302)          # almacén / contabilidad sin otro rol: su única pantalla es el inventario
 
     if staff_user.role in ("digitador", "cliente"):
         # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
@@ -531,7 +595,87 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+        "can_local_installer": local_installer.roles_allowed({request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))),      # tarjeta «Servidor local»: todos menos digitador y cliente
     })
+
+
+@app.get("/servidor-local")
+def servidor_local_page(request: Request):
+    """Servidor local (Fase 6, solo con LOCAL_SERVER=1): todos los eventos de la nube y «Descargar a local». En la nube no existe esta pantalla."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    if not local_server_router.is_local_server():
+        return RedirectResponse("/", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not (roles & {"almacen", "contabilidad"}) and max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="servidor_local.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+    })
+
+
+@app.get("/inventario")
+def inventario_page(request: Request):
+    """Inventario de los eventos (Fase 5): pantalla de las cuentas de almacén y contabilidad (con o sin otros roles) y de coordinador+. Lo que cada rol puede editar lo decide el servidor (app/routers/inventory.py)."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not (roles & {"almacen", "contabilidad"}) and max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="inventario.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "inv_manager": bool(roles & {"almacen", "admin", "super_admin"}),          # Fase 10: administran el catálogo (crear, renombrar, archivar)
+        "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+    })
+
+
+@app.get("/gastos")
+def gastos_page(request: Request):
+    """Fase 9C: panel de gastos (admin y super_admin; desde la Fase 10 B también contabilidad, sin la pestaña «Eventos»). Pestaña «Infraestructura» (esta pieza) y «Eventos» (otra pieza: `_gastos_eventos.html` + `gastos-eventos.js`, se cargan solo si existen)."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    is_admin = max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["admin"]
+    if not is_admin and "contabilidad" not in roles:          # Fase 10 B: contabilidad ve y registra los gastos de infraestructura; la pestaña «Eventos» sigue siendo solo de admin
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="gastos.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
+        "sidebar_active": "gastos", "has_eventos_js": is_admin and os.path.exists(os.path.join("static", "js", "gastos-eventos.js")), "is_admin": is_admin,
+        "gw_side": bool(max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]),
+    })
+
+
+@app.get("/cuentas-de-cobro")
+def cuentas_de_cobro_page(request: Request):
+    """Fase 8: cuentas de Wompi de terceros, asignación a formularios y QR de cobro. Solo admin y super_admin."""
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    role = request.session.get("staff_role")
+    return templates.TemplateResponse(request=request, name="cuentas_cobro.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "sidebar_active": "cuentas_cobro"})
+
+
+@app.get("/sincronizacion")
+def sincronizacion_page(request: Request):
+    """Fase 6: en el servidor LOCAL, estado de la subida a la nube; en la nube, alta y revocación de servidores locales (solo admin y super_admin)."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    local = node_sync.is_local_server()
+    if local:
+        allowed = bool(roles & {"almacen", "contabilidad"}) or max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]
+    else:
+        allowed = max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["admin"]
+    if not allowed:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="sincronizacion.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "local_server": local})
 
 
 @app.get("/configuracion/plantilla-evento")
@@ -543,6 +687,7 @@ def plantilla_evento_page(request: Request):
     return templates.TemplateResponse(request=request, name="plantilla_evento.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "is_super": request.session.get("staff_role") == "super_admin",          # las opciones de «Categoría (tipo de evento)» se editan solo con super_admin
         "sidebar_active": "configuracion",
     })
 
@@ -691,6 +836,12 @@ def kiosk_rostro(event_id: int, request: Request, db: Session = Depends(get_db))
     return _resolve_kiosk_page(event_id, request, db, "kiosk_rostro.html", extra_context={"not_found": NOT_FOUND_FACE})
 
 
+@app.get("/kiosk/{event_id}/autoregistro")
+def kiosk_autoregistro(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Fase 8: pantalla de autorregistro sin base de datos (la persona se crea sola; el equipo está abierto con una cuenta del personal). Ver app/selfreg.py."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_autoregistro.html")
+
+
 @app.get("/kiosk/{event_id}/facial")
 @app.get("/kiosk/{event_id}/cedula")
 def kiosk_registro_legacy_redirect(event_id: int):
@@ -738,6 +889,22 @@ def kiosk_usuarios_hoja(event_id: int, request: Request, db: Session = Depends(g
                                               "coordinator_name": staff_credentials.event_info(db, db.get(Event, event_id))["coordinator"] if db.get(Event, event_id) is not None else ""})
 
 
+@app.get("/kiosk/{event_id}/tv")
+def kiosk_tv(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pantalla de ingreso para proyectar en un televisor (Fase 8): con la sesión de quien la abre (coordinador+). Sin sesión, el mismo contenido sale con un enlace de solo lectura (/ver/tv/<token>)."""
+    from app.routers.stats_links import tv_context
+    staff_user = _page_staff(request, db)
+    if not staff_user:
+        return RedirectResponse("/login", status_code=302)
+    try:
+        event = get_event_for_staff(event_id, db, staff_user)
+    except HTTPException:
+        return RedirectResponse("/", status_code=302)
+    if max(ROLE_HIERARCHY[r] for r in effective_roles(staff_user)) < ROLE_HIERARCHY["coordinador"]:
+        return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
+    return templates.TemplateResponse(request=request, name="kiosk_tv.html", headers={"Cache-Control": "no-store"}, context=tv_context(event, f"/api/events/{event.id}/tv", event_logo_url(event)))
+
+
 @app.get("/kiosk/{event_id}/estadisticas")
 def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Reporte + gráficos del evento (Sprint 2.2 Fase B, 2026-09-16) — antes vivía como pestaña
@@ -755,6 +922,12 @@ def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(ge
     return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"], extra_context={"embed": embed})
 
 
+@app.get("/kiosk/{event_id}/expositores")
+def kiosk_expositores_page(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Fase 8: expositores del evento y sus enlaces (coordinador en adelante)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_expositores.html", min_role="coordinador")
+
+
 @app.get("/kiosk/{event_id}/parametros")
 def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Parámetros del Evento (Sprint 2.2, 2026-09-16, pedido explícito) — coordinador+ define por
@@ -769,6 +942,12 @@ def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_
 def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Documentos del Evento (reunión 2026-09-21, ítem 8) — coordinador+ (comercial incluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_documentos.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/actas")
+def kiosk_acts(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Acta de novedades (Fase 10): coordinador+ y el cliente del evento (firma la suya); el digitador no entra."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_actas.html", exclude_roles=["digitador"])
 
 
 @app.get("/kiosk/{event_id}/ruleta")
@@ -854,6 +1033,18 @@ def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(ge
 def kiosk_areas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Control de Áreas (ítem 9a): entrada/salida por zona. digitador+ (comercial excluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_areas.html", min_role="digitador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/turnos")
+def kiosk_turnos(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Turnos y filas (Fase 8): consola del operador (llamar, repetir, saltar, ver fila). digitador+ (comercial excluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_turnos.html", min_role="digitador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/turnos/tv")
+def kiosk_turnos_tv(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pantalla de TV de turnos: el turno llamado en grande y los últimos llamados."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_turnos_tv.html", min_role="digitador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/inventario")
@@ -958,3 +1149,8 @@ def _apply_mode() -> None:
 
 
 _apply_mode()
+
+# URL limpia de las inscripciones (D2.5k): `/inscripciones/<evento>` y `/inscripciones/<evento>/<formulario>`. Va AL FINAL, después de todas las demás rutas y del filtro por modo, para no tapar ninguna; solo en
+# `all` y `publico` (el panel `web` y la biometría no sirven páginas públicas). Ver docs/20_URL_LIMPIA_INSCRIPCIONES.md.
+if appmode.MODE in ("all", "publico"):
+    app.include_router(clean_url_router.router)

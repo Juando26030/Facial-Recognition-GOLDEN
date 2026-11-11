@@ -76,8 +76,8 @@ Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existente
 
 ## 9. Fase 1.5 · piezas compartidas (docs/ux/FASE_1_5_PLAN.md)
 - **Barra de guardado única** `.gw-savebar` (`templates/_gw_savebar.html`, motor `static/js/params-save.js`): botón + Ctrl o Cmd + S, «Cambios sin guardar», aviso al salir; el contenedor lleva `id="paramsRoot"`. Una por pantalla.
-- **Botón que trabaja:** `GW.busy(boton, trabajo)` (`static/js/gw-busy.js`) pone la rueda (`aria-busy`), bloquea el doble clic y avisa si tarda. Todo botón que dispara una petición lo usa.
-- **Encabezado de página** `.gw-page-head` (`__text`, `__title`, `__sub`, `__actions`); **vacío** `.gw-empty`; **cargando** `.gw-skeleton`.
+- **Botón que trabaja:** `GW.busy(boton, trabajo)` (`static/js/gw-busy.js`) pone la rueda (`aria-busy`), bloquea el doble clic y avisa si tarda. Además, desde el 9-nov-2026 `static/js/gw-carga.js` (en `_gw_head.html`) marca SOLO cualquier botón cuya acción dispara una petición, y muestra la barra `.gw-loadbar` para lo que no sale de un botón; los sondeos no la encienden. Guía: [`CARGAS_Y_ESQUELETOS.md`](CARGAS_Y_ESQUELETOS.md).
+- **Encabezado de página** `.gw-page-head` (`__text`, `__title`, `__sub`, `__actions`); **vacío** `.gw-empty`; **cargando** con la forma del contenido: `{{ skeleton('table'|'cards'|'list'|'stats'|'block'|'text') }}` de `_gw_skeleton.html` o `GW.skeleton(...)` (`.gw-sk`, hecho con `.gw-skeleton`).
 - **Lista en tarjetas** `.gw-cards` + `.gw-card-row` (`__head`, `__title`, `__meta`, `__actions`): las acciones van SIEMPRE dentro de la tarjeta, a la vista. **Tabla que se vuelve tarjetas en celular:** `<table class="gw-table-cards">`, `td[data-label]` y `td.gw-table-cards__actions`.
 - **Celular:** bajo 768 px la barra de guardado respeta el borde inferior; bajo 640 px los `.gw-modal` ocupan toda la pantalla.
 - **Congelado:** lo que ven las personas no se toca (`tests/test_publico_congelado.py`).

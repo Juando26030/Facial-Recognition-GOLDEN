@@ -25,7 +25,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import brandcolor, crypto, formlib, formsvc, jobs, pledge, security, timing, uploads, wompi, safe_limits
+from app import brandcolor, crypto, formlib, formsvc, jobs, pledge, security, timing, uploads, wompi, safe_limits, payment_accounts
 from app.safeeq import safe_eq
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
@@ -165,37 +165,47 @@ def mask_prefill_value(f: dict, value) -> object:
     return " ".join(_mask_word(w) for w in v.split())
 
 
-def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
-    """(prefill, readonly) para el navegador: los de solo lectura van ENMASCARADOS y el correo/teléfono editables NO se pre-llenan (X4)."""
+def _prefill_parts(design: dict, person: dict) -> Tuple[dict, list, dict]:
+    """(prefill, readonly, hidden_real). Un campo de solo lectura se enmascara SOLO si `formlib.mask_wanted` lo pide (opción «mostrar con asteriscos» del editor; por defecto no, salvo correo y
+    teléfono de diseños anteriores). `hidden_real` = {campo: valor real} de los que el navegador ve distintos del real: sirve para resolver en el servidor las condiciones que dependen de ellos."""
     fields = design["fields"]
-    prefill, readonly = {}, []
+    prefill, readonly, hidden_real = {}, [], {}
     for fid, val in formsvc.prefill_values(design, person).items():
         f = fields[fid]
         if f.get("readonly_when_prefilled"):
-            prefill[fid] = mask_prefill_value(f, val)
+            shown = mask_prefill_value(f, val) if formlib.mask_wanted(f) else val
+            prefill[fid] = shown
             readonly.append(fid)
+            if shown != val:
+                hidden_real[fid] = val
         elif f.get("type") in ("email", "phone") or f.get("key") in ("email", "phone"):
             continue
         else:
             prefill[fid] = val
+    return prefill, readonly, hidden_real
+
+
+def public_prefill(design: dict, person: dict) -> Tuple[dict, list]:
+    """(prefill, readonly) para el navegador. Los editables de correo/teléfono NO se pre-llenan (X4)."""
+    prefill, readonly, _ = _prefill_parts(design, person)
     return prefill, readonly
 
 
 def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] = None) -> dict:
     """Todo lo que el navegador necesita para dibujar el formulario (+ los datos ya conocidos de la persona, enmascarados si son de solo lectura)."""
     design = formsvc.get_design(form)
-    prefill, readonly = {}, []
+    prefill, readonly, hidden_real = {}, [], {}
     if claims.get("p"):
         person = formsvc.find_person(db, form, claims["p"])
         if person:
-            prefill, readonly = public_prefill(design, person)
+            prefill, readonly, hidden_real = _prefill_parts(design, person)
     if form.kind == formsvc.PLEDGE_KIND and claims.get("pc"):          # Camino B/C: ya viene identificado por su sesión de espera (no se vuelve a pedir la cédula)
         who = db.get(StaffUser, int(claims["pc"]))
         if who is not None:
-            prefill, readonly = {pledge.FID_ID: who.username, pledge.FID_NAME: who.full_name or ""}, [pledge.FID_ID]
-    quota = formsvc.quota_public(db, form)
+            prefill, readonly = pledge.prefill_for(db, form, who), [pledge.FID_ID]
+    quota = formlib.freeze_conditions(formsvc.quota_public(db, form), hidden_real)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
+    return {"design": formlib.freeze_conditions(formlib.public_design(design), hidden_real), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -268,6 +278,11 @@ async def page(event_id: int, slug: str, request: Request, k: Optional[str] = No
     """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
     navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca.
     `async` a propósito: la caché se sirve en el bucle de eventos, sin pasar por el pool de hilos (ver `_cached_async`)."""
+    return await render_shell(request, event_id, slug, k)
+
+
+async def render_shell(request: Request, event_id: int, slug: str, k: Optional[str]) -> HTMLResponse:
+    """Arma el cascarón de la página pública de un formulario. Lo usan `/f/{id}/{slug}` y la URL limpia `/<evento>/<formulario>` (app/routers/clean_url.py): la página siempre habla con `/f/{id}/{slug}/...`."""
     from app.main import templates  # import tardio: main.py importa este modulo
     key = ("page", event_id, slug)
     try:
@@ -724,7 +739,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
     """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
-    quote = charge = cfg = code_row = None
+    quote = charge = cfg = code_row = charge_account_id = None
     pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
     if pay_field:
         if formsvc.normalize_code(payload.get("code")):
@@ -741,7 +756,8 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
         if quote["amount"] > 0:
             if quote["amount"] < formlib.MIN_PAYMENT_COP:
                 return JSONResponse({"detail": f"El monto a pagar (${quote['amount']}) es menor al mínimo de ${formlib.MIN_PAYMENT_COP} COP por transacción. Avisa a los organizadores."}, status_code=422)
-            cfg = wompi.config(is_test)
+            charge_account_id = form.payment_account_id          # F5-9 C5: la cuenta cuyas llaves firman el cobro es la que queda en el pago (aunque alguien la cambie a la vez)
+            cfg = payment_accounts.cfg_for_form(db, form, is_test)
             if not cfg:
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
             charge = quote["amount"]
@@ -823,7 +839,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                 clean[fid]["stored"] = stored
             sub.data_json = json.dumps(clean)
         if charge:
-            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"],
+            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"], account_id=charge_account_id,
                               reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)

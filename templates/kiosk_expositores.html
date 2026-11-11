@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expositores | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-expositores.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/expositores-admin.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page gw-shell has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+
+<main class="golden-main" data-event-id="{{ event.id }}">
+  <div class="gw-container gw-stack-lg">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name|upper }}</p>
+        <h1 class="gw-page-head__title">Expositores</h1>
+        <p class="gw-page-head__sub">Cada expositor recibe un enlace privado para escanear asistentes. Solo ve a quienes aceptaron compartir sus datos.</p>
+      </div>
+    </div>
+
+    <form id="exForm" class="gw-card gw-stack">
+      <h2 class="gw-card__title">Agregar expositor</h2>
+      <div class="gw-fields-row gw-fields-row--3">
+        <div class="gw-field"><label class="gw-label" for="exName">Empresa o stand *</label><input class="gw-input" id="exName" required maxlength="120"></div>
+        <div class="gw-field"><label class="gw-label" for="exContact">Persona de contacto</label><input class="gw-input" id="exContact" maxlength="120"></div>
+        <div class="gw-field"><label class="gw-label" for="exTitle">Cargo</label><input class="gw-input" id="exTitle" maxlength="120"></div>
+        <div class="gw-field"><label class="gw-label" for="exPhone">Teléfono</label><input class="gw-input" id="exPhone" maxlength="40" inputmode="tel"></div>
+        <div class="gw-field"><label class="gw-label" for="exEmail">Correo</label><input class="gw-input" id="exEmail" maxlength="160" type="email"></div>
+      </div>
+      <div><button type="submit" class="gw-btn gw-btn--primary">Agregar</button></div>
+    </form>
+
+    <div class="gw-card gw-stack">
+      <h2 class="gw-card__title">Expositores del evento</h2>
+      <div class="gw-table-wrap"><table class="gw-table gw-table-cards ex-table">
+        <thead><tr><th>Expositor</th><th>Contactos</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="exBody">{{ skeleton('table', rows=4, cols=4, label='Cargando expositores…') }}</tbody>
+      </table></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

@@ -69,7 +69,7 @@
   });
 
   $('docList').addEventListener('click', async (e) => {
-    if (e.target.closest('[data-retry]')) { setList('<span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando documentos…</span></span>', true); loadDocs(); return; }
+    if (e.target.closest('[data-retry]')) { setList(window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'cards', rows: 3, label: 'Cargando documentos…' }) : '<span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando documentos…</span></span>', true); loadDocs(); return; }
     const btn = e.target.closest('[data-archive], [data-restore], [data-del]');
     if (!btn) return;
     const name = window.escapeHtml(btn.dataset.name);

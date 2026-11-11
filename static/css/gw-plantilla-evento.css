@@ -57,3 +57,9 @@
 .gw-tpl-preview { background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-lg); padding: var(--gw-sp-3); box-shadow: var(--gw-shadow-sm); margin-top: var(--gw-sp-4); }
 .gw-tpl-preview__top { font-weight: var(--gw-fw-bold); margin-bottom: var(--gw-sp-2); }
 .gw-tpl-preview__cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gw-sp-3); }
+
+/* Opciones de «Categoría (tipo de evento)» dentro del panel de propiedades (static/js/event-type-options.js) */
+.gw-tpl-evt__add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--gw-sp-2); align-items: center; margin-bottom: var(--gw-sp-2); }
+.gw-tpl-evt__list { list-style: none; margin: var(--gw-sp-2) 0 0; padding: 0; display: grid; gap: var(--gw-sp-1); }
+.gw-tpl-evt__row { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; justify-content: space-between; }
+.gw-tpl-evt__tools { display: inline-flex; gap: var(--gw-sp-1); align-items: center; }

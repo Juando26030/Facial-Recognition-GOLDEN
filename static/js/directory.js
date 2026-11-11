@@ -393,12 +393,6 @@
       </div>
       <div class="gw-modal__body">
       <div id="editModalNotice" role="alert" class="gw-alert gw-alert--warn" hidden></div>
-      <label class="gw-check"><input type="checkbox" id="editNewCedulaChk"> ¿Es cédula nueva?</label>
-      <div id="editNewCedulaBox" hidden class="gw-card gw-registro__editnew">
-        <div class="gw-rowact">
-          <button type="button" id="editMrzCamBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Escanear cédula</button>
-        </div>
-      </div>
       <form id="editModalForm">
         ${configuredHtml}
       </form>
@@ -412,11 +406,66 @@
         </select>
         <p class="gw-hint">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
+      <details id="editModalHistory" class="gw-form-group">
+        <summary class="gw-form-group__summary">Historial de cambios de esta persona</summary>
+        <div id="editModalHistoryBody" class="gw-form-group__body gw-hint" aria-live="polite">Se carga al abrir.</div>
+      </details>
       <button type="button" id="editModalDelete" class="gw-btn gw-btn--danger gw-btn--block"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-trash"/></svg>Eliminar de este evento</button>
       ` : ''}
       </div>
     `;
     overlay.appendChild(box);
+    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (coordinador o superior; si no, queda el texto)
+      (async () => {
+        try {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/form-files`);
+          if (!res.ok) return;
+          const d = await res.json();
+          (d.items || []).forEach((it) => {
+            const input = box.querySelector(`[name="${it.key}"]`);
+            const row = input ? input.closest('.gw-registro__editfield') : null;
+            if (!row) return;
+            row.querySelectorAll('input, textarea, select').forEach((el) => el.remove());          // el archivo no se edita aquí: sin campo, no se vuelve a guardar como texto
+            const a = document.createElement('a');
+            a.className = 'gw-btn gw-btn--ghost gw-btn--sm';
+            a.href = it.url;
+            a.setAttribute('download', it.filename);
+            a.textContent = `Descargar ${it.filename}`;
+            const hint = document.createElement('p');
+            hint.className = 'gw-hint';
+            hint.textContent = 'Archivo subido por la persona en el formulario. Haz clic para descargarlo y revisarlo.';
+            row.appendChild(a);
+            row.appendChild(hint);
+          });
+        } catch (e) { /* sin archivos o sin permiso: se deja el campo como estaba */ }
+      })();
+    }
+    {                                                                   // Fase 10 E: historial de datos modificados de la persona (coordinador o superior; se pide solo al desplegar)
+      const det = box.querySelector('#editModalHistory');
+      if (det) {
+        let loaded = false;
+        det.addEventListener('toggle', async () => {
+          if (!det.open || loaded) return;
+          const body = box.querySelector('#editModalHistoryBody');
+          if (window.GW && GW.skeleton) GW.skeleton(body, { kind: 'list', rows: 3, label: 'Cargando el historial…' }); else body.textContent = 'Cargando…';
+          try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/change-history`);
+            if (!res.ok) throw new Error('http ' + res.status);
+            const d = await res.json();
+            loaded = true;
+            body.textContent = '';
+            if (!d.items.length) { body.textContent = 'Esta persona no tiene datos modificados.'; return; }
+            const ul = document.createElement('ul'); ul.className = 'gw-list';
+            d.items.forEach((r) => {
+              const li = document.createElement('li');
+              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: ${r.old || '(vacío)'} → ${r.new || '(vacío)'}`;
+              ul.appendChild(li);
+            });
+            body.appendChild(ul);
+          } catch (e) { body.textContent = 'No se pudo cargar el historial. Cierra y vuelve a abrir este grupo.'; showToast('No se pudo cargar el historial de la persona', 'error'); }
+        });
+      }
+    }
     document.body.appendChild(overlay);
     const pfCtl = pfDef ? window.PersonForm.mount(box.querySelector('#editModalForm'), pfDef) : null;          // grupos, columnas, obligatorios y «Texto al escribir» del formulario de persona
     window.FieldRender.watchEmail(box, () => user.id);
@@ -426,22 +475,6 @@
     });
 
     function close() { overlay.remove(); }
-    {                                                                   // B3: cédula NUEVA (foto del reverso, MRZ): llena nombres, apellidos y —si se puede editar— la cédula
-      const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox');
-      chk.addEventListener('change', () => { nbox.hidden = !chk.checked; });
-      const readMrz = async (blob) => {
-        const fd = new FormData(); fd.append('file', blob, 'cedula.jpg');
-        try {
-          const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: fd });
-          const d = await res.json().catch(() => ({}));
-          if (!res.ok) { showToast(d.detail || 'No se pudo leer la foto — intenta de nuevo', 'error'); return; }
-          const set = (sel, v) => { const el = box.querySelector(sel); if (el && v && !el.disabled) el.value = v; };
-          set('#editModalForm [name="first_name"]', d.first_name); set('#editModalForm [name="last_name"]', d.last_name); set('#editModalCedulaField', d.id);
-          showToast('Cédula leída — revisa los datos y guarda', 'success');
-        } catch (e) { showToast('Error de red', 'error'); }
-      };
-      box.querySelector('#editMrzCamBtn').addEventListener('click', () => { if (window.CameraCapture) window.CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: readMrz }); });
-    }
     if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío
       const note = box.querySelector('#editModalNotice');
       note.textContent = `Falta el campo obligatorio: ${opts.missing.map((m) => m.label).join(', ')}. Complétalo y guarda: queda acreditado(a) en el mismo paso.`;
@@ -672,6 +705,8 @@
 
   function pollSignal(ok) { try { window.dispatchEvent(new CustomEvent('gw:poll', { detail: { ok: !!ok } })); } catch (e) { /* sin ventana de eventos (pruebas): nada */ } }          // la pantalla muestra «Sin conexión» si el último sondeo falló
   let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «Acreditar» en TODAS las filas
+  /* La cédula se MUESTRA sin ceros a la izquierda («0000349220» -> «349220»); el valor guardado y el que se usa para buscar o editar no cambian. Un documento con letras no se toca. */
+  function shownId(v) { const t = String(v == null ? '' : v); return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t; }
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
@@ -716,7 +751,7 @@
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
-      td.innerText = user[field] || '';
+      td.innerText = field === 'id' ? shownId(user[field]) : (user[field] || '');
       tr.appendChild(td);
     });
 
@@ -762,9 +797,15 @@
     users.forEach(user => tbody.appendChild(buildRow(user)));
   }
 
+  // Mientras llega la lista: filas esqueleto con las columnas de la tabla (static/js/gw-carga.js); sin él, la fila de texto de siempre.
+  function loadingRows(tbody) {
+    if (window.GW && window.GW.skeleton) window.GW.skeleton(tbody, { kind: 'table', rows: 8, label: 'Cargando la lista de personas…' });
+    else tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+  }
+
   async function loadRows(tbodyId) {
     const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+    loadingRows(tbody);
     try {
       const res = await fetch(withEvent('/api/users'));
       const users = await res.json();
@@ -1118,7 +1159,7 @@
       const GC0 = GCref();
       if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
       if (localMode) { setLocalMode(false); allUsers = []; }
-      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
+      if (!allUsers.length) loadingRows(tbody);
       T('directory:loading-row-shown');
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
@@ -1468,11 +1509,25 @@
         if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
         if (e.key === 'Enter') {
           e.preventDefault();
-          const raw = cedulaInput.value.trim();
+          let raw = cedulaInput.value.trim();
           if (!raw) return;
+          if (window.QrCode && QrCode.collect) {                       // QR en vCard con lector de mano: llega en varias líneas; se espera a que termine (Fase 10, C)
+            const whole = QrCode.collect(raw);
+            if (whole === null) { cedulaInput.value = ''; syncClearBtn(); return; }
+            raw = QrCode.unwrap(whole).trim();
+            if (!raw) { cedulaInput.value = ''; syncClearBtn(); return; }
+          }
+          if (window.QrCode && QrCode.isDynamic && QrCode.isDynamic(raw)) {           // QR dinámico de la credencial digital: el servidor valida firma y vigencia y devuelve la persona
+            QrCode.resolveDynamic(raw, window.EVENT_ID).then((resolved) => {
+              const qr = QrCode.parse(resolved);
+              fastCheckin(qr.cedula, false, { nombres: qr.nombres, apellidos: qr.apellidos }, undefined, 'qr');
+              cedulaInput.value = ''; syncClearBtn();
+            }).catch((err) => { showToast(err.message || 'No se pudo validar el código', 'error'); verdict('err', 'Código no válido', err.message || 'No se pudo validar el código'); });
+            return;
+          }
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
             const q = SC.classifyQuery(raw);
-            const doc = q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr'
+            const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
               || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
           }

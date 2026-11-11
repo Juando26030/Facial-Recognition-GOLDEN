@@ -105,6 +105,8 @@
             });
             if (focus) tab.focus();
             try { win.localStorage.setItem(STORE, JSON.stringify(tab.dataset.tab)); } catch (e) { /* sin almacenamiento: no pasa nada */ }
+            // Aviso «esta pestaña se ve»: las secciones que cargan al abrirse (Estados, Alertas, Catálogo) lo escuchan, también si se llegó con el teclado o al recordar la última pestaña.
+            try { tab.dispatchEvent(new win.CustomEvent('gw:tabshow', { bubbles: true })); } catch (e) { /* sin eventos: queda el clic */ }
         }
         tabs.forEach((t, i) => {
             t.addEventListener('click', () => select(t.dataset.tab));

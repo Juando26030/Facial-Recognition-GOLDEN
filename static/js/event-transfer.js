@@ -167,7 +167,7 @@
         "<p>Crea un evento <b>NUEVO</b> a partir de un paquete exportado de otro entorno. <b>Nunca sobrescribe</b> un evento que ya existe, y primero hace un <b>simulacro</b> para que veas qué entraría.</p>" +
         tenantSelect() +
         '<label class="gwt-field"><span>Paquete del evento (.zip)</span><input type="file" id="gwtFile" accept=".zip"></label>' +
-        '<details><summary>Historial de exportaciones e importaciones</summary><div id="gwtLog" class="gwt-muted">Cargando…</div></details>',
+        '<details><summary>Historial de exportaciones e importaciones</summary><div id="gwtLog" class="gwt-muted">' + (window.GW && GW.skeleton ? GW.skeleton.html({ kind: "list", rows: 2, label: "Cargando el historial…" }) : "Cargando…") + '</div></details>',
         [{ id: "cancel", label: "Cancelar" }, { id: "upload", label: "Subir y revisar", primary: true }]
       );
       jfetch("/api/event-transfer/log").then(function (rows) {

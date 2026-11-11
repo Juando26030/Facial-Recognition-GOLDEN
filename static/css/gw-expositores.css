@@ -1,0 +1,15 @@
+/* Expositores del evento (templates/kiosk_expositores.html; filas: static/js/expositores-admin.js). Solo tokens --gw-*.
+   Revisión visual F5-9: en celular la tabla de 4 columnas partía las palabras («Co/nta/ct/os»); con .gw-table-cards cada expositor es una tarjeta y aquí se ponen los rótulos. */
+.ex-table .gw-row-actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.ex-table .gw-row-actions .gw-btn { white-space: nowrap; }
+.ex-table td:nth-child(2) { font-variant-numeric: tabular-nums; }
+@media (min-width: 769px) {
+  .ex-table td:nth-child(2), .ex-table th:nth-child(2), .ex-table td:nth-child(3), .ex-table th:nth-child(3) { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+}
+@media (max-width: 768px) {
+  .ex-table td:nth-child(2)::before { content: "Contactos: "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+  .ex-table td:nth-child(3)::before { content: "Estado: "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+  .ex-table td[colspan] { text-align: center; }
+  .ex-table .gw-row-actions { padding-top: var(--gw-sp-2); }
+  .ex-table .gw-row-actions .gw-btn { flex: 1 1 auto; }
+}

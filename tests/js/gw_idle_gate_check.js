@@ -52,6 +52,7 @@ const ALLOWED = {
   'templates/digital_badge.html': 'pantalla de exhibición del carné digital',
   'templates/roulette_display.html': 'pantalla de exhibición de la ruleta',
   'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health (sin base) y contador, que solo consulta tras un intento reciente (5 min)',
+  'static/js/queue-tv.js': 'pantalla de exhibición de turnos (TV): se pausa con la pestaña oculta y el estado sale de la memoria del proceso (queue_svc.snapshot, ≤1 consulta cada 3 s por proceso)',
   'static/js/sistema.js': 'solo la línea del reloj local «Actualizado hace»; el refresco va por GW.poll',
 };
 const files = [];

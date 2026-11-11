@@ -1,0 +1,13 @@
+/* Acta de novedades (Fase 10): solo lo que el sistema de diseño no trae. Únicamente tokens --gw-*. */
+.gw-acta-body { min-height: 12rem; }
+.gw-acta-read { white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--gw-lh-body); }
+.gw-acta-read ul { margin: 0; padding-left: var(--gw-sp-5); white-space: normal; }
+.gw-acta-sigs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-4); }
+.gw-acta-sig { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); padding: var(--gw-sp-3); background: var(--gw-surface); min-width: 0; }
+.gw-acta-sig__name { margin: var(--gw-sp-1) 0 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); overflow-wrap: anywhere; }
+/* La firma es siempre negra sobre papel blanco (también en modo oscuro): así se ve igual en el documento impreso. */
+.gw-acta-pad { display: block; width: 100%; height: 10rem; background: white; border: 2px dashed var(--gw-border-strong); border-radius: var(--gw-radius-sm); touch-action: none; cursor: crosshair; }
+.gw-acta-img { display: block; width: 100%; height: 10rem; object-fit: contain; background: white; border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); }
+.gw-acta-pending { display: flex; align-items: center; justify-content: center; height: 10rem; color: var(--gw-text-muted); border: 1px dashed var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+#actForm[hidden], #actDetail[hidden], .gw-btn[hidden] { display: none; }
+@media (max-width: 640px) { .gw-acta-sigs { grid-template-columns: minmax(0, 1fr); } }

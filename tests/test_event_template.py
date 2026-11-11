@@ -169,21 +169,19 @@ def _make_template(client, *fields, place=(), mutate=None):
 def test_custom_fields_are_validated_and_stored_in_extra_json(admin, factory, db):
     coord = factory.staff("coordinador", "coord")
     com = factory.staff("comercial", "com")
-    inv = {"inventory_types": [{"key": "pa", "label": "Pañoletas", "refs": ["Roja", "Azul"]}]}
     _make_template(admin, _custom(required=True), _custom(key="c_valor", type_="money", title="Valor"), _custom(key="c_com2", type_="commercial", title="Comercial 2"),
                    _custom(key="c_dir", type_="address_map", title="Dirección con mapa"), _custom(key="c_cto", type_="contact", title="Contacto"),
-                   _custom(key="c_inv", type_="inventory", title="Inventario", config=inv), place=["c_tipo", "c_valor", "c_com2", "c_dir", "c_cto", "c_inv"])
+                   place=["c_tipo", "c_valor", "c_com2", "c_dir", "c_cto"])
     p = _payload(coord.id, commercial_staff_id=com.id)
     assert admin.post("/api/events", json=p).status_code == 400          # falta el tipo (obligatorio)
-    good = {"c_tipo": "Feria", "c_valor": "1500000", "c_com2": com.id, "c_dir": {"text": "Cl 1 # 2-3", "lat": 4.7, "lng": -74.07}, "c_cto": {"name": "Ana", "phone": "3001234567"},
-            "c_inv": [{"type": "pa", "qty": 10, "ref": "Roja"}]}
+    good = {"c_tipo": "Feria", "c_valor": "1500000", "c_com2": com.id, "c_dir": {"text": "Cl 1 # 2-3", "lat": 4.7, "lng": -74.07}, "c_cto": {"name": "Ana", "phone": "3001234567"}}
     r = admin.post("/api/events", json={**p, "extra": good})
     assert r.status_code == 200, r.text
     assert r.json()["extra"]["c_valor"] == 1500000 and r.json()["extra"]["c_tipo"] == "Feria"
     from app.models import Event
     db.expire_all()
     stored = db.get(Event, r.json()["id"]).get_extra()
-    assert stored["c_dir"] == {"text": "Cl 1 # 2-3", "lat": 4.7, "lng": -74.07} and stored["c_inv"] == [{"type": "pa", "qty": 10, "ref": "Roja"}]
+    assert stored["c_dir"] == {"text": "Cl 1 # 2-3", "lat": 4.7, "lng": -74.07}
     for bad in ({"c_tipo": "Otra"}, {"c_tipo": "Feria", "c_valor": -5}, {"c_tipo": "Feria", "c_com2": coord.id}, {"c_tipo": "Feria", "c_inv": [{"type": "zz", "qty": 1}]},
                 {"c_tipo": "Feria", "c_nuevo": "x"}, {"c_tipo": "Feria", "start_date": "2026-01-01"}):
         r = admin.post("/api/events", json={**p, "event_code": "PL-BAD", "extra": bad})

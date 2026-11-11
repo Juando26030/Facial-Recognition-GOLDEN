@@ -10,6 +10,7 @@
 {% set can_archive = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
 {% set n_categories = ((event.categories | fromjson) | length) if event.categories else 0 %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -24,7 +25,12 @@
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
+    <script src="{{ url_for('static', path='js/queue-params.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/dwell-params.js') }}" defer></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-parametros has-sidebar">
 {% include "_sidebar.html" %}
@@ -97,6 +103,13 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div class="gw-item-head"><h4>Configuración del registro</h4>{% call ayuda('ay_gear', 'Engranaje del registro') %}Apagada por defecto: en la pantalla de Registro, el coordinador y los administradores siempre ven el engranaje (impresora, autoregistro e impresión automática); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar la configuración del registro a los digitadores</label>
             <p class="gw-hint">Apagada: solo coordinador y administradores ven el engranaje.</p>
+          </div>
+
+          <!-- Fase 8: autorregistro sin base de datos (app/selfreg.py): la persona se crea sola en una pantalla aparte; no capta rostro. -->
+          <div class="gw-group__item" data-psave="selfreg">
+            <div class="gw-item-head"><h4>Autorregistro sin base de datos</h4>{% call ayuda('ay_selfreg', 'Autorregistro') %}Para eventos sin lista de invitados: en el equipo del kiosco abres la pantalla de autorregistro y cada persona se crea sola (cédula, nombres y lo que sea obligatorio en los campos). Solo funciona con el evento «En proceso». No capta rostro ni foto, y no deja ver ni buscar a nadie más. Si una cédula ya estaba registrada, la pantalla solo dice que ya quedó registrada, sin mostrar datos.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="selfregOn" {% if event.selfreg_enabled %}checked{% endif %}> Permitir que las personas se registren solas</label>
+            <p class="gw-hint">Apagado de fábrica. <a href="/kiosk/{{ event.id }}/autoregistro" target="_blank" rel="noopener">Abrir la pantalla de autorregistro</a>.</p>
           </div>
 
           <!-- Fase 2: ¿el apellido es obligatorio? Se detecta solo al cargar la base (app/lastname.py); lo que se elija aquí manda sobre lo automático. -->
@@ -292,7 +305,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             {% if not can_change_reprint %}<p class="gw-alert" role="note">{{ ic('lock') }}<span class="gw-alert__body">Solo un administrador cambia esta opción.</span></p>{% endif %}
             <div class="gw-sub"><h5>Solicitudes de permiso de este evento</h5></div>
-            <div id="reprintHistory" aria-live="polite"><p class="gw-msg">Cargando…</p></div>
+            <div id="reprintHistory" aria-live="polite">{{ skeleton('list', rows=2, label='Cargando las solicitudes…') }}</div>
           </div>
 
           <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
@@ -307,7 +320,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div id="stationsCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Puestos de impresión</h4>{% call ayuda('ay_puestos', 'Puestos de impresión') %}Por cada cuenta: si es «Puesto de impresión», si usa «Solo lector» en «Registro touch» y si en su Registro se muestra o se esconde el menú de impresión (Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».{% endcall %}</div>
             <p class="gw-hint">Elige qué cuentas son puesto de impresión y qué ven en su Registro.</p>
-            <div id="stationsTable" data-psave="stations">Cargando…</div>
+            <div id="stationsTable" data-psave="stations">{{ skeleton('list', rows=3, label='Cargando los puestos…') }}</div>
           </div>
 
           <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel de impresión del Registro. app/routers/print_settings.py -->
@@ -408,7 +421,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=3, label='Cargando zonas…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
                 <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
@@ -427,15 +440,85 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=7, label='Cargando ítems…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
                 <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
                 <label class="gw-check"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
                 <label class="gw-check"><input type="checkbox" id="newItemRepeat"> Permitir repetir la entrega a la misma persona</label>
+                <label class="gw-check"><input type="checkbox" id="newItemDwell"> Solo a quien cumple la estadía</label>
                 <button type="button" id="addItemBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar ítem</button>
               </div>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
+            </div>
+          </div>
+
+          <!-- Permanencia en zonas, premio por porcentaje de estadía y escaneo automático (Fase 10): se guarda con el «Guardar cambios» general (clave «dwell» de GWParams); «Calcular» y la lista van aparte (data-pnodirty). -->
+          <div class="gw-group__item" id="dwellBox" data-event="{{ event.id }}">
+            <div class="gw-item-head"><h4>Permanencia, premio por estadía y escaneo automático</h4>{% call ayuda('ay_dwell', 'Permanencia y premio por estadía') %}Con el conteo activo, cada entrada y salida de una zona se suma por persona (10 min + 5 min = 15 min). Tú defines el tiempo total de referencia (el 100 %, por ejemplo las 24 h del evento). Con el premio activo puedes ver cuántas personas pasan de un porcentaje (por ejemplo 80 %), bajar la lista en Excel o CSV, habilitar su certificado y dejar ítems de inventario solo para ellas. La persona de prueba nunca cuenta.{% endcall %}</div>
+            <div data-psave="dwell">
+            <p class="gw-hint">Esto se arma en dos pasos. El paso 1 solo <strong>mide</strong>; el paso 2 es el que <strong>decide quién recibe</strong> algo.</p>
+            <div class="gw-card gw-stack" id="dwellStep1">
+              <h5>Paso 1 · Medir (solo informativo)</h5>
+              <label class="gw-check"><input type="checkbox" id="dwellEnabled" {% if event.areas_dwell_enabled %}checked{% endif %}> Sumar el tiempo que cada persona pasa dentro de las zonas</label>
+              <p class="gw-hint">Con esto solo se ven los minutos y el porcentaje de cada persona en reportes y estadísticas. <strong>No bloquea ni entrega nada por sí solo.</strong></p>
+            </div>
+            <div id="dwellConfig" class="gw-stack" {% if not event.areas_dwell_enabled %}hidden{% endif %}>
+              <div class="gw-card gw-stack" id="dwellStep2">
+                <h5>Paso 2 · Exigir el porcentaje (opcional)</h5>
+                <label class="gw-check"><input type="checkbox" id="dwellPrize" {% if event.dwell_prize_enabled %}checked{% endif %}> Exigir un mínimo de permanencia para poder dar certificado o inventario</label>
+                <div class="gw-actions">
+                  <div class="gw-field"><label class="gw-label" for="dwellRefH">¿Cuánto es el 100 %? horas</label><input class="gw-input gw-input--short" type="number" id="dwellRefH" min="0" placeholder="0"></div>
+                  <div class="gw-field"><label class="gw-label" for="dwellRefM">minutos</label><input class="gw-input gw-input--short" type="number" id="dwellRefM" min="0" max="59" placeholder="0"></div>
+                  <div class="gw-field"><label class="gw-label" for="dwellPct">Mínimo para cumplir (%)</label><input class="gw-input gw-input--short" type="number" id="dwellPct" min="1" max="100" placeholder="80"></div>
+                </div>
+                <p class="gw-hint" id="dwellRefHint">Si dejas el tiempo de referencia vacío se usa la duración del evento (según sus fechas y horas).</p>
+                <p class="gw-hint"><strong>Qué se condiciona:</strong> el <em>certificado</em> con el botón «Habilitar certificado a quienes cumplen» (más abajo) y cada <em>ítem de inventario</em> donde marques «Solo a quien cumple la estadía». Lo que no marques sigue igual para todos.</p>
+              </div>
+              <div class="gw-alert gw-alert--info" id="dwellSummary" role="status" aria-live="polite"></div>
+            </div>
+            <div class="gw-stack" id="scanAutoBox">
+              <label class="gw-check"><input type="checkbox" id="areasAutoscan" {% if event.areas_autoscan %}checked{% endif %}> Control de áreas: escanear o dar Enter registra la entrada o salida solo, sin pulsar «Acreditar»</label>
+              <label class="gw-check"><input type="checkbox" id="inventoryAutoscan" {% if event.inventory_autoscan %}checked{% endif %}> Control de inventario: escanear o dar Enter entrega de una vez lo que esté marcado, sin pulsar «Entregar»</label>
+            </div>
+            </div>
+            <div id="dwellStats" class="gw-stack" data-pnodirty hidden>
+              <h5>Personas por porcentaje de estadía</h5>
+              <div class="gw-actions">
+                <div class="gw-field"><label class="gw-label" for="dwellEval">Ver quiénes pasan de (%)</label><input class="gw-input gw-input--short" type="number" id="dwellEval" min="1" max="100" placeholder="80"></div>
+                <div class="gw-field"><label class="gw-label" for="dwellArea">Zona</label><select class="gw-select" id="dwellArea"><option value="">Todas las zonas</option></select></div>
+                <button type="button" id="dwellCalc" class="gw-btn gw-btn--secondary">Calcular</button>
+              </div>
+              <div id="dwellResult" aria-live="polite"></div>
+              <div class="gw-actions" id="dwellActions" hidden>
+                <a class="gw-btn gw-btn--secondary gw-btn--sm" id="dwellXlsx" href="#">{{ ic('download', 'gw-icon--sm') }} Excel (solo quienes cumplen)</a>
+                <a class="gw-btn gw-btn--secondary gw-btn--sm" id="dwellCsv" href="#">{{ ic('download', 'gw-icon--sm') }} CSV (solo quienes cumplen)</a>
+                <a class="gw-btn gw-btn--ghost gw-btn--sm" id="dwellXlsxAll" href="#">{{ ic('download', 'gw-icon--sm') }} Excel (todas las personas)</a>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="dwellCerts">Habilitar certificado a quienes cumplen</button>
+              </div>
+              <p class="gw-hint">Para las entregas de inventario, marca «Solo a quien cumple la estadía» en cada ítem de la tabla de arriba.</p>
+            </div>
+          </div>
+
+          <!-- Turnos y filas (Fase 8): módulo propio con su botón Guardar (fuera del seguimiento de «Sin guardar»). -->
+          <div class="gw-group__item" id="queueBox" data-pnodirty data-event="{{ event.id }}">
+            <div class="gw-item-head"><h4>Turnos y filas</h4>{% call ayuda('ay_turnos', 'Turnos y filas') %}La persona escanea un QR, ve su turno (A1, B7…) en su celular y le avisa cuando la llamen. En la pantalla del televisor se ve el turno llamado. El orden puede ser por llegada, por orden de inscripción, alfabético o el que tú subas en un Excel.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="queueEnabled" {% if event.queue_enabled %}checked{% endif %}> Activar turnos y filas</label>
+            <div id="queueConfig" class="gw-stack" {% if not event.queue_enabled %}hidden{% endif %}>
+              <div class="gw-field"><label class="gw-label" for="queueMode">¿Cómo se ordena la gente?</label>
+                <select class="gw-select" id="queueMode">
+                  <option value="arrival">Por llegada (el turno se da al escanear el QR)</option>
+                  <option value="form">Por orden de inscripción en el formulario</option>
+                  <option value="alpha">Alfabético (apellido y nombre)</option>
+                  <option value="manual">Manual (subo un Excel con el orden)</option>
+                </select></div>
+              <div class="gw-field"><label class="gw-label" for="queueLanes">Filas (letras separadas por coma, con nombre opcional)</label>
+                <input class="gw-input" type="text" id="queueLanes" placeholder="A=Mesa 1, B=Mesa 2">
+                <p class="gw-hint">Máximo 8 filas. Con una sola letra (A) todos van en la misma fila.</p></div>
+              <label class="gw-check"><input type="checkbox" id="queueShowName"> Mostrar el primer nombre en el celular (nunca la cédula; nunca a menores de edad)</label>
+              <label class="gw-check"><input type="checkbox" id="queueRequireReg"> Por llegada: dar turno solo a quien ya fue acreditado</label>
+              <div class="gw-actions"><button type="button" id="queueSave" class="gw-btn gw-btn--secondary">Guardar turnos y filas</button></div>
+              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
             </div>
           </div>
         </section>
@@ -487,7 +570,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-group__item" id="personFormCard">
             <div class="gw-item-head"><h4 id="personFormTitle">Formulario de persona</h4></div>
             <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos y textos. Funciona igual sin conexión. Se guarda con «Guardar cambios».</p>
-            <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
+            <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">{{ skeleton('text', rows=5, label='Cargando el formulario de persona…') }}</div>
           </div>
           <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
           <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
@@ -501,7 +584,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
           <div id="privacyCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Datos del rostro</h4>{% call ayuda('ay_privacidad', 'Datos del rostro') %}El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan. Para autorizar el rostro en los formularios web, crea en «Campos» un campo de consentimiento aparte y en «Insertar texto tipo» elige «Autorización del dato biométrico»; debe ser una casilla separada de la autorización general de datos.{% endcall %}</div>
-            <p id="privInfo" class="gw-msg" role="status">Cargando…</p>
+            <div id="privInfo" class="gw-msg" role="status">{{ skeleton('text', rows=2, label='Cargando…') }}</div>
             {% if is_admin_plus %}<div class="gw-danger-zone">
               <h4>{{ ic('alert') }} Borrar rostros (no se puede deshacer)</h4>
               <div class="gw-field"><label class="gw-label" for="privCedula">Cédula de la persona a la que se le borrará el rostro</label><input class="gw-input" type="text" id="privCedula" aria-label="Cédula de la persona a la que se le borrará el rostro"></div>
@@ -688,14 +771,15 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
             <td data-label="Varias unidades a la vez"><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
             <td data-label="Repetir la entrega a la misma persona"><label class="gw-check"><input type="checkbox" class="item-repeat" ${i.allow_repeat_delivery ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Permitir repetir la entrega de ${esc(i.name)} a la misma persona"></label></td>
+            <td data-label="Solo a quien cumple la estadía"><label class="gw-check"><input type="checkbox" class="item-dwell" ${i.requires_dwell ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Entregar ${esc(i.name)} solo a quien cumple el porcentaje de estadía"></label></td>
             <td data-label="Entregado / Disponible">${i.delivered} / <strong>${i.available}</strong></td>
             <td class="gw-pm-act">${rowActions(i, 'item', 'el ítem')}</td></tr>`).join('')
-            : '<tr><td colspan="6">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
+            : '<tr><td colspan="7">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
         try {
-            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', { name: tr.querySelector('.item-name').value, initial_qty: tr.querySelector('.item-qty').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked });
+            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', { name: tr.querySelector('.item-name').value, initial_qty: tr.querySelector('.item-qty').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked });
             showToast('Ítem actualizado', 'success');
         } catch (err) { /* el toast ya lo mostró api() */ }
         loadItems();
@@ -711,10 +795,11 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const name = document.getElementById('newItemName').value.trim();
         if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
         await GWParams.flush('mod_inventory');
-        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked });
+        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked });
         document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
-    loadAreas().catch(() => {}); loadItems().catch(() => {});
+    const failBox = (id) => () => { const b = document.getElementById(id); if (b && b.querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error(b, { text: 'Recarga la página para intentarlo de nuevo.' }); };
+    loadAreas().catch(failBox('areasBody')); loadItems().catch(failBox('itemsBody'));
 
 
 
@@ -815,6 +900,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     })();
     GWParams.register({ key: 'reggear', label: 'Configuración del registro', order: 12, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/registro-gear-digitadores`, { enabled: document.getElementById('regGearDig').checked }), 'No se pudo guardar la opción del engranaje');
+    } });
+    GWParams.register({ key: 'selfreg', label: 'Autorregistro sin base de datos', order: 14, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/selfreg-config`, { enabled: document.getElementById('selfregOn').checked }), 'No se pudo guardar el autorregistro');
     } });
     GWParams.register({ key: 'lastname', label: 'Apellido obligatorio', order: 13, reload: true, save: async () => {
         const mode = (document.querySelector('input[name="lastNameMode"]:checked') || {}).value || 'auto';

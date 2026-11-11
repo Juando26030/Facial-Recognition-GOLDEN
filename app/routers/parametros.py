@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     audit_actions,
+    event_history,
     biometric_setup,
     brandcolor,
     digital_fields,
@@ -233,16 +234,19 @@ def set_digital_badge_enabled(
     (si todavía no tenía una fila propia en event_field_configs, o sea nadie lo había tocado antes)."""
     event = get_event_for_staff(event_id, db, staff)
     was = bool(event.digital_badge_enabled)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     event.digital_badge_enabled = bool(data.get("enabled"))
     if was != event.digital_badge_enabled:
         audit_actions.record(db, staff, "update", "event_digital_badge_enabled", event.id, event.name, f"{was} -> {event.digital_badge_enabled}")
     if not event.digital_badge_enabled:
         event.digital_badge_fields = None          # al apagar se olvida la selección: reactivar no vuelve a exponer teléfono/correo sin que alguien lo elija de nuevo
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     if event.digital_badge_enabled:
         row = db.query(EventFieldConfig).filter_by(event_id=event_id, field_key="digital_contact").first()
         if not row:
             db.add(EventFieldConfig(event_id=event_id, field_key="digital_contact", required=True, field_type="text_short"))
     db.commit()
+    event_history.kick_after(_hr)
     return {"digital_badge_enabled": event.digital_badge_enabled}
 
 
@@ -393,8 +397,11 @@ def set_facial_enabled(
         blockers = biometric_setup.facial_blockers(event)
         if blockers:
             raise HTTPException(status_code=400, detail="Para activar el reconocimiento facial en un evento de un tercero falta: " + ", ".join(blockers))
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     event.facial_enabled = bool(data.get("enabled"))
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"facial_enabled": event.facial_enabled}
 
 
@@ -406,8 +413,11 @@ def set_certificates_enabled(
     """Activa/desactiva el módulo de certificados (ítem 5, reunión 2026-09-21). Al activarlo aparece
     el campo "Certificado" (Sí/No, default No) en Registrar/Editar y el diseñador del certificado."""
     event = get_event_for_staff(event_id, db, staff)
+    _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     event.certificates_enabled = bool(data.get("enabled"))
+    _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
+    event_history.kick_after(_hr)
     return {"certificates_enabled": event.certificates_enabled}
 
 

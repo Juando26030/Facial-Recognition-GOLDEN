@@ -5,7 +5,9 @@
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 {% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
+{% set is_super = staff_role == "super_admin" %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,12 +17,16 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-configuracion.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell{% if staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
@@ -49,7 +55,7 @@
         <p class="gw-page-head__sub">Ajusta cómo se ve el sistema en este computador{% if is_admin_plus %} y las reglas de sesión y cuentas del personal{% endif %}.</p>
       </div>
       <div class="gw-page-head__actions">
-        <a href="/cambiar-contrasena" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('lock', 'gw-icon--sm') }} Cambiar mi contraseña</a>
+        {% if local_server %}<span class="gw-hint">La contraseña solo se cambia en la nube.</span>{% else %}<a href="/cambiar-contrasena" class="gw-btn gw-btn--secondary gw-btn--sm">{{ ic('lock', 'gw-icon--sm') }} Cambiar mi contraseña</a>{% endif %}
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="configuracion">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
@@ -66,10 +72,14 @@
     <div class="gw-tabs" id="paramsRoot" data-tabs-key="configuracion">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de configuración" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la pestaña" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves de qué trata.">
         <button type="button" class="gw-tab" role="tab" id="tab_apariencia" data-tab="apariencia" aria-controls="apariencia" aria-selected="true">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Apariencia</span><span class="gw-tab__sum">Color y tipografía de este computador</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        {% if can_local_installer %}<button type="button" class="gw-tab" role="tab" id="tab_servidor" data-tab="servidor" aria-controls="servidor" aria-selected="false" tabindex="-1">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Servidor local</span><span class="gw-tab__sum">Instalar el programa para trabajar sin internet</span></button>{% endif %}
         {% if is_admin_plus %}
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
+        {% if is_super %}<button type="button" class="gw-tab" role="tab" id="tab_tipos" data-tab="tipos" aria-controls="tipos" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Tipos de evento</span><span class="gw-tab__sum">Categorías del calendario</span></button>{% endif %}
+        {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
+        <button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
       </div>
@@ -109,6 +119,75 @@
           </div>
         </section>
 
+        {% if can_local_installer %}
+        <section class="gw-tabpanel" role="tabpanel" id="servidor" aria-labelledby="tab_servidor" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Servidor local</h2><p class="gw-tabpanel__lead">Un programa que se instala en un computador con Windows para atender un evento aunque se caiga el internet.</p></div>
+          <div class="gw-group__item" data-pnodirty id="localInstallerCard">
+            <div class="gw-item-head"><h4>Descargar el instalador</h4></div>
+            <div id="localInstallerBody" aria-live="polite">{{ skeleton('block', label='Revisando si el instalador está disponible…') }}</div>
+          </div>
+          {% if is_admin_plus %}
+          <div class="gw-group__item" data-pnodirty id="localInstallerPublish">
+            <div class="gw-item-head"><h4>Cómo publicar el instalador</h4></div>
+            <details class="gw-form-group">
+              <summary class="gw-form-group__summary">Cómo publicar el instalador (solo administradores)</summary>
+              <div class="gw-form-group__body">
+                <p>El botón de descarga aparece cuando el archivo del instalador está guardado en el almacenamiento de GoldenWeb. Hay que <strong>construirlo una vez</strong> y <strong>subirlo</strong>. Se repite cada vez que cambie la versión de producción.</p>
+                <h5 class="gw-label">Qué se necesita</h5>
+                <ul class="gw-list">
+                  <li>Acceso al repositorio de GitHub (para el camino A) o un computador con Windows 10/11 con internet (camino B).</li>
+                  <li>La herramienta de Google Cloud (<code>gcloud</code>, que trae <code>gsutil</code>) con tu cuenta de Golden, o la consola web de Google Cloud.</li>
+                  <li>El nombre del almacenamiento de la app (en <code>deploy/gcp/config.sh</code>: <code>APP_BUCKET</code> y <code>APP_PREFIX</code>). Abajo lo llamamos <code>BUCKET</code> y <code>PREFIJO</code>.</li>
+                </ul>
+                <h5 class="gw-label">Paso 1 · Construir el instalador</h5>
+                <p><strong>Camino A (sin Windows, con GitHub):</strong> en GitHub entra a Actions, elige «Instalador de Windows (servidor local)», pulsa «Run workflow», escribe la versión (por ejemplo <code>2026.11.10</code>) y espera unos 20 a 30 minutos. Al terminar, descarga el archivo comprimido <code>golden-local-windows</code> y ábrelo: dentro está <code>GoldenLocal-Setup-2026.11.10.exe</code>. También se puede con comandos:</p>
+                <pre class="gw-code"><code>gh workflow run instalador-windows.yml -f version=2026.11.10
+gh run watch
+gh run download -n golden-local-windows -D instalador</code></pre>
+                <p><strong>Camino B (en un Windows):</strong> instala Git, Python 3.13 e Inno Setup 6; abre PowerShell y escribe:</p>
+                <pre class="gw-code"><code>git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git
+cd Facial-Recognition-GOLDEN
+git checkout f5/integracion
+Set-ExecutionPolicy -Scope Process Bypass
+.\deploy\windows\build_installer.ps1 -Version 2026.11.10</code></pre>
+                <p>El archivo queda en <code>build\windows\out\GoldenLocal-Setup-2026.11.10.exe</code>.</p>
+                <h5 class="gw-label">Paso 2 · Subirlo al almacenamiento</h5>
+                <p>El nombre del archivo debe ser exactamente <code>GoldenLocal-Setup-&lt;versión&gt;.exe</code>. Con <code>gcloud</code> instalado:</p>
+                <pre class="gw-code"><code>gcloud auth login
+gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-installer/</code></pre>
+                <p>Si el entorno no usa prefijo, la ruta es <code>gs://BUCKET/system/local-installer/</code>. Sin comandos: en la consola web de Google Cloud, Cloud Storage, abre el almacenamiento, entra a la carpeta <code>system/local-installer</code> (créala si no existe) y arrastra el archivo.</p>
+                <h5 class="gw-label">Paso 3 · Comprobar</h5>
+                <ol class="gw-list">
+                  <li><code>gsutil ls gs://BUCKET/PREFIJO/system/local-installer/</code> debe mostrar el archivo.</li>
+                  <li>Recarga esta página y abre «Servidor local»: la tarjeta de arriba debe decir <strong>Disponible</strong> con la versión, en vez de «Aún no disponible».</li>
+                  <li>Pulsa «Descargar instalador para Windows» y confirma que baja el archivo.</li>
+                </ol>
+                <p class="gw-hint">Si hay varias versiones guardadas se ofrece la más alta. Para retirar una, bórrala de esa carpeta.</p>
+              </div>
+            </details>
+          </div>
+          {% endif %}
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Cómo funciona, en pocas palabras</h4></div>
+            <div class="gw-stack">
+              <div class="gw-field"><h5 class="gw-label">¿Qué es?</h5><div>Una copia de GoldenWeb que vive en un computador del evento. El personal se conecta a ese computador con el wifi del lugar y trabaja como siempre, sin necesitar internet.</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Qué necesito?</h5><div>Un computador con Windows 10 u 11, 8 GB de memoria, un router o wifi propio para que los demás equipos se conecten, y internet <em>solo al principio</em> (para instalar y bajar el evento).</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Cómo se usa?</h5><div>
+                <ol class="gw-list">
+                  <li>Con internet, descarga el instalador de aquí y ábrelo con doble clic. Acepta los permisos y espera unos minutos.</li>
+                  <li>Entra con tu mismo usuario y contraseña de siempre.</li>
+                  <li>Elige tu evento y pulsa «Descargar a local». El evento queda en ese computador.</li>
+                  <li>El día del evento, conecta los demás equipos al mismo wifi y trabaja normalmente.</li>
+                </ol>
+              </div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Y el evento en internet?</h5><div>Mientras un evento está en el servidor local, en internet solo se puede <strong>ver</strong>, no cambiar. Así nunca se mezclan dos versiones. Un solo lugar manda a la vez.</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Qué pasa si no hay internet?</h5><div>Nada: todo sigue funcionando. Cuando vuelva el internet, el servidor sube solo lo que se hizo (cada 30 minutos). Al terminar, pulsa «Pasar a internet» para que el evento vuelva a poder editarse en la nube.</div></div>
+            </div>
+            <p class="gw-hint">Una explicación más larga, sin términos técnicos, está en el documento «Explicación del servidor local».</p>
+          </div>
+        </section>
+        {% endif %}
+
         {% if is_admin_plus %}
         <section class="gw-tabpanel" role="tabpanel" id="sesion" aria-labelledby="tab_sesion" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Sesiones</h2><p class="gw-tabpanel__lead">Cuántas sesiones puede tener abiertas una misma cuenta.</p></div>
@@ -141,8 +220,64 @@
             </form>
           </div>
           <label class="gw-check"><input type="checkbox" id="showArchivedStates"> Ver archivados</label>
-          <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite"></div>
+          <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando estados…') }}</div>
         </section>
+
+        {% if is_super %}<section class="gw-tabpanel" role="tabpanel" id="tipos" aria-labelledby="tab_tipos" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Tipos de evento</h2><p class="gw-tabpanel__lead">La lista de categorías (Feria, Congreso…) que se elige al crear o editar un evento y con la que el calendario filtra. Lo que hagas aquí actúa al instante.</p></div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Agregar un tipo</h4>{% call ayuda('ay_tipos', 'Archivar un tipo') %}Archivar deja de ofrecer el tipo al crear o editar eventos, pero los eventos que ya lo tienen lo conservan y el calendario lo sigue mostrando. Se puede restaurar. El color es opcional: sale en el calendario junto al nombre.{% endcall %}</div>
+            <form id="typeForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="typeName">Nombre</label><input class="gw-input" type="text" id="typeName" maxlength="80" required autocomplete="off"></div>
+              <div class="gw-field"><label class="gw-label" for="typeColor">Color (opcional)</label><div class="gw-actions"><input type="color" id="typeColor" class="gw-config__swatch"><label class="gw-check"><input type="checkbox" id="typeUseColor"> Usar color</label></div></div>
+              <button type="submit" class="gw-btn gw-btn--primary" id="typeCreateBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar tipo</button>
+            </form>
+          </div>
+          <label class="gw-check"><input type="checkbox" id="showArchivedTypes"> Ver archivados</label>
+          <div class="gw-cards gw-estado__list" id="tiposList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando tipos de evento…') }}</div>
+        </section>{% endif %}
+
+        <section class="gw-tabpanel" role="tabpanel" id="alertas" aria-labelledby="tab_alertas" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Alertas del sistema</h2><p class="gw-tabpanel__lead">Si alguien borra muchos registros de golpe (eventos, formularios, inscripciones, personas, archivos), el sistema envía un correo al instante. El correo dice quién, qué, cuántos y cuándo, y <strong>nunca</strong> incluye datos de los asistentes. La limpieza automática de privacidad no cuenta como alerta.</p></div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>¿Desde cuántos registros se avisa?</h4>{% call ayuda('ay_alsettings', 'Umbral de la alerta') %}Se avisa cuando UNA acción borra al menos «registros en una acción», o cuando la misma cuenta acumula al menos «registros acumulados» dentro de los minutos indicados. Si no sabe qué poner, deje los valores que vienen.{% endcall %}</div>
+            <form id="alSettingsForm" class="gw-stack">
+              <label class="gw-check"><input type="checkbox" id="alEnabled"> Enviar alertas de borrado masivo</label>
+              <div class="gw-field"><label class="gw-label" for="alPerAction">Registros en una sola acción</label><input class="gw-input" type="number" id="alPerAction" inputmode="numeric" min="5" step="1"></div>
+              <div class="gw-field"><label class="gw-label" for="alWindowCount">Registros acumulados por una cuenta</label><input class="gw-input" type="number" id="alWindowCount" inputmode="numeric" min="10" step="1"></div>
+              <div class="gw-field"><label class="gw-label" for="alWindowMinutes">…dentro de estos minutos</label><input class="gw-input" type="number" id="alWindowMinutes" inputmode="numeric" min="1" max="60" step="1"></div>
+              <button type="submit" class="gw-btn gw-btn--primary" id="alSettingsBtn">{{ ic('check', 'gw-icon--sm') }} Guardar umbral</button>
+            </form>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>¿Quién recibe la alerta?</h4>{% call ayuda('ay_alrecipients', 'Destinatarios') %}Puede agregar correos de personas que no tienen cuenta en la plataforma, o cuentas de la plataforma (reciben el aviso en la campana y en su correo registrado). Pause un destinatario sin borrarlo con «Desactivar».{% endcall %}</div>
+            <div class="gw-cards" id="alList" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando destinatarios…') }}</div>
+            <form id="alEmailForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="alEmail">Agregar un correo</label><input class="gw-input" type="email" id="alEmail" maxlength="200" autocomplete="off" placeholder="nombre@empresa.com"></div>
+              <button type="submit" class="gw-btn gw-btn--secondary" id="alEmailBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar correo</button>
+            </form>
+            <form id="alStaffForm" class="gw-stack">
+              <div class="gw-field"><label class="gw-label" for="alStaff">Agregar una cuenta de la plataforma</label><select class="gw-input" id="alStaff"></select></div>
+              <button type="submit" class="gw-btn gw-btn--secondary" id="alStaffBtn">{{ ic('plus', 'gw-icon--sm') }} Agregar cuenta</button>
+            </form>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Probar</h4>{% call ayuda('ay_altest', 'Alerta de prueba') %}Envía un mensaje de prueba a todos los destinatarios activos para confirmar que llega. No borra nada.{% endcall %}</div>
+            <button type="button" class="gw-btn gw-btn--secondary" id="alTestBtn">{{ ic('mail', 'gw-icon--sm') }} Enviar alerta de prueba</button>
+          </div>
+
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Últimas alertas</h4></div>
+            <div class="gw-cards" id="alRecent" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando alertas enviadas…') }}</div>
+          </div>
+        </section>
+
+        {% if is_admin_plus %}
+        {% include "_inventory_catalog_admin.html" %}
+        {% endif %}
 
         <section class="gw-tabpanel" role="tabpanel" id="staff" aria-labelledby="tab_staff" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Staff y permisos</h2><p class="gw-tabpanel__lead">Crea cuentas, cambia roles y activa o desactiva accesos. Lo que hagas aquí actúa al instante.</p></div>
@@ -168,7 +303,11 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 });
 </script>
 <script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
+{% if can_local_installer %}<script src="{{ url_for('static', path='js/local-installer-card.js') }}"></script>{% endif %}
 {% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
-<script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>
+<script src="{{ url_for('static', path='js/system-alerts-admin.js') }}"></script>{% endif %}
+{% if is_admin_plus %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
+{% if is_super %}<script src="{{ url_for('static', path='js/event-types-admin.js') }}"></script>{% endif %}
 </body>
 </html>

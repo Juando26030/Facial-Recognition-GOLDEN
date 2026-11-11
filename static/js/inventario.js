@@ -4,7 +4,8 @@
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
-  let users = [], person = null, items = [];
+  let users = [], person = null, items = [], delivering = false;
+  const AUTOSCAN = !!window.AUTOSCAN;          // Fase 10: «escanear / Enter = entrega automática» (Parámetros): al leer a la persona se entrega lo que esté marcado, sin pulsar «Entregar»
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
   const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
   function verdict(cls, title, html) {
@@ -40,6 +41,7 @@
       return;
     }
     $('itemsLoading').hidden = true;
+    const keep = AUTOSCAN ? selection() : {};          // con entrega automática lo marcado se conserva entre personas
     $('statStock').textContent = items.filter(i => i.available > 0).length;
     $('statOut').textContent = items.filter(i => i.available <= 0).length;
     $('statOutBox').classList.toggle('gw-stat--err', items.some(i => i.available <= 0));
@@ -50,6 +52,25 @@
           ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(i.available, 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
           : `<label class="gw-check"><input type="checkbox" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`}</div>
       </div>`).join('') : `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
+    if (AUTOSCAN) restore(keep);
+  }
+  /* Lo marcado en pantalla: {id_del_ítem: cantidad}. Pura sobre el DOM; se usa para conservarlo al recargar y para armar la entrega. */
+  function selection() {
+    const out = {};
+    document.querySelectorAll('.item-row').forEach(row => {
+      const id = parseInt(row.dataset.item, 10);
+      const q = row.querySelector('.qty') ? parseInt(row.querySelector('.qty').value, 10) || 0 : (row.querySelector('.qty-check').checked ? 1 : 0);
+      if (q > 0) out[id] = q;
+    });
+    return out;
+  }
+  function restore(sel) {
+    document.querySelectorAll('.item-row').forEach(row => {
+      const q = sel[parseInt(row.dataset.item, 10)] || 0;
+      if (!q) return;
+      if (row.querySelector('.qty')) { const inp = row.querySelector('.qty'); if (!inp.disabled) inp.value = Math.min(q, parseInt(inp.max, 10) || q); }
+      else { const chk = row.querySelector('.qty-check'); if (chk && !chk.disabled) chk.checked = true; }
+    });
   }
 
   async function loadDeliveries() {
@@ -73,25 +94,36 @@
     b.hidden = false;
     $('suggest').innerHTML = ''; $('nameSearch').value = '';
   }
-  function byId(id) {
+  function byId(id, auto) {
     const u = users.find(x => x.id === id);
-    if (u) setPerson(u); else showToast('Esa persona no está en la base de este evento', 'error');
+    if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
+    setPerson(u);
+    if (auto && AUTOSCAN) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
+    return true;
   }
 
   $('scanInput').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const raw = e.target.value.trim(); e.target.value = '';
-    if (!raw) return;
-    const qr = QrCode.parse(raw);
-    const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
-    byId(qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw));   // QR propio: en vez de entregar la cédula
+    let typed = e.target.value.trim(); e.target.value = '';
+    if (!typed) return;
+    typed = QrCode.collect(typed);                                             // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
+    if (typed === null) return;
+    QrCode.resolveDynamic(typed, window.EVENT_ID, 'inventory').then((raw) => {          // QR dinámico de la credencial digital: lo valida el servidor
+      const qr = QrCode.parse(raw);
+      const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
+      byId(qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw), true);   // QR propio: en vez de entregar la cédula
+    }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); });
   });
   // Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
-  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
+  let scanner = null;
+  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear QR — Control de Inventario',
-    onCode: (text) => { const qr = QrCode.parse(text); if (qr) byId(qr.cedula); },
-  }));
+    // Si la cámara lee el QR y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
+    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => { const qr = QrCode.parse(raw); return qr ? byId(qr.cedula, true) : false; })
+      .then((found) => { if (found && scanner) scanner.close(); })
+      .catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
+  }); });
   $('nameSearch').addEventListener('input', (e) => {
     const q = e.target.value.trim();
     const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
@@ -103,13 +135,14 @@
 
   async function deliver() {
     if (!person) { showToast('Primero elige a quién se le entrega', 'error'); return; }
-    const lines = [];
-    document.querySelectorAll('.item-row').forEach(row => {
-      const id = parseInt(row.dataset.item, 10);
-      const qty = row.querySelector('.qty') ? parseInt(row.querySelector('.qty').value, 10) || 0 : (row.querySelector('.qty-check').checked ? 1 : 0);
-      if (qty > 0) lines.push({ item_id: id, qty });
-    });
-    if (!lines.length) { showToast('Elige al menos un ítem', 'error'); return; }
+    if (delivering) return;          // un segundo Enter mientras se entrega no duplica la entrega
+    const sel = selection();
+    const lines = Object.keys(sel).map(id => ({ item_id: parseInt(id, 10), qty: sel[id] }));
+    if (!lines.length) { showToast(AUTOSCAN ? 'Marca primero qué se entrega: se entregará solo al escanear a cada persona' : 'Elige al menos un ítem', 'error'); return; }
+    delivering = true;
+    try { await doDeliver(lines); } finally { delivering = false; }
+  }
+  async function doDeliver(lines) {
     let res, data;
     try {
       res = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliver`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: person.id, items: lines }) });

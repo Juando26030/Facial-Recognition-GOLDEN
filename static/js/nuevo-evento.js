@@ -32,6 +32,7 @@
   let fields = {};                 // clave -> campo
   let sections = [];               // [{id, title, keys[]}] ya sin los campos ocultos para este usuario
   let ctx = {};
+  let workdayRefresh = null;
 
   async function citiesFor(country) {
     try {
@@ -62,16 +63,27 @@
       return '<section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT' + i + '"' + (i ? ' hidden' : '') + '>' +
         '<h3 class="gw-nuevo__panel-title" id="neT' + i + '" tabindex="-1">' + esc(s.title) + '</h3>' +
         '<div class="gw-fields-row gw-fields-row--2 gw-nuevo__cols3">' + s.keys.map((k) => EF.renderField(fields[k], { ctx: ctx })).join('') + '</div>' +
-        (last ? '<h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
+        (last ? '<div id="neInvWrap"><h4 class="gw-nuevo__section">Inventario</h4><p class="gw-hint">Productos del catálogo que pide este evento. Almacén registra después lo que sale, vuelve y se consume.</p><div id="neInventory"></div></div><h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
     const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl, fields: fields });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
     EF.bind(form, { fields: fields, loadCities: citiesFor });
+    if (!workdayRefresh) workdayRefresh = EF.bindWorkday(form); else workdayRefresh();          // Jornada en vivo (Fase 5): se recalcula al digitar las horas; el enganche se hace UNA vez
     applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();
+    mountInventory();
     nextBtn.disabled = false;
     if (window.GW && GW.wizard) GW.wizard.go(form, 0);
     document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl, enhanced: mounted } }));
+  }
+  // Inventario (Fase 5): los productos activos del catálogo se piden aquí como cantidades; se guardan justo después de crear el evento (PUT /api/events/<id>/inventory-plan).
+  let invCtrl = null;
+  async function mountInventory() {
+    invCtrl = null;
+    const box = document.getElementById('neInventory'), wrap = document.getElementById('neInvWrap');
+    if (!box || !window.GWInvPlan) { if (wrap) wrap.hidden = true; return; }
+    try { invCtrl = await GWInvPlan.mount(box, { eventId: null, saveButton: false, icons: root.dataset.icons || undefined }); } catch (e) { invCtrl = null; }
+    if (!invCtrl || !invCtrl.visible || invCtrl.empty) { wrap.hidden = true; invCtrl = null; }
   }
   const control = (key, part) => form.querySelector('[data-evf-key="' + key + '"][data-evf-part="' + (part || 'v') + '"]');
   function setIfEmpty(key, value) { const c = control(key); if (c && !c.value) c.value = value; }
@@ -184,7 +196,8 @@
   // ---- Resumen del último paso (todo escapado).
   function summaryText(f, key) {
     if (f.type === 'client') return (PICK_TENANT ? (control('client') && control('client').value || '') : (root.dataset.tenantName || '')).trim() || '—';
-    if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event') {
+    if (f.type === 'workday') return EF.workdayText(control('event_time_start') && control('event_time_start').value, control('event_time_end') && control('event_time_end').value);
+    if (f.type === 'commercial' || f.type === 'coordinator' || f.type === 'super_event' || f.type === 'event_type') {
       const c = control(key); const o = c && c.options && c.options[c.selectedIndex];
       return c && c.value && o ? o.textContent.replace(/ \(\d+ eventos\)$/, '') : '—';
     }
@@ -236,6 +249,15 @@
         res = await fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       } catch (e) { showToast('Sin conexión: no se pudo crear el evento. Revisa tu red e inténtalo de nuevo.', 'error'); return; }
       if (res.ok) {
+        const created = await res.json().catch(() => ({}));
+        if (invCtrl && created.id && invCtrl.dirty()) {
+          const inv = await invCtrl.save(created.id);
+          if (!inv.ok) {
+            showToast('El evento se creó, pero el inventario no se guardó: ' + inv.error + ' Ábrelo desde el calendario para reintentarlo.', 'error');
+            window.setTimeout(() => { window.location.href = AFTER_URL; }, 4000);
+            return;
+          }
+        }
         showToast('Evento creado', 'success');
         window.location.href = AFTER_URL;
         return;
@@ -281,7 +303,9 @@
     }
     fields = {};
     tpl.fields.forEach((f) => { if (!f.retired) fields[f.key] = f; });
-    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], tenantName: root.dataset.tenantName || '', pickTenant: PICK_TENANT };
+    let eventTypes = [];          // lista de tipos de evento (Configuración › Tipos de evento); si no carga, el campo queda con «Sin categoría» y el evento se crea igual
+    try { const tr = await fetch('/api/event-types', { cache: 'no-store' }); if (tr.ok) eventTypes = (await tr.json()).types || []; } catch (e) { eventTypes = []; }
+    ctx = { countries: COUNTRIES, people: tpl.people || {}, superEvents: [], eventTypes: eventTypes, tenantName: root.dataset.tenantName || '', pickTenant: PICK_TENANT };
     loading.hidden = true;
     build();
     if (PICK_TENANT) setupTenantPicker();

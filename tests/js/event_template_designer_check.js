@@ -20,12 +20,13 @@ p.fields[0].title = 'x';
 assert.notStrictEqual(m.fields[0].title, 'x', 'toPayload debe copiar');
 
 // 2) Disponibles: los interruptores y nada más de fábrica
-assert.deepStrictEqual(D.unplaced(m).map((f) => f.type), Array(10).fill('switch'));
+assert.deepStrictEqual(D.unplaced(m).map((f) => f.type), ['workday', ...Array(10).fill('switch')]);          // la jornada (calculada) es opcional: de fábrica no está en ninguna vista
 assert.strictEqual(D.calUnplaced(m).length, m.fields.length - 10);          // 10 campos ya salen en la tarjeta de fábrica
 
 // 3) Agregar un campo de cada tipo creable: clave segura, título por defecto, configuración válida
 const creatable = fx.catalog.types.filter((t) => t.creatable).map((t) => t.type);
-assert.strictEqual(creatable.length, 16);
+assert.strictEqual(creatable.length, 15);
+assert.ok(!creatable.includes('inventory'), 'el inventario por tipos quedó como «anterior»: el de catálogo (Fase 5) lo reemplaza');
 creatable.forEach((t, i) => {
   const k = D.addField(m, t, 'datos', seq(i));
   assert.ok(/^c_[a-z0-9]{8}$/.test(k), k);
@@ -33,7 +34,6 @@ creatable.forEach((t, i) => {
   assert.strictEqual(f.type, t); assert.ok(f.title); assert.strictEqual(f.required, false); assert.strictEqual(D.sectionIndexOf(m, k), 0);
 });
 assert.deepStrictEqual(D.validate(m), []);
-assert.deepStrictEqual(D.field(m, keysOf(m, 0)[keysOf(m, 0).length - 1]).config, { inventory_types: [{ key: 'tipo1', label: 'Tipo 1', refs: [] }] });
 const cityKey = keysOf(m, 0).find((k) => D.field(m, k).type === 'city' && D.isCustom(k));
 assert.strictEqual(D.field(m, cityKey).config.country_key, D.active(m).find((f) => f.type === 'country').key);
 const keyDup = new Set(m.fields.map((f) => f.key)); assert.strictEqual(keyDup.size, m.fields.length);

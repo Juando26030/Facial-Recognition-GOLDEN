@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <title>Mis datos para expositores</title>
+  {% include "_contact_public_head.html" %}
+  <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+  <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+  <script src="{{ url_for('static', path='js/contact-common.js') }}"></script>
+  <script src="{{ url_for('static', path='js/contact-card.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page">
+<main class="ct-wrap" data-token="{{ token }}" data-mode="manage">
+  {% if logo_url %}<div class="ct-logo"><img src="{{ logo_url }}" alt="Logo"></div>{% endif %}
+  <div class="gw-card gw-stack">
+    <h1 class="ct-name">Compartir mis datos con expositores</h1>
+    <p class="ct-muted">{{ event_name }}</p>
+    <p class="ct-legal" id="shareText">Cargando…</p>
+    <label class="ct-check" id="adultRow" hidden><input type="checkbox" id="adultBox"> <span id="adultText"></span></label>
+    <p class="gw-state__text" id="minorMsg" hidden>Los menores de 18 años no comparten sus datos con expositores.</p>
+    <p class="ct-muted" id="stateMsg" role="status"></p>
+    <div class="ct-row">
+      <button type="button" class="gw-btn gw-btn--primary gw-btn--block" id="acceptBtn" hidden>Sí, compartir mis datos</button>
+      <button type="button" class="gw-btn gw-btn--secondary" id="revokeBtn" hidden>Dejar de compartir</button>
+    </div>
+  </div>
+  <div class="gw-card gw-stack" id="qrCard" hidden>
+    <h2 class="gw-card__title">Tu tarjeta para que te escaneen</h2>
+    <p class="ct-muted">El expositor escanea este código con su teléfono (o acerca el suyo si tienes una etiqueta NFC) y puede guardar tu contacto.</p>
+    <div class="ct-qr gw-no-theme" id="qrHost"></div>
+  </div>
+</main>
+</body>
+</html>

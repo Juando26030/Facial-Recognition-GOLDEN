@@ -9,6 +9,7 @@
 {% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
 {% set tour_on = not embed and not public_view %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -24,6 +25,9 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell{% if embed %} gw-stats-embed{% elif staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 <a class="gw-skip" href="#gwStatsMain">Ir a las estadísticas</a>
@@ -129,7 +133,7 @@
     <section class="gw-card" id="timingReport" aria-labelledby="gwStatsTimeTitle">
       <h2 class="gw-stats__section-title" id="gwStatsTimeTitle">Tiempo por registro</h2>
       <p class="gw-stats__section-sub">Mediana (p50) y percentil 90 (p90) de lo que tarda el digitador desde la primera tecla hasta enviar el registro. Solo agregados; sin datos de las personas.</p>
-      <div id="timingBody" class="gw-stats-timing" role="status" aria-live="polite">Cargando…</div>
+      <div id="timingBody" class="gw-stats-timing" role="status" aria-live="polite">{{ skeleton('text', rows=4, label='Cargando el informe de tiempos…') }}</div>
     </section>
 
     <section class="gw-danger-zone" aria-labelledby="gwStatsPurgeTitle">

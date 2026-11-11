@@ -76,6 +76,8 @@
     banner.className = 'gw-alert gw-alert--err';
     banner.innerHTML = icon('error') + '<div><p class="gw-alert__title">Problema</p><p class="gw-alert__body">No se pudo consultar el estado (' + esc(e.message) +
       '). Si esta pantalla no carga, la aplicación misma puede estar caída. Pulsa «Actualizar ahora» para reintentar.</p></div>';
+    var grid = document.getElementById('grid');
+    if (grid.querySelector('[data-gw-sk]')) grid.innerHTML = '';      // sin el esqueleto: el aviso de arriba dice qué pasó
   }
 
   function refresh() {

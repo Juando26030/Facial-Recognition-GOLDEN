@@ -205,13 +205,16 @@ def test_browser_confirmation_is_checked_against_wompi_not_trusted(client, facto
 
     def fake_fetch(cfg, txn_id):
         calls.append(txn_id)
-        return {"id": txn_id, "status": "APPROVED", "reference": "OTRA-REFERENCIA", "amount_in_cents": 15000000, "currency": "COP"} if txn_id == "forged" else \
-               {"id": txn_id, "status": "APPROVED", "reference": ref, "amount_in_cents": 15000000, "currency": "COP", "payment_method_type": "PSE"}
+        mine = {"public_key": cfg["public_key"]}          # F5-9 C1: Wompi dice de qué comercio es la transacción; solo vale la del comercio que cobró
+        return {"id": txn_id, "status": "APPROVED", "reference": "OTRA-REFERENCIA", "amount_in_cents": 15000000, "currency": "COP", "merchant": mine} if txn_id == "forged" else \
+               {"id": txn_id, "status": "APPROVED", "reference": ref, "amount_in_cents": 15000000, "currency": "COP", "payment_method_type": "PSE",
+                "merchant": {"public_key": "pub_prod_OTROCOMERCIO1"} if txn_id == "ajena" else mine}
 
     monkeypatch.setattr("app.routers.form_payments.wompi.fetch_transaction", fake_fetch)
     url = f"{_url(ev, form)}/pay/confirm"
     assert client.post(url, json={"pt": token, "transaction_id": "forged"}).json()["status"] == "pending"     # otra referencia: no cuenta
     assert client.post(url, json={"pt": "token-falso", "transaction_id": "x"}).status_code == 403
+    assert client.post(url, json={"pt": token, "transaction_id": "ajena"}).json()["status"] == "pending"     # F5-9 C1: misma referencia y monto, pero de OTRO comercio: no cuenta
     r = client.post(url, json={"pt": token, "transaction_id": "good"}).json()
     assert r["status"] == "approved" and r["thanks"]["title"]
     assert client.get(f"{_url(ev, form)}/pay/status", params={"pt": token}).json()["status"] == "approved"
@@ -322,7 +325,7 @@ def test_payment_field_state_is_reported_to_the_editor(client, factory, keys, mo
     ev = _event(client, factory)
     form = _with_payment(client, ev)
     _staff(client)
-    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"] == {"has_field": True, "sandbox_configured": True, "production_configured": True}
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"] == {"has_field": True, "sandbox_configured": True, "production_configured": True, "account_id": None}
     for k in SANDBOX:
         monkeypatch.delenv(k)
     assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"]["sandbox_configured"] is False

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, fx, ops, security, timing, wompi
+from app import formlib, formsvc, fx, ops, security, timing, wompi, payment_accounts
 from app.database import SessionLocal, get_db
 from app.models import FormPayment, FormRefund, FormSubmission, WebForm
 from app.routers import forms_public as fp
@@ -189,8 +189,8 @@ def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session 
     pay = _pay_from_token(db, form, data.get("pt"))
     txn_id = str(data.get("transaction_id") or "").strip()
     if pay.status not in ("approved", "refunded") and txn_id:
-        cfg = wompi.config(pay.is_test)
-        txn = wompi.fetch_transaction(cfg, txn_id) if cfg else None
+        cfg = payment_accounts.cfg_for_payment(db, pay)
+        txn = wompi.fetch_own_transaction(cfg, txn_id, pay.reference) if cfg else None          # F5-9 C1: solo una transacción del comercio con el que se cobró
         if txn and txn.get("reference") == pay.reference and int(txn.get("amount_in_cents") or -1) == pay.amount_cents and txn.get("currency") == pay.currency:
             pay = apply_result(db, pay.id, txn.get("status", ""), txn.get("id"), txn.get("payment_method_type"))
     return _result(db, form, pay)
@@ -205,6 +205,16 @@ def pay_status(event_id: int, slug: str, request: Request, pt: Optional[str] = N
     return _result(db, form, _pay_from_token(db, form, pt))
 
 
+@router.post("/webhooks/wompi/{ref}")
+async def webhook_account(ref: str, request: Request, db: Session = Depends(get_db)):
+    """Eventos de Wompi de una CUENTA DE COBRO de un tercero (Fase 8): cada cuenta tiene su propia URL y se verifica con SU secreto de eventos."""
+    try:
+        event = json.loads((await request.body()) or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Cuerpo inválido")
+    return await run_in_threadpool(_process_webhook, db, event, request.headers.get("X-Event-Checksum"), ref)
+
+
 @router.post("/webhooks/wompi")
 async def webhook(request: Request, db: Session = Depends(get_db)):
     """Eventos de Wompi (`transaction.updated`). Lee el cuerpo (lo único asíncrono) y procesa en un hilo: el bucle de eventos nunca espera a la base."""
@@ -215,10 +225,18 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     return await run_in_threadpool(_process_webhook, db, event, request.headers.get("X-Event-Checksum"))
 
 
-def _process_webhook(db: Session, event: dict, checksum: Optional[str]) -> dict:
+def _process_webhook(db: Session, event: dict, checksum: Optional[str], ref: Optional[str] = None) -> dict:
     """Se acepta solo con checksum válido (SHA-256 con el secreto de eventos); sin secreto configurado se rechaza. Responde 200 aun si la referencia no
     es nuestra, para que Wompi no reintente. Cada evento válido queda anotado para «Estado del sistema» (último webhook recibido)."""
-    env = wompi.verify_event_env(event, checksum)          # D8: el secreto que firmó decide el ambiente
+    account = None
+    if ref:
+        account = payment_accounts.by_ref(db, ref)
+        cfg = payment_accounts.cfg_of(account, for_new_charges=False)          # F5-9 C2: una cuenta DESACTIVADA sigue recibiendo los eventos de lo que ya cobró
+        if cfg is None:
+            raise HTTPException(status_code=404, detail="Cuenta de cobro desconocida")
+        env = wompi.verify_event_cfg(event, checksum, cfg)
+    else:
+        env = wompi.verify_event_env(event, checksum)          # D8: el secreto que firmó decide el ambiente
     if env is None:
         raise HTTPException(status_code=503, detail="Los eventos de Wompi no están configurados")
     if env is False:
@@ -230,6 +248,8 @@ def _process_webhook(db: Session, event: dict, checksum: Optional[str]) -> dict:
     pay = db.query(FormPayment).filter(FormPayment.reference == str(txn.get("reference") or "")).first()
     if not pay:
         return {"ok": True, "ignored": "referencia desconocida"}
+    if (pay.account_id or None) != (account.id if account else None):
+        return {"ok": True, "ignored": "cuenta distinta a la del pago"}        # el evento de una cuenta no puede aprobar el pago de otra
     if (env == "test") != bool(pay.is_test):
         return {"ok": True, "ignored": "ambiente distinto al del pago"}       # un evento de pruebas no puede aprobar un pago real
     if int(txn.get("amount_in_cents") or -1) != pay.amount_cents or txn.get("currency") != pay.currency:

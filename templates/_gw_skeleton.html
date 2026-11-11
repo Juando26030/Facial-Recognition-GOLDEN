@@ -1,0 +1,22 @@
+{# Esqueletos de carga (9-nov-2026, docs/ux/CARGAS_Y_ESQUELETOS.md): el MISMO marcado que GW.skeleton.html() de static/js/gw-carga.js, para que el contenedor nazca con la forma
+   de lo que va a llegar (sin esperar al JavaScript). Uso: {% from "_gw_skeleton.html" import skeleton %} … <tbody id="x">{{ skeleton('table', rows=6, cols=4) }}</tbody>
+   Clases: table (filas <tr>), cards (tarjetas sueltas, para .gw-cards), list (filas con punto), stats (cifras), block (gráfica o mapa), text (líneas). La pantalla lo reemplaza
+   al pintar sus datos; si una petición falla y el esqueleto sigue a la vista, gw-carga.js lo cambia por el estado de error. #}
+{% macro _bone(cls='') %}<span class="gw-skeleton gw-sk__bone{{ ' ' ~ cls if cls }}" aria-hidden="true"></span>{% endmacro %}
+{% macro skeleton(kind='list', rows=None, cols=4, label='Cargando…') -%}
+{%- set n = rows or {'table': 6, 'cards': 4, 'list': 5, 'stats': 4, 'block': 1, 'text': 3}.get(kind, 4) -%}
+{%- set sr %}<span class="gw-sr-only" role="status">{{ label }}</span>{% endset -%}
+{%- if kind == 'table' -%}
+{%- for i in range(n) %}<tr class="gw-sk gw-sk--row" data-gw-sk>{% for c in range(cols) %}<td>{{ sr if (i == 0 and c == 0) }}{{ _bone('gw-sk__bone--w80' if c == 0 else ('gw-sk__bone--w60' if c % 2 else 'gw-sk__bone--w40')) }}</td>{% endfor %}</tr>{% endfor -%}
+{%- elif kind == 'cards' -%}
+{%- for i in range(n) %}<div class="gw-sk gw-sk--card" data-gw-sk>{{ sr if i == 0 }}{{ _bone('gw-sk__bone--title') }}{{ _bone('gw-sk__bone--w80') }}{{ _bone('gw-sk__bone--w60') }}{{ _bone('gw-sk__bone--btn') }}</div>{% endfor -%}
+{%- elif kind == 'stats' -%}
+<div class="gw-sk gw-sk--stats" data-gw-sk>{{ sr }}{% for i in range(n) %}<div class="gw-sk__tile">{{ _bone('gw-sk__bone--w60') }}{{ _bone('gw-sk__bone--num') }}</div>{% endfor %}</div>
+{%- elif kind == 'block' -%}
+<div class="gw-sk gw-sk--block" data-gw-sk>{{ sr }}{{ _bone('gw-sk__bone--block') }}</div>
+{%- elif kind == 'text' -%}
+<div class="gw-sk gw-sk--text" data-gw-sk>{{ sr }}{% for i in range(n) %}{{ _bone('gw-sk__bone--w60' if loop.last else 'gw-sk__bone--w100') }}{% endfor %}</div>
+{%- else -%}
+<div class="gw-sk gw-sk--list" data-gw-sk>{{ sr }}{% for i in range(n) %}<div class="gw-sk__item">{{ _bone('gw-sk__bone--dot') }}<span class="gw-sk__lines">{{ _bone('gw-sk__bone--w80') }}{{ _bone('gw-sk__bone--w40') }}</span></div>{% endfor %}</div>
+{%- endif -%}
+{%- endmacro %}

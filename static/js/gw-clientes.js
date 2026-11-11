@@ -101,7 +101,7 @@
   /* ---------------------------------------------------------------- Eventos de un cliente */
   async function loadEventsForTenant(tenantId, card) {
     const el = card.querySelector('[data-events-container]');
-    if (!tenantEventsCache.has(card)) el.innerHTML = '<div class="gw-skeleton gw-adm-skeleton" aria-hidden="true"></div><span class="gw-sr-only">Cargando eventos…</span>';
+    if (!tenantEventsCache.has(card)) el.innerHTML = window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'list', rows: 3, label: 'Cargando eventos…' }) : '<div class="gw-skeleton gw-adm-skeleton" aria-hidden="true"></div><span class="gw-sr-only">Cargando eventos…</span>';
     try {
       const withArchived = isAdmin && card.querySelector('[data-show-archived-events]')?.checked;          // «Ver eventos archivados» (admin+)
       const res = await fetch('/api/events?tenant_id=' + encodeURIComponent(tenantId) + (withArchived ? '&include_archived=true' : ''));

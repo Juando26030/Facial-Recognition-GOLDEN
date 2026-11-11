@@ -1,4 +1,5 @@
 """Cierre de hallazgos de seguridad del lado público (nov-2026): X1–X7. Pruebas de código fuente y de funciones puras, y unas pocas con base (Postgres de pruebas)."""
+import json
 import re
 from datetime import timedelta
 from pathlib import Path
@@ -107,7 +108,7 @@ def test_x4_mask_rules():
 def test_x4_public_prefill_masks_readonly_and_drops_editable_contact():
     design = {"fields": {
         "ced": {"type": "text_short", "key": "id"},
-        "nom": {"type": "text_short", "key": "first_name", "readonly_when_prefilled": True},
+        "nom": {"type": "text_short", "key": "first_name", "readonly_when_prefilled": True, "mask_asterisks": True},
         "mail_ro": {"type": "email", "key": "email", "readonly_when_prefilled": True},
         "cel": {"type": "phone", "key": "phone"},
         "ent": {"type": "text_short", "key": "entity"},
@@ -187,3 +188,41 @@ def test_x7_badge_editor_escapes_categories_and_static_text():
     assert "`<option value=\"${window.escapeHtml(c)}\">${window.escapeHtml(c)}</option>`" in html
     assert "<textarea id=\"p_content\" rows=\"2\">${window.escapeHtml(el.content || '')}</textarea>" in html
     assert ">${c}</option>" not in html and ">${el.content || ''}</textarea>" not in html
+
+
+# ------------------------------- asteriscos configurables: las condiciones se resuelven con el valor real sin entregarlo
+def test_mask_default_is_off_except_email_and_phone():
+    design = {"fields": {
+        "nom": {"type": "text_short", "key": "first_name", "readonly_when_prefilled": True},
+        "mail": {"type": "email", "key": "email", "readonly_when_prefilled": True},
+        "mail_open": {"type": "email", "key": "email", "readonly_when_prefilled": True, "mask_asterisks": False},
+    }}
+    person = {"first_name": "Ana María", "email": "ana@empresa.com"}
+    prefill, _ = forms_public.public_prefill(design, person)
+    assert prefill["nom"] == "Ana María" and prefill["mail"] != "ana@empresa.com" and prefill["mail_open"] == "ana@empresa.com"
+
+
+def test_masked_field_conditions_are_frozen_with_the_real_value():
+    design = {"fields": {
+        "ciu": {"type": "text_short", "key": "city", "readonly_when_prefilled": True, "mask_asterisks": True},
+        "txt": {"type": "paragraph", "content": "x", "show_if": {"match": "any", "rules": [{"field": "ciu", "op": "equals", "value": "Cali"}, {"field": "otro", "op": "filled"}]},
+                "variants": {"content": {"items": [{"when": {"field": "ciu", "op": "equals", "value": "Bogotá"}, "value": "Hola"}]}}},
+    }}
+    person = {"city": "Cali"}
+    prefill, _, hidden = forms_public._prefill_parts(design, person)
+    assert prefill["ciu"] == "C***" and hidden == {"ciu": "Cali"}
+    out = forms_public.formlib.freeze_conditions(design, hidden)
+    assert out["fields"]["txt"]["show_if"]["rules"][0] == {"field": "ciu", "op": "filled"}          # «Cali» se cumple
+    assert out["fields"]["txt"]["variants"]["content"]["items"][0]["when"] == {"field": "ciu", "op": "in", "value": []}      # «Bogotá» no
+    assert out["fields"]["txt"]["show_if"]["rules"][1] == {"field": "otro", "op": "filled"}
+    assert "Cali" not in json.dumps(out["fields"]["txt"])
+    assert design["fields"]["txt"]["show_if"]["rules"][0]["value"] == "Cali"          # no muta el original
+
+
+def test_sanitize_keeps_mask_asterisks_only_when_decided():
+    base = {"type": "text_short", "label": "Nombre", "key": "first_name"}
+    for given, want in ((True, True), (False, False)):
+        d = forms_public.formlib.sanitize_design({"rows": [{"items": ["a"]}], "fields": {"a": {**base, "mask_asterisks": given}}}, set())
+        assert d["fields"]["a"]["mask_asterisks"] is want
+    d = forms_public.formlib.sanitize_design({"rows": [{"items": ["a"]}], "fields": {"a": base}}, set())
+    assert "mask_asterisks" not in d["fields"]["a"]

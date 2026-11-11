@@ -163,3 +163,13 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .ev-filters .gw-input, .ev-filters .gw-select { min-height: var(--gw-tap); font-size: var(--gw-fs-md); text-overflow: ellipsis; }
   .ev-filters .gw-label { font-size: var(--gw-fs-sm); }
 }
+
+/* Entrega al cliente (Fase 5): enlace con Copiar / Regenerar y envío por correo. */
+.ee-delivery { display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.ee-delivery__row { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: center; }
+.ee-delivery__row .gw-input { flex: 1 1 16rem; min-width: 0; }
+/* Historial de cambios (revisión visual F5-9): en celular las palabras se partían letra por letra («Andr/és», «Edició/n»); la tabla conserva un ancho mínimo y se desplaza dentro de su caja. */
+.ee-modal .ee-history { min-width: 34rem; }
+.ee-modal .ee-history th, .ee-modal .ee-history td { overflow-wrap: normal; word-break: normal; }
+.ee-modal .ee-history td:first-child { white-space: nowrap; }
+.ee-modal .ee-history .gw-badge { white-space: nowrap; }

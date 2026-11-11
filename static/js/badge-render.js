@@ -167,6 +167,24 @@
     div.appendChild(img);
   }
 
+  /* Fase 10 (C): el QR de la escarapela es una vCard (nombre, teléfono si el dato viene, y en NOTE el código de siempre) para poder guardar el contacto al escanear con el celular.
+     Los lectores de Golden (qr.js) sacan el código de NOTE y siguen aceptando el formato anterior. Nivel de corrección «L» (la vCard es más larga y así el QR queda en una versión más chica);
+     el tamaño del elemento y de la etiqueta NO cambia. Sin vcard.js cargado se dibuja el formato anterior. UTF-8 para las tildes y la ñ. */
+  function drawQr(holder, payload, person) {
+    const V = (typeof window !== 'undefined') ? window.GWVcard : null;
+    const text = V ? V.build({ first_name: person && person.first_name, last_name: person && person.last_name, phone: person && person.phone, note: payload }) : payload;
+    const prev = qrcode.stringToBytes;
+    if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    try {
+      const qr = qrcode(0, V ? V.QR_LEVEL : 'M');
+      qr.addData(text);
+      qr.make();
+      holder.innerHTML = qr.createSvgTag({ scalable: true });
+    } finally { qrcode.stringToBytes = prev; }
+    const svg = holder.querySelector('svg');
+    if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
+  }
+
   function renderQr(div, el, data) {
     const holder = document.createElement('div');
     holder.style.cssText = 'width:100%; height:100%; display:flex; align-items:center; justify-content:center;';
@@ -175,12 +193,7 @@
     const value = variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
     if (typeof qrcode === 'undefined') { holder.innerText = 'QR'; return; }
     try {
-      const qr = qrcode(0, 'M');
-      qr.addData(value);
-      qr.make();
-      holder.innerHTML = qr.createSvgTag({ scalable: true });
-      const svg = holder.querySelector('svg');
-      if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
+      drawQr(holder, value, data);
     } catch (e) {
       holder.innerText = 'QR';
     }

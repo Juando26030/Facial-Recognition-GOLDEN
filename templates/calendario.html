@@ -6,6 +6,7 @@
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 {% set has_filters = staff_role in ("comercial", "admin", "super_admin") %}
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,14 +16,20 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-calendario.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-calendar-cats.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
     {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/calendar-card.js') }}"></script>
+    <script src="{{ url_for('static', path='js/calendar-cats.js') }}"></script>
+    <script src="{{ url_for('static', path='js/calendar-cats-ui.js') }}"></script>
     <script src="{{ url_for('static', path='js/event-actions.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
@@ -80,6 +87,8 @@
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-fold" id="foldBtn" aria-pressed="false" title="Pliega los eventos a una línea (color, nombre y código) o los despliega con toda su información">Plegar eventos</button>
     </div>
 
+    <div class="cal-cats" id="catBar" hidden></div>
+
     <div class="cal-filters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Muestra solo los eventos de una persona del equipo.">
       {% if has_filters %}{% if staff_role == "comercial" %}
       <div class="gw-field"><label class="gw-label" for="mineFilter">Mostrar</label>
@@ -102,7 +111,7 @@
         </select></div>
     </div>
 
-    <div id="calBody" aria-busy="false"></div>
+    <div id="calBody" aria-busy="false">{{ skeleton('block', label='Cargando el calendario…') }}</div>
   </div>
 </main>
 
@@ -247,16 +256,17 @@ async function loadAndRender() {
   if (coordinatorFilter && coordinatorFilter.value) params.set('coordinator_staff_id', coordinatorFilter.value);
 
   calBody.setAttribute('aria-busy', 'true');
-  if (!calBody.firstElementChild) calBody.innerHTML = '<div class="gw-skeleton" role="status" aria-label="Cargando el calendario"></div><div class="gw-skeleton"></div>';
+  if (!calBody.firstElementChild) calBody.innerHTML = window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'block', label: 'Cargando el calendario…' }) : '<div class="gw-skeleton" role="status" aria-label="Cargando el calendario"></div>';
   try {
     const [evRes, noteRes] = await Promise.all([
       fetch(`/api/events/calendar?${params.toString()}`),
       fetch(`/api/calendar/notes?start=${toISO(start)}&end=${toISO(end)}`),
       loadCardLayout(),          // la plantilla del evento (Vista calendario) dibuja la tarjeta en Día, Semana y el resumen del Mes
     ]);
-    if (!evRes.ok && !noteRes.ok) throw new Error('http');
-    eventsCache = evRes.ok ? await evRes.json() : [];
+    if (!evRes.ok) throw new Error('http');          // antes un error de /api/events/calendar se tragaba en silencio y salía «No hay eventos»
+    eventsCache = await evRes.json();
     notesCache = noteRes.ok ? await noteRes.json() : [];
+    renderCatChips();
     render();
   } catch (err) {
     calBody.innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar el calendario</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry-cal>Reintentar</button></div>';
@@ -265,9 +275,27 @@ async function loadAndRender() {
   }
 }
 
+// Categorías de evento (Fase 10, C): chips clicables arriba del calendario, para cualquiera que lo vea. Lógica en calendar-cats.js.
+let activeCats = new Set();
+const knownCats = {};          // nombre y color de las categorías ya vistas (para que una activa siga con su nombre al cambiar de mes)
+const catBar = document.getElementById('catBar');
+let catCatalog = null;          // tipos vigentes (se piden una vez): los chips salen SIEMPRE, con conteo aunque sea 0
+function renderCatChips() {
+  const cats = CalendarCats.build(eventsCache, activeCats, knownCats, catCatalog);
+  cats.forEach((c) => { if (c.count) knownCats[c.key] = { label: c.label, color: c.color }; });
+  CalendarCatsUI.paint(catBar, cats, activeCats.size > 0);
+}
+catBar.addEventListener('click', (e) => {
+  if (e.target.closest('[data-cat-all]')) { activeCats = new Set(); renderCatChips(); render(); return; }
+  const b = e.target.closest('[data-cat]'); if (!b) return;
+  activeCats = CalendarCats.toggle(activeCats, b.dataset.cat); renderCatChips(); render();
+});
+CalendarCatsUI.loadCatalog().then((t) => { catCatalog = t; renderCatChips(); });
+renderCatChips();
+
 function eventsForDay(iso) {
   const st = statusFilter ? statusFilter.value : '';
-  return eventsCache.filter(e => e.start_date && iso >= e.start_date && iso <= (e.end_date || e.start_date) && (!st || e.status === st));
+  return eventsCache.filter(e => e.start_date && iso >= e.start_date && iso <= (e.end_date || e.start_date) && (!st || e.status === st) && CalendarCats.matches(e, activeCats));
 }
 function notesForDay(iso) {
   return notesCache.filter(n => n.date === iso);

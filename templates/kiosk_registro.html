@@ -18,6 +18,9 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-registro{% if staff_role not in ['digitador', 'cliente'] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
@@ -54,6 +57,7 @@
 {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
 {% if person_form_json != "null" %}<script src="{{ url_for('static', path='js/form-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/person-form.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/vcard.js') }}"></script>
 <script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
 <main class="golden-main">
@@ -107,6 +111,13 @@
       </div>
       {% endif %}
 
+      {% if event.local_node_name %}
+      <div class="gw-alert gw-alert--warn gw-registro__notice" role="status">
+        <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
+        <div>Este evento está en el servidor local <strong>«{{ event.local_node_name }}»</strong>{% if event.local_last_upload_at %} (última subida a la nube: {{ event.local_last_upload_at|local_dt }}){% endif %}. Aquí solo se puede ver: no se registra ni se edita hasta pasarlo a internet.</div>
+      </div>
+      {% endif %}
+
       {% if event.status != "en_proceso" and staff_role != "cliente" %}
       <div class="gw-alert gw-alert--warn gw-registro__notice" role="status">
         <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
@@ -119,6 +130,9 @@
         <div>Sin conexión: ves tu lista y lo que registres aquí; no ves a los otros equipos hasta que vuelva la red.</div>
       </div>
 
+      {% if event.selfreg_enabled and event.status == "en_proceso" and staff_role != "cliente" %}
+      <p class="gw-hint"><a href="/kiosk/{{ event.id }}/autoregistro">Abrir la pantalla de autorregistro</a> (la persona se registra sola, sin base de datos).</p>
+      {% endif %}
       {% set ns = namespace(n=0) %}
       {% if staff_role == "cliente" or event.facial_enabled %}
       <div class="tabs" role="group" aria-label="Secciones">
@@ -164,7 +178,7 @@
                     <table class="golden-table">
                         <thead>
                             <tr>
-                                <th scope="col">Acción</th><th scope="col">{{ field_labels.id }}</th><th scope="col">{{ field_labels.first_name }}</th><th scope="col">{{ field_labels.last_name }}</th><th scope="col">{{ field_labels.opt_1 }}</th><th scope="col">Estado</th>
+                                <th scope="col" data-col="action">Acción</th><th scope="col" data-col="id">{{ field_labels.id }}</th><th scope="col" data-col="first_name">{{ field_labels.first_name }}</th><th scope="col" data-col="last_name">{{ field_labels.last_name }}</th><th scope="col" data-col="opt_1">{{ field_labels.opt_1 }}</th><th scope="col" data-col="status">Estado</th><th scope="col" data-col="entity">Empresa</th><th scope="col" data-col="origin">Origen</th><th scope="col" data-col="recent" aria-hidden="true"></th>
                             </tr>
                         </thead>
                         <tbody id="directoryTableBody"></tbody>
@@ -265,7 +279,7 @@
                     <table class="golden-table">
                         <thead>
                             <tr>
-                                <th scope="col" data-gw-tour-step="2" data-gw-tour-title="2. Acredita" data-gw-tour-text="Cuando aparezca la persona, pulsa «Acreditar» en su fila. Si te equivocas, tienes unos segundos para deshacer.">Acción</th><th scope="col">{{ field_labels.id }}</th><th scope="col">{{ field_labels.first_name }}</th><th scope="col">{{ field_labels.last_name }}</th><th scope="col">{{ field_labels.opt_1 }}</th><th scope="col">Estado</th>
+                                <th scope="col" data-col="action" data-gw-tour-step="2" data-gw-tour-title="2. Acredita" data-gw-tour-text="Cuando aparezca la persona, pulsa «Acreditar» en su fila. Si te equivocas, tienes unos segundos para deshacer.">Acción</th><th scope="col" data-col="id">{{ field_labels.id }}</th><th scope="col" data-col="first_name">{{ field_labels.first_name }}</th><th scope="col" data-col="last_name">{{ field_labels.last_name }}</th><th scope="col" data-col="opt_1">{{ field_labels.opt_1 }}</th><th scope="col" data-col="status">Estado</th><th scope="col" data-col="entity">Empresa</th><th scope="col" data-col="origin">Origen</th><th scope="col" data-col="recent" aria-hidden="true"></th>
                             </tr>
                         </thead>
                         <tbody id="directoryTableBody"></tbody>
@@ -661,7 +675,9 @@
                 title: 'Escanear',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processMrzPhoto,
-                onCode: (text, format) => {
+                onCode: async (rawText, format) => {
+                    let text = rawText;
+                    try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }          // QR dinámico: lo valida el servidor
                     const r = QrCode.classify(text, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
                     if (!r || !window.directorySearch) { showToast('No se reconoció el código: acerca la cámara al QR o al reverso de la cédula', 'error'); return; }
                     if (r.kind === 'qr') window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos }, 'qr');
@@ -697,8 +713,11 @@
             if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const raw = regScanCedulaInput.value.trim();
+                let raw = regScanCedulaInput.value.trim();
                 if (!raw) return;
+                raw = QrCode.collect(raw);                                                  // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
+                if (raw === null) { regScanCedulaInput.value = ''; return; }
+                raw = QrCode.unwrap(raw).trim();
                 const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
                 const qr = QrCode.parse(raw);
                 if (qr && qr.isQr) fillRegFormFromScan(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos });
@@ -732,7 +751,9 @@
                 title: 'Escanear cédula',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processRegScanMrzPhoto,
-                onCode: (text, format) => {
+                onCode: async (rawText, format) => {
+                    let text = rawText;
+                    try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }
                     const r = QrCode.classify(text, format, GoldenDirectory.parseOldCedulaBarcode);
                     if (r) fillRegFormFromScan(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
                     else showToast('No se reconoció el código: acerca la cámara al reverso de la cédula', 'error');

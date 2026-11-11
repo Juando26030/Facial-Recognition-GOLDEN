@@ -17,8 +17,27 @@
 (function () {
   const NUMERIC_ID = /^\d[\d.\s-]{2,}\d$/;
 
+  /* Fase 10 (C): el QR de la escarapela / credencial digital / Wallet ahora es una vCard (static/js/vcard.js) con el código de siempre en NOTE; se acepta ese formato y el anterior.
+     unwrap() saca el código de la vCard de Golden y deja IGUAL cualquier otro texto. */
+  function vc() { return (typeof module !== 'undefined' && typeof require === 'function') ? require('./vcard.js') : (typeof window !== 'undefined' ? window.GWVcard : null); }
+  function unwrap(raw) { const v = vc(); return v ? v.unwrap(raw) : String(raw == null ? '' : raw); }
+
+  /* Lector de mano (teclado): una vCard llega como VARIAS líneas, cada una con su Enter. collect(línea) devuelve null mientras la vCard no termina (quien llama no hace nada) y, al completarse,
+     el texto completo; cualquier otra lectura se devuelve tal cual. */
+  let vcBuf = null, vcAt = 0;
+  function collect(line) {
+    const t = String(line == null ? '' : line).trim();
+    const now = Date.now();
+    if (vcBuf !== null && now - vcAt > 5000) vcBuf = null;           // quedó a medias: se descarta
+    if (vcBuf === null) { if (!/^BEGIN:VCARD$/i.test(t)) return t; vcBuf = []; }
+    vcAt = now;
+    if (t) vcBuf.push(t);
+    if (/^END:VCARD$/i.test(t)) { const full = vcBuf.join('\n'); vcBuf = null; return full; }
+    return null;
+  }
+
   function parse(raw) {
-    const text = String(raw == null ? '' : raw).trim();
+    const text = unwrap(raw).trim();
     if (!text) return null;
     if (!text.includes('|')) return { cedula: text, nombres: '', apellidos: '', isQr: false };
     const parts = text.split('|').map((p) => p.trim()).filter(Boolean);
@@ -38,7 +57,7 @@
        null                                            nada utilizable.
      `format` es el que informa el detector ('qr_code' | 'pdf417'); jsQR (sin detector) solo lee QR. */
   function classify(raw, format, parseOld) {
-    const text = String(raw == null ? '' : raw).trim();
+    const text = unwrap(raw).trim();
     if (!text) return null;
     const q = parse(text);
     if (q && q.isQr) return { kind: 'qr', cedula: q.cedula, nombres: q.nombres, apellidos: q.apellidos };
@@ -51,6 +70,20 @@
       if (m) return { kind: 'cedula', cedula: m[1], nombres: '', apellidos: '' };
     }
     return format === 'pdf417' ? null : { kind: 'qr', cedula: q ? q.cedula : plain, nombres: '', apellidos: '' };
+  }
+
+  /* QR DINÁMICO de la credencial digital (Fase 8, app/dynamic_qr.py): «gwq1.<id>.<ventana>.<firma>» (cambia cada 30 s) o «gwq1s.<id>.<firma>» (el del pase de Wallet). No trae la cédula: el SERVIDOR valida firma y vigencia
+     y devuelve la persona. `resolveDynamic(texto, eventId)` devuelve el mismo texto si NO es dinámico y, si lo es, «cédula|nombres|apellidos» (el formato del QR de la escarapela, así el resto del flujo no cambia).
+     Rechaza con Error(mensaje en español) si el código es inválido, vencido o de otro evento. */
+  const DYNAMIC_RE = /^gwq1s?\.\d{1,12}(?:\.\d{1,12})?\.[0-9a-f]{20}$/i;
+  function isDynamic(raw) { return DYNAMIC_RE.test(unwrap(raw).trim()); }
+  async function resolveDynamic(raw, eventId, purpose) {          // purpose: 'entry' (por defecto) | 'area' | 'inventory' — el código estático del pase de Wallet solo vale en la entrada
+    const text = unwrap(raw).trim();
+    if (!isDynamic(text)) return unwrap(raw);
+    const res = await fetch('/api/qr/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, event_id: eventId == null ? window.EVENT_ID : eventId, purpose: purpose || 'entry' }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo validar el código');
+    return [data.cedula, data.first_name, data.last_name].map((x) => String(x == null ? '' : x).replace(/\|/g, ' ').trim()).join('|');
   }
 
   // Copia PROPIA de jsQR (static/vendor/jsqr, Apache-2.0): sin CDN, así el escáner de QR por cámara también funciona sin red (el service worker del quiosco la guarda en la primera visita).
@@ -114,7 +147,7 @@
       if (text === last.text && now - last.at < cooldown) return;
       last = { text, at: now };
       status.textContent = 'Código leído.';                      // sin eco del contenido: puede traer una cédula
-      onCode(text, format);
+      onCode(unwrap(text), format);                              // una vCard de Golden entrega el código de adentro; todo lo demás, igual
     }
     const photoBtn = box.querySelector('.qr-photo');
     if (opts.onPhoto) {
@@ -172,6 +205,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
-  if (typeof module !== 'undefined') module.exports = { parse, classify };  // para las pruebas en Node
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
+  if (typeof module !== 'undefined') module.exports = { parse, classify, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();

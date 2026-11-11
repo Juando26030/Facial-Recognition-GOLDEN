@@ -10,6 +10,10 @@
 <div class="golden-sidebar-backdrop" id="sidebarBackdrop"></div>
 {# Fase 1B: tarjeta de permisos de reimpresión para el coordinador del evento (y admin+); sondeo cada 10 s con GW.poll, ver static/js/reprint-inbox.js #}
 {% if staff_role is defined and staff_role and ("coordinador" in staff_role or "admin" in staff_role) %}<script src="{{ url_for('static', path='js/reprint-inbox.js') }}" defer></script>{% endif %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
+<script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/version-banner.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/kiosk-back.js') }}" defer></script>
 <aside class="golden-sidebar" id="gwSidebar">
   <nav>
     <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>
@@ -20,8 +24,13 @@
        Sprint 2.4 (ver app/main.py: configuracion_page) — nadie con sidebar salvo admin/super_admin
        tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
        pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
+    <a href="/inventario"{% if sidebar_active == "inventario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-inbox"/></svg> Inventario</a>
+    {% if local_server %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>
+    <a href="/sincronizacion"{% if sidebar_active == "sincronizacion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg> Sincronización</a>{% endif %}
+    {% if staff_role in ["admin", "super_admin"] %}<a href="/cuentas-de-cobro"{% if sidebar_active == "cuentas_cobro" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Cuentas de cobro</a>{% endif %}
     <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>
     {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}
+    {% if staff_role in ["admin", "super_admin", "contabilidad"] %}<a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}
   </nav>
 </aside>
 <script>

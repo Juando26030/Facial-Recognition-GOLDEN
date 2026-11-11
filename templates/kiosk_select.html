@@ -16,6 +16,9 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell{% if staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
@@ -97,6 +100,9 @@
         {% if event.areas_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/areas" % event.id, "lock", "Control de áreas", "Entradas y salidas por zona (cédula, QR o facial)") }}
         {% endif %}
+        {% if event.queue_enabled and staff_role != "comercial" %}
+        {{ tile("/kiosk/%s/turnos" % event.id, "clock", "Turnos y filas", "Llama al siguiente; la gente ve su turno en el celular") }}
+        {% endif %}
         {% if event.inventory_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
         {% endif %}
@@ -107,7 +113,7 @@
     </section>
 
     {% if staff_role != "digitador" %}
-    <details class="gw-group" id="gwMoreTools">
+    <details class="gw-group" id="gwMoreTools" open>
       <summary class="gw-group__sum">Más herramientas</summary>
       <div class="gw-group__body">
         <div class="gw-tiles">
@@ -130,7 +136,11 @@
           {% if event.report_pdf_path %}
           {{ tile("/api/events/%s/final-report" % event.id, "download", "Descargar informe", "El informe final que se adjuntó al evento (el mismo que se envió a la comercial)", true) }}
           {% endif %}
+          {{ tile("/kiosk/%s/actas" % event.id, "form", "Acta de novedades", "Escribe lo ocurrido en el evento y recoge la firma del coordinador y del cliente") }}
           {{ tile("/kiosk/%s/legalizaciones" % event.id, "form", "Legalizaciones", "Gastos del evento con evidencia, y reporte con el total") }}
+          {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+          {{ tile("/kiosk/%s/expositores" % event.id, "users", "Expositores", "Enlaces para que los expositores escaneen asistentes y guarden sus contactos") }}
+          {% endif %}
           {% if staff_role != "comercial" %}
           {{ tile("/kiosk/%s/parametros" % event.id, "settings", "Parámetros del evento", "Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola") }}
           {% endif %}

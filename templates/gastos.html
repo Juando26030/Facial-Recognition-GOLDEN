@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gastos | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-gastos.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/gastos-infra.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
+    {% if has_eventos_js %}<script src="{{ url_for('static', path='js/gastos-eventos.js') }}" defer></script>{% endif %}
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page gw-shell{% if gw_side %} has-sidebar{% endif %}">
+{% if gw_side %}{% include "_sidebar.html" %}{% endif %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<main class="golden-main" id="contenido">
+  <div class="gw-container gw-stack-lg">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{% if is_admin %}Solo administradores{% else %}Contabilidad{% endif %}</p>
+        <h1 class="gw-page-head__title">Gastos</h1>
+        <p class="gw-page-head__sub">Cuánto cuesta mantener la plataforma viva cada mes y por evento, y el análisis de los eventos.</p>
+      </div>
+    </div>
+    <div class="gw-tabs" id="gastosTabs">
+      <div class="gw-tablist" role="tablist" aria-label="Secciones de gastos">
+        <button type="button" class="gw-tab" role="tab" id="tab_infra" data-tab="infra" aria-controls="gastos-infra" aria-selected="true"><svg class="gw-icon gw-tab__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-gauge"/></svg><span class="gw-tab__name">Infraestructura</span><span class="gw-tab__sum">Google, Neon, Microsoft y más</span></button>
+        {% if is_admin %}<button type="button" class="gw-tab" role="tab" id="tab_eventos" data-tab="eventos" aria-controls="gastos-eventos" aria-selected="false" tabindex="-1"><svg class="gw-icon gw-tab__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg><span class="gw-tab__name">Eventos</span><span class="gw-tab__sum">Satisfacción y tiempos de cierre</span></button>{% endif %}
+      </div>
+      <section class="gw-tabpanel" role="tabpanel" id="gastos-infra" aria-labelledby="tab_infra">
+        <div class="gw-tabpanel__head">
+          <h2 class="gw-tabpanel__title">Costo de la infraestructura</h2>
+          <p class="gw-tabpanel__lead">Lo que se paga por mantener la plataforma: se registra a mano (con soporte opcional), se sube en un archivo de Excel (CSV) o, si se conecta, Google se importa solo.</p>
+        </div>
+        <div class="gw-gx" id="gxRoot" aria-busy="true">
+          <form class="gw-gx__bar" id="gxRange" autocomplete="off">
+            <div class="gw-field"><label class="gw-label" for="gxFrom">Desde</label><input class="gw-input" type="month" id="gxFrom" name="from" required></div>
+            <div class="gw-field"><label class="gw-label" for="gxTo">Hasta</label><input class="gw-input" type="month" id="gxTo" name="to" required></div>
+            <button type="submit" class="gw-btn gw-btn--secondary">Actualizar</button>
+            <span class="gw-gx__bar-spacer"></span>
+            <button type="button" class="gw-btn gw-btn--secondary" data-act="upload">Subir archivo (CSV)</button>
+            <button type="button" class="gw-btn gw-btn--secondary" data-act="export">Descargar Excel</button>
+            <button type="button" class="gw-btn gw-btn--primary" data-act="new">Registrar gasto</button>
+          </form>
+          <div id="gxConn" aria-live="polite">{{ skeleton('list', rows=2, label='Revisando las conexiones…') }}</div>
+          <div id="gxBody">{{ skeleton('stats', rows=4, label='Cargando los gastos…') }}{{ skeleton('list', rows=4, label='') }}</div>
+        </div>
+      </section>
+      {% if is_admin %}
+      <section class="gw-tabpanel" role="tabpanel" id="gastos-eventos" aria-labelledby="tab_eventos" hidden>
+        {% include "_gastos_eventos.html" ignore missing %}
+        {% if not has_eventos_js %}<div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Análisis de eventos</h2><p class="gw-tabpanel__lead">Esta sección se está terminando de construir.</p></div>{% endif %}
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</main>
+</body>
+</html>

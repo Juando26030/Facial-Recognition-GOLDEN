@@ -295,13 +295,22 @@ def _zip_with_extra(data: bytes) -> bytes:
     return out.getvalue()
 
 
-def test_only_super_admin_can_use_the_endpoints(client, db, factory):
+def test_export_is_for_company_staff_and_import_is_super_admin_only_in_the_cloud(client, db, factory, monkeypatch):
+    """Fase 6: bajar un evento (exportar) lo puede hacer cualquiera de la empresa; importar en la NUBE sigue siendo solo del super_admin; en un servidor local (LOCAL_SERVER=1) también ellos."""
     factory.staff("admin", "adm")
+    factory.staff("digitador", "dig")
     factory.staff("super_admin", "root")
     ev = _build(db, factory)
-    login(client, "adm")
+    login(client, "dig")
     assert client.get(f"/api/event-transfer/export/{ev.id}").status_code == 403
+    client.get("/logout")
+    login(client, "adm")
+    assert client.get(f"/api/event-transfer/export/{ev.id}").status_code == 200
+    monkeypatch.delenv("LOCAL_SERVER", raising=False)
     assert client.post("/api/event-transfer/import/dry-run", files={"file": ("x.zip", b"x")}).status_code == 403
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    assert client.post("/api/event-transfer/import/dry-run", files={"file": ("x.zip", b"x")}).status_code != 403
+    monkeypatch.delenv("LOCAL_SERVER", raising=False)
     client.get("/logout")
     login(client, "root")
     r = client.get(f"/api/event-transfer/export/{ev.id}")
@@ -717,3 +726,23 @@ def test_small_packages_upload_through_the_app_and_direct_upload_still_works(cli
     assert client.post("/api/event-transfer/upload", files={"file": ("x.zip", b"", "application/zip")}).status_code == 400                # vacío
     js = client.get("/static/js/event-transfer.js").text
     assert '"/api/event-transfer/upload"' in js and "SMALL_UPLOAD" in js and "CORS del bucket" in js                                     # el asistente usa la subida por la app para los chicos
+
+
+def test_f5_9_only_super_admin_exports_biometrics_and_jobs_belong_to_who_asked(client, db, factory, inline_jobs):
+    """F5-9 A-01 / A-02: con la Fase 6 exportar se abrió a la empresa, pero la biometría sigue siendo solo del super_admin, y un trabajo (con su enlace de descarga
+    firmado) solo lo ve quien lo pidió: otro coordinador no consigue el enlace de una exportación ajena preguntando por su número."""
+    factory.staff("super_admin", "root")
+    factory.staff("coordinador", "coord")
+    ev = _bio_event(db, factory)
+    login(client, "coord")
+    assert client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "frase de transporte 123"}).status_code == 403
+    client.get("/logout")
+    login(client, "root")
+    job = client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "frase de transporte 123"}).json()
+    assert job["ready"] and "download_url" in job
+    client.get("/logout")
+    login(client, "coord")
+    assert client.get(f"/api/event-transfer/jobs/{job['id']}").status_code == 404
+    assert client.get(job["download_url"]).status_code == 403                               # el enlace del super_admin no sirve en otra sesión
+    mine = client.post("/api/event-transfer/export/start", json={"event_id": ev.id}).json()
+    assert client.get(f"/api/event-transfer/jobs/{mine['id']}").status_code == 200 and client.get(mine["download_url"]).status_code == 200

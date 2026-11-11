@@ -296,3 +296,19 @@ table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wr
 }
 
 /* Los grupos de Configuración van uno debajo del otro, a todo lo ancho (6-nov-2026: nada de secciones lado a lado). */
+
+/* Fase 10 (ajuste 7): la barra y el cuadro de los textos con formato (static/js/rich-text.js, que trae colores fijos claros y es un archivo congelado) siguen el tema con tokens --gw-*.
+   `body` delante sube la especificidad por encima de la hoja que inserta rich-text.js. */
+body .rt-bar { border: 1px solid var(--gw-border-strong); border-bottom: none; background: var(--gw-surface-2); gap: var(--gw-sp-1); }
+body .rt-bar button { border: 1px solid var(--gw-border-strong); background: var(--gw-secondary-bg); color: var(--gw-secondary-text); transition: background var(--gw-dur), border-color var(--gw-dur); }
+body .rt-bar button:hover { background: var(--gw-surface-2); border-color: var(--gw-text); }
+body .rt-bar button:active { background: var(--gw-border); }
+body .rt-bar button:focus-visible, body .rt-bar select:focus-visible, body .rt-bar input[type="color"]:focus-visible { outline: 2px solid var(--gw-focus); outline-offset: 1px; }
+body .rt-bar select { background: var(--gw-secondary-bg); color: var(--gw-secondary-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+body .rt-bar input[type="color"] { background: var(--gw-secondary-bg); border-color: var(--gw-border-strong); }
+body .rt-ed { border: 1px solid var(--gw-border-strong); background: var(--gw-surface); color: var(--gw-text); }
+body .rt-ed:focus { outline: 2px solid var(--gw-focus); }
+.gw-pm-editor { background: var(--gw-surface); color: var(--gw-text); }
+/* Variantes plegadas: el resumen (nombre · condición → valor) va en su propia línea, completo hasta 2 renglones, y los botones debajo; en el panel angosto los botones se comían todo el ancho y no se veía el nombre. */
+.gwe-cvh { flex-wrap: wrap; }
+.gwe-cvs { order: -1; flex: 1 1 100%; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }

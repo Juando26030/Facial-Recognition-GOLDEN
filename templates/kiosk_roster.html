@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -17,6 +18,9 @@
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='vendor/jszip-3.10.1.min.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
 <body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
@@ -226,7 +230,9 @@ useSourceEvent.addEventListener("change", async () => {
     rosterFileInput.required = !useSourceEvent.checked;  // con un evento anterior el Excel pasa a ser opcional
     showRosterFileInfo();
     if (useSourceEvent.checked && !sourceEventsLoaded) {
-        const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`);
+        if (window.GW && GW.skeleton) GW.skeleton(sourceEventList, { kind: "text", rows: 3, label: "Cargando los eventos del cliente…" });
+        const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`).catch(() => null);
+        if (!res) { if (window.GW && GW.skeleton) GW.skeleton.error(sourceEventList, { title: "No se pudieron cargar los eventos", text: "Revisa la conexión, desmarca y vuelve a marcar la casilla.", retry: false }); return; }
         const events = (res.ok ? await res.json() : []).filter(e => e.id !== window.EVENT_ID);
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         sourceEventList.innerHTML = events.length

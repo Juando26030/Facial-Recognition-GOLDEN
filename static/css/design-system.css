@@ -226,6 +226,7 @@
 
 /* ============================================================ Formularios: etiqueta arriba, ayuda corta, error que dice qué hacer */
 .gw-field { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-field[hidden] { display: none; }
 .gw-label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .gw-req { color: var(--gw-req); font-weight: var(--gw-fw-bold); }          /* el asterisco de «obligatorio»: naranja en TODAS las pantallas del personal (las páginas públicas no llevan asterisco) */
 .gw-input, .gw-select, .gw-textarea { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); transition: border-color var(--gw-dur), box-shadow var(--gw-dur); }
@@ -1044,3 +1045,104 @@
 .gw-combobox__hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-combobox__empty { display: flex; align-items: center; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 @media (forced-colors: active) { .gw-combobox__opt.is-active { outline: 2px solid Highlight; } }
+
+/* ============================================================ Revisión visual F5-9 · cabecera en ventana angosta y tableta vertical (641-900 px)
+   Con el menú plegado, el nombre completo + «Tema oscuro» + «Salir» no cabían y «Salir» bajaba a una segunda línea. Igual que en celular pero con más aire:
+   UNA línea, tema solo ícono (su nombre accesible lo pone _gw_theme_toggle.html) y el nombre recortado con «…» (completo en `title`). */
+@media (min-width: 641px) and (max-width: 900px) {
+  .gw-page .golden-header-container { flex-wrap: nowrap; align-items: center; gap: var(--gw-sp-3); }
+  .gw-page .golden-header .golden-logo { flex: 0 1 auto; min-width: 0; }
+  .gw-page .golden-header .golden-nav, .gw-page .golden-header .gw-kiosk-nav { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; justify-content: flex-end; }
+  .gw-page .golden-header form { margin: 0; }
+  .gw-page .golden-header .gw-theme-toggle { flex: none; justify-content: center; width: var(--gw-tap); padding: 0; }
+  .gw-page .golden-header .gw-theme-toggle [data-gw-theme-label] { display: none; }
+  .gw-page .golden-header .golden-nav-user, .gw-page .golden-header .gw-shell__who, .gw-page .golden-header .gw-registro__who, .gw-page .golden-header .gw-parametros__who { flex: 0 1 auto; min-width: 2.5rem; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-page .golden-header .gw-btn { flex: none; }
+  /* franja azul del evento: Cliente · Evento · Código seguidos (como en celular), en vez de tres bloques apilados */
+  .gw-page .golden-event-strip { padding: var(--gw-sp-2) var(--gw-sp-4); font-size: var(--gw-fs-sm); }
+  .gw-page .golden-event-strip-inner { display: block; text-align: left; }
+  .gw-page .golden-event-strip-inner > span { display: inline; }
+  .gw-page .golden-event-strip-inner > span + span::before { content: " \00b7  "; color: var(--gw-nav-accent); font-weight: var(--gw-fw-bold); }
+  .gw-page .golden-event-strip strong { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
+
+/* ============================================================ Revisión visual F5-9 · piezas que el JS nuevo ya usaba sin estilo (muestrario: guia_visual.html#lista-filas)
+   - `.gw-list__item`: fila de lista con datos a la izquierda y acciones a la derecha (Servidor local, Sincronización, Inventario, Cuentas de cobro). En celular las acciones bajan.
+   - `.gw-section-title`: subtítulo de grupo dentro de una página (por cliente, por mes, nombre del evento abierto).
+   - `.gw-text-danger`: texto de error dentro de una fila o ventana (con palabras, no solo color). */
+.gw-list:has(> .gw-list__item) { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: var(--gw-sp-2); }
+.gw-list > .gw-list__item + .gw-list__item { margin-top: 0; }
+.gw-list__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2) var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-list__item > :first-child { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; line-height: var(--gw-lh-body); }
+.gw-list__item > :not(:first-child) { flex: none; max-width: 100%; }          /* 12-nov-2026: sin tope, las acciones (flex: none) medían todos sus botones en una línea y se salían de la tarjeta; con el tope bajan de línea dentro de ella */
+.gw-list__item > .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
+.gw-list__item code { font-size: var(--gw-fs-sm); overflow-wrap: anywhere; word-break: break-all; }
+.gw-list__item .gw-badge { vertical-align: middle; }
+.gw-list__item .gw-card-row__actions .gw-select, .gw-list__item .gw-card-row__actions select.gw-input { width: auto; min-width: 14rem; max-width: 100%; }
+.gw-section-title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); }
+.gw-text-danger { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
+@media (max-width: 640px) {
+  .gw-list__item { padding: var(--gw-sp-3); }
+  .gw-list__item > :not(:first-child) { flex: 1 1 100%; min-width: 0; }
+  .gw-list__item > .gw-btn { width: 100%; }
+  .gw-list__item .gw-card-row__actions .gw-select, .gw-list__item .gw-card-row__actions select.gw-input { min-width: 0; flex: 1 1 8rem; }
+}
+
+/* ============================================================ Carga visible (9-nov-2026, orden de Juan David; static/js/gw-carga.js, guía docs/ux/CARGAS_Y_ESQUELETOS.md)
+   1) Botón ocupado: cualquier botón (no solo .gw-btn) con data-gw-busy (lo pone gw-carga.js o GW.busy) muestra una rueda CENTRADA del color de su texto, y el texto se vuelve transparente
+      (el botón no cambia de tamaño ni se toca su contenido). .gw-btn conserva su rueda a la izquierda; .gw-menu__item (Registro) la suya. Un aria-busy puesto a mano sin data-gw-busy
+      recibe la rueda en línea. Movimiento reducido: la rueda no gira, solo late (opacidad).
+   2) Barra delgada arriba `.gw-loadbar` (role=progressbar): dorada, indeterminada; con movimiento reducido, llena y latiendo.
+   3) Esqueletos `.gw-sk` (GW.skeleton / templates/_gw_skeleton.html): filas de tabla, tarjetas, lista, cifras, bloque y texto, con la forma del contenido que llega. */
+:where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item), :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item), :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item) { cursor: progress; color: transparent !important; }
+:where(.gw-page) button[data-gw-busy="static"]:not(.gw-btn):not(.gw-menu__item), :where(.gw-page) [role="button"][data-gw-busy="static"]:not(.gw-btn):not(.gw-menu__item), :where(.gw-page) a[data-gw-busy="static"]:not(.gw-btn):not(.gw-menu__item) { position: relative; }
+:where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item) > *, :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item) > *, :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item) > * { visibility: hidden; }
+:where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after { content: ""; position: absolute; inset: 0; margin: auto; box-sizing: border-box; width: 1.15em; height: 1.15em; max-width: 80%; max-height: 80%; border-radius: 50%; border: 2px solid var(--gw-busy-c, var(--gw-text)); border-right-color: transparent; visibility: visible; pointer-events: none; animation: gw-spin 0.8s linear infinite; }
+:where(.gw-page) input[data-gw-busy], :where(.gw-page) input[aria-busy="true"] { cursor: progress; opacity: 0.6; }
+:where(.gw-page) button[aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item), :where(.gw-page) [role="button"][aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item) { cursor: progress; }
+:where(.gw-page) button[aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before, :where(.gw-page) [role="button"][aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-inline-end: var(--gw-sp-2); vertical-align: -0.15em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: gw-spin 0.8s linear infinite; }
+@keyframes gw-busy-fade { from { opacity: 0.35; } to { opacity: 1; } }
+
+.gw-loadbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10003; height: 3px; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity var(--gw-dur); }
+.gw-loadbar[data-active] { opacity: 1; }
+.gw-loadbar__fill { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: var(--gw-radius-pill); background: var(--gw-gold-grad); transform: translateX(-100%); }
+.gw-loadbar[data-active] .gw-loadbar__fill { animation: gw-loadbar 1.1s ease-in-out infinite; }
+@keyframes gw-loadbar { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+.gw-sk { pointer-events: none; }
+.gw-sk__bone { min-height: 0.875rem; margin: var(--gw-sp-1) 0; }
+.gw-sk__bone--w100 { width: 100%; }
+.gw-sk__bone--w80 { width: 80%; }
+.gw-sk__bone--w60 { width: 60%; }
+.gw-sk__bone--w40 { width: 40%; }
+.gw-sk__bone--title { width: 70%; height: 1.25rem; margin-bottom: var(--gw-sp-2); }
+.gw-sk__bone--btn { width: 7rem; height: 2.25rem; margin-top: auto; border-radius: var(--gw-radius-md); }
+.gw-sk__bone--num { width: 50%; height: 2rem; margin-top: var(--gw-sp-2); }
+.gw-sk__bone--dot { flex: none; width: 2.5rem; height: 2.5rem; margin: 0; border-radius: 50%; }
+.gw-sk__bone--block { width: 100%; height: 12rem; margin: 0; border-radius: var(--gw-radius-md); }
+.gw-sk--card { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-height: 9rem; padding: var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-sk--card + .gw-sk--card { margin-top: var(--gw-sp-3); }
+.gw-cards > .gw-sk--card + .gw-sk--card, .gw-rows > .gw-sk--card + .gw-sk--card { margin-top: 0; }
+.gw-sk--list, .gw-sk--text { display: flex; flex-direction: column; gap: var(--gw-sp-2); }
+.gw-sk__item { display: flex; align-items: center; gap: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-sk__lines { flex: 1 1 auto; min-width: 0; }
+.gw-sk--stats { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); }
+.gw-sk__tile { padding: var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-sk--row td { vertical-align: middle; }
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, .gw-btn[aria-busy="true"]::before, :where(.gw-page) button[aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before, :where(.gw-page) [role="button"][aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before { animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
+  .gw-loadbar[data-active] .gw-loadbar__fill { width: 100%; transform: none; animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
+}
+
+/* Bloque de comandos copiables (tutoriales de Configuración, Fase 10 E): `.gw-code` en <pre>; el código en línea toma el mismo fondo. Solo tokens. */
+.gw-code { margin: var(--gw-sp-2) 0; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); font-family: ui-monospace, Consolas, monospace; font-size: var(--gw-fs-sm); overflow-x: auto; white-space: pre; }
+.gw-form-group__body code { background: var(--gw-surface-2); padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
+.gw-code code { background: none; padding: 0; }
+
+/* «Volver al kiosco» (static/js/kiosk-back.js): píldora dorada en la franja del evento, distinta de los botones normales; no mueve el título */
+.gw-backchip { display: inline-flex; align-items: center; align-self: center; flex: 0 0 auto; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-4); border-radius: 999px; background: var(--gw-gold-grad); color: var(--gw-on-gold); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); line-height: 1.2; text-decoration: none; white-space: nowrap; border: 2px solid var(--gw-surface); box-shadow: 0 2px 10px rgba(0, 0, 0, .45); }
+.gw-backchip:hover { filter: brightness(1.08); text-decoration: none; }
+.gw-backchip:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-backrow { display: flex; padding: var(--gw-sp-2) 0 0; }
+@media (max-width: 760px) { .gw-page .golden-event-strip-inner > .gw-backchip { display: inline-flex; margin-right: var(--gw-sp-2); } }

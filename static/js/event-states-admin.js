@@ -46,7 +46,7 @@
   async function load() {
     const box = $('estadosList');
     box.setAttribute('aria-busy', 'true');
-    box.innerHTML = '<div class="gw-skeleton gw-estado__skeleton" role="status" aria-label="Cargando estados"></div>';
+    box.innerHTML = window.GW && GW.skeleton ? GW.skeleton.html({ kind: 'cards', rows: 3, label: 'Cargando estados…' }) : '<div class="gw-skeleton gw-estado__skeleton" role="status" aria-label="Cargando estados"></div>';
     try {
       const d = await j(`/api/event-states${showArchived && perms.canViewArchived ? '?include_archived=true' : ''}`, { cache: 'no-store' });
       const list = showArchived ? d.states.filter((s) => s.archived) : d.states;
@@ -107,6 +107,6 @@
   let loaded = false;
   const start = () => { if (!loaded) { loaded = true; load(); } };
   const tab = $('tab_estados');
-  if (tab) tab.addEventListener('click', start);
+  if (tab) { tab.addEventListener('click', start); tab.addEventListener('gw:tabshow', start); }
   if (!root.hidden) start();
 })();

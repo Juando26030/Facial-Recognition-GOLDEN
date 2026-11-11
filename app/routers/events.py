@@ -4,9 +4,9 @@ from datetime import date
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from app.inputcheck import check_text, check_username, text_validator, username_validator
+from app.inputcheck import check_text, check_username, text_validator
 from app.tenant_scope import assert_same_tenant
 from sqlalchemy.orm import Session
 
@@ -14,18 +14,21 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import audit_actions, jobs, security, staff_credentials, status_changes, warmup
+from app import audit_actions, jobs, security, staff_credentials, status_changes, temp_client, warmup
 from app.timeutil import utcnow
 from app.database import get_db
-from app import event_archive, event_rules, formsvc
+from app import event_archive, event_rules, formsvc, inventory_svc
+from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
 from app import event_template_svc
-from app import pledge, testperson
-from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
+from app import pledge, testperson, workday
+from app.models import EventChangeLog, EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
+from app.routers import event_types as event_types_router
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
+from app import queue_svc
 from app.routers.areas_inventory import delete_event_modules
-from app.auth import assert_event_scope, assert_event_tenant, effective_roles, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
+from app.auth import assert_event_scope, assert_event_tenant, effective_roles, is_inventory_only, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
@@ -42,14 +45,15 @@ def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinad
 
 
 class EventStaffIn(BaseModel):
-    username: str  # cédula, para digitador
+    username: Optional[str] = None  # cédula, para digitador; vacío si `client` (el servidor genera el usuario)
+    client: bool = False  # 12-nov-2026: cliente temporal (app/temp_client.py): mismos permisos que el digitador, usuario y contraseña aleatorios, sin autorización del coordinador
     password: Optional[str] = None      # 6-nov-2026: el digitador temporal entra con su cédula como usuario Y contraseña; solo se manda una si alguien quiere otra distinta (esa sí pasa la política estricta)
     full_name: Optional[str] = None
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
     email: Optional[str] = None  # Fase 4: correo donde recibe los datos de ingreso y del evento (opcional)
 
-    _u = username_validator("username")
+    _u = field_validator("username")(classmethod(lambda cls, v: None if v in (None, "") else check_username(v)))
     _t = text_validator("full_name")
 
 
@@ -58,7 +62,7 @@ class AssignExistingIn(BaseModel):
 
 
 def _serialize_staff(s: StaffUser) -> dict:
-    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip())}
+    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip()), "client_temp": bool(getattr(s, "client_temp", False))}
 
 
 # Código del evento (orden del 21-oct-2026). Va en direcciones públicas: /aceptar/<código>, el QR del cartel y los enlaces personales ya enviados por correo.
@@ -93,6 +97,7 @@ class EventIn(BaseModel):
     bandana_color: Optional[str] = None  # Sprint 2.4 Fase 12: "Color de pañoleta", hex #rrggbb
     bandana_color_name: Optional[str] = None  # nombre libre para ese color (ej. "Rojo Golden")
     super_event_id: Optional[int] = None  # superevento al que pertenece (2026-09-23: también se elige al CREAR el evento)
+    event_type_id: Optional[int] = None  # Fase 10 (C): «Categoría (tipo de evento)» (app/routers/event_types.py); sin valor = «Sin categoría»
     notes: Optional[str] = None
     # Interruptores: la MISMA columna que cambia «Parámetros del evento» (una sola fuente de datos). Sin valor = no se toca (queda apagado, como siempre).
     facial_enabled: Optional[bool] = None
@@ -133,6 +138,7 @@ class EventUpdate(BaseModel):
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
+    event_type_id: Optional[int] = None  # Fase 10 (C): null explícito = dejarlo «Sin categoría»
     extra: Optional[Dict[str, Any]] = None      # Fase 2: valores de campos personalizados de la plantilla que se cambian (un valor null borra ese valor); los demás no se tocan
 
 
@@ -142,11 +148,16 @@ def _serialize(e: Event) -> dict:
         "event_code": e.event_code, "name": e.name, "location": e.location, "address": e.address,
         "country": e.country, "city": e.city, "status": e.status,
         "state_id": e.state_id, "state_name": e.state.name if e.state else None, "state_color": e.state.color if e.state else None,
+        "billed": e.billed_at is not None, "billed_at": e.billed_at.isoformat() if e.billed_at else None,
+        "billed_by_name": (e.billed_by.full_name or e.billed_by.username) if e.billed_by else None,
+        "final_db_uploaded": bool(e.final_db_key), "final_db_name": e.final_db_name, "final_db_uploaded_at": e.final_db_uploaded_at.isoformat() if e.final_db_uploaded_at else None,
+        "final_db_uploaded_by_name": (e.final_db_uploaded_by.full_name or e.final_db_uploaded_by.username) if e.final_db_uploaded_by else None,
         "start_date": e.start_date.isoformat() if e.start_date else None,
         "end_date": e.end_date.isoformat() if e.end_date else None,
         "setup_date": e.setup_date.isoformat() if e.setup_date else None,
         "event_time_start": e.event_time_start, "event_time_end": e.event_time_end,
         "setup_time_start": e.setup_time_start, "setup_time_end": e.setup_time_end,
+        **workday.serialize(e),          # Fase 5: jornada calculada (solo lectura): workday_key / workday_label / workday_hours
         "notes": e.notes,
         "coordinator_staff_id": e.coordinator_staff_id,
         "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
@@ -156,9 +167,11 @@ def _serialize(e: Event) -> dict:
         "bandana_color_name": e.bandana_color_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "data_archived": e.data_archived_at is not None, "data_archived_at": e.data_archived_at.isoformat() if e.data_archived_at else None, "archived": e.archived_at is not None, "archived_at": e.archived_at.isoformat() if e.archived_at else None, "archived_auto": e.archived_at is not None and e.archived_by_id is None,
+        "local": event_lease.serialize(e),          # Fase 6: «en servidor local» (solo lectura en la nube) y última subida
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
+        "event_type_id": e.event_type_id, "event_type_name": e.event_type.name if e.event_type else None, "event_type_color": (e.event_type.color or None) if e.event_type else None,
         "super_event_id": e.super_event_id,
         "super_event_name": e.super_event.name if e.super_event else None,
         "extra": e.get_extra(),      # Fase 2: valores de los campos personalizados de la plantilla (los retirados también); {} en los eventos anteriores
@@ -183,6 +196,8 @@ def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_curr
     más probable es justamente ese mensaje ambiguo. Este campo nuevo deja que el frontend
     distinga "no tienes ninguna asignación" de "tienes asignación(es) pero ningún evento está en
     proceso todavía" sin cambiar la forma de `events` (sigue siendo la lista de siempre)."""
+    if is_inventory_only(staff):          # F5-9 D (D1): almacén/contabilidad solos no entran a eventos (su pantalla es /inventario)
+        return {"events": [], "has_any_authorization": False}
     query = event_archive.active_only(db.query(Event).filter(Event.status == "en_proceso"))
     has_any_authorization = True
     if staff.role in ("digitador", "cliente"):
@@ -467,6 +482,7 @@ def create_event(
         if not coord:
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
 
+    event_types_router.check_assignable(db, data.event_type_id)
     if data.super_event_id is not None:
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != data.tenant_id:
@@ -487,6 +503,7 @@ def create_event(
         event.set_extra(prepared["extra"])
     db.add(event)
     db.flush()
+    public_slug.ensure(db, event)          # D2.5k: nombre del enlace limpio de inscripciones («nombre + año», único)
     event_template_svc.after_create(db, event)
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     if pledge.text_available():
@@ -508,6 +525,7 @@ def update_event(
     assert_event_scope(event, staff, db)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo para editarlo")
+    event_lease.assert_editable(event)          # Fase 6: en un servidor local es de solo lectura aquí
     new_state = None
     if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
         new_state = db.get(EventState, data.state_id)
@@ -519,6 +537,8 @@ def update_event(
     if new_state is None and data.status is not None and data.status != event.status:
         new_state = event_rules.default_state(db, data.status)          # cambió solo el estado base: se usa el primer estado activo de ese tipo
     status_changed = data.status is not None and data.status != event.status
+    if status_changed and data.status == "en_proceso":
+        inventory_svc.assert_can_enter_in_progress(db, event)          # Fase 5: regla de cuadre del inventario (app/inventory.py); sin líneas de inventario no estorba
     # 2026-09-16, pedido explícito: si el evento ya tiene gente cargada (roster y/o registros en
     # vivo), no se puede "devolver" a 'creado' — 'creado' es preparación previa al evento, y
     # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,
@@ -531,6 +551,18 @@ def update_event(
                 detail=("Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado' desde aquí. Un administrador puede hacerlo con «Devolver a Creado» (queda registrado quién y cuándo; "
                         "no se borra nada). Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero."),
             )
+    entering_billing = leaving_billing = False
+    if new_state is not None and new_state.id != event.state_id:          # Fase 5: «Facturado» (estado con la regla client_delivery) lo pone o quita SOLO una comercial (también con doble rol) o un administrador
+        entering_billing, leaving_billing = event_rules.is_billing_state(new_state), event_rules.is_billing_state(event.state)
+        if (entering_billing or leaving_billing) and not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
+            raise HTTPException(status_code=403, detail="Solo una comercial o un administrador puede poner el evento en «Facturado» o sacarlo de ese estado")
+        if entering_billing and event.status != "finalizado":
+            raise HTTPException(status_code=400, detail="Solo un evento «Finalizado» se puede pasar a «Facturado»")
+        if entering_billing and not event.final_db_key:          # decisión de Juan David (9-nov-2026): sin la base final adjunta no se factura
+            raise HTTPException(status_code=400, detail="Para pasar el evento a «Facturado» primero hay que adjuntar la base de datos final (Editar evento → Base de datos final)")
+        if leaving_billing and entering_billing:
+            leaving_billing = False          # de un estado de facturación a otro: se conserva quién y cuándo lo facturó
+            entering_billing = False
     if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
     if data.coordinator_staff_id is not None and data.coordinator_staff_id != event.coordinator_staff_id:      # P8: misma validación que al crear (0C, N3)
@@ -555,6 +587,7 @@ def update_event(
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
+    event_types_router.check_assignable(db, data.event_type_id, event.event_type_id)
     if data.super_event_id is not None:
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != event.tenant_id:
@@ -568,16 +601,32 @@ def update_event(
     _validate_event_dates(effective_start, effective_end, effective_setup)
 
     extra_patch = event_template_svc.merge_extra(db, event.get_extra(), data.extra) if data.extra is not None else None      # valida ANTES de tocar nada
+    history_before = event_history.snapshot(db, event)          # Fase 5: historial por campo (se compara con lo que quede abajo, en el mismo commit)
     for field, value in data.dict(exclude_unset=True, exclude={"extra"}).items():
         setattr(event, field, value)
     if extra_patch is not None:
         event.set_extra(extra_patch)
     if new_state is not None:
         event.state_id = new_state.id
+    if entering_billing:
+        event.billed_at, event.billed_by_id = utcnow(), staff.id
+        audit_actions.record(db, staff, "billed", "event", event.id, event.name, f"estado «{new_state.name}»")
+    elif leaving_billing:
+        event.billed_at = event.billed_by_id = None          # el historial (quién y cuándo lo facturó) queda en audit_actions
+        audit_actions.record(db, staff, "unbilled", "event", event.id, event.name, f"pasó a «{new_state.name}»")
+    changed_rows = event_history.record(db, event, history_before, staff, "edit")
     db.commit()
+    if changed_rows:
+        jobs.kick()                  # despierta el envío del aviso de campos clave (si se encoló alguno)
     if status_changed:
         warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora
     return _serialize(event)
+
+
+@router.get("/events/{event_id:int}")          # «:int»: sin él esta ruta (incluida ANTES que calendar) se tragaba GET /events/calendar y el calendario respondía 422
+def get_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Un evento (mismo formato de la lista), para abrir su edición desde un enlace: /eventos?editar=<id> (correo del aviso de la base final, Fase 5)."""
+    return _serialize(get_event_for_staff(event_id, db, staff))
 
 
 @router.get("/events/{event_id}/staff-users")
@@ -611,6 +660,9 @@ def create_event_staff(
     Fase 15 (doble rol coordinador+comercial): ambas excepciones se evalúan sobre effective_roles,
     no sobre `staff.role` a secas — alguien coordinador+comercial SÍ puede crear digitador (porque
     también es coordinador de verdad), la exclusión es solo para quien es comercial pura."""
+    from app import localmode
+    if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
+        raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
     if data.role == "cliente":
         # 2026-11-05 (pedido de Juan David): ya no se crean cuentas «cliente» temporales de evento; para compartir estadísticas están los enlaces con vencimiento (/ver/e/{token}, stats_links.py). Las cuentas cliente existentes y el cliente de FORMULARIO (/mi-formulario) no se tocan.
         raise HTTPException(status_code=400, detail="Ya no se crean cuentas de cliente para el evento. Para compartir las estadísticas usa un enlace con vencimiento.")
@@ -624,6 +676,20 @@ def create_event_staff(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
     assert_event_scope(event, staff, db)
+    if data.client:          # 12-nov-2026: cliente temporal = digitador (mismos permisos) con usuario y contraseña aleatorios; se entregan UNA vez en esta respuesta y no llevan correo
+        if not (data.full_name or "").strip():
+            raise HTTPException(status_code=400, detail="Escribe el nombre de la persona del cliente")
+        username = temp_client.new_username(lambda n: db.query(StaffUser.id).filter(StaffUser.username == n).first() is not None)
+        password = temp_client.new_password(username)
+        new_user = StaffUser(username=username, password_hash=hash_password(password), full_name=data.full_name.strip(), role="digitador", client_temp=True,
+                             tenant_id=event.tenant_id, created_by_id=staff.id, must_change_password=False)
+        db.add(new_user)
+        db.flush()
+        db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
+        db.commit()
+        return {**_serialize_staff(new_user), "credentials": {"username": username, "password": password}, "credentials_mail": "disabled"}
+    if not data.username:
+        raise HTTPException(status_code=400, detail="Escribe el usuario (la cédula)")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
     password = (data.password or "").strip() or data.username        # decisión de Juan David (6-nov-2026): la cuenta temporal de digitador usa su cédula como contraseña; no aplica la política de contraseña segura
@@ -737,6 +803,9 @@ def staff_users_template(event_id: int, db: Session = Depends(get_db), staff: St
 def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Asigna digitadores a este evento desde un Excel (Identificación, Nombres, Apellidos). Cédula nueva → crea la cuenta (usuario y contraseña = cédula) y la asigna; cédula que ya tenía
     cuenta de digitador del mismo cliente → solo la asigna. Una cédula que ya es otra cosa (otro rol u otro cliente) no se toca y se informa. Devuelve cantidades y los motivos por fila (sin contraseñas)."""
+    from app import localmode
+    if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
+        raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
     import re as _re
     from app import heavy, safe_limits
     from app.inputcheck import check_text
@@ -943,6 +1012,8 @@ def delete_event(
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
+    db.query(EventChangeLog).filter(EventChangeLog.event_id == event_id).delete()
+    person_history.delete_for_event(db, event_id)          # historial de datos modificados de las personas del evento
     for _form in db.query(WebForm).filter(WebForm.event_id == event_id).all():
         delete_form_rows(db, _form)
     db.query(RouletteDraw).filter(RouletteDraw.event_id == event_id).delete()
@@ -957,6 +1028,7 @@ def delete_event(
     db.query(PrintLog).filter(PrintLog.event_id == event_id).delete()
     delete_event_files(db, event_id)
     delete_event_modules(db, event_id)
+    queue_svc.delete_event_data(db, event_id)
     db.query(AccessLog).filter(AccessLog.event_id == event_id).update({"event_id": None})
     db.delete(event)
     db.commit()
@@ -1047,12 +1119,14 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
         raise HTTPException(status_code=409, detail="Solo un evento «En proceso» se puede devolver a «Creado»" + (" (los finalizados no se tocan)." if event.status == "finalizado" else "."))
     reason = ((data.reason if data else None) or "").strip()[:500] or None
     counts = _revert_counts(db, event_id)
+    history_before = event_history.snapshot(db, event)
     event.status = "creado"
     new_state = event_rules.default_state(db, "creado")
     if new_state is not None:
         event.state_id = new_state.id
     db.add(EventStatusChange(event_id=event.id, tenant_id=event.tenant_id, staff_user_id=staff.id, staff_username=staff.username, from_status="en_proceso", to_status="creado", reason=reason,
                              attendees_count=counts["attendees"], access_logs_count=counts["access_logs"], at=utcnow()))
+    event_history.record(db, event, history_before, staff, "state")
     db.commit()
     log.info("evento %s devuelto a «creado» por el usuario %s (%s personas, %s ingresos)", event.id, staff.id, counts["attendees"], counts["access_logs"])
     warmup.kick()                  # sale de «en proceso»: soltar las instancias precalentadas, como en cualquier cambio de estado

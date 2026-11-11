@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs, minors, privacy
+from app import formfiles, formlib, jobs, minors, person_history, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, RateLimitEvent, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -677,9 +677,9 @@ def superseded_is_safe(db: Session, old: FormSubmission) -> bool:
     """D1: el intento anterior de la MISMA sesión solo se descarta si Wompi no tiene ninguna transacción viva (pendiente o aprobada) para sus referencias. Si no se pudo
     consultar («unknown») se asume que sí hay una: perder una inscripción pagada es peor que pedirle esperar unos minutos a quien reintenta. Hace llamadas a Wompi: se invoca
     ANTES de tomar el bloqueo del formulario."""
-    from app import wompi
+    from app import payment_accounts, wompi
     for p in db.query(FormPayment).filter(FormPayment.submission_id == old.id, FormPayment.status == "pending").all():
-        cfg = wompi.config(p.is_test)
+        cfg = payment_accounts.cfg_for_payment(db, p)
         state = wompi.reference_state(cfg, p.reference) if cfg else "unknown"
         if state in ("pending", "approved", "unknown"):
             return False
@@ -977,6 +977,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     if is_new:
         user = User(id=person_id, tenant_id=event.tenant_id)
         db.add(user)
+    history_before = None if is_new else person_history.snapshot(user)          # Fase 10 E: lo que esta inscripción cambie en una persona que ya existía queda en su historial
     # 0C (A4/C3/C-N2): quien llena el formulario público solo conoce una cédula; el correo, el teléfono y la fecha de nacimiento que ya están en la base NO se sobrescriben desde ahí:
     # solo se completan los vacíos. Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
     # X2 (defensa en profundidad): nombre, apellido, rol y entidad de una persona que YA existe tampoco se reemplazan desde el formulario público (solo se completan si
@@ -993,8 +994,10 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     elif birth is not None and minors.is_minor(birth):
         user.is_biometric_enabled = False                              # una fecha de menor siempre restringe; una de adulto nunca habilita
     extras = user.get_extras()
-    extras.update({k: str(v) for k, v in kv.items() if k.startswith("opcional_")})
+    extras.update({k: formfiles.stored_text(v) for k, v in kv.items() if k.startswith("opcional_")})        # archivo: solo el nombre (el archivo se ve y se baja en «Editar persona»)
     user.set_extras(extras)
+    if history_before is not None:
+        person_history.record(db, user, history_before, event_id=event.id, staff_id=None, source="form")
     db.flush()
     upsert_attendee(db, event.id, person_id, event.tenant_id)
     db.flush()          # autoflush=False: sin esto, el segundo upsert (correo de la escarapela) no vería la fila y la duplicaría
@@ -1004,6 +1007,16 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     if not sub.is_test and event.aceptar_enabled and event.accept_link_email and event.facial_enabled and not event.biometrics_locked:
         _send_accept_link(db, event, sub, person_id)
     return None
+
+
+def enqueue_pending_feed(db: Session, form: WebForm) -> int:
+    """Al pasar el formulario a «en tiempo real»: las inscripciones reales que ya había y aún no están en la base se encolan una por una (mismo trabajo `form_feed`, idempotente).
+    Devuelve cuántas encoló; quien llama hace commit y despierta al worker (`jobs.kick()`)."""
+    n = 0
+    for (sid,) in real_submissions(db, form).filter(FormSubmission.fed == False).with_entities(FormSubmission.id).order_by(FormSubmission.id):  # noqa: E712
+        jobs.enqueue(db, "form_feed", {"submission_id": sid}, dedupe_key=str(sid))
+        n += 1
+    return n
 
 
 def feed_pending(db: Session, form: WebForm, upsert_attendee) -> dict:

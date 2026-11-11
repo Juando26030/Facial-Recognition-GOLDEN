@@ -16,14 +16,15 @@
         const slowText = opts.slowText || 'Sigue trabajando…';
         const textOnly = !btn.children || btn.children.length === 0;
         const original = textOnly ? btn.textContent : null;
-        btn.setAttribute('aria-busy', 'true');
+        const deco = root.GWLoad && root.GWLoad.decorate;                        // misma rueda centrada que la carga automática (static/js/gw-carga.js)
+        if (deco) deco(btn); else btn.setAttribute('aria-busy', 'true');
         const timer = slowMs > 0 ? setTimeout(() => { if (textOnly) btn.textContent = slowText; btn.setAttribute('data-gw-slow', '1'); }, slowMs) : null;
         let p;
         try { p = Promise.resolve(typeof work === 'function' ? work() : work); } catch (e) { p = Promise.reject(e); }
         const done = () => {
             if (timer) clearTimeout(timer);
             pending.delete(btn);
-            btn.removeAttribute('aria-busy');
+            if (deco) root.GWLoad.undecorate(btn); else btn.removeAttribute('aria-busy');
             if (btn.hasAttribute('data-gw-slow')) { btn.removeAttribute('data-gw-slow'); if (textOnly) btn.textContent = original; }
         };
         const tracked = p.then((v) => { done(); return v; }, (e) => { done(); throw e; });

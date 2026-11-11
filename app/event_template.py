@@ -70,10 +70,12 @@ TYPES = {
     "address_map": {"label": "Dirección con mapa", "creatable": True},
     "contact": {"label": "Contacto del evento", "creatable": True},
     "bandana_colors": {"label": "Colores de pañoletas", "creatable": True},
-    "inventory": {"label": "Inventario", "creatable": True},
+    "inventory": {"label": "Inventario (anterior)", "creatable": False},          # Fase 5: ya no se crea; vive el catálogo (app/inventory_unify.py). Un campo viejo sobrevive solo «retirado»
+    "workday": {"label": "Jornada (calculada)", "creatable": False},
     "switch": {"label": "Interruptor", "creatable": False},
     "client": {"label": "Cliente", "creatable": False},
     "super_event": {"label": "Superevento", "creatable": False},
+    "event_type": {"label": "Categoría (tipo de evento)", "creatable": False},          # Fase 10 (C): lista que administra el super_admin (app/routers/event_types.py)
 }
 CREATABLE_TYPES = tuple(t for t, m in TYPES.items() if m["creatable"])
 CURRENCIES = ("COP", "USD", "EUR")
@@ -125,6 +127,7 @@ BASE_FIELDS = [
     _b("client", "client", "Cliente", True, "datos", locked=True),
     _b("event_code", "text_short", "Código interno", True, "datos", locked=True, help="Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026)."),
     _b("name", "text_short", "Nombre del evento", True, "datos", locked=True),
+    _b("event_type_id", "event_type", "Categoría (tipo de evento)", False, "datos", help="Opcional: el tipo de evento (Feria, Congreso…). Con él el calendario filtra por categoría."),
     _b("country", "country", "País", True, "datos"),
     _b("city", "city", "Ciudad", True, "datos", config={"country_key": "country"}),
     _b("location", "text_short", "Lugar", True, "datos"),
@@ -136,6 +139,9 @@ BASE_FIELDS = [
     _b("setup_date", "date", "Fecha montaje", True, "fechas"),
     _b("setup_time_start", "time", "Hora inicio montaje", True, "fechas"),
     _b("setup_time_end", "time", "Hora fin montaje", True, "fechas"),
+    # Fase 5: campo INFORMATIVO calculado (app/workday.py). No es una columna ni un valor guardado: se deduce de event_time_start/event_time_end. De fábrica no está en ninguna vista;
+    # el administrador decide si lo agrega a «Nuevo evento»/«Editar evento» y si sale en la tarjeta del calendario (colocándolo en una zona).
+    _b("workday", "workday", "Jornada", False, None, help="Se calcula sola con la hora de inicio y la de fin del evento. No se edita."),
     _b("coordinator_staff_id", "coordinator", "Coordinador asignado", True, "responsables"),
     _b("commercial_staff_id", "commercial", "Comercial asignada", True, "responsables"),
     _b("super_event_id", "super_event", "Superevento", False, "responsables", help="Opcional: agrupa eventos hermanos de este cliente."),
@@ -151,7 +157,8 @@ BOUND_KEYS = BASE_KEYS + SWITCH_FIELD_KEYS            # los que NO viven en extr
 # columnas de events que escribe cada campo base (para armar el Event al crear)
 BASE_COLUMNS = {"client": ("tenant_id",), "bandana": ("bandana_color", "bandana_color_name")}
 for _f in BASE_FIELDS:
-    BASE_COLUMNS.setdefault(_f["key"], (_f["key"],))
+    if _f["type"] != "workday":          # la jornada no tiene columna: se calcula
+        BASE_COLUMNS.setdefault(_f["key"], (_f["key"],))
 for _s in SWITCH_KEYS:
     BASE_COLUMNS[switch_field_key(_s)] = (_s,)
 
@@ -341,6 +348,12 @@ def merge_missing_base(tpl: dict) -> dict:
     for f in default_template()["fields"]:
         if f["key"] not in have:
             out["fields"].append(f)
+    if "event_type_id" not in have:          # Fase 10 (C): la categoría aparece SOLA en «Nuevo evento» (Datos del evento) de las plantillas guardadas antes; el administrador puede quitarla al guardar la plantilla
+        for sec in out.get("creation_layout", {}).get("sections", []):
+            if sec.get("id") == "datos" and "event_type_id" not in sec.get("keys", []):
+                keys = sec.setdefault("keys", [])
+                keys.insert(keys.index("name") + 1 if "name" in keys else len(keys), "event_type_id")
+                break
     return out
 
 
@@ -429,13 +442,16 @@ def _clean_field(rf) -> dict:
             type_, config = "switch", {"switch": sw}
         locked = key in LOCKED_KEYS
         required = True if locked else bool(rf.get("required")) and type_ != "switch"
-        if type_ == "switch":
+        if type_ in ("switch", "workday"):          # el interruptor y la jornada (calculada) nunca son obligatorios
             required = False
         return {"key": key, "type": type_, "title": title, "required": required, "options": [], "config": config, "help": helptext, "retired": False}
     if not KEY_RE.match(key):
         raise TemplateError("Clave de campo inválida")
     type_ = rf.get("type")
-    if type_ not in CREATABLE_TYPES:
+    if type_ == "inventory":
+        if not retired:          # Fase 5 (9-nov-2026): el inventario es UNO solo, el catálogo (app/inventory_unify.py). El campo viejo solo sobrevive «retirado».
+            raise TemplateError(f"«{title}»: el inventario ahora se maneja con el catálogo (Configuración → Inventario); este tipo de campo ya no se puede usar")
+    elif type_ not in CREATABLE_TYPES:
         raise TemplateError(f"Tipo de campo no permitido en «{title}»")
     options = _clean_options(rf.get("options"), f"«{title}»: las opciones", MAX_OPTIONS) if type_ == "select" else []
     config = clean_config(type_, rf.get("config"), key=key)
@@ -510,6 +526,8 @@ def clean_value(field: dict, raw):
         if not isinstance(raw, bool):
             raise TemplateError(f"«{title}» debe ser sí o no")
         return raw
+    if t == "workday":          # calculado: nunca se recibe ni se guarda un valor
+        return None
     if is_empty(raw):
         return None
     w = f"«{title}»"
@@ -539,7 +557,7 @@ def clean_value(field: dict, raw):
         if cfg.get("max") is not None and d > Decimal(str(cfg["max"])):
             raise TemplateError(f"{w} no puede ser mayor que {cfg['max']}")
         return _num_out(d)
-    if t in ("commercial", "coordinator", "super_event"):
+    if t in ("commercial", "coordinator", "super_event", "event_type"):
         return _int(raw, w, 1, 2_147_483_647)
     if t == "date":
         return _date(raw, w)
@@ -627,6 +645,8 @@ def raw_values_from_payload(payload: dict, extra: dict) -> dict:
     """Pone en una sola forma {clave de campo: valor} lo que manda «Nuevo evento»: las columnas de siempre (nivel superior), los interruptores (por el nombre de su columna) y `extra` (personalizados)."""
     raw = {}
     for key in BASE_KEYS:
+        if key == "workday":
+            continue
         if key == "bandana":
             if payload.get("bandana_color") or payload.get("bandana_color_name"):
                 raw[key] = [{"name": payload.get("bandana_color_name") or "", "hex": payload.get("bandana_color") or ""}] if payload.get("bandana_color") else None
