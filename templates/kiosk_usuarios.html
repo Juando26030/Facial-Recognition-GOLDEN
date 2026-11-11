@@ -83,9 +83,18 @@
     <details class="gw-group" id="grpNueva" open data-gw-tour-step="1" data-gw-tour-title="1. Agrega a alguien" data-gw-tour-text="Llena la cédula y el nombre. La cédula es también la contraseña.">
       <summary class="gw-group__sum"><span class="gw-group__title">Nueva cuenta para este evento</span><span class="gw-group__hint">Crea y asigna en un solo paso.</span></summary>
       <div class="gw-group__body">
+        <div class="gw-alert gw-alert--ok" id="clientCreds" role="status" aria-live="polite" hidden>
+          <div class="gw-alert__body">
+            <p class="gw-alert__title">Datos de ingreso del cliente</p>
+            <p>Entrégaselos ahora: <strong>no se vuelven a mostrar</strong>. Si se pierden, usa «Restablecer contraseña» para generar una nueva.</p>
+            <div class="gw-cred"><span class="gw-cred__label">Usuario</span><code class="gw-cred__value" id="clientCredUser"></code> <button type="button" class="gw-btn gw-btn--secondary" data-cred-copy="user">Copiar usuario</button></div>
+            <div class="gw-cred"><span class="gw-cred__label">Contraseña</span><code class="gw-cred__value" id="clientCredPass"></code> <button type="button" class="gw-btn gw-btn--secondary" data-cred-copy="pass">Copiar contraseña</button></div>
+            <div class="gw-actions"><button type="button" class="gw-btn gw-btn--primary" id="clientCredDone">Ya los copié</button></div>
+          </div>
+        </div>
         <form id="tempUserForm" class="gw-stack">
           <div class="gw-fields-row gw-fields-row--2">
-            <div class="gw-field">
+            <div class="gw-field" id="uUsernameField">
               <label class="gw-label" for="uUsername">Usuario (para digitador, la cédula)</label>
               <input class="gw-input" type="text" id="uUsername" name="username" required data-gw-username-input autocapitalize="none">
             </div>
@@ -100,9 +109,10 @@
               <select class="gw-select" name="role" id="eventRoleSelect" required>
                 {% if staff_role != "comercial" %}
                 <option value="digitador">Digitador (temporal)</option>
+                <option value="cliente_temp">Cliente (temporal, con usuario y contraseña propios)</option>
                 {% endif %}
               </select>
-              <p class="gw-hint">La contraseña de la cuenta es la misma cédula: no hay que escribirla.</p>
+              <p class="gw-hint" id="uRoleHint">La contraseña de la cuenta es la misma cédula: no hay que escribirla.</p>
             </div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">
@@ -188,8 +198,10 @@
         <button type="button" class="gw-btn gw-btn--danger" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Eliminar los usuarios temporales de este evento</button>{% endif %}
       </div>
       <div id="tempUsersStatus" role="status" aria-live="polite" class="gw-msg"></div>
+      <div class="gw-rowsbox">
       <div id="tempUsersList" class="gw-cards gw-rows gw-usr__list" aria-busy="true" data-gw-tour-step="3" data-gw-tour-title="3. Quita el acceso al terminar" data-gw-tour-text="«Quitar de este evento» retira el acceso aquí. «Eliminar cuenta» borra de verdad la cuenta del digitador (si está en otro evento, solo la quita de este).">
         {{ skeleton('cards', rows=3, label='Cargando cuentas…') }}
+      </div>
       </div>
       <div id="tempUsersPager"></div>
     </section>

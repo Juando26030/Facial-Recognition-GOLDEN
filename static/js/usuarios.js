@@ -20,7 +20,7 @@
 
     function cardHtml(u) {
         const PL = window.UsuariosCompromiso;
-        const rol = ROLES[u.role] || u.role;
+        const rol = u.client_temp ? 'Cliente (temporal)' : (ROLES[u.role] || u.role);
         const nombre = u.full_name || 'Sin nombre';
         const st = loginState[u.id] || {};
         const estado = (u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>')
@@ -31,15 +31,15 @@
         const PLG = PL && u.role === 'digitador';      // compromiso digital (usuarios-compromiso.js): sin firmar no se ofrece «Permitir»; el servidor también lo rechaza
         const allowBtn = PLG && PL.blocked(u.id) ? ''
             : `<button type="button" class="gw-btn gw-btn--primary" data-act="allow" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Permitir</span></button>`;
-        const loginBtns = !canManage || u.role !== 'digitador' ? '' : (st.login_pending
+        const loginBtns = !canManage || u.role !== 'digitador' || u.client_temp ? '' : (st.login_pending
             ? allowBtn
               + `<button type="button" class="gw-btn gw-btn--danger-outline" data-act="deny" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>No permitir</span></button>`
             : '') + (st.locked
             ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="unlock" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Desbloquear</span></button>`
             : '');
         const reset = u.role === 'digitador'
-            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Restablecer contraseña</span></button>` : '';
-        const resend = canManage && u.role === 'digitador'
+            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-client="${u.client_temp ? '1' : '0'}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-lock"/></svg><span>Restablecer contraseña</span></button>` : '';
+        const resend = canManage && u.role === 'digitador' && !u.client_temp
             ? (u.has_email
                 ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="resend" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Reenviar correo</span></button>`
                 : `<button type="button" class="gw-btn gw-btn--secondary" data-act="setmail" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><span>Agregar correo</span></button>`) : '';
@@ -237,16 +237,64 @@
         return typeof err.detail === 'string' ? err.detail : fallback;
     }
 
+    // Cliente temporal (12-nov-2026): sin cédula (el servidor genera usuario y contraseña) y los datos se muestran UNA sola vez.
+    const roleSel = document.getElementById('eventRoleSelect');
+    const userField = document.getElementById('uUsernameField');
+    const userInput = document.getElementById('uUsername');
+    const roleHint = document.getElementById('uRoleHint');
+    const credBox = document.getElementById('clientCreds');
+    const HINT_DIG = 'La contraseña de la cuenta es la misma cédula: no hay que escribirla.';
+    const HINT_CLI = 'Para el cliente que también interviene en la base: tiene los mismos permisos del digitador, pero entra con un usuario y una contraseña propios que se generan solos, sin que el coordinador tenga que autorizar cada ingreso. Escribe solo su nombre.';
+    function syncRole() {
+        const isClient = !!roleSel && roleSel.value === 'cliente_temp';
+        if (userField) userField.hidden = isClient;
+        if (userInput) userInput.required = !isClient;
+        if (roleHint) roleHint.textContent = isClient ? HINT_CLI : HINT_DIG;
+    }
+    function showCredentials(user, pass) {
+        if (!credBox) return;
+        document.getElementById('clientCredUser').textContent = user;
+        document.getElementById('clientCredPass').textContent = pass;
+        credBox.hidden = false;
+        credBox.scrollIntoView({ block: 'nearest' });
+    }
+    function hideCredentials() {
+        if (!credBox) return;
+        credBox.hidden = true;
+        document.getElementById('clientCredUser').textContent = '';
+        document.getElementById('clientCredPass').textContent = '';
+    }
+    if (roleSel) roleSel.addEventListener('change', syncRole);
+    if (credBox) credBox.addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.id === 'clientCredDone') { hideCredentials(); return; }
+        const which = b.getAttribute('data-cred-copy');
+        if (!which) return;
+        const text = document.getElementById(which === 'user' ? 'clientCredUser' : 'clientCredPass').textContent;
+        if (await window.copyText(text)) showToast(which === 'user' ? 'Usuario copiado' : 'Contraseña copiada', 'success');
+        else showToast('No se pudo copiar: selecciónalo y cópialo a mano', 'error');
+    });
+    syncRole();
+
     tempForm.addEventListener('submit', (ev) => {
         ev.preventDefault();
         const form = ev.target;
         const btn = form.querySelector('[data-gw-submit]');
         const payload = Object.fromEntries(new FormData(form).entries());
+        const isClient = payload.role === 'cliente_temp';
+        if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; }          // el servidor genera el usuario y la contraseña
         return busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
             });
-            if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }
+            if (res.ok && isClient) {
+                const d = await res.json().catch(() => ({}));
+                form.reset(); syncRole(); loadTempUsers();
+                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password);
+                showToast('Cliente creado y asignado al evento', 'success');
+            }
+            else if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }
             else showToast(await errDetail(res, 'Revisa los datos: falta algún campo o no es válido'), 'error');
         }).catch(() => showToast('No se pudo crear la cuenta. Revisa la conexión.', 'error'));
     });
@@ -273,6 +321,16 @@
             const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}`, { method: 'DELETE' });
             loadTempUsers();
             showToast(res.ok ? 'Acceso revocado' : 'No se pudo revocar el acceso', res.ok ? 'success' : 'error');
+        });
+    }
+
+    async function resetClientPassword(btn, staffId, username) {
+        if (!(await showConfirm(`Se generará una contraseña NUEVA para "${window.escapeHtml(username)}" y la anterior dejará de servir. Se muestra una sola vez. ¿Continuar?`, { confirmLabel: 'Generar contraseña' }))) return;
+        await busy(btn, async () => {
+            const res = await fetch(`/api/staff/${staffId}/password`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ generate: true }) });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.new_password) { showCredentials(username, data.new_password); showToast('Contraseña nueva generada', 'success'); }
+            else showToast(data.detail || 'No se pudo restablecer', 'error');
         });
     }
 
@@ -447,7 +505,7 @@
         const act = btn.getAttribute('data-act'), id = btn.getAttribute('data-id'), user = btn.getAttribute('data-username') || '';
         const run = act === 'reload' ? loadTempUsers()
             : act === 'revoke' ? revokeTempUser(btn, id)
-            : act === 'reset' ? resetTempPassword(btn, id, user)
+            : act === 'reset' ? (btn.dataset.client === '1' ? resetClientPassword(btn, id, user) : resetTempPassword(btn, id, user))
             : act === 'resend' ? resendCredentials(btn, id)
             : act === 'setmail' ? setStaffMail(btn, id)
             : act === 'delete' ? deleteTempUser(btn, id, user, btn.dataset.role)

@@ -304,3 +304,22 @@ La barra (negrita, cursiva, subrayado, color, tamaño, letra, alineación, lista
 - **Parámetros › Permanencia:** «Paso 1 · Medir (solo informativo)» y «Paso 2 · Exigir el porcentaje», con un resumen que dice qué efecto tiene hoy.
 - **No probado aquí (sin base de datos):** los endpoints de la fila de sorteos y el filtro por día (corren en Cloud Shell con pytest); la parte visual sí se revisó con el arnés (computador, celular, claro y oscuro).
 - **Segunda ronda (11-nov, tarde):** la fila de sorteos ya no tiene su propio «Guardar»: se registra en el guardado general (`GWParams`, clave `queue`) y se guarda con la barra «Guardar cambios». «Volver al kiosco» pasó a una píldora dorada con borde claro en la franja azul «Cliente · Evento · Código» (si la pantalla no tiene franja, queda en una fila propia sobre el contenido), así no mueve el título. En el Kiosco, «Más herramientas» abre desplegado por defecto (se puede plegar).
+
+## Ajustes del 12-nov-2026
+
+Pedidos de Juan David tras ver producción (commit 25cccaa) en una ventana de navegador algo más pequeña de lo normal.
+
+### 1. Filas que se descuadraban (botones y textos)
+- **Causa:** la fila de cada formulario (`kiosk_formularios`, `p-formularios.css`) se ponía en UNA línea cuando la ventana medía ≥ 901 px, pero la barra lateral le quita ~276 px: con ventanas de 1100-1450 px los botones («Archivar», «⋯») se salían por la derecha y aparecía scroll horizontal. Medir la ventana era la pregunta equivocada.
+- **Arreglo:** la fila delgada ahora depende del ANCHO DE LA LISTA (`container: forms / inline-size`, `@container forms (min-width: 1240px)`). Más angosta, conserva la tarjeta (las acciones saltan de línea). También se ensanchó la columna «Inscripciones / Cupo» para que «Cupo» no se corte. Probado de 1000 a 1800 px y en celular con la herramienta de capturas: sin desborde.
+- **Regla para pantallas nuevas:** una lista de una sola línea con botones se decide por el ancho del contenedor, no por el de la ventana.
+
+### 2. «(opcional)» en negrilla
+`static/js/form-render.js`: el «(opcional)» de los campos no obligatorios de los formularios públicos pasa de letra fina y apagada a `font-weight:700` (sin opacidad). Hash de `tests/test_publico_congelado.py` renovado A PROPÓSITO, con orden expresa.
+
+### 3. Cliente temporal del evento
+- **Qué es:** en «Usuarios del evento › Nueva cuenta», el rol «Cliente (temporal, con usuario y contraseña propios)». Tiene los MISMOS permisos que el digitador temporal (su rol sigue siendo `digitador`; columna nueva `staff_users.client_temp`, migración `0129_staff_client_temp`), pero entra con un usuario `cli-xxxxxx` y una contraseña aleatoria de 14 caracteres generados por el servidor (`app/temp_client.py`), SIN la solicitud de ingreso que autoriza el coordinador (`login_control.applies` lo excluye).
+- **Entrega:** el usuario y la contraseña se muestran UNA sola vez a quien crea la cuenta (panel verde con «Copiar»); no se guardan en claro, no van por correo ni a los registros. Si se pierden: «Restablecer contraseña» genera una nueva (`PUT /api/staff/{id}/password` con `{"generate": true}`).
+- **Qué se mantiene:** el bloqueo por intentos fallidos de `security` (por usuario+IP) sigue valiendo; el compromiso digital, la eliminación con «Eliminar los usuarios temporales», el alcance por evento y las puertas `get_event_for_staff` / `require_event_in_progress` son las del digitador.
+- **Decisiones (documentadas porque eran ambiguas):** no lleva correo (el correo nunca lleva contraseñas y su texto habla de la cédula); la contraseña no vence ni obliga a cambiarla (cuenta del evento); sin «Permitir / No permitir / Desbloquear» en su fila.
+- **Pruebas:** `tests/test_ajustes_nov12.py` (de texto, sin base de datos). Pendiente: prueba con base de datos (crear, ingresar sin autorización, restablecer) en la sesión de pruebas completas.

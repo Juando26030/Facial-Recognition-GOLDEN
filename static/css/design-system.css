@@ -1074,7 +1074,7 @@
 .gw-list > .gw-list__item + .gw-list__item { margin-top: 0; }
 .gw-list__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2) var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
 .gw-list__item > :first-child { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; line-height: var(--gw-lh-body); }
-.gw-list__item > :not(:first-child) { flex: none; }
+.gw-list__item > :not(:first-child) { flex: none; max-width: 100%; }          /* 12-nov-2026: sin tope, las acciones (flex: none) medían todos sus botones en una línea y se salían de la tarjeta; con el tope bajan de línea dentro de ella */
 .gw-list__item > .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
 .gw-list__item code { font-size: var(--gw-fs-sm); overflow-wrap: anywhere; word-break: break-all; }
 .gw-list__item .gw-badge { vertical-align: middle; }

@@ -13,7 +13,7 @@
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   // Mensaje del cupo lleno: el de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Espejo de formlib.quota_full_message.
-  const OPTIONAL = ' <span class="fr-opt" style="font-weight:400; opacity:.7;">(opcional)</span>';       // cara al público no hay asteriscos: lo no obligatorio lleva «(opcional)» (6-nov-2026, orden de Juan David)
+  const OPTIONAL = ' <span class="fr-opt" style="font-weight:700;">(opcional)</span>';       // cara al público no hay asteriscos: lo no obligatorio lleva «(opcional)» (6-nov-2026, orden de Juan David)
   const QUOTA_DEFAULT_MESSAGE = 'Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.';
   const QUOTA_CLOSED_MESSAGE = 'Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.';   // máximo 0 = cerrado temporalmente
   const quotaFullMessage = (message, label, closed) => (String(message == null ? '' : message).trim() || (closed ? QUOTA_CLOSED_MESSAGE : QUOTA_DEFAULT_MESSAGE)).split('{cupo}').join(String(label == null ? '' : label));

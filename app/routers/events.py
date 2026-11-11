@@ -4,9 +4,9 @@ from datetime import date
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from app.inputcheck import check_text, check_username, text_validator, username_validator
+from app.inputcheck import check_text, check_username, text_validator
 from app.tenant_scope import assert_same_tenant
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import audit_actions, jobs, security, staff_credentials, status_changes, warmup
+from app import audit_actions, jobs, security, staff_credentials, status_changes, temp_client, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
@@ -45,14 +45,15 @@ def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinad
 
 
 class EventStaffIn(BaseModel):
-    username: str  # cédula, para digitador
+    username: Optional[str] = None  # cédula, para digitador; vacío si `client` (el servidor genera el usuario)
+    client: bool = False  # 12-nov-2026: cliente temporal (app/temp_client.py): mismos permisos que el digitador, usuario y contraseña aleatorios, sin autorización del coordinador
     password: Optional[str] = None      # 6-nov-2026: el digitador temporal entra con su cédula como usuario Y contraseña; solo se manda una si alguien quiere otra distinta (esa sí pasa la política estricta)
     full_name: Optional[str] = None
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
     email: Optional[str] = None  # Fase 4: correo donde recibe los datos de ingreso y del evento (opcional)
 
-    _u = username_validator("username")
+    _u = field_validator("username")(classmethod(lambda cls, v: None if v in (None, "") else check_username(v)))
     _t = text_validator("full_name")
 
 
@@ -61,7 +62,7 @@ class AssignExistingIn(BaseModel):
 
 
 def _serialize_staff(s: StaffUser) -> dict:
-    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip())}
+    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip()), "client_temp": bool(getattr(s, "client_temp", False))}
 
 
 # Código del evento (orden del 21-oct-2026). Va en direcciones públicas: /aceptar/<código>, el QR del cartel y los enlaces personales ya enviados por correo.
@@ -675,6 +676,20 @@ def create_event_staff(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
     assert_event_scope(event, staff, db)
+    if data.client:          # 12-nov-2026: cliente temporal = digitador (mismos permisos) con usuario y contraseña aleatorios; se entregan UNA vez en esta respuesta y no llevan correo
+        if not (data.full_name or "").strip():
+            raise HTTPException(status_code=400, detail="Escribe el nombre de la persona del cliente")
+        username = temp_client.new_username(lambda n: db.query(StaffUser.id).filter(StaffUser.username == n).first() is not None)
+        password = temp_client.new_password(username)
+        new_user = StaffUser(username=username, password_hash=hash_password(password), full_name=data.full_name.strip(), role="digitador", client_temp=True,
+                             tenant_id=event.tenant_id, created_by_id=staff.id, must_change_password=False)
+        db.add(new_user)
+        db.flush()
+        db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
+        db.commit()
+        return {**_serialize_staff(new_user), "credentials": {"username": username, "password": password}, "credentials_mail": "disabled"}
+    if not data.username:
+        raise HTTPException(status_code=400, detail="Escribe el usuario (la cédula)")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
     password = (data.password or "").strip() or data.username        # decisión de Juan David (6-nov-2026): la cuenta temporal de digitador usa su cédula como contraseña; no aplica la política de contraseña segura

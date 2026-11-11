@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import audit_actions, jobs, security, sessions, staff_credentials, localmode
+from app import audit_actions, jobs, security, sessions, staff_credentials, localmode, temp_client
 from app.inputcheck import check_text, check_username, text_validator, username_validator
 from app.auth import EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
@@ -389,7 +389,13 @@ def reset_staff_password(
     if target.role not in _manageable_roles(staff):
         raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
     _assert_can_manage(db, staff, target)          # P1: el coordinador solo con digitadores de eventos a los que tiene acceso
-    if data.get("use_username") and target.role == "digitador":
+    generated = None
+    if data.get("generate") and getattr(target, "client_temp", False):
+        generated = temp_client.new_password(target.username)          # cliente temporal (12-nov-2026): contraseña aleatoria nueva, se muestra UNA vez a quien la restablece; no vence
+        new_password, must_change = generated, False
+    elif data.get("use_username") and target.role == "digitador" and getattr(target, "client_temp", False):
+        raise HTTPException(status_code=400, detail="El cliente temporal no usa la cédula: genera una contraseña nueva")
+    elif data.get("use_username") and target.role == "digitador":
         new_password, must_change = target.username, False         # digitador temporal (6-nov-2026): vuelve a entrar con su cédula como contraseña; sin política de contraseña segura
     else:
         new_password, must_change = str(data.get("new_password") or ""), security.must_change_on_set_by_other(target.role)      # Fase 4: ya no es opcional (se ignora `must_change` del cuerpo)
@@ -404,6 +410,8 @@ def reset_staff_password(
     if mail_queued:
         jobs.kick()
     security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
+    if generated:
+        return {"message": f"Contraseña de {target.username} restablecida: entrégale la nueva, no se vuelve a mostrar", "new_password": generated, "credentials_mail": "disabled"}
     return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")
             + (". Se le envió un correo con las instrucciones" if mail_queued else ". No tiene correo registrado: entrégale la hoja impresa"), "credentials_mail": "queued" if mail_queued else "no_email"}
 

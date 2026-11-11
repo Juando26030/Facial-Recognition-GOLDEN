@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 12-nov-2026, orden expresa de Juan David: «(opcional)» de los formularios públicos sale en negrilla (form-render.js: font-weight 700, sin opacidad); hash renovado.
 # 9-nov-2026 (cierre Fase 4): form_public.html, legal_base.html y form-render.js cambiaron A PROPÓSITO (compromiso digital: ficha, secciones, avisos); hashes renovados.
 # 9-nov-2026 (revisión F5-9): digital_badge.html cambió A PROPÓSITO en la Fase 8 (QR dinámico, Wallet y enlace de contactos, orden de Juan David); y por ORDEN EXPRESA de
 # Juan David todas las páginas llevan el ícono de Golden en la pestaña (solo se agregaron las líneas <link rel="icon">). Hashes renovados.
@@ -32,7 +33,7 @@ FROZEN = {
     "templates/roulette_display.html": "0d095afc32fda8902a50a211250475ced849be613d8b62b170f86e64d10fc9b9",
     "templates/badge_print.html": "6ed7e10d2dc70329eb20dccb1861e73eb167a27e2355d886617812e37f4e3f87",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
-    "static/js/form-render.js": "44ab6b5b75382e6284642060169ac2c7ee0ea6916e587b0e90e856a475950ba3",
+    "static/js/form-render.js": "87efcadfa55b3a73e363fcc293fd476112e108fbb4f0b183fcd34626f3036951",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
     "static/js/direct-upload.js": "9b22353dca8650e6b924aca2114aeba2eec713b875c8a996631affd5e3f500f3",
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",

@@ -39,10 +39,12 @@
   #importCard .gw-field { margin-bottom: 0; }
 }
 
-/* Escritorio (>= 901 px): cada formulario es UNA fila delgada (nombre · estado · enlace · cifras · acciones en una línea). El celular conserva la tarjeta. */
-@media (min-width: 901px) {
-  #body.gw-cards { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); }
-  #body .gw-card-row { display: grid; grid-template-columns: minmax(0, 2.4fr) 6.5rem minmax(0, 1.1fr) minmax(11.5rem, 1.4fr) minmax(6.5rem, 0.5fr) auto; align-items: center; column-gap: var(--gw-sp-4); row-gap: 0; padding: var(--gw-sp-2) var(--gw-sp-4); box-shadow: none; }
+/* Una fila delgada por formulario (nombre · estado · enlace · cifras · acciones en una línea) SOLO cuando la LISTA mide >= 1240 px. Se mide el ancho de la lista y no el de la ventana:
+   la barra lateral le quita ~276 px, así que con una ventana de 1280-1500 px los botones se salían por la derecha (12-nov-2026). Más angosta, conserva la tarjeta (las acciones saltan de línea). */
+@media (min-width: 901px) { #body.gw-cards { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); } }
+#body.gw-cards { container: forms / inline-size; }
+@container forms (min-width: 1240px) {
+  #body .gw-card-row { display: grid; grid-template-columns: minmax(0, 2.4fr) 6.5rem minmax(0, 1.1fr) minmax(11.5rem, 1.4fr) minmax(9.5rem, 0.6fr) auto; align-items: center; column-gap: var(--gw-sp-4); row-gap: 0; padding: var(--gw-sp-2) var(--gw-sp-4); box-shadow: none; }
   #body .gw-card-row__head, #body .gw-card-row .gw-stats-row { display: contents; }
   #body .gw-card-row__title { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-md); }
   #body .gw-card-row__head > .gw-badge { grid-column: 2; justify-self: start; }
@@ -63,9 +65,9 @@
   #newForm > .gw-form-group { align-self: end; }
   #newForm > .gw-forms-main { align-self: end; }
 }
-@media (min-width: 901px) and (max-width: 1599px) {
-  /* Pantallas de 1280-1536 px: los botones se compactan y las columnas se reparten para que se vea todo lo mismo que en celular (textos de los botones y nota de pruebas) */
-  #body .gw-card-row { grid-template-columns: minmax(9rem, 2.4fr) 6.5rem minmax(3.5rem, 0.6fr) minmax(9.5rem, 1.2fr) minmax(8.5rem, 0.8fr) auto; column-gap: var(--gw-sp-3); }
+@container forms (min-width: 1240px) and (max-width: 1349px) {
+  /* Listas de 1240-1349 px (ventanas de 1500-1620 px con la barra lateral): los botones se compactan y las columnas se reparten para que se vea todo lo mismo que en celular (textos de los botones y nota de pruebas) */
+  #body .gw-card-row { grid-template-columns: minmax(9rem, 2.4fr) 6.5rem minmax(3.5rem, 0.6fr) minmax(9.5rem, 1.2fr) minmax(9.5rem, 0.8fr) auto; column-gap: var(--gw-sp-3); }
   #body .gw-card-row__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: var(--gw-lh-tight); }          /* el nombre ocupa 2 líneas en vez de cortarse */
   #body .gw-card-row__actions { gap: var(--gw-sp-1); }
   #body .gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }

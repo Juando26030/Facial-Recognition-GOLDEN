@@ -108,8 +108,10 @@
 
     <section aria-labelledby="staffListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Revisa los accesos" data-gw-tour-text="Cada cuenta es una tarjeta con su rol y su estado. Desde ahí cambias el rol, restableces la contraseña o desactivas el acceso.">
       <h2 class="gw-sr-only" id="staffListTitle">Cuentas del personal</h2>
+      <div class="gw-rowsbox">
       <div id="staffBody" class="gw-cards gw-rows gw-staff__list" aria-live="polite" aria-busy="true">
         {{ skeleton('cards', rows=4, label='Cargando cuentas…') }}
+      </div>
       </div>
     </section>
   </div>
