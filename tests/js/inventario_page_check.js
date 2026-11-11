@@ -70,3 +70,13 @@ assert.strictEqual(D.fmtMinutes(1440), '24 h');
 assert.strictEqual(D.fmtMinutes(125), '2 h 05 min');
 assert.strictEqual(D.fmtMinutes(45), '45 min');
 console.log('inventario_page_check: OK');
+
+// 11-nov-2026: tablero del día
+{
+  const P = globalThis.GWInvPage || require('../../static/js/inventario-page.js');
+  const evs = [{ id: 1, start: '2026-11-10', end: '2026-11-12', lines: [{ product_id: 1, assigned: 5 }, { product_id: 2, assigned: 3 }] }, { id: 2, start: '2026-11-11', end: '2026-11-11', lines: [] }];
+  const b = P.dayBoard(evs, { '2026-11-11': { 1: 5, 2: 3 } }, [{ id: 1, stock: 4 }, { id: 2, stock: 10 }], '2026-11-11', 0);
+  if (b.events.length !== 2 || b.units !== 8 || b.equipos !== 2 || b.short !== 1) throw new Error('dayBoard ' + JSON.stringify(b));
+  if (P.eventUnits(evs[0], 2) !== 3 || P.safeColor('red;x') !== '' || P.safeColor('#aabbcc') !== '#aabbcc') throw new Error('eventUnits/safeColor');
+  console.log('dayBoard ok');
+}

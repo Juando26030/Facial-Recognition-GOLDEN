@@ -70,7 +70,17 @@
     if (loose.length) groups.push({ name: 'Sin categorizar', products: loose });
     return groups;
   }
-  root.GWInvPage = { othersPeak, maxAssignable, parseQty, panelGroups, parse, toIso, addDays, mondayOf, monthStart, addMonths, eventOnDay, rangeFor, gridDays, usedOn, availOn, shortOn, eventsOn, titleFor, groupCatalog, dowIndex };
+  /* Unidades que un evento tiene asignadas (de un producto, o de todos). */
+  const eventUnits = (ev, pid) => (ev.lines || []).reduce((n, l) => n + ((!pid || l.product_id === pid) ? (l.assigned || 0) : 0), 0);
+  const safeColor = (c) => (/^#[0-9a-fA-F]{3,8}$/.test(String(c || '')) ? c : '');
+  /* Resumen de un día para el tablero: eventos con material, unidades, equipos distintos y cuántos equipos faltan. */
+  function dayBoard(events, daily, products, day, pid) {
+    const evs = eventsOn(events, day, pid);
+    const ids = new Set();
+    evs.forEach((e) => (e.lines || []).forEach((l) => { if ((!pid || l.product_id === pid) && l.assigned > 0) ids.add(l.product_id); }));
+    return { events: evs, units: evs.reduce((n, e) => n + eventUnits(e, pid), 0), equipos: ids.size, short: shortOn(daily, day, pid ? (products || []).filter((p) => p.id === pid) : products).length };
+  }
+  root.GWInvPage = { eventUnits, dayBoard, safeColor, othersPeak, maxAssignable, parseQty, panelGroups, parse, toIso, addDays, mondayOf, monthStart, addMonths, eventOnDay, rangeFor, gridDays, usedOn, availOn, shortOn, eventsOn, titleFor, groupCatalog, dowIndex };
 
   const doc = root.document;
   if (!doc || !doc.getElementById('invCatalog')) return;          // en Node solo se exponen las funciones puras
@@ -102,6 +112,8 @@
 
   /* ---- catálogo */
   let catalog = null;
+  let catDay = '';          // día que se mira en el catálogo (vacío = hoy)
+  const dayWord = () => (!catDay || catDay === toIso(new Date()) ? 'hoy' : 'ese día');
   const unitText = (p, n) => `${n} ${p.unit || ''}`.trim();
   function productCard(p, canManage) {
     const short = p.available != null && p.available < 0;
@@ -116,8 +128,8 @@
     return `<article class="gw-invpg__prod" data-product="${p.id}">
       <div class="gw-invpg__name">${esc(p.name)}${p.sku ? ` <span class="gw-hint">${esc(p.sku)}</span>` : ''}</div>
       <div class="gw-invpg__num"><span class="gw-invpg__lbl">Existencias</span><span class="gw-invpg__val">${p.stock == null ? 'Sin control' : esc(unitText(p, p.stock))}</span></div>
-      <div class="gw-invpg__num"><span class="gw-invpg__lbl">En uso hoy</span><span class="gw-invpg__val">${esc(unitText(p, p.in_use || 0))}</span></div>
-      <div class="gw-invpg__num"><span class="gw-invpg__lbl">Disponible hoy</span><span class="gw-invpg__val${short ? ' gw-invpg__val--short' : ''}">${p.available == null ? '—' : esc(unitText(p, p.available))}${short ? ' · falta material' : ''}</span></div>
+      <div class="gw-invpg__num"><span class="gw-invpg__lbl">En uso ${dayWord()}</span><span class="gw-invpg__val">${esc(unitText(p, p.in_use || 0))}</span></div>
+      <div class="gw-invpg__num"><span class="gw-invpg__lbl">Disponible ${dayWord()}</span><span class="gw-invpg__val${short ? ' gw-invpg__val--short' : ''}">${p.available == null ? '—' : esc(unitText(p, p.available))}${short ? ' · falta material' : ''}</span></div>
       <div>${edit}</div>${editor}</article>`;
   }
   function renderCatalog() {
@@ -130,7 +142,10 @@
   }
   async function loadCatalog() {
     try {
-      catalog = await jget('/api/inventory/overview');
+      catalog = await jget('/api/inventory/overview' + (catDay ? `?day=${catDay}` : ''));
+      if (!catDay) catDay = catalog.today || '';
+      if ($('invCatDay')) $('invCatDay').value = catDay;
+      if ($('invCatDayText')) $('invCatDayText').textContent = titleFor('day', catDay) + (catDay === toIso(new Date()) ? ' (hoy)' : '');
       const sel = $('invCatFilter'), cur = sel.value;
       sel.innerHTML = '<option value="">Todas</option>' + catalog.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
       sel.value = cur;
@@ -141,6 +156,13 @@
       renderCatalog();
     } catch (err) { $('invCatalog').setAttribute('aria-busy', 'false'); $('invCatalog').innerHTML = stateBox(err.message, true); }
   }
+  function setCatDay(iso) { if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return; catDay = iso; loadCatalog(); }
+  $('invCatDay').addEventListener('change', (e) => setCatDay(e.target.value));
+  doc.querySelector('.gw-invcatday').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-catday]'); if (!b) return;
+    const k = b.dataset.catday;
+    setCatDay(k === 'today' ? toIso(new Date()) : addDays(catDay || toIso(new Date()), k === 'next' ? 1 : -1));
+  });
   let searchTimer = null;
   $('invSearch').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => catalog && renderCatalog(), 200); });
   $('invCatFilter').addEventListener('change', () => catalog && renderCatalog());
@@ -188,8 +210,11 @@
   function chip(ev, pid) {
     const pend = ev.status === 'finalizado' && ev.lines.some((l) => l.pending_return > 0);
     const none = !ev.has_inventory && ev.status !== 'finalizado';
-    const txt = pid ? `${ev.name} · ${lineQty(ev, pid)}` : (none ? `${ev.name} · Sin inventario aún` : `${ev.name} · ${ev.lines.length} equipo${ev.lines.length === 1 ? '' : 's'}`);
-    return `<span class="gw-invcal__chip${pend ? ' gw-invcal__chip--warn' : ''}${none ? ' gw-invcal__chip--none' : ''}" data-drop-event="${ev.id}" title="${esc(ev.name)}">${esc(txt)}</span>`;
+    const units = eventUnits(ev, pid);
+    const col = safeColor(root.CalendarCats.categoryOf(ev).color);
+    const badge = none ? '<b class="gw-invcal__chipn gw-invcal__chipn--none">Sin inv.</b>' : `<b class="gw-invcal__chipn">${units}</b>`;
+    const tip = none ? `${ev.name} · sin inventario aún` : `${ev.name} · ${units} unidad${units === 1 ? '' : 'es'} en ${pid ? 1 : ev.lines.length} equipo${(pid ? 1 : ev.lines.length) === 1 ? '' : 's'}`;
+    return `<span class="gw-invcal__chip${pend ? ' gw-invcal__chip--warn' : ''}${none ? ' gw-invcal__chip--none' : ''}" data-drop-event="${ev.id}" title="${esc(tip)}"${col ? ` style="--evc:${esc(col)}"` : ''}><span class="gw-invcal__chipname">${esc(ev.name)}</span>${badge}</span>`;
   }
   function availText(day, pid, onlyIfUsed) {
     const prod = cal.data.products.find((p) => p.id === pid);
@@ -205,10 +230,11 @@
     const cells = gridDays('month', cal.anchor).map((day) => {
       const evs = eventsOn(visible(), day, pid);
       const short = pid ? [] : shortOn(cal.data.daily, day, cal.data.products);
-      const chips = evs.slice(0, 3).map((e) => chip(e, pid)).join('') + (evs.length > 3 ? `<span class="gw-invcal__more">+${evs.length - 3} más</span>` : '');
+      const chips = evs.slice(0, 3).map((e) => chip(e, pid)).join('') + (evs.length > 3 ? `<span class="gw-invcal__more">+${evs.length - 3} evento${evs.length - 3 === 1 ? '' : 's'} más</span>` : '');
+      const total = evs.reduce((n, e) => n + eventUnits(e, pid), 0);
       const warn = short.length ? `<span class="gw-invcal__chip gw-invcal__chip--warn">Falta material (${short.length})</span>` : '';
-      return `<button type="button" class="gw-invcal__cell${day.slice(0, 7) === month ? '' : ' gw-invcal__cell--out'}${day === today ? ' gw-invcal__cell--today' : ''}" data-day="${day}" aria-pressed="${day === cal.selected}" aria-label="${esc(titleFor('day', day))}: ${evs.length} evento${evs.length === 1 ? '' : 's'}">
-        <span class="gw-invcal__d">${Number(day.slice(8))}</span>${chips}${warn}${pid ? availText(day, pid, true) : ''}</button>`;
+      return `<button type="button" class="gw-invcal__cell${day.slice(0, 7) === month ? '' : ' gw-invcal__cell--out'}${day === today ? ' gw-invcal__cell--today' : ''}${evs.length ? '' : ' gw-invcal__cell--empty'}" data-day="${day}" aria-pressed="${day === cal.selected}" aria-label="${esc(titleFor('day', day))}: ${evs.length} evento${evs.length === 1 ? '' : 's'}, ${total} unidades">
+        <span class="gw-invcal__top"><span class="gw-invcal__d">${Number(day.slice(8))}</span><span class="gw-invcal__dn">${DOW[dowIndex(day)]}</span>${total ? `<span class="gw-invcal__tot" title="Unidades asignadas ese día">${total} uds</span>` : ''}</span>${chips}${warn}${pid ? availText(day, pid, true) : ''}</button>`;
     }).join('');
     return `<div class="gw-invcal__month" role="group" aria-label="Calendario del mes">${head}${cells}</div>`;
   }
@@ -239,6 +265,26 @@
     }).join('')}</tbody></table></div>` : '';
     box.innerHTML = `<h2 class="gw-card__title">${esc(titleFor('day', day))}</h2>${evHtml}${avail ? `<h3 class="gw-invcal__evtitle">Disponibilidad por equipo</h3>${avail}` : ''}`;
   }
+  function renderBoard() {
+    const box = $('invDayBoard'), day = cal.selected, pid = pidFilter();
+    if (!box) return;
+    if (!(cal.data.start <= day && day <= cal.data.end)) { box.innerHTML = ''; return; }
+    const d = dayBoard(visible(), cal.data.daily, cal.data.products, day, pid);
+    const kpi = (n, l, cls) => `<div class="gw-invboard__kpi${cls ? ' ' + cls : ''}"><span class="gw-invboard__n">${n}</span><span class="gw-invboard__l">${l}</span></div>`;
+    const cards = d.events.map((e) => {
+      const col = safeColor(root.CalendarCats.categoryOf(e).color), u = eventUnits(e, pid);
+      const lines = e.lines.filter((l) => (!pid || l.product_id === pid) && l.assigned > 0).sort((x, y) => y.assigned - x.assigned);
+      const none = !e.has_inventory && e.status !== 'finalizado';
+      return `<article class="gw-invboard__card" data-drop-event="${e.id}"${col ? ` style="--evc:${esc(col)}"` : ''}>
+        <div class="gw-invboard__head"><h3 class="gw-invboard__name">${esc(e.name)}</h3><span class="gw-hint">${esc(STATUS[e.status] || e.status)} · ${esc(e.event_start)}${e.event_end !== e.event_start ? ' al ' + esc(e.event_end) : ''}</span></div>
+        <div class="gw-invboard__big">${none ? '<span class="gw-badge gw-badge--warn">Sin inventario aún</span>' : `<span class="gw-invboard__num">${u}</span><span class="gw-invboard__unit">unidad${u === 1 ? '' : 'es'} · ${lines.length} equipo${lines.length === 1 ? '' : 's'}</span>`}</div>
+        ${lines.length ? `<ul class="gw-invboard__lines">${lines.slice(0, 4).map((l) => `<li><b>${l.assigned}</b> × ${esc(l.name)}</li>`).join('')}${lines.length > 4 ? `<li class="gw-hint">+${lines.length - 4} equipos más</li>` : ''}</ul>` : ''}
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-open-event="${e.id}" data-name="${esc(e.name)}">Abrir inventario del evento</button></article>`;
+    }).join('');
+    box.innerHTML = `<section class="gw-invboard" aria-label="Resumen del día"><h2 class="gw-invboard__title">${esc(titleFor('day', day))}${day === today ? ' <span class="gw-badge gw-badge--info">Hoy</span>' : ''}</h2>
+      <div class="gw-invboard__kpis">${kpi(d.events.length, d.events.length === 1 ? 'evento con material' : 'eventos con material')}${kpi(d.units, 'unidades asignadas')}${kpi(d.equipos, d.equipos === 1 ? 'equipo distinto' : 'equipos distintos')}${kpi(d.short, 'equipos con faltante', d.short ? 'gw-invboard__kpi--bad' : '')}</div>
+      ${cards ? `<div class="gw-invboard__cards">${cards}</div>` : '<p class="gw-hint">Ningún evento tiene material asignado este día. Toca otro día del calendario.</p>'}</section>`;
+  }
   function renderCalendar() {
     $('invCalBody').setAttribute('aria-busy', 'false');
     $('invCalTitle').textContent = titleFor(cal.view, cal.anchor);
@@ -246,6 +292,7 @@
     doc.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === cal.view)));
     renderCats();
     renderPanel();
+    renderBoard();
     renderDetail();
   }
 

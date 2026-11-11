@@ -435,15 +435,20 @@ def _events_in_range(db: Session, a, b) -> list:
 
 
 @router.get("/inventory/overview")
-def inventory_overview(db: Session = Depends(get_db), staff: StaffUser = Depends(VIEWER)):
-    """Catálogo vigente (categorías, productos, existencias) con lo asignado a eventos HOY y lo disponible. Sin nombres de eventos."""
+def inventory_overview(day: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(VIEWER)):
+    """Catálogo vigente (categorías, productos, existencias) con lo asignado a eventos un día (`day`, AAAA-MM-DD; sin él, HOY) y lo disponible. Sin nombres de eventos."""
     today = to_local(utcnow()).date()
+    try:
+        target = inventory_calendar.parse_day(day) if day else today
+    except inventory_calendar.RangeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     cat = _catalog(db, False)
-    used = inventory_calendar.usage_on(today, [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in _events_in_range(db, today, today)])
+    used = inventory_calendar.usage_on(target, [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in _events_in_range(db, target, target)])
     for p in cat["products"]:
         p["in_use"] = used.get(p["id"], 0)
         p["available"] = inventory_calendar.available(p["stock"], p["in_use"])
     cat["today"] = today.isoformat()
+    cat["day"] = target.isoformat()
     cat["can_manage"] = _can_manage(staff)
     cat["can_edit_catalog"] = _can_manage(staff)
     return cat

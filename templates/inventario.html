@@ -71,6 +71,13 @@
           <select class="gw-select" id="invCatFilter"><option value="">Todas</option></select></div>
         <button type="button" class="gw-btn gw-btn--secondary" id="invAdminLink" data-tab="adm" hidden>Administrar el catálogo</button>
       </div>
+      <div class="gw-invcatday" role="group" aria-label="Día que se consulta">
+        <button type="button" class="gw-btn gw-btn--secondary" data-catday="prev" aria-label="Día anterior">&lsaquo;</button>
+        <div class="gw-field"><label class="gw-label" for="invCatDay">Ver usos y disponibles de este día</label><input class="gw-input" type="date" id="invCatDay"></div>
+        <button type="button" class="gw-btn gw-btn--secondary" data-catday="next" aria-label="Día siguiente">&rsaquo;</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-catday="today">Hoy</button>
+        <strong class="gw-invcatday__text" id="invCatDayText" aria-live="polite"></strong>
+      </div>
       <p class="gw-hint" id="invCatHint" hidden></p>
       <div id="invCatalog" class="gw-stack-lg" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el catálogo…') }}</div>
     </section>
@@ -98,6 +105,7 @@
         <p class="gw-hint" id="invArmed" role="status" aria-live="polite"></p>
         <div id="invArtList"></div>
       </section>
+      <div id="invDayBoard" aria-live="polite"></div>
       <p class="gw-hint">Cada día muestra qué material tiene asignado cada evento (desde el montaje hasta el último día) y cuánto queda disponible. Toca un día para ver el detalle.</p>
       <div id="invCalBody" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el calendario…') }}</div>
       <div class="gw-invcal__detail" id="invCalDetail"></div>
