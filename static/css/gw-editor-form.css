@@ -296,3 +296,6 @@ table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wr
 }
 
 /* Los grupos de Configuración van uno debajo del otro, a todo lo ancho (6-nov-2026: nada de secciones lado a lado). */
+/* Variantes plegadas: el resumen (nombre · condición → valor) va en su propia línea, completo hasta 2 renglones, y los botones debajo; en el panel angosto los botones se comían todo el ancho y no se veía el nombre. */
+.gwe-cvh { flex-wrap: wrap; }
+.gwe-cvs { order: -1; flex: 1 1 100%; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
