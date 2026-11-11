@@ -1009,6 +1009,16 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     return None
 
 
+def enqueue_pending_feed(db: Session, form: WebForm) -> int:
+    """Al pasar el formulario a «en tiempo real»: las inscripciones reales que ya había y aún no están en la base se encolan una por una (mismo trabajo `form_feed`, idempotente).
+    Devuelve cuántas encoló; quien llama hace commit y despierta al worker (`jobs.kick()`)."""
+    n = 0
+    for (sid,) in real_submissions(db, form).filter(FormSubmission.fed == False).with_entities(FormSubmission.id).order_by(FormSubmission.id):  # noqa: E712
+        jobs.enqueue(db, "form_feed", {"submission_id": sid}, dedupe_key=str(sid))
+        n += 1
+    return n
+
+
 def feed_pending(db: Session, form: WebForm, upsert_attendee) -> dict:
     """Carga todas las inscripciones reales que aún no están en la base."""
     done, problems = 0, []

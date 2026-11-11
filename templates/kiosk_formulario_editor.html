@@ -1599,7 +1599,7 @@ async function saveConfig(opts = {}) {
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
-  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(opts); showToast('Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
+  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(opts); showToast(form.feed_queued ? `Configuración guardada. Se están cargando a la base las ${form.feed_queued} inscripciones que ya estaban` : 'Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
 }
 // Lo editado en Configuración queda pendiente hasta el botón de guardar. [data-instant] = actúa al instante (subir lista, archivo de pre-llenado); [data-own-pending] = estado, cupo y calendario (su pendiente se calcula contra lo guardado)
 ['input', 'change'].forEach((ev) => $('pane-config').addEventListener(ev, (e) => {

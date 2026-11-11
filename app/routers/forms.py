@@ -21,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, bulk_jobs, formfiles, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
+from app import audit_actions, bulk_jobs, formfiles, jobs, formlib, formsvc, heavy, ops, optionvalues, public_slug, publicurl, variant_table, warmup, wompi, payment_accounts
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app import event_archive
 from app.database import get_db
@@ -205,6 +205,7 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     form = _get_form(db, event, form_id)
     _not_archived(form)
     quota_before = formsvc.quota_sig_map(form)
+    feed_before = formsvc.get_settings(form)["feed"]
     if "name" in data:
         name = str(data["name"]).strip()[:120]
         if not name:
@@ -234,9 +235,15 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     if ("design" in data or "settings" in data) and formsvc.quota_sig_map(form) != quota_before:
         formsvc.invalidate_quota_keys(db, form)
         formsvc.rebuild_quota_keys(db, form, formsvc.quota_rules(form))          # se recalculan aquí, una vez y guardadas con este mismo guardado (no en cada visita pública)
+    queued = formsvc.enqueue_pending_feed(db, form) if "settings" in data and feed_before != "realtime" and formsvc.get_settings(form)["feed"] == "realtime" else 0     # cambio a «tiempo real»: las que ya estaban inscritas también se cargan
     db.commit()
+    if queued:
+        jobs.kick()
     formsvc.invalidate_public_cache()
-    return _detail(db, form, request)
+    out = _detail(db, form, request)
+    if queued:
+        out["feed_queued"] = queued
+    return out
 
 
 def _registered_parse(db: Session, event: Event, form: WebForm, file: UploadFile, with_data: bool = False) -> dict:

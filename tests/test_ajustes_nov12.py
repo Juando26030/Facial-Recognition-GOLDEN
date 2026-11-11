@@ -85,3 +85,12 @@ def test_form_files_routes_and_screens():
     assert "formfiles.stored_text" in _t("app/formsvc.py")
     assert "files-zip?field=" in _t("templates/kiosk_formulario_editor.html") and 'id="ansFiles"' in _t("templates/kiosk_formulario_editor.html")
     assert "/form-files`" in _t("static/js/directory.js")
+
+
+def test_switch_to_realtime_feeds_existing_submissions():
+    f = _t("app/routers/forms.py")
+    assert "feed_before != \"realtime\"" in f and "enqueue_pending_feed" in f and "jobs.kick()" in f
+    s = _t("app/formsvc.py")
+    body = s[s.index("def enqueue_pending_feed"):s.index("def feed_pending")]
+    assert "fed == False" in body and '"form_feed"' in body and "dedupe_key" in body
+    assert "feed_queued" in _t("templates/kiosk_formulario_editor.html")
