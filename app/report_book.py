@@ -1,6 +1,7 @@
 """Arma la portada y los gráficos del libro del reporte del evento (Fase 10, bloque E). Sin base de datos ni almacenamiento propio: lo que necesita llega como parámetros (`read_optional` lee un
 archivo del almacenamiento y devuelve None si no existe), así se prueba con datos simulados.
 
+UN solo logo en la portada (decisión del 10-nov): el del evento si existe, si no el de Golden (más una marca pequeña de Golden en el pie cuando sale el del evento).
 Orden final de las hojas: «Portada» → «Reporte» (lo de siempre) → «Gráficos» → «Historial de cambios» (solo si hubo cambios; la agrega app/reports.py después)."""
 import logging
 import os
@@ -13,16 +14,18 @@ log = logging.getLogger("golden.report_book")
 STATIC_LOGO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "img", "logo-golden.png")
 
 
-def cover_logos(event, tenant_id: str, read_optional, key_of) -> list:
-    """Logos de la portada, en este orden: Golden Eventos (siempre), el del cliente, el del evento y uno adicional; None donde no hay (la portada no deja hueco).
-    Cliente y adicional se leen de `<cliente>/branding/client-logo.png` y `<cliente>/branding/extra-logo-<evento>.png` (todavía no hay pantalla para subirlos: si no existen, se omiten)."""
+def cover_logos(event, read_optional) -> tuple:
+    """(logo principal, marca del pie). UN solo logo: el del evento si tiene uno propio («custom») y se puede leer; si no, el de Golden. Si el principal es el del evento, el pie lleva una marca
+    pequeña de Golden; si el principal ya es Golden, no se repite (None)."""
     try:
         with open(STATIC_LOGO, "rb") as fh:
             golden = fh.read()
     except OSError:
         golden = None
     own = read_optional(getattr(event, "logo_path", None)) if getattr(event, "logo_mode", "") == "custom" else None
-    return [golden, read_optional(key_of(tenant_id, "branding", "client-logo.png")), own, read_optional(key_of(tenant_id, "branding", f"extra-logo-{getattr(event, 'id', 0)}.png"))]
+    if own and report_cover.prepare_logo(own):
+        return own, golden
+    return golden, None
 
 
 def _n(v: int) -> str:
@@ -57,7 +60,7 @@ def cover_info(event, tenant_name: str, df, changes: list) -> dict:
     }
 
 
-def decorate(book, event, tenant_name: str, tenant_id: str, df, field_hints: dict, changes: list, read_optional, key_of) -> None:
+def decorate(book, event, tenant_name: str, tenant_id: str, df, field_hints: dict, changes: list, read_optional, key_of=None) -> None:
     """Agrega «Gráficos» y «Portada» (la primera) al libro openpyxl `book`, que ya trae la hoja «Reporte». Cada pieza falla por separado sin tumbar a la otra."""
     try:
         report_charts.build_sheet(book, report_charts.build_specs(df, field_hints, changes))
@@ -66,7 +69,8 @@ def decorate(book, event, tenant_name: str, tenant_id: str, df, field_hints: dic
         if report_charts.SHEET in book.sheetnames:
             del book[report_charts.SHEET]
     cover = book.create_sheet("Portada", 0)
-    report_cover.build_cover(cover, cover_info(event, tenant_name, df, changes), cover_logos(event, tenant_id, read_optional, key_of))
+    logo, footer = cover_logos(event, read_optional)
+    report_cover.build_cover(cover, cover_info(event, tenant_name, df, changes), logo, footer)
     for ws in book.worksheets:                         # una sola hoja seleccionada (si no, Excel las agrupa y lo que se escribe cae en todas)
         ws.sheet_view.tabSelected = ws is cover
     book.active = 0

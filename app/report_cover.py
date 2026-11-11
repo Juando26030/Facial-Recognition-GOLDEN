@@ -24,7 +24,7 @@ COL_W = 11.0
 COL_PX = 82                     # ancho aproximado de una columna de 11 caracteres
 BAND_ROWS, BAND_ROW_H = (2, 5), 20      # franja de logos: filas 2 a 5, 20 pt cada una (≈ 107 px en total)
 LOGO_BOX = (3 * COL_PX - 12, 86)         # caja máxima de cada logo (px): 3 columnas de ancho
-SLOTS = {1: ["F"], 2: ["C", "J"], 3: ["B", "F", "J"], 4: ["B", "E", "H", "K"]}         # columna donde empieza cada logo según cuántos hay
+FOOTER_LOGO_BOX = (110, 26)             # marca pequeña de Golden en el pie (solo cuando el logo principal es el del evento)
 MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 PRIVACY_NOTE = ("Este documento contiene datos personales de los asistentes (Ley 1581 de 2012). Úsalo solo para la finalidad del evento, no lo compartas con terceros "
                 "y elimínalo cuando ya no lo necesites. No incluye datos biométricos (rostros).")
@@ -101,20 +101,21 @@ def _card(ws, row: int, c1: int, c2: int, label: str, value: str, *, big: bool =
     ws.row_dimensions[row + 1].height = 40 if big else 30
 
 
-def _place_logo(ws, prepared: tuple, col_letter: str, band_px: float) -> None:
+def _place_logo(ws, prepared: tuple, col_letter: str, band_px: float, row: int = BAND_ROWS[0]) -> None:
     png, w, h = prepared
     img = XLImage(io.BytesIO(png))
     img.width, img.height = w, h
     col = ws[f"{col_letter}1"].column - 1
     row_off = max(0, int((band_px - h) / 2))
-    marker = AnchorMarker(col=col, colOff=pixels_to_EMU(6), row=BAND_ROWS[0] - 1, rowOff=pixels_to_EMU(row_off))
+    marker = AnchorMarker(col=col, colOff=pixels_to_EMU(6), row=row - 1, rowOff=pixels_to_EMU(row_off))
     img.anchor = OneCellAnchor(_from=marker, ext=XDRPositiveSize2D(pixels_to_EMU(w), pixels_to_EMU(h)))
     ws.add_image(img)
 
 
-def build_cover(ws, info: dict, logos: Iterable[Optional[bytes]]) -> int:
+def build_cover(ws, info: dict, logo: Optional[bytes], footer_logo: Optional[bytes] = None) -> int:
     """Dibuja la portada en `ws` (hoja ya creada). `info`: tenant, event_name, event_code, dates, place, event_type, coordinator, commercial, generated, kpis [(etiqueta, valor)], kpis2 [(etiqueta, valor)],
-    privacy (opcional). `logos`: bytes de cada logo en este orden: Golden, cliente, evento, adicional (None = no hay). Devuelve cuántos logos se dibujaron."""
+    privacy (opcional). `logo`: bytes del ÚNICO logo principal (el del evento, o el de Golden si el evento no tiene). `footer_logo`: marca pequeña de Golden para el pie (None = sin marca).
+    Devuelve cuántos logos se dibujaron (0 si el principal no se pudo leer: la franja queda limpia)."""
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 100
     ws.sheet_properties.tabColor = GOLD
@@ -128,11 +129,12 @@ def build_cover(ws, info: dict, logos: Iterable[Optional[bytes]]) -> int:
     # franja de logos
     for r in range(BAND_ROWS[0], BAND_ROWS[1] + 1):
         ws.row_dimensions[r].height = BAND_ROW_H
-    prepared = [p for p in (prepare_logo(d) for d in logos) if p]
-    prepared = prepared[:4]
+    drawn = 0
     band_px = (BAND_ROWS[1] - BAND_ROWS[0] + 1) * BAND_ROW_H * 96 / 72
-    for p, col in zip(prepared, SLOTS.get(len(prepared), [])):
-        _place_logo(ws, p, col, band_px)
+    main = prepare_logo(logo)
+    if main:
+        _place_logo(ws, main, "B", band_px)
+        drawn += 1
     ws.row_dimensions[6].height = 4
     for c in range(1, NCOLS + 1):
         ws.cell(row=6, column=c).fill = fill(GOLD)
@@ -190,6 +192,10 @@ def build_cover(ws, info: dict, logos: Iterable[Optional[bytes]]) -> int:
     # pie
     row += 1
     ws.row_dimensions[row].height = 34
+    mark = prepare_logo(footer_logo, FOOTER_LOGO_BOX)
+    if mark:
+        _place_logo(ws, mark, "L", 34 * 96 / 72, row)
+        drawn += 1
     _merge(ws, f"B{row}:M{row}", "Generado el " + (info.get("generated") or ""), Font(name=FONT, size=10, bold=True, color=NAVY), GRAY_BG, Alignment(horizontal="left", vertical="center", indent=1), BOX)
     row += 1
     ws.row_dimensions[row].height = 48
@@ -204,4 +210,4 @@ def build_cover(ws, info: dict, logos: Iterable[Optional[bytes]]) -> int:
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 1
     ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
-    return len(prepared)
+    return drawn

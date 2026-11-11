@@ -76,18 +76,32 @@ def test_cover_content_and_totals_exclude_nothing_extra():
     assert str(len(df)) in text and "Datos modificados".upper() in text
 
 
-def test_logo_slots_have_no_gaps():
-    for files, expected in (({}, 1), ({"ev.png": png(600, 200)}, 2), ({"ev.png": png(600, 200), "acme/branding/client-logo.png": png(300, 300)}, 3),
-                            ({"ev.png": png(600, 200), "acme/branding/client-logo.png": png(300, 300), "acme/branding/extra-logo-7.png": png(500, 120)}, 4)):
-        wb = book(files)
-        assert len(wb["Portada"]._images) == expected
+def test_single_logo_event_logo_wins_and_golden_stays_as_small_footer_mark():
+    wb = book({"ev.png": png(600, 200)})
+    assert len(wb["Portada"]._images) == 2                          # logo del evento + marca pequeña de Golden en el pie
+    main, mark = wb["Portada"]._images
+    assert main.width > mark.width and mark.height <= report_cover.FOOTER_LOGO_BOX[1]
+
+
+def test_without_event_logo_only_golden_appears_once():
+    for ev in (event(logo_mode="default"), event(logo_path=None)):
+        wb = book({"ev.png": png(600, 200)}, ev=ev)
+        assert len(wb["Portada"]._images) == 1                       # Golden como logo principal, sin repetirlo en el pie
+
+
+def test_client_and_extra_logo_files_are_never_read():
+    asked = []
+    wb = Workbook()
+    wb.active.title = "Reporte"
+    report_book.decorate(wb, event(), "Cliente", "acme", make_df(), {}, [], lambda k: (asked.append(k), png(50, 50))[1], key_of)
+    assert asked == ["ev.png"]                                       # solo el logo del evento; nada de client-logo ni extra-logo
 
 
 def test_missing_corrupt_or_hidden_logos_do_not_break():
-    wb = book({"ev.png": b"no es una imagen", "acme/branding/client-logo.png": b""})
-    assert len(wb["Portada"]._images) == 1                                         # solo el de Golden
-    wb = book({"ev.png": png(50, 50)}, ev=event(logo_mode="default"))
-    assert len(wb["Portada"]._images) == 1                                         # el del evento solo se usa si es «custom»
+    wb = book({"ev.png": b"no es una imagen"})
+    assert len(wb["Portada"]._images) == 1                           # logo dañado: se usa el de Golden
+    wb = book({}, ev=event(logo_path="otro.png"))
+    assert len(wb["Portada"]._images) == 1
     assert report_cover.prepare_logo(None) is None and report_cover.prepare_logo(b"x") is None
 
 

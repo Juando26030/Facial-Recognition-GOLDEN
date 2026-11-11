@@ -256,7 +256,7 @@ class ReportManager:
             # Fase 10 E: el libro queda «Portada» → «Reporte» → «Gráficos» → «Historial de cambios» (esta última solo si hubo cambios de datos después del registro).
             changes = person_history.event_rows(db, event) if event else []
             try:
-                report_book.decorate(writer.book, event, tenant_name, tenant_id, df, {label: field_types.get(key) for key, label in optional_columns}, changes, _read_optional, key_of)
+                report_book.decorate(writer.book, event, tenant_name, tenant_id, df, {label: field_types.get(key) for key, label in optional_columns}, changes, _read_optional)
             except Exception:          # la portada y los gráficos son un adorno: si fallan, el reporte (lo importante) sale igual
                 log.exception("no se pudo armar la portada o los gráficos del reporte")
             if changes:
