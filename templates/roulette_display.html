@@ -34,6 +34,7 @@ const assetUrl = (p) => `${base}/asset/${p}`;
 let style = null, stage = null, lastSeen = null, busy = false, authorized = false, authLabel = "", idleNames = [];
 let freeStop = null;          // giro libre (Fase 10, C): mientras gira sin parar, aquí está la función que lo frena (el clic en «Detener»)
 const manual = () => !!style && style.spin_mode === 'manual';
+let nextInfo = null, autoTimer = null, autoLeft = 0;     // fila de sorteos (11-nov-2026): cómo arranca el paso que toca («click» o solo tras una pausa) y la cuenta atrás
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -56,7 +57,8 @@ function paintButton() {
     const b = $('spinBtn');
     if (freeStop) { b.disabled = false; b.classList.add('ready'); b.textContent = 'Detener'; }
     else if (busy) { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Girando…'; }
-    else if (authorized) { b.disabled = false; b.classList.add('ready'); b.textContent = '¡Girar!'; }
+    else if (autoTimer) { b.disabled = false; b.classList.add('ready'); b.textContent = `Gira solo en ${autoLeft} s (o pulsa ya)`; }
+    else if (authorized) { b.disabled = false; b.classList.add('ready'); b.textContent = '¡Girar!' + (nextInfo && nextInfo.total > 1 ? ` · sorteo ${nextInfo.step} de ${nextInfo.total}` : ''); }
     else { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Esperando autorización…'; }
     if (!busy && authorized && authLabel) $('label').textContent = authLabel;
 }
@@ -66,10 +68,11 @@ async function poll() {
         const url = `${base}/state` + (lastSeen === null ? '' : `?after=${lastSeen}`);
         const st = await (await fetch(url)).json();
         if (!style || JSON.stringify(st.style) !== JSON.stringify(style)) paintStyle(st.style);
-        authorized = !!st.authorized; authLabel = st.authorized_label || '';
+        authorized = !!st.authorized; authLabel = st.authorized_label || ''; nextInfo = st.authorized_next || null;
+        if (!authorized) cancelAuto();
         if (lastSeen === null) { lastSeen = st.latest_id; }          // lo que ya estaba: no se re-anima
         else if (st.draw && !busy) { lastSeen = st.draw.id; run(st.draw); }   // otro giro (p. ej. desde otra pantalla)
-        if (!busy) paintButton();
+        if (!busy) { scheduleAuto(); paintButton(); }
     } catch (e) { /* sin red por un momento: se reintenta */ }
 }
 
@@ -83,22 +86,38 @@ async function run(draw, free) {
             let release; const stop = new Promise((r) => { release = r; });
             freeStop = () => { freeStop = null; release(); b_frenando(); };
             paintButton();
-            await stage.spin(draw.pool, winner.name, style.spin_seconds, { stop });
+            await stage.spin(draw.pool, winner.name, draw.spin_seconds || style.spin_seconds, { stop });
             freeStop = null;
         } else {
-            await stage.spin(draw.pool, winner.name, style.spin_seconds);
+            await stage.spin(draw.pool, winner.name, draw.spin_seconds || style.spin_seconds);
         }
         const card = document.createElement('div'); $('result').appendChild(card);
         RouletteRender.reveal(card, winner, style);
         if (draw.winners.length > 1) await sleep(2200);
     }
-    busy = false; authorized = false; paintButton();
+    busy = false; authorized = !!draw.next; nextInfo = draw.next || null;       // en una fila, la autorización sigue viva para el paso siguiente
+    if (authorized) { authLabel = draw.next.label || ''; scheduleAuto(); }
+    paintButton();
+}
+
+function cancelAuto() { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } }
+// Paso con inicio «solo»: tras la pausa que dejó el operador, gira sin que nadie pulse (el botón sigue sirviendo para adelantarlo).
+function scheduleAuto() {
+    if (autoTimer || busy || !authorized || !nextInfo || nextInfo.start !== 'auto') return;
+    autoLeft = nextInfo.pause || 8;
+    autoTimer = setInterval(() => {
+        autoLeft -= 1;
+        if (autoLeft <= 0) { cancelAuto(); doSpin(); } else paintButton();
+    }, 1000);
+    paintButton();
 }
 
 function b_frenando() { const b = $('spinBtn'); b.disabled = true; b.classList.remove('ready'); b.textContent = 'Frenando…'; }
 
 // El botón «Girar»: pide al servidor el giro autorizado (el ganador lo decide el servidor) y lo anima de inmediato.
-$('spinBtn').addEventListener('click', async () => {
+$('spinBtn').addEventListener('click', () => doSpin());
+async function doSpin() {
+    cancelAuto();
     if (freeStop) { freeStop(); return; }                           // segundo clic del giro libre: frenar
     if (busy || !authorized) return;
     busy = true; paintButton();
@@ -107,9 +126,9 @@ $('spinBtn').addEventListener('click', async () => {
         const draw = await res.json().catch(() => ({}));
         if (!res.ok) { busy = false; authorized = false; paintButton(); $('label').textContent = draw.detail || 'No se pudo girar'; return; }
         lastSeen = draw.draw_id;                                        // este giro ya lo vamos a animar aquí: que el sondeo no lo repita
-        busy = false; run(draw, manual());
+        busy = false; run(draw, draw.spin_mode ? draw.spin_mode === 'manual' : manual());          // cada sorteo de la fila trae su propia forma de girar
     } catch (e) { busy = false; paintButton(); }
-});
+}
 
 poll(); setInterval(poll, 1500);
 </script>

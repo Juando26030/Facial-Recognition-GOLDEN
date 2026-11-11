@@ -66,7 +66,7 @@ html:has(.rr-display) { height: 100%; }
 .rr-winner__star { width: 1.8em; height: 1.8em; margin: 0 auto .1em; display: block; fill: currentColor; opacity: .85; font-size: 1.1rem; }
 .rr-winner__eyebrow { font-size: .9rem; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; opacity: .85; }
 .rr-winner__name { margin-top: .15em; font-size: calc(clamp(1.6rem, 4.2vw, 3.2rem) * var(--rr-name-scale, 1)); font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
-.rr-winner__entity { margin-top: .35em; font-size: 1.05rem; opacity: .9; overflow-wrap: anywhere; }
+.rr-winner__entity { margin-top: .35em; opacity: .9; overflow-wrap: anywhere; }
 
 /* ---------- columna «casino» ---------- */
 .rr-reel { position: relative; width: 100%; overflow: hidden; border-radius: 1.6rem; border: .5rem solid transparent; background: linear-gradient(var(--rr-navy-deep), var(--rr-navy-deep)) padding-box, var(--rr-gold-grad) border-box; box-shadow: inset 0 0 4rem rgba(0, 0, 0, .65), var(--rr-shadow); }

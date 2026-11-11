@@ -78,7 +78,7 @@ def test_new_cedula_is_a_checkbox_and_the_scan_goes_in_the_same_id_field():
     assert 'id="regScanCedulaInput"' not in reg                                                     # un solo campo de cédula
     assert "const regScanCedulaInput = document.getElementById('manualIdField');" in reg
     js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
-    assert 'id="editNewCedulaChk"' in js and "/cedula-mrz-scan" in js
+    assert 'id="editNewCedulaChk"' not in js            # 11-nov-2026: editar a una persona ya registrada no lleva «cédula nueva» (solo el registro nuevo)
 
 
 # ---------------------------------------------------------------------------------------------------- B1

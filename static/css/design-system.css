@@ -1139,3 +1139,8 @@
 .gw-code { margin: var(--gw-sp-2) 0; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); font-family: ui-monospace, Consolas, monospace; font-size: var(--gw-fs-sm); overflow-x: auto; white-space: pre; }
 .gw-form-group__body code { background: var(--gw-surface-2); padding: 0 var(--gw-sp-1); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
 .gw-code code { background: none; padding: 0; }
+
+/* «Volver al kiosco» junto al título de cada pantalla del evento (static/js/kiosk-back.js) */
+.gw-backrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-backrow > h1 { margin: 0; min-width: 0; }
+.gw-backbtn { flex: 0 0 auto; white-space: nowrap; }

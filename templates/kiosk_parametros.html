@@ -457,15 +457,25 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-group__item" id="dwellBox" data-event="{{ event.id }}">
             <div class="gw-item-head"><h4>Permanencia, premio por estadía y escaneo automático</h4>{% call ayuda('ay_dwell', 'Permanencia y premio por estadía') %}Con el conteo activo, cada entrada y salida de una zona se suma por persona (10 min + 5 min = 15 min). Tú defines el tiempo total de referencia (el 100 %, por ejemplo las 24 h del evento). Con el premio activo puedes ver cuántas personas pasan de un porcentaje (por ejemplo 80 %), bajar la lista en Excel o CSV, habilitar su certificado y dejar ítems de inventario solo para ellas. La persona de prueba nunca cuenta.{% endcall %}</div>
             <div data-psave="dwell">
-            <label class="gw-check"><input type="checkbox" id="dwellEnabled" {% if event.areas_dwell_enabled %}checked{% endif %}> Contar el tiempo de permanencia en las zonas</label>
+            <p class="gw-hint">Esto se arma en dos pasos. El paso 1 solo <strong>mide</strong>; el paso 2 es el que <strong>decide quién recibe</strong> algo.</p>
+            <div class="gw-card gw-stack" id="dwellStep1">
+              <h5>Paso 1 · Medir (solo informativo)</h5>
+              <label class="gw-check"><input type="checkbox" id="dwellEnabled" {% if event.areas_dwell_enabled %}checked{% endif %}> Sumar el tiempo que cada persona pasa dentro de las zonas</label>
+              <p class="gw-hint">Con esto solo se ven los minutos y el porcentaje de cada persona en reportes y estadísticas. <strong>No bloquea ni entrega nada por sí solo.</strong></p>
+            </div>
             <div id="dwellConfig" class="gw-stack" {% if not event.areas_dwell_enabled %}hidden{% endif %}>
-              <label class="gw-check"><input type="checkbox" id="dwellPrize" {% if event.dwell_prize_enabled %}checked{% endif %}> Habilitar premio por porcentaje de estadía (certificado o entrega solo a quien cumple)</label>
-              <div class="gw-actions">
-                <div class="gw-field"><label class="gw-label" for="dwellRefH">Tiempo de referencia (el 100 %): horas</label><input class="gw-input gw-input--short" type="number" id="dwellRefH" min="0" placeholder="0"></div>
-                <div class="gw-field"><label class="gw-label" for="dwellRefM">minutos</label><input class="gw-input gw-input--short" type="number" id="dwellRefM" min="0" max="59" placeholder="0"></div>
-                <div class="gw-field"><label class="gw-label" for="dwellPct">Porcentaje mínimo para cumplir</label><input class="gw-input gw-input--short" type="number" id="dwellPct" min="1" max="100" placeholder="80"></div>
+              <div class="gw-card gw-stack" id="dwellStep2">
+                <h5>Paso 2 · Exigir el porcentaje (opcional)</h5>
+                <label class="gw-check"><input type="checkbox" id="dwellPrize" {% if event.dwell_prize_enabled %}checked{% endif %}> Exigir un mínimo de permanencia para poder dar certificado o inventario</label>
+                <div class="gw-actions">
+                  <div class="gw-field"><label class="gw-label" for="dwellRefH">¿Cuánto es el 100 %? horas</label><input class="gw-input gw-input--short" type="number" id="dwellRefH" min="0" placeholder="0"></div>
+                  <div class="gw-field"><label class="gw-label" for="dwellRefM">minutos</label><input class="gw-input gw-input--short" type="number" id="dwellRefM" min="0" max="59" placeholder="0"></div>
+                  <div class="gw-field"><label class="gw-label" for="dwellPct">Mínimo para cumplir (%)</label><input class="gw-input gw-input--short" type="number" id="dwellPct" min="1" max="100" placeholder="80"></div>
+                </div>
+                <p class="gw-hint" id="dwellRefHint">Si dejas el tiempo de referencia vacío se usa la duración del evento (según sus fechas y horas).</p>
+                <p class="gw-hint"><strong>Qué se condiciona:</strong> el <em>certificado</em> con el botón «Habilitar certificado a quienes cumplen» (más abajo) y cada <em>ítem de inventario</em> donde marques «Solo a quien cumple la estadía». Lo que no marques sigue igual para todos.</p>
               </div>
-              <p class="gw-hint" id="dwellRefHint">Si dejas el tiempo de referencia vacío se usa la duración del evento (según sus fechas y horas).</p>
+              <div class="gw-alert gw-alert--info" id="dwellSummary" role="status" aria-live="polite"></div>
             </div>
             <div class="gw-stack" id="scanAutoBox">
               <label class="gw-check"><input type="checkbox" id="areasAutoscan" {% if event.areas_autoscan %}checked{% endif %}> Control de áreas: escanear o dar Enter registra la entrada o salida solo, sin pulsar «Acreditar»</label>

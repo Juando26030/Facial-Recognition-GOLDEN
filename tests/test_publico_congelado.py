@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # 10-nov-2026 (Fase 10, bloque C), orden de Juan David: la ruleta (roulette_display.html y roulette-render.js) gana datos del ganador a elección, logos/banners arriba y giro libre (Iniciar/Detener); el QR de la escarapela (impresa y digital) y del pase de Wallet pasa a ser una vCard (guardar el contacto al escanear). Cambian badge-render.js
 # (dibuja la vCard, nivel de corrección L), digital_badge.html (QR dinámico en vCard) y los <script> de vcard.js en badge_print/certificate_public. Tamaños y parámetros de impresión intactos. Hashes renovados.
 # 10-nov-2026 (tras probar staging), orden de Juan David: roulette-render.js gana tamaño propio y alineación por logo/banner y escala del texto del nombre y de los demás datos del ganador (variables CSS --rr-top-h, --rr-name-scale, --rr-fields-scale). Hash renovado.
+# 11-nov-2026, orden expresa de Juan David (ajustes de la ruleta): roulette_display.html gana los sorteos en fila (cada paso con su forma de girar y arranque automático
+# opcional, una sola autorización) y gw-ruleta-display.css deja de anular el tamaño de «más datos» del ganador. Huella renovada.
 FROZEN = {
     "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
     "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
@@ -27,7 +29,7 @@ FROZEN = {
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
     "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
-    "templates/roulette_display.html": "00ed83f08f9b9f76a26758f7c5f8abbb0feac35c6146cfbebbd7d1a1793eb5e0",
+    "templates/roulette_display.html": "0d095afc32fda8902a50a211250475ced849be613d8b62b170f86e64d10fc9b9",
     "templates/badge_print.html": "6ed7e10d2dc70329eb20dccb1861e73eb167a27e2355d886617812e37f4e3f87",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
     "static/js/form-render.js": "44ab6b5b75382e6284642060169ac2c7ee0ea6916e587b0e90e856a475950ba3",

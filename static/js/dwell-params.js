@@ -28,10 +28,21 @@
     $('inventoryAutoscan').checked = !!c.inventory_autoscan;
     $('dwellConfig').hidden = !c.dwell_enabled;
     $('dwellStats').hidden = !c.dwell_enabled;
+    summary();
     $('dwellRefHint').textContent = c.event_minutes
       ? `Si lo dejas vacío se usa la duración del evento: ${fmtMinutes(c.event_minutes)} (según sus fechas y horas).`
       : 'El evento no tiene fecha y hora de fin completas: escribe aquí el tiempo de referencia.';
   }
+  function summary() {
+    const el = $('dwellSummary');
+    if (!el) return;
+    const on = $('dwellEnabled').checked, prize = $('dwellPrize').checked, pct = $('dwellPct').value || 80;
+    el.textContent = !on ? 'Hoy no se mide la permanencia: nada depende del tiempo en las zonas.'
+      : !prize ? 'Hoy el tiempo en zonas es solo informativo: se ve en reportes y estadísticas, pero certificados e inventario se dan a todos igual.'
+      : `Hoy el ${pct} % de permanencia es un requisito: solo quien lo cumple puede recibir el certificado que habilites y los ítems de inventario marcados «Solo a quien cumple la estadía».`;
+  }
+  box.addEventListener('input', summary);
+  box.addEventListener('change', summary);
   async function call(url, opts) {
     const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
     const d = await r.json().catch(() => ({}));

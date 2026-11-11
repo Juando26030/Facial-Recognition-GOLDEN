@@ -85,6 +85,7 @@
       <div class="gw-tablist" role="tablist" aria-label="Secciones de la ruleta" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Define a quién incluye" data-gw-tour-text="En «Cómo se elige» decides el modo del sorteo y a quién incluye. Lo que cambies queda pendiente hasta guardar.">
         <button type="button" class="gw-tab" role="tab" id="tab_modo" data-tab="modo" aria-controls="grp_modo" aria-selected="true">{{ ic('roulette', 'gw-tab__icon') }}<span class="gw-tab__name">Cómo se elige</span><span class="gw-tab__sum" id="sumMode">Cargando…</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_girar" data-tab="girar" aria-controls="grp_girar" aria-selected="false" tabindex="-1" data-gw-tour-step="3" data-gw-tour-title="3. Autoriza y gira" data-gw-tour-text="Autoriza el giro desde aquí; el botón «¡GIRAR!» se activa en la pantalla del proyector.">{{ ic('eye', 'gw-tab__icon') }}<span class="gw-tab__name">Autorizar y proyector</span><span class="gw-tab__sum" id="sumAuth">Enlace de la pantalla y autorización</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_fila" data-tab="fila" aria-controls="grp_fila" aria-selected="false" tabindex="-1">{{ ic('roulette', 'gw-tab__icon') }}<span class="gw-tab__name">Sorteos en fila</span><span class="gw-tab__sum" id="sumQueue">Varios sorteos, una sola autorización</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_sorteos" data-tab="sorteos" aria-controls="grp_sorteos" aria-selected="false" tabindex="-1">{{ ic('chart', 'gw-tab__icon') }}<span class="gw-tab__name">Sorteos</span><span class="gw-tab__sum" id="sumHist">Registro de lo ya sorteado</span></button>
       </div>
 
@@ -155,6 +156,26 @@
           </div>
         </section>
 
+        {# ===================================================================== SORTEOS EN FILA #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_fila" data-group="fila" aria-labelledby="tab_fila" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Sorteos en fila</h2><p class="gw-tabpanel__lead">Deja preparados varios sorteos seguidos (por ejemplo: 1 ganador, luego 3 en orden fijo, luego todos los asistentes) y autoriza <strong>una sola vez</strong>.</p></div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Cómo se arma la fila</h4>{% call ayuda('ay_fila', 'Cómo se arma la fila') %}1) En «Cómo se elige» deja configurado un sorteo (modo, ganadores, filtro). 2) Vuelve aquí y pulsa «Agregar a la fila»: se guarda una copia. 3) Repite con el siguiente. 4) Elige para cada uno cómo gira y cómo arranca. 5) Pulsa «Autorizar toda la fila». En la pantalla del proyector irán saliendo en el orden de la lista.{% endcall %}</div>
+            <ol class="gw-hint"><li>Configura un sorteo en «Cómo se elige».</li><li>Pulsa «Agregar a la fila» (guarda una copia de lo configurado).</li><li>Repite con los demás y ordénalos con las flechas.</li></ol>
+            <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary" id="qAdd">{{ ic('plus', 'gw-icon--sm') }} Agregar a la fila el sorteo configurado en «Cómo se elige»</button></div>
+            <div id="qList" class="gw-stack"></div>
+            <div class="gw-actions">
+              <button type="button" class="gw-btn gw-btn--secondary" id="qSave" disabled>Guardar la fila</button>
+              <span class="gw-msg" id="qMsg" role="status"></span>
+            </div>
+          </div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Autorizar toda la fila</h4></div>
+            <p class="gw-hint">Con una sola autorización quedan habilitados todos los sorteos de la fila, en orden. Si un paso está en «Con un clic», quien maneja el proyector pulsa «Girar» en cada uno; si está en «Solo», gira solo tras la pausa que le pongas (y el botón sirve para adelantarlo). Si editas la fila, la autorización se cancela.</p>
+            <button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-ruleta-run" id="qRun" disabled>{{ ic('lock') }}<span>Autorizar toda la fila</span></button>
+          </div>
+        </section>
+
         {# ===================================================================== SORTEOS #}
         <section class="gw-tabpanel" role="tabpanel" id="grp_sorteos" data-group="sorteos" aria-labelledby="tab_sorteos" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Registro de sorteos</h2><p class="gw-tabpanel__lead">Cada sorteo ejecutado queda aquí con quién lo autorizó.</p></div>
@@ -204,7 +225,7 @@ let fields = [], people = [], nameOf = {}, dirty = false;
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
 // El guardado es el ÚNICO de la pantalla (barra de abajo): este bloque se registra con su save() y los cambios lo dejan pendiente.
 function markDirty(v) { dirty = v; if (v) window.GWParams.markDirty('behavior'); else window.GWParams.markClean('behavior'); syncRun(); }
-function syncRun() { $('dirtyNote').hidden = !dirty; if (dirty) $('runBtn').disabled = true; }
+function syncRun() { $('dirtyNote').hidden = !dirty; if (dirty) $('runBtn').disabled = true; if (typeof renderQueue === 'function' && $('qList')) renderQueue(); }
 window.GWParams.register({ key: 'behavior', label: 'Cómo se elige', order: 1, save: async () => {
   await j(`${api}/behavior`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
   dirty = false; syncRun(); loadRound(); watchAuth();
@@ -312,7 +333,8 @@ function paintAuth(a) {
   $('runBtn').disabled = dirty || a.authorized;
   if (!a.authorized) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `${ico('check')}<div class="gw-alert__body"><p><strong>Giro autorizado${a.label ? ' — «' + esc(a.label) + '»' : ''}.</strong> El botón «¡GIRAR!» ya está activo en la pantalla de visualización: quien la maneja lo pulsa cuando quiera.</p><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="cancelAuth">Cancelar autorización</button></div></div>`;
+  const q = a.queue ? `Fila autorizada: va en el sorteo ${a.step + 1} de ${a.total}` : '';
+  box.innerHTML = `${ico('check')}<div class="gw-alert__body"><p><strong>${q ? q + (a.label ? ' — «' + esc(a.label) + '»' : '') : 'Giro autorizado' + (a.label ? ' — «' + esc(a.label) + '»' : '')}.</strong> El botón «¡GIRAR!» ya está activo en la pantalla de visualización: quien la maneja lo pulsa cuando quiera.</p><div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="cancelAuth">Cancelar autorización</button></div></div>`;
 }
 $('authBox').addEventListener('click', async (e) => {
   const btn = e.target.closest('#cancelAuth'); if (!btn) return;
@@ -385,18 +407,74 @@ $('displayCard').addEventListener('click', async (e) => {
   } catch (err) { showToast(err.message, 'error'); }
 });
 
+
+// ---------------------------------------------------------------- Sorteos en fila (11-nov-2026)
+let queue = [], queueDirty = false;
+function stepSummary(b) {
+  const name = (MODES[b.mode] || [b.mode])[0].replace(/^\S+ · /, '');
+  if (b.mode === 'all') return `${name} · ${b.batch_size} por giro`;
+  if (b.mode === 'filter_random') return `${name} · ${b.count} ganador(es) · ${(b.filter.conditions || []).length} condición(es)`;
+  return `${name} · ${(b.winners || []).length} elegido(s)`;
+}
+function renderQueue() {
+  $('qList').innerHTML = queue.map((st, i) => `<div class="gw-card gw-stack" data-q="${i}">
+    <div class="gw-rowact"><strong>Sorteo ${i + 1}</strong> <span class="gw-hint">${esc(stepSummary(st.behavior))}</span></div>
+    <div class="gw-form-grid">
+      <div class="gw-field"><label class="gw-label" for="ql${i}">Nombre (sale en pantalla)</label><input class="gw-input" id="ql${i}" data-k="label" maxlength="120" value="${esc(st.label)}" placeholder="Ej.: Premio mayor"></div>
+      <div class="gw-field"><label class="gw-label" for="qs${i}">Cómo gira</label><select class="gw-select" id="qs${i}" data-k="spin_mode"><option value="fixed" ${st.spin_mode === 'fixed' ? 'selected' : ''}>Por tiempo (se detiene sola)</option><option value="manual" ${st.spin_mode === 'manual' ? 'selected' : ''}>Giro libre (clic para iniciar y clic para detener)</option></select></div>
+      <div class="gw-field" ${st.spin_mode === 'manual' ? 'hidden' : ''}><label class="gw-label" for="qt${i}">Segundos de giro</label><input class="gw-input gw-input--short" type="number" min="2" max="20" id="qt${i}" data-k="spin_seconds" value="${st.spin_seconds}"></div>
+      <div class="gw-field"><label class="gw-label" for="qa${i}">Cómo arranca</label><select class="gw-select" id="qa${i}" data-k="start"><option value="click" ${st.start === 'click' ? 'selected' : ''}>Con un clic en la pantalla</option><option value="auto" ${st.start === 'auto' ? 'selected' : ''}>Solo, después de una pausa</option></select></div>
+      <div class="gw-field" ${st.start === 'auto' ? '' : 'hidden'}><label class="gw-label" for="qp${i}">Pausa antes de girar (segundos)</label><input class="gw-input gw-input--short" type="number" min="3" max="120" id="qp${i}" data-k="pause" value="${st.pause}"></div>
+    </div>
+    <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qup="${i}" ${i === 0 ? 'disabled' : ''}>Subir</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qdown="${i}" ${i === queue.length - 1 ? 'disabled' : ''}>Bajar</button><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-qdel="${i}">Quitar</button></div>
+  </div>`).join('') || '<p class="gw-hint">La fila está vacía. Configura un sorteo arriba y agrégalo.</p>';
+  $('sumQueue').textContent = queue.length ? `${queue.length} sorteo${queue.length === 1 ? '' : 's'} en fila` : 'Varios sorteos, una sola autorización';
+  $('qSave').disabled = !queueDirty; $('qRun').disabled = !queue.length || queueDirty || dirty;
+  $('qMsg').textContent = queueDirty ? 'Hay cambios sin guardar en la fila.' : dirty ? 'Guarda primero los cambios de «Cómo se elige».' : '';
+}
+function qChanged() { queueDirty = true; renderQueue(); }
+$('qAdd').addEventListener('click', () => {
+  if (queue.length >= 20) { showToast('La fila admite hasta 20 sorteos', 'error'); return; }
+  queue.push({ label: '', behavior: JSON.parse(JSON.stringify(state)), start: 'click', spin_mode: 'fixed', spin_seconds: 8, pause: 8 });
+  qChanged(); showToast('Sorteo agregado a la fila: guarda la fila cuando termines', 'success');
+});
+$('qList').addEventListener('change', (e) => {
+  const el = e.target, card = el.closest('[data-q]'); if (!card || !el.dataset.k) return;
+  const st = queue[+card.dataset.q]; st[el.dataset.k] = ['spin_seconds', 'pause'].includes(el.dataset.k) ? (+el.value || 8) : el.value;
+  qChanged();
+});
+$('qList').addEventListener('input', (e) => { const el = e.target, card = el.closest('[data-q]'); if (card && el.dataset.k === 'label') { queue[+card.dataset.q].label = el.value; queueDirty = true; $('qSave').disabled = false; $('qRun').disabled = true; } });
+$('qList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-qup],[data-qdown],[data-qdel]'); if (!b) return;
+  const mv = (i, d) => { const k = i + d; if (k < 0 || k >= queue.length) return; [queue[i], queue[k]] = [queue[k], queue[i]]; qChanged(); };
+  if (b.dataset.qup !== undefined) mv(+b.dataset.qup, -1); else if (b.dataset.qdown !== undefined) mv(+b.dataset.qdown, 1);
+  else { queue.splice(+b.dataset.qdel, 1); qChanged(); }
+});
+$('qSave').addEventListener('click', (e) => GW.busy(e.currentTarget, async () => {
+  try { const d = await j(`${api}/queue`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ steps: queue }) }); queue = d.steps; queueDirty = false; renderQueue(); showToast('Fila guardada', 'success'); watchAuth(); }
+  catch (err) { showToast(err.message, 'error'); }
+}));
+$('qRun').addEventListener('click', (e) => GW.busy(e.currentTarget, async () => {
+  try {
+    lastDrawCount = (await j(`${api}/draws`)).length;
+    await j(`${api}/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queue: true }) });
+    showToast('Fila autorizada: los sorteos se giran desde la pantalla de visualización', 'success'); watchAuth();
+  } catch (err) { showToast(err.message, 'error'); }
+}));
+async function loadQueue() { try { queue = (await j(`${api}/queue`)).steps; } catch (e) { queue = []; } queueDirty = false; renderQueue(); }
+
 async function init() {
   $('initError').hidden = true;
   try {
     const cfg = await j(api);
-    state = { ...state, ...cfg.behavior };
+    state = { ...state, ...cfg.behavior }; delete state.queue;
     state.filter = cfg.behavior.filter || { conditions: [] };
     $('totalCandidates').textContent = cfg.candidates_total;
     fields = await j(`${api}/fields`);
     await refreshPeople();
     // nombres de los ganadores ya elegidos (aunque no estén en la lista visible)
     try { const all = await j(`${api}/candidates`); all.people.forEach((p) => { nameOf[p.id] = p.name; }); } catch (e) {}
-    render(); markDirty(false); loadDisplayLink(); loadHistory(); loadRound();
+    render(); markDirty(false); loadQueue(); loadDisplayLink(); loadHistory(); loadRound();
     lastDrawCount = (await j(`${api}/draws`)).length; watchAuth();
   } catch (e) {
     $('initErrorText').textContent = 'No se pudo cargar la configuración (' + e.message + '). Revisa la conexión e inténtalo de nuevo.';

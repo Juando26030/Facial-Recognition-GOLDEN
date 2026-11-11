@@ -76,7 +76,8 @@ MAX_TOP_IMAGES = 4
 MAX_WINNER_FIELDS = 8
 SPIN_MODES = ("fixed", "manual")
 FIXED_WINNER_FIELDS = (("entity", "Empresa"), ("email", "Correo"), ("role", "Cargo"), ("opt_1", "Tipo de asistente"))     # la ciudad y demás datos propios del evento salen de sus campos opcionales con nombre
-DEFAULT_BEHAVIOR = {"mode": "single_fixed", "winners": [], "count": 1, "batch_size": 1,
+MAX_QUEUE_STEPS = 20           # sorteos en fila (11-nov-2026): cuántos se pueden dejar preparados con una sola autorización
+DEFAULT_BEHAVIOR = {"queue": [], "mode": "single_fixed", "winners": [], "count": 1, "batch_size": 1,
                     "filter": {"conditions": []}, "exclude_previous_winners": True, "all_reset_at": None}
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -323,6 +324,7 @@ def save_behavior(event_id: int, data: dict, db: Session = Depends(get_db), staf
     new = _validate_behavior(db, event, data)
     old = _behavior(cfg)
     new["all_reset_at"] = old.get("all_reset_at")   # cambiar la configuración no reinicia la ronda de "todos"
+    new["queue"] = old.get("queue") or []            # la fila de sorteos se edita por su propio endpoint (PUT /roulette/queue)
     cfg.behavior_json = json.dumps(new)
     db.commit()
     return new
@@ -449,10 +451,10 @@ def get_display_link(event_id: int, request: Request, db: Session = Depends(get_
 
 
 # ------------------------------------------------------------------ ejecución
-def _run_draw(db: Session, event: Event, cfg: RouletteConfig, label: str, created_by_id: Optional[int], dry_run: bool = False) -> dict:
+def _run_draw(db: Session, event: Event, cfg: RouletteConfig, label: str, created_by_id: Optional[int], dry_run: bool = False, behavior: Optional[dict] = None) -> dict:
     """Decide el/los ganador(es) según el comportamiento guardado y (salvo `dry_run`) guarda el registro del sorteo. `dry_run` solo
     valida que el sorteo se PUEDA hacer (sin ganadores válidos, sin candidatos…) para avisar al autorizar y no al girar."""
-    b = _behavior(cfg)
+    b = behavior or _behavior(cfg)          # `behavior`: el paso de la fila que toca (si no, el comportamiento guardado)
     mode = b["mode"]
     people = candidates(db, event)
     if not people:
@@ -522,6 +524,56 @@ def _authorization(cfg: RouletteConfig) -> Optional[dict]:
     return auth
 
 
+def _clean_step(db: Session, event: Event, raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Un sorteo de la fila no es válido")
+    behavior = _validate_behavior(db, event, raw.get("behavior") or {})
+    behavior.pop("all_reset_at", None)
+    start = raw.get("start") if raw.get("start") in ("click", "auto") else "click"
+    spin_mode = raw.get("spin_mode") if raw.get("spin_mode") in SPIN_MODES else "fixed"
+    try:
+        spin_seconds = max(2, min(20, int(raw.get("spin_seconds") or 8)))
+        pause = max(3, min(120, int(raw.get("pause") or 8)))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Los segundos deben ser un número")
+    return {"label": str(raw.get("label") or "").strip()[:120], "behavior": behavior, "start": start, "spin_mode": spin_mode,
+            "spin_seconds": spin_seconds, "pause": pause}
+
+
+def _queue(cfg: RouletteConfig) -> list:
+    q = _behavior(cfg).get("queue")
+    return q if isinstance(q, list) else []
+
+
+def _step_behavior(cfg: RouletteConfig, step: dict) -> dict:
+    """El comportamiento de un paso de la fila; la ronda de «todos» es la misma de siempre (se reinicia aparte)."""
+    return {**DEFAULT_BEHAVIOR, **step["behavior"], "all_reset_at": _behavior(cfg).get("all_reset_at")}
+
+
+@router.get("/events/{event_id}/roulette/queue")
+def get_queue(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    event = get_event_for_staff(event_id, db, staff)
+    return {"steps": _queue(_get_config(db, event)), "max": MAX_QUEUE_STEPS}
+
+
+@router.put("/events/{event_id}/roulette/queue")
+def save_queue(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Deja preparados varios sorteos (cada uno con su modo, sus ganadores y cómo se gira) para autorizarlos TODOS de una vez."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    raw = data.get("steps")
+    if not isinstance(raw, list) or len(raw) > MAX_QUEUE_STEPS:
+        raise HTTPException(status_code=400, detail=f"La fila admite de 0 a {MAX_QUEUE_STEPS} sorteos")
+    steps = [_clean_step(db, event, r) for r in raw]
+    cfg = _get_config(db, event)
+    b = _behavior(cfg)
+    b["queue"] = steps
+    cfg.behavior_json = json.dumps(b)
+    cfg.authorized_json = None if (_authorization(cfg) or {}).get("queue") else cfg.authorized_json     # editar la fila cancela una autorización de fila vigente
+    db.commit()
+    return {"steps": steps}
+
+
 @router.post("/events/{event_id}/roulette/authorize")
 def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """El operador AUTORIZA un giro: se valida ahora (para que los errores salgan aquí y no frente al público) y se activa el botón
@@ -530,6 +582,18 @@ def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), sta
     cfg = _get_config(db, event)
     if not cfg.display_token:
         raise HTTPException(status_code=400, detail="Primero genera el enlace de la pantalla de visualización: el botón de girar vive allá")
+    if data.get("queue"):
+        steps = _queue(cfg)
+        if not steps:
+            raise HTTPException(status_code=400, detail="La fila está vacía: agrega al menos un sorteo")
+        for i, step in enumerate(steps, start=1):
+            try:
+                _run_draw(db, event, cfg, "", staff.id, dry_run=True, behavior=_step_behavior(cfg, step))
+            except HTTPException as exc:
+                raise HTTPException(status_code=400, detail=f"Sorteo {i} de la fila ({step.get('label') or 'sin nombre'}): {exc.detail}")
+        cfg.authorized_json = json.dumps({"label": steps[0]["label"], "by": staff.id, "at": utcnow().isoformat(), "queue": True, "step": 0})
+        db.commit()
+        return {"authorized": True, "label": steps[0]["label"], "queue": True, "step": 0, "total": len(steps)}
     _run_draw(db, event, cfg, "", staff.id, dry_run=True)
     label = str(data.get("label") or "").strip()[:120]
     cfg.authorized_json = json.dumps({"label": label, "by": staff.id, "at": utcnow().isoformat()})
@@ -550,7 +614,8 @@ def cancel_authorization(event_id: int, db: Session = Depends(get_db), staff: St
 def get_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     auth = _authorization(_get_config(db, event))
-    return {"authorized": bool(auth), "label": auth["label"] if auth else "", "since": auth["at"] if auth else None}
+    return {"authorized": bool(auth), "label": auth["label"] if auth else "", "since": auth["at"] if auth else None,
+            "queue": bool(auth and auth.get("queue")), "step": (auth or {}).get("step", 0), "total": len(_queue(_get_config(db, event))) if auth and auth.get("queue") else 0}
 
 
 
@@ -656,6 +721,18 @@ def display_page(token: str, request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request=request, name="roulette_display.html", context={"token": token, "event_name": event.name})
 
 
+def _next_info(cfg: RouletteConfig, auth: Optional[dict]) -> Optional[dict]:
+    """Del paso que toca en una fila autorizada: cómo arranca («click» o solo tras una pausa) y cómo gira. None si no es una fila."""
+    if not auth or not auth.get("queue"):
+        return None
+    steps = _queue(cfg)
+    i = int(auth.get("step", 0))
+    if i >= len(steps):
+        return None
+    st = steps[i]
+    return {"step": i + 1, "total": len(steps), "start": st["start"], "pause": st["pause"], "spin_mode": st["spin_mode"], "spin_seconds": st["spin_seconds"]}
+
+
 @public_router.get("/r/{token}/state")
 def display_state(token: str, after: Optional[int] = None, db: Session = Depends(get_db)):
     """Estilo + el `id` del último sorteo. La pantalla recuerda el `id` que ya vio y pide con `?after=<id>`: solo si hay
@@ -665,7 +742,7 @@ def display_state(token: str, after: Optional[int] = None, db: Session = Depends
     last = db.query(RouletteDraw).filter_by(event_id=cfg.event_id).order_by(RouletteDraw.id.desc()).first()
     auth = _authorization(cfg)
     out = {"style": _style(cfg), "event_name": event.name, "latest_id": last.id if last else 0, "draw": None,
-           "authorized": bool(auth), "authorized_label": auth["label"] if auth else ""}
+           "authorized": bool(auth), "authorized_label": auth["label"] if auth else "", "authorized_next": _next_info(cfg, auth)}
     if last and after is not None and last.id > after:
         names = [p["name"] for p in candidates(db, event)]
         _RNG.shuffle(names)
@@ -685,11 +762,27 @@ def spin(token: str, request: Request, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=409, detail="El operador todavía no autorizó el giro")
     event = db.query(Event).filter(Event.id == locked.event_id).first()
-    locked.authorized_json = None                        # se consume antes de sortear: pase lo que pase no se puede repetir
+    step, behavior, nxt_auth = None, None, None
+    if auth.get("queue"):                                  # fila de sorteos: una sola autorización sirve para todos los pasos
+        steps = _queue(locked)
+        i = int(auth.get("step", 0))
+        if i >= len(steps):
+            locked.authorized_json = None
+            db.commit()
+            raise HTTPException(status_code=409, detail="La fila ya terminó")
+        step, behavior = steps[i], _step_behavior(locked, steps[i])
+        if i + 1 < len(steps):
+            nxt_auth = {**auth, "step": i + 1, "label": steps[i + 1]["label"], "at": utcnow().isoformat()}
+    locked.authorized_json = json.dumps(nxt_auth) if nxt_auth else None      # se consume antes de sortear: pase lo que pase no se puede repetir
     db.commit()
     try:
-        res = _run_draw(db, event, locked, auth["label"], auth["by"])
-        return {**res, "winners": public_winners(res["winners"])}          # la cédula queda en el sorteo guardado (reporte del operador), no en la pantalla pública
+        res = _run_draw(db, event, locked, (step or {}).get("label") if step else auth["label"], auth["by"], behavior=behavior)
+        out = {**res, "winners": public_winners(res["winners"])}          # la cédula queda en el sorteo guardado (reporte del operador), no en la pantalla pública
+        if step:
+            out["spin_mode"], out["spin_seconds"] = step["spin_mode"], step["spin_seconds"]
+            out["queue_step"], out["queue_total"] = int(auth.get("step", 0)) + 1, len(_queue(locked))
+            out["next"] = _next_info(locked, nxt_auth)
+        return out
     except HTTPException:
         locked.authorized_json = json.dumps(auth)        # el sorteo no se pudo hacer: la autorización sigue vigente
         db.commit()

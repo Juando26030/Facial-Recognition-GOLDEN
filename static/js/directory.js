@@ -393,12 +393,6 @@
       </div>
       <div class="gw-modal__body">
       <div id="editModalNotice" role="alert" class="gw-alert gw-alert--warn" hidden></div>
-      <label class="gw-check"><input type="checkbox" id="editNewCedulaChk"> ¿Es cédula nueva?</label>
-      <div id="editNewCedulaBox" hidden class="gw-card gw-registro__editnew">
-        <div class="gw-rowact">
-          <button type="button" id="editMrzCamBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="${iconUrl}#i-camera"/></svg>Escanear cédula</button>
-        </div>
-      </div>
       <form id="editModalForm">
         ${configuredHtml}
       </form>
@@ -456,22 +450,6 @@
     });
 
     function close() { overlay.remove(); }
-    {                                                                   // B3: cédula NUEVA (foto del reverso, MRZ): llena nombres, apellidos y —si se puede editar— la cédula
-      const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox');
-      chk.addEventListener('change', () => { nbox.hidden = !chk.checked; });
-      const readMrz = async (blob) => {
-        const fd = new FormData(); fd.append('file', blob, 'cedula.jpg');
-        try {
-          const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: fd });
-          const d = await res.json().catch(() => ({}));
-          if (!res.ok) { showToast(d.detail || 'No se pudo leer la foto — intenta de nuevo', 'error'); return; }
-          const set = (sel, v) => { const el = box.querySelector(sel); if (el && v && !el.disabled) el.value = v; };
-          set('#editModalForm [name="first_name"]', d.first_name); set('#editModalForm [name="last_name"]', d.last_name); set('#editModalCedulaField', d.id);
-          showToast('Cédula leída — revisa los datos y guarda', 'success');
-        } catch (e) { showToast('Error de red', 'error'); }
-      };
-      box.querySelector('#editMrzCamBtn').addEventListener('click', () => { if (window.CameraCapture) window.CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: readMrz }); });
-    }
     if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío
       const note = box.querySelector('#editModalNotice');
       note.textContent = `Falta el campo obligatorio: ${opts.missing.map((m) => m.label).join(', ')}. Complétalo y guarda: queda acreditado(a) en el mismo paso.`;
