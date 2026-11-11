@@ -58,6 +58,13 @@ def plan(db: Session, now_local: datetime = None) -> dict:
     }
 
 
+def idle_plan() -> dict:
+    """Plan de reposo SIN consultar la base: todo en cero y Neon con su apagado normal. Lo usa el Job económico (app/ops_runner.py::economic) para bajar las instancias mínimas cuando ya no hay eventos cerca."""
+    return {"web": 0, "publico": 0, "biometria": 0,
+            "neon": {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": float(os.getenv("NEON_IDLE_MIN_CU", "0.25"))},
+            "why": {"events_active": 0, "facial_active": 0, "form_submissions": 0, "reposo": True}}
+
+
 def _neon(method: str, path: str, **kw):
     import requests
     resp = requests.request(method, f"{NEON_API}{path}", headers={"Authorization": f"Bearer {os.environ['NEON_API_KEY']}", "Accept": "application/json"},

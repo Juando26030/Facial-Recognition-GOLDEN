@@ -227,3 +227,31 @@ Migración: solo `0128_event_types` (tipos de evento, ver 3). La ruleta y el QR 
 
 ### Pruebas del bloque
 `tests/test_qr_vcard.py`, `tests/js/qr_vcard_check.js`, `tests/test_ruleta_fase10.py`, `tests/js/calendar_cats_check.js`, `tests/test_tipos_evento.py`. Corren aquí las puras y las de texto/Node; las que usan base (resolver QR con vCard, ruleta con estilo y sorteo, pantalla pública) se corren en Cloud Shell.
+
+---
+
+## Costos (Neon/Cloud Run): el Job horario ahora es económico
+
+**El problema, en simple.** Neon cobra por las horas que su motor está encendido y se apaga solo después de 5 minutos sin que nadie le pregunte nada. El Job `golden-ops-hourly` le preguntaba algo **cada hora** (respaldo, cola, precalentamiento…), así que Neon casi nunca llegaba a dormirse, aunque no hubiera ningún evento.
+
+**Qué cambió.** El Job sigue avisando igual, pero ahora **piensa antes de despertar la base**:
+1. Si el aviso llega muy pronto después del anterior (menos de `OPS_MIN_INTERVAL_MINUTES`, por defecto 50), sale al instante sin hacer nada.
+2. Cada tarea (respaldo por hora, respaldo diario, purga de biometría, archivado semanal, importación mensual de costos, copia a OneDrive, revisión de respaldos, limpieza de reportes) **recuerda cuándo salió bien por última vez** (archivo `ops/steps.json` en el almacenamiento, no en la base) y solo corre si ya le toca. Así da igual si el Scheduler avisa cada hora o cada 2 horas: nada se pierde. Si una tarea falla no se anota y se reintenta en el siguiente aviso.
+3. Lo primero que toca la base es **una sola consulta** (tres conteos): ¿hay eventos «en proceso»?, ¿alguno empieza en las próximas 6 horas?, ¿hay trabajos pendientes en la cola? Solo se hace si hubo actividad en las últimas 3 horas o si toca el «turno de reposo» (cada 4 h).
+4. **Sin eventos en proceso ni cercanos:** no hay precalentamiento (solo se bajan a cero las instancias mínimas si estaban arriba, sin tocar la base), no se barre la cola si no hay trabajos vencidos y el respaldo por hora pasa a cada 8 h.
+5. **Con eventos (o actividad):** todo como antes: respaldo cada ~hora, precalentamiento y cola.
+
+**Lo que NO cambia (las reglas):** respaldo diario y purga biométrica **una vez al día** (a partir de las 3 y las 4 a. m.; si el Job no cae justo a esa hora, corre en el primer aviso posterior ese día); archivado de eventos a los 90 días semanal; los rostros se borran a los 7 días de finalizado el evento igual que antes; alertas por correo igual (máximo cada 6 h por problema).
+
+**Qué puede hacer Juan David (opcional, desde Cloud Shell):**
+- Sin tocar nada ya se ahorra: el Job sigue cada hora pero casi siempre sale sin despertar la base.
+- Para ahorrar un poco más, pasar el Scheduler a cada 2 horas: `OPS_SCHEDULE="5 */2 * * *" bash deploy/gcp/scheduler.sh <entorno> ensure` y ponerle al Job `OPS_MIN_INTERVAL_MINUTES=110`. En ese caso conviene `OPS_SCHEDULE_MAX_AGE_H=2.5` al correr `scheduler.sh check`. Los respaldos con actividad quedan entonces cada 2 h (no cada hora); si se quiere conservar «máximo 1 h de pérdida» durante eventos, **no** cambiar el Scheduler.
+- `BACKUP_HOURLY_MAX_AGE_H` debe seguir en 9 (ya está así en `common.yaml`): sin actividad el respaldo por hora llega cada 8 h.
+
+**Variables nuevas (todas opcionales):** `OPS_MIN_INTERVAL_MINUTES` (50), `OPS_IDLE_EVERY_H` (4), `OPS_IDLE_BACKUP_H` (8), `OPS_EVENT_LOOKAHEAD_H` (6), `OPS_REPORTS_EVERY_H` (6); `OPS_SCHEDULE` y `OPS_SCHEDULE_MAX_AGE_H` solo para `scheduler.sh`. Sin migración. `hourly-full` corre a mano la versión anterior (todo según la hora).
+
+**Otras rutas revisadas.** `/health` no toca la base (hay prueba), en Cloud Run el nodo de la cola usa Cloud Tasks (sin hilo que consulte), los sondeos del navegador del personal ya se pausan solos tras 60 s sin uso (`GW.poll`). Corregido: la **pantalla de TV de turnos** consultaba cada 3 s sin parar aunque quedara olvidada toda la noche; ahora pasa a cada 10 s si nada cambia en 5 min y a cada 30 s a los 30 min, y vuelve a 3 s en cuanto cambia algo o se vuelve a mirar la pestaña. No se tocaron páginas públicas congeladas ni impresión.
+
+**Cuánto se espera ahorrar (estimado, no medido).** Neon a 0,25 CU encendido todo el mes cuesta ~US$19. Antes, cada despertar horario dejaba el motor prendido ~8 a 12 minutos (el respaldo más los 5 min de gracia) → ~4 h/día ≈ 120 h/mes. Ahora, un día sin eventos despierta la base ~6 a 8 veces (consulta cada 4 h, respaldo cada 8 h, diario y purga) ≈ 1 h/día ≈ 30 a 40 h/mes: **alrededor de un 70 % menos de horas de cómputo** en los días sin eventos. Los días con eventos cuestan lo mismo que antes (la base está en uso de todos modos). Valor real: compararlo en la consola de Neon (Billing → Compute hours) una semana después de desplegar.
+
+**Sin probar aquí.** Las pruebas de `tests/test_ops_economico.py` corren sin base (`pytest --noconftest`); la consulta SQL de la sonda (`PROBE_SQL`) y el flujo con almacenamiento real y Neon quedan para verificar en Cloud Shell/staging (mirar el JSON que imprime el Job: `probe`, `skipped`). En staging, revisar que tras un evento las instancias mínimas bajen a 0 (paso `warmup-down`).

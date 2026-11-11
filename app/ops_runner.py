@@ -1,7 +1,9 @@
 """Job de operaciones de Cloud Run (`python -m app.ops_runner <tarea>`, misma imagen). Reemplaza los 4 cron de la VM con UNA tarea de Cloud
 Scheduler (cabe en las 3 gratuitas): cada hora al minuto 05, hora de Bogotá, corre `hourly`.
 
-  hourly         respaldo de la base (cada hora) · a las OPS_DAILY_HOUR (3) también el diario · a las OPS_PURGE_HOUR (4) la purga biométrica
+  hourly         TAREA ECONÓMICA (economic(), 10-nov-2026): cada paso decide por el tiempo desde su última ejecución buena (ops/steps.json) y la base solo se toca si hay actividad, eventos cerca o un paso vence; el Scheduler puede
+                 avisar cada 1 o 2 h (OPS_MIN_INTERVAL_MINUTES). Detalle y reglas en docs/FASE_10_AJUSTES_NOV10.md (Costos). `hourly-full` corre la versión antigua (todo según la hora):
+                 respaldo de la base (cada hora) · a las OPS_DAILY_HOUR (3) también el diario · a las OPS_PURGE_HOUR (4) la purga biométrica
                  · revisión de respaldos · cola de trabajos pendiente · precalentamiento · y SOLO los domingos a las OPS_WEEKLY_HOUR (5) el archivado de la base de los eventos a los 90 días (L7). Cada paso va aislado: si uno falla los demás
                  corren igual, y el Job termina con código 1 (la alerta de Cloud Monitoring avisa de ejecuciones fallidas).
   backup | backup-daily | purge | archive-events | check-backups | sweep | warmup      cada paso suelto, para correrlo a mano:
@@ -265,6 +267,104 @@ def hourly(now=None) -> dict:
     return results
 
 
+# ------------------------------------------------------------------ Job económico (10-nov-2026)
+PROBE_SQL = """
+SELECT
+  (SELECT count(*) FROM events WHERE status = 'en_proceso'),
+  (SELECT count(*) FROM events WHERE status NOT IN ('en_proceso', 'finalizado')
+     AND COALESCE(setup_date, start_date) <= :horizon AND COALESCE(end_date, start_date, setup_date) >= :today),
+  (SELECT count(*) FROM jobs WHERE status IN ('queued', 'running') AND run_at <= :now)
+"""
+
+
+def probe(now=None, now_utc=None) -> dict:
+    """UNA sola consulta barata (tres conteos en una ida a la base): eventos «en proceso», eventos que empiezan en las próximas OPS_EVENT_LOOKAHEAD_H (6) horas (o ya ocupan hoy sin haber arrancado)
+    y trabajos de la cola vencidos. Solo números."""
+    from sqlalchemy import text
+
+    from app.database import SessionLocal
+    now, now_utc = now or _local_now(), now_utc or utcnow()
+    horizon = (now + timedelta(hours=float(os.getenv("OPS_EVENT_LOOKAHEAD_H", "6")))).date()
+    with SessionLocal() as db:
+        running, near, jobs_due = db.execute(text(PROBE_SQL), {"horizon": horizon, "today": now.date(), "now": now_utc}).one()
+    return {"running": int(running), "near": int(near), "jobs_due": int(jobs_due)}
+
+
+def warmup_down() -> str:
+    """Baja a cero las instancias mínimas (y deja a Neon en su apagado normal) SIN tocar la base: solo la API de Cloud Run/Neon. Se usa cuando ya no hay eventos cerca."""
+    from app import warmup as w
+    changes = w.apply(w.idle_plan())
+    return "; ".join(changes) or "sin cambios (ya en reposo)"
+
+
+def economic(now=None, now_utc=None, steps=None, probe_fn=None) -> dict:
+    """Tarea horaria ECONÓMICA: cada paso decide por el tiempo desde su última ejecución buena (ops/steps.json en el almacenamiento, sin base), de modo que el Scheduler puede avisar cada 1 o 2 h sin perder nada.
+    Lo primero que toca la base es UNA consulta (`probe`), y solo si hay actividad reciente o toca el turno de reposo (OPS_IDLE_EVERY_H, 4 h). Sin eventos en proceso ni cercanos no hay precalentamiento
+    (solo se bajan las instancias si estaban arriba), ni barrido de cola si no hay trabajos vencidos. Reglas que no cambian: respaldo diario y purga biométrica UNA vez al día desde OPS_DAILY_HOUR / OPS_PURGE_HOUR,
+    respaldo horario cada ~50 min con actividad y cada OPS_IDLE_BACKUP_H (8) h sin ella, archivado semanal, copia a OneDrive y revisión de respaldos (que no abre la base)."""
+    now, now_utc = now or _local_now(), now_utc or utcnow()
+    from app import ops_state as S
+    steps = S.load_steps() if steps is None else steps
+    results, awake = {}, []
+
+    def run(name, fn, key=None):
+        try:
+            results[name] = {"ok": True, "detail": fn()}
+            if key:
+                steps[key] = S.stamp(now_utc)
+            return True
+        except Exception as e:  # noqa: BLE001 — un paso fallido no detiene los demás; al no anotarse, el próximo aviso lo reintenta
+            log.error("paso %s falló: %s", name, _reason(e), exc_info=True)
+            results[name] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+            return False
+
+    hint = S.recently_active(now_utc)
+    info = {"running": 0, "near": 0, "jobs_due": 0}
+    if hint or S.due_every(steps, "probe", float(os.getenv("OPS_IDLE_EVERY_H", "4")), now_utc):
+        def _probe():
+            info.update((probe_fn or probe)(now, now_utc))
+            return json.dumps(info)
+        if not run("probe", _probe, "probe"):                                  # sin saber, se asume lo peor: todo corre
+            info.update(running=1, jobs_due=1)
+        awake.append("probe")
+    busy = hint or bool(info["running"] or info["near"])
+
+    ran_backup = False
+    if S.due_every(steps, "backup", 50 / 60 if busy else float(os.getenv("OPS_IDLE_BACKUP_H", "8")), now_utc):
+        ran_backup = run("backup", lambda: backup_db("hourly", now=now), "backup")
+        awake.append("backup")
+    if S.due_daily(steps, "backup-daily", now, int(os.getenv("OPS_DAILY_HOUR", "3"))):
+        ran_backup = run("backup-daily", lambda: backup_db("daily", now=now), "backup-daily") or ran_backup
+        awake.append("backup-daily")
+    if S.due_daily(steps, "purge", now, int(os.getenv("OPS_PURGE_HOUR", "4"))):
+        run("purge", purge, "purge")                    # retención biométrica: una vez al día; con errores NO se anota y el próximo aviso la repite
+        awake.append("purge")
+    if S.due_weekly(steps, "archive-events", now, int(os.getenv("OPS_WEEKLY_DAY", "6")), int(os.getenv("OPS_WEEKLY_HOUR", "5"))):
+        run("archive-events", archive_events, "archive-events")
+        awake.append("archive-events")
+    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and S.due_monthly(steps, "infra-costs", now, int(os.getenv("OPS_INFRA_DAY", "2")), int(os.getenv("OPS_INFRA_HOUR", "6"))):
+        run("infra-costs", import_infra_costs, "infra-costs")
+        awake.append("infra-costs")
+    if ran_backup or S.due_every(steps, "check-backups", 6, now_utc):          # solo lee el bucket: no despierta la base
+        run("check-backups", check_backups, "check-backups")
+    if S.due_every(steps, "offsite-copy", 6, now_utc):                         # OneDrive + bucket; la copia semanal decide sola si toca
+        run("offsite-copy", offsite_copy, "offsite-copy")
+    if info["jobs_due"]:                                                       # sin trabajos vencidos no hay barrido (si la sonda falló, jobs_due=1: se barre por seguridad)
+        run("sweep", sweep)
+    if awake and S.due_every(steps, "reports", float(os.getenv("OPS_REPORTS_EVERY_H", "6")), now_utc):
+        run("reports", purge_reports, "reports")                               # solo si la base ya está despierta por otra razón
+    if busy:
+        run("warmup", warmup)
+        steps["warm_up"] = "1"
+    elif steps.get("warm_up", "1"):
+        if run("warmup-down", warmup_down):
+            steps["warm_up"] = ""
+    steps["full_run"] = S.stamp(now_utc)
+    if results:
+        S.save_steps(steps)
+    return results
+
+
 def export_consent() -> str:
     """Atención a una autoridad: exporta los registros de consentimiento de UNA persona (`CONSENT_EXPORT_CEDULA`, y opcional `CONSENT_EXPORT_TENANT`) a un archivo en el almacenamiento
     (`consent-exports/…json`). Solo corre a mano (no está en la tarea horaria). El log y el resultado llevan SOLO la clave del archivo y el conteo, jamás la cédula."""
@@ -396,10 +496,17 @@ TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_d
 def main(task: str) -> int:
     if task == "hourly":
         from app import ops_state
-        why = ops_state.idle_skip(_local_now())
-        if why:                                      # modo tranquilo: ni siquiera se abre la base
-            print(json.dumps({"ops": task, "skipped": why}, ensure_ascii=False))
+        steps = ops_state.load_steps()
+        last = ops_state._parse(steps.get("full_run"))
+        gap = ops_state.min_interval_minutes()
+        if last and gap and utcnow() - last < timedelta(minutes=gap):       # el Scheduler avisó de nuevo muy pronto: ni se abre la base
+            print(json.dumps({"ops": task, "skipped": f"corrió hace menos de {gap} min (OPS_MIN_INTERVAL_MINUTES)"}, ensure_ascii=False))
             return 0
+        results = economic(steps=steps)
+        if not results:
+            print(json.dumps({"ops": task, "skipped": "ningún paso vence ahora: la base descansa"}, ensure_ascii=False))
+            return 0
+    elif task == "hourly-full":                      # a mano: todos los pasos según la hora, sin las reglas de ahorro
         results = hourly()
     elif task in TASKS:
         try:

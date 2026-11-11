@@ -16,7 +16,7 @@ ENV_ARG="${1:-}"; ACTION="${2:-}"; shift 2 2>/dev/null || true
 # shellcheck source=/dev/null
 source deploy/gcp/config.sh "$ENV_ARG"
 PYTHON="${PYTHON:-python3}"
-SCHEDULE="5 * * * *"; TZ_NAME="America/Bogota"                                  # cada hora al minuto 05, hora de Bogotá (= bootstrap.sh paso 9 y app/ops_runner.py)
+SCHEDULE="${OPS_SCHEDULE:-5 * * * *}"; TZ_NAME="America/Bogota"                                  # por defecto cada hora al minuto 05, hora de Bogotá (= bootstrap.sh paso 9 y app/ops_runner.py); para ahorrar Neon: OPS_SCHEDULE="5 */2 * * *" (docs/FASE_10_AJUSTES_NOV10.md, Costos) y OPS_MIN_INTERVAL_MINUTES=110 en el Job
 URI="https://run.googleapis.com/v2/$(run_path jobs "$JOB_OPS"):run"
 INVOKER="$(sa_email "$SA_INVOKER")"
 DESC="Respaldos, revisión, purga, cola y precalentamiento"
@@ -50,7 +50,7 @@ case "$ACTION" in
     newest="$(gcloud storage ls -l "gs://$BACKUP_BUCKET/db/hourly/**" 2>/dev/null | grep '\.sql\.gz$' | awk '{print $2}' | sort | tail -1 || true)"
     deployed="$(gcloud run revisions list --service "$SVC_WEB" --region "$REGION" --limit 1 --format 'value(metadata.creationTimestamp)' 2>/dev/null || true)"
     printf "%s" "$job_json" | PYTHONIOENCODING=utf-8 PAUSED_OK="$paused_ok" WANT_NAME="$SCHEDULER_OPS" WANT_REGION="$REGION" WANT_SCHEDULE="$SCHEDULE" WANT_TZ="$TZ_NAME" WANT_URI="$URI" WANT_SA="$INVOKER" \
-      NEWEST="$newest" DEPLOYED="$deployed" MAX_AGE_H="${BACKUP_HOURLY_MAX_AGE_H:-9}" "$PYTHON" -c '
+      NEWEST="$newest" DEPLOYED="$deployed" MAX_AGE_H="${BACKUP_HOURLY_MAX_AGE_H:-9}" MAX_RUN_H="${OPS_SCHEDULE_MAX_AGE_H:-1.5}" "$PYTHON" -c '
 import json, os, sys
 from datetime import datetime, timezone
 j = json.load(sys.stdin); e = os.environ; bad = 0
@@ -76,7 +76,7 @@ chk(state == "ENABLED" or (paused_ok and state == "PAUSED"), "estado %s" % state
 last = j.get("lastAttemptTime")
 if state == "ENABLED":
     age = (now - ts(last)).total_seconds() / 3600 if last else None
-    chk(age is not None and age <= 1.5, "última ejecución hace %.1f h" % (age or 0), "la tarea está activa pero no corrió en la última hora y media (último intento: %s)" % (last or "nunca"))
+    chk(age is not None and age <= float(e["MAX_RUN_H"]), "última ejecución hace %.1f h" % (age or 0), "la tarea está activa pero no corrió en la última hora y media (límite %s h; último intento: %s)" % (e["MAX_RUN_H"], last or "nunca"))
     code = (j.get("status") or {}).get("code")
     chk(not code, "el último intento no dio error", "el último intento de la tarea falló (código %s): %s" % (code, (j.get("status") or {}).get("message", "")))
 if not (state == "PAUSED" and paused_ok):

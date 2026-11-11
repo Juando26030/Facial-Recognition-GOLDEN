@@ -35,9 +35,14 @@ def test_unreadable_marker_means_run(monkeypatch):
 
 
 def test_main_hourly_skips_without_opening_the_database(monkeypatch, capsys):
+    """Sin actividad y con todos los pasos al día (Job económico): sale sin abrir la base ni correr nada."""
     from app import ops_runner
+    fresh = (utcnow() - timedelta(minutes=10)).replace(microsecond=0).isoformat()
+    steps = {k: fresh for k in ("probe", "backup", "backup-daily", "purge", "archive-events", "check-backups", "offsite-copy", "reports")}
+    steps.update(warm_up="", full_run=(utcnow() - timedelta(hours=2)).replace(microsecond=0).isoformat())
+    monkeypatch.setattr(ops_state, "load_steps", lambda: steps)
     monkeypatch.setattr(ops_state, "last_activity", lambda: None)
-    monkeypatch.setattr(ops_runner, "_local_now", lambda: _local(9))
+    monkeypatch.setattr(ops_runner, "_local_now", lambda: utcnow() - timedelta(hours=5))
     monkeypatch.setattr(ops_runner, "hourly", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debía correr")))
     assert ops_runner.main("hourly") == 0
     assert "skipped" in capsys.readouterr().out
