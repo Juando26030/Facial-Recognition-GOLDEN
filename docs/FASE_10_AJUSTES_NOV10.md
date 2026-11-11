@@ -32,11 +32,12 @@ Cada bloque (A a E) agrega su sección al final. No reescribas las de otros.
 
 **Qué hace.** Sección nueva del evento («Acta de novedades», en «Más herramientas» del evento, ruta `/kiosk/<evento>/actas`). Se escribe lo ocurrido (párrafo o lista), y el coordinador y el cliente firman dibujando con el dedo o el mouse. Se pueden hacer varias actas por evento. Cada una se puede ver, imprimir o descargar.
 
-**Cómo se usa (para Juan David).**
-1. El coordinador entra a «Acta de novedades», escribe el título y lo ocurrido, y guarda.
-2. Abre el acta, dibuja su firma y pulsa «Firmar».
-3. El cliente entra con su cuenta de cliente, abre el acta, dibuja su firma y pulsa «Firmar».
-4. Con las dos firmas el acta queda «Firmada» y el texto ya no se puede cambiar. «Imprimir» abre el documento; desde el cuadro de impresión se guarda como PDF. «Descargar» baja el archivo.
+**Cómo se usa (para Juan David; flujo ajustado el 10-nov tras probar staging).**
+1. El coordinador entra a «Acta de novedades», escribe el título y lo ocurrido.
+2. En la misma pantalla, antes de guardar: firma el coordinador, escribe su nombre quien firma por el cliente y dibuja la firma del cliente (en la tableta del coordinador).
+3. Un solo botón «Guardar»: crea el acta ya firmada, genera el PDF y la bloquea (el texto ya no se cambia). «Descargar PDF» baja el PDF; «Imprimir» abre la versión imprimible.
+4. Opción secundaria: «Guardar borrador (sin firmas)». El borrador se puede editar y borrar; un cliente con cuenta puede abrirlo y firmar la suya desde su sesión, y el coordinador firma la suya abriéndolo. Al quedar las dos firmas se genera el PDF.
+Una sola firma no se acepta al crear: o las dos o ninguna.
 
 **Permisos.** Escribe y firma por el coordinador: coordinador, admin y super_admin. La comercial ve las actas pero no las escribe. El cliente (rol cliente autorizado al evento, evento en proceso) ve y firma SOLO la suya; nadie puede firmar por otro. El digitador no entra. Todo pasa por `get_event_for_staff` y la base archivada la bloquea.
 
@@ -255,3 +256,7 @@ Migración: solo `0128_event_types` (tipos de evento, ver 3). La ruleta y el QR 
 **Cuánto se espera ahorrar (estimado, no medido).** Neon a 0,25 CU encendido todo el mes cuesta ~US$19. Antes, cada despertar horario dejaba el motor prendido ~8 a 12 minutos (el respaldo más los 5 min de gracia) → ~4 h/día ≈ 120 h/mes. Ahora, un día sin eventos despierta la base ~6 a 8 veces (consulta cada 4 h, respaldo cada 8 h, diario y purga) ≈ 1 h/día ≈ 30 a 40 h/mes: **alrededor de un 70 % menos de horas de cómputo** en los días sin eventos. Los días con eventos cuestan lo mismo que antes (la base está en uso de todos modos). Valor real: compararlo en la consola de Neon (Billing → Compute hours) una semana después de desplegar.
 
 **Sin probar aquí.** Las pruebas de `tests/test_ops_economico.py` corren sin base (`pytest --noconftest`); la consulta SQL de la sonda (`PROBE_SQL`) y el flujo con almacenamiento real y Neon quedan para verificar en Cloud Shell/staging (mirar el JSON que imprime el Job: `probe`, `skipped`). En staging, revisar que tras un evento las instancias mínimas bajen a 0 (paso `warmup-down`).
+
+### 4. Barra de formato de los textos enriquecidos en tema oscuro (ajuste 7)
+
+La barra (negrita, cursiva, subrayado, color, tamaño, letra, alineación, listas) y el cuadro de escritura de `static/js/rich-text.js` traían colores fijos claros, por eso en oscuro se veían blancos y rotos. `rich-text.js` es un archivo congelado (huella), así que no se tocó: `static/css/gw-editor-form.css` la reestiliza con tokens `--gw-*` (fondo, bordes, botones, selectores, estados hover/activo/foco, cuadro de texto). El único otro texto con formato editable de la app (el cuerpo del correo en Parámetros, `.gw-pm-editor`) ahora también toma fondo y color del tema. El único lugar que monta la barra es el editor de formularios. Revisado en Chromium en claro y oscuro. El cuadro de color del navegador conserva su negro por defecto (lo fija el JS congelado).

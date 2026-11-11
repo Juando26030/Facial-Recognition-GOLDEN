@@ -83,7 +83,8 @@ def test_routes_are_sync_and_guard_archived_base():
     src = (ROOT / "app" / "routers" / "event_acts.py").read_text(encoding="utf-8")
     assert "async def" not in src and "require_data_open" in src and "get_event_for_staff" in src
     assert 'staff.role == "cliente"' in src          # el cliente firma solo la suya
-    assert "print(" not in src and "act.body" not in src.split("def make_pdf")[1].split("def _delete_signatures")[0].split("log.warning")[1]          # el log del PDF no lleva el texto del acta
+    assert "print(" not in src
+    assert all("body" not in ln and "title" not in ln for ln in src.splitlines() if "log.warning" in ln)          # el log del PDF no lleva el texto del acta
 
 
 def test_migration_0126_is_linked_and_page_has_no_inline_js():
@@ -169,3 +170,29 @@ def test_coordinator_collects_client_signature_on_his_tablet_and_pdf_can_be_rege
     assert client.get(f"{base}/{aid}/pdf").status_code in (200, 404)          # 404 solo si reportlab no está
     if r.json()["pdf"]:
         assert client.post(f"{base}/{aid}/pdf/regenerate").status_code == 200
+
+
+def test_create_signed_in_one_call_then_locked_with_pdf(client, acta_env):
+    ev, coord, cli, dig = acta_env
+    base = f"/api/events/{ev.id}/acts"
+    _as(client, coord)
+    body = {"title": "Cierre", "format": "list", "body": "uno\ndos"}
+    assert client.post(base, json={**body, "coordinator_signature": _png()}).status_code == 422          # o las dos firmas o ninguna
+    both = {**body, "coordinator_signature": _png(), "client_signature": _png()}
+    assert client.post(base, json=both).status_code == 422          # falta el nombre de quien firma por el cliente
+    assert client.post(base, json={**both, "client_signer_name": "Luis", "client_signature": _png(blank=True)}).status_code == 422
+    r = client.post(base, json={**both, "client_signer_name": "Luis Pérez"})
+    assert r.status_code == 200 and r.json()["status"] == "firmada" and r.json()["client_name"] == "Luis Pérez" and r.json()["coordinator_signed"]
+    aid = r.json()["id"]
+    assert client.put(f"{base}/{aid}", json=body).status_code == 409          # bloqueada
+    assert client.get(f"{base}/{aid}/pdf").status_code in (200, 404)          # 404 solo sin reportlab
+    # borrador sin firmas: opción secundaria
+    r = client.post(base, json=body)
+    assert r.json()["status"] == "borrador" and not r.json()["pdf"]
+
+
+def test_ui_main_path_is_write_sign_save():
+    js = (ROOT / "static" / "js" / "kiosk-actas.js").read_text(encoding="utf-8")
+    tpl = (ROOT / "templates" / "kiosk_actas.html").read_text(encoding="utf-8")
+    assert "data-form-pad=\"coordinator\"" in tpl and "data-form-pad=\"client\"" in tpl and 'id="actDraft"' in tpl and ">Guardar</button>" in tpl
+    assert "coordinator_signature" in js and "client_signature" in js

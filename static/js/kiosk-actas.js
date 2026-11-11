@@ -10,7 +10,7 @@
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
   const base = '/api/events/' + EVENT_ID + '/acts';
   const BADGE = { borrador: 'gw-badge', firma_pendiente: 'gw-badge gw-badge--warn', firmada: 'gw-badge gw-badge--ok' };
-  let canWrite = false, isClient = false, openId = null, editing = null, drawn = false;
+  let canWrite = false, isClient = false, openId = null, editing = null;
 
   const when = (iso) => (iso ? new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
   async function api(url, opts) {
@@ -31,9 +31,10 @@
     }
     canWrite = data.can_write; isClient = data.is_client;
     $('actForm').hidden = !canWrite;
+    if (canWrite) initFormPads();
     $('actCount').textContent = data.acts.length ? '(' + data.acts.length + ')' : '';
     if (!data.acts.length) {
-      setList('<div class="gw-state"><p class="gw-state__title">Todavía no hay actas</p><p class="gw-state__text">' + (canWrite ? 'Escribe la primera arriba y pídele al cliente que la firme.' : 'Cuando el coordinador escriba un acta, la verás aquí para firmarla.') + '</p></div>', false);
+      setList('<div class="gw-state"><p class="gw-state__title">Todavía no hay actas</p><p class="gw-state__text">' + (canWrite ? 'Escribe la primera arriba, fírmala con el cliente y guárdala.' : 'Cuando el coordinador escriba un acta, la verás aquí para firmarla.') + '</p></div>', false);
       return;
     }
     setList(data.acts.map((a) => `
@@ -73,13 +74,18 @@
     canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
     const ctx = canvas.getContext('2d');
     ctx.scale(ratio, ratio); ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgb(0, 0, 0)';
-    drawn = false;
+    canvas._drawn = false;
     let down = false, last = null;
     const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    canvas.addEventListener('pointerdown', (e) => { down = true; last = pos(e); canvas.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, 7); ctx.fill(); drawn = true; e.preventDefault(); });
+    canvas.addEventListener('pointerdown', (e) => { down = true; last = pos(e); canvas.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, 7); ctx.fill(); canvas._drawn = true; e.preventDefault(); });
     canvas.addEventListener('pointermove', (e) => { if (!down) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
     ['pointerup', 'pointercancel'].forEach((ev) => canvas.addEventListener(ev, () => { down = false; }));
-    canvas._clear = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); drawn = false; };
+    canvas._clear = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas._drawn = false; };
+  }
+
+  function initFormPads() {          // los recuadros del formulario se dibujan cuando el formulario ya es visible (si no, miden 0)
+    if (editing) return;
+    document.querySelectorAll('[data-form-pad]').forEach((c) => { if (!c._ready) { initPad(c); c._ready = true; } });
   }
 
   async function openAct(id) {
@@ -105,16 +111,28 @@
   }
 
   function closeDetail() { openId = null; $('actDetail').hidden = true; }
-  function resetForm() { editing = null; $('actForm').reset(); $('actFormTitle').textContent = 'Nueva acta'; $('actSave').textContent = 'Guardar acta'; $('actCancel').hidden = true; }
+  function formMode(edit) {
+    $('actSignBox').hidden = edit; $('actDraft').hidden = edit; $('actCancel').hidden = !edit;
+    $('actFormTitle').textContent = edit ? 'Editar el acta' : 'Nueva acta'; $('actSave').textContent = edit ? 'Guardar cambios' : 'Guardar';
+  }
+  function resetForm() {
+    editing = null; $('actForm').reset(); formMode(false);
+    document.querySelectorAll('[data-form-pad]').forEach((c) => { if (c._clear) c._clear(); });
+    initFormPads();
+  }
 
-  $('actForm').addEventListener('submit', (e) => {
-    e.preventDefault();
+  // Camino principal: escribir -> firmar -> «Guardar» (crea el acta ya firmada, con su PDF). «Guardar borrador» guarda sin firmas.
+  function saveAct(btn, withSignatures) {
     const body = { title: $('actTitle').value, format: $('actFormat').value, body: $('actBody').value };
-    const send = async (confirmReset) => {
-      if (editing) return api(base + '/' + editing, json('PUT', { ...body, confirm_reset: confirmReset }));
-      return api(base, json('POST', body));
-    };
-    busy($('actSave'), async () => {
+    if (!$('actForm').reportValidity()) return;
+    if (!editing && withSignatures) {
+      const [c, k] = ['coordinator', 'client'].map((n) => document.querySelector('[data-form-pad="' + n + '"]'));
+      if ($('actClientName').value.trim().length < 3) { showToast('Escribe el nombre de quien firma por el cliente', 'error'); $('actClientName').focus(); return; }
+      if (!c._drawn || !k._drawn) { showToast('Faltan firmas: firma el coordinador y el cliente, o usa «Guardar borrador»', 'error'); return; }
+      body.coordinator_signature = c.toDataURL('image/png'); body.client_signature = k.toDataURL('image/png'); body.client_signer_name = $('actClientName').value;
+    }
+    const send = async (confirmReset) => (editing ? api(base + '/' + editing, json('PUT', { ...body, confirm_reset: confirmReset })) : api(base, json('POST', body)));
+    busy(btn, async () => {
       try { return await send(false); } catch (err) {
         if (err.status === 409 && editing) {
           if (!(await showConfirm(err.message, { confirmLabel: 'Cambiar y quitar la firma' }))) return null;
@@ -124,10 +142,13 @@
       }
     }).then((a) => {
       if (!a) return;
-      showToast(editing ? 'Acta actualizada' : 'Acta guardada. Ahora falta firmarla.', 'success');
+      const wasEdit = !!editing;
+      showToast(wasEdit ? 'Acta actualizada' : (a.status === 'firmada' ? (a.pdf ? 'Acta firmada y guardada, con su PDF' : 'Acta firmada y guardada. El PDF no se pudo generar: usa «Generar PDF»') : 'Borrador guardado'), a.status === 'firmada' && !a.pdf ? 'error' : 'success');
       resetForm(); loadList(); openAct(a.id);
     }).catch((err) => showToast(err.message, 'error'));
-  });
+  }
+  $('actForm').addEventListener('submit', (e) => { e.preventDefault(); saveAct($('actSave'), true); });
+  $('actDraft').addEventListener('click', () => saveAct($('actDraft'), false));
   $('actCancel').addEventListener('click', resetForm);
 
   document.addEventListener('click', async (e) => {
@@ -146,7 +167,7 @@
     if (edit) {
       const a = JSON.parse($('actDetail').dataset.act || '{}');
       editing = a.id; $('actTitle').value = a.title; $('actFormat').value = a.format; $('actBody').value = a.body;
-      $('actFormTitle').textContent = 'Editar el acta'; $('actSave').textContent = 'Guardar cambios'; $('actCancel').hidden = false;
+      formMode(true);
       $('actForm').hidden = false; $('actForm').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('actTitle').focus();
       return;
     }
@@ -159,7 +180,7 @@
     if (sign) {
       const canvas = sign.closest('.gw-acta-sig').querySelector('canvas');
       if (sign.dataset.padSign === 'client' && !isClient && $('signerName') && $('signerName').value.trim().length < 3) { showToast('Escribe el nombre de quien firma por el cliente', 'error'); $('signerName').focus(); return; }
-      if (!drawn) { showToast('Dibuja tu firma en el recuadro antes de firmar', 'error'); return; }
+      if (!canvas._drawn) { showToast('Dibuja tu firma en el recuadro antes de firmar', 'error'); return; }
       if (!(await showConfirm('Al firmar confirmas que el texto del acta es correcto. ¿Firmar ahora?', { confirmLabel: 'Sí, firmar' }))) return;
       busy(sign, () => api(base + '/' + openId + '/sign', json('POST', { signature: canvas.toDataURL('image/png'), side: sign.dataset.padSign, signer_name: ($('signerName') || {}).value || '' })))
         .then(() => { showToast('Firma guardada', 'success'); loadList(); openAct(openId); })

@@ -1,7 +1,7 @@
 """Acta de novedades del evento (Fase 10, tabla event_acts, 0126). Lógica pura en app/event_acts.py.
 
   GET    /api/events/{id}/acts                 lista (coordinador+ y el cliente del evento)
-  POST   /api/events/{id}/acts                 crea (título, formato text|list, texto)               coordinador / admin / super_admin
+  POST   /api/events/{id}/acts                 crea (título, formato, texto) y, si trae las dos firmas, la crea YA FIRMADA con su PDF; sin firmas = borrador   coordinador / admin / super_admin
   GET    /api/events/{id}/acts/{aid}           detalle
   PUT    /api/events/{id}/acts/{aid}           cambia el texto; con firmas puestas exige {"confirm_reset": true} (las quita); firmada = no se cambia
   DELETE /api/events/{id}/acts/{aid}           borra un acta SIN firmas
@@ -93,6 +93,17 @@ def make_pdf(event: Event, act: EventAct) -> bool:
         return False
 
 
+def _put_signature(event: Event, act: EventAct, side: str, signer: str, staff: StaffUser, blob: bytes) -> None:
+    key = event_acts.sig_key(event.tenant_id, event.id, act.id, side, uuid.uuid4().hex)
+    get_storage().put(key, blob)
+    setattr(act, f"{side}_sig_key", key)
+    setattr(act, f"{side}_name", signer[:160])
+    setattr(act, f"{side}_signed_by_id", staff.id)
+    setattr(act, f"{side}_signed_at", utcnow())
+    act.content_hash = event_acts.content_hash(act.title, act.format, act.body)
+    act.updated_at = utcnow()
+
+
 def _delete_signatures(act: EventAct) -> None:
     for attr in ("coordinator_sig_key", "client_sig_key"):
         key = getattr(act, attr)
@@ -115,16 +126,35 @@ def list_acts(event_id: int, db: Session = Depends(get_db), staff: StaffUser = D
 
 @router.post("/events/{event_id}/acts")
 def create_act(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_writer)):
+    """Camino principal: escribir, firmar (coordinador y cliente en la misma pantalla) y guardar de una vez: `coordinator_signature` + `client_signature` + `client_signer_name`. Con las dos firmas el acta se crea
+    ya firmada, se genera el PDF y queda bloqueada. Sin firmas es un borrador (opción secundaria). Una sola firma no se acepta: o las dos o ninguna."""
     event = _event(event_id, db, staff)
     try:
         f = event_acts.clean_fields(data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    c_raw, k_raw = data.get("coordinator_signature"), data.get("client_signature")
+    blobs, client_name = None, ""
+    if c_raw or k_raw:
+        if not (c_raw and k_raw):
+            raise HTTPException(status_code=422, detail="Para guardar el acta firmada hacen falta las dos firmas: la del coordinador y la del cliente")
+        client_name = " ".join(str(data.get("client_signer_name") or "").split())
+        if len(client_name) < 3:
+            raise HTTPException(status_code=422, detail="Escribe el nombre de quien firma por el cliente")
+        try:
+            blobs = (event_acts.decode_signature(c_raw), event_acts.decode_signature(k_raw))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
     now = utcnow()
     act = EventAct(event_id=event.id, created_by_id=staff.id, created_at=now, updated_at=now, **f)
     db.add(act)
     db.flush()
-    audit_actions.record(db, staff, "create", "event_act", act.id, None, f"evento {event.id}")
+    if blobs:
+        _put_signature(event, act, "coordinator", staff.full_name or staff.username, staff, blobs[0])
+        _put_signature(event, act, "client", client_name, staff, blobs[1])
+        db.flush()
+        make_pdf(event, act)
+    audit_actions.record(db, staff, "create", "event_act", act.id, None, f"evento {event.id}" + (", firmada" if blobs else ""))
     db.commit()
     return JSONResponse(_out(act), headers=NO_STORE)
 
@@ -191,14 +221,7 @@ def sign_act(event_id: int, act_id: int, data: dict, db: Session = Depends(get_d
     act = _act(db, event, act_id, lock=True)
     if getattr(act, f"{side}_sig_key"):
         raise HTTPException(status_code=409, detail="Esta parte ya firmó el acta")
-    key = event_acts.sig_key(event.tenant_id, event.id, act.id, side, uuid.uuid4().hex)
-    get_storage().put(key, blob)
-    setattr(act, f"{side}_sig_key", key)
-    setattr(act, f"{side}_name", signer[:160])
-    setattr(act, f"{side}_signed_by_id", staff.id)
-    setattr(act, f"{side}_signed_at", utcnow())
-    act.content_hash = event_acts.content_hash(act.title, act.format, act.body)
-    act.updated_at = utcnow()
+    _put_signature(event, act, side, signer, staff, blob)
     db.flush()
     if event_acts.status_of(act) == "firmada":
         make_pdf(event, act)

@@ -72,8 +72,26 @@
         <textarea class="gw-textarea gw-acta-body" id="actBody" maxlength="10000" required placeholder="Escribe aquí lo que pasó en el evento"></textarea>
         <p class="gw-hint" id="actBodyHint">Máximo 10.000 letras. Cuando las dos partes firmen, el texto ya no se puede cambiar.</p>
       </div>
+      <div id="actSignBox" class="gw-stack">
+        <h3 class="gw-card__title">Firmas</h3>
+        <p class="gw-hint">Firma aquí mismo, antes de guardar. El cliente que no tenga cuenta firma en esta pantalla, con su nombre escrito.</p>
+        <div class="gw-acta-sigs">
+          <div class="gw-acta-sig">
+            <h4 class="gw-label">Coordinador</h4>
+            <canvas class="gw-acta-pad" data-form-pad="coordinator" role="img" aria-label="Espacio para la firma del coordinador"></canvas>
+            <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-pad-clear>Borrar y repetir</button></div>
+          </div>
+          <div class="gw-acta-sig">
+            <h4 class="gw-label">Cliente</h4>
+            <div class="gw-field"><label class="gw-label" for="actClientName">Nombre de quien firma por el cliente *</label><input class="gw-input" type="text" id="actClientName" maxlength="160" autocomplete="off"></div>
+            <canvas class="gw-acta-pad" data-form-pad="client" role="img" aria-label="Espacio para la firma del cliente"></canvas>
+            <div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-pad-clear>Borrar y repetir</button></div>
+          </div>
+        </div>
+      </div>
       <div class="gw-actions">
-        <button type="submit" class="gw-btn gw-btn--primary" id="actSave">Guardar acta</button>
+        <button type="submit" class="gw-btn gw-btn--primary" id="actSave">Guardar</button>
+        <button type="button" class="gw-btn gw-btn--secondary" id="actDraft">Guardar borrador (sin firmas)</button>
         <button type="button" class="gw-btn gw-btn--secondary" id="actCancel" hidden>Cancelar</button>
       </div>
     </form>
