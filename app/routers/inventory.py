@@ -488,7 +488,8 @@ def inventory_calendar_view(start: str, end: str, db: Session = Depends(get_db),
                 continue
             lines.append({"product_id": pid, "name": p.name, "unit": p.unit, "category_id": p.category_id, "assigned": l.qty_assigned or 0, "out": l.qty_out or 0, "returned": l.qty_returned or 0,
                           "consumed": l.qty_consumed or 0, "pending_return": inventory_calendar.pending_return(l.qty_out, l.qty_returned, l.qty_consumed)})
-        events.append({"id": e.id, "name": e.name, "code": e.event_code, "status": e.status, "city": e.city, "start": o["span"][0].isoformat(), "end": o["span"][1].isoformat(),
+        et = e.event_type
+        events.append({"id": e.id, "name": e.name, "has_inventory": bool(lines), "event_type_id": e.event_type_id, "event_type_name": et.name if et else None, "event_type_color": (et.color or None) if et else None, "code": e.event_code, "status": e.status, "city": e.city, "start": o["span"][0].isoformat(), "end": o["span"][1].isoformat(),
                        "event_start": e.start_date.isoformat(), "event_end": (e.end_date or e.start_date).isoformat(), "lines": lines})
     spans = [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in found]
     daily = {}
@@ -498,7 +499,7 @@ def inventory_calendar_view(start: str, end: str, db: Session = Depends(get_db),
             daily[day.isoformat()] = used
     prods = [{"id": p.id, "name": p.name, "unit": p.unit, "category_id": p.category_id, "category_name": p.category.name if p.category and p.category.archived_at is None else None, "stock": p.qty_total}
              for p in sorted(products.values(), key=lambda x: (x.position, x.id)) if p.archived_at is None]
-    return {"start": a.isoformat(), "end": b.isoformat(), "events": events, "daily": daily, "products": prods}
+    return {"start": a.isoformat(), "end": b.isoformat(), "events": events, "daily": daily, "products": prods, "can_assign": _can_manage(staff)}
 
 
 def _range(start, end):
@@ -506,3 +507,52 @@ def _range(start, end):
         return inventory_calendar.clean_range(start, end)
     except inventory_calendar.RangeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/inventory/assign")
+def assign_inventory(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Planeación desde el calendario (Fase 10): fija cuántas unidades de un producto tiene ASIGNADAS un evento (`qty`; 0 = quitarlo). Valida la regla de cuadre de siempre (no bajar de lo que ya salió)
+    y que las existencias de Golden alcancen en TODOS los días del evento (montaje y días siguientes incluidos) junto con lo asignado a otros eventos que se cruzan. Admin, Almacén y Super Admin."""
+    try:
+        event_id, product_id = int(data.get("event_id")), int(data.get("product_id"))
+    except (TypeError, ValueError):
+        _err("Envía el evento y el equipo")
+    event = _event(db, event_id, staff, lock=True)
+    if event.archived_at is not None:
+        _err("El evento está archivado: restáuralo para asignarle inventario")
+    if event.status == "finalizado":
+        _err("El evento ya finalizó: no se le asigna más inventario")
+    span = inventory_calendar.event_span(event.start_date, event.end_date, event.setup_date)
+    if span is None:
+        _err("El evento no tiene fecha de inicio: ponle fechas para poder asignarle inventario")
+    prod = _product(db, product_id)
+    if prod.archived_at is not None:
+        _err(f"«{prod.name}» está archivado en el catálogo")
+    qty = _wrap(lambda: inventory.clean_qty(data.get("qty"), f"La cantidad de «{prod.name}»"))
+    line = db.query(EventInventoryItem).filter_by(event_id=event.id, product_id=prod.id).with_for_update().first()
+    row = inventory.Row(name=prod.name, assigned=qty, out=(line.qty_out if line else 0) or 0, returned=(line.qty_returned if line else 0) or 0, consumed=(line.qty_consumed if line else 0) or 0,
+                        category_id=prod.category_id, product_id=prod.id)
+    rep = inventory.check_balance([row], "creado")
+    if not rep.ok:
+        _err("No se guardó: " + " ".join(i.message for i in rep.errors[:3]))
+    left = None
+    if prod.qty_total is not None:
+        others = [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in _events_in_range(db, span[0], span[1]) if o["event"].id != event.id]
+        peak = inventory_calendar.peak_usage(span, others, prod.id)
+        left = inventory_calendar.max_assignable(prod.qty_total, peak)
+        if qty > left:
+            _err(f"No alcanza «{prod.name}»: en las fechas de este evento (del {span[0].isoformat()} al {span[1].isoformat()}, con montaje) ya hay {peak} asignados a otros eventos de {prod.qty_total} que tiene Golden. Se pueden asignar hasta {left}.")
+    if line is None:
+        if qty == 0:
+            return {"event_id": event.id, "product_id": prod.id, "assigned": 0, "max_assignable": left}
+        line = EventInventoryItem(event_id=event.id, product_id=prod.id)
+        db.add(line)
+    line.qty_assigned = qty
+    line.updated_by_id, line.updated_at = staff.id, utcnow()
+    audit_actions.record(db, staff, "update", "event_inventory", event.id, event.name, f"calendario: «{prod.name}» asignado = {qty}")
+    db.flush()
+    alerts = inventory_alerts.notify_event(db, event, staff, inventory_alerts.warnings_for_event(db, event))          # avisa (campana + correo); nunca bloquea
+    db.commit()
+    if alerts:
+        jobs.kick()
+    return {"event_id": event.id, "product_id": prod.id, "assigned": qty, "max_assignable": left}

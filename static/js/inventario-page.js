@@ -50,7 +50,27 @@
     if (loose.length) groups.push({ id: null, name: 'Sin categorizar', products: loose });
     return groups;
   }
-  root.GWInvPage = { parse, toIso, addDays, mondayOf, monthStart, addMonths, eventOnDay, rangeFor, gridDays, usedOn, availOn, shortOn, eventsOn, titleFor, groupCatalog, dowIndex };
+  /* Planeación (arrastrar o tocar un equipo y un evento): lo más usado por OTROS eventos en los días del evento (los que ya están cargados) y cuánto se le puede asignar. El servidor valida de verdad. */
+  function othersPeak(daily, span, pid, current) {
+    let peak = 0;
+    for (let d = span.start; d <= span.end; d = addDays(d, 1)) peak = Math.max(peak, usedOn(daily, d, pid) - (current || 0));
+    return Math.max(peak, 0);
+  }
+  const maxAssignable = (stock, peak) => (stock == null ? null : Math.max(stock - peak, 0));
+  /* Cantidad escrita por la persona: entero de 0 en adelante o null. */
+  function parseQty(text) { const t = String(text == null ? '' : text).trim(); return /^\d{1,6}$/.test(t) ? parseInt(t, 10) : null; }
+  /* Productos del panel agrupados por categoría (las sin categoría al final) con búsqueda. */
+  function panelGroups(products, q) {
+    const needle = String(q || '').trim().toLowerCase();
+    const list = (products || []).filter((p) => !needle || (p.name || '').toLowerCase().includes(needle));
+    const names = [];
+    list.forEach((p) => { const n = p.category_name || ''; if (n && !names.includes(n)) names.push(n); });
+    const groups = names.map((n) => ({ name: n, products: list.filter((p) => p.category_name === n) }));
+    const loose = list.filter((p) => !p.category_name);
+    if (loose.length) groups.push({ name: 'Sin categorizar', products: loose });
+    return groups;
+  }
+  root.GWInvPage = { othersPeak, maxAssignable, parseQty, panelGroups, parse, toIso, addDays, mondayOf, monthStart, addMonths, eventOnDay, rangeFor, gridDays, usedOn, availOn, shortOn, eventsOn, titleFor, groupCatalog, dowIndex };
 
   const doc = root.document;
   if (!doc || !doc.getElementById('invCatalog')) return;          // en Node solo se exponen las funciones puras
@@ -139,7 +159,8 @@
 
   /* ---- calendario */
   const today = toIso(new Date());
-  const cal = { view: 'month', anchor: today, selected: today, data: null, loaded: false, ctrl: null, key: '' };
+  const cal = { view: 'month', anchor: today, selected: today, data: null, loaded: false, ctrl: null, key: '', cats: new Set(), known: {}, armed: 0, panelQ: '' };
+  const visible = () => cal.data.events.filter((e) => root.CalendarCats.matches(e, cal.cats));          // filtro por tipo de evento (chips)
   const pidFilter = () => Number($('invCalProduct').value) || 0;
 
   async function loadCalendar() {
@@ -166,8 +187,9 @@
   const lineQty = (ev, pid) => { const l = ev.lines.find((x) => x.product_id === pid); return l ? l.assigned : 0; };
   function chip(ev, pid) {
     const pend = ev.status === 'finalizado' && ev.lines.some((l) => l.pending_return > 0);
-    const txt = pid ? `${ev.name} · ${lineQty(ev, pid)}` : `${ev.name} · ${ev.lines.length} equipo${ev.lines.length === 1 ? '' : 's'}`;
-    return `<span class="gw-invcal__chip${pend ? ' gw-invcal__chip--warn' : ''}" title="${esc(ev.name)}">${esc(txt)}</span>`;
+    const none = !ev.has_inventory && ev.status !== 'finalizado';
+    const txt = pid ? `${ev.name} · ${lineQty(ev, pid)}` : (none ? `${ev.name} · Sin inventario aún` : `${ev.name} · ${ev.lines.length} equipo${ev.lines.length === 1 ? '' : 's'}`);
+    return `<span class="gw-invcal__chip${pend ? ' gw-invcal__chip--warn' : ''}${none ? ' gw-invcal__chip--none' : ''}" data-drop-event="${ev.id}" title="${esc(ev.name)}">${esc(txt)}</span>`;
   }
   function availText(day, pid, onlyIfUsed) {
     const prod = cal.data.products.find((p) => p.id === pid);
@@ -181,7 +203,7 @@
     const pid = pidFilter(), month = cal.anchor.slice(0, 7);
     const head = DOW.map((d) => `<div class="gw-invcal__dow">${d}</div>`).join('');
     const cells = gridDays('month', cal.anchor).map((day) => {
-      const evs = eventsOn(cal.data.events, day, pid);
+      const evs = eventsOn(visible(), day, pid);
       const short = pid ? [] : shortOn(cal.data.daily, day, cal.data.products);
       const chips = evs.slice(0, 3).map((e) => chip(e, pid)).join('') + (evs.length > 3 ? `<span class="gw-invcal__more">+${evs.length - 3} más</span>` : '');
       const warn = short.length ? `<span class="gw-invcal__chip gw-invcal__chip--warn">Falta material (${short.length})</span>` : '';
@@ -193,22 +215,23 @@
   function renderWeek() {
     const pid = pidFilter();
     return `<div class="gw-invcal__week">${gridDays('week', cal.anchor).map((day) => {
-      const evs = eventsOn(cal.data.events, day, pid);
-      const body = evs.length ? evs.map((e) => `<div class="gw-invcal__evt"><strong>${esc(e.name)}</strong><ul>${e.lines.filter((l) => !pid || l.product_id === pid).slice(0, 6).map((l) => `<li>${l.assigned} × ${esc(l.name)}</li>`).join('')}${e.lines.length > 6 && !pid ? `<li>+${e.lines.length - 6} más</li>` : ''}</ul></div>`).join('') : '<span class="gw-hint">Sin material asignado</span>';
+      const evs = eventsOn(visible(), day, pid);
+      const body = evs.length ? evs.map((e) => `<div class="gw-invcal__evt" data-drop-event="${e.id}"><strong>${esc(e.name)}</strong>${!e.has_inventory && e.status !== 'finalizado' ? '<span class="gw-badge gw-badge--warn">Sin inventario aún</span>' : ''}<ul>${e.lines.filter((l) => !pid || l.product_id === pid).slice(0, 6).map((l) => `<li>${l.assigned} × ${esc(l.name)}</li>`).join('')}${e.lines.length > 6 && !pid ? `<li>+${e.lines.length - 6} más</li>` : ''}</ul></div>`).join('') : '<span class="gw-hint">Sin material asignado</span>';
       return `<div class="gw-invcal__col"${day === today ? ' aria-current="date"' : ''}><button type="button" class="gw-btn gw-btn--${day === cal.selected ? 'primary' : 'secondary'} gw-btn--sm" data-day="${day}" aria-pressed="${day === cal.selected}">${DOW[dowIndex(day)]} ${Number(day.slice(8))}</button>${body}${pid ? availText(day, pid) : ''}</div>`;
     }).join('')}</div>`;
   }
   function renderDetail() {
     const day = cal.selected, pid = pidFilter(), box = $('invCalDetail');
-    const evs = eventsOn(cal.data.events, day, pid);
+    const evs = eventsOn(visible(), day, pid);
     const inRange = cal.data.start <= day && day <= cal.data.end;
     if (!inRange) { box.innerHTML = ''; return; }
     const evHtml = evs.length ? evs.map((e) => {
       const lines = e.lines.filter((l) => !pid || l.product_id === pid);
       return `<article class="gw-card gw-stack"><div class="gw-invcal__evhead"><h3 class="gw-invcal__evtitle">${esc(e.name)} <span class="gw-hint">${esc(e.code)} · ${esc(STATUS[e.status] || e.status)} · ${esc(e.event_start)}${e.event_end !== e.event_start ? ' al ' + esc(e.event_end) : ''}${e.start < e.event_start ? ' · montaje desde ' + esc(e.start) : ''}</span></h3>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-open-event="${e.id}" data-name="${esc(e.name)}">Abrir inventario del evento</button></div>
-        <div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Material de ${esc(e.name)}</caption><thead><tr><th scope="col">Equipo</th><th scope="col">Asignado</th><th scope="col">Salió</th><th scope="col">Volvió</th><th scope="col">Falta por volver</th></tr></thead><tbody>${lines.map((l) => `<tr><td>${esc(l.name)}</td><td>${l.assigned} ${esc(l.unit)}</td><td>${l.out}</td><td>${l.returned}</td><td>${l.pending_return > 0 && e.status === 'finalizado' ? `<span class="gw-badge gw-badge--warn">${l.pending_return}</span>` : l.pending_return}</td></tr>`).join('')}</tbody></table></div></article>`;
-    }).join('') : stateBox('Ningún evento tiene material asignado este día.');
+        <span class="gw-actions">${canAssign(e) && cal.armed ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-drop-event="${e.id}">Asignar «${esc(armedName())}» aquí</button>` : ''}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-open-event="${e.id}" data-name="${esc(e.name)}">Abrir inventario del evento</button></span></div>
+        ${!e.has_inventory && e.status !== 'finalizado' ? '<p><span class="gw-badge gw-badge--warn">Sin inventario aún</span> <span class="gw-hint">Elige un equipo arriba y arrástralo aquí, o tócalo y luego toca este evento.</span></p>' : ''}
+        ${lines.length ? `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Material de ${esc(e.name)}</caption><thead><tr><th scope="col">Equipo</th><th scope="col">Asignado</th><th scope="col">Salió</th><th scope="col">Volvió</th><th scope="col">Falta por volver</th>${canAssign(e) ? '<th scope="col"><span class="gw-sr-only">Acciones</span></th>' : ''}</tr></thead><tbody>${lines.map((l) => `<tr><td>${esc(l.name)}</td><td>${l.assigned} ${esc(l.unit)}</td><td>${l.out}</td><td>${l.returned}</td><td>${l.pending_return > 0 && e.status === 'finalizado' ? `<span class="gw-badge gw-badge--warn">${l.pending_return}</span>` : l.pending_return}</td>${canAssign(e) ? `<td><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-edit-line="${e.id}:${l.product_id}" aria-label="Cambiar la cantidad de ${esc(l.name)}">Cambiar</button> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-del-line="${e.id}:${l.product_id}" aria-label="Quitar ${esc(l.name)} de ${esc(e.name)}">Quitar</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}</article>`;
+    }).join('') : stateBox('Ningún evento ocupa material este día.');
     const prods = cal.data.products.filter((p) => (!pid || p.id === pid) && (usedOn(cal.data.daily, day, p.id) > 0 || p.stock != null));
     const avail = prods.length ? `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Disponibilidad por equipo</caption><thead><tr><th scope="col">Equipo</th><th scope="col">Existencias</th><th scope="col">Asignado</th><th scope="col">Disponible</th></tr></thead><tbody>${prods.map((p) => {
       const u = usedOn(cal.data.daily, day, p.id), a = availOn(p.stock, u);
@@ -221,7 +244,61 @@
     $('invCalTitle').textContent = titleFor(cal.view, cal.anchor);
     $('invCalBody').innerHTML = cal.view === 'month' ? renderMonth() : (cal.view === 'week' ? renderWeek() : '');
     doc.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === cal.view)));
+    renderCats();
+    renderPanel();
     renderDetail();
+  }
+
+  /* ---- tipos de evento (chips, como en el Calendario): filtran los eventos visibles y las cantidades del panel */
+  function renderCats() {
+    const cats = root.CalendarCats.build(cal.data.events, cal.cats, cal.known);
+    cats.forEach((c) => { if (c.count) cal.known[c.key] = { label: c.label, color: c.color }; });
+    const bar = $('invCalCats');
+    bar.hidden = !cats.length;
+    bar.innerHTML = cats.map((c) => `<button type="button" class="gw-chip" data-cat="${esc(c.key)}" aria-pressed="${c.active}">${esc(c.label)} <span class="gw-hint">${c.count}</span></button>`).join('') +
+      (cal.cats.size ? '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-cat-clear>Ver todos</button>' : '');
+  }
+
+  /* ---- panel de equipos para asignar (arrastrar a un evento, o tocar el equipo y luego el evento) */
+  const canAssign = (ev) => !!(cal.data && cal.data.can_assign && ev.status !== 'finalizado');
+  const prodById = (id) => cal.data.products.find((p) => p.id === id);
+  const armedName = () => { const p = prodById(cal.armed); return p ? p.name : ''; };
+  function renderPanel() {
+    const box = $('invAssign');
+    box.hidden = !cal.data.can_assign;
+    if (box.hidden) return;
+    const day = cal.selected, vis = visible().filter((e) => eventOnDay(e, day));
+    const groups = panelGroups(cal.data.products, cal.panelQ);
+    $('invArmed').innerHTML = cal.armed ? `Elegiste <strong>${esc(armedName())}</strong>: toca un evento del calendario para asignarlo. <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-disarm>Cancelar</button>` : 'Arrastra un equipo a un evento del calendario, o tócalo y luego toca el evento. Las cantidades son las disponibles el día seleccionado.';
+    $('invArtList').innerHTML = groups.length ? groups.map((g) => `<div class="gw-invassign__group"><h3 class="gw-invassign__cat">${esc(g.name)}</h3><div class="gw-invassign__chips">${g.products.map((p) => {
+      const used = usedOn(cal.data.daily, day, p.id), a = availOn(p.stock, used);
+      const mine = cal.cats.size ? vis.reduce((n, e) => n + lineQty(e, p.id), 0) : null;
+      return `<button type="button" class="gw-chip gw-invassign__art${a != null && a <= 0 ? ' gw-invassign__art--none' : ''}" draggable="true" data-art="${p.id}" aria-pressed="${cal.armed === p.id}">${esc(p.name)} <span class="gw-hint">${a == null ? 'sin control' : 'disp. ' + a}${mine != null ? ' · en estos eventos ' + mine : ''}</span></button>`;
+    }).join('')}</div></div>`).join('') : '<p class="gw-hint">Ningún equipo coincide.</p>';
+  }
+
+  async function askAssign(evId, pid) {
+    const ev = cal.data.events.find((e) => e.id === evId), prod = prodById(pid);
+    if (!ev || !prod) return;
+    if (!canAssign(ev)) { showToast('Este evento ya finalizó: no se le asigna más inventario.', 'error'); return; }
+    const cur = lineQty(ev, pid);
+    const max = maxAssignable(prod.stock, othersPeak(cal.data.daily, { start: ev.start < cal.data.start ? cal.data.start : ev.start, end: ev.end > cal.data.end ? cal.data.end : ev.end }, pid, cur));
+    const info = `Del ${esc(ev.start)} al ${esc(ev.end)} (con montaje). ` + (max == null ? 'Sin control de existencias.' : `Se pueden asignar hasta ${max}.`);
+    for (;;) {
+      const txt = await showPrompt(`¿Cuántas unidades de <strong>${esc(prod.name)}</strong> para <strong>${esc(ev.name)}</strong>?<br><span class="gw-hint">${info}</span>`, { title: cur ? 'Cambiar la cantidad' : 'Asignar equipo', defaultValue: cur ? String(cur) : '1', confirmLabel: 'Asignar' });
+      if (txt == null) return;
+      const qty = parseQty(txt);
+      if (qty == null) { showToast('Escribe un número entero (0 o más).', 'error'); continue; }
+      if (max != null && qty > max) { showToast(`Solo se pueden asignar hasta ${max} en esas fechas.`, 'error'); continue; }
+      return sendAssign(ev, prod, qty);
+    }
+  }
+  async function sendAssign(ev, prod, qty) {
+    try {
+      await send('/api/inventory/assign', 'POST', { event_id: ev.id, product_id: prod.id, qty });
+      showToast(qty ? `${qty} × ${prod.name} asignado a ${ev.name}` : `${prod.name} quitado de ${ev.name}`, 'success');
+      cal.armed = 0; cal.key = ''; await loadCalendar(); loadCatalog();
+    } catch (err) { showToast(err.message, 'error'); }
   }
   function step(dir) {
     if (cal.view === 'month') cal.anchor = addMonths(cal.anchor, dir);
@@ -238,10 +315,44 @@
   });
   $('invCalProduct').addEventListener('change', () => cal.data && renderCalendar());
   $('invPanelCal').addEventListener('click', (e) => {
+    const drop = e.target.closest('[data-drop-event]');
+    if (drop && cal.armed) { askAssign(Number(drop.dataset.dropEvent), cal.armed); return; }          // alternativa sin arrastrar (tableta, celular, teclado)
+    const ed = e.target.closest('[data-edit-line]'), del = e.target.closest('[data-del-line]');
+    if (ed) { const [ev, pid] = ed.dataset.editLine.split(':').map(Number); askAssign(ev, pid); return; }
+    if (del) {
+      const [evId, pid] = del.dataset.delLine.split(':').map(Number), ev = cal.data.events.find((x) => x.id === evId), prod = prodById(pid);
+      if (ev && prod) showConfirm(`¿Quitar «${esc(prod.name)}» del inventario de «${esc(ev.name)}»?`, { confirmLabel: 'Quitar' }).then((ok) => { if (ok) sendAssign(ev, prod, 0); });
+      return;
+    }
     const d = e.target.closest('[data-day]');
     if (d) { cal.selected = d.dataset.day; if (cal.view === 'day') { cal.anchor = cal.selected; loadCalendar(); } else renderCalendar(); return; }
     const o = e.target.closest('[data-open-event]');
     if (o) openEvent(Number(o.dataset.openEvent), o.dataset.name);
+  });
+
+  $('invCalCats').addEventListener('click', (e) => {
+    if (e.target.closest('[data-cat-clear]')) { cal.cats = new Set(); renderCalendar(); return; }
+    const b = e.target.closest('[data-cat]');
+    if (b) { cal.cats = root.CalendarCats.toggle(cal.cats, b.dataset.cat); renderCalendar(); }
+  });
+  $('invArtSearch').addEventListener('input', (e) => { cal.panelQ = e.target.value; if (cal.data) renderPanel(); });
+  $('invAssign').addEventListener('click', (e) => {
+    if (e.target.closest('[data-disarm]')) { cal.armed = 0; renderCalendar(); return; }
+    const a = e.target.closest('[data-art]');
+    if (a) { const id = Number(a.dataset.art); cal.armed = cal.armed === id ? 0 : id; renderCalendar(); }
+  });
+  /* arrastrar (ratón): el equipo se suelta sobre el evento (cintas del mes, bloques de la semana o tarjetas del día) */
+  let dragPid = 0;
+  $('invAssign').addEventListener('dragstart', (e) => { const a = e.target.closest('[data-art]'); if (!a) return; dragPid = Number(a.dataset.art); e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', 'equipo:' + dragPid); });
+  $('invAssign').addEventListener('dragend', () => { dragPid = 0; doc.querySelectorAll('.gw-invcal--drop').forEach((n) => n.classList.remove('gw-invcal--drop')); });
+  $('invPanelCal').addEventListener('dragover', (e) => { const t = dragPid && e.target.closest('[data-drop-event]'); if (t) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; t.classList.add('gw-invcal--drop'); } });
+  $('invPanelCal').addEventListener('dragleave', (e) => { const t = e.target.closest('[data-drop-event]'); if (t) t.classList.remove('gw-invcal--drop'); });
+  $('invPanelCal').addEventListener('drop', (e) => {
+    const t = dragPid && e.target.closest('[data-drop-event]');
+    if (!t) return;
+    e.preventDefault(); t.classList.remove('gw-invcal--drop');
+    const pid = dragPid; dragPid = 0;
+    askAssign(Number(t.dataset.dropEvent), pid);
   });
 
   /* ---- bloque de inventario de un evento (el mismo de siempre), abierto desde el calendario */

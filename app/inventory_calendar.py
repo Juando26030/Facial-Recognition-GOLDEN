@@ -68,3 +68,16 @@ def available(stock: Optional[int], used: int) -> Optional[int]:
 
 def pending_return(out: int, returned: int, consumed: int) -> int:
     return max(int(out or 0) - int(returned or 0) - int(consumed or 0), 0)
+
+
+def peak_usage(span: Optional[Tuple[date, date]], events: Iterable[dict], product_id: int) -> int:
+    """Lo MÁS asignado de un producto, en un solo día, por los eventos dados dentro del rango `span` (el del evento al que se quiere asignar, con montaje y todos sus días)."""
+    if span is None:
+        return 0
+    evs = list(events)
+    return max((usage_on(d, evs).get(product_id, 0) for d in days_between(span[0], span[1])), default=0)
+
+
+def max_assignable(stock: Optional[int], others_peak: int) -> Optional[int]:
+    """Cuántas unidades se le pueden asignar a un evento sin pasar las existencias en ninguno de sus días (None = sin control de existencias)."""
+    return None if stock is None else max(int(stock) - int(others_peak), 0)

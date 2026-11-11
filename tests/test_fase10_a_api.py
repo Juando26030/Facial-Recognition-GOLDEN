@@ -187,3 +187,40 @@ def test_calendar_hides_event_names_the_account_cannot_see_but_counts_them(clien
     cal = client.get(f"/api/inventory/calendar?start={date.today()}&end={date.today()}").json()
     assert [e["id"] for e in cal["events"]] == [mine.id]
     assert cal["daily"][str(date.today())][str(prod["id"])] == 3          # la disponibilidad cuenta todos los eventos
+
+
+def test_assign_from_the_calendar_validates_dates_stock_and_roles(client, factory, db):
+    factory.staff("super_admin", "sup")
+    factory.staff("coordinador", "alm5", extra_roles="almacen")
+    factory.staff("coordinador", "coord5")
+    today = date.today()
+    ea = factory.event("creado", start_date=today + timedelta(days=1), end_date=today + timedelta(days=3), setup_date=today)          # montaje desde hoy
+    eb = factory.event("creado", start_date=today, end_date=today)                                                                    # se cruza con el montaje de ea
+    ec = factory.event("creado", start_date=today + timedelta(days=10), end_date=today + timedelta(days=11))
+    nodate = factory.event("creado")
+    done = factory.event("finalizado", start_date=today - timedelta(days=9), end_date=today - timedelta(days=8))
+    login(client, "sup")
+    _, _, prod = _catalog(client)                                                                                                    # existencias: 6
+    client.post("/logout")
+    login(client, "alm5")
+    go = lambda ev, qty: client.post("/api/inventory/assign", json={"event_id": ev.id, "product_id": prod["id"], "qty": qty})
+    assert go(eb, 4).status_code == 200
+    r = go(ea, 3)
+    assert r.status_code == 400 and "No alcanza" in r.json()["detail"] and "hasta 2" in r.json()["detail"]          # el montaje de ea coincide con eb el día de hoy
+    assert go(ea, 2).status_code == 200 and go(ea, 2).json()["max_assignable"] == 2
+    assert go(ec, 6).status_code == 200                                                                                               # otras fechas: todo disponible
+    assert go(nodate, 1).status_code == 400 and go(done, 1).status_code == 400
+    assert go(ea, -1).status_code == 400 and go(ea, "x").status_code == 400
+    cal = client.get(f"/api/inventory/calendar?start={today}&end={today + timedelta(days=12)}").json()
+    by = {e["id"]: e for e in cal["events"]}
+    assert by[ea.id]["has_inventory"] and by[ea.id]["lines"][0]["assigned"] == 2 and "event_type_name" in by[ea.id] and cal["can_assign"] is True
+    # quitar y editar
+    assert go(ea, 0).status_code == 200 and db.query(EventInventoryItem).filter_by(event_id=ea.id).one().qty_assigned == 0
+    db.query(EventInventoryItem).filter_by(event_id=eb.id).update({"qty_out": 4})
+    db.commit()
+    bad = go(eb, 2)
+    assert bad.status_code == 400 and "No se guardó" in bad.json()["detail"]                                                          # no baja de lo que ya salió
+    client.post("/logout")
+    login(client, "coord5")
+    assert go(ea, 1).status_code == 403
+    assert client.get(f"/api/inventory/calendar?start={today}&end={today}").json()["can_assign"] is False

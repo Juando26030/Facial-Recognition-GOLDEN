@@ -96,9 +96,10 @@
   }
   function byId(id, auto) {
     const u = users.find(x => x.id === id);
-    if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return; }
+    if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
     setPerson(u);
     if (auto && AUTOSCAN) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
+    return true;
   }
 
   $('scanInput').addEventListener('keydown', (e) => {
@@ -115,10 +116,14 @@
     }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); });
   });
   // Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
-  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
+  let scanner = null;
+  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear QR — Control de Inventario',
-    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => { const qr = QrCode.parse(raw); if (qr) byId(qr.cedula, true); }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
-  }));
+    // Si la cámara lee el QR y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
+    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => { const qr = QrCode.parse(raw); return qr ? byId(qr.cedula, true) : false; })
+      .then((found) => { if (found && scanner) scanner.close(); })
+      .catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
+  }); });
   $('nameSearch').addEventListener('input', (e) => {
     const q = e.target.value.trim();
     const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];

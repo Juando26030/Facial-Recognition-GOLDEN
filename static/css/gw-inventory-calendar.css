@@ -54,3 +54,16 @@
   .gw-invpg__prod { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .gw-invpg__name, .gw-invpg__edit { grid-column: 1 / -1; }
 }
+
+/* Planeación: panel de equipos para asignar, cintas «sin inventario aún» y destino de soltar (Fase 10). */
+.gw-invcal__cats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-invcal__cats[hidden], .gw-invassign[hidden] { display: none; }
+.gw-invassign__group { min-width: 0; }
+.gw-invassign__cat { margin: var(--gw-sp-2) 0 var(--gw-sp-1); font-size: var(--gw-fs-md); }
+.gw-invassign__chips { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-invassign__art { cursor: grab; text-align: left; }
+.gw-invassign__art[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: var(--gw-gold-2); }
+.gw-invassign__art--none { border-style: dashed; }
+.gw-invassign__art:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-invcal__chip--none { background: var(--gw-surface); border: 1px dashed var(--gw-border-strong); }
+.gw-invcal--drop { outline: 3px dashed var(--gw-gold-2); outline-offset: 1px; background: var(--gw-info-bg); }

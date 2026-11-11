@@ -113,3 +113,13 @@ def test_range_validation():
             ic.clean_range(a, b)
     assert len(ic.days_between(date(2026, 11, 1), date(2026, 11, 7))) == 7
     assert ic.pending_return(5, 2, 1) == 2 and ic.pending_return(5, 5, 1) == 0
+
+
+def test_peak_usage_and_max_assignable_cover_setup_and_multi_day_events():
+    others = [{"span": (date(2026, 11, 10), date(2026, 11, 10)), "lines": {1: 5}}, {"span": (date(2026, 11, 12), date(2026, 11, 14)), "lines": {1: 3}},
+              {"span": (date(2026, 11, 12), date(2026, 11, 12)), "lines": {1: 4}}]
+    span = ic.event_span(date(2026, 11, 11), date(2026, 11, 13), date(2026, 11, 9))          # montaje desde el 9: toma el 10 (5 unidades)
+    assert ic.peak_usage(span, others, 1) == 7                                                   # el 12 coinciden 3 + 4
+    assert ic.peak_usage((date(2026, 11, 11), date(2026, 11, 11)), others, 1) == 0
+    assert ic.peak_usage(None, others, 1) == 0 and ic.peak_usage(span, others, 99) == 0
+    assert ic.max_assignable(10, 7) == 3 and ic.max_assignable(5, 9) == 0 and ic.max_assignable(None, 9) is None

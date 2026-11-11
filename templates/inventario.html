@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory-calendar.css') }}">
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}" defer></script>{% endif %}
+    <script src="{{ url_for('static', path='js/calendar-cats.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/inventario-page.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -86,6 +87,15 @@
         <div class="gw-field"><label class="gw-label" for="invCalProduct">Ver un solo equipo</label>
           <select class="gw-select" id="invCalProduct"><option value="">Todos los equipos</option></select></div>
       </div>
+      <div class="gw-invcal__cats" id="invCalCats" role="group" aria-label="Filtrar por tipo de evento" hidden></div>
+      <section class="gw-card gw-stack gw-invassign" id="invAssign" aria-labelledby="invAssignTitle" hidden>
+        <div class="gw-row gw-row--between">
+          <h2 class="gw-card__title" id="invAssignTitle">Equipos para asignar</h2>
+          <div class="gw-field"><label class="gw-label" for="invArtSearch">Buscar un equipo</label><input class="gw-input" type="search" id="invArtSearch" autocomplete="off" placeholder="Nombre del equipo"></div>
+        </div>
+        <p class="gw-hint" id="invArmed" role="status" aria-live="polite"></p>
+        <div id="invArtList"></div>
+      </section>
       <p class="gw-hint">Cada día muestra qué material tiene asignado cada evento (desde el montaje hasta el último día) y cuánto queda disponible. Toca un día para ver el detalle.</p>
       <div id="invCalBody" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el calendario…') }}</div>
       <div class="gw-invcal__detail" id="invCalDetail"></div>

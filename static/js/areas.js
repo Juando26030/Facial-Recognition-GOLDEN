@@ -1,7 +1,8 @@
 /* Control de áreas (Fase 1.5). Lee window.EVENT_ID / FACIAL / AUTOREG / CAN_REPORT / ENABLED (los pone la plantilla). Sin manejadores en línea: todo por delegación. */
 (function () {
   'use strict';
-  let direction = 'auto', users = [];
+  let direction = 'auto', users = [], scanner = null;
+  const FOUND = ['OK', 'FOUND_PENDING', 'ALREADY_ENTERED', 'NOT_INSIDE'];          // resultados en los que la persona sí se encontró
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const areaId = () => $('areaSelect').value;
@@ -111,7 +112,7 @@
   }
 
   async function register(cedula, confirm, forcedDirection, method) {
-    if (!areaId()) { showToast('Primero elige una zona', 'error'); return; }
+    if (!areaId()) { showToast('Primero elige una zona', 'error'); return false; }
     method = method || 'cedula';
     try {
       const res = await fetch(`/api/events/${window.EVENT_ID}/areas/${areaId()}/movement`, {
@@ -119,9 +120,10 @@
         body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return; }
+      if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return false; }
       await handle(data, (c, d) => register(cedula, c, d, method));
-    } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
+      return FOUND.includes(data.result);          // true = la persona se encontró (la cámara se cierra sola); false = el aviso queda y la cámara sigue abierta
+    } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); return false; }
   }
 
   async function scanValue(rawText) {
@@ -171,10 +173,13 @@
   });
 
   // Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
-  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
+  if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear QR — Control de Áreas',
-    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => { const qr = QrCode.parse(raw); if (qr) register(qr.cedula, false, undefined, 'qr'); }).catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
-  }));
+    // Si la cámara lee el QR y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
+    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => { const qr = QrCode.parse(raw); return qr ? register(qr.cedula, false, undefined, 'qr') : false; })
+      .then((found) => { if (found && scanner) scanner.close(); })
+      .catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
+  }); });
 
   $('nameSearch').addEventListener('input', (e) => {
     const q = e.target.value.trim();

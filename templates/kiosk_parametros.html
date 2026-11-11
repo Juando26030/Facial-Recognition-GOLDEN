@@ -453,9 +453,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
           </div>
 
-          <!-- Permanencia en zonas, premio por porcentaje de estadía y escaneo automático (Fase 10): módulo propio con su botón Guardar (fuera del seguimiento de «Sin guardar»). -->
-          <div class="gw-group__item" id="dwellBox" data-pnodirty data-event="{{ event.id }}">
+          <!-- Permanencia en zonas, premio por porcentaje de estadía y escaneo automático (Fase 10): se guarda con el «Guardar cambios» general (clave «dwell» de GWParams); «Calcular» y la lista van aparte (data-pnodirty). -->
+          <div class="gw-group__item" id="dwellBox" data-event="{{ event.id }}">
             <div class="gw-item-head"><h4>Permanencia, premio por estadía y escaneo automático</h4>{% call ayuda('ay_dwell', 'Permanencia y premio por estadía') %}Con el conteo activo, cada entrada y salida de una zona se suma por persona (10 min + 5 min = 15 min). Tú defines el tiempo total de referencia (el 100 %, por ejemplo las 24 h del evento). Con el premio activo puedes ver cuántas personas pasan de un porcentaje (por ejemplo 80 %), bajar la lista en Excel o CSV, habilitar su certificado y dejar ítems de inventario solo para ellas. La persona de prueba nunca cuenta.{% endcall %}</div>
+            <div data-psave="dwell">
             <label class="gw-check"><input type="checkbox" id="dwellEnabled" {% if event.areas_dwell_enabled %}checked{% endif %}> Contar el tiempo de permanencia en las zonas</label>
             <div id="dwellConfig" class="gw-stack" {% if not event.areas_dwell_enabled %}hidden{% endif %}>
               <label class="gw-check"><input type="checkbox" id="dwellPrize" {% if event.dwell_prize_enabled %}checked{% endif %}> Habilitar premio por porcentaje de estadía (certificado o entrega solo a quien cumple)</label>
@@ -470,8 +471,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-check"><input type="checkbox" id="areasAutoscan" {% if event.areas_autoscan %}checked{% endif %}> Control de áreas: escanear o dar Enter registra la entrada o salida solo, sin pulsar «Acreditar»</label>
               <label class="gw-check"><input type="checkbox" id="inventoryAutoscan" {% if event.inventory_autoscan %}checked{% endif %}> Control de inventario: escanear o dar Enter entrega de una vez lo que esté marcado, sin pulsar «Entregar»</label>
             </div>
-            <div class="gw-actions"><button type="button" id="dwellSave" class="gw-btn gw-btn--secondary">Guardar permanencia y escaneo</button></div>
-            <div id="dwellStats" class="gw-stack" hidden>
+            </div>
+            <div id="dwellStats" class="gw-stack" data-pnodirty hidden>
               <h5>Personas por porcentaje de estadía</h5>
               <div class="gw-actions">
                 <div class="gw-field"><label class="gw-label" for="dwellEval">Ver quiénes pasan de (%)</label><input class="gw-input gw-input--short" type="number" id="dwellEval" min="1" max="100" placeholder="80"></div>

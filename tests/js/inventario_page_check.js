@@ -49,6 +49,17 @@ same(P.groupCatalog(cat, 'par', '').map((g) => g.name), ['Audio']);
 same(P.groupCatalog(cat, 'p-1', '').map((g) => g.name), ['Audio']);
 same(P.groupCatalog(cat, '', '2').map((g) => g.name), ['Luces']);
 
+// planeación: pico de uso de otros eventos, cantidad máxima, cantidad escrita y agrupación del panel
+const dl = { '2026-11-10': { 7: 5 }, '2026-11-11': { 7: 8 }, '2026-11-12': { 7: 3 } };
+assert.strictEqual(P.othersPeak(dl, { start: '2026-11-10', end: '2026-11-12' }, 7, 0), 8);
+assert.strictEqual(P.othersPeak(dl, { start: '2026-11-10', end: '2026-11-12' }, 7, 3), 5);          // lo que ya tiene este evento no cuenta como de otros
+assert.strictEqual(P.othersPeak(dl, { start: '2026-11-20', end: '2026-11-21' }, 7, 0), 0);
+assert.strictEqual(P.maxAssignable(10, 8), 2); assert.strictEqual(P.maxAssignable(5, 9), 0); assert.strictEqual(P.maxAssignable(null, 9), null);
+assert.strictEqual(P.parseQty(' 12 '), 12); assert.strictEqual(P.parseQty('0'), 0); assert.strictEqual(P.parseQty('-1'), null); assert.strictEqual(P.parseQty('2.5'), null); assert.strictEqual(P.parseQty(''), null);
+const pg = [{ id: 1, name: 'Parlante', category_name: 'Audio' }, { id: 2, name: 'Foco', category_name: 'Luces' }, { id: 3, name: 'Cable', category_name: null }];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(P.panelGroups(pg, '').map((g) => g.name))), ['Audio', 'Luces', 'Sin categorizar']);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(P.panelGroups(pg, 'foc').map((g) => g.name))), ['Luces']);
+
 const D = load('dwell-params.js').GWDwell;
 assert.ok(D);
 assert.strictEqual(D.toMinutes(24, 0), 1440);

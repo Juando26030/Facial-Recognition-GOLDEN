@@ -54,11 +54,14 @@ def test_autoscan_and_requires_dwell_are_wired_in_areas_inventory():
 
 def test_parametros_has_the_dwell_block_and_item_column():
     html = read("templates/kiosk_parametros.html")
-    for needle in ('id="dwellBox"', 'id="dwellEnabled"', 'id="dwellPrize"', 'id="dwellRefH"', 'id="dwellPct"', 'id="areasAutoscan"', 'id="inventoryAutoscan"', 'id="dwellSave"',
+    for needle in ('id="dwellBox"', 'id="dwellEnabled"', 'id="dwellPrize"', 'id="dwellRefH"', 'id="dwellPct"', 'id="areasAutoscan"', 'id="inventoryAutoscan"',
                    'id="dwellCerts"', "js/dwell-params.js", "item-dwell", "newItemDwell", "Solo a quien cumple la estadía"):
         assert needle in html, needle
     assert "cols=7" in html and 'colspan="7"' in html
-    assert "data-pnodirty" in html.split('id="dwellBox"')[1].split(">")[0]          # módulo propio: fuera del «Sin guardar»
+    assert 'id="dwellSave"' not in html and 'data-psave="dwell"' in html          # se guarda con el «Guardar cambios» general
+    assert "data-pnodirty" in html.split('id="dwellStats"')[1].split(">")[0]          # «Calcular» y la lista van aparte
+    js = read("static/js/dwell-params.js")
+    assert "GWParams.register({ key: 'dwell'" in js and "dwellSave" not in js
 
 
 def test_kiosk_pages_know_about_autoscan():
@@ -113,6 +116,26 @@ def test_areas_kiosk_shows_the_dwell_statistics():
     for needle in ('id="dwellPanel"', 'id="adwCalc"', 'id="adwXlsx"', 'id="adwCsv"', 'id="adwCerts"', "js/areas-dwell.js", "areas_dwell_enabled"):
         assert needle in html, needle
     assert "/areas-dwell" in js and "apply-certificates" in js and "export?" in js and "showConfirm" in js
+
+
+def test_camera_scanners_close_when_the_person_is_found():
+    for rel in ("static/js/inventario.js", "static/js/areas.js"):
+        js = read(rel)
+        assert "scanner = QrScanner.open(" in js and "scanner.close()" in js and "found" in js, rel
+    assert "return FOUND.includes(data.result)" in read("static/js/areas.js")
+    inv = read("static/js/inventario.js")
+    assert "return true;" in inv and "if (auto && AUTOSCAN) deliver();" in inv          # con autoescaneo la entrega se lanza antes de cerrar
+
+
+def test_calendar_planning_wiring():
+    js, html, srv = read("static/js/inventario-page.js"), read("templates/inventario.html"), read("app/routers/inventory.py")
+    for needle in ("draggable=\"true\"", "dragstart", "dragover", "'drop'", "/api/inventory/assign", "Sin inventario aún", "data-edit-line", "data-del-line", "CalendarCats.matches", "data-disarm"):
+        assert needle in js, needle
+    for needle in ('id="invAssign"', 'id="invCalCats"', "js/calendar-cats.js", 'id="invArtSearch"'):
+        assert needle in html, needle
+    assert '"/inventory/assign"' in srv and "Depends(MANAGER)" in srv.split('"/inventory/assign"')[1].split("def ")[1].split(":")[0] + "Depends(MANAGER)"
+    assert "event_type_name" in srv and "has_inventory" in srv and "can_assign" in srv
+    assert "peak_usage" in srv and "max_assignable" in srv
 
 
 def test_doc_section_exists():

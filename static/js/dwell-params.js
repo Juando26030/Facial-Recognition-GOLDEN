@@ -1,4 +1,4 @@
-/* Parámetros → Permanencia, premio por estadía y escaneo automático (Fase 10). Módulo propio: guarda con su botón, no entra en el «Sin guardar» del resto.
+/* Parámetros → Permanencia, premio por estadía y escaneo automático (Fase 10). Se guarda con el «Guardar cambios» general (GWParams, clave «dwell»: cuenta en «cambios pendientes»); «Calcular» y las descargas son acciones aparte.
    API: /api/events/<id>/areas-dwell/* (app/routers/areas_dwell.py). Delegación de eventos, texto escapado, mensajes con showToast / showConfirm. Funciones puras en GWDwell (se prueban con Node). */
 (function (root) {
   'use strict';
@@ -43,18 +43,17 @@
   fetch(api + '/config', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) fill(d); });
 
   box.addEventListener('change', (e) => { if (e.target.id === 'dwellEnabled') $('dwellConfig').hidden = !e.target.checked; });
+  GWParams.register({ key: 'dwell', label: 'Permanencia y escaneo automático', order: 67, save: async () => {
+    const body = { dwell_enabled: $('dwellEnabled').checked, prize_enabled: $('dwellEnabled').checked && $('dwellPrize').checked,
+      reference_minutes: toMinutes($('dwellRefH').value, $('dwellRefM').value), threshold_pct: $('dwellPct').value || 80,
+      areas_autoscan: $('areasAutoscan').checked, inventory_autoscan: $('inventoryAutoscan').checked };
+    fill(await call(api + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));          // call() lanza Error(mensaje) si falla: el guardado general lo reporta
+  } });
+
   box.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-    if (btn.id === 'dwellSave') {
-      const body = { dwell_enabled: $('dwellEnabled').checked, prize_enabled: $('dwellEnabled').checked && $('dwellPrize').checked,
-        reference_minutes: toMinutes($('dwellRefH').value, $('dwellRefM').value), threshold_pct: $('dwellPct').value || 80,
-        areas_autoscan: $('areasAutoscan').checked, inventory_autoscan: $('inventoryAutoscan').checked };
-      try {
-        const d = await (root.GW && root.GW.busy ? root.GW.busy(btn, () => call(api + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })) : call(api + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
-        fill(d); showToast('Permanencia y escaneo guardados', 'success');
-      } catch (err) { showToast(err.message, 'error'); }
-    } else if (btn.id === 'dwellCalc') {
+    if (btn.id === 'dwellCalc') {
       calc(btn);
     } else if (btn.id === 'dwellCerts') {
       const pct = parseInt($('dwellEval').value, 10) || (cfg && cfg.threshold_pct) || 80;
