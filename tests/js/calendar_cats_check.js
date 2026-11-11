@@ -24,5 +24,10 @@ assert.strictEqual(active.size, 0); assert.ok(evs.every((e) => C.matches(e, acti
 // una activa que hoy no tiene eventos sigue visible, con el nombre que ya se conocía
 const kept = C.build([evs[4]], new Set(['t9', 'none']), { t9: { label: 'Social', color: '#c2417c' } });
 assert.ok(kept.some((c) => c.key === 't9' && c.label === 'Social' && c.active && c.count === 0) && kept.some((c) => c.key === 'none' && c.active && c.count === 1));
-assert.deepStrictEqual(C.build([], new Set()), []);
+assert.deepStrictEqual(C.build([], new Set()).map((c) => [c.label, c.count]), [['Sin categoría', 0]], 'sin eventos igual sale «Sin categoría» con 0');
+// con el catálogo: TODOS los tipos vigentes salen con su conteo aunque sea 0, y «Sin categoría» al final
+const cat = [{ id: 2, name: 'Congreso', color: '#2e6fd8' }, { id: 7, name: 'Feria', color: '#e8803a' }, { id: 9, name: 'Social', color: '' }];
+assert.deepStrictEqual(C.build([], new Set(), {}, cat).map((c) => [c.label, c.count]), [['Congreso', 0], ['Feria', 0], ['Social', 0], ['Sin categoría', 0]]);
+assert.deepStrictEqual(C.build(evs, new Set(), {}, cat).map((c) => [c.label, c.count]), [['Congreso', 1], ['Feria', 2], ['Social', 0], ['Sin categoría', 2]]);
+assert.strictEqual(C.build(evs, new Set(['t9']), {}, cat).find((c) => c.key === 't9').active, true);
 console.log('calendar_cats_check OK');

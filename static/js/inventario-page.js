@@ -250,13 +250,12 @@
   }
 
   /* ---- tipos de evento (chips, como en el Calendario): filtran los eventos visibles y las cantidades del panel */
+  let catCatalog = null;          // tipos vigentes: los chips salen siempre, con conteo aunque sea 0
+  if (root.CalendarCatsUI) root.CalendarCatsUI.loadCatalog().then((t) => { catCatalog = t; if (cal.data) renderCats(); });
   function renderCats() {
-    const cats = root.CalendarCats.build(cal.data.events, cal.cats, cal.known);
+    const cats = root.CalendarCats.build(cal.data.events, cal.cats, cal.known, catCatalog);
     cats.forEach((c) => { if (c.count) cal.known[c.key] = { label: c.label, color: c.color }; });
-    const bar = $('invCalCats');
-    bar.hidden = !cats.length;
-    bar.innerHTML = cats.map((c) => `<button type="button" class="gw-chip" data-cat="${esc(c.key)}" aria-pressed="${c.active}">${esc(c.label)} <span class="gw-hint">${c.count}</span></button>`).join('') +
-      (cal.cats.size ? '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-cat-clear>Ver todos</button>' : '');
+    root.CalendarCatsUI.paint($('invCalCats'), cats, cal.cats.size > 0);          // mismo componente que el Calendario
   }
 
   /* ---- panel de equipos para asignar (arrastrar a un evento, o tocar el equipo y luego el evento) */
@@ -331,7 +330,7 @@
   });
 
   $('invCalCats').addEventListener('click', (e) => {
-    if (e.target.closest('[data-cat-clear]')) { cal.cats = new Set(); renderCalendar(); return; }
+    if (e.target.closest('[data-cat-all]')) { cal.cats = new Set(); renderCalendar(); return; }
     const b = e.target.closest('[data-cat]');
     if (b) { cal.cats = root.CalendarCats.toggle(cal.cats, b.dataset.cat); renderCalendar(); }
   });

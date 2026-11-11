@@ -14,9 +14,11 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
     <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory-calendar.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-calendar-cats.css') }}">
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}" defer></script>{% endif %}
     <script src="{{ url_for('static', path='js/calendar-cats.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/calendar-cats-ui.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/inventario-page.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -87,7 +89,7 @@
         <div class="gw-field"><label class="gw-label" for="invCalProduct">Ver un solo equipo</label>
           <select class="gw-select" id="invCalProduct"><option value="">Todos los equipos</option></select></div>
       </div>
-      <div class="gw-invcal__cats" id="invCalCats" role="group" aria-label="Filtrar por tipo de evento" hidden></div>
+      <div class="cal-cats" id="invCalCats" hidden></div>
       <section class="gw-card gw-stack gw-invassign" id="invAssign" aria-labelledby="invAssignTitle" hidden>
         <div class="gw-row gw-row--between">
           <h2 class="gw-card__title" id="invAssignTitle">Equipos para asignar</h2>

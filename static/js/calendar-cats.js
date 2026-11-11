@@ -3,7 +3,7 @@
    Un evento sin tipo cae en «Sin categoría». Se ve igual para cualquiera que vea el calendario (no depende del rol). Varias categorías pueden estar activas a la vez; ninguna activa = se ven todas.
 
    categoryOf(evento)            -> { key, label, color }
-   build(eventos, activas, conocidas) -> [{ key, label, color, count, active }] (las que hay en el periodo + las activas aunque hoy no tengan eventos); «Sin categoría» al final, el resto alfabético
+   build(eventos, activas, conocidas, catalogo) -> [{ key, label, color, count, active }] (TODOS los tipos del catálogo y «Sin categoría» con su conteo, aunque sea 0, + los de eventos + las activas); «Sin categoría» al final, el resto alfabético
    toggle(activas, key)          -> nuevo Set con la categoría puesta o quitada
    matches(evento, activas)      -> true si no hay ninguna activa o el evento es de una activa                                                                       */
 (function () {
@@ -15,11 +15,13 @@
     return { key: NONE.key, label: NONE.label, color: NONE.color };
   }
 
-  function build(events, active, known) {
+  function build(events, active, known, catalog) {
     var on = active || new Set(), map = {};
+    (catalog || []).forEach(function (t) { map['t' + t.id] = { key: 't' + t.id, label: String(t.name), color: t.color || '', count: 0, active: on.has('t' + t.id) }; });          // los tipos vigentes salen SIEMPRE, aunque hoy tengan 0 eventos
+    map[NONE.key] = { key: NONE.key, label: NONE.label, color: NONE.color, count: 0, active: on.has(NONE.key) };          // «Sin categoría» también
     (events || []).forEach(function (e) {
       var c = categoryOf(e);
-      if (!map[c.key]) map[c.key] = { key: c.key, label: c.label, color: c.color, count: 0, active: on.has(c.key) };
+      if (!map[c.key]) map[c.key] = { key: c.key, label: c.label, color: c.color, count: 0, active: on.has(c.key) };          // un tipo archivado que un evento aún tiene
       map[c.key].count += 1;
     });
     on.forEach(function (key) {          // una activa que hoy no tiene eventos sigue visible (para poder quitarla); `known` = {clave: {label, color}} de lo ya visto en otros periodos

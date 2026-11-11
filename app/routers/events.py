@@ -622,7 +622,7 @@ def update_event(
     return _serialize(event)
 
 
-@router.get("/events/{event_id}")
+@router.get("/events/{event_id:int}")          # «:int»: sin él esta ruta (incluida ANTES que calendar) se tragaba GET /events/calendar y el calendario respondía 422
 def get_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Un evento (mismo formato de la lista), para abrir su edición desde un enlace: /eventos?editar=<id> (correo del aviso de la base final, Fase 5)."""
     return _serialize(get_event_for_staff(event_id, db, staff))

@@ -153,3 +153,19 @@ def test_designer_edits_the_same_catalog():
     assert "/api/event-types" in o and "canEdit" in o
     assert "event-type-options.js" in _read("templates/plantilla_evento.html")
     assert "data-super" in _read("templates/plantilla_evento.html")
+
+
+def test_calendar_route_is_not_swallowed_by_the_event_id_route():
+    """Bug de staging: GET /events/{event_id} (Fase 5 A, 9-nov) se incluía ANTES que /events/calendar y la tragaba (422): el calendario salía vacío y sin chips. Ahora el id es «:int»."""
+    src = _read("app/routers/events.py")
+    assert '@router.get("/events/{event_id:int}")' in src and '@router.get("/events/{event_id}")' not in src
+
+
+def test_calendar_and_inventory_share_the_type_chip_group():
+    ui = _read("static/js/calendar-cats-ui.js")
+    assert "Tipo de evento" in ui and "data-cat-all" in ui and "Todos" in ui
+    for page in ("templates/calendario.html", "templates/inventario.html"):
+        t = _read(page)
+        assert "calendar-cats-ui.js" in t and "gw-calendar-cats.css" in t
+    assert "CalendarCatsUI.paint" in _read("static/js/inventario-page.js")
+    assert "if (!evRes.ok) throw" in _read("templates/calendario.html")          # un error de la API ya no se disfraza de «No hay eventos»
