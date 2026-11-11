@@ -328,6 +328,7 @@
       } else {
         html += '<label class="gw-check"><input type="checkbox" data-tpl-prop="required"' + (f.required ? ' checked' : '') + (locked ? ' disabled' : '') + '> <span class="gw-choice__text">Obligatorio' + (locked ? ' (siempre)' : '') + '</span></label>';
       }
+      if (f.type === 'event_type') html += '<h3 class="gw-tpl-h2">Opciones de la categoría</h3><div data-evtype-options></div>';          // misma lista que Configuración › Tipos de evento (static/js/event-type-options.js)
       if (f.type === 'select') html += lab('tp_opts', 'Opciones (una por línea)', '<textarea class="gw-textarea" id="tp_opts" rows="6" data-tpl-prop="options">' + esc((f.options || []).join('\n')) + '</textarea>', 'Puedes agregar o quitar opciones cuando quieras: los eventos que ya tienen una opción la conservan.');
       if (f.type === 'money') html += lab('tp_cur', 'Moneda', '<select class="gw-select" id="tp_cur" data-tpl-prop="currency">' + (m.catalog.currencies || ['COP']).map(function (cu) { return '<option value="' + esc(cu) + '"' + (c.currency === cu ? ' selected' : '') + '>' + esc(cu) + '</option>'; }).join('') + '</select>');
       if (f.type === 'number') html += '<div class="gw-fields-row gw-fields-row--3">' + lab('tp_min', 'Mínimo', '<input class="gw-input" id="tp_min" type="number" value="' + esc(c.min == null ? '' : c.min) + '" data-tpl-prop="min">') + lab('tp_max', 'Máximo', '<input class="gw-input" id="tp_max" type="number" value="' + esc(c.max == null ? '' : c.max) + '" data-tpl-prop="max">') + lab('tp_dec', 'Decimales', '<input class="gw-input" id="tp_dec" type="number" min="0" max="4" value="' + esc(c.decimals || 0) + '" data-tpl-prop="decimals">') + '</div>';
@@ -355,6 +356,8 @@
       q('tplPaletteA').innerHTML = paletteHtml();
       q('tplCanvasA').innerHTML = m.sections.map(sectionHtml).join('') + '<button type="button" class="gw-btn gw-btn--secondary" data-tpl-act="sec-add"' + (m.sections.length >= LIMITS.sections ? ' disabled' : '') + '>' + ic('plus', 'gw-icon--sm') + ' Agregar paso</button>';
       q('tplPropsA').innerHTML = propsHtml();
+      var evBox = q('tplPropsA').querySelector('[data-evtype-options]');
+      if (evBox && root.EventTypeOptions) root.EventTypeOptions.mount(evBox, { canEdit: host.getAttribute('data-super') === '1', icons: icons });
     }
 
     /* ---- vista B: calendario */

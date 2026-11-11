@@ -438,7 +438,8 @@
 
   function reveal(container, winner, style) {
     const rows = fieldRows(winner).map((f) => `<div class="rr-winner__entity">${f.entity || !f.label ? '' : `<span class="rr-winner__fieldlabel">${esc(f.label)}</span> `}${esc(f.value)}</div>`).join('');
-    container.innerHTML = `<div class="rr-winner" style="--rr-win-bg:${esc(style.winner_bg)}; --rr-win-fg:${esc(style.winner_color)};">
+    const scale = (v, d) => (Math.max(50, Math.min(400, Number(v) || d)) / 100).toFixed(2);
+    container.innerHTML = `<div class="rr-winner" style="--rr-win-bg:${esc(style.winner_bg)}; --rr-win-fg:${esc(style.winner_color)}; --rr-name-scale:${scale(style.name_scale, 100)}; --rr-fields-scale:${scale(style.fields_scale, 150)};">
       <svg class="rr-winner__star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1l2.6 7.4L22 11l-7.4 2.6L12 21l-2.6-7.4L2 11l7.4-2.6z"/></svg>
       <div class="rr-winner__eyebrow">${winner.position ? 'Ganador ' + esc(winner.position) : 'Ganador'}</div>
       <div class="rr-winner__name" style="font-family:'${esc(style.title_font)}', sans-serif;">${esc(winner.name)}</div>
@@ -453,7 +454,14 @@
     const list = Array.isArray(style.top_images) ? style.top_images.filter(Boolean) : [];
     host.hidden = !list.length;
     host.classList.toggle('rr-top--single', list.length === 1);
-    list.forEach((p) => { const img = document.createElement('img'); img.src = assetUrl(p); img.alt = ''; host.appendChild(img); });
+    const cfgs = Array.isArray(style.top_images_cfg) ? style.top_images_cfg : [];
+    list.forEach((p, i) => {
+      const img = document.createElement('img'), c = cfgs[i] || {};
+      const h = Math.max(4, Math.min(40, Number(c.height) || 18));
+      img.src = assetUrl(p); img.alt = ''; img.style.setProperty('--rr-top-h', h + 'vh');          // alto propio de cada logo; el ancho sigue su proporción
+      img.dataset.align = ['left', 'center', 'right'].includes(c.align) ? c.align : 'center';
+      host.appendChild(img);
+    });
   }
 
   if (typeof window !== 'undefined') window.RouletteRender = { wheel, buildSegments, buildReelList, stage, applyBackground, reveal, topImages, fieldRows };

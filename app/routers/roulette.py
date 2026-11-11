@@ -66,6 +66,9 @@ DEFAULT_STYLE = {
     "wheel_style": "circular",   # circular | jackpot (columna vertical estilo casino: para muchos nombres)
     # Fase 10 (C), todo dentro de style_json (sin migración):
     "winner_fields": ["entity"],   # datos que salen bajo el nombre del ganador (el nombre siempre sale); ver winner_field_choices()
+    "top_images_cfg": [],          # un {height, align} por cada logo/banner de top_images (mismo orden): alto en % del alto de la pantalla y alineación
+    "name_scale": 100,             # tamaño del nombre del ganador (% del tamaño base)
+    "fields_scale": 150,           # tamaño de los DEMÁS datos (empresa, correo…) (% del tamaño base; antes se veían muy pequeños en el proyector)
     "top_images": [],              # logos/banners arriba de la pantalla (hasta MAX_TOP_IMAGES), ruta "<cliente>/<archivo>" como el logo
     "spin_mode": "fixed",          # fixed = dura `spin_seconds` · manual = giro libre: un clic en «Girar» lo inicia y otro en «Detener» lo frena
 }
@@ -178,6 +181,21 @@ def winner_field_choices(event: Event) -> list:
     for key, label in sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1])):
         out.append({"key": f"extra:{key}", "label": label})
     return out
+
+
+TOP_ALIGNS = ("left", "center", "right")
+TOP_HEIGHT_DEFAULT, TOP_HEIGHT_MIN, TOP_HEIGHT_MAX = 18, 4, 40
+
+
+def _top_cfg(raw) -> dict:
+    """Tamaño y alineación de UN logo/banner de arriba: alto en % del alto de la pantalla (4 a 40) y left/center/right. Lo inválido vuelve al valor por defecto."""
+    raw = raw if isinstance(raw, dict) else {}
+    try:
+        height = max(TOP_HEIGHT_MIN, min(TOP_HEIGHT_MAX, int(raw.get("height", TOP_HEIGHT_DEFAULT))))
+    except (TypeError, ValueError):
+        height = TOP_HEIGHT_DEFAULT
+    align = raw.get("align") if raw.get("align") in TOP_ALIGNS else "center"
+    return {"height": height, "align": align}
 
 
 def _winner_fields(p: dict, keys: list, choices: list) -> list:
@@ -351,13 +369,30 @@ def save_style(event_id: int, data: dict, db: Session = Depends(get_db), staff: 
         imgs = data["top_images"]
         if not isinstance(imgs, list) or len(imgs) > MAX_TOP_IMAGES:
             raise HTTPException(status_code=400, detail=f"Puedes poner hasta {MAX_TOP_IMAGES} logos o banners arriba")
-        clean = []
-        for value in imgs:
+        raw_cfg = data.get("top_images_cfg", style.get("top_images_cfg")) or []
+        if not isinstance(raw_cfg, list):
+            raise HTTPException(status_code=400, detail="Tamaño de logos no válido")
+        clean, cfgs = [], []
+        for i, value in enumerate(imgs):
             value = str(value or "")
             if not value.startswith(event.tenant_id + "/") or os.path.splitext(value)[1].lower() not in ALLOWED_IMAGE_EXT or ".." in value:
                 raise HTTPException(status_code=400, detail="Imagen no válida")
+            if value in clean:
+                continue
             clean.append(value)
-        style["top_images"] = list(dict.fromkeys(clean))
+            cfgs.append(_top_cfg(raw_cfg[i] if i < len(raw_cfg) else None))
+        style["top_images"], style["top_images_cfg"] = clean, cfgs
+    elif "top_images_cfg" in data:       # solo cambió el tamaño/alineación de los que ya hay
+        raw_cfg = data["top_images_cfg"]
+        if not isinstance(raw_cfg, list):
+            raise HTTPException(status_code=400, detail="Tamaño de logos no válido")
+        style["top_images_cfg"] = [_top_cfg(raw_cfg[i] if i < len(raw_cfg) else None) for i in range(len(style.get("top_images") or []))]
+    for key, lo, hi, msg in (("name_scale", 50, 400, "El tamaño del nombre"), ("fields_scale", 50, 400, "El tamaño de los demás datos")):
+        if key in data:
+            try:
+                style[key] = max(lo, min(hi, int(data[key])))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"{msg} debe ser un número entre {lo} y {hi}")
     if "winner_fields" in data:       # qué datos salen bajo el nombre (el nombre siempre sale)
         keys = data["winner_fields"]
         allowed = {c["key"] for c in winner_field_choices(event)}

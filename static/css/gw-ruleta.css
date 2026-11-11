@@ -61,7 +61,8 @@ button.gw-ruleta-item:focus-visible { outline: 3px solid var(--gw-focus); outlin
 .gw-ruleta-preview canvas { width: min(440px, 100%); height: auto; }
 .gw-ruleta-preview__title { margin: 0 0 var(--gw-sp-2); font-weight: var(--gw-fw-normal); font-size: var(--gw-fs-3xl); }
 .gw-ruleta-preview .rr-top { padding: 0 0 var(--gw-sp-2); gap: var(--gw-sp-2); }
-.gw-ruleta-preview .rr-top img { max-height: 4rem; max-width: 100%; }
+.gw-ruleta-preview .rr-top img { height: calc(var(--rr-top-h, 18vh) * .35); max-height: 8rem; max-width: 100%; }          /* la vista previa es una miniatura: el alto proporcional (35 %) conserva la relación con la pantalla real */
+.gw-ruleta-preview .rr-winner__entity { font-size: calc(1.05rem * var(--rr-fields-scale, 1.5)); }
 .gw-ruleta-toplist { list-style: none; margin: var(--gw-sp-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
 .gw-ruleta-toplist li { display: flex; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-1) var(--gw-sp-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
 .gw-ruleta-toplist__img { max-height: 2.5rem; max-width: 7rem; object-fit: contain; }

@@ -123,6 +123,10 @@
           <div class="gw-group__body">
             <p class="gw-hint">El nombre siempre sale. Marca lo demás que quieras mostrar; lo que la persona no tenga lleno no se muestra. Ojo: todo lo que marques lo verá el público en la pantalla del sorteo.</p>
             <div class="gw-checklist" id="winnerFields" role="group" aria-label="Datos del ganador que se muestran"></div>
+            <div class="gw-form-grid">
+              <div class="gw-field"><label class="gw-label" for="name_scale">Tamaño del nombre: <output id="nameScaleOut">100</output> %</label><input type="range" class="gw-input" id="name_scale" min="50" max="300" step="10"></div>
+              <div class="gw-field"><label class="gw-label" for="fields_scale">Tamaño de los demás datos (empresa, correo…): <output id="fieldsScaleOut">150</output> %</label><input type="range" class="gw-input" id="fields_scale" min="50" max="300" step="10"><small class="gw-hint">Súbelo si en el proyector se ven muy pequeños. La vista previa se actualiza sola.</small></div>
+            </div>
           </div>
         </details>
 
@@ -220,19 +224,29 @@ function sampleWinner(name, entity) {
 }
 function renderTopList() {
   const list = style.top_images || [];
-  $('topList').innerHTML = list.map((p, i) => `<li><img src="${staffAsset(p)}" alt="" class="gw-ruleta-toplist__img"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-top-rm="${i}">Quitar</button></li>`).join('');
+  const cfgs = style.top_images_cfg || [];
+  $('topList').innerHTML = list.map((p, i) => { const c = cfgs[i] || {}, h = c.height || 18, al = c.align || 'center'; return `<li><img src="${staffAsset(p)}" alt="" class="gw-ruleta-toplist__img">` +
+    `<label class="gw-label" for="topH${i}">Tamaño: <output>${h}</output> %</label><input type="range" class="gw-input" id="topH${i}" min="4" max="40" step="1" value="${h}" data-top-h="${i}">` +
+    `<label class="gw-label" for="topA${i}">Alineación</label><select class="gw-select" id="topA${i}" data-top-a="${i}"><option value="left"${al === 'left' ? ' selected' : ''}>Izquierda</option><option value="center"${al === 'center' ? ' selected' : ''}>Centro</option><option value="right"${al === 'right' ? ' selected' : ''}>Derecha</option></select>` +
+    `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-top-rm="${i}">Quitar</button></li>`; }).join('');
   $('topFile').disabled = list.length >= 4;
 }
-$('topList').addEventListener('click', (e) => { const b = e.target.closest('[data-top-rm]'); if (!b) return; style.top_images.splice(+b.dataset.topRm, 1); renderTopList(); paintPreview(); pending(); });
+function topCfg(i) { style.top_images_cfg = style.top_images_cfg || []; while (style.top_images_cfg.length < (style.top_images || []).length) style.top_images_cfg.push({ height: 18, align: 'center' }); return style.top_images_cfg[i]; }
+$('topList').addEventListener('input', (e) => { const r = e.target.closest('[data-top-h]'); if (!r) return; topCfg(+r.dataset.topH).height = +r.value; r.previousElementSibling.querySelector('output').textContent = r.value; paintPreview(); pending(); });
+$('topList').addEventListener('change', (e) => { const s = e.target.closest('[data-top-a]'); if (!s) return; topCfg(+s.dataset.topA).align = s.value; paintPreview(); pending(); });
+$('topList').addEventListener('click', (e) => { const b = e.target.closest('[data-top-rm]'); if (!b) return; style.top_images.splice(+b.dataset.topRm, 1); (style.top_images_cfg || []).splice(+b.dataset.topRm, 1); renderTopList(); paintPreview(); pending(); });
 async function uploadTop() {
   const input = $('topFile'), f = input.files[0]; if (!f) return;
   if ((style.top_images || []).length >= 4) { showToast('Máximo 4 logos o banners', 'info'); input.value = ''; return; }
   const fd = new FormData(); fd.append('file', f);
   input.disabled = true;
-  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style.top_images = [...(style.top_images || []), d.storage_path]; renderTopList(); paintPreview(); pending(); showToast('Imagen cargada — guarda los cambios para conservarla', 'success'); }
+  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style.top_images = [...(style.top_images || []), d.storage_path]; topCfg(style.top_images.length - 1); renderTopList(); paintPreview(); pending(); showToast('Imagen cargada — guarda los cambios para conservarla', 'success'); }
   catch (e) { showToast(e.message, 'error'); }
   input.value = ''; input.disabled = (style.top_images || []).length >= 4;
 }
+function sampleReveal() { if (!busy) RouletteRender.reveal($('pResult'), sampleWinner('Ana Pérez', 'Ejemplo S.A.S.'), style); }          // vista previa en vivo del tamaño de los textos
+function paintScales() { ['name_scale', 'fields_scale'].forEach((id) => { $(id).value = style[id]; $(id).previousElementSibling.querySelector('output').textContent = style[id]; }); }
+function bindScale(id) { $(id).addEventListener('input', () => { style[id] = +$(id).value; $(id).previousElementSibling.querySelector('output').textContent = $(id).value; sampleReveal(); pending(); }); }
 function paintSpinMode() { $('spinSecondsField').hidden = style.spin_mode === 'manual'; }
 
 async function spin(btn, names, winner, entity) {
@@ -273,9 +287,10 @@ async function init() {
   $('wheel_style').value = style.wheel_style || 'circular';
   $('spin_seconds').value = style.spin_seconds;
   $('spin_mode').value = style.spin_mode || 'fixed'; paintSpinMode();
-  renderPalette(); renderWinnerFields(); renderTopList(); paintPreview();
+  renderPalette(); renderWinnerFields(); renderTopList(); paintScales(); paintPreview();
   if (!init.bound) {
     init.bound = true;
+    bindScale('name_scale'); bindScale('fields_scale');
     $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
     ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach((id) => $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }));
     $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });

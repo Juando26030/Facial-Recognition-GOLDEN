@@ -135,3 +135,21 @@ def test_history_snapshot_uses_the_type_name(client, factory, db):
     ev = client.post("/api/events", json=_payload(root.id, code="TE-H", event_type_id=t["id"])).json()
     from app.models import Event
     assert event_history.snapshot(db, db.get(Event, ev["id"]))["event_type_id"] == "Historial"
+
+
+def test_edit_modal_shows_the_category_in_the_first_group_for_every_event():
+    """Bug de staging: el selector estaba en «Superevento y pañoleta» (plegado). Ahora va en «Datos del evento», no depende de la plantilla guardada."""
+    t = _read("templates/_event_edit_modal.html")
+    first = t.index("Datos del evento")
+    second = t.index("Fechas y horarios")
+    assert first < t.index('id="eeEventType"') < second
+    assert 'if (tpl' not in t[t.index("async function paintEventType"):t.index("window.openEventEditModal")]          # no depende de la plantilla
+
+
+def test_designer_edits_the_same_catalog():
+    d = _read("static/js/event-template-designer.js")
+    assert "data-evtype-options" in d and "EventTypeOptions.mount" in d
+    o = _read("static/js/event-type-options.js")
+    assert "/api/event-types" in o and "canEdit" in o
+    assert "event-type-options.js" in _read("templates/plantilla_evento.html")
+    assert "data-super" in _read("templates/plantilla_evento.html")

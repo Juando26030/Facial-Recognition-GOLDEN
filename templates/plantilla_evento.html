@@ -43,7 +43,7 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="gw-container gw-tpl-wrap" id="tplRoot" data-gw-tour="plantilla-evento" data-gw-tour-auto data-icons="{{ url_for('static', path='img/icons.svg') }}">
+  <div class="gw-container gw-tpl-wrap" id="tplRoot" data-super="{{ 1 if is_super else 0 }}" data-gw-tour="plantilla-evento" data-gw-tour-auto data-icons="{{ url_for('static', path='img/icons.svg') }}">
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">Configuración</p>
@@ -107,6 +107,7 @@
 
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-type-options.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-template-designer.js') }}"></script>
 <script src="{{ url_for('static', path='js/plantilla-evento.js') }}"></script>
 </body>

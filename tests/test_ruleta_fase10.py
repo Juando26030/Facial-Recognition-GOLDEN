@@ -118,3 +118,27 @@ def test_roulette_render_pure_parts():
             "R.fieldRows({name:'A',fields:[{label:'Correo',value:'a@b.co'},{label:'X',value:''}]})]))")
     out = json.loads(subprocess.run([node, "-e", expr], capture_output=True, text=True, cwd=ROOT, check=True).stdout)
     assert out == [[{"label": "", "value": "E", "entity": True}], [], [{"label": "Correo", "value": "a@b.co", "entity": False}]]
+
+
+def test_logo_sizes_and_text_scales(client, factory, db):
+    ev = _setup(client, factory, db)
+    cfg = client.get(f"/api/events/{ev.id}/roulette").json()["style"]
+    assert cfg["fields_scale"] > cfg["name_scale"] and cfg["top_images_cfg"] == []        # los demás datos salen más grandes que antes
+    bad = _style(client, ev, name_scale="mucho")
+    assert bad.status_code == 400
+    r = _style(client, ev, name_scale=900, fields_scale=10)
+    assert r.status_code == 200 and r.json()["name_scale"] == 400 and r.json()["fields_scale"] == 50
+    r = _style(client, ev, top_images=["acme/a.png", "acme/b.png"], top_images_cfg=[{"height": 99, "align": "right"}, {"height": "x", "align": "zzz"}])
+    assert r.status_code == 200
+    assert r.json()["top_images_cfg"] == [{"height": 40, "align": "right"}, {"height": 18, "align": "center"}]
+    r = _style(client, ev, top_images_cfg=[{"height": 25, "align": "left"}])        # solo tamaño: se ajusta al número de imágenes
+    assert [c["height"] for c in r.json()["top_images_cfg"]] == [25, 18]
+
+
+def test_logo_size_and_text_scale_controls_are_in_the_screens():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    vis = (root / "templates/kiosk_ruleta_visual.html").read_text(encoding="utf-8")
+    assert "fields_scale" in vis and "name_scale" in vis and "data-top-h" in vis and "data-top-a" in vis
+    css = (root / "static/css/gw-ruleta-display.css").read_text(encoding="utf-8")
+    assert "--rr-fields-scale" in css and "--rr-top-h" in css
+    assert "--rr-top-h" in (root / "static/js/roulette-render.js").read_text(encoding="utf-8")

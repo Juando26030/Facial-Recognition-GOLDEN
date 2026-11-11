@@ -34,7 +34,10 @@ html:has(.rr-display) { height: 100%; }
 .rr-display.rr-has-top { display: flex; flex-direction: column; }
 .rr-top { position: relative; z-index: 2; flex: 0 0 auto; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1.2vh 3vw; padding: 2.4vh 4vw 0; box-sizing: border-box; }
 .rr-top[hidden] { display: none; }
-.rr-top img { max-height: 13vh; max-width: min(40vw, 38rem); object-fit: contain; }
+.rr-top img { height: var(--rr-top-h, 18vh); max-height: 40vh; width: auto; max-width: min(46vw, 60rem); object-fit: contain; }
+.rr-top img[data-align="left"] { margin-right: auto; }
+.rr-top img[data-align="right"] { margin-left: auto; }
+.rr-top img[data-align="center"] { margin-inline: auto; }
 .rr-top--single img { max-width: 92vw; }
 .rr-has-top .rr-layout { flex: 1 1 auto; height: auto; min-height: 0; padding-top: 1.5vh; }
 .rr-has-top .rr-stage { width: min(70vh, 54vw); }
@@ -51,18 +54,18 @@ html:has(.rr-display) { height: 100%; }
 /* varios ganadores: tarjetas en fila bajo los datos; un solo ganador: tarjeta grande al pie de la pantalla (deja ver el segmento o la fila ganadora) */
 .rr-result--solo { position: fixed; inset: 0; z-index: 5; align-items: flex-end; padding-bottom: 5vh; box-sizing: border-box; background: linear-gradient(to top, rgba(0, 0, 0, .62), rgba(0, 0, 0, 0) 58%); }
 .rr-result--solo .rr-winner { padding: clamp(1.6rem, 4vh, 3.4rem) clamp(2rem, 5vw, 5rem); min-width: min(34rem, 86vw); max-width: 90vw; }
-.rr-result--solo .rr-winner__name { font-size: clamp(2.4rem, 6vw, 6rem); }
+.rr-result--solo .rr-winner__name { font-size: calc(clamp(2.4rem, 6vw, 6rem) * var(--rr-name-scale, 1)); }
 .rr-result--solo .rr-winner__eyebrow { font-size: clamp(1rem, 1.8vw, 1.7rem); }
 .rr-result--solo .rr-winner__fieldlabel { font-size: .72em; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; opacity: .7; margin-right: .4em; }
-.rr-winner__entity { font-size: clamp(1.1rem, 2.2vw, 2.1rem); }
+.rr-winner__entity { font-size: calc(clamp(1.1rem, 2.2vw, 2.1rem) * var(--rr-fields-scale, 1.5)); }
 .rr-result--multi .rr-winner { padding: 1rem 1.6rem; }
-.rr-result--multi .rr-winner__name { font-size: clamp(1.4rem, 2.6vw, 2.6rem); }
+.rr-result--multi .rr-winner__name { font-size: calc(clamp(1.4rem, 2.6vw, 2.6rem) * var(--rr-name-scale, 1)); }
 
 /* ---------- tarjeta del ganador (también en la vista previa) ---------- */
 .rr-winner { position: relative; display: inline-block; max-width: 100%; box-sizing: border-box; padding: 1rem 1.6rem; text-align: center; border-radius: 1.4rem; background: var(--rr-win-bg, var(--rr-gold-2)); color: var(--rr-win-fg, var(--rr-ink)); border: .22rem solid var(--rr-ivory); box-shadow: var(--rr-shadow), 0 0 0 .35rem rgba(232, 194, 90, .55); animation: rr-pop .6s cubic-bezier(.2, 1.3, .4, 1) both; }
 .rr-winner__star { width: 1.8em; height: 1.8em; margin: 0 auto .1em; display: block; fill: currentColor; opacity: .85; font-size: 1.1rem; }
 .rr-winner__eyebrow { font-size: .9rem; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; opacity: .85; }
-.rr-winner__name { margin-top: .15em; font-size: clamp(1.6rem, 4.2vw, 3.2rem); font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+.rr-winner__name { margin-top: .15em; font-size: calc(clamp(1.6rem, 4.2vw, 3.2rem) * var(--rr-name-scale, 1)); font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
 .rr-winner__entity { margin-top: .35em; font-size: 1.05rem; opacity: .9; overflow-wrap: anywhere; }
 
 /* ---------- columna «casino» ---------- */

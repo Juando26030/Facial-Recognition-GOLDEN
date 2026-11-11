@@ -23,6 +23,9 @@
           <summary class="gw-form-group__summary">Datos del evento</summary>
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeName">Nombre del evento</label><input class="gw-input" type="text" id="eeName" name="name" required></div>
+            {# Categoría (tipo de evento) — Fase 10 (C): la lista se ve SIEMPRE en «Datos del evento», también en eventos viejos; vacío = «Sin categoría». La lista sale del mismo catálogo que las opciones del diseñador de plantilla. El calendario filtra por ella. #}
+            <div class="gw-field"><label class="gw-label" for="eeEventType">Categoría (tipo de evento)</label>
+              <select class="gw-select" name="event_type_id" id="eeEventType"><option value="">— Sin categoría —</option></select></div>
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="modalStatusSelect">Estado del evento</label>
                 <select class="gw-select" name="state" id="modalStatusSelect">
@@ -85,9 +88,6 @@
                 {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<button type="button" class="gw-btn gw-btn--secondary" id="eeManageSuper">Administrar</button>{% endif %}
               </div>
             </div>
-            {# Categoría (tipo de evento) — Fase 10 (C): la lista la administra el super_admin en Configuración › Tipos de evento. El calendario filtra por ella. #}
-            <div class="gw-field"><label class="gw-label" for="eeEventType">Categoría (tipo de evento)</label>
-              <select class="gw-select" name="event_type_id" id="eeEventType"><option value="">— Sin categoría —</option></select></div>
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="eeColor">Color de pañoleta</label><input class="gw-input" type="color" id="eeColor" name="bandana_color"></div>
               <div class="gw-field"><label class="gw-label" for="eeColorName">Nombre del color</label><input class="gw-input" type="text" id="eeColorName" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # el botón pulsado; sin cambiar textos, validaciones ni flujo. El certificado y la ruleta ya mostraban «Buscando…»/«Girando…»: no se tocaron. Hashes renovados.
 # 10-nov-2026 (Fase 10, bloque C), orden de Juan David: la ruleta (roulette_display.html y roulette-render.js) gana datos del ganador a elección, logos/banners arriba y giro libre (Iniciar/Detener); el QR de la escarapela (impresa y digital) y del pase de Wallet pasa a ser una vCard (guardar el contacto al escanear). Cambian badge-render.js
 # (dibuja la vCard, nivel de corrección L), digital_badge.html (QR dinámico en vCard) y los <script> de vcard.js en badge_print/certificate_public. Tamaños y parámetros de impresión intactos. Hashes renovados.
+# 10-nov-2026 (tras probar staging), orden de Juan David: roulette-render.js gana tamaño propio y alineación por logo/banner y escala del texto del nombre y de los demás datos del ganador (variables CSS --rr-top-h, --rr-name-scale, --rr-fields-scale). Hash renovado.
 FROZEN = {
     "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
     "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
@@ -36,7 +37,7 @@ FROZEN = {
     "static/css/fonts-propias.css": "ac7d385e4523d16f1e096040af3ec024beb81e283f04805597cd945821ec93f0",
     "static/js/cookie-notice.js": "3ba161fa3e997046272fdba4dbcab23582579669995ebc3a64bdd281cab33990",
     "static/js/badge-render.js": "4b60e4ba9d0d2036f9851ddbf25a1f897c0218a47ffafe9d8e60e1f1b7d5182e",
-    "static/js/roulette-render.js": "5e55b45fc40c1312df3013c7cfd6da85a4e5268a10c3fd1b0674a870bf43a328",
+    "static/js/roulette-render.js": "4987b437bc4bf570c9c9db64dfe61f572b0689645f00fde0425c08399737c143",
     "static/js/photo-capture.js": "d2d938ab04bba511f06b20981fb12e2a94321239e047a961d81eb41b88b55da4",
     "static/css/agrandir.css": "a3ca46e1a8b678f2f3a55b4663f529d6c975e81c9dc6bf5313b2c0c09ea4384d",
 }

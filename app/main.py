@@ -687,6 +687,7 @@ def plantilla_evento_page(request: Request):
     return templates.TemplateResponse(request=request, name="plantilla_evento.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "is_super": request.session.get("staff_role") == "super_admin",          # las opciones de «Categoría (tipo de evento)» se editan solo con super_admin
         "sidebar_active": "configuracion",
     })
 

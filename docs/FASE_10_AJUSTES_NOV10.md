@@ -226,6 +226,15 @@ Migración: solo `0128_event_types` (tipos de evento, ver 3). La ruleta y el QR 
 
 **Archivos.** `alembic/versions/0128_event_types.py`, `app/routers/event_types.py`, `app/models.py`, `app/routers/events.py`, `app/event_template.py`, `app/event_history.py`, `app/event_transfer.py`, `static/js/event-types-admin.js`, `static/js/event-field-render.js`, `static/js/nuevo-evento.js`, `static/js/calendar-cats.js` (solo cambió `categoryOf`), `templates/configuracion.html`, `templates/_event_edit_modal.html`, `templates/calendario.html`.
 
+### Ajustes tras probar staging (10-nov, bloque C)
+- **Categoría en «Editar evento» (bug).** El selector existía pero estaba dentro del grupo plegable «Superevento y pañoleta», por eso quien miraba «Datos del evento» (Nombre, Estado, Observaciones) no lo veía. No dependía de la plantilla guardada. Ahora está SIEMPRE en «Datos del evento», justo bajo el nombre, para todos los eventos (viejos incluidos); vacío = «Sin categoría». Prueba de texto: `test_edit_modal_shows_the_category_in_the_first_group_for_every_event`.
+- **Opciones de la categoría desde el diseñador de plantilla** (`/configuracion/plantilla-evento`, panel del campo «Categoría (tipo de evento)», debajo de «Obligatorio»): lista, agregar, renombrar, color, archivar, ver archivadas y restaurar (`static/js/event-type-options.js`). Es la MISMA tabla `event_types` y la misma API/permiso que la pestaña «Tipos de evento» de Configuración (solo super_admin escribe; un admin ve la lista). Cada cambio se guarda al instante (no espera el botón Guardar de la plantilla) y se ve de inmediato en el selector de Nuevo/Editar evento y en los chips del calendario, porque todos leen la misma tabla.
+
+### Ruleta: tamaño de logos y de los datos del ganador (ajuste tras staging)
+- **Por logo/banner** (Apariencia › Imágenes): deslizador de tamaño (4 a 40 % del alto de la pantalla; por defecto 18, antes ~13) y alineación Izquierda/Centro/Derecha. Se guarda en `style_json.top_images_cfg` (una entrada por imagen, en el mismo orden; el servidor la normaliza y la recorta/rellena al número de imágenes).
+- **Texto del ganador** (Apariencia › Datos del ganador): escala del nombre (`name_scale`, 50-300 %, por defecto 100) y de los demás datos (`fields_scale`, por defecto 150 %, que antes se veían pequeños en el proyector). Variables CSS `--rr-name-scale` y `--rr-fields-scale`.
+- Vista previa en vivo: al mover cualquiera de los deslizadores se repinta la franja de logos y aparece un ganador de ejemplo. Sin migración. `roulette-render.js` (congelado): hash renovado con esta orden.
+
 ### Pruebas del bloque
 `tests/test_qr_vcard.py`, `tests/js/qr_vcard_check.js`, `tests/test_ruleta_fase10.py`, `tests/js/calendar_cats_check.js`, `tests/test_tipos_evento.py`. Corren aquí las puras y las de texto/Node; las que usan base (resolver QR con vCard, ruleta con estilo y sorteo, pantalla pública) se corren en Cloud Shell.
 
