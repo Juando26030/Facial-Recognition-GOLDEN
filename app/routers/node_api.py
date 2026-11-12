@@ -25,6 +25,10 @@ def _meta(e: Event) -> dict:
         "id": e.id, "event_code": e.event_code, "name": e.name, "tenant_id": e.tenant_id, "tenant_name": e.tenant.name if e.tenant else None,
         "city": e.city, "start_date": e.start_date.isoformat() if e.start_date else None, "end_date": e.end_date.isoformat() if e.end_date else None,
         "status": e.status, "state_name": e.state.name if e.state else None, "local": event_lease.serialize(e),
+        # Para que la lista del servidor local se vea como la de Eventos de la nube (solo metadatos del evento, nada de personas)
+        "location": e.location, "report_uploaded": bool(e.report_pdf_path),
+        "commercial_name": (e.commercial.full_name or e.commercial.username) if e.commercial else None,
+        "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
     }
 
 
@@ -42,7 +46,7 @@ def _audit(db: Session, node: LocalNode, action: str, event: Event, detail: str)
 
 @router.get("/node/events")
 def node_events(db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
-    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state)).filter(Event.archived_at.is_(None)).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
+    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state), joinedload(Event.commercial), joinedload(Event.coordinator)).filter(Event.archived_at.is_(None)).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
     return {"events": [_meta(e) for e in rows]}
 
 
