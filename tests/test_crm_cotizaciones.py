@@ -128,3 +128,45 @@ def test_erasing_an_account_removes_quotes_proformas_pdfs_and_history(client, fa
 def test_a_coordinator_cannot_use_the_quote_api(client, factory, crm_on):
     staff_client(client, factory, "coordinador", "coord_q")
     assert client.get("/api/crm/quotes").status_code == 403 and client.get("/api/crm/products").status_code == 403
+
+
+def test_global_search_needs_two_characters_and_finds_across_types_without_accents(client, factory, crm_on):
+    staff_client(client, factory)
+    acc = new_account(client, "Cámara Ficticia de Comercio")
+    new_contact(client, acc["id"], first_name="Lucía", last_name="Ficticia", email="lucia@ejemplo.test")
+    _quote(client, acc["id"], title="Feria Cámara 2027")
+    assert client.get("/api/crm/search?q=a").status_code == 400 and client.get("/api/crm/search?q=" + "x" * 101).status_code == 400
+    r = client.get("/api/crm/search?q=camara").json()
+    assert [a["name"] for a in r["accounts"]] == ["Cámara Ficticia de Comercio"] and [q["title"] for q in r["quotes"]] == ["Feria Cámara 2027"]
+    assert client.get("/api/crm/search?q=lucia").json()["contacts"][0]["name"] == "Lucía Ficticia"
+    assert client.get(f"/api/crm/search?q={acc['code']}").json()["accounts"][0]["id"] == acc["id"]
+    assert client.get("/api/crm/search?q=zzzz").json() == {"accounts": [], "contacts": [], "opportunities": [], "quotes": [], "leads": []}
+
+
+def test_saved_filters_keep_no_free_text_and_belong_to_their_owner(client, factory, crm_on):
+    staff_client(client, factory, "comercial", "com_f1")
+    f = client.post("/api/crm/filters", json={"scope": "cuentas", "name": "Activas de Bogotá", "filters": {"q": "Lucía", "status": "activo", "city": "Bogotá"}}).json()
+    assert f["filters"] == {"status": "activo", "city": "Bogotá"} and f["mine"] is True
+    shared = client.post("/api/crm/filters", json={"scope": "cuentas", "name": "Compartido", "filters": {"status": "activo"}, "shared": True}).json()
+    client.post("/logout")
+    staff_client(client, factory, "comercial", "com_f2")
+    names = [x["name"] for x in client.get("/api/crm/filters?scope=cuentas").json()["items"]]
+    assert names == ["Compartido"]                                   # los ajenos no compartidos no se ven
+    assert client.delete(f"/api/crm/filters/{f['id']}").status_code == 403 and client.delete(f"/api/crm/filters/{shared['id']}").status_code == 403
+    assert client.post("/api/crm/filters", json={"scope": "otra", "name": "x"}).status_code == 400
+
+
+def test_export_is_admin_only_neutralises_formulas_and_audits_only_the_count(client, factory, crm_on, db):
+    staff_client(client, factory, "comercial", "com_exp")
+    assert client.get("/api/crm/export/cuentas").status_code == 403
+    client.post("/logout")
+    staff_client(client, factory, "admin", "adm_exp")
+    new_account(client, "=HYPERLINK(\"http://x\")")
+    r = client.get("/api/crm/export/cuentas")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv") and r.content.startswith(b"\xef\xbb\xbf") and "no-store" in r.headers["cache-control"]
+    text = r.content.decode("utf-8-sig")
+    assert text.splitlines()[0].startswith("codigo;nombre") and "'=HYPERLINK" in text and ";=HYPERLINK" not in text
+    from app.models import AuditAction
+    row = db.query(AuditAction).filter_by(action="export").one()
+    assert row.detail == "1 filas" and "HYPERLINK" not in (row.entity_name or "")
+    assert client.get("/api/crm/export/todo").status_code == 400

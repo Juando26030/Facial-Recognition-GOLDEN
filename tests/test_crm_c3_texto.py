@@ -130,3 +130,21 @@ def test_erasing_deletes_pdfs_and_counts_quotes():
 def test_quote_history_never_stores_meeting_notes():
     src = _read("app/crm/history.py")          # sin importar el módulo (necesita sqlalchemy)
     assert '"quote": ("meeting_notes",)' in src and '"meeting_notes", "contact_id"' in src
+
+
+# ------------------------------------------------------------------ herramientas (C3-3)
+def test_csv_cells_that_look_like_formulas_are_neutralised():
+    src = _read("app/crm/tools.py")
+    ns = {}
+    exec(src[src.index("def safe_cell"):src.index("def _rows")], ns)          # la función es pura: se prueba sin importar sqlalchemy
+    safe = ns["safe_cell"]
+    assert safe("=1+1") == "'=1+1" and safe("+57 300") == "'+57 300" and safe("-5") == "'-5" and safe("@x") == "'@x" and safe("\tx") == "'\tx"
+    assert safe("Hotel") == "Hotel" and safe(None) == "" and safe(1234) == "1234"
+
+
+def test_tools_guarantees_in_the_source():
+    tools, router = _read("app/crm/tools.py"), _read("app/routers/crm_tools.py")
+    assert "async def" not in router and "_require_crm_enabled" in router
+    assert re.search(r"def export\([^)]*admin_staff", router) and 'f"{n} filas"' in router
+    assert tools.count(".limit(") >= 5 and "SEARCH_MIN" in tools and "utf-8" in tools and "\\ufeff" in tools
+    assert "setInterval" not in _read("static/js/crm_buscar.js") if pathlib.Path("static/js/crm_buscar.js").exists() else True
