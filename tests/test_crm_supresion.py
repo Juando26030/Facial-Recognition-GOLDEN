@@ -50,8 +50,6 @@ def test_erase_contact_removes_every_trace_and_reports_only_counts(client, facto
     log = db.query(m.CrmChangeLog).all()
     assert log, "el historial de lo demás debe quedar"
     for row in log:
-        if (row.entity, row.field_key) == ("account", "description"):
-            continue          # TEXTO LIBRE: no se borra por valor (no se puede asegurar que sea suyo); se AVISA en `review` para que una persona lo revise
         assert not any(p in f"{row.old_value} {row.new_value}".lower() for p in PERSONAL), (row.field_key, row.entity)          # ningún otro valor suyo en NINGÚN historial
     assert counts["review"] == {"description": True, "general_notes": 1}          # y el aviso trae los conteos que la pantalla mostrará
     assert any(r_.field_key == "billing_city" and r_.new_value == "Medellín" for r_ in log)                   # lo que no era suyo se conserva
@@ -161,3 +159,43 @@ def test_local_server_gets_the_contact_of_crm_clients_no_staff_uses(client, fact
     account_sync.apply(db, payload)
     db.commit()
     assert db.get(m.Tenant, "empresa-que-no-existe-aqui") is None                       # nunca se crean empresas en el local
+
+
+def test_free_text_changes_are_logged_without_their_content(client, factory, crm_on, db):
+    """La descripción y las notas del contacto pueden nombrar a alguien: el historial dice QUE cambiaron, no QUÉ decían (así no hay nada que adivinar al suprimir)."""
+    staff_client(client, factory, "admin", "adm_libre")
+    a = new_account(client)
+    c = new_contact(client, a["id"], "Ana", "Pérez")
+    cur = client.get(f"/api/crm/accounts/{a['id']}").json()
+    assert client.put(f"/api/crm/accounts/{a['id']}", json={"description": "Hablar con Ana Pérez", "updated_at": cur["updated_at"]}).status_code == 200
+    assert client.put(f"/api/crm/contacts/{c['id']}", json={"notes": "Ana prefiere correo", "updated_at": c["updated_at"]}).status_code == 200
+    rows = db.query(m.CrmChangeLog).filter(m.CrmChangeLog.field_key.in_(("description", "notes"))).all()
+    assert len(rows) == 2 and all(r.old_value is None and r.new_value is None for r in rows)
+    assert not any("ana" in (r.old_value or "").lower() + (r.new_value or "").lower() for r in db.query(m.CrmChangeLog).all())
+    shown = client.get(f"/api/crm/accounts/{a['id']}/history").json()
+    assert any(x["field"] == "description" for x in shown)                              # sigue constando que cambió
+
+
+def test_erase_blanks_old_free_text_history_rows_that_name_the_person(client, factory, crm_on, db):
+    a, tid, ana, beto = _scenario(client, factory)
+    db.add_all([m.CrmChangeLog(entity="account", entity_id=a["id"], field_key="description", old_value="Hablar con Ana Pérez", new_value="Hablar con Beto Gómez", source="import"),
+                m.CrmChangeLog(entity="account", entity_id=a["id"], field_key="description", old_value="Cuenta de congresos", new_value="Cuenta de ferias", source="import")])
+    db.commit()
+    preview = client.get(f"/api/crm/contacts/{ana['id']}/erase-preview").json()["counts"]
+    real = client.post(f"/api/crm/contacts/{ana['id']}/erase", json={"reason": "x", "confirm_name": "Ana Pérez"}).json()["counts"]
+    assert preview == real                                                              # el adelanto cuenta también estas filas
+    db.expire_all()
+    rows = db.query(m.CrmChangeLog).filter_by(entity="account", entity_id=a["id"], field_key="description").all()
+    assert not any("ana" in f"{r.old_value} {r.new_value}".lower() for r in rows)       # ningún valor que nombre a Ana
+    assert len(rows) >= 3                                                               # las filas siguen: consta que la descripción cambió
+    assert any(r.old_value == "Cuenta de congresos" for r in rows)                      # y la que no la nombraba conserva sus valores
+
+
+def test_editing_the_description_after_erasing_leaves_no_trace_in_history(client, factory, crm_on, db):
+    a, tid, ana, beto = _scenario(client, factory)
+    client.post(f"/api/crm/contacts/{ana['id']}/erase", json={"reason": "x", "confirm_name": "Ana Pérez"})
+    cur = client.get(f"/api/crm/accounts/{a['id']}").json()
+    assert "Ana Pérez" in cur["description"]                                            # el texto libre sigue ahí hasta que una persona lo revise
+    assert client.put(f"/api/crm/accounts/{a['id']}", json={"description": "Cuenta de congresos", "updated_at": cur["updated_at"]}).status_code == 200
+    db.expire_all()
+    assert not any("ana" in f"{r.old_value} {r.new_value}".lower() for r in db.query(m.CrmChangeLog).all())          # el valor anterior (con su nombre) no quedó en el historial

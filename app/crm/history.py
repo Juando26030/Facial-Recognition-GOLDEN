@@ -19,6 +19,9 @@ ACCOUNT_FIELDS = ("name", "status", "nit", "email", "phone", "billing_address", 
 CONTACT_FIELDS = ("first_name", "last_name", "job_title", "email", "phone", "mobile", "is_primary", "notes", "archived_at")
 FIELDS = {"account": ACCOUNT_FIELDS, "contact": CONTACT_FIELDS}
 SOURCES = ("edit", "import", "system")
+# Texto libre: el historial registra QUE cambió, no su contenido. Una descripción o unas notas pueden nombrar a una persona y no hay forma segura de reconocerlo después (Ley 1581):
+# si el valor se guardara, una supresión futura tendría que adivinar en qué fila está. Las filas de estos campos llevan valores vacíos (app/crm/erase.py limpia las que ya los traían).
+FREE_TEXT = {"account": ("description",), "contact": ("notes",)}
 
 
 def snapshot(obj, entity: str) -> dict:
@@ -43,6 +46,7 @@ def record(db: Session, obj, entity: str, before: dict, *, staff_id: Optional[in
     changes = diff(before, snapshot(obj, entity), FIELDS[entity])
     now = utcnow()
     for f, old, new in changes:
-        db.add(CrmChangeLog(entity=entity, entity_id=obj.id, field_key=f, old_value=(old or None) and old[:MAX_VALUE], new_value=(new or None) and new[:MAX_VALUE],
+        keep = f not in FREE_TEXT.get(entity, ())
+        db.add(CrmChangeLog(entity=entity, entity_id=obj.id, field_key=f, old_value=(old or None) and keep and old[:MAX_VALUE] or None, new_value=(new or None) and keep and new[:MAX_VALUE] or None,
                             changed_by_id=staff_id, source=source, changed_at=now))
     return len(changes)

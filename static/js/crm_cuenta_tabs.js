@@ -250,6 +250,7 @@
     billing_country: "País de facturación", shipping_address: "Dirección de envío", shipping_city: "Ciudad de envío", shipping_country: "País de envío", billing_contact_name: "Contacto de facturación",
     billing_contact_phone: "Teléfono de facturación", payment_term: "Condición de pago", payment_days: "Días de plazo", billing_close: "Cierre de facturación", agency_percent: "Porcentaje de agencia",
     owner_staff_id: "Responsable", description: "Descripción", archived_at: "Archivada", first_name: "Nombres", last_name: "Apellidos", job_title: "Cargo", mobile: "Celular", is_primary: "Contacto principal", notes: "Notas del contacto" };
+  const FREE_TEXT = ["description", "notes"];          // el historial no guarda lo que decían (Ley 1581): solo que cambiaron
   function val(field, v) {
     if (v == null || v === "") return "—";
     if (field === "is_primary") return v === "True" ? "Sí" : "No";
@@ -272,7 +273,7 @@
           const tr = el("tr"), td = (label, content) => { const c = el("td"); c.dataset.label = label; if (content instanceof Node) c.appendChild(content); else c.textContent = content; tr.appendChild(c); };
           td("Cuándo", fmtDate(r.at)); td("Quién", (r.by || "Sistema") + (r.source === "import" ? " (importado)" : ""));
           td("Sobre", r.entity === "contact" ? "Contacto: " + (r.contact || "contacto") : "La cuenta"); td("Qué cambió", LABELS[r.field] || r.field);
-          const ch = el("span", "crm-history__change"); ch.appendChild(document.createTextNode(val(r.field, r.old) + " → " + val(r.field, r.new))); td("Antes → Después", ch);
+          const ch = el("span", "crm-history__change"); ch.appendChild(document.createTextNode(FREE_TEXT.indexOf(r.field) >= 0 && r.old == null && r.new == null ? "Se modificó (el texto no se guarda en el historial)" : val(r.field, r.old) + " → " + val(r.field, r.new))); td("Antes → Después", ch);
           tb.appendChild(tr);
         });
         t.appendChild(tb); wrap.appendChild(t); box.replaceChildren(wrap);

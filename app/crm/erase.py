@@ -16,21 +16,34 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.crm import normalize
+from app.crm.history import FREE_TEXT
 from app.crm.matching import ACCOUNT_PERSONAL_FIELDS, digits, identifiers, mentions, value_matches
 from app.models import CrmAccount, CrmChangeLog, CrmContact, CrmNote, Tenant
 
+def _history_hits(db: Session, account: CrmAccount, ids: dict) -> tuple:
+    """Filas del historial de la cuenta que traen datos de esta persona: (ids a BORRAR, filas de texto libre a VACIAR).
+    Campos con datos personales (correo, teléfonos, contacto de facturación): se borra la fila. Texto libre (descripción): la fila se conserva (queda constancia de que cambió) pero se le vacían
+    los valores, porque nombran a la persona. Los cambios nuevos de texto libre ya se guardan sin valores (history.FREE_TEXT); esto limpia lo anterior."""
+    free = FREE_TEXT["account"]
+    rows = db.execute(select(CrmChangeLog).where(CrmChangeLog.entity == "account", CrmChangeLog.entity_id == account.id,
+                                                CrmChangeLog.field_key.in_(ACCOUNT_PERSONAL_FIELDS + free))).scalars().all()
+    drop = [r.id for r in rows if r.field_key in ACCOUNT_PERSONAL_FIELDS and (value_matches(r.field_key, r.old_value, ids) or value_matches(r.field_key, r.new_value, ids))]
+    blank = [r for r in rows if r.field_key in free and (mentions(r.old_value, ids) or mentions(r.new_value, ids))]
+    return drop, blank
+
+
 def _scrub_account(db: Session, account: CrmAccount, ids: dict) -> dict:
     """Pasos 3 y 4: historial de la cuenta y valores actuales de la cuenta."""
-    rows = db.execute(select(CrmChangeLog).where(CrmChangeLog.entity == "account", CrmChangeLog.entity_id == account.id,
-                                                CrmChangeLog.field_key.in_(ACCOUNT_PERSONAL_FIELDS))).scalars().all()
-    drop = [r.id for r in rows if value_matches(r.field_key, r.old_value, ids) or value_matches(r.field_key, r.new_value, ids)]
+    drop, blank = _history_hits(db, account, ids)
     removed = db.execute(delete(CrmChangeLog).where(CrmChangeLog.id.in_(drop))).rowcount if drop else 0
+    for r in blank:
+        r.old_value = r.new_value = None
     cleared = 0
     for f in ACCOUNT_PERSONAL_FIELDS:
         if value_matches(f, getattr(account, f), ids):
             setattr(account, f, None)
             cleared += 1
-    return {"account_history": removed, "account_fields": cleared}
+    return {"account_history": removed + len(blank), "account_fields": cleared}
 
 
 def _clear_tenant_mirror(db: Session, tenant_id: Optional[str], contact: CrmContact) -> int:
@@ -105,9 +118,8 @@ def preview_contact(db: Session, contact_id: int) -> Optional[dict]:
            "account_history": 0, "account_fields": 0, "tenant_fields": 0, "review": {"description": False, "general_notes": 0}}
     if account is None:
         return out
-    rows = db.execute(select(CrmChangeLog).where(CrmChangeLog.entity == "account", CrmChangeLog.entity_id == account.id,
-                                                CrmChangeLog.field_key.in_(ACCOUNT_PERSONAL_FIELDS))).scalars().all()
-    out["account_history"] = sum(1 for r in rows if value_matches(r.field_key, r.old_value, ids) or value_matches(r.field_key, r.new_value, ids))
+    drop, blank = _history_hits(db, account, ids)
+    out["account_history"] = len(drop) + len(blank)
     out["account_fields"] = sum(1 for f in ACCOUNT_PERSONAL_FIELDS if value_matches(f, getattr(account, f), ids))
     tenant = db.get(Tenant, account.tenant_id) if account.tenant_id else None
     if tenant is not None:

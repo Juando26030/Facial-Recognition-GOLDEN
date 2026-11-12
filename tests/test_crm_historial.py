@@ -56,12 +56,14 @@ def test_values_are_cut_to_500_characters_and_contacts_have_their_own_entity(db)
     db.add(c)
     db.commit()
     before = history.snapshot(c, "contact")
-    c.notes = "x" * 900
+    c.job_title = "x" * 900
+    c.notes = "texto libre"
     c.email = "ana@ejemplo.test"
     history.record(db, c, "contact", before, source="import")
     db.commit()
     rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=c.id)}
-    assert len(rows["notes"].new_value) == 500 and rows["email"].source == "import"
+    assert len(rows["job_title"].new_value) == 500 and rows["email"].source == "import"
+    assert rows["notes"].new_value is None and rows["notes"].old_value is None          # texto libre: consta el cambio, no el contenido (history.FREE_TEXT)
 
 
 def test_an_unknown_source_is_rejected(db):
