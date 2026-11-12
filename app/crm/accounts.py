@@ -37,6 +37,9 @@ ACCOUNT_TEXT = tuple(ACCOUNT_LIMITS)
 CONTACT_LIMITS = {"first_name": 120, "last_name": 120, "job_title": 120, "email": 200, "phone": 60, "mobile": 60, "notes": 20000}
 NOTE_MAX = 5000
 PAGE_SIZE = 50
+MAX_ID = 2_147_483_647          # el entero más grande que admite la base (columnas `integer`): un id mayor no puede existir y no debe llegar al SQL
+MAX_PAGE = 1_000_000
+NORM_MAX = {"name_norm": 200, "full_name_norm": 240, "email_norm": 200}          # columnas de búsqueda: normalizar (NFKD) puede alargar el texto, y nombre + apellido suman 241 con el espacio
 
 
 # ------------------------------------------------------------------ limpieza de datos
@@ -85,7 +88,7 @@ def clean_account(data: dict) -> dict:
                 d = Decimal(str(v).replace(",", "."))
             except InvalidOperation as exc:
                 raise CrmError("El porcentaje de agencia debe ser un número.") from exc
-            if not Decimal(0) <= d <= Decimal(100):
+            if not d.is_finite() or not Decimal(0) <= d <= Decimal(100):          # NaN no se puede comparar y rompería con 500
                 raise CrmError("El porcentaje de agencia debe estar entre 0 y 100.")
             out["agency_percent"] = d.quantize(Decimal("0.01"))
     if "owner_staff_id" in data:
@@ -111,12 +114,12 @@ def full_name(c: CrmContact) -> str:
 
 
 def _norms(c: CrmContact) -> None:
-    c.full_name_norm = normalize(full_name(c))
-    c.email_norm = normalize(c.email) or None
+    c.full_name_norm = normalize(full_name(c))[:NORM_MAX["full_name_norm"]]
+    c.email_norm = normalize(c.email)[:NORM_MAX["email_norm"]] or None
 
 
 def _check_owner(db: Session, owner_id) -> None:
-    if owner_id is not None and db.get(StaffUser, owner_id) is None:
+    if owner_id is not None and (not 0 < owner_id <= MAX_ID or db.get(StaffUser, owner_id) is None):
         raise CrmError("El responsable indicado no existe.")
 
 
@@ -142,7 +145,7 @@ def create_account(db: Session, staff: StaffUser, data: dict, *, confirm_duplica
         raise CrmError("La cuenta necesita un nombre.")
     fields.setdefault("status", "activo")
     _check_owner(db, fields.get("owner_staff_id"))
-    norm = normalize(fields["name"])
+    norm = normalize(fields["name"])[:NORM_MAX["name_norm"]]
     if not confirm_duplicate:
         twin = db.query(CrmAccount.code).filter(CrmAccount.name_norm == norm).first()
         if twin is not None:
@@ -161,7 +164,7 @@ def update_account(db: Session, staff: StaffUser, account: CrmAccount, data: dic
     for key, value in fields.items():
         setattr(account, key, value)
     if "name" in fields:
-        account.name_norm = normalize(account.name)
+        account.name_norm = normalize(account.name)[:NORM_MAX["name_norm"]]
     if history.record(db, account, "account", before, staff_id=staff.id):
         account.updated_at = utcnow()
     db.flush()
@@ -207,9 +210,12 @@ def list_accounts(db: Session, *, q: str = "", status: str = "", owner_id: Optio
     if status:
         query = query.filter(CrmAccount.status == status)
     if owner_id:
+        if not 0 < owner_id <= MAX_ID:
+            return {"items": [], "total": 0, "page": 1, "size": size}
         query = query.filter(CrmAccount.owner_staff_id == owner_id)
     if city:
         query = query.filter(CrmAccount.billing_city == city)
+    q = (q or "")[:200]          # una búsqueda más larga que el campo más largo no encuentra nada distinto
     clause = search_clause(q) if q else None
     if q and clause is None:
         return {"items": [], "total": 0, "page": 1, "size": size}
@@ -217,7 +223,7 @@ def list_accounts(db: Session, *, q: str = "", status: str = "", owner_id: Optio
         query = query.filter(clause)
     total = query.count()
     size = max(1, min(int(size or PAGE_SIZE), 200))
-    page = max(1, int(page or 1))
+    page = max(1, min(int(page or 1), MAX_PAGE))
     rows = query.order_by(CrmAccount.name_norm, CrmAccount.id).offset((page - 1) * size).limit(size).all()
     primaries = {}
     if rows:
@@ -365,6 +371,8 @@ def add_note(db: Session, staff: StaffUser, account: CrmAccount, body: str, cont
     body = (body or "").strip()
     if not body:
         raise CrmError("La nota está vacía.")
+    if contact_id is not None and not 0 < contact_id <= MAX_ID:
+        raise CrmError("El contacto de la nota no pertenece a esta cuenta.")
     if len(body) > NOTE_MAX:
         raise CrmError(f"La nota es demasiado larga (máximo {NOTE_MAX} caracteres).")
     if contact_id is not None:

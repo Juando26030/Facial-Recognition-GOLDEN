@@ -97,16 +97,25 @@ def create_tenant(
     return _serialize(tenant)
 
 
+def _clip(value, limit: int):
+    """Recorta a lo que admite la columna del CRM: la cuenta que se crea sola desde /clientes nunca debe hacer fallar la creación del cliente (los campos de `tenants` no tienen tope)."""
+    v = (value or "").strip()
+    return v[:limit] or None
+
+
 def _create_crm_account(db: Session, staff: StaffUser, tenant: Tenant) -> None:
-    account = CrmAccount(code=int(tenant.client_code), tenant_id=tenant.id, name=tenant.name, name_norm=crm_normalize(tenant.name), status="activo", created_by_id=staff.id)
+    name = _clip(tenant.name, 200) or "Cliente"
+    account = CrmAccount(code=int(tenant.client_code), tenant_id=tenant.id, name=name, name_norm=crm_normalize(name)[:200], status="activo", created_by_id=staff.id)
     db.add(account)
     db.flush()
     if (tenant.contact_name or "").strip():          # con nombre de contacto, sus datos pasan a ser el contacto principal (la fuente es el CRM)
         first, _, last = (tenant.contact_name or "").strip().partition(" ")
-        contact = CrmContact(account_id=account.id, first_name=first or None, last_name=last.strip() or None, email=tenant.contact_email, phone=tenant.contact_phone,
+        email = (tenant.contact_email or "").strip()
+        email = email if 0 < len(email) <= 200 else None          # un correo cortado ya no sería ese correo: si no cabe, no se copia al CRM (en el cliente queda completo)
+        contact = CrmContact(account_id=account.id, first_name=_clip(first, 120), last_name=_clip(last, 120), email=email, phone=_clip(tenant.contact_phone, 60),
                              is_primary=True, created_by_id=staff.id)
-        contact.full_name_norm = crm_normalize(crm_accounts.full_name(contact))
-        contact.email_norm = crm_normalize(contact.email) or None
+        contact.full_name_norm = crm_normalize(crm_accounts.full_name(contact))[:240]
+        contact.email_norm = crm_normalize(contact.email)[:200] or None
         db.add(contact)
         db.flush()
 

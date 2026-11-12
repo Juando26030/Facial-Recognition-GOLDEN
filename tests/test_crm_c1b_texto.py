@@ -135,3 +135,71 @@ def test_erase_never_writes_history_with_personal_values():
 def test_no_inline_handlers_or_native_dialogs_in_crm_sources():
     for rel in ("app/routers/crm.py", "app/crm/accounts.py"):
         assert "alert(" not in _read(rel) and "onclick" not in _read(rel)
+
+
+# ------------------------------------------------------------------ límites de longitud (sin base de datos)
+def _column_lengths(cls_name):
+    """{columna: N} de `Column(String(N))` dentro de la clase de app/models.py (las `Text` y `String` sin número no tienen tope)."""
+    src = _read("app/models.py")
+    start = src.index(f"class {cls_name}(")
+    nxt = src.find("\nclass ", start + 5)
+    body = src[start: nxt if nxt != -1 else len(src)]
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r"^\s+(\w+)\s*=\s*Column\(String\((\d+)\)", body, re.M)}
+
+
+def _limits():
+    """ACCOUNT_LIMITS, CONTACT_LIMITS y NORM_MAX leídos del código fuente (sin importar sqlalchemy, que estas pruebas no necesitan)."""
+    import ast
+    tree = ast.parse(_read("app/crm/accounts.py"))
+    found = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "") in ("ACCOUNT_LIMITS", "CONTACT_LIMITS", "NORM_MAX"):
+            found[node.targets[0].id] = ast.literal_eval(node.value)
+    return SimpleNamespace(**found)
+
+
+def test_api_limits_equal_the_column_lengths_of_the_models():
+    svc = _limits()
+    acc, con = _column_lengths("CrmAccount"), _column_lengths("CrmContact")
+    for key, limit in svc.ACCOUNT_LIMITS.items():
+        if key == "description":
+            assert key not in acc                       # Text: sin tope en la base; la API lo limita a 20.000
+            continue
+        assert acc.get(key) == limit, f"CrmAccount.{key}: API {limit} vs columna {acc.get(key)}"
+    for key, limit in svc.CONTACT_LIMITS.items():
+        if key == "notes":
+            assert key not in con
+            continue
+        assert con.get(key) == limit, f"CrmContact.{key}: API {limit} vs columna {con.get(key)}"
+
+
+def test_every_bounded_column_that_a_person_can_type_has_an_api_limit():
+    """Si alguien agrega una columna con tope a CrmAccount/CrmContact y se olvida de ponerla en ACCOUNT_LIMITS/CONTACT_LIMITS, esta prueba lo dice."""
+    svc = _limits()
+    internal_account = {"tenant_id", "status", "name_norm", "legacy_sugar_id"}
+    internal_contact = {"full_name_norm", "email_norm", "legacy_sugar_id"}
+    for col in set(_column_lengths("CrmAccount")) - internal_account:
+        assert col in svc.ACCOUNT_LIMITS, f"CrmAccount.{col} tiene tope en la base pero no en la API"
+    for col in set(_column_lengths("CrmContact")) - internal_contact:
+        assert col in svc.CONTACT_LIMITS, f"CrmContact.{col} tiene tope en la base pero no en la API"
+
+
+def test_search_columns_are_clipped_to_their_length():
+    svc = _limits()
+    acc, con = _column_lengths("CrmAccount"), _column_lengths("CrmContact")
+    assert svc.NORM_MAX == {"name_norm": acc["name_norm"], "full_name_norm": con["full_name_norm"], "email_norm": con["email_norm"]}
+    src = _read("app/crm/accounts.py")
+    for key in svc.NORM_MAX:
+        assert f'NORM_MAX["{key}"]' in src, f"{key} se escribe sin recortar"
+
+
+def test_route_has_a_safety_net_for_database_data_errors():
+    src = _read("app/routers/crm.py")
+    assert "except DataError" in src and "status_code=400" in src.split("except DataError", 1)[1][:300]
+    assert "_check_path_ids" in src
+
+
+def test_tenant_to_crm_copy_clips_to_the_crm_columns():
+    src = _read("app/routers/tenants.py")
+    body = src[src.index("def _create_crm_account"):src.index("@router.patch")] if "@router.patch" in src else src[src.index("def _create_crm_account"):]
+    assert "_clip(tenant.name, 200)" in body and "_clip(first, 120)" in body and "_clip(last, 120)" in body and "_clip(tenant.contact_phone, 60)" in body

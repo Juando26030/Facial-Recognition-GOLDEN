@@ -51,19 +51,40 @@ def test_record_writes_nothing_when_nothing_changed(db):
 
 
 def test_values_are_cut_to_500_characters_and_contacts_have_their_own_entity(db):
+    """Ninguna columna del CRM que el historial registra admite 500 caracteres o más (la mayor es billing_address, 300; las demás ≤ 200), y los textos libres no guardan
+    contenido. Por eso el recorte a 500 se prueba con un objeto de reemplazo que NO se guarda en la base: `record()` solo lee atributos."""
+    import types
     a = _acc(db)
     c = m.CrmContact(account_id=a.id, first_name="Ana", full_name_norm="ana")
     db.add(c)
     db.commit()
     before = history.snapshot(c, "contact")
-    c.job_title = "x" * 900
-    c.notes = "texto libre"
-    c.email = "ana@ejemplo.test"
-    history.record(db, c, "contact", before, source="import")
+    stand_in = types.SimpleNamespace(id=c.id, job_title="x" * 900, email="ana@ejemplo.test")          # 900 > 120 de la columna real: por eso no se persiste
+    history.record(db, stand_in, "contact", before, source="import")
     db.commit()
     rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=c.id)}
-    assert len(rows["job_title"].new_value) == 500 and rows["email"].source == "import"
+    assert len(rows["job_title"].new_value) == history.MAX_VALUE == 500 and rows["email"].source == "import"
+
+
+def test_free_text_fields_record_the_change_but_not_the_content(db):
+    a = _acc(db)
+    c = m.CrmContact(account_id=a.id, first_name="Ana", full_name_norm="ana")
+    db.add(c)
+    db.commit()
+    before = history.snapshot(c, "contact")
+    c.notes = "texto libre"
+    c.job_title = "Gerente"
+    history.record(db, c, "contact", before, source="edit")
+    db.commit()
+    rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=c.id)}
     assert rows["notes"].new_value is None and rows["notes"].old_value is None          # texto libre: consta el cambio, no el contenido (history.FREE_TEXT)
+    assert rows["job_title"].new_value == "Gerente"
+
+
+def test_the_history_never_stores_longer_text_than_its_columns():
+    from app.crm import history as h
+    assert h.MAX_VALUE == 500
+    assert "description" in h.FREE_TEXT["account"] and "notes" in h.FREE_TEXT["contact"]
 
 
 def test_an_unknown_source_is_rejected(db):

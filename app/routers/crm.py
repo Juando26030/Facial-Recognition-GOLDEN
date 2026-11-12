@@ -6,8 +6,9 @@
 """
 from typing import Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app import audit_actions
@@ -24,7 +25,15 @@ def _require_crm_enabled() -> None:
         raise HTTPException(status_code=404, detail="No encontrado")
 
 
+def _check_path_ids(request: Request) -> None:          # se agrega a `router.dependencies` justo debajo del router
+    """Un id de la dirección mayor que el entero de la base no puede existir: 404 claro en vez de un error de SQL (500)."""
+    for key, value in request.path_params.items():
+        if key.endswith("_id") and str(value).isdigit() and int(value) > svc.MAX_ID:
+            raise HTTPException(status_code=404, detail="No encontrado.")
+
+
 router = APIRouter(prefix="/crm", dependencies=[Depends(_require_crm_enabled)])
+router.dependencies.append(Depends(_check_path_ids))
 view_staff = require_platform_role("comercial")
 admin_staff = require_platform_role("admin")
 
@@ -38,6 +47,12 @@ def _run(db: Session, fn):
     except svc.CrmError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    except DataError as exc:          # red de seguridad: un valor que la base no admite (texto más largo que la columna, número fuera de rango) nunca es un 500
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Uno de los datos es demasiado largo o no es válido. Revisa los campos e intenta de nuevo.") from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo guardar: un dato no coincide con lo que ya existe (por ejemplo, un registro que cambió o ya no está).") from exc
     except CodeCounterNotReady as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="El contador de códigos del CRM no está listo. Pide a un administrador que lo fije antes de crear cuentas.") from exc
