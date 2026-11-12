@@ -34,10 +34,16 @@ def test_menu_link_follows_the_role(client, factory, crm_on):
 
 
 def test_history_names_the_contact(client, factory, crm_on):
+    """El alta no deja historial (por diseño, app/crm/history.py): hace falta un CAMBIO para que aparezca una fila del contacto."""
     from tests.crm_helpers import new_account, new_contact
     staff_client(client, factory, "admin", "adm_hist")
     a = new_account(client)
-    new_contact(client, a["id"], "Ana", "Pérez")
+    c = new_contact(client, a["id"], "Ana", "Pérez")
+    assert client.get(f"/api/crm/accounts/{a['id']}/history").json() == []                      # solo el alta: sin filas
+    r = client.put(f"/api/crm/contacts/{c['id']}", json={"job_title": "Gerente", "updated_at": c["updated_at"]})
+    assert r.status_code == 200
+    client.put(f"/api/crm/accounts/{a['id']}", json={"billing_city": "Bogotá", "updated_at": a["updated_at"]})
     rows = client.get(f"/api/crm/accounts/{a['id']}/history").json()
-    assert any(r["entity"] == "contact" and r["contact"] == "Ana Pérez" for r in rows)
-    assert all(r["contact"] is None for r in rows if r["entity"] == "account")
+    assert any(x["entity"] == "contact" and x["contact"] == "Ana Pérez" and x["field"] == "job_title" for x in rows)
+    account_rows = [x for x in rows if x["entity"] == "account"]
+    assert account_rows and all(x["contact"] is None for x in account_rows)
