@@ -22,7 +22,7 @@ log = logging.getLogger("golden.account_sync")
 VERSION_KEY = "account_sync_version"
 SYNCED_AT_KEY = "account_sync_at"
 STAFF_FIELDS = ("username", "password_hash", "full_name", "role", "secondary_role", "extra_roles", "tenant_id", "email", "phone", "is_active", "must_change_password", "print_station", "tours_auto_off")
-TENANT_FIELDS = ("id", "client_code", "name", "contact_name", "contact_phone", "contact_email")
+TENANT_FIELDS = ("id", "client_code", "legacy_client_code", "name", "contact_name", "contact_phone", "contact_email")          # CRM C1a: legacy_client_code = el hexadecimal anterior (alias)
 FETCH_TIMEOUT = 20.0
 MAX_BYTES = 5_000_000
 NO_PASSWORD = "!"          # F5-9 A-08: una cuenta inactiva o archivada viaja SIN su hash (no sirve para entrar en el local y no se expone si el token del nodo se filtra); bcrypt nunca acepta «!»
@@ -92,7 +92,9 @@ def apply(db: Session, payload: dict) -> dict:
         if row is None:
             row = Tenant(id=t["id"], client_code=t["client_code"], name=t["name"])
             db.add(row)
-        for f in ("client_code", "name", "contact_name", "contact_phone", "contact_email"):
+        for f in ("client_code", "legacy_client_code", "name", "contact_name", "contact_phone", "contact_email"):
+            if f == "legacy_client_code" and f not in t:
+                continue                       # carga de una nube anterior al CRM: no trae el alias, el que ya hay aquí se conserva
             setattr(row, f, t.get(f))
         row.archived_at = (row.archived_at or utcnow()) if t.get("archived") else None
     db.flush()

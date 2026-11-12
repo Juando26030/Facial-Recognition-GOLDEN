@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import event as sa_event
-from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint, Index, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint, Index, text
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
@@ -36,6 +36,7 @@ class Tenant(Base):
     contact_email = Column(String)
     archived_at = Column(DateTime, nullable=True)  # 0088 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas, se restaura; nada se borra). Ver app/routers/tenants.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    legacy_client_code = Column(String, unique=True, nullable=True)  # 0130 (CRM C1a): el código hexadecimal de antes cuando el cliente pasó al número consecutivo del CRM; alias para paquetes de eventos viejos (app/event_transfer.py). NULL = nunca cambió
 
     users = relationship("User", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
@@ -1699,3 +1700,121 @@ class MassDeleteLog(Base):
     label = Column(String(40), nullable=False)
     rows = Column(Integer, nullable=False)
     event_id = Column(Integer, nullable=True)
+
+
+# ------------------------------------------------------------------------------------------------ CRM (módulo de GoldenWeb; docs/crm/, migración 0130)
+class CrmCounter(Base):
+    """Contadores de los códigos consecutivos del CRM (`name`: account | event). `value` es el último número entregado; `ready` es falso hasta que alguien fije el número inicial
+    (scripts/crm_set_counter.py) y mientras tanto app/crm/codes.next_code se niega a entregar números."""
+    __tablename__ = 'crm_counters'
+    name = Column(String(32), primary_key=True)
+    value = Column(BigInteger, nullable=False, default=0, server_default='0')
+    ready = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class CrmAccount(Base):
+    """Cuenta del CRM (la empresa cliente o prospecto). `code` es el número consecutivo (el mismo que `tenants.client_code` cuando la cuenta ya es cliente de la plataforma). El estado
+    (`status`) se valida en el código (app/crm/__init__.py: ACCOUNT_STATUSES), no con CHECK: la lista se ajusta cuando se vea la exportación de SuiteCRM."""
+    __tablename__ = 'crm_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(BigInteger, nullable=False)
+    tenant_id = Column(String, ForeignKey('tenants.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    name_norm = Column(String(200), nullable=False)
+    status = Column(String(12), nullable=False, default='activo', server_default='activo')
+    nit = Column(String(40))
+    email = Column(String(200))
+    phone = Column(String(60))
+    billing_address = Column(String(300))
+    billing_city = Column(String(120))
+    billing_state = Column(String(120))
+    billing_country = Column(String(120))
+    shipping_address = Column(String(300))
+    shipping_city = Column(String(120))
+    shipping_country = Column(String(120))
+    billing_contact_name = Column(String(200))
+    billing_contact_phone = Column(String(60))
+    payment_term = Column(String(60))
+    payment_days = Column(Integer)
+    billing_close = Column(String(60))
+    agency_percent = Column(Numeric(5, 2))
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    description = Column(Text)
+    legacy_sugar_id = Column(String(40))
+    source_created_at = Column(DateTime)
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    contacts = relationship("CrmContact", back_populates="account", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (
+        UniqueConstraint('code', name='uq_crm_accounts_code'),
+        Index('uq_crm_accounts_tenant', 'tenant_id', unique=True, postgresql_where=text('tenant_id IS NOT NULL')),
+        Index('uq_crm_accounts_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_accounts_status', 'status'),
+        Index('ix_crm_accounts_owner', 'owner_staff_id'),
+        Index('ix_crm_accounts_city', 'billing_city'),
+        Index('ix_crm_accounts_name_norm', 'name_norm', postgresql_ops={'name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmContact(Base):
+    """Contacto de una cuenta del CRM (datos personales: Ley 1581; ver docs/crm/README.md, supresión). Un solo contacto principal por cuenta."""
+    __tablename__ = 'crm_contacts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    first_name = Column(String(120))
+    last_name = Column(String(120))
+    full_name_norm = Column(String(240), nullable=False, default='')
+    job_title = Column(String(120))
+    email = Column(String(200))
+    email_norm = Column(String(200))
+    phone = Column(String(60))
+    mobile = Column(String(60))
+    is_primary = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    notes = Column(Text)
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    account = relationship("CrmAccount", back_populates="contacts")
+    __table_args__ = (
+        Index('uq_crm_contacts_primary', 'account_id', unique=True, postgresql_where=text('is_primary')),
+        Index('uq_crm_contacts_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_contacts_account', 'account_id'),
+        Index('ix_crm_contacts_email_norm', 'email_norm'),
+        Index('ix_crm_contacts_name_norm', 'full_name_norm', postgresql_ops={'full_name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmNote(Base):
+    """Línea de tiempo de una cuenta: notas escritas por el personal (`kind` note) o del sistema (`system`). Si habla de un contacto, `contact_id` lo señala y se borra con él."""
+    __tablename__ = 'crm_notes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='CASCADE'), nullable=True)
+    kind = Column(String(16), nullable=False, default='note', server_default='note')
+    body = Column(Text, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    legacy_sugar_id = Column(String(40))
+    __table_args__ = (Index('ix_crm_notes_account_created', 'account_id', 'created_at'), Index('ix_crm_notes_contact', 'contact_id'))
+
+
+class CrmChangeLog(Base):
+    """Registro de cambios del CRM, con la forma de `person_change_log` (app/person_history.py): una fila por campo cambiado (campo, valor anterior, valor nuevo, quién y cuándo).
+    `entity`: account | contact. Sin llaves foráneas (como el original): se borra desde el código junto con su cuenta/contacto (app/crm/erase.py). `source`: edit | import | system."""
+    __tablename__ = 'crm_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity = Column(String(16), nullable=False)
+    entity_id = Column(Integer, nullable=False)
+    field_key = Column(String(64), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, nullable=True)
+    source = Column(String(16), nullable=False, default='edit', server_default='edit')
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_change_log_entity', 'entity', 'entity_id', 'changed_at'),)

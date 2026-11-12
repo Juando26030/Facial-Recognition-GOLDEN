@@ -28,7 +28,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from sqlalchemy import Date, DateTime, Float, Numeric, select, text
+from sqlalchemy import Date, DateTime, Float, Numeric, or_, select, text
 from sqlalchemy.orm import Session
 
 from app import consent, crypto, minors, public_slug
@@ -314,7 +314,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
     ctx["payment_ids"] = [r[0] for r in db.execute(select(m.FormPayment.id).where(m.FormPayment.event_id == event.id)).all()] if ctx["form_ids"] else []
     tenant = db.get(m.Tenant, event.tenant_id)
     manifest = {"format": FORMAT, "format_version": FORMAT_VERSION, "alembic_revision": _revision(db), "source_env": os.getenv("DEPLOY_ENV", "").strip().lower() or "local",
-                "created_at": utcnow().isoformat(), "tenant": {"id": tenant.id, "client_code": tenant.client_code, "name": tenant.name} if tenant else {"id": event.tenant_id},
+                "created_at": utcnow().isoformat(), "tenant": {"id": tenant.id, "client_code": tenant.client_code, "legacy_client_code": tenant.legacy_client_code, "name": tenant.name} if tenant else {"id": event.tenant_id},
                 "event": {"event_code": event.event_code, "name": event.name, "status": event.status}, "options": {"include_biometrics": False}, "includes_files": True,
                 "tables": {}, "files": [], "staff_usernames": [], "warnings": []}
     used_staff = set()
@@ -578,9 +578,15 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     # ---- cliente (solo nombre y código si falta, y solo cuando es el mismo del paquete)
     if not db.get(m.Tenant, tenant_id):
         client_code = tenant_info.get("client_code") or tenant_id
-        if db.query(m.Tenant.id).filter(m.Tenant.client_code == client_code).first():
-            raise TransferError("El código de cliente del paquete ya existe en este sistema con otro identificador: crea el cliente a mano y vuelve a importar.")
-        db.add(m.Tenant(id=tenant_id, client_code=client_code, name=tenant_info.get("name") or tenant_id))
+        legacy_code = tenant_info.get("legacy_client_code") or None
+        # CRM C1a: el código del paquete puede ser el hexadecimal VIEJO de un cliente que aquí ya pasó al número consecutivo (alias en `legacy_client_code`): se revisan las dos columnas
+        clash = db.query(m.Tenant.id, m.Tenant.client_code).filter(or_(m.Tenant.client_code == client_code, m.Tenant.legacy_client_code == client_code)).first()
+        if clash:
+            raise TransferError(f"El código de cliente del paquete ya existe en este sistema con otro identificador («{clash[0]}», código actual {clash[1]}): importa el evento eligiendo ese cliente "
+                                "(«Importar en otro cliente») o crea el cliente a mano y vuelve a importar.")
+        if legacy_code and db.query(m.Tenant.id).filter(or_(m.Tenant.client_code == legacy_code, m.Tenant.legacy_client_code == legacy_code)).first():
+            legacy_code = None                                                      # el alias ya lo usa otro cliente: el nuevo se crea sin alias en lugar de fallar
+        db.add(m.Tenant(id=tenant_id, client_code=client_code, legacy_client_code=legacy_code, name=tenant_info.get("name") or tenant_id))
         db.flush()
         report["warnings"].append("El cliente no existía en el destino: se creó solo con su nombre y código.")
     staff_by_name = {un: sid for sid, un in db.execute(select(m.StaffUser.id, m.StaffUser.username)).all()}

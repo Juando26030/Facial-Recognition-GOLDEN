@@ -10,6 +10,8 @@ from app.database import get_db
 from app import audit_actions
 from app.models import Event, StaffUser, Tenant
 from app.auth import require_role
+from app.crm import crm_enabled
+from app.crm.codes import CodeCounterNotReady, next_code
 from app.timeutil import utcnow
 from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 
@@ -36,6 +38,11 @@ def _slugify(name: str) -> str:
 
 
 def _generate_client_code(db: Session) -> str:
+    if crm_enabled():          # CRM C1a: con el CRM encendido (solo en la nube) el código de cliente es el siguiente número consecutivo; el servidor local sigue con el hexadecimal de siempre
+        try:
+            return str(next_code(db, "account"))
+        except CodeCounterNotReady as exc:
+            raise HTTPException(status_code=409, detail="No se puede crear el cliente: el contador de códigos del CRM no está listo. Pide a un administrador que lo fije antes de crear clientes.") from exc
     code = secrets.token_hex(4).upper()
     while db.query(Tenant).filter(Tenant.client_code == code).first():
         code = secrets.token_hex(4).upper()

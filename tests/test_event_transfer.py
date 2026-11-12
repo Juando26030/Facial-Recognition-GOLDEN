@@ -746,3 +746,71 @@ def test_f5_9_only_super_admin_exports_biometrics_and_jobs_belong_to_who_asked(c
     assert client.get(job["download_url"]).status_code == 403                               # el enlace del super_admin no sirve en otra sesión
     mine = client.post("/api/event-transfer/export/start", json={"event_id": ev.id}).json()
     assert client.get(f"/api/event-transfer/jobs/{mine['id']}").status_code == 200 and client.get(mine["download_url"]).status_code == 200
+
+
+# ------------------------------------------------------------------------------------------------ CRM C1a: código de cliente numérico + alias hexadecimal
+def _rewrite_manifest(data, mutate):
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for info in zin.infolist():
+            raw = zin.read(info.filename)
+            if info.filename == "manifest.json":
+                mf = json.loads(raw)
+                mutate(mf)
+                raw = json.dumps(mf).encode()
+            zout.writestr(info.filename, raw)
+    return out.getvalue()
+
+
+def _to_number(db, ev, number="21500"):
+    t = db.get(m.Tenant, ev.tenant_id)
+    t.legacy_client_code, t.client_code = t.client_code, number
+    db.commit()
+    return t
+
+
+def test_export_carries_both_the_number_and_the_hex_alias_of_the_client(db, factory):
+    ev = _build(db, factory)
+    _to_number(db, ev)
+    _, manifest = et.export_event(db, ev)
+    assert manifest["tenant"]["client_code"] == "21500" and manifest["tenant"]["legacy_client_code"] == "Cacme"
+
+
+def test_import_into_an_environment_where_the_client_does_not_exist_creates_it_with_number_and_alias(db, factory):
+    ev = _build(db, factory)
+    _to_number(db, ev)
+    data, _ = et.export_event(db, ev)
+    _wipe_event_data(db)
+    db.query(m.Tenant).delete()
+    db.commit()
+    rep = et.import_package(db, data, new_event_code="NUEVO-1", new_name="Evento nuevo", dry_run=False)
+    assert rep["ok"]
+    t = db.query(m.Tenant).one()
+    assert (t.id, t.client_code, t.legacy_client_code) == ("acme", "21500", "Cacme")
+
+
+def test_an_old_package_with_only_the_hex_code_imports_into_the_client_that_already_has_a_number(db, factory):
+    ev = _build(db, factory)
+    data, _ = et.export_event(db, ev)
+    old = _rewrite_manifest(data, lambda mf: mf["tenant"].pop("legacy_client_code", None))          # paquete exportado antes del cambio
+    _to_number(db, ev)                                                                           # el cliente ya pasó al número
+    rep = et.import_package(db, old, new_event_code="VIEJO-1", new_name="Paquete viejo", dry_run=False)
+    assert rep["ok"] and rep["tenant"] == "acme"
+    t = db.query(m.Tenant).one()                                                                 # no se duplicó ni se le tocó el código
+    assert (t.client_code, t.legacy_client_code) == ("21500", "Cacme")
+
+
+def test_an_old_package_whose_hex_code_is_the_alias_of_another_client_is_rejected_with_a_clear_message_and_works_choosing_that_client(db, factory):
+    ev = _build(db, factory)
+    data, _ = et.export_event(db, ev)
+    old = _rewrite_manifest(data, lambda mf: mf["tenant"].pop("legacy_client_code", None))
+    _wipe_event_data(db)
+    db.query(m.Tenant).delete()
+    db.add(m.Tenant(id="nuevo", client_code="21500", legacy_client_code="Cacme", name="NUEVO"))        # aquí el cliente se creó con otro identificador
+    db.commit()
+    with pytest.raises(et.TransferError, match="otro identificador") as exc:
+        et.import_package(db, old, new_event_code="VIEJO-2", new_name="Sin cliente", dry_run=False)
+    assert "nuevo" in str(exc.value) and "Importar en otro cliente" in str(exc.value)
+    rep = et.import_package(db, old, new_event_code="VIEJO-3", new_name="Con el cliente elegido", target_tenant_id="nuevo", dry_run=False)
+    assert rep["ok"] and db.query(m.Tenant).count() == 1 and db.query(m.Event).filter_by(event_code="VIEJO-3").one().tenant_id == "nuevo"
