@@ -596,6 +596,32 @@ def crm_importar_page(request: Request):
     return _crm_page(request, "crm_importar.html")
 
 
+@app.get("/crm/cotizaciones")
+def crm_cotizaciones_page(request: Request):
+    return _crm_page(request, "crm_cotizaciones.html")
+
+
+@app.get("/crm/cotizaciones/{quote_id}")
+def crm_cotizacion_page(request: Request, quote_id: int):
+    return _crm_page(request, "crm_cotizacion.html", quote_id=quote_id)
+
+
+@app.get("/crm/buscar")
+def crm_buscar_page(request: Request):
+    return _crm_page(request, "crm_buscar.html")
+
+
+@app.get("/crm/productos")
+def crm_productos_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_productos.html")
+
+
 @app.get("/clientes")
 def clientes_page(request: Request):
     redirect = _require_page_role(request, "coordinador")

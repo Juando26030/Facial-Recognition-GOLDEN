@@ -1,0 +1,22 @@
+/* CRM C3: cotizaciones, productos y búsqueda. SOLO tokens --gw-* (nada de colores ni tamaños sueltos); los componentes compartidos viven en design-system.css. */
+.crm-search__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-2); }
+.crm-search__list li { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2) var(--gw-sp-3); align-items: baseline; }
+.crm-search__link { min-height: var(--gw-tap); display: inline-flex; align-items: center; font-weight: var(--gw-fw-bold); color: var(--gw-link); overflow-wrap: anywhere; }
+.crm-lines { width: 100%; }
+.crm-lines .gw-input { width: 100%; min-width: 0; }
+.crm-lines td[data-label="Cant."] .gw-input, .crm-lines td[data-label="Desc. %"] .gw-input, .crm-lines td[data-label="Imp. %"] .gw-input { max-width: 6rem; }
+.crm-lines td[data-label="Total"] { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crm-totals { display: grid; grid-template-columns: 1fr auto; gap: var(--gw-sp-1) var(--gw-sp-4); max-width: 22rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+.crm-totals dt { color: var(--gw-text-muted); }
+.crm-totals dd { margin: 0; text-align: right; }
+.crm-totals .is-total { font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-lg); color: var(--gw-text); }
+.crm-quote-grid { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.crm-quote-grid .is-wide { grid-column: 1 / -1; }
+.crm-versions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); list-style: none; margin: 0; padding: 0; }
+.crm-textarea { min-height: 7rem; resize: vertical; }
+.crm-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); }
+.crm-card-actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.crm-savebar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); }
+.crm-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-2); overflow-wrap: anywhere; }
+.crm-catalog-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-3); }
+.crm-catalog-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding-bottom: var(--gw-sp-3); border-bottom: 1px solid var(--gw-border); }

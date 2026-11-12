@@ -148,3 +148,44 @@ def test_tools_guarantees_in_the_source():
     assert "admin_staff" in router.split("def export(")[1].split("\n")[0] and 'f"{n} filas"' in router
     assert tools.count(".limit(") >= 5 and "SEARCH_MIN" in tools and "utf-8" in tools and "\\ufeff" in tools
     assert "setInterval" not in _read("static/js/crm_buscar.js") if pathlib.Path("static/js/crm_buscar.js").exists() else True
+
+
+# ------------------------------------------------------------------ pantallas (C3-4)
+C3_PAGES = {"crm_buscar": ("templates/crm_buscar.html", "static/js/crm_buscar.js"), "crm_cotizaciones": ("templates/crm_cotizaciones.html", "static/js/crm_cotizaciones.js"),
+            "crm_cotizacion": ("templates/crm_cotizacion.html", "static/js/crm_cotizacion.js"), "crm_productos": ("templates/crm_productos.html", "static/js/crm_productos.js")}
+
+
+@pytest.mark.parametrize("name", sorted(C3_PAGES))
+def test_c3_pages_follow_the_frontend_rules(name):
+    tpl, js = (_read(p) for p in C3_PAGES[name])
+    for code in (tpl, js):
+        assert not re.search(r"\bon(click|change|input|submit)\s*=", code), "nada de eventos inline"
+    assert not re.search(r"setInterval|setTimeout|EventSource|WebSocket", js), "sin temporizadores ni sondeos"
+    assert "innerHTML" not in js and "insertAdjacentHTML" not in js
+    assert not re.search(r"(?<![.\w])(alert|confirm|prompt)\(", js), "usar showToast/showConfirm/showPrompt"
+    assert "style=" not in tpl and not re.search(r"#[0-9a-fA-F]{3,6}\b", tpl), "solo tokens y clases del sistema de diseño"
+    icons = _read("static/img/icons.svg") if pathlib.Path("static/img/icons.svg").exists() else ""
+    for ic in re.findall(r"ic\('([a-z-]+)'", tpl):
+        assert f'id="i-{ic}"' in icons, f"icono desconocido: {ic}"
+
+
+def test_c3_css_uses_only_tokens():
+    css = _read("static/css/p-crm-c3.css")
+    assert not re.search(r"#[0-9a-fA-F]{3,6}\b|\brgba?\(|\b(?:[02-9]|\d{2,})px\b", css.split("*/", 1)[1]), "ni colores ni píxeles sueltos"
+
+
+def test_c3_page_routes_exist_and_the_catalog_page_is_admin_only():
+    main = _read("app/main.py")
+    for route in ('"/crm/cotizaciones"', '"/crm/cotizaciones/{quote_id}"', '"/crm/buscar"', '"/crm/productos"'):
+        assert f"@app.get({route})" in main
+    block = main.split('@app.get("/crm/productos")', 1)[1].split("@app.get", 1)[0]
+    assert '_require_page_role(request, "admin")' in block
+    init = _read("app/crm/__init__.py")
+    assert '"cotizaciones"' in init.split("SECTIONS_BUILT", 1)[1] and '"buscar"' in init.split("SECTIONS_BUILT", 1)[1]
+
+
+def test_quote_editor_never_trusts_screen_totals_and_warns_about_unsaved_changes():
+    js = _read("static/js/crm_cotizacion.js")
+    body = js.split("function body()", 1)[1].split("async function save", 1)[0]
+    assert "subtotal" not in body and "total" not in body.replace("lines", ""), "los totales no se envían: el servidor los calcula"
+    assert "beforeunload" in js and "updated_at" in body

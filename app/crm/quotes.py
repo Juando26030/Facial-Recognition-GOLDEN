@@ -145,6 +145,10 @@ def update_template(db: Session, template_id: int, data: dict) -> CrmDocTemplate
         db.query(CrmDocTemplate).filter(CrmDocTemplate.kind == t.kind, CrmDocTemplate.is_default.is_(True)).update({"is_default": False})
         db.flush()
         t.is_default = True
+    if "archived" in data:
+        t.archived_at = utcnow() if data["archived"] else None
+        if t.archived_at is not None:
+            t.is_default = False
     db.flush()
     return t
 

@@ -1,0 +1,47 @@
+{# CRM - Cotizaciones (C3): lista, nueva cotización y filtros guardados. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_cotizaciones.js; API: /api/crm/quotes. #}
+{% from "_crm_macros.html" import ic, ayuda %}
+{% set page_title = "CRM - Cotizaciones" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/crm_cotizaciones.js"] %}{% set crm_section = 'cotizaciones' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="quotesRoot" data-can-admin="{{ '1' if can_admin else '0' }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Cotizaciones</h1>
+        <p class="gw-page-head__sub">Propuestas económicas para tus clientes, con su PDF y sus versiones.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        {% if can_admin %}<a class="gw-btn gw-btn--secondary" href="/crm/productos">Productos y plantillas</a><button type="button" class="gw-btn gw-btn--secondary" id="quoteExport">{{ ic('download', 'gw-icon--sm') }} Exportar CSV</button>{% endif %}
+        <button type="button" class="gw-btn gw-btn--primary" id="quoteNew">{{ ic('plus', 'gw-icon--sm') }} Nueva cotización</button>
+      </div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Crea la cotización</span>
+        {% call ayuda('ay_q1', 'Crea la cotización') %}Elige la cuenta y ponle un título. El número se asigna solo.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Agrega las líneas</span>
+        {% call ayuda('ay_q2', 'Agrega las líneas') %}Dentro de la cotización agregas productos o servicios con cantidad, precio y descuento. Los totales los calcula el sistema.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Descarga el PDF y envíala</span>
+        {% call ayuda('ay_q3', 'Descarga el PDF y envíala') %}El PDF se genera al pedirlo. Si cambias algo, se vuelve a generar. Para cambios después de enviarla, crea una versión nueva.{% endcall %}</li>
+    </ol>
+
+    <form class="crm-filters" id="quoteFilters" role="search">
+      <div class="gw-field crm-filters__wide"><label class="gw-label" for="quoteQ">Buscar</label><input type="search" class="gw-input" id="quoteQ" maxlength="100" placeholder="Número, título o cuenta" autocomplete="off"></div>
+      <div class="gw-field"><label class="gw-label" for="quoteStage">Etapa</label><select class="gw-select" id="quoteStage"><option value="">Todas</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="quoteSaved">Filtros guardados</label><select class="gw-select" id="quoteSaved"><option value="">Elegir…</option></select></div>
+      {% if can_admin %}<label class="gw-check"><input type="checkbox" id="quoteArchived"> Ver archivadas</label>{% endif %}
+      <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">{{ ic('search', 'gw-icon--sm') }} Buscar</button><button type="button" class="gw-btn gw-btn--secondary" id="quoteClear">Quitar filtros</button><button type="button" class="gw-btn gw-btn--secondary" id="quoteSaveFilter">Guardar este filtro</button></div>
+    </form>
+
+    <section aria-labelledby="quoteListTitle">
+      <h2 class="gw-sr-only" id="quoteListTitle">Lista de cotizaciones</h2>
+      <div id="quoteResults" aria-live="polite" aria-busy="true">
+        <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-table">
+          <thead><tr><th scope="col">Número</th><th scope="col">Cotización</th><th scope="col">Etapa</th><th scope="col">Total</th><th scope="col">Válida hasta</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
+          <tbody id="quoteBody"></tbody>
+        </table></div>
+        <div id="quotePager"></div>
+      </div>
+      <div id="quoteState" hidden></div>
+    </section>
+  </div>
+{% include "_crm_shell_bottom.html" %}

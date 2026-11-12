@@ -1,0 +1,41 @@
+{# CRM - Productos, condiciones y plantillas (C3, solo admin). Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_productos.js; API: /api/crm/products, /terms, /doc-templates. #}
+{% from "_crm_macros.html" import ic, ayuda %}
+{% set page_title = "CRM - Productos y plantillas" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/crm_productos.js"] %}{% set crm_section = 'cotizaciones' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="catalogRoot">
+    <a class="crm-back" href="/crm/cotizaciones">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a las cotizaciones</a>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM · Administración</p>
+        <h1 class="gw-page-head__title">Productos y plantillas</h1>
+        <p class="gw-page-head__sub">El catálogo que usan las cotizaciones, los textos de condiciones y las plantillas del PDF.</p>
+      </div>
+    </div>
+
+    <section class="gw-card gw-stack" aria-labelledby="prodTitle">
+      <div class="crm-card-head"><h2 class="gw-card__title" id="prodTitle">Productos y servicios</h2>
+        <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" id="prodNew">{{ ic('plus', 'gw-icon--sm') }} Nuevo producto</button></div></div>
+      <form class="crm-filters" id="prodFilters" role="search">
+        <div class="gw-field crm-filters__wide"><label class="gw-label" for="prodQ">Buscar</label><input type="search" class="gw-input" id="prodQ" maxlength="100" placeholder="Nombre o código (SKU)" autocomplete="off"></div>
+        <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">{{ ic('search', 'gw-icon--sm') }} Buscar</button></div>
+      </form>
+      <div id="prodResults" aria-live="polite"><div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-table">
+        <thead><tr><th scope="col">Producto</th><th scope="col">Código</th><th scope="col">Precio</th><th scope="col">Impuesto</th><th scope="col">Estado</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
+        <tbody id="prodBody"></tbody></table></div><div id="prodPager"></div></div>
+      <div id="prodState" hidden></div>
+    </section>
+
+    <section class="gw-card gw-stack" aria-labelledby="termTitle">
+      <div class="crm-card-head"><h2 class="gw-card__title" id="termTitle">Condiciones</h2>
+        <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" id="termNew">{{ ic('plus', 'gw-icon--sm') }} Nueva condición</button></div></div>
+      <ul class="crm-catalog-list" id="termList"></ul>
+    </section>
+
+    <section class="gw-card gw-stack" aria-labelledby="tplTitle">
+      <div class="crm-card-head"><h2 class="gw-card__title" id="tplTitle">Plantillas del PDF</h2>
+        <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" id="tplNew">{{ ic('plus', 'gw-icon--sm') }} Nueva plantilla</button></div></div>
+      <p class="gw-hint">Texto de encabezado, saludo y pie del PDF. Sin logo en esta versión.</p>
+      <ul class="crm-catalog-list" id="tplList"></ul>
+    </section>
+  </div>
+{% include "_crm_shell_bottom.html" %}
