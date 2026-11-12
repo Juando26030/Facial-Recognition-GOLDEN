@@ -66,7 +66,8 @@ def create_activity(db: Session, staff: StaffUser, data: dict) -> CrmActivity:
     check_attached(fields.get("account_id"), fields.get("contact_id"), fields.get("lead_id"), fields.get("opportunity_id"))
     _resolve_links(db, fields)
     _check_owner(db, fields.get("owner_staff_id"))
-    fields.setdefault("owner_staff_id", staff.id)
+    if fields.get("owner_staff_id") is None:                      # el formulario manda null cuando se deja «Yo»: se guarda quien crea
+        fields["owner_staff_id"] = staff.id
     a = CrmActivity(created_by_id=staff.id, status="done" if fields["kind"] == "note" else "planned", **fields)
     if a.status == "done":
         a.done_at = utcnow()          # una nota ya ocurrió: no queda pendiente

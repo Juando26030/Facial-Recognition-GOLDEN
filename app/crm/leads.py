@@ -38,7 +38,8 @@ def create_lead(db: Session, staff: StaffUser, data: dict, *, confirm_duplicate:
     if not lead_has_identity(fields.get("first_name"), fields.get("last_name"), fields.get("company_name"), fields.get("email")):
         raise CrmError("El lead necesita al menos un nombre, una empresa o un correo.")
     _check_owner(db, fields.get("owner_staff_id"))
-    fields.setdefault("owner_staff_id", staff.id)
+    if fields.get("owner_staff_id") is None:                      # el formulario manda null cuando se deja «Yo»: se guarda quien crea
+        fields["owner_staff_id"] = staff.id
     fields.setdefault("status", "nuevo")
     lead = CrmLead(created_by_id=staff.id, **fields)
     _norms(lead)

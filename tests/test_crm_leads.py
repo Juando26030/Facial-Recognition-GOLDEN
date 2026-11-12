@@ -88,3 +88,22 @@ def test_erasing_a_contact_removes_leads_with_the_same_email_and_only_flags_the_
     assert counts["leads"] == 1
     assert client.get(f"/api/crm/leads/{same['id']}").status_code == 404
     assert client.get(f"/api/crm/leads/{homonym['id']}").status_code == 200          # el homónimo no se borra solo; queda para revisión
+
+
+def test_a_lead_created_with_owner_null_belongs_to_whoever_created_it_but_editing_can_clear_it(client, factory, crm_on):
+    """El formulario muestra «Yo» y manda owner_staff_id=null: debe guardarse el usuario actual."""
+    staff = staff_client(client, factory)
+    made = client.post("/api/crm/leads", json={"first_name": "Lead", "last_name": "Ficticio", "owner_staff_id": None})
+    assert made.status_code == 200, made.text
+    assert made.json()["owner_staff_id"] == staff.id
+    cleared = client.put(f"/api/crm/leads/{made.json()['id']}", json={"owner_staff_id": None, "updated_at": made.json()["updated_at"]})
+    assert cleared.status_code == 200 and cleared.json()["owner_staff_id"] is None          # al EDITAR, «Sin responsable» sigue siendo posible
+
+
+def test_opportunities_and_activities_created_with_owner_null_also_default_to_the_creator(client, factory, crm_on):
+    from tests.crm_helpers import new_account
+    staff = staff_client(client, factory, "comercial", "com_owner")
+    acc = new_account(client)
+    opp = client.post("/api/crm/opportunities", json={"account_id": acc["id"], "name": "Evento ficticio", "owner_staff_id": None}).json()
+    act = client.post("/api/crm/activities", json={"kind": "task", "subject": "Llamar", "account_id": acc["id"], "owner_staff_id": None}).json()
+    assert opp["owner_staff_id"] == staff.id and act["owner_staff_id"] == staff.id

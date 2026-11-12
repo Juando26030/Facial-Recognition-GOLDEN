@@ -120,12 +120,15 @@ def render_proforma(p: dict, q: Optional[dict] = None, tpl: Optional[dict] = Non
     return doc.render()
 
 
+LAYOUT = 2          # súbelo cuando cambie el diseño o los rótulos del PDF: los guardados con otro número se regeneran solos (v2: «Subtotal con descuento»)
+
+
 def quote_key(q) -> str:
-    return f"crm/quotes/{q.id}/cotizacion-{q.number}-v{q.version}.pdf"
+    return f"crm/quotes/{q.id}/cotizacion-{q.number}-v{q.version}-d{LAYOUT}.pdf"
 
 
 def proforma_key(p) -> str:
-    return f"crm/proformas/{p.id}/proforma-{p.number}.pdf"
+    return f"crm/proformas/{p.id}/proforma-{p.number}-d{LAYOUT}.pdf"
 
 
 def stamp() -> object:

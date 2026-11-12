@@ -67,7 +67,8 @@ def create_opportunity(db: Session, staff: StaffUser, data: dict) -> CrmOpportun
         raise CrmError("Una oportunidad nueva empieza en una etapa abierta.")
     _check_owner(db, fields.get("owner_staff_id"))
     _check_contact(db, account.id, fields.get("primary_contact_id"))
-    fields.setdefault("owner_staff_id", staff.id)
+    if fields.get("owner_staff_id") is None:                      # el formulario manda null cuando se deja «Yo»: se guarda quien crea
+        fields["owner_staff_id"] = staff.id
     o = CrmOpportunity(code=next_code(db, "event"), account_id=account.id, pipeline_id=pipeline_id, stage_id=stage_id, created_by_id=staff.id, stage_entered_at=utcnow(), **fields)
     db.add(o)
     db.flush()

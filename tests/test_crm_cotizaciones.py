@@ -180,3 +180,20 @@ def test_free_text_search_ignores_accents_and_case_in_titles_and_names(client, f
     assert [q["title"] for q in client.get("/api/crm/quotes?q=CAMARA").json()["items"]] == ["Feria Cámara 2027"]          # lista de cotizaciones
     assert [o["name"] for o in client.get("/api/crm/search?q=nandu").json()["opportunities"]] == ["Congreso Ñandú Único"]          # buscador global
     assert [o["name"] for o in client.get("/api/crm/opportunities?q=UNICO").json()["items"]] == ["Congreso Ñandú Único"]          # lista de oportunidades
+
+
+def test_a_pdf_stored_with_an_older_layout_is_regenerated_on_download(client, factory, crm_on, db):
+    from app.crm import quote_pdf
+    from app.models import CrmQuote
+    from app.storage import get_storage
+    staff_client(client, factory)
+    q = _quote(client, new_account(client)["id"])
+    old_key = f"crm/quotes/{q['id']}/cotizacion-{q['number']}-v1.pdf"          # llave del diseño anterior
+    get_storage().put(old_key, b"%PDF-viejo")
+    row = db.get(CrmQuote, q["id"])
+    row.pdf_key = old_key
+    db.commit()
+    r = client.get(f"/api/crm/quotes/{q['id']}/pdf")
+    assert r.status_code == 200 and b"viejo" not in r.content and b"Subtotal con descuento" in r.content
+    db.expire_all()
+    assert db.get(CrmQuote, q["id"]).pdf_key == quote_pdf.quote_key(row)

@@ -213,3 +213,16 @@ def test_sqlfold_table_is_aligned_and_matches_normalize():
     for word in ("Cámara", "ÑANDÚ", "Pingüino", "Ceñidor", "Français ç", "Ópera"):
         folded = "".join(sqlfold._TO[sqlfold._FROM.index(c)] if c in sqlfold._FROM else c for c in word).lower()
         assert folded == normalize(word)
+
+
+def test_real_quote_pdf_prints_the_new_subtotal_label_and_cached_pdfs_are_versioned():
+    """Genera el PDF de verdad y lee sus bytes (no solo el código). Los PDF guardados con otro diseño se regeneran: la llave lleva `-d<LAYOUT>`."""
+    import types
+    q = {"number": 7001, "version": 1, "title": "Prueba", "currency": "COP", "account_name": "Empresa Ficticia", "subtotal": "180", "tax_total": "34.2", "total": "214.2",
+         "lines": [{"position": 1, "name": "Servicio", "qty": "2", "unit_price": "100", "discount_percent": "10", "line_total": "180"}]}
+    pdf = quote_pdf.render_quote(q)
+    assert pdf.startswith(b"%PDF") and b"Subtotal con descuento" in pdf and b"(Subtotal)" not in pdf
+    obj = types.SimpleNamespace(id=5, number=7001, version=1)
+    assert quote_pdf.quote_key(obj).endswith(f"-d{quote_pdf.LAYOUT}.pdf") and quote_pdf.proforma_key(obj).endswith(f"-d{quote_pdf.LAYOUT}.pdf")
+    router = (pathlib.Path(__file__).resolve().parent.parent / "app/routers/crm_quotes.py").read_text(encoding="utf-8")
+    assert "key != quote_pdf.quote_key(q)" in router and "p.pdf_key != quote_pdf.proforma_key(p)" in router

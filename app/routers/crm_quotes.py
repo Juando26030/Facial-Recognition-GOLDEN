@@ -137,19 +137,30 @@ def quote_history(quote_id: int, db: Session = Depends(get_db), staff: StaffUser
     return [{"field": r.field_key, "old": r.old_value, "new": r.new_value, "source": r.source, "at": r.changed_at.isoformat()} for r in rows]
 
 
+def _drop_old(st, old, new) -> None:
+    """Borra el PDF guardado con el diseño anterior (si no se puede, no pasa nada: ya no se usa)."""
+    if old and old != new:
+        try:
+            st.delete(old)
+        except Exception:
+            pass
+
+
 @router.get("/quotes/{quote_id}/pdf")
 def quote_pdf_download(quote_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     """Sirve el PDF guardado o lo genera ahora. Una consulta por la cotización, sin trabajo en segundo plano (un PDF pequeño se arma en milisegundos)."""
     q = svc.get_quote(db, quote_id)
     key = q.pdf_key
     st = get_storage()
-    if not key or not st.exists(key):
+    if not key or key != quote_pdf.quote_key(q) or not st.exists(key):          # otro diseño de PDF (LAYOUT) = se regenera
+        old = key
         detail = svc.quote_detail(db, q)
         tpl = next((t for t in svc.list_templates(db, "quote") if t["id"] == q.template_id), None) or next(iter(svc.list_templates(db, "quote")), None)
         key = quote_pdf.quote_key(q)
         st.put(key, quote_pdf.render_quote(detail, tpl))
         q.pdf_key, q.pdf_generated_at = key, utcnow()
         db.commit()
+        _drop_old(st, old, key)
     return st.response(key, filename=f"cotizacion-{q.number}-v{q.version}.pdf", media_type="application/pdf")
 
 
@@ -185,11 +196,13 @@ def proforma_pdf_download(proforma_id: int, db: Session = Depends(get_db), staff
     if p is None:
         raise HTTPException(status_code=404, detail="Proforma no encontrada.")
     st = get_storage()
-    if not p.pdf_key or not st.exists(p.pdf_key):
+    if not p.pdf_key or p.pdf_key != quote_pdf.proforma_key(p) or not st.exists(p.pdf_key):
+        old = p.pdf_key
         acc = db.get(CrmAccount, p.account_id)
         quote = svc.quote_detail(db, svc.get_quote(db, p.quote_id)) if p.quote_id else None
         tpl = next(iter(svc.list_templates(db, "proforma")), None)
         p.pdf_key = quote_pdf.proforma_key(p)
         st.put(p.pdf_key, quote_pdf.render_proforma(svc.serialize_proforma(p, acc.name if acc else None), quote, tpl))
         db.commit()
+        _drop_old(st, old, p.pdf_key)
     return st.response(p.pdf_key, filename=f"proforma-{p.number}.pdf", media_type="application/pdf")
