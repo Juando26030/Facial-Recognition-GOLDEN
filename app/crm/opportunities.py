@@ -1,7 +1,7 @@
 """Oportunidades del CRM y su tablero Kanban (C2). Sin commit propio: quien llama (el router) confirma o revierte.
 
 * Una oportunidad = un posible evento de una cuenta. Su `code` sale del contador `event` AL CREARLA (docs/crm/ETAPA_C1C_C4_DISENO.md §4); si se gana, el evento usará ese mismo número (pieza C4).
-* Mover de etapa es UNA actualización corta (`move_stage`); ganar o perder la cierra. NO crea el evento ni el cliente: el punto de extensión es `on_won` (lo llena C4).
+* Mover de etapa es UNA actualización corta (`move_stage`); ganar o perder la cierra. Al ganarla `on_won` crea el cliente y el evento (C4, app/crm/won.py).
 * El tablero cuesta DOS consultas por carga, sin importar cuántas oportunidades haya: una de totales por etapa y moneda (suma y suma ponderada, agrupadas por moneda: COP y USD nunca se suman) y una de
   tarjetas con `row_number()` por etapa (50 por columna; «ver más» pide otra página de UNA columna). Nombres de cuenta y responsable salen en la misma consulta con JOIN: no hay N+1.
 """
@@ -34,8 +34,10 @@ def get_opportunity(db: Session, opportunity_id: int) -> CrmOpportunity:
 
 
 def on_won(db: Session, opportunity: CrmOpportunity, staff: StaffUser) -> None:
-    """Punto de extensión (C4): cuando una oportunidad pasa a una etapa ganada, aquí se crea el cliente y el evento. Hoy no hace nada a propósito."""
-    return None
+    """Al pasar a una etapa ganada: crea el cliente (si falta) y el evento con el mismo número (app/crm/won.py). Todo en la misma transacción del movimiento."""
+    from app.crm import won
+    if opportunity.event_id is None:
+        won.create_event_for(db, staff, opportunity)
 
 
 def _check_contact(db: Session, account_id: int, contact_id: Optional[int]) -> None:

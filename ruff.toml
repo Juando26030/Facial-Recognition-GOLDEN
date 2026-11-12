@@ -13,6 +13,7 @@ ignore = ["F401"]        # los routers reexportan/importan por efecto lateral en
 "tests/test_crm_cuentas_api.py" = ["F811"]                 # el fixture crm_on se importa de tests/crm_helpers.py
 "tests/test_crm_contactos.py" = ["F811"]
 "tests/test_crm_permisos.py" = ["F811"]
+"tests/test_crm_ganada.py" = ["F811"]
 "tests/test_crm_supresion.py" = ["F811"]
 "tests/test_crm_pantallas.py" = ["F811"]
 "tests/test_crm_limites.py" = ["F811"]

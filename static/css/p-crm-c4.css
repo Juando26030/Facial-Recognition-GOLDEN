@@ -1,0 +1,20 @@
+/* CRM C4: Mi día y tableros. SOLO tokens --gw-* (nada de colores ni tamaños sueltos). */
+.crm-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); }
+.crm-day-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-3); }
+.crm-day-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding-bottom: var(--gw-sp-3); border-bottom: 1px solid var(--gw-border); }
+.crm-day-amount { font-variant-numeric: tabular-nums; font-weight: var(--gw-fw-bold); }
+.crm-sub-link { color: var(--gw-link); overflow-wrap: anywhere; }
+.crm-filters--boards { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; }
+.crm-stats { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.crm-stat { background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-4); }
+.crm-stat__label { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.crm-stat__value { margin: var(--gw-sp-1) 0 0; font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.crm-stat__sub { margin: var(--gw-sp-1) 0 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); overflow-wrap: anywhere; }
+.crm-bar { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr auto; gap: var(--gw-sp-1) var(--gw-sp-3); align-items: center; }
+.crm-bar__label { overflow-wrap: anywhere; }
+.crm-bar__track { display: block; height: var(--gw-sp-3); background: var(--gw-surface-2); border-radius: var(--gw-radius-md); overflow: hidden; }
+.crm-bar__fill { display: block; height: 100%; width: calc(var(--w, 0) * 1%); background: var(--gw-navy); border-radius: var(--gw-radius-md); }
+:root[data-theme="dark"] .crm-bar__fill { background: var(--gw-gold-2); }
+.crm-bar__value { font-variant-numeric: tabular-nums; font-weight: var(--gw-fw-bold); text-align: right; }
+.crm-bar__text { grid-column: 2 / -1; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .crm-filters--boards { grid-template-columns: minmax(0, 1fr); } .crm-bar { grid-template-columns: 1fr auto; } .crm-bar__track { grid-column: 1 / -1; } .crm-bar__text { grid-column: 1 / -1; } }

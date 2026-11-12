@@ -208,10 +208,10 @@ def test_free_text_of_leads_and_opportunities_stays_out_of_the_history():
     assert "next_step" in R.OPPORTUNITY_LIMITS and "description" in R.OPPORTUNITY_LIMITS
 
 
-def test_move_is_one_short_update_and_leaves_the_event_to_c4():
+def test_move_is_one_short_update_and_delegates_the_event_to_won_module():
     src = _read("app/crm/opportunities.py")
     move = src.split("def move_stage")[1].split("\n# ------")[0]
-    assert "def on_won" in src and "return None" in src.split("def on_won")[1].split("def ")[0]
+    assert "def on_won" in src and "won.create_event_for" in src.split("def on_won")[1].split("def ")[0]          # C4: el evento lo crea app/crm/won.py en la misma transacción
     assert "Evento(" not in move and "create_event" not in move and "make_client" not in move and "Tenant(" not in move
 
 

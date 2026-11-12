@@ -36,7 +36,7 @@ def normalize(text: Optional[str]) -> str:
 SECTIONS = (("cuentas", "Cuentas", "/crm", False), ("oportunidades", "Oportunidades", "/crm/oportunidades", False), ("leads", "Leads", "/crm/leads", False),
             ("cotizaciones", "Cotizaciones", "/crm/cotizaciones", False), ("midia", "Mi día", "/crm/mi-dia", False), ("tableros", "Tableros", "/crm/tableros", False),
             ("buscar", "Buscar", "/crm/buscar", False), ("embudos", "Embudos", "/crm/embudos", True), ("importar", "Importar", "/crm/importar", True))
-SECTIONS_BUILT = {"cuentas", "oportunidades", "leads", "embudos", "importar", "cotizaciones", "buscar"}
+SECTIONS_BUILT = {"cuentas", "oportunidades", "leads", "embudos", "importar", "cotizaciones", "buscar", "midia", "tableros"}
 
 
 def sections(is_admin: bool, built=None) -> list:

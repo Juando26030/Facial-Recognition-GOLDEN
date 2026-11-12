@@ -1,0 +1,19 @@
+{# CRM - Mi día (C4): lo que tengo que hacer hoy, lo vencido y lo que se puede perder. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_midia.js; API: /api/crm/today. #}
+{% from "_crm_macros.html" import ic, ayuda %}
+{% set page_title = "CRM - Mi día" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c4.css"] %}{% set page_js = ["js/crm_midia.js"] %}{% set crm_section = 'midia' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="dayRoot">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Mi día</h1>
+        <p class="gw-page-head__sub" id="daySub">Tus pendientes de hoy, lo que se venció y lo que está por perderse.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary" id="dayReload">{{ ic('undo', 'gw-icon--sm') }} Actualizar</button>
+      </div>
+    </div>
+    <div id="dayState" hidden></div>
+    <div id="dayMain" class="gw-stack-lg" aria-live="polite" aria-busy="true"></div>
+  </div>
+{% include "_crm_shell_bottom.html" %}

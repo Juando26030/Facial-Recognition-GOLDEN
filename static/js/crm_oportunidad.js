@@ -36,10 +36,15 @@
     const b = e.target.closest("button[data-stage]"); if (!b || b.disabled) return;
     const s = stages().find((x) => x.id === Number(b.dataset.stage)), payload = { stage_id: s.id, updated_at: opp.updated_at };
     if (s.kind === "lost") { const reason = await showPrompt("Motivo por el que se perdió (opcional)", { title: "Marcar como perdida", confirmLabel: "Marcar perdida" }); if (reason === null) return; payload.lost_reason = reason.trim(); }
-    else if (s.kind === "won" && !await showConfirm("", { variant: "warning", title: "Marcar como ganada", text: "La oportunidad se cierra como ganada. Más adelante, ganar una oportunidad creará su evento; por ahora solo se cierra.", confirmLabel: "Marcar ganada" })) return;
+    else if (s.kind === "won" && !await showConfirm("", { variant: "warning", title: "Marcar como ganada", text: "La oportunidad se cierra como ganada y se crea el evento con el número " + opp.code + (opp.account_is_client ? "." : ", junto con el cliente de la plataforma (la cuenta aún no lo es)."), confirmLabel: "Ganar y crear evento" })) return;
     await busy(b, async () => {
       try { opp = await api("POST", "/api/crm/opportunities/" + id + "/move", payload); fill(); showToast("Movida a «" + s.name + "».", "success"); } catch (err) { handleError(err); }
     });
+  });
+
+  $("opBadges").addEventListener("click", async (e) => {
+    const b = e.target.closest("#opMakeEvent"); if (!b) return;
+    await busy(b, async () => { try { opp = await api("POST", "/api/crm/opportunities/" + id + "/win"); fill(); showToast("Evento " + opp.event.event_code + " creado.", "success"); } catch (err) { handleError(err); } });
   });
 
   /* ---------------------------------------------------------------- datos */
@@ -51,6 +56,8 @@
     const badges = $("opBadges"); badges.replaceChildren();
     badges.appendChild(el("span", "gw-badge gw-badge--info", opp.stage_name));
     if (opp.outcome === "won") badges.appendChild(el("span", "gw-badge gw-badge--ok", "Ganada")); if (opp.outcome === "lost") badges.appendChild(el("span", "gw-badge gw-badge--warn", "Perdida")); if (opp.archived) badges.appendChild(el("span", "gw-badge", "Archivada"));
+    if (opp.event_id) { const ev = el("a", "gw-badge gw-badge--ok", "Evento " + opp.code); ev.href = "/eventos"; badges.appendChild(ev); }
+    if (opp.outcome === "won" && !opp.event_id && !opp.archived) { const mk = el("button", "gw-btn gw-btn--primary gw-btn--sm", "Crear el evento"); mk.type = "button"; mk.id = "opMakeEvent"; badges.appendChild(mk); }
     if (opp.no_next_activity) badges.appendChild(el("span", "gw-badge gw-badge--warn", "Sin próxima actividad"));
     const link = el("a", "gw-badge", "Cuenta " + (opp.account_name || "")); link.href = "/crm/cuentas/" + opp.account_id; badges.appendChild(link);
     const lbl = $("opArchiveLabel"); if (lbl) lbl.textContent = opp.archived ? "Restaurar oportunidad" : "Archivar oportunidad";

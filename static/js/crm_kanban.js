@@ -107,7 +107,7 @@
       const reason = await showPrompt("Motivo por el que se perdió «" + window.escapeHtml(name) + "» (opcional)", { title: "Marcar como perdida", confirmLabel: "Marcar perdida" });
       if (reason === null) return; payload.lost_reason = reason.trim();
     } else if (col.kind === "won") {
-      if (!await showConfirm("", { variant: "warning", title: "Marcar como ganada", text: "«" + name + "» se cierra como ganada. Más adelante, ganar una oportunidad creará su evento; por ahora solo se cierra.", confirmLabel: "Marcar ganada" })) return;
+      if (!await showConfirm("", { variant: "warning", title: "Marcar como ganada", text: "«" + name + "» se cierra como ganada y se crea su evento (con el cliente de la plataforma si la cuenta aún no lo es).", confirmLabel: "Ganar y crear evento" })) return;
     }
     try { await api("POST", "/api/crm/opportunities/" + cardEl.dataset.id + "/move", payload); showToast("Movida a «" + col.name + "».", "success"); }
     catch (e) { showToast(e.message, "error"); }

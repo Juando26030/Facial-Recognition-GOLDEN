@@ -175,26 +175,11 @@ def restore_account(account_id: int, db: Session = Depends(get_db), staff: Staff
 @router.post("/accounts/{account_id}/make-client")
 def make_client(account_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     """Convierte la cuenta en cliente de la plataforma: crea el `tenant` con el MISMO número (no saca otro del contador) y los datos del contacto principal."""
-    from app.routers.tenants import _slugify
+    from app.crm import won
 
     def work():
         account = svc.get_account(db, account_id)
-        if account.tenant_id is not None:
-            raise svc.CrmError("La cuenta ya es cliente de la plataforma.", 409)
-        code = str(account.code)
-        if db.query(Tenant.id).filter((Tenant.client_code == code) | (Tenant.legacy_client_code == code)).first() is not None:
-            raise svc.CrmError("Ya existe un cliente de la plataforma con ese código. Hay que emparejarlo a mano antes de convertir esta cuenta.", 409)
-        base_id = _slugify(account.name)
-        tenant_id, n = base_id, 1
-        while db.get(Tenant, tenant_id) is not None:
-            n += 1
-            tenant_id = f"{base_id}_{n}"
-        db.add(Tenant(id=tenant_id, client_code=code, name=account.name))
-        db.flush()
-        account.tenant_id = tenant_id
-        svc.mirror_primary_to_tenant(db, account)
-        audit_actions.record(db, staff, "make_client", "crm_account", account.id, account.name, f"cliente {tenant_id}")
-        db.flush()
+        won.make_client(db, staff, account)
         return svc.serialize_account(account, svc.primary_of(db, account.id), detail=True)
     return _run(db, work)
 

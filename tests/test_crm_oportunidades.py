@@ -48,7 +48,7 @@ def test_moving_to_won_closes_it_and_moving_back_reopens_it(client, factory, crm
     st = _stages(client)
     o = _opp(client, new_account(client)["id"])
     won = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Ganada"]["id"], "updated_at": o["updated_at"]}).json()
-    assert won["outcome"] == "won" and won["closed_at"] and won["stage_name"] == "Ganada" and won["event_id"] is None          # NO crea evento: eso es C4
+    assert won["outcome"] == "won" and won["closed_at"] and won["stage_name"] == "Ganada" and won["event_id"] is not None          # desde C4 ganar crea el cliente y el evento (tests/test_crm_ganada.py)
     back = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Negociación"]["id"]}).json()
     assert back["outcome"] == "open" and back["closed_at"] is None
     lost = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Perdida"]["id"], "lost_reason": "Precio"}).json()
