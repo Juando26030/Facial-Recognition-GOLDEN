@@ -1045,3 +1045,10 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 - C1b-3b: pestañas Contactos (crear, editar, hacer principal, archivar/restaurar, suprimir con adelanto y motivo + nombre tecleado), Notas (por cuenta o por contacto, borrar) e Historial (paginado, con el nombre del contacto). Aviso de revisión persistente tras suprimir. Revisión visual a 1000/1100/1280/1500 px, claro y oscuro. Bug arreglado en la revisión: el menú «Más» de cada contacto se abría y cerraba solo por un manejador duplicado.
 - C1b-4: `docs/crm/STAGING_C1B.md` con los 10 criterios y los pasos para staging con datos ficticios.
 - Pruebas: de texto pasan (58); con base de datos, nuevas y **sin ejecutar** hasta que Juan David las corra.
+
+## 2026-11-12 · CRM etapa C3 (rama `crm/c1c-c4`; sin desplegar)
+- Migración `0133_crm_quotes` (productos, condiciones, plantillas, cotizaciones y líneas, proformas, filtros guardados; contadores `quote` y `proforma`).
+- Reglas y servicios: `app/crm/quote_rules.py`, `quotes.py`, `pdfdoc.py`/`quote_pdf.py` (PDF propio sin dependencias), `tools.py` (búsqueda, filtros guardados, exportación CSV solo admin); APIs `crm_quotes.py` y `crm_tools.py`.
+- Supresión Ley 1581 ampliada: contactos y cuentas arrastran sus cotizaciones, proformas y PDF.
+- Pantallas `/crm/cotizaciones`, `/crm/cotizaciones/{id}`, `/crm/productos` (admin), `/crm/buscar`. Revisión visual hecha. Criterios y decisiones: `docs/crm/STAGING_C3.md`.
+- Pruebas: de texto pasan; `tests/test_crm_cotizaciones.py` (con base) **sin ejecutar** hasta que Juan David la corra.

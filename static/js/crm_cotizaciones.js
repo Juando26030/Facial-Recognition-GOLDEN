@@ -20,9 +20,9 @@
     const tr = document.createElement("tr"), cell = (label, content) => { const td = document.createElement("td"); td.dataset.label = label; if (content instanceof Node) td.appendChild(content); else td.textContent = content == null || content === "" ? "—" : content; tr.appendChild(td); return td; };
     cell("Número", "N.º " + q.number + (q.version > 1 ? " · v" + q.version : ""));
     const who = el("div", "crm-name-wrap"), a = el("a", "crm-name", q.title); a.href = "/crm/cotizaciones/" + q.id; who.appendChild(a); who.appendChild(el("span", "crm-sub", q.account_name || "")); cell("Cotización", who);
-    const sw = el("div", "crm-name-wrap"); sw.appendChild(el("span", "gw-badge " + (BADGE[q.stage] || ""), STAGE[q.stage] || q.stage)); if (q.expired) sw.appendChild(el("span", "gw-badge gw-badge--warn", "Vencida")); if (q.archived) sw.appendChild(el("span", "gw-badge", "Archivada")); cell("Etapa", sw);
+    const sw = el("div", "crm-name-wrap"); sw.appendChild(el("span", "gw-badge " + (BADGE[q.stage] || ""), STAGE[q.stage] || q.stage)); if (q.expired && q.stage !== "vencida") sw.appendChild(el("span", "gw-badge gw-badge--warn", "Vencida")); if (q.archived) sw.appendChild(el("span", "gw-badge", "Archivada")); cell("Etapa", sw);
     cell("Total", money(q.total, q.currency)); cell("Válida hasta", q.valid_until ? X.fmtDay(q.valid_until) : "");
-    const td = cell("Acciones", ""); td.classList.add("crm-actions-cell");
+    const td = cell("Acciones", document.createDocumentFragment()); td.classList.add("crm-actions-cell");
     const open = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Abrir"); open.href = "/crm/cotizaciones/" + q.id; td.appendChild(open);
     const pdf = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "PDF"); pdf.href = "/api/crm/quotes/" + q.id + "/pdf"; pdf.target = "_blank"; pdf.rel = "noopener"; pdf.setAttribute("aria-label", "Descargar el PDF de la cotización " + q.number); td.appendChild(pdf);
     return tr;

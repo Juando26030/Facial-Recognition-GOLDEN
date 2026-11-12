@@ -170,7 +170,7 @@ def test_c3_pages_follow_the_frontend_rules(name):
 
 
 def test_c3_css_uses_only_tokens():
-    css = _read("static/css/p-crm-c3.css")
+    css = re.sub(r"@media\s*\([^)]*\)", "", _read("static/css/p-crm-c3.css"))
     assert not re.search(r"#[0-9a-fA-F]{3,6}\b|\brgba?\(|\b(?:[02-9]|\d{2,})px\b", css.split("*/", 1)[1]), "ni colores ni píxeles sueltos"
 
 

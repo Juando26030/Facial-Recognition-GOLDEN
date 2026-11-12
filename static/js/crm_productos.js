@@ -31,7 +31,7 @@
     const tr = document.createElement("tr"), cell = (label, v) => { const td = document.createElement("td"); td.dataset.label = label; if (v instanceof Node) td.appendChild(v); else td.textContent = v == null || v === "" ? "—" : v; tr.appendChild(td); return td; };
     cell("Producto", p.name); cell("Código", p.sku); cell("Precio", p.currency + " " + Number(p.price).toLocaleString("es-CO", { minimumFractionDigits: 2 })); cell("Impuesto", Number(p.tax_percent) + " %");
     cell("Estado", el("span", "gw-badge " + (p.active ? "gw-badge--ok" : ""), p.active ? "Activo" : "Inactivo"));
-    const td = cell("Acciones", ""); td.classList.add("crm-actions-cell");
+    const td = cell("Acciones", document.createDocumentFragment()); td.classList.add("crm-actions-cell");
     const ed = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Editar"); ed.type = "button"; ed.dataset.edit = String(p.id); ed.setAttribute("aria-label", "Editar " + p.name); td.appendChild(ed);
     const tg = el("button", "gw-btn gw-btn--secondary gw-btn--sm", p.active ? "Desactivar" : "Activar"); tg.type = "button"; tg.dataset.toggle = String(p.id); tg.setAttribute("aria-label", (p.active ? "Desactivar " : "Activar ") + p.name); td.appendChild(tg);
     return tr;
