@@ -48,8 +48,11 @@ def test_duplicate_name_ignoring_accents_needs_confirmation(client, factory, crm
 def test_validation_messages(client, factory, crm_on):
     staff_client(client, factory)
     for payload in ({"name": "X", "email": "no-es-correo"}, {"name": "X", "payment_days": 400}, {"name": "X", "payment_days": "abc"}, {"name": "X", "agency_percent": 101},
-                    {"name": "X", "agency_percent": "mucho"}, {"name": "X", "owner_staff_id": 999999}, {"name": "x" * 201}):
-        assert client.post("/api/crm/accounts", json=payload).status_code == 400, payload
+                    {"name": "X", "agency_percent": "mucho"}, {"name": "X", "owner_staff_id": 999999}, {"name": "X", "owner_staff_id": "abc"}, {"name": "x" * 201}):
+        r = client.post("/api/crm/accounts", json=payload)
+        assert r.status_code == 400 and isinstance(r.json()["detail"], str), payload          # SIEMPRE 400 con mensaje en español (nunca el 422 de FastAPI con lista en inglés)
+    assert "días de plazo" in client.post("/api/crm/accounts", json={"name": "X", "payment_days": "abc"}).json()["detail"]
+    assert "responsable" in client.post("/api/crm/accounts", json={"name": "X", "owner_staff_id": "abc"}).json()["detail"]
     ok = new_account(client, "Con datos", agency_percent=12.5, payment_days=30, nit="900.123.456-1", billing_city="Bogotá")
     assert ok["agency_percent"] == "12.50" and ok["payment_days"] == 30
 

@@ -89,7 +89,11 @@ def clean_account(data: dict) -> dict:
                 raise CrmError("El porcentaje de agencia debe estar entre 0 y 100.")
             out["agency_percent"] = d.quantize(Decimal("0.01"))
     if "owner_staff_id" in data:
-        out["owner_staff_id"] = data["owner_staff_id"] or None
+        v = data["owner_staff_id"]
+        try:
+            out["owner_staff_id"] = int(v) if v not in (None, "") else None
+        except (TypeError, ValueError) as exc:
+            raise CrmError("El responsable indicado no es válido.") from exc
     return out
 
 

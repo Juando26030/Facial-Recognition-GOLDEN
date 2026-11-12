@@ -60,10 +60,10 @@ class AccountIn(BaseModel):
     billing_contact_name: Optional[str] = None
     billing_contact_phone: Optional[str] = None
     payment_term: Optional[str] = None
-    payment_days: Optional[int] = None
+    payment_days: Optional[Union[int, str]] = None          # int o texto: si no es número, responde 400 en español (clean_account) y no un 422 de FastAPI en inglés
     billing_close: Optional[str] = None
     agency_percent: Optional[Union[str, float]] = None
-    owner_staff_id: Optional[int] = None
+    owner_staff_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
     confirm_duplicate: bool = False
     updated_at: Optional[str] = None          # versión que vio quien edita (solo al editar)

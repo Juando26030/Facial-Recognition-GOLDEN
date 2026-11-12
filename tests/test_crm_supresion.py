@@ -50,7 +50,10 @@ def test_erase_contact_removes_every_trace_and_reports_only_counts(client, facto
     log = db.query(m.CrmChangeLog).all()
     assert log, "el historial de lo demás debe quedar"
     for row in log:
-        assert not any(p in f"{row.old_value} {row.new_value}".lower() for p in PERSONAL), (row.field_key, row.entity)          # ningún valor suyo en NINGÚN historial
+        if (row.entity, row.field_key) == ("account", "description"):
+            continue          # TEXTO LIBRE: no se borra por valor (no se puede asegurar que sea suyo); se AVISA en `review` para que una persona lo revise
+        assert not any(p in f"{row.old_value} {row.new_value}".lower() for p in PERSONAL), (row.field_key, row.entity)          # ningún otro valor suyo en NINGÚN historial
+    assert counts["review"] == {"description": True, "general_notes": 1}          # y el aviso trae los conteos que la pantalla mostrará
     assert any(r_.field_key == "billing_city" and r_.new_value == "Medellín" for r_ in log)                   # lo que no era suyo se conserva
     acc = db.get(m.CrmAccount, a["id"])
     assert acc.email is None and acc.billing_contact_name is None and acc.billing_contact_phone is None and "Ana Pérez" in acc.description
@@ -75,7 +78,11 @@ def test_only_the_matching_mirror_fields_are_cleared(client, factory, crm_on, db
 
 def test_the_cleared_mirror_reaches_the_local_server_through_account_sync(client, factory, crm_on, db):
     a, tid, ana, beto = _scenario(client, factory)
+    factory.staff("coordinador", "usuario_del_cliente", tenant_id=tid)                  # `account_sync` solo entrega las empresas que usa alguna cuenta: sin esto la fila ni viaja
+    before = next(t for t in account_sync.snapshot(db)["tenants"] if t["id"] == tid)
+    assert (before["contact_name"], before["contact_email"], before["contact_phone"]) == ("Ana Pérez", EMAIL, MOBILE)          # antes de suprimir, la nube entrega la copia
     client.post(f"/api/crm/contacts/{ana['id']}/erase", json={"reason": "x", "confirm_name": "Ana Pérez"})
+    db.expire_all()
     payload = copy.deepcopy(account_sync.snapshot(db))                                  # lo que la nube entrega a un servidor local
     row = next(t for t in payload["tenants"] if t["id"] == tid)
     assert (row["contact_name"], row["contact_email"], row["contact_phone"]) == (None, None, None)
