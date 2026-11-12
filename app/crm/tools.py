@@ -20,6 +20,7 @@ from app.models import CrmAccount, CrmContact, CrmLead, CrmOpportunity, CrmQuote
 SEARCH_MIN = 2
 SEARCH_LIMIT = 8
 EXPORT_MAX_ROWS = 20000
+BOM = "\ufeff"          # para que Excel respete las tildes
 EXPORT_SCOPES = ("cuentas", "contactos", "oportunidades", "leads", "cotizaciones")
 
 
@@ -124,7 +125,7 @@ def export_csv(db: Session, scope: str) -> tuple:
     for row in _rows(db, scope):
         w.writerow([safe_cell(c) for c in row])
         n += 1
-    return ("﻿" + buf.getvalue()).encode("utf-8"), max(n, 0)
+    return (BOM + buf.getvalue()).encode("utf-8"), max(n, 0)
 
 
 def clean_scope(scope: Optional[str]) -> str:
