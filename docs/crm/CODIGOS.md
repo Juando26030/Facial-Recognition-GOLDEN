@@ -10,7 +10,10 @@
 ## Orden para encender el CRM (importante)
 1. Respaldo de Neon del entorno (en producción, con autorización explícita de Juan David para esa acción).
 2. Migración `0130_crm_cuentas_base` aplicada (el contador nace **no listo**).
-3. **Primero el contador:** `python scripts/crm_set_counter.py --name account --floor N` (simulacro por defecto) y luego con `--apply`. `N` = el ÚLTIMO número ya usado: el mayor entre el código más alto de SuiteCRM y el mayor número ya presente en `tenants.client_code`/`legacy_client_code`/`crm_accounts.code`. El siguiente entregado será `N + 1`.
+3. **Primero el contador:** `python scripts/crm_set_counter.py --name account --floor N` (simulacro por defecto) y luego con `--apply`. `N` = el ÚLTIMO número ya usado.
+   - **En producción, `N` es el mayor entre (a) el código de cuenta más alto de SuiteCRM (de la exportación) y (b) el mayor número ya presente en `tenants`.** El siguiente entregado será `N + 1`.
+   - Para (b), contar solo códigos numéricos reales, no los hexadecimales que por azar son solo dígitos (esos tienen siempre 8 caracteres y los consecutivos son menores de 10.000.000): `SELECT max(client_code::bigint) FROM tenants WHERE client_code ~ '^[0-9]{1,7}$';` (y lo mismo con `legacy_client_code`, por prudencia).
+   - **`900000` es SOLO de staging** (datos ficticios, criterio 9 de `docs/crm/STAGING_C1A.md`). Nunca se usa en producción: dejaría un hueco enorme y chocaría con el orden real de SuiteCRM.
 4. **Después el interruptor:** `CRM_ENABLED=1` en el servicio `web` de la nube (nunca en el servidor local).
 5. Comprobar en `/sistema`: aparece el chequeo «CRM» en verde («encendido»). Crear un cliente de prueba (en staging) y ver que recibe `N + 1`.
 
@@ -18,5 +21,5 @@ Si se enciende en el orden contrario: `/sistema` muestra «CRM encendido sin con
 
 ## Notas
 - Un hexadecimal de 8 caracteres puede ser solo dígitos (por azar); `next_code` lo trata como ocupado si coincide.
-- `scripts/wipe_all_data.py` y las pruebas vacían `crm_counters`; sin fila, `next_code` se niega (no listo) y `crm_set_counter.py` la vuelve a crear.
+- `scripts/wipe_all_data.py` (vacía TODAS las tablas del modelo, incluidas las `crm_*`, y no tiene bloqueo por entorno: solo pide escribir el nombre de la base) y las pruebas vacían `crm_counters`; sin fila, `next_code` se niega (no listo) y `crm_set_counter.py` la vuelve a crear.
 - Reversa de la migración: restaura `client_code` desde `legacy_client_code` antes de quitar la columna. Caso límite: falla si un número actual coincide con el hexadecimal de otro cliente (solo con contador sobre 10.000.000; `next_code` evita entregarlos).
