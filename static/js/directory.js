@@ -415,7 +415,7 @@
       </div>
     `;
     overlay.appendChild(box);
-    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (coordinador o superior; si no, queda el texto)
+    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (digitador o superior, temporales incluidos; si no hay archivo, queda el texto)
       (async () => {
         try {
           const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/form-files`);

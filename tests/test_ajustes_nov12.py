@@ -81,7 +81,8 @@ def test_form_files_routes_and_screens():
     f = _t("app/routers/forms.py")
     assert '/forms/{form_id}/files-zip' in f and "formfiles.MAX_FILES" in f
     a = _t("app/routers/api.py")
-    assert "/users/{user_id}/form-files" in a and 'require_role("coordinador")' in a[a.index("def person_form_files"):a.index("def person_form_file_download")]
+    assert "/users/{user_id}/form-files" in a and 'require_role("digitador")' in a[a.index("def person_form_files"):a.index("def person_form_file_download")]
+    assert 'require_role("digitador")' in a[a.index("def person_form_file_download"):a.index("def incomplete_registrations")]      # cliente temporal y digitador temporal también descargan; get_event_for_staff les exige estar autorizados en el evento
     assert "formfiles.stored_text" in _t("app/formsvc.py")
     assert "files-zip?field=" in _t("templates/kiosk_formulario_editor.html") and 'id="ansFiles"' in _t("templates/kiosk_formulario_editor.html")
     assert "/form-files`" in _t("static/js/directory.js")
