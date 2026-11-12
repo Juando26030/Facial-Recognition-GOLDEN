@@ -55,7 +55,7 @@ C3: crm_products · crm_terms · crm_doc_templates · crm_quotes 1──* crm_qu
 - `crm_counters`: dos filas nuevas `quote` y `proforma` (nacen NO listas; `COUNTERS` y `_TAKEN` en `app/crm/codes.py` se amplían; el importador sube los pisos con `bump_floor`).
 
 ### 0134 `crm_c4_extras` — RESERVADA
-Solo si C4 descubre que necesita un índice o una columna (p. ej. para «Mi día»). Si no hace falta, el número queda sin usar y se anota aquí. La numeración es lineal: 0131 → 0132 → 0133 → 0134; cada una con `down_revision` de la anterior, id ≤ 32 caracteres, escrita a mano, con reversa.
+Solo si C4 descubre que necesita un índice o una columna (p. ej. para «Mi día»). Si no hace falta, el número queda sin usar y se anota aquí. **C4 (12-nov-2026): no hizo falta; la 0134 queda SIN USAR.** La numeración es lineal: 0131 → 0132 → 0133 → 0134; cada una con `down_revision` de la anterior, id ≤ 32 caracteres, escrita a mano, con reversa.
 
 **Cómo se prueba cada migración:** `docs/crm/verificacion_sql/correr_etapa.sh` convierte el archivo REAL de la migración a SQL (`alembic_a_sql.py`, sin SQLAlchemy), lo sube a un PostgreSQL temporal, corre `06_pruebas_etapa.sql` (cascadas, únicos parciales, RESTRICT, siembra), baja todo en orden inverso, comprueba que no queda ninguna tabla nueva y vuelve a subir. Correr así: `runuser -u pgtest -- bash docs/crm/verificacion_sql/correr_etapa.sh`. Además hay pruebas de texto de cada migración (ids ≤ 32, `down_revision`, reversa que borra todo) y la prueba con base de datos `alembic upgrade/downgrade` (sin ejecutar).
 

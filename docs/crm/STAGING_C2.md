@@ -9,7 +9,7 @@ Solo con datos ficticios, en staging (`CRM_ENABLED=1`). Producción NO se toca.
 ## Criterios de éxito
 1. `/crm/embudos` (admin): se ve el embudo «Eventos» con sus etapas; se puede crear una etapa, renombrarla, reordenarla con las flechas y archivarla. Una etapa con oportunidades abiertas no se archiva.
 2. `/crm/oportunidades`: crear una oportunidad ficticia; recibe el siguiente número de evento y queda en la primera etapa abierta.
-3. Arrastrar la tarjeta a otra columna (o «Mover a…») la mueve; al pasar a «Perdida» pide el motivo. «Ganada» la cierra y NO crea evento (eso es C4).
+3. Arrastrar la tarjeta a otra columna (o «Mover a…») la mueve; al pasar a «Perdida» pide el motivo. «Ganada» la cierra; desde C4 también crea el cliente y el evento (ver `STAGING_C4.md`).
 4. Los totales de cada columna separan COP y USD y muestran el valor ponderado; nunca se suman monedas distintas.
 5. Una columna con más de 50 tarjetas muestra «Ver más» y continúa en la misma columna.
 6. Abrir dos pestañas sobre la misma oportunidad, guardar en una y luego en la otra: la segunda avisa que fue modificada.

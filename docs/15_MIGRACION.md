@@ -1052,3 +1052,8 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 - Supresión Ley 1581 ampliada: contactos y cuentas arrastran sus cotizaciones, proformas y PDF.
 - Pantallas `/crm/cotizaciones`, `/crm/cotizaciones/{id}`, `/crm/productos` (admin), `/crm/buscar`. Revisión visual hecha. Criterios y decisiones: `docs/crm/STAGING_C3.md`.
 - Pruebas: de texto pasan; `tests/test_crm_cotizaciones.py` (con base) **sin ejecutar** hasta que Juan David la corra.
+
+## 2026-11-12 · CRM etapa C4 (rama `crm/c1c-c4`; sin desplegar)
+- Ganar una oportunidad crea el cliente (si falta) y el evento con el mismo número en la misma transacción (`app/crm/won.py`; `POST /api/crm/opportunities/{id}/win` para las ganadas sin evento). 409 todo o nada si el código ya existe.
+- «Mi día» (`/crm/mi-dia`) y tableros (`/crm/tableros`): `app/crm/today.py`, `app/routers/crm_today.py`; sin migración nueva (la 0134 queda sin usar); sin sondeos.
+- Criterios y decisiones: `docs/crm/STAGING_C4.md`. Pruebas de texto pasan; `tests/test_crm_ganada.py` (con base) **sin ejecutar** hasta que Juan David la corra.
