@@ -575,3 +575,22 @@ def crm_history(v, q):
     return [{'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'payment_term', 'old': '30 días', 'new': '60 días', 'by': 'Andrés Ochoa', 'source': 'edit', 'at': '2026-11-10T15:00:00'},
             {'entity': 'contact', 'entity_id': 11, 'contact': 'Camila Torres Quintero', 'field': 'is_primary', 'old': 'False', 'new': 'True', 'by': 'Laura Páez', 'source': 'edit', 'at': '2026-11-09T11:00:00'},
             {'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'name', 'old': None, 'new': 'Asociación Colombiana de Ingenieros', 'by': None, 'source': 'import', 'at': '2026-10-01T08:00:00'}]
+
+
+# ------- extensiones por pieza: cada `mocks_*.py` registra sus rutas con `from mocks import route` (así las piezas en paralelo no editan este archivo) -------
+def _load_extensions():
+    import glob
+    import importlib.util
+    import os
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    for path in sorted(glob.glob(os.path.join(here, 'mocks_*.py'))):
+        name = os.path.basename(path)[:-3]
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+
+_load_extensions()

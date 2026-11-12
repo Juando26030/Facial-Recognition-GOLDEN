@@ -95,4 +95,22 @@ def context(key, v, Obj):
         return 'crm_cuentas.html', {**simple, 'staff_role': 'admin', 'sidebar_active': 'crm', 'can_admin': v != 'comercial'}
     if key == 'crm_cuenta':
         return 'crm_cuenta.html', {**simple, 'sidebar_active': 'crm', 'can_admin': v != 'comercial', 'account_id': '' if v == 'new' else 1}
+    ext = _extensions(key, v, Obj, simple)          # pantallas de otras piezas (pages_<pieza>.py); así cada pieza trae su archivo y no se pisan
+    if ext is not None:
+        return ext
     raise KeyError(key)
+
+
+def _extensions(key, v, Obj, simple):
+    """Cada `scripts/visual_harness/pages_*.py` define `context(key, v, Obj, simple)` y devuelve (plantilla, contexto) o None si la pantalla no es suya."""
+    import glob
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in sorted(glob.glob(os.path.join(here, 'pages_*.py'))):
+        spec = importlib.util.spec_from_file_location(os.path.basename(path)[:-3], path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        got = mod.context(key, v, Obj, simple)
+        if got is not None:
+            return got
+    return None

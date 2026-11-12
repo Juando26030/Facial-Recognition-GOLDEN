@@ -1818,3 +1818,183 @@ class CrmChangeLog(Base):
     source = Column(String(16), nullable=False, default='edit', server_default='edit')
     changed_at = Column(DateTime, nullable=False, default=utcnow)
     __table_args__ = (Index('ix_crm_change_log_entity', 'entity', 'entity_id', 'changed_at'),)
+
+
+# ------------------------------------------------------------------ CRM etapa C1c–C4 (docs/crm/ETAPA_C1C_C4_DISENO.md). Migraciones 0131 (embudos, oportunidades, leads, actividades) y 0132 (importador).
+class CrmPipeline(Base):
+    """Embudo de ventas (p. ej. «Eventos»). Las etapas viven en `crm_stages`. Uno solo es el predeterminado."""
+    __tablename__ = 'crm_pipelines'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(120), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    is_default = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('name', name='uq_crm_pipelines_name'),)
+
+
+class CrmStage(Base):
+    """Etapa de un embudo. `kind`: open | won | lost (la ganada y la perdida cierran la oportunidad). `probability` 0–100 (la oportunidad puede traer la suya)."""
+    __tablename__ = 'crm_stages'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('crm_pipelines.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String(80), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    probability = Column(Integer, nullable=False, default=0, server_default='0')
+    kind = Column(String(8), nullable=False, default='open', server_default='open')
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('pipeline_id', 'name', name='uq_crm_stages_pipeline_name'), Index('ix_crm_stages_pipeline_pos', 'pipeline_id', 'position'))
+
+
+class CrmLead(Base):
+    """Cliente potencial. DATOS PERSONALES (Ley 1581): nombre, correo y teléfono; se suprimen con el mismo criterio que un contacto (app/crm/erase.py). `description` es texto libre:
+    el historial no guarda su contenido (history.FREE_TEXT). `status`: nuevo | contactado | calificado | convertido | descartado."""
+    __tablename__ = 'crm_leads'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    first_name = Column(String(120))
+    last_name = Column(String(120))
+    full_name_norm = Column(String(240), nullable=False, default='', server_default='')
+    company_name = Column(String(200))
+    job_title = Column(String(120))
+    email = Column(String(200))
+    email_norm = Column(String(200))
+    phone = Column(String(60))
+    source = Column(String(60))
+    status = Column(String(16), nullable=False, default='nuevo', server_default='nuevo')
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    description = Column(Text)
+    converted_at = Column(DateTime, nullable=True)
+    converted_account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='SET NULL'), nullable=True)
+    converted_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    converted_opportunity_id = Column(Integer, nullable=True)          # sin llave foránea: la oportunidad se crea después que la tabla y se puede borrar sin tocar al lead
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        Index('uq_crm_leads_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_leads_status', 'status'),
+        Index('ix_crm_leads_owner', 'owner_staff_id'),
+        Index('ix_crm_leads_email_norm', 'email_norm'),
+        Index('ix_crm_leads_name_norm', 'full_name_norm', postgresql_ops={'full_name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmOpportunity(Base):
+    """Oportunidad = un posible evento. `code` sale del contador `event` al CREARLA y es el mismo número que tendrá el evento si se gana (regla de códigos, docs/crm/ETAPA_C1C_C4_DISENO.md §4).
+    `outcome`: open | won | lost (lo fija la etapa). `next_activity_at` es una copia (la mantiene app/crm/activities.py) para marcar las que no tienen próxima actividad sin consultar otra tabla."""
+    __tablename__ = 'crm_opportunities'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(BigInteger, nullable=False)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    pipeline_id = Column(Integer, ForeignKey('crm_pipelines.id', ondelete='RESTRICT'), nullable=False)
+    stage_id = Column(Integer, ForeignKey('crm_stages.id', ondelete='RESTRICT'), nullable=False)
+    name = Column(String(200), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False, default=0, server_default='0')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    probability = Column(Integer, nullable=True)
+    expected_close = Column(Date, nullable=True)
+    opp_type = Column(String(60))
+    source = Column(String(60))
+    next_step = Column(String(200))
+    description = Column(Text)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    primary_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    event_start = Column(Date, nullable=True)
+    city = Column(String(120))
+    outcome = Column(String(8), nullable=False, default='open', server_default='open')
+    closed_at = Column(DateTime, nullable=True)
+    lost_reason = Column(String(200))
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='SET NULL'), nullable=True)
+    next_activity_at = Column(DateTime, nullable=True)
+    stage_entered_at = Column(DateTime, nullable=False, default=utcnow)
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        UniqueConstraint('code', name='uq_crm_opportunities_code'),
+        Index('uq_crm_opportunities_event', 'event_id', unique=True, postgresql_where=text('event_id IS NOT NULL')),
+        Index('uq_crm_opportunities_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_opps_board', 'pipeline_id', 'stage_id', 'stage_entered_at'),
+        Index('ix_crm_opps_account', 'account_id'),
+        Index('ix_crm_opps_owner', 'owner_staff_id'),
+        Index('ix_crm_opps_close', 'expected_close'),
+        Index('ix_crm_opps_outcome', 'outcome'),
+    )
+
+
+class CrmActivity(Base):
+    """Llamada, tarea, reunión o nota con fecha. Cuelga de una cuenta, un contacto, un lead o una oportunidad (al menos uno; lo exige el código). Si habla de un contacto o un lead, se borra con él.
+    `result` es una lista cerrada corta (portafolio enviado, cotización enviada, orden de compra pendiente, sin respuesta…) para el seguimiento por contacto. `subject` y `description` son texto libre."""
+    __tablename__ = 'crm_activities'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(8), nullable=False)
+    status = Column(String(10), nullable=False, default='planned', server_default='planned')
+    subject = Column(String(200), nullable=False)
+    description = Column(Text)
+    due_at = Column(DateTime, nullable=True)
+    remind_at = Column(DateTime, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    result = Column(String(24))
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=True)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='CASCADE'), nullable=True)
+    lead_id = Column(Integer, ForeignKey('crm_leads.id', ondelete='CASCADE'), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey('crm_opportunities.id', ondelete='CASCADE'), nullable=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    legacy_sugar_id = Column(String(40))
+    __table_args__ = (
+        Index('uq_crm_activities_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_act_owner_due', 'owner_staff_id', 'status', 'due_at'),
+        Index('ix_crm_act_account', 'account_id', 'created_at'),
+        Index('ix_crm_act_contact', 'contact_id'),
+        Index('ix_crm_act_lead', 'lead_id'),
+        Index('ix_crm_act_opp', 'opportunity_id', 'created_at'),
+    )
+
+
+class CrmImportRun(Base):
+    """Una corrida del importador (C1c). `mode`: sample (20 filas por archivo, nada se guarda) | dry_run (todo el archivo, nada se guarda) | apply (guarda). `status`: queued | running | done | failed | cancelled.
+    Los archivos subidos viven en el almacenamiento con prefijo `crm/imports/<id>/` y se borran al terminar. `counts_json`, `cursor_json` y el informe NO llevan datos personales: solo conteos, números de fila y motivos."""
+    __tablename__ = 'crm_import_runs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(16), nullable=False, default='suitecrm', server_default='suitecrm')
+    mode = Column(String(8), nullable=False, default='sample', server_default='sample')
+    status = Column(String(10), nullable=False, default='queued', server_default='queued')
+    files_json = Column(Text)
+    options_json = Column(Text)
+    counts_json = Column(Text)
+    cursor_json = Column(Text)
+    report_key = Column(String(300))
+    error = Column(String(500))
+    started_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_crm_import_runs_created', 'created_at'),)
+
+
+class CrmImportPair(Base):
+    """Informe de emparejamiento: un cliente de la plataforma (hexadecimal) frente a una cuenta de SuiteCRM. `bucket`: seguro | dudoso | sin_pareja. `decision`: pending | approved | rejected | applied.
+    Solo nombres de EMPRESAS (no de personas). Aplicar una pareja aprobada pasa el `client_code` del cliente al número de SuiteCRM y guarda el hexadecimal en `legacy_client_code`."""
+    __tablename__ = 'crm_import_pairs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey('crm_import_runs.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=True)
+    tenant_name = Column(String(200))
+    suitecrm_legacy_id = Column(String(40))
+    suitecrm_code = Column(BigInteger, nullable=True)
+    suitecrm_name = Column(String(200))
+    score = Column(Integer, nullable=False, default=0, server_default='0')
+    bucket = Column(String(12), nullable=False)
+    decision = Column(String(10), nullable=False, default='pending', server_default='pending')
+    decided_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_crm_import_pairs_run', 'run_id', 'bucket'),)
