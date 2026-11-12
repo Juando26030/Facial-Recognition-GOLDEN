@@ -196,8 +196,20 @@ def test_free_text_searches_fold_accents_in_sql_for_columns_without_norm():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
     fold = (root / "app/crm/sqlfold.py").read_text(encoding="utf-8")
-    assert "translate" in fold and "áéíóú" in fold and "ÁÉÍÓÚ" in fold
+    assert "translate" in fold
     for rel in ("app/crm/quotes.py", "app/crm/tools.py", "app/crm/opportunities.py"):
         src = (root / rel).read_text(encoding="utf-8")
         assert "import fold" in src
         assert not re.search(r"func\.lower\(Crm(Quote\.title|Opportunity\.name)\)", src), rel          # tildes: siempre fold(), nunca lower() a secas
+
+
+def test_sqlfold_table_is_aligned_and_matches_normalize():
+    """IMPORTA el módulo (no solo lo lee): un desajuste o un error de importación se ve sin base de datos."""
+    from app.crm import normalize, sqlfold
+    assert len(sqlfold._FROM) == len(sqlfold._TO) == len(sqlfold.PAIRS)
+    assert all(len(a) == 1 and len(b) == 1 for a, b in sqlfold.PAIRS)
+    for ch in "áéíóúüñàèìòùâêîôûäëïöçÁÉÍÓÚÜÑÀÈÌÒÙÂÊÎÔÛÄËÏÖÇ":
+        assert sqlfold._TO[sqlfold._FROM.index(ch)].lower() == normalize(ch), ch          # el SQL traduce igual que normalize()
+    for word in ("Cámara", "ÑANDÚ", "Pingüino", "Ceñidor", "Français ç", "Ópera"):
+        folded = "".join(sqlfold._TO[sqlfold._FROM.index(c)] if c in sqlfold._FROM else c for c in word).lower()
+        assert folded == normalize(word)
