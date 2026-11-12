@@ -49,7 +49,7 @@ def test_convert_into_an_existing_account_and_a_failure_leaves_nothing_behind(cl
     assert db.query(CrmContact).filter_by(account_id=acc["id"]).count() == 0 and db.query(CrmOpportunity).count() == 0
     ok = client.post(f"/api/crm/leads/{lead['id']}/convert", json={"account_id": acc["id"]})
     assert ok.status_code == 200 and ok.json()["account_created"] is False and ok.json()["opportunity_id"] is None
-    assert client.post(f"/api/crm/leads/{_lead(client, email='otro@ejemplo.test')['id']}/convert", json={"account_id": 999999}).status_code == 400
+    assert client.post(f"/api/crm/leads/{_lead(client, email='otro@ejemplo.test')['id']}/convert", json={"account_id": 999999}).status_code == 404
 
 
 def test_discard_archive_and_restore(client, factory, crm_on):

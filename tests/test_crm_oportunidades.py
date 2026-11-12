@@ -105,7 +105,7 @@ def test_the_board_gives_50_per_column_and_see_more_continues_the_same_column(cl
     from datetime import timedelta
     base = utcnow()
     for i in range(55):
-        db.add(O(code=5000 + i, account_id=acc["id"], pipeline_id=st["Prospecto"]["pipeline_id"], stage_id=st["Prospecto"]["id"], name=f"Op {i:02d}", owner_staff_id=staff.id, stage_entered_at=base - timedelta(minutes=i)))
+        db.add(O(code=5000 + i, account_id=acc["id"], pipeline_id=client.get("/api/crm/pipeline/meta").json()["pipelines"][0]["id"], stage_id=st["Prospecto"]["id"], name=f"Op {i:02d}", owner_staff_id=staff.id, stage_entered_at=base - timedelta(minutes=i)))
     db.commit()
     first = next(c for c in client.get("/api/crm/opportunities/board").json()["columns"] if c["name"] == "Prospecto")
     assert first["count"] == 55 and len(first["cards"]) == 50 and first["has_more"] is True and first["cards"][0]["name"] == "Op 00"
