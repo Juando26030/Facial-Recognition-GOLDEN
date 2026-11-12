@@ -107,13 +107,13 @@ def test_erasing_a_contact_removes_its_change_history_and_its_notes_but_not_the_
     ana_id = ana.id
     counts = erase_contact(db, ana_id)
     db.commit()
-    assert counts == {"contacts": 1, "notes": 1, "changes": 2}
+    assert {k: counts[k] for k in ("contacts", "notes", "changes")} == {"contacts": 1, "notes": 1, "changes": 2}          # C1b-1 añadió más conteos (historial y campos de la cuenta, copia en tenants)
     assert db.get(m.CrmContact, ana_id) is None
     assert db.query(m.CrmNote).filter_by(contact_id=ana_id).count() == 0
     assert db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=ana_id).count() == 0
     assert db.query(m.CrmContact).count() == 1 and db.query(m.CrmNote).count() == 2                      # Beto y la nota de la cuenta siguen
     assert db.query(m.CrmChangeLog).count() == 2                                                       # el de Beto y el de la cuenta
-    assert erase_contact(db, ana_id) == {"contacts": 0, "notes": 0, "changes": 0}                      # repetir no falla
+    assert erase_contact(db, ana_id)["contacts"] == 0 and erase_contact(db, ana_id)["notes"] == 0                    # repetir no falla
 
 
 def test_erasing_an_account_removes_contacts_notes_and_every_history(db):
@@ -127,7 +127,7 @@ def test_erasing_an_account_removes_contacts_notes_and_every_history(db):
     aid = a.id
     counts = erase_account(db, aid)
     db.commit()
-    assert counts == {"accounts": 1, "contacts": 1, "notes": 2, "changes": 2}
+    assert {k: counts[k] for k in ("accounts", "contacts", "notes", "changes")} == {"accounts": 1, "contacts": 1, "notes": 2, "changes": 2}
     assert db.get(m.CrmAccount, aid) is None and db.query(m.CrmContact).count() == 1 and db.query(m.CrmNote).count() == 1
     assert [(r.entity, r.entity_id) for r in db.query(m.CrmChangeLog).all()] == [("contact", cb.id)]
     assert erase_account(db, aid)["accounts"] == 0

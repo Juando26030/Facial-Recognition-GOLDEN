@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import audit_actions
-from app.models import Event, StaffUser, Tenant
+from app.models import CrmAccount, CrmContact, Event, StaffUser, Tenant
 from app.auth import require_role
-from app.crm import crm_enabled
+from app.crm import accounts as crm_accounts, crm_enabled, normalize as crm_normalize
 from app.crm.codes import CodeCounterNotReady, next_code
 from app.timeutil import utcnow
 from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
@@ -90,8 +90,25 @@ def create_tenant(
         contact_name=data.contact_name, contact_phone=data.contact_phone, contact_email=data.contact_email,
     )
     db.add(tenant)
+    if crm_enabled():          # CRM C1b (D2): todo cliente nuevo nace con su cuenta del CRM, con EL MISMO número, en la misma transacción
+        db.flush()
+        _create_crm_account(db, staff, tenant)
     db.commit()
     return _serialize(tenant)
+
+
+def _create_crm_account(db: Session, staff: StaffUser, tenant: Tenant) -> None:
+    account = CrmAccount(code=int(tenant.client_code), tenant_id=tenant.id, name=tenant.name, name_norm=crm_normalize(tenant.name), status="activo", created_by_id=staff.id)
+    db.add(account)
+    db.flush()
+    if (tenant.contact_name or "").strip():          # con nombre de contacto, sus datos pasan a ser el contacto principal (la fuente es el CRM)
+        first, _, last = (tenant.contact_name or "").strip().partition(" ")
+        contact = CrmContact(account_id=account.id, first_name=first or None, last_name=last.strip() or None, email=tenant.contact_email, phone=tenant.contact_phone,
+                             is_primary=True, created_by_id=staff.id)
+        contact.full_name_norm = crm_normalize(crm_accounts.full_name(contact))
+        contact.email_norm = crm_normalize(contact.email) or None
+        db.add(contact)
+        db.flush()
 
 
 @router.patch("/tenants/{tenant_id}")
@@ -108,6 +125,10 @@ def update_tenant(
     changes = data.dict(exclude_unset=True)
     if "name" in changes and not str(changes["name"] or "").strip():
         raise HTTPException(status_code=400, detail="El cliente necesita un nombre")
+    if crm_enabled() and crm_accounts.tenant_contact_locked(db, tenant.id):          # CRM C1b (D3): con contacto principal en el CRM, estos tres datos se editan allí (un solo sentido)
+        moved = [f for f in ("contact_name", "contact_phone", "contact_email") if f in changes and ((changes[f] or "").strip() or None) != getattr(tenant, f)]
+        if moved:
+            raise HTTPException(status_code=409, detail="Los datos de contacto de este cliente se editan en el CRM (contacto principal de su cuenta).")
     for field, value in changes.items():
         setattr(tenant, field, value.strip() if isinstance(value, str) else value)
     audit_actions.record(db, staff, "edit", "tenant", tenant.id, tenant.name, "campos: " + ", ".join(sorted(changes)))          # solo QUÉ campos, nunca los valores (contactos)

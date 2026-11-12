@@ -22,16 +22,27 @@ La lista (`ACCOUNT_STATUSES` en `app/crm/__init__.py`) se valida en el código, 
 - Staging solo con datos ficticios. Datos reales únicamente a producción, con respaldo previo en Neon y autorización explícita de Juan David para esa acción. Antes de cargar contactos reales: aviso a la auditora (borrador en el documento 53 del proyecto).
 - Las exportaciones de SuiteCRM se guardan solo en carpeta temporal y se borran al terminar.
 
-## Solicitudes de supresión de un contacto del CRM (para C1b)
+## Solicitudes de supresión de un contacto del CRM (C1b-1: API hecha; pantalla en C1b-3)
 El flujo de la plataforma por cédula (`privacy.erase_person`, `DELETE /api/attendees/{id}/purge-data`) **no cubre** estos datos: los contactos del CRM no tienen cédula. Cómo se atiende:
-1. **Quién:** solo admin o super_admin. Pantalla «Eliminar contacto (supresión)» dentro de la cuenta, con `showConfirm` que muestra qué se borra y pide el motivo.
-2. **Qué hace:** llama `app/crm/erase.py::erase_contact`, que borra en una transacción el contacto, las notas que lo señalan (`crm_notes.contact_id`) y su historial (`crm_change_log`, entity `contact`). Para una cuenta completa, `erase_account`.
-3. **Qué NO alcanza solo:** (a) el nombre o correo escrito a mano dentro del texto de notas de la cuenta, llamadas, tareas y cotizaciones (C2/C3): la pantalla debe ofrecer una búsqueda por texto del correo/nombre para revisarlo y editarlo; (b) el contacto único del cliente en `tenants.contact_*` si es la misma persona (ver pregunta abierta de abajo); (c) las copias de respaldo de Neon y de Cloud Storage, que se vencen por su política de retención.
-4. **Constancia:** `audit_actions.record(..., "erase", "crm_contact", <id>, ...)` con SOLO conteos y el id, nunca nombres ni correos.
+1. **Quién:** solo admin o super_admin (`POST /api/crm/contacts/{id}/erase`, `POST /api/crm/accounts/{id}/erase`). Pide el **motivo** y que se escriba el nombre del contacto (o de la cuenta).
+2. **Qué hace (`app/crm/erase.py`, una transacción).** Un contacto deja rastro en cinco sitios y los cinco se limpian:
+   1. su fila y sus notas (`crm_contacts`, `crm_notes.contact_id`);
+   2. su propio historial (`crm_change_log`, entidad `contact`);
+   3. **el historial de la CUENTA** que traiga sus valores: se borran las filas de `crm_change_log` (entidad `account`) de los campos `email`, `phone`, `billing_contact_name` y `billing_contact_phone` cuyo valor anterior o nuevo coincida con su nombre, correo o teléfono (comparación sin tildes ni mayúsculas; teléfonos por dígitos, mínimo 7);
+   4. **los campos actuales de la cuenta** con esos mismos valores: se dejan vacíos, **sin escribir historial** (el valor anterior es justo el dato a suprimir);
+   5. **la copia en `tenants.contact_name/phone/email`** (regla del contacto principal): se vacía cada campo que coincida. `account_sync` entrega el vacío al servidor local y `apply` lo sobrescribe (prueba en `tests/test_crm_supresion.py`).
+3. **Qué NO se puede decidir solo:** el texto libre (descripción de la cuenta, notas generales, y más adelante llamadas, tareas y cotizaciones). Se cuenta si parece nombrarse a la persona (`review`: descripción sí/no, número de notas generales) y la pantalla debe pedir revisarlo y editarlo a mano. Tampoco alcanza las copias de respaldo de Neon y de Cloud Storage, que se vencen por su política de retención.
+4. **Constancia:** `audit_actions.record(..., "erase", "crm_contact", <id>, <nombre de la CUENTA>, "motivo; conteos")`. Nunca el nombre, correo ni teléfono de la persona. El motivo es texto libre del administrador: que no lleve datos personales.
 5. **Respuesta al titular:** dentro de los plazos de la Ley 1581 (10 días hábiles para consultas, 15 para reclamos).
-6. **Prueba:** `tests/test_crm_modelos.py` comprueba que borrar un contacto borra sus notas y su historial.
+6. **Pruebas:** `tests/test_crm_supresion.py` (extremo a extremo, con base de datos), `tests/test_crm_c1b_texto.py` (reconocer a la persona, sin base de datos).
+
+## Búsqueda sin tildes (C1b-1)
+Sin `unaccent` ni migración: la búsqueda normaliza el texto buscado en Python (`app.crm.normalize`: minúsculas, sin tildes, espacios colapsados) y lo compara con `crm_accounts.name_norm`, `crm_contacts.full_name_norm` y `crm_contacts.email_norm`, columnas que **ya existen desde C1a** y se guardan normalizadas al escribir. Por eso esas columnas **solo se escriben desde `app/crm/accounts.py`** (y desde `tenants._create_crm_account`); una prueba de texto lo vigila. Además: código exacto y NIT sin puntos ni guiones. Es un barrido sin índice trigrama (los comodines de LIKE se escapan); alcanza hasta unos 20.000 registros (decisión D5). El importador de C1c debe llenar estas columnas con la misma función.
+
+## Encendido por entorno (C1b-1)
+`CRM_ENABLED` se fija en `deploy/gcp/config.sh`: **staging 1, producción 0** (producción solo con `CRM_ENABLED=1` en el comando y con autorización de Juan David). `deploy.sh` lo escribe en el servicio `web` en cada despliegue, porque `gcloud run deploy --env-vars-file` **reemplaza todas las variables**: un valor puesto a mano se pierde. Lo usan igual `deploy/gcp/manual_deploy.sh` (que muestra el valor antes de desplegar) y GitHub Actions, porque ambos pasan por `deploy.sh`. Las rutas `/api/crm/*` siempre están montadas, pero cada una responde 404 mientras el interruptor esté apagado.
 
 ## Preguntas abiertas de C1b
 1. **Contacto único del cliente (`tenants.contact_name/phone/email`) frente a los contactos del CRM — DECIDIDO (Juan David, 11-nov-2026): manda el CRM.** Los `tenants.contact_*` se rellenan desde el **contacto principal** de la cuenta vinculada, **en un solo sentido** (CRM → cliente), sin cambiar nada de lo que sincroniza `account_sync` (sigue enviando `tenants.contact_*` tal cual). Detalles que el plan de C1b debe resolver (no están programados): con cuenta vinculada, Clientes muestra esos campos de solo lectura; sin cuenta vinculada se editan como hoy; qué pasa si la cuenta queda sin contacto principal (propuesta: se conservan los valores, no se borran); al suprimir al contacto principal, también se limpian los `tenants.contact_*` que se copiaron de él. **C1b no se programa hasta que Juan David apruebe su plan.**
 2. Listas de valores (etapas, formas de pago, plazos) y valores reales de «cierre de facturación» (campos hoy en texto).
-3. Dónde se enciende `CRM_ENABLED=1` en la configuración de la nube (`deploy/gcp/env/`) y cómo se enlazan las rutas `/crm` al modo `web` (`app/appmode.py`).
+3. ~~Dónde se enciende `CRM_ENABLED=1`~~ — RESUELTO en C1b-1 (ver «Encendido por entorno»). Las rutas `/crm` y `/api/crm` ya caen en el servicio `web` sin tocar `app/appmode.py` (prueba en `tests/test_crm_c1b_texto.py`).

@@ -1023,3 +1023,13 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 - [ ] **Sin ejecutar:** las pruebas de `pytest` que necesitan PostgreSQL (`tests/test_crm_*.py`, ampliaciones de `test_account_sync.py` y `test_event_transfer.py`) y la suite completa: correrlas con el procedimiento del documento 43 antes de desplegar.
 - [ ] Primera ejecución real de la migración: despliegue a staging con respaldo de Neon staging antes (`docs/crm/STAGING_C1A.md`, criterios de éxito).
 - Siguiente: C1b (pantallas de cuentas y contactos, con aprobación aparte) y C1c (importador de SuiteCRM; informe de emparejamiento de clientes viejos).
+
+## 2026-11-12 · CRM pieza C1b-1 (rama `crm/c1b-pantallas`, desde `crm/c1-cuentas`; sin desplegar)
+- [x] API `/api/crm/*` (`app/routers/crm.py`, lógica en `app/crm/accounts.py`): cuentas (alta con número consecutivo, edición con control de versión, búsqueda sin tildes, filtros, archivar/restaurar), contactos (único principal), notas, historial, convertir en cliente. Permisos: comercial/admin/super_admin; archivar y suprimir, admin+; coordinador puro no entra.
+- [x] Regla del contacto principal (CRM → `tenants.contact_*`), D2 (cliente nuevo crea su cuenta con el mismo número) y D3 (contacto del cliente de solo lectura en `/clientes` con principal en el CRM).
+- [x] Supresión completa (`app/crm/erase.py`): fila, notas, historial del contacto, historial y campos de la cuenta con sus valores, y copia en `tenants`; el texto libre se avisa en `review`.
+- [x] `CRM_ENABLED` por entorno en `config.sh`/`deploy.sh` (staging 1, producción 0); cubre `manual_deploy.sh` y Actions. Sin migración nueva.
+- [x] Verificado: `ruff check .`, `bash -n` de los tres scripts y 50 pruebas de texto sin base de datos (`tests/test_crm_c1b_texto.py`, `tests/test_crm_texto.py`).
+- [ ] **Sin ejecutar:** `tests/test_crm_cuentas_api.py`, `test_crm_contactos.py`, `test_crm_permisos.py`, `test_crm_supresion.py` (necesitan PostgreSQL; procedimiento del documento 43) y la suite completa.
+- Siguiente: C1b-2 (pantallas de lista y ficha).
+
