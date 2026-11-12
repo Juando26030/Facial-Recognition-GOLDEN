@@ -1,6 +1,6 @@
 """Fija (o sube) el número inicial de un contador del CRM y lo deja LISTO (docs/crm/CODIGOS.md).
 
-    python scripts/crm_set_counter.py --name account --floor 21500            # SIMULACRO: solo muestra qué haría (por defecto)
+    python scripts/crm_set_counter.py --name account --floor 21500            # (account | event | quote | proforma) SIMULACRO: solo muestra qué haría (por defecto)
     python scripts/crm_set_counter.py --name account --floor 21500 --apply    # lo aplica
 
 Nunca baja un contador (usa el mayor entre el actual y --floor). El número que se fija es el ÚLTIMO ya usado: el siguiente que se entregue será floor + 1. Debe ser mayor o igual al
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--name", required=True, choices=("account", "event"))
+    ap.add_argument("--name", required=True, choices=("account", "event", "quote", "proforma"))
     ap.add_argument("--floor", required=True, type=int, help="último número ya usado (el siguiente será este + 1)")
     ap.add_argument("--apply", action="store_true", help="aplica el cambio (sin esto es un simulacro)")
     args = ap.parse_args(argv)

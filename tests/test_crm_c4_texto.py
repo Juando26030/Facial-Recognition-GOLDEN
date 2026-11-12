@@ -79,3 +79,16 @@ def test_win_texts_tell_the_truth_about_what_gets_created():
     for path in ("static/js/crm_kanban.js", "static/js/crm_oportunidad.js"):
         js = _read(path)
         assert "por ahora solo se cierra" not in js and "Ganar y crear evento" in js
+
+
+def test_staging_findings_nov12_won_stagebar_event_link_subtotal_label_and_counter_choices():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    opp = (root / "static/js/crm_oportunidad.js").read_text(encoding="utf-8")
+    assert "const locked = Boolean(opp.event_id) && s.kind !== \"won\"" in opp and "b.disabled = isCurrent || opp.archived || locked" in opp          # botones deshabilitados con evento
+    assert "No disponible" in opp and "no puede volver a una etapa anterior" in opp                                                      # y un aviso visible
+    assert "\"Ver evento \" + opp.code" in opp and "\"/kiosk/\" + opp.event_id" in opp
+    assert "Subtotal con descuento" in (root / "static/js/crm_cotizacion.js").read_text(encoding="utf-8")
+    assert "Subtotal con descuento" in (root / "app/crm/quote_pdf.py").read_text(encoding="utf-8")
+    script = (root / "scripts/crm_set_counter.py").read_text(encoding="utf-8")
+    assert 'choices=("account", "event", "quote", "proforma")' in script

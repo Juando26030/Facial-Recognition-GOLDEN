@@ -19,7 +19,7 @@
   function totals() { let sub = 0, disc = 0, tax = 0; lines.forEach((l) => { const c = lineCents(l); sub += c.net; disc += c.disc; tax += c.tax; }); return { sub, disc, tax, total: sub + tax }; }
   function showTotals() {
     const t = totals(), dl = $("qTotals"); dl.replaceChildren();
-    [["Subtotal", t.sub], ["Descuentos", t.disc], ["Impuestos", t.tax]].forEach(([k, v]) => { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", fmt(v, q.currency))); });
+    [["Subtotal con descuento", t.sub], ["Descuento incluido", t.disc], ["Impuestos", t.tax]].forEach(([k, v]) => { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", fmt(v, q.currency))); });
     const a = el("dt", "is-total", "Total"), b = el("dd", "is-total", fmt(t.total, q.currency)); dl.appendChild(a); dl.appendChild(b);
   }
   const markDirty = () => { dirty = true; };

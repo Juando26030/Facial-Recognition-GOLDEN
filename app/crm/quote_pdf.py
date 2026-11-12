@@ -75,7 +75,7 @@ def render_quote(q: dict, tpl: Optional[dict] = None) -> bytes:
         doc.table_row([ln["position"], name, fmt_qty(ln["qty"]), fmt_money(ln["unit_price"], ""), fmt_qty(ln["discount_percent"]), fmt_money(ln["line_total"], "")], widths, aligns, 9)
     doc.y -= 8
     cur = q["currency"]
-    for label, key, bold in (("Subtotal", "subtotal", False), ("Impuestos", "tax_total", False), ("TOTAL", "total", True)):
+    for label, key, bold in (("Subtotal con descuento", "subtotal", False), ("Impuestos", "tax_total", False), ("TOTAL", "total", True)):
         doc.need(16)
         doc.y -= 14
         txt = fmt_money(q[key], cur)
