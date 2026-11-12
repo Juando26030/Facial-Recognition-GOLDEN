@@ -12,7 +12,7 @@ persona lo revise. Todo se devuelve como conteos, nunca como valores.
 """
 from typing import Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.crm import normalize
@@ -89,3 +89,30 @@ def erase_account(db: Session, account_id: int) -> dict:
     db.delete(account)          # sus contactos caen por cascada (la base; el ORM borra los ya cargados)
     db.flush()
     return {"accounts": 1, "contacts": len(contact_ids), "notes": notes, "changes": changes, "tenant_fields": tenant_fields}
+
+
+def preview_contact(db: Session, contact_id: int) -> Optional[dict]:
+    """Lo mismo que `erase_contact` pero SIN tocar nada: cuántas cosas se borrarían y qué texto libre habría que revisar. Es el «adelanto» de la ventana de confirmación (C1b-3).
+    Devuelve None si el contacto no existe. Solo conteos, nunca valores."""
+    contact = db.get(CrmContact, contact_id)
+    if contact is None:
+        return None
+    account = db.get(CrmAccount, contact.account_id)
+    ids = identifiers(contact)
+    out = {"contacts": 1,
+           "notes": db.execute(select(func.count()).select_from(CrmNote).where(CrmNote.contact_id == contact_id)).scalar() or 0,
+           "changes": db.execute(select(func.count()).select_from(CrmChangeLog).where(CrmChangeLog.entity == "contact", CrmChangeLog.entity_id == contact_id)).scalar() or 0,
+           "account_history": 0, "account_fields": 0, "tenant_fields": 0, "review": {"description": False, "general_notes": 0}}
+    if account is None:
+        return out
+    rows = db.execute(select(CrmChangeLog).where(CrmChangeLog.entity == "account", CrmChangeLog.entity_id == account.id,
+                                                CrmChangeLog.field_key.in_(ACCOUNT_PERSONAL_FIELDS))).scalars().all()
+    out["account_history"] = sum(1 for r in rows if value_matches(r.field_key, r.old_value, ids) or value_matches(r.field_key, r.new_value, ids))
+    out["account_fields"] = sum(1 for f in ACCOUNT_PERSONAL_FIELDS if value_matches(f, getattr(account, f), ids))
+    tenant = db.get(Tenant, account.tenant_id) if account.tenant_id else None
+    if tenant is not None:
+        out["tenant_fields"] = ((1 if tenant.contact_name and normalize(tenant.contact_name) == ids["name"] else 0)
+                                + (1 if tenant.contact_email and normalize(tenant.contact_email) in ids["emails"] else 0)
+                                + (1 if tenant.contact_phone and digits(tenant.contact_phone) in ids["phones"] else 0))
+    out["review"] = review_hints(db, account, ids)
+    return out

@@ -14,7 +14,7 @@ from app import audit_actions
 from app.auth import require_platform_role
 from app.crm import ACCOUNT_STATUSES, accounts as svc, crm_enabled
 from app.crm.codes import CodeCounterNotReady
-from app.crm.erase import erase_account, erase_contact
+from app.crm.erase import erase_account, erase_contact, preview_contact
 from app.database import get_db
 from app.models import CrmAccount, CrmChangeLog, CrmContact, CrmNote, StaffUser, Tenant
 
@@ -236,6 +236,15 @@ def archive_contact(contact_id: int, db: Session = Depends(get_db), staff: Staff
 @router.post("/contacts/{contact_id}/restore")
 def restore_contact(contact_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     return _run(db, lambda: svc.serialize_contact(svc.set_contact_archived(db, staff, svc.get_contact(db, contact_id), False)))
+
+
+@router.get("/contacts/{contact_id}/erase-preview")
+def erase_contact_preview(contact_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    """Adelanto de la supresión (no borra nada): cuántas cosas se quitarían y cuánto texto libre habría que revisar después. Solo conteos."""
+    counts = preview_contact(db, contact_id)
+    if counts is None:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado.")
+    return {"counts": counts}
 
 
 @router.post("/contacts/{contact_id}/erase")

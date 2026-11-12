@@ -117,3 +117,47 @@ def test_erasing_a_contact_without_any_other_trace_still_works(client, factory, 
     r = client.post(f"/api/crm/contacts/{c['id']}/erase", json={"reason": "x", "confirm_name": "Solo Contacto"})
     assert r.status_code == 200 and r.json()["counts"]["tenant_fields"] == 0 and r.json()["counts"]["review"] == {"description": False, "general_notes": 0}
     assert client.post(f"/api/crm/contacts/{c['id']}/erase", json={"reason": "x", "confirm_name": "Solo Contacto"}).status_code == 404          # ya no existe
+
+
+def test_preview_matches_the_real_erase_and_changes_nothing(client, factory, crm_on, db):
+    a, tid, ana, beto = _scenario(client, factory)
+    url = f"/api/crm/contacts/{ana['id']}"
+    before = (db.query(m.CrmContact).count(), db.query(m.CrmNote).count(), db.query(m.CrmChangeLog).count())
+    preview = client.get(f"{url}/erase-preview")
+    assert preview.status_code == 200
+    db.expire_all()
+    assert (db.query(m.CrmContact).count(), db.query(m.CrmNote).count(), db.query(m.CrmChangeLog).count()) == before          # el adelanto no borra nada
+    real = client.post(f"{url}/erase", json={"reason": "x", "confirm_name": "Ana Pérez"}).json()["counts"]
+    assert preview.json()["counts"] == real                                                                                      # lo anunciado es lo que se hizo
+    assert client.get(f"{url}/erase-preview").status_code == 404
+
+
+def test_preview_is_admin_only(client, factory, crm_on):
+    a = None
+    staff_client(client, factory, "admin", "adm_prev")
+    a = new_account(client)
+    c = new_contact(client, a["id"], "Ana", "Pérez")
+    staff_client(client, factory, "comercial", "com_prev")
+    assert client.get(f"/api/crm/contacts/{c['id']}/erase-preview").status_code == 403
+
+
+def test_local_server_gets_the_contact_of_crm_clients_no_staff_uses(client, factory, crm_on, db):
+    a, tid, ana, beto = _scenario(client, factory)                                      # ninguna cuenta de personal usa esta empresa
+    assert not any(t["id"] == tid for t in account_sync.snapshot(db)["tenants"])
+    client.post(f"/api/crm/contacts/{ana['id']}/erase", json={"reason": "x", "confirm_name": "Ana Pérez"})
+    db.expire_all()
+    payload = copy.deepcopy(account_sync.snapshot(db))
+    assert payload["tenant_contacts"][tid] == {"contact_name": None, "contact_phone": None, "contact_email": None}
+    t = db.get(m.Tenant, tid)                                                           # el servidor local conservaba la copia vieja
+    t.contact_name, t.contact_email, t.contact_phone = "Ana Pérez", EMAIL, MOBILE
+    db.commit()
+    account_sync.apply(db, payload)
+    db.commit()
+    db.expire_all()
+    t = db.get(m.Tenant, tid)
+    assert (t.contact_name, t.contact_email, t.contact_phone) == (None, None, None)
+    payload["tenant_contacts"]["empresa-que-no-existe-aqui"] = {"contact_name": "X", "contact_phone": None, "contact_email": None}
+    payload["version"] = account_sync.version_of(payload["tenants"], payload["staff"], payload["tenant_contacts"])
+    account_sync.apply(db, payload)
+    db.commit()
+    assert db.get(m.Tenant, "empresa-que-no-existe-aqui") is None                       # nunca se crean empresas en el local
