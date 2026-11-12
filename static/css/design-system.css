@@ -1180,7 +1180,7 @@
 /* Barra de etapas de una oportunidad: una fila de pasos (ganada/perdida cierran). Cada paso dice su estado con palabras (`__state`) además del color. En celular se apila. */
 .gw-stagebar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: 0; padding: 0; list-style: none; }
 .gw-stagebar__step { flex: 1 1 8rem; display: flex; flex-direction: column; gap: var(--gw-sp-1); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
-.gw-stagebar__step button { all: unset; cursor: pointer; display: block; width: 100%; }
+.gw-stagebar__step button { all: unset; cursor: pointer; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; min-height: var(--gw-tap); width: calc(100% + 2 * var(--gw-sp-3)); margin: calc(-1 * var(--gw-sp-2)) calc(-1 * var(--gw-sp-3)); padding: var(--gw-sp-2) var(--gw-sp-3); }
 .gw-stagebar__step button:focus-visible { box-shadow: var(--gw-ring); border-radius: var(--gw-radius-sm); }
 .gw-stagebar__state { font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
 .gw-stagebar__step.is-done { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }

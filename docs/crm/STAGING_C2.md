@@ -27,3 +27,7 @@ Solo con datos ficticios, en staging (`CRM_ENABLED=1`). Producción NO se toca.
 - El filtro por nombre de oportunidad no ignora tildes (el de cuenta sí).
 - Al suprimir un contacto solo se borran leads con correo idéntico; los homónimos se revisan a mano.
 - Consultas por pantalla: tablero = 2 consultas + catálogo en memoria 30 s.
+
+## Revisión visual (12-nov-2026, arnés con datos ficticios)
+Tablero (normal, vacío, 57 en una columna, nombres larguísimos), ficha, leads, embudos e importar, a 1000/1100/1280/1500 y 390 px, claro y oscuro: sin desbordes. Corregido: los botones de la barra de etapas de la ficha medían 22 px de alto en celular (ahora ≥ 44 px). El subtítulo que se corta con «…» en celular es la regla general de la plataforma, no de esta pantalla. Los avisos «CHICOS» del botón de ayuda de los pasos son la superposición invisible del componente `.gw-steps` (igual en el resto del sitio).
+Pendiente a mano en staging: arrastrar y soltar con ratón real y con teclado («Mover a…»).
