@@ -38,3 +38,13 @@ Solo con datos ficticios, en staging (`CRM_ENABLED=1`). Producción NO se toca.
 ## Revisión visual (12-nov-2026, arnés con datos ficticios)
 «Mi día» (normal, 40 actividades, textos larguísimos, vacío) y tableros (equipo, comercial, vacío) a 1000/1280 y 390 px, claro y oscuro: sin desbordes. Corregido: en celular el valor de cada barra caía solo en otra línea y el filtro «Ver» quedaba suelto.
 Pendiente a mano en staging: ganar con el cliente nuevo y abrir el evento en Eventos para confirmar que la plantilla de evento no pide nada más.
+
+## Pregunta de producto: «ganada» por error (PROPUESTA, NO IMPLEMENTADA)
+**Hoy no hay forma de corregirlo desde la pantalla.** Una oportunidad con evento no sale de «ganada» (el movimiento da 409) y el cliente y el evento ya existen. Solo se arregla a mano en la base.
+
+**Propuesta más simple (pendiente de que Juan David la apruebe):**
+1. **Confirmación antes de ganar** (ya existe el texto «Ganar y crear evento»; añadir el aviso «Se creará el cliente y el evento; deshacerlo requiere a un administrador»).
+2. **Deshacer solo para admin:** botón «Deshacer ganada» en la ficha que reabre la oportunidad (vuelve a su etapa anterior abierta, `outcome=open`) y **desliga** el evento (`event_id=NULL`) sin borrarlo ni borrar el cliente.
+3. El evento y el cliente quedan como están; si estaban sin uso, un admin los archiva por las pantallas normales de eventos. Así no se pierde nada de lo ya registrado (persona de prueba, formularios, pagos).
+4. Si luego se vuelve a ganar, `create_event_for` reutiliza el evento ligado si el código coincide (hoy da 409 por «código ya usado»: habría que decidir si reutilizar o pedir otro código).
+5. Queda en el historial de auditoría (quién y cuándo), sin texto libre.

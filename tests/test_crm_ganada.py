@@ -147,7 +147,7 @@ def test_dashboards_separate_currencies_and_the_commercial_only_sees_her_own(cli
     _opp(client, acc["id"], "COP uno", amount="1000000", currency="COP", probability=50)
     _opp(client, acc["id"], "USD uno", amount="500", currency="USD", probability=100)
     other = factory.staff("comercial", "otra_comercial")
-    db.add(CrmOpportunity(code=900, name="Ajena", account_id=acc["id"], pipeline_id=client.get("/api/crm/pipelines").json()["pipelines"][0]["id"],
+    db.add(CrmOpportunity(code=900, name="Ajena", account_id=acc["id"], pipeline_id=client.get("/api/crm/pipeline/meta").json()["pipelines"][0]["id"],
                           stage_id=_stages(client)["Prospecto"]["id"], amount=777, currency="COP", owner_staff_id=other.id, outcome="open"))
     db.commit()
     d = client.get("/api/crm/dashboards?owner_id=" + str(other.id)).json()          # el comercial no puede mirar a otro
