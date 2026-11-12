@@ -8,7 +8,7 @@
   const isNew = root.dataset.accountId === "";
   const accountId = isNew ? null : root.dataset.accountId;
   const canAdmin = root.dataset.canAdmin === "1";
-  const form = $("crmForm"), saveBtn = $("crmSave"), stateBox = $("crmState"), conflict = $("crmConflict"), loading = $("crmLoading");
+  const tabsWrap = $("crmTabs"), form = $("crmForm"), saveBtn = $("crmSave"), stateBox = $("crmState"), conflict = $("crmConflict"), loading = $("crmLoading");
   const busy = (btn, work) => (window.GW && GW.busy ? GW.busy(btn, work) : Promise.resolve(work()));
   let account = null, dirty = false, meta = null;
 
@@ -23,11 +23,12 @@
     if (!r.ok) { const err = new Error(typeof data.detail === "string" ? data.detail : "No se pudo completar la acción."); err.status = r.status; throw err; }
     return data;
   }
+  function showMain(on) { form.hidden = !on; if (tabsWrap) tabsWrap.hidden = !on; }
   function fieldInputs() { return Array.from(form.querySelectorAll("[data-field]")); }
 
   /* ---------------------------------------------------------------- estados de la pantalla */
   function showError(title, text, retry) {
-    loading.hidden = true; form.hidden = true; stateBox.hidden = false; stateBox.replaceChildren();
+    loading.hidden = true; showMain(false); stateBox.hidden = false; stateBox.replaceChildren();
     const box = el("div", "gw-state gw-state--error"), ic = el("div", "gw-state__icon"); ic.appendChild(icon("error")); box.appendChild(ic);
     box.appendChild(el("p", "gw-state__title", title)); box.appendChild(el("p", "gw-state__text", text));
     if (retry) { const b = el("button", "gw-btn gw-btn--primary", "Reintentar"); b.type = "button"; b.addEventListener("click", retry); box.appendChild(b); }
@@ -72,13 +73,13 @@
     } catch (e) { /* sin listas: el formulario igual sirve */ }
   }
   async function loadAccount() {
-    stateBox.hidden = true; conflict.hidden = true; loading.hidden = false; form.hidden = true;
+    stateBox.hidden = true; conflict.hidden = true; loading.hidden = false; showMain(false);
     try {
       account = await api("GET", "/api/crm/accounts/" + encodeURIComponent(accountId));
       if (meta) fillOwners($("owner_staff_id"), meta.owners);
       if (account.owner_staff_id && meta && !meta.owners.some((o) => o.id === account.owner_staff_id)) $("owner_staff_id").appendChild(new Option("Responsable anterior", String(account.owner_staff_id)));
       fill(account);
-      loading.hidden = true; form.hidden = false;
+      loading.hidden = true; showMain(true);
     } catch (e) {
       if (e.status === 404) showError("No encontramos esta cuenta", "Puede que el enlace esté mal escrito o que la hayan eliminado.");
       else showError("No se pudo cargar la ficha", e.message || "Revisa tu conexión e intenta de nuevo.", loadAccount);
@@ -146,13 +147,18 @@
   }
 
   /* ---------------------------------------------------------------- menú «Más» */
-  function closeMenus() { document.querySelectorAll(".gw-menu").forEach((m) => { const p = m.querySelector(".gw-menu__panel"); if (p) p.hidden = true; const t = m.querySelector("[data-menu-toggle]"); if (t) t.setAttribute("aria-expanded", "false"); }); }
+  function closeMenus() { document.querySelectorAll("#crmActions .gw-menu").forEach((m) => { const p = m.querySelector(".gw-menu__panel"); if (p) p.hidden = true; const t = m.querySelector("[data-menu-toggle]"); if (t) t.setAttribute("aria-expanded", "false"); }); }
   document.addEventListener("click", (e) => {
-    const t = e.target.closest && e.target.closest("[data-menu-toggle]");
+    const t = e.target.closest && e.target.closest("#crmActions [data-menu-toggle]");
     if (t) { const wrap = t.closest(".gw-menu"), panel = wrap.querySelector(".gw-menu__panel"), open = panel.hidden; closeMenus(); panel.hidden = !open; t.setAttribute("aria-expanded", open ? "true" : "false"); return; }
     closeMenus();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
+
+  /* Lo que usan las pestañas (crm_cuenta_tabs.js): saber si la cuenta es cliente y refrescar SOLO la línea del contacto principal (sin pisar lo que se esté editando). */
+  window.CRM = { id: accountId, canAdmin, account: () => account,
+    refreshPrimary: async () => { try { const a = await api("GET", "/api/crm/accounts/" + encodeURIComponent(accountId)); account.primary_contact = a.primary_contact; const prim = $("crmPrimary"); prim.replaceChildren(el("strong", null, "Contacto principal: "), document.createTextNode(a.primary_contact || "todavía no tiene")); } catch (e) { /* queda lo que había */ } },
+    api, el, icon };
 
   /* ---------------------------------------------------------------- arranque */
   form.addEventListener("submit", save);
@@ -163,5 +169,5 @@
     $("crmMakeClient").addEventListener("click", makeClient);
     const arch = $("crmArchive"); if (arch) arch.addEventListener("click", toggleArchive);
   }
-  (async function init() { await loadMeta(); if (isNew) { loading.hidden = true; form.hidden = false; $("name").focus(); } else loadAccount(); })();
+  (async function init() { await loadMeta(); if (isNew) { loading.hidden = true; showMain(true); $("name").focus(); } else loadAccount(); })();
 })();

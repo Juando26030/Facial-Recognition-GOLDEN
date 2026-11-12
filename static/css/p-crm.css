@@ -32,3 +32,37 @@
 }
 .crm-form .gw-fields-row, .crm-form .gw-form-group__body > .gw-field { margin-bottom: var(--gw-sp-3); }
 .crm-form .gw-form-group__body > :last-child { margin-bottom: 0; }
+
+/* Pestañas de la ficha: fila horizontal (no la lista lateral de Parámetros) */
+.crm-tablist { flex-direction: row; flex: none; position: static; overflow-x: auto; }
+.crm-tablist .gw-tab { min-width: 0; grid-template-columns: auto auto; }
+.crm-panel { min-width: 0; }
+.crm-panel[hidden] { display: none; }
+.crm-panel__bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-3); }
+.crm-panel__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+
+.crm-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); }
+@media (max-width: 720px) { .crm-cards { grid-template-columns: minmax(0, 1fr); } }
+.crm-card { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; overflow-wrap: anywhere; }
+.crm-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.crm-card__name { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); margin: 0; }
+.crm-card__line { margin: 0; }
+.crm-card__label { color: var(--gw-text-muted); }
+.crm-card__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+
+.crm-notes { list-style: none; margin: var(--gw-sp-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.crm-note { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gw-sp-2); }
+.crm-note__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.crm-note__body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.crm-history td { vertical-align: top; }
+.crm-history__change { overflow-wrap: anywhere; }
+
+/* Aviso de revisión tras suprimir: se queda a la vista hasta cerrarlo */
+.crm-review { position: sticky; top: var(--gw-sp-2); z-index: 20; }
+.crm-review__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.crm-erase__list { margin: 0; padding-left: var(--gw-sp-5); }
+.gw-modal .gw-fields-row { row-gap: var(--gw-sp-3); }
+/* Ventanas del CRM: más anchas que el confirmar común y con los botones siempre a la vista aunque el contenido se desplace */
+.gw-modal--dialog.crm-dialog { max-width: 36rem; }
+.crm-dialog .gw-modal__foot { position: sticky; bottom: 0; background: var(--gw-surface); }

@@ -3,7 +3,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FILES = ["templates/crm_cuentas.html", "templates/crm_cuenta.html", "static/js/crm_cuentas.js", "static/js/crm_cuenta.js", "static/css/p-crm.css"]
+FILES = ["templates/crm_cuentas.html", "templates/crm_cuenta.html", "static/js/crm_cuentas.js", "static/js/crm_cuenta.js", "static/js/crm_cuenta_tabs.js", "static/css/p-crm.css"]
 
 
 def _read(rel):
@@ -28,7 +28,7 @@ def test_templates_use_url_for_static_and_design_tokens():
 
 
 def test_user_text_is_never_written_with_innerhtml():
-    for rel in ("static/js/crm_cuentas.js", "static/js/crm_cuenta.js"):
+    for rel in ("static/js/crm_cuentas.js", "static/js/crm_cuenta.js", "static/js/crm_cuenta_tabs.js"):
         text = _read(rel)
         assert text.count("innerHTML") <= 1 and ("innerHTML" not in text or "GW.skeleton.html" in text), rel
 
@@ -50,3 +50,17 @@ def test_ficha_sends_the_version_it_saw_and_handles_conflict():
     js = _read("static/js/crm_cuenta.js")
     assert "updated_at = account.updated_at" in js and "err.status === 409" in js
     assert "confirm_duplicate" in js
+
+
+def test_erase_flow_shows_a_preview_and_keeps_the_review_notice():
+    js = _read("static/js/crm_cuenta_tabs.js")
+    assert "/erase-preview" in js and js.index("/erase-preview") < js.index('"/erase"'), "la vista previa va antes de suprimir"
+    assert "showReview(r.counts)" in js and 'ok.dataset.go = "close"' in js      # el aviso se cierra solo con el botón, no desaparece solo
+    assert "setTimeout" not in js
+    assert "review.description" in js or "r.description" in js
+    assert js.count("insertAdjacentHTML") == 1, "HTML armado a mano solo con texto fijo"
+
+
+def test_confirmation_needs_reason_and_the_typed_name():
+    js = _read("static/js/crm_cuenta_tabs.js")
+    assert "go.disabled = true" in js and "reason.value.trim()" in js and "toLowerCase() === c.full_name" in js

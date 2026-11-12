@@ -31,3 +31,13 @@ def test_sales_and_admin_see_the_pages(client, factory, crm_on, role, path):
 def test_menu_link_follows_the_role(client, factory, crm_on):
     staff_client(client, factory, "comercial")
     assert 'href="/crm"' in client.get("/crm").text
+
+
+def test_history_names_the_contact(client, factory, crm_on):
+    from tests.crm_helpers import new_account, new_contact
+    staff_client(client, factory, "admin", "adm_hist")
+    a = new_account(client)
+    new_contact(client, a["id"], "Ana", "Pérez")
+    rows = client.get(f"/api/crm/accounts/{a['id']}/history").json()
+    assert any(r["entity"] == "contact" and r["contact"] == "Ana Pérez" for r in rows)
+    assert all(r["contact"] is None for r in rows if r["entity"] == "account")

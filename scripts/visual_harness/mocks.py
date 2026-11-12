@@ -532,3 +532,46 @@ def crm_put(v, q, i):
 @route('POST', r'/api/crm/accounts')
 def crm_create(v, q):
     return crm_get('', q, '1')
+
+
+_CRM_CONTACTS = [
+    {'id': 11, 'account_id': 1, 'first_name': 'Camila', 'last_name': 'Torres Quintero', 'full_name': 'Camila Torres Quintero', 'job_title': 'Directora de eventos', 'email': 'camila.torres@ejemplo.test',
+     'phone': '601 555 1234', 'mobile': '300 123 4567', 'is_primary': True, 'notes': 'Prefiere que la llamen por la mañana.', 'archived': False, 'updated_at': '2026-11-10T15:00:00'},
+    {'id': 12, 'account_id': 1, 'first_name': 'Juan Pablo', 'last_name': 'Rojas', 'full_name': 'Juan Pablo Rojas', 'job_title': None, 'email': 'jprojas@ejemplo.test', 'phone': None,
+     'mobile': '310 999 8888', 'is_primary': False, 'notes': None, 'archived': False, 'updated_at': '2026-11-10T15:00:00'},
+]
+
+
+@route('GET', r'/api/crm/accounts/\d+/contacts')
+def crm_contacts(v, q):
+    if v == 'cerror':
+        return 500, {'detail': 'No se pudieron cargar los contactos.'}, {}
+    if q.get('archived'):
+        return []
+    return [] if v == 'cempty' else _CRM_CONTACTS
+
+
+@route('GET', r'/api/crm/contacts/\d+/erase-preview')
+def crm_preview(v, q):
+    review = {'description': True, 'general_notes': 2} if v != 'clean' else {'description': False, 'general_notes': 0}
+    return {'counts': {'contacts': 1, 'notes': 2, 'changes': 4, 'account_history': 3, 'account_fields': 2, 'tenant_fields': 3, 'review': review}}
+
+
+@route('POST', r'/api/crm/contacts/\d+/erase')
+def crm_erase(v, q):
+    return crm_preview(v, q)['counts'] and {'message': 'Datos del contacto suprimidos', 'counts': crm_preview(v, q)['counts']}
+
+
+@route('GET', r'/api/crm/accounts/\d+/notes')
+def crm_notes(v, q):
+    if v == 'nempty':
+        return []
+    return [{'id': 1, 'contact_id': 11, 'kind': 'note', 'body': 'Pidió cotización para el congreso de 2027.\nQuedamos en llamar el lunes.', 'author': 'María Fernanda Rodríguez Valderrama', 'created_at': '2026-11-09T14:00:00'},
+            {'id': 2, 'contact_id': None, 'kind': 'note', 'body': 'Cuenta con crédito a 30 días.', 'author': 'Andrés Ochoa', 'created_at': '2026-11-02T09:30:00'}]
+
+
+@route('GET', r'/api/crm/accounts/\d+/history')
+def crm_history(v, q):
+    return [{'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'payment_term', 'old': '30 días', 'new': '60 días', 'by': 'Andrés Ochoa', 'source': 'edit', 'at': '2026-11-10T15:00:00'},
+            {'entity': 'contact', 'entity_id': 11, 'contact': 'Camila Torres Quintero', 'field': 'is_primary', 'old': 'False', 'new': 'True', 'by': 'Laura Páez', 'source': 'edit', 'at': '2026-11-09T11:00:00'},
+            {'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'name', 'old': None, 'new': 'Asociación Colombiana de Ingenieros', 'by': None, 'source': 'import', 'at': '2026-10-01T08:00:00'}]

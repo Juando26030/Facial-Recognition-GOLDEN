@@ -308,9 +308,10 @@ def account_history(account_id: int, db: Session = Depends(get_db), staff: Staff
     """Cambios de la cuenta y de sus contactos, del más reciente al más antiguo (hasta 500). Los valores se recortan como en el historial de personas."""
     if db.get(CrmAccount, account_id) is None:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada.")
-    contact_ids = [r[0] for r in db.query(CrmContact.id).filter(CrmContact.account_id == account_id).all()]
+    contacts = {c.id: svc.full_name(c) for c in db.query(CrmContact).filter(CrmContact.account_id == account_id).all()}
+    contact_ids = list(contacts)
     q = db.query(CrmChangeLog).filter(((CrmChangeLog.entity == "account") & (CrmChangeLog.entity_id == account_id)) |
                                       ((CrmChangeLog.entity == "contact") & (CrmChangeLog.entity_id.in_(contact_ids or [-1]))))
     names = {s.id: s.full_name for s in db.query(StaffUser.id, StaffUser.full_name).all()}
     rows = q.order_by(CrmChangeLog.changed_at.desc(), CrmChangeLog.id.desc()).limit(500).all()
-    return [{"entity": r.entity, "entity_id": r.entity_id, "field": r.field_key, "old": r.old_value, "new": r.new_value, "by": names.get(r.changed_by_id), "source": r.source, "at": r.changed_at.isoformat()} for r in rows]
+    return [{"entity": r.entity, "entity_id": r.entity_id, "contact": contacts.get(r.entity_id) if r.entity == "contact" else None, "field": r.field_key, "old": r.old_value, "new": r.new_value, "by": names.get(r.changed_by_id), "source": r.source, "at": r.changed_at.isoformat()} for r in rows]

@@ -88,7 +88,18 @@
 
     <div id="crmLoading">{{ skeleton('text', rows=6, label='Cargando la ficha…') if not is_new }}</div>
 
-    <form id="crmForm" class="gw-stack crm-form" novalidate {% if not is_new %}hidden{% endif %}>
+    {% if not is_new %}
+    <div id="crmReview" class="crm-review" role="status" hidden></div>
+    <div id="crmTabs" class="gw-stack" hidden>
+      <div class="gw-tablist crm-tablist" role="tablist" aria-label="Secciones de la cuenta" data-gw-tour-step="4" data-gw-tour-title="Contactos, notas e historial" data-gw-tour-text="Las personas de la cuenta, las notas del equipo y todo lo que se ha cambiado.">
+        <button type="button" class="gw-tab" role="tab" id="tab_datos" data-tab="datos" aria-controls="panel_datos" aria-selected="true">{{ ic('building', 'gw-tab__icon') }}<span class="gw-tab__name">Datos</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_contactos" data-tab="contactos" aria-controls="panel_contactos" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Contactos</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_notas" data-tab="notas" aria-controls="panel_notas" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Notas</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_historial" data-tab="historial" aria-controls="panel_historial" aria-selected="false" tabindex="-1">{{ ic('clock', 'gw-tab__icon') }}<span class="gw-tab__name">Historial</span></button>
+      </div>
+      <div class="crm-panel" role="tabpanel" id="panel_datos" aria-labelledby="tab_datos" data-panel="datos">
+    {% endif %}
+    <form id="crmForm" class="gw-stack crm-form" novalidate hidden>
       <p class="crm-primary" id="crmPrimary" hidden></p>
 
       <details class="gw-form-group" open data-gw-tour-step="1" data-gw-tour-title="Datos principales" data-gw-tour-text="Nombre, estado, NIT, correo, teléfono y responsable de la cuenta.">
@@ -168,9 +179,42 @@
         <a class="gw-btn gw-btn--secondary" href="/crm">Cancelar</a>
       </div>
     </form>
+    {% if not is_new %}
+      </div>
+
+      <div class="crm-panel" role="tabpanel" id="panel_contactos" aria-labelledby="tab_contactos" data-panel="contactos" hidden>
+        <div class="crm-panel__bar">
+          <div><h2 class="crm-panel__title">Contactos</h2><p class="gw-hint" id="crmContactsHint">El primero que se agrega es el principal. El principal se copia al cliente de la plataforma si la cuenta lo es.</p></div>
+          <button type="button" class="gw-btn gw-btn--primary" id="crmNewContact">{{ ic('user-plus', 'gw-icon--sm') }} Nuevo contacto</button>
+        </div>
+        <label class="gw-check"><input type="checkbox" id="crmContactsArchived"> Ver archivados</label>
+        <div id="crmContacts" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando contactos…') }}</div>
+      </div>
+
+      <div class="crm-panel" role="tabpanel" id="panel_notas" aria-labelledby="tab_notas" data-panel="notas" hidden>
+        <div class="crm-panel__bar"><div><h2 class="crm-panel__title">Notas</h2><p class="gw-hint">Lo que el equipo quiere recordar de esta cuenta. No escribas aquí datos sensibles de personas.</p></div></div>
+        <form id="crmNoteForm" class="gw-stack" novalidate>
+          <div class="gw-field"><label class="gw-label" for="crmNoteBody">Nueva nota</label><textarea class="gw-textarea" id="crmNoteBody" rows="3" maxlength="5000"></textarea></div>
+          <div class="gw-fields-row gw-fields-row--2">
+            <div class="gw-field"><label class="gw-label" for="crmNoteContact">Sobre</label><select class="gw-select" id="crmNoteContact"><option value="">Toda la cuenta</option></select></div>
+          </div>
+          <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="crmNoteSave">Agregar nota</button></div>
+        </form>
+        <div id="crmNotes" aria-live="polite">{{ skeleton('list', rows=3, label='Cargando notas…') }}</div>
+      </div>
+
+      <div class="crm-panel" role="tabpanel" id="panel_historial" aria-labelledby="tab_historial" data-panel="historial" hidden>
+        <div class="crm-panel__bar"><div><h2 class="crm-panel__title">Historial</h2><p class="gw-hint">Cada cambio a los datos de la cuenta y de sus contactos: quién, cuándo y qué cambió. Se muestran los últimos 500.</p></div></div>
+        <div id="crmHistory" aria-live="polite">{{ skeleton('table', rows=5, cols=5, label='Cargando historial…') }}</div>
+        <div id="crmHistoryPager"></div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </main>
 
+<script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
 <script src="{{ url_for('static', path='js/crm_cuenta.js') }}"></script>
+{% if not is_new %}<script src="{{ url_for('static', path='js/crm_cuenta_tabs.js') }}"></script>{% endif %}
 </body>
 </html>
