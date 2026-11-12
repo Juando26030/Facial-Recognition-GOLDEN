@@ -10,12 +10,31 @@ def seed_counters(db, *, ready=True, account=0, event=0):
 
 import pytest  # noqa: E402
 
+STAGES = (("Prospecto", 10, "open"), ("Calificado", 25, "open"), ("Propuesta de valor", 50, "open"), ("Cotización enviada", 65, "open"), ("Negociación", 80, "open"), ("Ganada", 100, "won"), ("Perdida", 0, "lost"))
+
+
+def seed_pipeline(db):
+    """Vuelve a sembrar el embudo «Eventos» con sus 7 etapas como los deja la migración 0131 (`_clean_tables` vacía todas las tablas antes de cada prueba) y descarta el catálogo en memoria. Devuelve (embudo, {nombre: etapa})."""
+    from app.crm import pipeline as pipe
+    from app.models import CrmPipeline, CrmStage
+    pipeline = CrmPipeline(name="Eventos", position=0, is_default=True)
+    db.add(pipeline)
+    db.flush()
+    stages = {}
+    for i, (name, prob, kind) in enumerate(STAGES):
+        stages[name] = CrmStage(pipeline_id=pipeline.id, name=name, position=i, probability=prob, kind=kind)
+        db.add(stages[name])
+    db.commit()
+    pipe.invalidate()
+    return pipeline, stages
+
 
 @pytest.fixture()
 def crm_on(monkeypatch, db):
     """CRM encendido con el contador listo en 1000 (la primera cuenta es la 1001). Se importa en cada archivo de pruebas: `from tests.crm_helpers import crm_on  # noqa: F401`."""
     monkeypatch.setenv("CRM_ENABLED", "1")
     seed_counters(db, ready=True, account=1000)
+    seed_pipeline(db)
 
 
 def staff_client(client, factory, role="comercial", username=None, **extra):

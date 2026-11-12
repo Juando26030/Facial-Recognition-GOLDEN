@@ -137,12 +137,18 @@
     if (k.account_fields) out.push(done ? PLURAL(k.account_fields, "dato de la cuenta vaciado (correo, teléfono o contacto de facturación)", "datos de la cuenta vaciados (correo, teléfono o contacto de facturación)")
       : PLURAL(k.account_fields, "dato de la cuenta que se vaciará (correo, teléfono o contacto de facturación)", "datos de la cuenta que se vaciarán (correo, teléfono o contacto de facturación)"));
     if (k.tenant_fields) out.push(PLURAL(k.tenant_fields, "dato copiado al cliente de la plataforma", "datos copiados al cliente de la plataforma"));
+    if (k.activities) out.push(PLURAL(k.activities, "actividad suya", "actividades suyas"));
+    if (k.opportunities) out.push(done ? PLURAL(k.opportunities, "oportunidad desvinculada de este contacto", "oportunidades desvinculadas de este contacto") : PLURAL(k.opportunities, "oportunidad que dejará de tenerlo como contacto", "oportunidades que dejarán de tenerlo como contacto"));
+    if (k.leads) out.push(PLURAL(k.leads, "lead con su mismo correo, con sus actividades e historial", "leads con su mismo correo, con sus actividades e historial"));
     return out;
   }
   function reviewLines(r) {
     const out = [];
     if (r && r.description) out.push("La descripción de la cuenta parece mencionar a esta persona.");
     if (r && r.general_notes) out.push(r.general_notes === 1 ? "1 nota general parece mencionarla." : r.general_notes + " notas generales parecen mencionarla.");
+    if (r && r.opportunity_texts) out.push(PLURAL(r.opportunity_texts, "oportunidad de la cuenta tiene texto que parece mencionarla.", "oportunidades de la cuenta tienen texto que parece mencionarla."));
+    if (r && r.activity_texts) out.push(PLURAL(r.activity_texts, "actividad de la cuenta parece mencionarla.", "actividades de la cuenta parecen mencionarla."));
+    if (r && r.leads_to_check) out.push(PLURAL(r.leads_to_check, "lead podría ser la misma persona (coincide el nombre o el teléfono): revísalo en Leads.", "leads podrían ser la misma persona (coinciden el nombre o el teléfono): revísalos en Leads."));
     return out;
   }
   async function eraseFlow(c) {

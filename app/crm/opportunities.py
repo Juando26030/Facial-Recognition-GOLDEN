@@ -6,7 +6,7 @@
   tarjetas con `row_number()` por etapa (50 por columna; «ver más» pide otra página de UNA columna). Nombres de cuenta y responsable salen en la misma consulta con JOIN: no hay N+1.
 """
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from sqlalchemy import case, func, or_
@@ -220,7 +220,7 @@ def board(db: Session, pipeline_id: Optional[int], filters: dict, *, stage_id: O
     for sid, cur, n, amount, wtd in totals_q.all():
         totals.setdefault(sid, {"count": 0, "by_currency": []})
         totals[sid]["count"] += int(n)
-        totals[sid]["by_currency"].append({"currency": cur, "amount": str(Decimal(amount).quantize(Decimal("0.01"))), "weighted": str(Decimal(wtd).quantize(Decimal("0.01")))})
+        totals[sid]["by_currency"].append({"currency": cur, "amount": str(Decimal(amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)), "weighted": str(Decimal(wtd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))})
 
     # 2) tarjetas: UNA consulta con row_number() por etapa (ver _cards)
     result_rows = _cards(db, base, off, size)

@@ -41,7 +41,7 @@ def test_erase_contact_removes_every_trace_and_reports_only_counts(client, facto
     counts = r.json()["counts"]
     assert counts["contacts"] == 1 and counts["notes"] == 1 and counts["changes"] >= 1 and counts["tenant_fields"] == 3
     assert counts["account_fields"] == 3 and counts["account_history"] >= 3                                 # correo, contacto de facturación y su teléfono
-    assert counts["review"] == {"description": True, "general_notes": 1}                                     # texto libre: se avisa, no se toca
+    assert {k: counts["review"][k] for k in ("description", "general_notes")} == {"description": True, "general_notes": 1}                                     # texto libre: se avisa, no se toca
     assert not any(p in json.dumps(r.json(), ensure_ascii=False).lower() for p in PERSONAL)               # la respuesta no trae datos personales
 
     db.expire_all()
@@ -51,7 +51,7 @@ def test_erase_contact_removes_every_trace_and_reports_only_counts(client, facto
     assert log, "el historial de lo demás debe quedar"
     for row in log:
         assert not any(p in f"{row.old_value} {row.new_value}".lower() for p in PERSONAL), (row.field_key, row.entity)          # ningún otro valor suyo en NINGÚN historial
-    assert counts["review"] == {"description": True, "general_notes": 1}          # y el aviso trae los conteos que la pantalla mostrará
+    assert {k: counts["review"][k] for k in ("description", "general_notes")} == {"description": True, "general_notes": 1}          # y el aviso trae los conteos que la pantalla mostrará
     assert any(r_.field_key == "billing_city" and r_.new_value == "Medellín" for r_ in log)                   # lo que no era suyo se conserva
     acc = db.get(m.CrmAccount, a["id"])
     assert acc.email is None and acc.billing_contact_name is None and acc.billing_contact_phone is None and "Ana Pérez" in acc.description
@@ -113,7 +113,7 @@ def test_erasing_a_contact_without_any_other_trace_still_works(client, factory, 
     a = new_account(client)
     c = new_contact(client, a["id"], "Solo", "Contacto")
     r = client.post(f"/api/crm/contacts/{c['id']}/erase", json={"reason": "x", "confirm_name": "Solo Contacto"})
-    assert r.status_code == 200 and r.json()["counts"]["tenant_fields"] == 0 and r.json()["counts"]["review"] == {"description": False, "general_notes": 0}
+    assert r.status_code == 200 and r.json()["counts"]["tenant_fields"] == 0 and {k: r.json()["counts"]["review"][k] for k in ("description", "general_notes")} == {"description": False, "general_notes": 0}
     assert client.post(f"/api/crm/contacts/{c['id']}/erase", json={"reason": "x", "confirm_name": "Solo Contacto"}).status_code == 404          # ya no existe
 
 

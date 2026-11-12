@@ -6,7 +6,7 @@ Los topes de texto son EXACTAMENTE los de las columnas de app/models.py (hay una
 """
 import re
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Iterable, Optional
 
 from app.crm.errors import CrmError
@@ -193,8 +193,8 @@ def effective_probability(opp_probability: Optional[int], stage_probability: int
 
 
 def weighted(amount, probability: int) -> Decimal:
-    """Monto × probabilidad / 100, con dos decimales."""
-    return (Decimal(str(amount or 0)) * Decimal(int(probability)) / Decimal(100)).quantize(Decimal("0.01"))
+    """Monto × probabilidad / 100, con dos decimales (la mitad sube, como el redondeo de `numeric` de Postgres que usa el tablero)."""
+    return (Decimal(str(amount or 0)) * Decimal(int(probability)) / Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def move_effects(stage_kind: str, previous_outcome: str, lost_reason: Optional[str], now: datetime) -> dict:
