@@ -145,6 +145,6 @@ def test_csv_cells_that_look_like_formulas_are_neutralised():
 def test_tools_guarantees_in_the_source():
     tools, router = _read("app/crm/tools.py"), _read("app/routers/crm_tools.py")
     assert "async def" not in router and "_require_crm_enabled" in router
-    assert re.search(r"def export\([^)]*admin_staff", router) and 'f"{n} filas"' in router
+    assert "admin_staff" in router.split("def export(")[1].split("\n")[0] and 'f"{n} filas"' in router
     assert tools.count(".limit(") >= 5 and "SEARCH_MIN" in tools and "utf-8" in tools and "\\ufeff" in tools
     assert "setInterval" not in _read("static/js/crm_buscar.js") if pathlib.Path("static/js/crm_buscar.js").exists() else True
