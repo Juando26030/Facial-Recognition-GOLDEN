@@ -958,7 +958,7 @@
   .gw-page .gw-stack > * + * { margin-top: var(--gw-sp-2); }
   .gw-page .gw-stack-lg > .gw-page-head + .gw-steps, .gw-page .gw-stack-lg > .gw-stack:first-child + .gw-steps { margin-top: var(--gw-sp-1); }
   .gw-page .gw-parametros__wrap { gap: var(--gw-sp-2); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-3); }
-  .gw-page .gw-container { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .gw-page .gw-container, .gw-page .gw-crm-nav { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
   .gw-page .golden-main > .gw-container { padding-top: var(--gw-sp-2); }
   .gw-page .gw-card { padding: var(--gw-sp-3); }
   .gw-page .gw-card__head { margin-bottom: var(--gw-sp-2); }
@@ -1191,6 +1191,6 @@
 .gw-stagebar__step.is-lost .gw-stagebar__state { color: var(--gw-err-text); }
 
 /* CRM · barra de secciones (etapa C1c–C4): fila de píldoras con desplazamiento propio; la sección actual lleva `aria-current="page"` y fondo de información (par verificado). */
-.gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; padding: var(--gw-sp-1); max-width: 100%; }
+.gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; width: 100%; max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-1) var(--gw-sp-4); }          /* misma columna y mismo relleno lateral que .gw-container: el borde izquierdo de la primera píldora cae sobre el del título */
 .gw-crm-nav .gw-chip { flex: 0 0 auto; text-decoration: none; }
 .gw-chip--current { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }

@@ -92,3 +92,44 @@ def test_staging_findings_nov12_won_stagebar_event_link_subtotal_label_and_count
     assert "Subtotal con descuento" in (root / "app/crm/quote_pdf.py").read_text(encoding="utf-8")
     script = (root / "scripts/crm_set_counter.py").read_text(encoding="utf-8")
     assert 'choices=("account", "event", "quote", "proforma")' in script
+
+
+def test_nav_order_is_defined_once_importar_is_last_and_admin_only():
+    import re
+    from pathlib import Path
+    from app.crm import SECTIONS, sections
+    root = Path(__file__).resolve().parent.parent
+    order = ["buscar", "midia", "tableros", "cuentas", "leads", "oportunidades", "cotizaciones", "embudos", "importar"]
+    assert [k for k, *_ in SECTIONS] == order
+    assert [s["key"] for s in sections(True)] == order
+    assert [s["key"] for s in sections(False)] == order[:-2]                      # un comercial no ve Embudos ni Importar
+    assert [label for _k, label, *_ in SECTIONS][-1] == "Importar" and dict((k, a) for k, _l, _h, a in SECTIONS)["importar"] is True
+    # una sola definición: ninguna plantilla ni el arnés repiten la lista de pestañas
+    for f in (root / "templates").glob("crm_*.html"):
+        assert "/crm/mi-dia" not in re.sub(r"\{#.*?#\}", "", f.read_text(encoding="utf-8"), flags=re.S) or f.name == "crm_midia.html", f.name
+    nav = (root / "templates/_crm_nav.html").read_text(encoding="utf-8")
+    assert "for s in crm_nav" in nav
+    assert "from app.crm import SECTIONS" in (root / "scripts/visual_harness/pages.py").read_text(encoding="utf-8")
+
+
+def test_import_is_admin_only_in_the_server_page_and_every_api_route():
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    api = (root / "app/routers/crm_import.py").read_text(encoding="utf-8")
+    assert 'admin_staff = ' in api or "admin_staff" in api
+    routes = re.findall(r"@router\.(?:get|post|put|delete)\(.*?\)\ndef \w+\((.*?)\):", api, flags=re.S)
+    assert len(routes) >= 6 and all("Depends(admin_staff)" in r for r in routes)                  # TODAS las rutas piden admin
+    assert 'admin_staff = crm_router.require_platform_role("admin")' in api or "require_platform_role(\"admin\")" in (root / "app/routers/crm.py").read_text(encoding="utf-8")
+    main = (root / "app/main.py").read_text(encoding="utf-8")
+    page = main[main.index('def crm_importar_page'):]
+    page = page[:page.index("\n\n\n")]
+    assert '_require_page_role(request, "admin")' in page and "status_code=403" in page
+
+
+def test_nav_aligns_with_the_page_column():
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "static/css/design-system.css").read_text(encoding="utf-8")
+    rule = next(l for l in css.splitlines() if l.startswith(".gw-crm-nav {"))
+    assert "max-width: var(--gw-content-w)" in rule and "margin: 0 auto" in rule and "padding: var(--gw-sp-1) var(--gw-sp-4)" in rule
+    assert ".gw-page .gw-container, .gw-page .gw-crm-nav" in css                                  # mismo relleno lateral en celular

@@ -3,8 +3,11 @@ import datetime
 import importlib.util
 import json
 
-_CRM_SECTIONS = (('cuentas', 'Cuentas', '/crm', 0), ('oportunidades', 'Oportunidades', '/crm/oportunidades', 0), ('leads', 'Leads', '/crm/leads', 0), ('cotizaciones', 'Cotizaciones', '/crm/cotizaciones', 0),
-                 ('midia', 'Mi día', '/crm/mi-dia', 0), ('tableros', 'Tableros', '/crm/tableros', 0), ('buscar', 'Buscar', '/crm/buscar', 0), ('embudos', 'Embudos', '/crm/embudos', 1), ('importar', 'Importar', '/crm/importar', 1))
+import os
+import sys
+
+sys.path.insert(0, os.environ.get('REPO', '.'))
+from app.crm import SECTIONS as _CRM_SECTIONS  # noqa: E402  (una sola definición: la misma barra que la app real)
 LONG_EVENT = 'Congreso Nacional de Innovación, Tecnología Aplicada y Transformación Digital 2026'
 LONG_TENANT = 'Asociación Colombiana de Ingenieros de Sistemas y Telecomunicaciones'
 LONG_STAFF = 'María Fernanda Rodríguez Valderrama'

@@ -33,9 +33,9 @@ def normalize(text: Optional[str]) -> str:
 
 
 # Barra de secciones del CRM (templates/_crm_nav.html). (clave, texto, dirección, solo admin). Una sección aparece cuando su pieza se fusiona: el integrador la agrega a SECTIONS_BUILT.
-SECTIONS = (("cuentas", "Cuentas", "/crm", False), ("oportunidades", "Oportunidades", "/crm/oportunidades", False), ("leads", "Leads", "/crm/leads", False),
-            ("cotizaciones", "Cotizaciones", "/crm/cotizaciones", False), ("midia", "Mi día", "/crm/mi-dia", False), ("tableros", "Tableros", "/crm/tableros", False),
-            ("buscar", "Buscar", "/crm/buscar", False), ("embudos", "Embudos", "/crm/embudos", True), ("importar", "Importar", "/crm/importar", True))
+SECTIONS = (("buscar", "Buscar", "/crm/buscar", False), ("midia", "Mi día", "/crm/mi-dia", False), ("tableros", "Tableros", "/crm/tableros", False),
+            ("cuentas", "Cuentas", "/crm", False), ("leads", "Leads", "/crm/leads", False), ("oportunidades", "Oportunidades", "/crm/oportunidades", False),
+            ("cotizaciones", "Cotizaciones", "/crm/cotizaciones", False), ("embudos", "Embudos", "/crm/embudos", True), ("importar", "Importar", "/crm/importar", True))
 SECTIONS_BUILT = {"cuentas", "oportunidades", "leads", "embudos", "importar", "cotizaciones", "buscar", "midia", "tableros"}
 
 

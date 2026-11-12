@@ -591,8 +591,10 @@ def crm_importar_page(request: Request):
     from app.crm import crm_enabled
     if not crm_enabled():
         raise HTTPException(status_code=404, detail="No encontrado")
-    redirect = _require_page_role(request, "admin")
+    redirect = _require_page_role(request, "admin")          # sin sesión → /login
     if redirect:
+        if request.session.get("staff_role"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede importar.")          # con sesión pero rol menor: 403, no redirección
         return redirect
     return _crm_page(request, "crm_importar.html")
 
