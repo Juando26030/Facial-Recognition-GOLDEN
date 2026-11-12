@@ -30,15 +30,18 @@ def _run_dict(r: CrmImportRun) -> dict:
 
 
 @router.post("/runs")
-def start_run(mode: str = Form(...), accounts: Optional[UploadFile] = File(None), contacts: Optional[UploadFile] = File(None), confirm: str = Form(""),
+def start_run(mode: str = Form(...), accounts: Optional[UploadFile] = File(None), contacts: Optional[UploadFile] = File(None), products: Optional[UploadFile] = File(None),
+              opportunities: Optional[UploadFile] = File(None), activities: Optional[UploadFile] = File(None), quotes: Optional[UploadFile] = File(None),
+              quote_lines: Optional[UploadFile] = File(None), proformas: Optional[UploadFile] = File(None), confirm: str = Form(""),
               dry_run_id: Optional[int] = Form(None), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
     if mode not in MODES:
         raise HTTPException(status_code=400, detail="Modo no válido.")
 
     def work():
-        files = {k: f.file.read() for k, f in (("accounts", accounts), ("contacts", contacts)) if f is not None}
+        files = {k: f.file.read() for k, f in (("accounts", accounts), ("contacts", contacts), ("products", products), ("opportunities", opportunities),
+                                                    ("activities", activities), ("quotes", quotes), ("quote_lines", quote_lines), ("proformas", proformas)) if f is not None}
         if not files:
-            raise runner.CrmError("Sube al menos un archivo (cuentas o contactos).")
+            raise runner.CrmError("Sube al menos un archivo.")
         if mode == "apply":
             if not apply_enabled():
                 raise runner.CrmError("La carga real está desactivada en este entorno.", 403)

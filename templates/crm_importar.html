@@ -16,7 +16,7 @@
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Sube los archivos</span>
-        {% call ayuda('ay_imp1', 'Sube los archivos') %}Un CSV de cuentas y, si quieres, otro de contactos. Hasta 25 MB cada uno.{% endcall %}</li>
+        {% call ayuda('ay_imp1', 'Sube los archivos') %}Un CSV de cuentas y, si quieres, los de contactos, productos, oportunidades, actividades, cotizaciones (con sus líneas) y proformas. Se procesan en ese orden. Hasta 25 MB cada uno.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Prueba sin guardar</span>
         {% call ayuda('ay_imp2', 'Prueba sin guardar') %}«Muestra» lee 20 filas; «Prueba completa» lee todo. Ninguna guarda nada y el informe no muestra datos personales.{% endcall %}</li>
       <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Revisa y carga</span>
@@ -24,8 +24,14 @@
     </ol>
 
     <section class="gw-card gw-stack" aria-label="Archivos">
-      <div class="gw-field"><label class="gw-label" for="impAcc">Cuentas (CSV)</label><input class="gw-input" type="file" id="impAcc" accept=".csv,text/csv"></div>
-      <div class="gw-field"><label class="gw-label" for="impCon">Contactos (CSV, opcional)</label><input class="gw-input" type="file" id="impCon" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_accounts">Cuentas (CSV)</label><input class="gw-input" type="file" id="imp_accounts" data-kind="accounts" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_contacts">Contactos (CSV, opcional)</label><input class="gw-input" type="file" id="imp_contacts" data-kind="contacts" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_products">Productos (CSV, opcional)</label><input class="gw-input" type="file" id="imp_products" data-kind="products" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_opportunities">Oportunidades (CSV, opcional)</label><input class="gw-input" type="file" id="imp_opportunities" data-kind="opportunities" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_activities">Actividades (CSV, opcional)</label><input class="gw-input" type="file" id="imp_activities" data-kind="activities" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_quotes">Cotizaciones (CSV, opcional)</label><input class="gw-input" type="file" id="imp_quotes" data-kind="quotes" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_quote_lines">Líneas de cotización (CSV, opcional)</label><input class="gw-input" type="file" id="imp_quote_lines" data-kind="quote_lines" accept=".csv,text/csv"></div>
+      <div class="gw-field"><label class="gw-label" for="imp_proformas">Proformas (CSV, opcional)</label><input class="gw-input" type="file" id="imp_proformas" data-kind="proformas" accept=".csv,text/csv"></div>
       <div class="crm-actions">
         <button type="button" class="gw-btn gw-btn--secondary" data-mode="sample">Muestra (20 filas)</button>
         <button type="button" class="gw-btn gw-btn--primary" data-mode="dry_run">Prueba completa</button>

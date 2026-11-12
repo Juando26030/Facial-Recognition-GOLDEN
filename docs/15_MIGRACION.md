@@ -1057,3 +1057,6 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 - Ganar una oportunidad crea el cliente (si falta) y el evento con el mismo número en la misma transacción (`app/crm/won.py`; `POST /api/crm/opportunities/{id}/win` para las ganadas sin evento). 409 todo o nada si el código ya existe.
 - «Mi día» (`/crm/mi-dia`) y tableros (`/crm/tableros`): `app/crm/today.py`, `app/routers/crm_today.py`; sin migración nueva (la 0134 queda sin usar); sin sondeos.
 - Criterios y decisiones: `docs/crm/STAGING_C4.md`. Pruebas de texto pasan; `tests/test_crm_ganada.py` (con base) **sin ejecutar** hasta que Juan David la corra.
+
+- **C1c-2 (importar oportunidades, actividades, productos, cotizaciones con líneas y proformas):** `app/crm/importer/more.py` + `parsing.py` (lectura pura), `formats.py` (alias por tipo), `runner.py` (orden y registro de la corrida para que la prueba en seco resuelva referencias), `/crm/importar` con 8 archivos, generador sintético ampliado. Mismos tres candados. Lo importado no crea eventos ni historial. Ver `docs/crm/IMPORTADOR.md` y `docs/crm/STAGING_C1C2.md`.
+

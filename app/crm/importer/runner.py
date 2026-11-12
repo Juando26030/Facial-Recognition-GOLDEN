@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session
 from app.crm import accounts as acc_svc, normalize
 from app.crm.codes import bump_floor
 from app.crm.errors import CrmError
-from app.crm.importer import formats, scoring
+from app.crm.importer import formats, more, scoring
 from app.models import CrmAccount, CrmContact, CrmImportPair, CrmImportRun, Tenant
 from app.storage import get_storage
 from app.timeutil import utcnow
 
 SAMPLE_ROWS = 20
 COMMIT_EVERY = 200
-FILE_KINDS = ("accounts", "contacts")
+FILE_KINDS = ("accounts", "contacts", "products", "opportunities", "activities", "quotes", "quote_lines", "proformas")
 
 
 def prefix(run_id: int) -> str:
@@ -35,7 +35,7 @@ def store_files(run_id: int, files: dict) -> dict:
     for kind, raw in files.items():
         if kind not in FILE_KINDS:
             raise CrmError("Tipo de archivo no válido.")
-        formats.decode(raw)                                  # valida tamaño y codificación al subir
+        formats.check_headers(kind, raw)                     # valida tamaño, codificación y columnas obligatorias al subir
         st.put(prefix(run_id) + kind + ".csv", raw)
         out[kind] = {"sha256": sha256(raw), "bytes": len(raw)}
     return out
@@ -95,7 +95,7 @@ def import_accounts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
     return {"counts": counts, "rejected": rejected, "names": names, "max_code": max_code}
 
 
-def import_contacts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
+def import_contacts(db: Session, staff_id: int, raw: bytes, mode: str, virtual: Optional[set] = None) -> dict:
     limit = SAMPLE_ROWS if mode == "sample" else None
     save = mode == "apply"
     counts = {"read": 0, "created": 0, "skipped_existing": 0, "rejected": 0, "without_account": 0}
@@ -109,6 +109,8 @@ def import_contacts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
                 continue
             norm = normalize(row.get("account_name"))[:200]
             account = db.query(CrmAccount).filter(CrmAccount.name_norm == norm).first() if norm else None
+            if account is None and not save and norm in (virtual or ()):
+                account = object()                                       # prueba en seco: la cuenta viene en los archivos de esta corrida
             if account is None:
                 counts["without_account"] += 1
                 raise CrmError("El contacto no tiene una cuenta conocida.")
@@ -183,19 +185,41 @@ def run(db: Session, run_id: int) -> None:
     db.commit()
     st = get_storage()
     try:
-        summary, suite = {}, []
-        for kind in FILE_KINDS:
-            key = prefix(run_id) + kind + ".csv"
-            if not st.exists(key):
-                continue
-            raw = st.get(key)
-            if kind == "accounts":
-                res = import_accounts(db, row.started_by_id, raw, row.mode)
-                suite = res["names"]
+        summary, suite, grouped = {}, [], None
+        files = {k: st.get(prefix(run_id) + k + ".csv") for k in FILE_KINDS if st.exists(prefix(run_id) + k + ".csv")}
+        save = row.mode == "apply"
+        if "accounts" in files:
+            res = import_accounts(db, row.started_by_id, files["accounts"], row.mode)
+            suite = res["names"]
+            summary["accounts"] = {"counts": res["counts"], "rejected": res["rejected"]}
+        if "contacts" in files:
+            virtual = {normalize(n)[:200] for _l, n, _c in suite}
+            res = import_contacts(db, row.started_by_id, files["contacts"], row.mode, virtual)
+            summary["contacts"] = {"counts": res["counts"], "rejected": res["rejected"]}
+        later = [k for k in ("products", "opportunities", "activities", "quotes", "proformas") if k in files]
+        if later or "quote_lines" in files:
+            if save:
+                db.commit()
+            ctx = more.Ctx(db, save)
+            ctx.add_accounts(suite)
+            if "quote_lines" in files and "quotes" not in files:
+                summary["quote_lines"] = {"counts": {"read": 0}, "rejected": [], "note": "Las líneas se leen junto con las cotizaciones: sube también el archivo de cotizaciones."}
+            if "quotes" in files:
+                grouped = more.group_lines(files.get("quote_lines"))
+            for kind in later:
+                if kind == "products":
+                    res = more.import_products(ctx, row.started_by_id, files[kind], row.mode)
+                elif kind == "opportunities":
+                    res = more.import_opportunities(ctx, row.started_by_id, files[kind], row.mode)
+                elif kind == "activities":
+                    res = more.import_activities(ctx, row.started_by_id, files[kind], row.mode)
+                elif kind == "quotes":
+                    res = more.import_quotes(ctx, row.started_by_id, files[kind], row.mode, grouped or {})
+                else:
+                    res = more.import_proformas(ctx, row.started_by_id, files[kind], row.mode)
                 summary[kind] = {"counts": res["counts"], "rejected": res["rejected"]}
-            else:
-                res = import_contacts(db, row.started_by_id, raw, row.mode)
-                summary[kind] = {"counts": res["counts"], "rejected": res["rejected"]}
+                if save:
+                    db.commit()
         if suite:
             summary["pairs"] = build_pairs(db, run_id, suite)
         row.counts_json = json.dumps(summary)

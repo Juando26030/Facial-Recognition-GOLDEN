@@ -29,8 +29,48 @@ CONTACT_ALIASES = {
     "phone": ("telefono de la oficina", "telefono movil", "mobile", "office phone", "telefono", "phone"),
     "account_name": ("nombre de la cuenta", "account name", "cuenta"),
 }
-ALIASES = {"accounts": ACCOUNT_ALIASES, "contacts": CONTACT_ALIASES}
-REQUIRED = {"accounts": ("name",), "contacts": ("first_name",)}
+PRODUCT_ALIASES = {
+    "legacy_id": ("id",), "sku": ("codigo", "sku", "part number", "numero de parte", "referencia"), "name": ("nombre", "name", "producto", "nombre del producto"),
+    "description": ("descripcion", "description"), "category": ("categoria", "category"), "cost": ("costo", "cost"), "price": ("precio", "price", "precio de lista", "list price"),
+    "currency": ("moneda", "currency"),
+}
+OPPORTUNITY_ALIASES = {
+    "legacy_id": ("id",), "code": ("codigo proyecto", "codigo del proyecto", "project code", "numero", "codigo"), "name": ("nombre", "name", "nombre de la oportunidad", "opportunity name"),
+    "account_name": ("nombre de la cuenta", "account name", "cuenta"), "stage": ("etapa de ventas", "sales stage", "etapa"), "amount": ("importe", "amount", "monto", "valor"),
+    "currency": ("moneda", "currency"), "expected_close": ("fecha de cierre esperada", "expected close date", "fecha de cierre", "cierre esperado"),
+    "opp_type": ("tipo", "type"), "source": ("fuente de la oportunidad", "lead source", "fuente", "origen"), "next_step": ("siguiente paso", "next step"),
+    "description": ("descripcion", "description"), "city": ("ciudad", "city"), "event_start": ("fecha del evento", "fecha de inicio del evento", "event date", "event start"),
+    "lost_reason": ("motivo de perdida", "motivo", "lost reason"), "closed_at": ("fecha de cierre real", "closed date", "fecha cierre real"),
+}
+ACTIVITY_ALIASES = {
+    "legacy_id": ("id",), "kind": ("tipo", "type", "tipo de actividad", "module"), "subject": ("asunto", "subject", "tema", "nombre", "name"), "status": ("estado", "status"),
+    "due": ("fecha de vencimiento", "fecha de inicio", "date due", "date start", "fecha", "vence"), "description": ("descripcion", "description"),
+    "opportunity_legacy_id": ("id oportunidad", "opportunity id", "id de la oportunidad"), "opportunity_name": ("oportunidad", "opportunity", "nombre de la oportunidad"),
+    "account_name": ("nombre de la cuenta", "account name", "cuenta"),
+}
+QUOTE_ALIASES = {
+    "legacy_id": ("id",), "number": ("numero", "number", "numero de cotizacion", "quote number"), "title": ("titulo", "title", "nombre", "name", "asunto"),
+    "account_name": ("nombre de la cuenta", "account name", "cuenta"), "opportunity_legacy_id": ("id oportunidad", "opportunity id", "id de la oportunidad"),
+    "opportunity_name": ("oportunidad", "opportunity", "nombre de la oportunidad"), "stage": ("etapa", "stage", "estado", "etapa de la cotizacion", "quote stage"),
+    "valid_until": ("valida hasta", "valid until", "fecha de validez", "valido hasta"), "terms": ("terminos y condiciones", "terms", "terminos"),
+    "currency": ("moneda", "currency"), "total": ("total", "total amount", "importe total"),
+}
+QUOTE_LINE_ALIASES = {
+    "quote_legacy_id": ("id cotizacion", "quote id", "id de la cotizacion"), "quote_number": ("numero de cotizacion", "quote number", "cotizacion"),
+    "name": ("nombre", "name", "producto", "concepto", "item"), "description": ("descripcion", "description"), "qty": ("cantidad", "quantity", "qty"),
+    "unit_price": ("precio unitario", "unit price", "precio", "list price"), "discount_percent": ("descuento", "discount", "descuento %"),
+    "tax_percent": ("impuesto", "tax", "iva", "impuesto %"),
+}
+PROFORMA_ALIASES = {
+    "legacy_id": ("id",), "number": ("numero", "number", "numero de proforma", "proforma"), "quote_legacy_id": ("id cotizacion", "quote id", "id de la cotizacion"),
+    "quote_number": ("numero de cotizacion", "quote number", "cotizacion"), "account_name": ("nombre de la cuenta", "account name", "cuenta"),
+    "issued_at": ("fecha de emision", "fecha", "issue date", "issued"), "due_at": ("fecha de vencimiento", "vence", "due date"), "status": ("estado", "status", "estado de pago"),
+    "event_name": ("evento", "nombre del evento", "event"), "city": ("ciudad", "city"), "total": ("total", "importe total", "total amount"), "currency": ("moneda", "currency"),
+}
+ALIASES = {"accounts": ACCOUNT_ALIASES, "contacts": CONTACT_ALIASES, "products": PRODUCT_ALIASES, "opportunities": OPPORTUNITY_ALIASES, "activities": ACTIVITY_ALIASES,
+           "quotes": QUOTE_ALIASES, "quote_lines": QUOTE_LINE_ALIASES, "proformas": PROFORMA_ALIASES}
+REQUIRED = {"accounts": ("name",), "contacts": ("first_name",), "products": ("name",), "opportunities": ("name", "account_name"), "activities": ("subject",),
+            "quotes": ("account_name",), "quote_lines": ("name",), "proformas": ("account_name",)}
 
 
 def decode(raw: bytes) -> str:
@@ -83,3 +123,9 @@ def read_rows(kind: str, raw: bytes, limit: Optional[int] = None) -> Iterator[tu
         n += 1
         if limit is not None and n >= limit:
             return
+
+
+def check_headers(kind: str, raw: bytes) -> None:
+    """Valida tamaño, codificación y columnas obligatorias al subir (falla rápido, antes de encolar nada)."""
+    for _ in read_rows(kind, raw, 1):
+        break

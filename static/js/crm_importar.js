@@ -6,6 +6,7 @@
   const { $, el, api, stateBlock } = X;
   const MODES = { sample: "Muestra", dry_run: "Prueba completa", apply: "Carga" };
   const STATUS = { queued: "En cola", running: "En curso", done: "Terminada", failed: "Falló", cancelled: "Cancelada" };
+  const KINDS = { accounts: "Cuentas", contacts: "Contactos", products: "Productos", opportunities: "Oportunidades", activities: "Actividades", quotes: "Cotizaciones", quote_lines: "Líneas de cotización", proformas: "Proformas" };
   let lastDry = null, applyEnabled = false;
 
   function say(text) { $("impMsg").textContent = text || ""; }
@@ -17,7 +18,18 @@
     bar.appendChild(el("span", "gw-badge " + (r.status === "done" ? "gw-badge--ok" : r.status === "failed" ? "gw-badge--warn" : "gw-badge--info"), STATUS[r.status] || r.status)); card.appendChild(bar);
     card.appendChild(el("p", "gw-help", X.fmtDateTime(r.created_at)));
     if (r.error) card.appendChild(el("p", "gw-text", r.error));
-    ["accounts", "contacts"].forEach((k) => { const s = r.counts && r.counts[k]; if (s) { card.appendChild(el("p", "gw-text", line(k === "accounts" ? "Cuentas" : "Contactos", s.counts))); (s.rejected || []).slice(0, 10).forEach((x) => card.appendChild(el("p", "gw-help", "Fila " + x.row + ": " + x.reason))); } });
+    Object.keys(KINDS).forEach((k) => {
+      const s = r.counts && r.counts[k]; if (!s) return;
+      card.appendChild(el("p", "gw-text", line(KINDS[k], s.counts)));
+      if (s.note) card.appendChild(el("p", "gw-help", s.note));
+      const c = s.counts || {}, extra = [];
+      if (c.without_account) extra.push(c.without_account + " sin cuenta conocida"); if (c.unlinked) extra.push(c.unlinked + " sin oportunidad ni cuenta");
+      if (c.without_quote) extra.push(c.without_quote + " sin cotización ligada"); if (c.stage_unmapped) extra.push(c.stage_unmapped + " con etapa no reconocida");
+      if (c.currency_defaulted) extra.push(c.currency_defaulted + " con moneda no reconocida (COP)"); if (c.total_only) extra.push(c.total_only + " solo con total (sin líneas)");
+      if (c.lines) extra.push(c.lines + " líneas");
+      if (extra.length) card.appendChild(el("p", "gw-help", extra.join(" · ")));
+      (s.rejected || []).slice(0, 10).forEach((x) => card.appendChild(el("p", "gw-help", "Fila " + x.row + ": " + x.reason)));
+    });
     if (r.counts && r.counts.pairs) {
       const p = r.counts.pairs; card.appendChild(el("p", "gw-text", "Parejas con clientes de la plataforma: " + p.seguro + " seguras · " + p.dudoso + " dudosas · " + p.sin_pareja + " sin pareja"));
       const b = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Revisar parejas"); b.type = "button"; b.dataset.act = "pairs"; b.dataset.run = r.id; card.appendChild(b);
@@ -39,9 +51,10 @@
   }
 
   async function start(mode) {
-    const fd = new FormData(), a = $("impAcc").files[0], c = $("impCon").files[0];
-    if (!a && !c) { say("Elige al menos un archivo."); return; }
-    fd.append("mode", mode); if (a) fd.append("accounts", a); if (c) fd.append("contacts", c);
+    const fd = new FormData(); let any = false;
+    root.querySelectorAll("input[type=file][data-kind]").forEach((i) => { if (i.files[0]) { fd.append(i.dataset.kind, i.files[0]); any = true; } });
+    if (!any) { say("Elige al menos un archivo."); return; }
+    fd.append("mode", mode);
     if (mode === "apply") {
       if (!lastDry) { say("Primero termina una prueba completa con estos mismos archivos."); return; }
       const word = await showPrompt("Para cargar de verdad escribe CARGAR.", { title: "Confirmar la carga", confirmLabel: "Cargar" });
