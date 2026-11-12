@@ -36,4 +36,35 @@ INSERT INTO crm_import_runs (kind, mode) VALUES ('suitecrm', 'sample');
 INSERT INTO crm_import_pairs (run_id, tenant_id, bucket) VALUES (1, 't1', 'seguro');
 DELETE FROM crm_import_runs WHERE id = 1;
 SELECT CASE WHEN (SELECT count(*) FROM crm_import_pairs) = 0 THEN 'OK  al borrar una corrida se va su informe' ELSE 'FALLA cascada corrida→parejas' END;
+-- ---- 0133 (C3) ----
+SELECT CASE WHEN (SELECT count(*) FROM crm_counters WHERE name IN ('quote','proforma') AND NOT ready AND value = 0) = 2 THEN 'OK  contadores quote y proforma nacen NO listos' ELSE 'FALLA contadores C3' END;
+INSERT INTO crm_products (name, name_norm, sku) VALUES ('Escarapelas', 'escarapelas', 'ESC-1');
+INSERT INTO crm_quotes (number, account_id, title) VALUES (9001, 2, 'Cotización de prueba');
+INSERT INTO crm_quote_lines (quote_id, name, product_id) VALUES (1, 'Línea 1', 1);
+DO $$ BEGIN
+  BEGIN INSERT INTO crm_quotes (number, version, account_id, title) VALUES (9001, 1, 2, 'Repetida'); RAISE NOTICE 'FALLA número+versión repetidos aceptados';
+  EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'OK  número y versión de cotización no se repiten'; END;
+  INSERT INTO crm_quotes (number, version, account_id, title, parent_quote_id) VALUES (9001, 2, 2, 'Versión 2', 1);
+  RAISE NOTICE 'OK  una versión nueva repite el número';
+  BEGIN INSERT INTO crm_products (name, name_norm, sku) VALUES ('Otro', 'otro', 'ESC-1'); RAISE NOTICE 'FALLA sku repetido aceptado';
+  EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'OK  el sku no se repite (índice parcial)'; END;
+END $$;
+INSERT INTO crm_contacts (account_id, first_name) VALUES (2, 'Beto');
+UPDATE crm_quotes SET contact_id = (SELECT max(id) FROM crm_contacts) WHERE id = 1;
+DELETE FROM crm_contacts WHERE id = (SELECT max(id) FROM crm_contacts);
+SELECT CASE WHEN (SELECT contact_id FROM crm_quotes WHERE id = 1) IS NULL THEN 'OK  al suprimir un contacto su cotización queda sin contacto (SET NULL)' ELSE 'FALLA contacto→cotización' END;
+DELETE FROM crm_products WHERE id = 1;
+SELECT CASE WHEN (SELECT count(*) FROM crm_quote_lines WHERE product_id IS NULL) = 1 THEN 'OK  borrar un producto deja la línea (SET NULL)' ELSE 'FALLA producto→línea' END;
+INSERT INTO crm_proformas (number, quote_id, account_id, issued_at) VALUES (7001, 1, 2, current_date);
+DELETE FROM crm_quotes WHERE id = 2;
+DELETE FROM crm_quotes WHERE id = 1;
+SELECT CASE WHEN (SELECT count(*) FROM crm_quote_lines) = 0 AND (SELECT quote_id FROM crm_proformas WHERE number = 7001) IS NULL THEN 'OK  borrar la cotización borra sus líneas y deja la proforma' ELSE 'FALLA cascada cotización' END;
+INSERT INTO crm_doc_templates (kind, name, is_default) VALUES ('quote', 'A', true);
+DO $$ BEGIN
+  BEGIN INSERT INTO crm_doc_templates (kind, name, is_default) VALUES ('quote', 'B', true); RAISE NOTICE 'FALLA dos plantillas predeterminadas';
+  EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'OK  una sola plantilla predeterminada por tipo'; END;
+END $$;
+INSERT INTO crm_saved_filters (owner_staff_id, scope, name, filters_json) VALUES (1, 'cuentas', 'Activas', '{"status":"activo"}');
+DELETE FROM staff_users WHERE id = 1;
+SELECT CASE WHEN (SELECT count(*) FROM crm_saved_filters) = 0 THEN 'OK  al borrar un usuario se van sus filtros guardados' ELSE 'FALLA cascada filtros' END;
 SELECT CASE WHEN (SELECT status FROM crm_import_runs WHERE false) IS NULL THEN 'OK  fin de las pruebas de esquema' END;

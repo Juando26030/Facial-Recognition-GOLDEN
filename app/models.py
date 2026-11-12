@@ -1998,3 +1998,142 @@ class CrmImportPair(Base):
     decided_at = Column(DateTime, nullable=True)
     applied_at = Column(DateTime, nullable=True)
     __table_args__ = (Index('ix_crm_import_pairs_run', 'run_id', 'bucket'),)
+
+
+
+class CrmProduct(Base):
+    """Producto o servicio del catálogo del CRM (C3). Sin datos personales."""
+    __tablename__ = 'crm_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sku = Column(String(60))
+    name = Column(String(200), nullable=False)
+    name_norm = Column(String(200), nullable=False)
+    description = Column(Text)
+    category = Column(String(80))
+    cost = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    price = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    tax_percent = Column(Numeric(5, 2), nullable=False, default=19, server_default='19')
+    active = Column(Boolean, nullable=False, default=True, server_default=text('true'))
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_products_name', 'name_norm'),
+                      Index('uq_crm_products_sku', 'sku', unique=True, postgresql_where=text('sku IS NOT NULL')),
+                      Index('uq_crm_products_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmTerm(Base):
+    """Condición comercial elegible en una cotización (contado, 50-50, 30 días…)."""
+    __tablename__ = 'crm_terms'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False)
+    body = Column(Text, nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    archived_at = Column(DateTime, nullable=True)
+
+
+class CrmDocTemplate(Base):
+    """Plantilla de texto del PDF de cotización o proforma (`kind` quote | proforma)."""
+    __tablename__ = 'crm_doc_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(10), nullable=False)
+    name = Column(String(80), nullable=False)
+    header_text = Column(Text)
+    greeting_text = Column(Text)
+    footer_text = Column(Text)
+    logo_key = Column(String(300))
+    is_default = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    archived_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('uq_crm_doc_templates_default', 'kind', unique=True, postgresql_where=text('is_default AND archived_at IS NULL')),)
+
+
+class CrmQuote(Base):
+    """Cotización (C3). `number` es el consecutivo (contador `quote`); cada versión nueva repite el número con `version` + 1. `contact_id` pasa a NULL si se suprime al contacto (Ley 1581)."""
+    __tablename__ = 'crm_quotes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    number = Column(BigInteger, nullable=False)
+    version = Column(Integer, nullable=False, default=1, server_default='1')
+    parent_quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey('crm_opportunities.id', ondelete='SET NULL'), nullable=True)
+    title = Column(String(200), nullable=False)
+    stage = Column(String(12), nullable=False, default='borrador', server_default='borrador')
+    approval_status = Column(String(12), nullable=False, default='pendiente', server_default='pendiente')
+    invoice_status = Column(String(12), nullable=False, default='no_facturada', server_default='no_facturada')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    valid_until = Column(Date, nullable=True)
+    event_start = Column(Date, nullable=True)
+    terms_id = Column(Integer, ForeignKey('crm_terms.id', ondelete='SET NULL'), nullable=True)
+    terms_text = Column(Text)
+    meeting_notes = Column(Text)
+    template_id = Column(Integer, ForeignKey('crm_doc_templates.id', ondelete='SET NULL'), nullable=True)
+    subtotal = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    discount_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    tax_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    pdf_key = Column(String(300))
+    pdf_generated_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('uq_crm_quotes_number_version', 'number', 'version', unique=True), Index('ix_crm_quotes_account', 'account_id'), Index('ix_crm_quotes_opportunity', 'opportunity_id'),
+                      Index('ix_crm_quotes_stage', 'stage', 'updated_at'),
+                      Index('uq_crm_quotes_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmQuoteLine(Base):
+    __tablename__ = 'crm_quote_lines'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='CASCADE'), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    qty = Column(Numeric(12, 2), nullable=False, default=1, server_default='1')
+    unit_price = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    discount_percent = Column(Numeric(5, 2), nullable=False, default=0, server_default='0')
+    tax_percent = Column(Numeric(5, 2), nullable=False, default=19, server_default='19')
+    line_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    __table_args__ = (Index('ix_crm_quote_lines_quote', 'quote_id', 'position'),)
+
+
+class CrmProforma(Base):
+    """Proforma (C3): documento de cobro anticipado, con su propio consecutivo (contador `proforma`)."""
+    __tablename__ = 'crm_proformas'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    number = Column(BigInteger, nullable=False)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    issued_at = Column(Date, nullable=False)
+    due_at = Column(Date, nullable=True)
+    status = Column(String(10), nullable=False, default='no_pagado', server_default='no_pagado')
+    event_name = Column(String(200))
+    city = Column(String(120))
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    pdf_key = Column(String(300))
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('uq_crm_proformas_number', 'number', unique=True), Index('ix_crm_proformas_account', 'account_id'),
+                      Index('uq_crm_proformas_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmSavedFilter(Base):
+    """Filtro guardado de una lista del CRM. `filters_json` guarda SOLO filtros estructurados: el texto de búsqueda libre no se guarda (podría ser el nombre de una persona)."""
+    __tablename__ = 'crm_saved_filters'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    scope = Column(String(14), nullable=False)
+    name = Column(String(80), nullable=False)
+    filters_json = Column(Text, nullable=False)
+    shared = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_saved_filters_owner', 'owner_staff_id', 'scope'),)

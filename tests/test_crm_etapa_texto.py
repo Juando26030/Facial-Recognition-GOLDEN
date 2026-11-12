@@ -16,7 +16,7 @@ def _mig(name):
 
 
 def test_migrations_0131_and_0132_are_chained_short_and_reversible():
-    chain = [("0130_crm_cuentas_base", None), ("0131_crm_pipeline_leads", "0130_crm_cuentas_base"), ("0132_crm_import_runs", "0131_crm_pipeline_leads")]
+    chain = [("0130_crm_cuentas_base", None), ("0131_crm_pipeline_leads", "0130_crm_cuentas_base"), ("0132_crm_import_runs", "0131_crm_pipeline_leads"), ("0133_crm_quotes", "0132_crm_import_runs")]
     for rev, parent in chain[1:]:
         src = _mig(rev)
         assert re.search(rf'^revision = "{rev}"', src, re.M) and re.search(rf'^down_revision = "{parent}"', src, re.M), rev
@@ -44,7 +44,8 @@ def test_models_match_the_migrations_table_by_table():
             table = next((n.value.value for n in node.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "__tablename__"), None)
             if table and table.startswith("crm_"):
                 cols[table] = {n.targets[0].id for n in node.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and getattr(n.value.func, "id", "") == "Column"}
-    for rev, tables in (("0131_crm_pipeline_leads", ["crm_pipelines", "crm_stages", "crm_leads", "crm_opportunities", "crm_activities"]), ("0132_crm_import_runs", ["crm_import_runs", "crm_import_pairs"])):
+    for rev, tables in (("0131_crm_pipeline_leads", ["crm_pipelines", "crm_stages", "crm_leads", "crm_opportunities", "crm_activities"]), ("0132_crm_import_runs", ["crm_import_runs", "crm_import_pairs"]),
+                         ("0133_crm_quotes", ["crm_products", "crm_terms", "crm_doc_templates", "crm_quotes", "crm_quote_lines", "crm_proformas", "crm_saved_filters"])):
         src = _mig(rev).split("def downgrade")[0]
         for table in tables:
             body = src[src.index(f'op.create_table(\n        "{table}"'):]

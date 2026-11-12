@@ -2,9 +2,10 @@
 from sqlalchemy import text
 
 
-def seed_counters(db, *, ready=True, account=0, event=0):
+def seed_counters(db, *, ready=True, account=0, event=0, quote=0, proforma=0):
     db.execute(text("DELETE FROM crm_counters"))
-    db.execute(text("INSERT INTO crm_counters (name, value, ready) VALUES ('account', :a, :r), ('event', :e, :r)"), {"a": account, "e": event, "r": ready})
+    db.execute(text("INSERT INTO crm_counters (name, value, ready) VALUES ('account', :a, :r), ('event', :e, :r), ('quote', :q, :r), ('proforma', :p, :r)"),
+               {"a": account, "e": event, "q": quote, "p": proforma, "r": ready})
     db.commit()
 
 

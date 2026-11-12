@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.timeutil import utcnow
 
-COUNTERS = ("account", "event")
+COUNTERS = ("account", "event", "quote", "proforma")
 MAX_ATTEMPTS = 1000
 
 
@@ -23,6 +23,8 @@ class CodeCounterNotReady(Exception):
 _TAKEN = {
     "account": "SELECT 1 FROM tenants WHERE client_code = :s OR legacy_client_code = :s UNION ALL SELECT 1 FROM crm_accounts WHERE code = :n LIMIT 1",
     "event": "SELECT 1 FROM events WHERE lower(btrim(event_code)) = :s LIMIT 1",
+    "quote": "SELECT 1 FROM crm_quotes WHERE number = :n LIMIT 1",
+    "proforma": "SELECT 1 FROM crm_proformas WHERE number = :n LIMIT 1",
 }
 
 
