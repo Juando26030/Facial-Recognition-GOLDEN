@@ -66,3 +66,8 @@
 /* Ventanas del CRM: más anchas que el confirmar común y con los botones siempre a la vista aunque el contenido se desplace */
 .gw-modal--dialog.crm-dialog { max-width: 36rem; }
 .crm-dialog .gw-modal__foot { position: sticky; bottom: 0; background: var(--gw-surface); }
+@media (max-width: 520px) {      /* celular: las cuatro pestañas caben sin deslizar (sin ícono) */
+  .crm-tablist { gap: var(--gw-sp-1); overflow-x: visible; }
+  .crm-tablist .gw-tab { grid-template-columns: auto; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); flex: 1 1 0; justify-items: center; }
+  .crm-tablist .gw-tab__icon { display: none; }
+}
