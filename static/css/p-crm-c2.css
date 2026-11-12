@@ -1,0 +1,30 @@
+/* CRM etapa C2: tablero, ficha de oportunidad, leads y embudos. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); los componentes .gw-kanban, .gw-kcard y .gw-stagebar viven en design-system.css. */
+.crm-filters--opp { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.crm-filters__wide { grid-column: span 2; }
+.crm-filters__actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); }
+@media (max-width: 900px) { .crm-filters--opp { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .crm-filters--opp { grid-template-columns: minmax(0, 1fr); } .crm-filters__wide { grid-column: auto; } }
+
+.crm-viewbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--gw-sp-3); }
+.crm-viewbar .gw-segment { flex: 0 1 auto; }
+.crm-viewbar .gw-segment__opt { flex: 0 0 auto; min-width: 8rem; }
+.crm-viewbar__pipe { min-width: 14rem; }
+.crm-viewbar__pipe[hidden] { display: none; }
+
+.crm-inline { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: stretch; }
+.crm-inline > input { flex: 1 1 12rem; min-width: 0; }
+
+.crm-name-plain { overflow-wrap: anywhere; }
+.crm-sub { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); overflow-wrap: anywhere; }
+.crm-actions-cell { white-space: nowrap; }
+.crm-actions-cell > * { margin-right: var(--gw-sp-2); }
+
+/* Actividades (línea de tiempo de la ficha y de la ventana del lead) */
+.crm-acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.crm-act { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); min-width: 0; }
+.crm-act--closed { background: var(--gw-surface-2); color: var(--gw-text-muted); }
+.crm-act__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.crm-act__subject { overflow-wrap: anywhere; }
+.crm-act__meta { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.crm-act__body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.crm-act__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-1); }

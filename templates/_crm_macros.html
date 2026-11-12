@@ -1,0 +1,5 @@
+{# Macros comunes de las pantallas del CRM (etapa C2): ícono y ayuda emergente. Uso: {% from "_crm_macros.html" import ic, ayuda %} #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-help"/></svg></button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}

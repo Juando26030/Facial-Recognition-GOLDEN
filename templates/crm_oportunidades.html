@@ -1,0 +1,61 @@
+{# CRM - Oportunidades (C2): tablero Kanban y lista. Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). JS: static/js/crm_kanban.js; API: /api/crm/opportunities. #}
+{% from "_crm_macros.html" import ic, ayuda %}
+{% set page_title = "CRM - Oportunidades" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_kanban.js"] %}{% set crm_section = 'oportunidades' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="oppRoot" data-can-admin="{{ '1' if can_admin else '0' }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Oportunidades</h1>
+        <p class="gw-page-head__sub">Cada oportunidad es un posible evento. Muévela de columna a medida que avanza la venta.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--primary" id="oppNew">{{ ic('plus', 'gw-icon--sm') }} Nueva oportunidad</button>
+      </div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira el tablero</span>
+        {% call ayuda('ay_opp1', 'Mira el tablero') %}Cada columna es una etapa de la venta. Arriba de la columna ves cuántas oportunidades hay y cuánto suman (el valor ponderado ya tiene en cuenta la probabilidad). Las sumas van por moneda: pesos y dólares no se mezclan.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Mueve la tarjeta</span>
+        {% call ayuda('ay_opp2', 'Mueve la tarjeta') %}Arrastra la tarjeta a otra columna, o usa el botón «Mover a…» de la tarjeta (sirve con teclado y en el celular). Al llevarla a «Perdida» te preguntamos el motivo.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Programa el siguiente paso</span>
+        {% call ayuda('ay_opp3', 'Programa el siguiente paso') %}Una tarjeta con el aviso «Sin próxima actividad» no tiene nada agendado. Ábrela y programa una llamada, tarea o reunión.{% endcall %}</li>
+    </ol>
+
+    <form class="crm-filters crm-filters--opp" id="oppFilters" role="search">
+      <div class="gw-field crm-filters__wide"><label class="gw-label" for="oppQ">Buscar</label><input type="search" class="gw-input" id="oppQ" maxlength="200" placeholder="Nombre, código o cuenta" autocomplete="off"></div>
+      <div class="gw-field"><label class="gw-label" for="oppOwner">Responsable</label><select class="gw-select" id="oppOwner"><option value="">Todos</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="oppCurrency">Moneda</label><select class="gw-select" id="oppCurrency"><option value="">Todas</option><option value="COP">COP</option><option value="USD">USD</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="oppFrom">Cierre desde</label><input type="date" class="gw-input" id="oppFrom"></div>
+      <div class="gw-field"><label class="gw-label" for="oppTo">Cierre hasta</label><input type="date" class="gw-input" id="oppTo"></div>
+      <label class="gw-check"><input type="checkbox" id="oppNoAct"> Solo sin próxima actividad</label>
+      {% if can_admin %}<label class="gw-check"><input type="checkbox" id="oppArchived"> Ver archivadas</label>{% endif %}
+      <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">{{ ic('search', 'gw-icon--sm') }} Buscar</button><button type="button" class="gw-btn gw-btn--secondary" id="oppClear">Quitar filtros</button></div>
+    </form>
+
+    <div class="crm-viewbar">
+      <div class="gw-segment" role="group" aria-label="Forma de ver las oportunidades">
+        <button type="button" class="gw-segment__opt" id="oppViewBoard" aria-pressed="true">Tablero</button>
+        <button type="button" class="gw-segment__opt" id="oppViewList" aria-pressed="false">Lista</button>
+      </div>
+      <div class="gw-field crm-viewbar__pipe" id="oppPipeWrap" hidden><label class="gw-label" for="oppPipe">Embudo</label><select class="gw-select" id="oppPipe"></select></div>
+    </div>
+
+    <section aria-labelledby="oppBoardTitle" id="oppBoardSection">
+      <h2 class="gw-sr-only" id="oppBoardTitle">Tablero de oportunidades</h2>
+      <p class="gw-hint" id="oppClosedNote" hidden></p>
+      <div id="oppBoard" aria-live="polite" aria-busy="true"></div>
+    </section>
+
+    <section aria-labelledby="oppListTitle" id="oppListSection" hidden>
+      <h2 class="gw-sr-only" id="oppListTitle">Lista de oportunidades</h2>
+      <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-table">
+        <thead><tr><th scope="col">Código</th><th scope="col">Oportunidad</th><th scope="col">Cuenta</th><th scope="col">Etapa</th><th scope="col">Monto</th><th scope="col">Cierre</th><th scope="col">Responsable</th></tr></thead>
+        <tbody id="oppListBody"></tbody>
+      </table></div>
+      <div id="oppListPager"></div>
+      <div id="oppListState" hidden></div>
+    </section>
+  </div>
+{% include "_crm_shell_bottom.html" %}
