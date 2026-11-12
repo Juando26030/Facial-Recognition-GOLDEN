@@ -189,3 +189,15 @@ def test_quote_editor_never_trusts_screen_totals_and_warns_about_unsaved_changes
     body = js.split("function body()", 1)[1].split("async function save", 1)[0]
     assert "subtotal" not in body and "total" not in body.replace("lines", ""), "los totales no se envían: el servidor los calcula"
     assert "beforeunload" in js and "updated_at" in body
+
+
+def test_free_text_searches_fold_accents_in_sql_for_columns_without_norm():
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    fold = (root / "app/crm/sqlfold.py").read_text(encoding="utf-8")
+    assert "translate" in fold and "áéíóú" in fold and "ÁÉÍÓÚ" in fold
+    for rel in ("app/crm/quotes.py", "app/crm/tools.py", "app/crm/opportunities.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        assert "import fold" in src
+        assert not re.search(r"func\.lower\(Crm(Quote\.title|Opportunity\.name)\)", src), rel          # tildes: siempre fold(), nunca lower() a secas

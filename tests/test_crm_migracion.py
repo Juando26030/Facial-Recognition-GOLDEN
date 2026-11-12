@@ -32,7 +32,7 @@ def test_upgrade_creates_the_crm_tables_seeds_the_counters_not_ready_and_leaves_
         command.upgrade(_cfg(), "head")
     with engine.connect() as c:
         rows = {r[0]: (r[1], r[2]) for r in c.execute(text("SELECT name, value, ready FROM crm_counters"))}
-        assert rows == {"account": (0, False), "event": (0, False)}
+        assert rows == {"account": (0, False), "event": (0, False), "quote": (0, False), "proforma": (0, False)}
         assert c.execute(text("SELECT count(*) FROM tenants WHERE legacy_client_code IS NOT NULL")).scalar() == 0
 
 

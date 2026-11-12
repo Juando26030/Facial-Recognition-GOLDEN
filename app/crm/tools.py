@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.crm import normalize
 from app.crm import quote_rules as qr
 from app.crm.errors import CrmError
+from app.crm.sqlfold import fold
 from app.models import CrmAccount, CrmContact, CrmLead, CrmOpportunity, CrmQuote, CrmSavedFilter, StaffUser
 
 SEARCH_MIN = 2
@@ -39,9 +40,9 @@ def search(db: Session, q: str) -> dict:
     con = db.query(CrmContact.id, CrmContact.account_id, CrmContact.first_name, CrmContact.last_name, CrmContact.job_title).filter(CrmContact.archived_at.is_(None))
     con = con.filter(or_(CrmContact.full_name_norm.like(like), CrmContact.email_norm == text.lower()))
     opp = db.query(CrmOpportunity.id, CrmOpportunity.code, CrmOpportunity.name, CrmOpportunity.outcome).filter(CrmOpportunity.archived_at.is_(None))
-    opp = opp.filter(or_(func.lower(CrmOpportunity.name).like(f"%{text.lower()}%"), *( [CrmOpportunity.code == number] if number is not None else [])))
+    opp = opp.filter(or_(fold(CrmOpportunity.name).like(like), *( [CrmOpportunity.code == number] if number is not None else [])))
     quo = db.query(CrmQuote.id, CrmQuote.number, CrmQuote.version, CrmQuote.title, CrmQuote.stage).filter(CrmQuote.archived_at.is_(None))
-    quo = quo.filter(or_(func.lower(CrmQuote.title).like(f"%{text.lower()}%"), *( [CrmQuote.number == number] if number is not None else [])))
+    quo = quo.filter(or_(fold(CrmQuote.title).like(like), *( [CrmQuote.number == number] if number is not None else [])))
     led = db.query(CrmLead.id, CrmLead.first_name, CrmLead.last_name, CrmLead.company_name, CrmLead.status).filter(CrmLead.archived_at.is_(None))
     led = led.filter(or_(CrmLead.full_name_norm.like(like), CrmLead.email_norm == text.lower()))
     return {

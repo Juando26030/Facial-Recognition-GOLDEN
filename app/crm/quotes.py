@@ -16,6 +16,7 @@ from app.crm import quote_rules as qr
 from app.crm.accounts import MAX_ID, _check_owner, _check_version, get_account
 from app.crm.codes import next_code
 from app.crm.errors import CrmError
+from app.crm.sqlfold import fold
 from app.models import (CrmAccount, CrmContact, CrmDocTemplate, CrmOpportunity, CrmProduct, CrmProforma, CrmQuote, CrmQuoteLine, CrmTerm, StaffUser)
 from app.timeutil import utcnow
 
@@ -327,7 +328,7 @@ def list_quotes(db: Session, *, q: str = "", stage: str = "", account_id: Option
     query = query.filter(CrmQuote.archived_at.isnot(None) if archived else CrmQuote.archived_at.is_(None))
     if q.strip():
         n = normalize(q)
-        query = query.filter(CrmAccount.name_norm.like(f"%{n}%") | func.lower(CrmQuote.title).like(f"%{q.strip().lower()}%") | (CrmQuote.number == int(q) if q.strip().isdigit() else False))
+        query = query.filter(CrmAccount.name_norm.like(f"%{n}%") | fold(CrmQuote.title).like(f"%{n}%") | (CrmQuote.number == int(q) if q.strip().isdigit() else False))
     if stage in qr.QUOTE_STAGES:
         query = query.filter(CrmQuote.stage == stage)
     if account_id:

@@ -170,3 +170,13 @@ def test_export_is_admin_only_neutralises_formulas_and_audits_only_the_count(cli
     row = db.query(AuditAction).filter_by(action="export").one()
     assert row.detail == "1 filas" and "HYPERLINK" not in (row.entity_name or "")
     assert client.get("/api/crm/export/todo").status_code == 400
+
+
+def test_free_text_search_ignores_accents_and_case_in_titles_and_names(client, factory, crm_on):
+    staff_client(client, factory)
+    acc = new_account(client, "Empresa Ficticia")
+    _quote(client, acc["id"], title="Feria Cámara 2027")
+    client.post("/api/crm/opportunities", json={"account_id": acc["id"], "name": "Congreso Ñandú Único"})
+    assert [q["title"] for q in client.get("/api/crm/quotes?q=CAMARA").json()["items"]] == ["Feria Cámara 2027"]          # lista de cotizaciones
+    assert [o["name"] for o in client.get("/api/crm/search?q=nandu").json()["opportunities"]] == ["Congreso Ñandú Único"]          # buscador global
+    assert [o["name"] for o in client.get("/api/crm/opportunities?q=UNICO").json()["items"]] == ["Congreso Ñandú Único"]          # lista de oportunidades

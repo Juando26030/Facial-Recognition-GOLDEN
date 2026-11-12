@@ -16,6 +16,7 @@ from app.crm import history, normalize, pipeline as pipe
 from app.crm.accounts import MAX_ID, MAX_PAGE, NORM_MAX, PAGE_SIZE, _check_owner, _check_version, _like
 from app.crm.codes import next_code
 from app.crm.errors import CrmError
+from app.crm.sqlfold import fold
 from app.crm.pipeline_rules import BOARD_PAGE, board_paging, clean_opportunity, effective_probability, move_effects
 from app.models import CrmAccount, CrmContact, CrmOpportunity, CrmStage, StaffUser
 from app.timeutil import utcnow
@@ -180,7 +181,7 @@ def _filtered(query, f: dict):
         query = query.filter(CrmOpportunity.outcome == "open", CrmOpportunity.next_activity_at.is_(None))
     q = (f.get("q") or "").strip()[:TEXT_MAX]
     if q:
-        parts = [func.lower(CrmOpportunity.name).like(_like(q.lower()), escape="\\")]
+        parts = [fold(CrmOpportunity.name).like(_like(normalize(q)), escape="\\")]
         norm = normalize(q)[:NORM_MAX["name_norm"]]
         if norm:
             parts.append(CrmAccount.name_norm.like(_like(norm), escape="\\"))
