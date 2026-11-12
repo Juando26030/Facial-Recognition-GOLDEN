@@ -583,6 +583,17 @@ def crm_embudos_page(request: Request):
     return _crm_page(request, "crm_embudos.html")
 
 
+@app.get("/crm/importar")
+def crm_importar_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_importar.html")
+
+
 @app.get("/clientes")
 def clientes_page(request: Request):
     redirect = _require_page_role(request, "coordinador")

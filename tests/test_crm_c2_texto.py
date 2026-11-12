@@ -268,3 +268,15 @@ def test_the_kanban_has_a_keyboard_and_touch_alternative_to_dragging():
     js = _read("static/js/crm_kanban.js")
     assert "dragstart" in js and "Mover a…" in js and "data-move" in js and "dragover" in js
     assert "lost_reason" in js and "updated_at" in js          # el motivo de pérdida y la versión van al servidor
+
+
+def test_import_page_is_admin_only_without_polling_and_uses_known_icons():
+    main = _read("app/main.py")
+    assert '_require_page_role(request, "admin")' in main.split("def crm_importar_page")[1].split("@app.get")[0]
+    js, html = _read("static/js/crm_importar.js"), _read("templates/crm_importar.html")
+    assert "setInterval" not in js and "setTimeout" not in js and "innerHTML" not in js and "alert(" not in js.replace("showToast", "")
+    icons = _read("static/img/icons.svg")
+    import re as _re
+    for name in _re.findall(r"ic\('([a-z-]+)'", html):
+        assert f'id="i-{name}"' in icons, name
+    assert '"importar"' in _re.search(r"^SECTIONS_BUILT = \{([^}]*)\}", _read("app/crm/__init__.py"), _re.M).group(1)
