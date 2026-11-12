@@ -1,0 +1,6 @@
+/* CRM · barra de secciones (etapa C1c–C4). Archivo PROPIO: URL nueva, así ninguna caché de otro CSS la deja con la regla vieja.
+   La barra usa EXACTAMENTE la columna de `.gw-container` (mismo max-width, centrada, mismo relleno lateral): su primera píldora queda alineada con el título de la página.
+   Solo tokens --gw-*. */
+.golden-main > .gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; box-sizing: border-box; width: 100%; max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-1) var(--gw-sp-4); }
+.gw-crm-nav .gw-chip { flex: 0 0 auto; text-decoration: none; }
+@media (max-width: 720px) { .golden-main > .gw-crm-nav { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); } }

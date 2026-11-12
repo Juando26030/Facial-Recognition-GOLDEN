@@ -129,7 +129,11 @@ def test_import_is_admin_only_in_the_server_page_and_every_api_route():
 
 def test_nav_aligns_with_the_page_column():
     from pathlib import Path
-    css = (Path(__file__).resolve().parent.parent / "static/css/design-system.css").read_text(encoding="utf-8")
-    rule = next(l for l in css.splitlines() if l.startswith(".gw-crm-nav {"))
-    assert "max-width: var(--gw-content-w)" in rule and "margin: 0 auto" in rule and "padding: var(--gw-sp-1) var(--gw-sp-4)" in rule
-    assert ".gw-page .gw-container, .gw-page .gw-crm-nav" in css                                  # mismo relleno lateral en celular
+    root = Path(__file__).resolve().parent.parent
+    css = (root / "static/css/p-crm-nav.css").read_text(encoding="utf-8")
+    rule = next(l for l in css.splitlines() if l.startswith(".golden-main > .gw-crm-nav {"))
+    assert "max-width: var(--gw-content-w)" in rule and "margin: 0 auto" in rule and "padding: var(--gw-sp-1) var(--gw-sp-4)" in rule and "box-sizing: border-box" in rule
+    ds = next(l for l in (root / "static/css/design-system.css").read_text(encoding="utf-8").splitlines() if l.startswith(".gw-crm-nav {"))
+    assert "max-width: var(--gw-content-w)" in ds and "margin: 0 auto" in ds          # el componente compartido también está alineado
+    for t in ("_crm_shell_top.html", "crm_cuentas.html", "crm_cuenta.html"):
+        assert "css/p-crm-nav.css" in (root / "templates" / t).read_text(encoding="utf-8"), t          # toda pantalla con barra carga el CSS propio

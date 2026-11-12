@@ -10,6 +10,7 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm-nav.css') }}">
     {% for css in page_css or [] %}<link rel="stylesheet" href="{{ url_for('static', path=css) }}">
     {% endfor %}<script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
