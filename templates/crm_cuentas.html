@@ -41,6 +41,7 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
+  {% set crm_section = 'cuentas' %}{% include "_crm_nav.html" %}
   <div class="gw-container gw-stack-lg" id="crmRoot" data-gw-tour="crm_cuentas" data-gw-tour-auto data-can-admin="{{ '1' if can_admin else '0' }}">
     <div class="gw-page-head">
       <div class="gw-page-head__text">

@@ -520,6 +520,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 def _crm_page(request: Request, template: str, **extra):
     """Pantallas del CRM (C1b-2): 404 con CRM_ENABLED apagado; comercial, admin y super_admin entran (D1); el coordinador puro vuelve al inicio.
     `can_admin` (archivar/restaurar/suprimir) es admin+ según el rol REAL de la sesión."""
+    from app import crm as crm_pkg
     from app.crm import crm_enabled
     if not crm_enabled():
         raise HTTPException(status_code=404, detail="No encontrado")
@@ -533,6 +534,7 @@ def _crm_page(request: Request, template: str, **extra):
         "sidebar_active": "crm",
         "can_admin": bool({"admin", "super_admin"} & roles),
     }
+    context["crm_nav"] = crm_pkg.sections(context["can_admin"])
     context.update(extra)
     return templates.TemplateResponse(request=request, name=template, context=context)
 

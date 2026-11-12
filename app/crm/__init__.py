@@ -30,3 +30,16 @@ def normalize(text: Optional[str]) -> str:
     s = unicodedata.normalize("NFKD", (text or "").strip().lower())
     s = "".join(c for c in s if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", s)
+
+
+# Barra de secciones del CRM (templates/_crm_nav.html). (clave, texto, dirección, solo admin). Una sección aparece cuando su pieza se fusiona: el integrador la agrega a SECTIONS_BUILT.
+SECTIONS = (("cuentas", "Cuentas", "/crm", False), ("oportunidades", "Oportunidades", "/crm/oportunidades", False), ("leads", "Leads", "/crm/leads", False),
+            ("cotizaciones", "Cotizaciones", "/crm/cotizaciones", False), ("midia", "Mi día", "/crm/mi-dia", False), ("tableros", "Tableros", "/crm/tableros", False),
+            ("buscar", "Buscar", "/crm/buscar", False), ("embudos", "Embudos", "/crm/embudos", True), ("importar", "Importar", "/crm/importar", True))
+SECTIONS_BUILT = {"cuentas"}
+
+
+def sections(is_admin: bool, built=None) -> list:
+    """Secciones visibles para quien mira, en orden. `built` solo lo usan las pruebas y el arnés visual (que muestran todas)."""
+    have = SECTIONS_BUILT if built is None else built
+    return [{"key": k, "label": label, "href": href} for k, label, href, admin_only in SECTIONS if k in have and (is_admin or not admin_only)]

@@ -19,7 +19,7 @@ def test_migration_0130_chain_id_length_and_hand_written():
     assert "LISTEN" not in code and "advisory" not in code.lower() and "TEMP" not in code.upper().replace("TEMPLATE", "")
 
 
-def test_there_is_a_single_alembic_head_after_0129():
+def test_there_is_a_single_alembic_head_and_it_descends_from_0130():
     revs = {}
     for p in (ROOT / "alembic" / "versions").glob("*.py"):
         s = p.read_text(encoding="utf-8")
@@ -28,7 +28,13 @@ def test_there_is_a_single_alembic_head_after_0129():
         if r:
             revs[r.group(1)] = d.group(1) if d else None
     parents = {d for d in revs.values() if d}
-    assert [r for r in revs if r not in parents] == ["0130_crm_cuentas_base"]          # una sola cadena, sin ramas
+    heads = [r for r in revs if r not in parents]
+    assert len(heads) == 1, heads          # una sola cadena, sin ramas
+    chain, cur = [], heads[0]
+    while cur:
+        chain.append(cur)
+        cur = revs.get(cur)
+    assert "0130_crm_cuentas_base" in chain          # la etapa C1c–C4 (0131 en adelante) cuelga de la 0130 de C1a
 
 
 def test_downgrade_restores_the_hex_code_before_dropping_the_column_and_drops_everything():

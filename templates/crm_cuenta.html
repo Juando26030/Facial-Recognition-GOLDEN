@@ -43,6 +43,7 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
+  {% set crm_section = 'cuentas' %}{% include "_crm_nav.html" %}
   <div class="gw-container gw-stack-lg" id="crmCuenta" data-account-id="{{ account_id }}" data-can-admin="{{ '1' if can_admin else '0' }}" data-gw-tour="{{ 'crm_cuenta_nueva' if is_new else 'crm_cuenta' }}" data-gw-tour-auto>
     <a class="crm-back" href="/crm">{{ ic('chevron', 'gw-icon--sm crm-back__icon') }} Volver a las cuentas</a>
 

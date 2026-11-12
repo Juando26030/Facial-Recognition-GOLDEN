@@ -69,5 +69,5 @@ def test_confirmation_needs_reason_and_the_typed_name():
 def test_history_view_explains_free_text_rows_and_backend_never_stores_them():
     assert "el texto no se guarda en el historial" in _read("static/js/crm_cuenta_tabs.js")
     hist = _read("app/crm/history.py")
-    assert 'FREE_TEXT = {"account": ("description",), "contact": ("notes",)}' in hist and "keep = f not in FREE_TEXT" in hist
+    assert '"account": ("description",), "contact": ("notes",)' in hist and "FREE_TEXT = {" in hist and "keep = f not in FREE_TEXT" in hist
     assert "_history_hits" in _read("app/crm/erase.py") and "FREE_TEXT" in _read("app/crm/erase.py")

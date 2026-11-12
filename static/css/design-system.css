@@ -1189,3 +1189,8 @@
 .gw-stagebar__step[aria-current="step"] .gw-stagebar__state { color: var(--gw-info-text); }
 .gw-stagebar__step.is-lost { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
 .gw-stagebar__step.is-lost .gw-stagebar__state { color: var(--gw-err-text); }
+
+/* CRM · barra de secciones (etapa C1c–C4): fila de píldoras con desplazamiento propio; la sección actual lleva `aria-current="page"` y fondo de información (par verificado). */
+.gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; padding: var(--gw-sp-1); max-width: 100%; }
+.gw-crm-nav .gw-chip { flex: 0 0 auto; text-decoration: none; }
+.gw-chip--current { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }

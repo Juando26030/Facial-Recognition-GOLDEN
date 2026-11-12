@@ -1,0 +1,6 @@
+{# Barra de secciones del CRM (etapa C1c–C4). Se incluye al inicio de cada pantalla del CRM con `{% set crm_section = 'oportunidades' %}`; la lista `crm_nav` la entrega `_crm_page` (app/main.py). Solo clases .gw-*. #}
+{% if crm_nav and crm_nav|length > 1 %}
+<nav class="gw-crm-nav" aria-label="Secciones del CRM">
+  {% for s in crm_nav %}<a class="gw-chip{% if s.key == crm_section %} gw-chip--current{% endif %}" href="{{ s.href }}"{% if s.key == crm_section %} aria-current="page"{% endif %}>{{ s.label }}</a>{% endfor %}
+</nav>
+{% endif %}

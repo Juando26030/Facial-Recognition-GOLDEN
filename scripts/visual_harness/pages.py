@@ -3,6 +3,8 @@ import datetime
 import importlib.util
 import json
 
+_CRM_SECTIONS = (('cuentas', 'Cuentas', '/crm', 0), ('oportunidades', 'Oportunidades', '/crm/oportunidades', 0), ('leads', 'Leads', '/crm/leads', 0), ('cotizaciones', 'Cotizaciones', '/crm/cotizaciones', 0),
+                 ('midia', 'Mi día', '/crm/mi-dia', 0), ('tableros', 'Tableros', '/crm/tableros', 0), ('buscar', 'Buscar', '/crm/buscar', 0), ('embudos', 'Embudos', '/crm/embudos', 1), ('importar', 'Importar', '/crm/importar', 1))
 LONG_EVENT = 'Congreso Nacional de Innovación, Tecnología Aplicada y Transformación Digital 2026'
 LONG_TENANT = 'Asociación Colombiana de Ingenieros de Sistemas y Telecomunicaciones'
 LONG_STAFF = 'María Fernanda Rodríguez Valderrama'
@@ -50,7 +52,7 @@ def kiosk_ctx(Obj, v):
 
 def context(key, v, Obj):
     ev = event(Obj, v)
-    simple = {**staff(), 'sidebar_active': ''}
+    simple = {**staff(), 'sidebar_active': '', 'crm_nav': [{'key': k, 'label': l, 'href': h} for k, l, h, _a in _CRM_SECTIONS]}
     if key in ('kiosk_registro', 'kiosk_select', 'kiosk_turnos', 'kiosk_turnos_tv', 'kiosk_expositores', 'kiosk_autoregistro', 'kiosk_parametros', 'kiosk_formularios', 'kiosk_usuarios'):
         return key + '.html', kiosk_ctx(Obj, v)
     if key == 'kiosk_tv':
