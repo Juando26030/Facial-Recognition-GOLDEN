@@ -388,7 +388,10 @@ def qconf(v, q):
 
 
 import json as _json, os as _os
-_TPL = _json.load(open(_os.path.join(_os.path.dirname(__file__), 'tpl.json')))
+try:
+    _TPL = _json.load(open(_os.path.join(_os.path.dirname(__file__), 'tpl.json')))
+except OSError:      # tpl.json no se versiona: sin él la pantalla de plantilla del evento no se simula, el resto sí
+    _TPL = {}
 
 
 @route('GET', r'/api/event-template')
@@ -475,3 +478,57 @@ def login_state(v, q):
 @route('GET', r'/api/events/42/pledge.*')
 def pledge_any(v, q):
     return {}
+
+
+# ------- CRM (C1b-2) -------
+CRM_OWNERS = [{'id': 7, 'name': 'María Fernanda Rodríguez Valderrama'}, {'id': 8, 'name': 'Andrés Ochoa'}, {'id': 9, 'name': 'Laura Páez'}]
+
+
+def _crm_account(i, v=''):
+    names = ['Asociación Colombiana de Ingenieros de Sistemas y Telecomunicaciones', 'Distribuidora Andina S.A.S.', 'Fundación Horizonte', 'Corferias', 'Constructora Bolívar Ltda.',
+             'Café Sierra Nevada', 'Universidad del Norte', 'Seguros Pacífico', 'Banco Mercantil', 'Logística Express']
+    return {'id': i, 'code': 51000 + i, 'name': names[(i - 1) % len(names)], 'status': ['activo', 'activo', 'inactivo', 'masivo'][i % 4], 'city': ['Bogotá', 'Medellín', 'Cali', None][i % 4],
+            'owner_staff_id': [7, 8, 9, None][i % 4], 'is_client': i % 3 == 0, 'tenant_id': 'acme' if i % 3 == 0 else None, 'archived': v == 'archived',
+            'primary_contact': ['Camila Torres Quintero', None, 'Juan Pablo Rojas', 'Ana María Villegas de la Torre'][i % 4], 'updated_at': '2026-11-10T15:00:00'}
+
+
+@route('GET', r'/api/crm/meta')
+def crm_meta(v, q):
+    return {'statuses': ['activo', 'inactivo', 'masivo'], 'owners': CRM_OWNERS, 'cities': ['Bogotá', 'Cali', 'Medellín'], 'payment_terms': ['Contado', '30 días', '60 días']}
+
+
+@route('GET', r'/api/crm/accounts')
+def crm_list(v, q):
+    if v == 'error':
+        return 500, {'detail': 'No se pudo cargar la lista.'}, {}
+    if v == 'empty' or q.get('q') == 'zzz':
+        return {'items': [], 'total': 0, 'page': 1, 'size': 20}
+    items = [_crm_account(i, v) for i in range(1, 21)]
+    return {'items': items, 'total': 1243, 'page': int(q.get('page') or 1), 'size': 20}
+
+
+@route('GET', r'/api/crm/accounts/(\d+)')
+def crm_get(v, q, i):
+    if v == 'missing':
+        return 404, {'detail': 'Cuenta no encontrada.'}, {}
+    if v == 'error':
+        return 500, {'detail': 'No se pudo cargar la ficha.'}, {}
+    a = _crm_account(int(i), 'archived' if v == 'archived' else '')
+    a['is_client'] = v == 'client'
+    a.update({'nit': '900123456-7', 'email': 'contabilidad@ejemplo.test', 'phone': '601 555 1234', 'billing_address': 'Carrera 15 # 88-64, Oficina 502', 'billing_city': 'Bogotá',
+              'billing_state': 'Cundinamarca', 'billing_country': 'Colombia', 'shipping_address': None, 'shipping_city': None, 'shipping_country': None,
+              'billing_contact_name': 'Tesorería', 'billing_contact_phone': '601 555 9876', 'payment_term': '30 días', 'billing_close': 'Día 25', 'description': 'Cliente de congresos anuales.',
+              'payment_days': 30, 'agency_percent': '10.00', 'created_at': '2024-03-02T10:00:00'})
+    return a
+
+
+@route('PUT', r'/api/crm/accounts/(\d+)')
+def crm_put(v, q, i):
+    if v == 'conflict':
+        return 409, {'detail': 'Alguien más modificó esta cuenta mientras la editabas.'}, {}
+    return crm_get('', q, i)
+
+
+@route('POST', r'/api/crm/accounts')
+def crm_create(v, q):
+    return crm_get('', q, '1')

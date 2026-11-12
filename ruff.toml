@@ -14,3 +14,4 @@ ignore = ["F401"]        # los routers reexportan/importan por efecto lateral en
 "tests/test_crm_contactos.py" = ["F811"]
 "tests/test_crm_permisos.py" = ["F811"]
 "tests/test_crm_supresion.py" = ["F811"]
+"tests/test_crm_pantallas.py" = ["F811"]

@@ -91,4 +91,8 @@ def context(key, v, Obj):
         return 'nuevo_evento.html', {**simple, 'sidebar_active': 'eventos', 'pure_coordinator': False, 'tenant_id': '', 'tenant_name': '', 'pick_tenant': True, 'back_url': '/eventos'}
     if key == 'plantilla_evento':
         return 'plantilla_evento.html', {**simple, 'sidebar_active': 'configuracion'}
+    if key == 'crm_cuentas':
+        return 'crm_cuentas.html', {**simple, 'staff_role': 'admin', 'sidebar_active': 'crm', 'can_admin': v != 'comercial'}
+    if key == 'crm_cuenta':
+        return 'crm_cuenta.html', {**simple, 'sidebar_active': 'crm', 'can_admin': v != 'comercial', 'account_id': '' if v == 'new' else 1}
     raise KeyError(key)

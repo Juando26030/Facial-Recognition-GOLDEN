@@ -17,6 +17,7 @@
 <aside class="golden-sidebar" id="gwSidebar">
   <nav>
     <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>
+    {% if crm_nav_visible is defined and crm_nav_visible(request) %}<a href="/crm"{% if sidebar_active == "crm" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/></svg> CRM</a>{% endif %}
     <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Eventos</a>
     <a href="/calendario"{% if sidebar_active == "calendario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Calendario</a>
     {# Bug real corregido (2026-09-16, pedido explícito): el link SIEMPRE estuvo oculto para

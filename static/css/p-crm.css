@@ -1,0 +1,34 @@
+/* CRM (C1b-2): lista de cuentas y ficha. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); lo demás viene de design-system.css. */
+.crm-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gw-sp-3) var(--gw-sp-4); align-items: end; }
+.crm-filters > * { min-width: 0; }
+.crm-filters__check { grid-column: 1 / -1; }
+@media (max-width: 720px) { .crm-filters { grid-template-columns: minmax(0, 1fr); } }
+
+.crm-table td { vertical-align: middle; }
+.crm-table .crm-name { font-weight: var(--gw-fw-bold); color: var(--gw-text); text-decoration: underline; text-decoration-color: var(--gw-gold-text); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.crm-table .crm-name:hover { color: var(--gw-gold-text); }
+.crm-name-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); min-width: 0; }
+.crm-row--archived { color: var(--gw-text-muted); }
+@media (max-width: 720px) {
+  .crm-table td[data-label]::before { content: attr(data-label) ": "; font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+}
+
+.crm-back { display: inline-flex; align-items: center; gap: var(--gw-sp-1); min-height: var(--gw-tap); color: var(--gw-text-muted); text-decoration: none; font-size: var(--gw-fs-sm); }
+.crm-back:hover { color: var(--gw-text); text-decoration: underline; }
+.crm-back__icon { transform: rotate(180deg); }
+.crm-badges { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+.crm-badges:empty { display: none; }
+
+.crm-form { max-width: 56rem; }
+.crm-primary { margin: 0; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); overflow-wrap: anywhere; }
+.crm-meta { margin: 0; }
+.crm-actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); }
+
+/* Columnas cortas sin partir palabras (a 1000 px la tabla es angosta); la de cuenta y la de contacto son las que se doblan. */
+@media (min-width: 721px) {
+  .crm-table th, .crm-table td { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .crm-table td:nth-child(1), .crm-table td:nth-child(3), .crm-table td:nth-child(4), .crm-table th { white-space: nowrap; }
+  .crm-table .gw-badge { white-space: nowrap; }
+}
+.crm-form .gw-fields-row, .crm-form .gw-form-group__body > .gw-field { margin-bottom: var(--gw-sp-3); }
+.crm-form .gw-form-group__body > :last-child { margin-bottom: 0; }

@@ -310,6 +310,23 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+
+
+def _crm_nav_visible(request) -> bool:
+    """Enlace «CRM» del menú lateral: solo con CRM_ENABLED encendido y para quien tenga comercial o más (rol real de la sesión, no el que se muestra: el
+    coordinador+comercial ve la etiqueta «coordinador» pero sí entra al CRM; el coordinador puro no)."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        return False
+    try:
+        role = request.session.get("staff_role")
+        roles = [role] + split_roles(request.session.get("staff_secondary_role"))
+        return bool(role) and max(ROLE_HIERARCHY.get(r, 0) for r in roles) >= ROLE_HIERARCHY["comercial"]
+    except Exception:
+        return False
+
+
+templates.env.globals["crm_nav_visible"] = _crm_nav_visible
 templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
@@ -498,6 +515,41 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     # Cliente→Eventos) se partió en secciones del menú lateral nuevo — Clientes es el punto de
     # entrada por defecto ahora, ver templates/clientes.html.
     return RedirectResponse("/clientes", status_code=302)
+
+
+def _crm_page(request: Request, template: str, **extra):
+    """Pantallas del CRM (C1b-2): 404 con CRM_ENABLED apagado; comercial, admin y super_admin entran (D1); el coordinador puro vuelve al inicio.
+    `can_admin` (archivar/restaurar/suprimir) es admin+ según el rol REAL de la sesión."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "comercial")
+    if redirect:
+        return redirect
+    roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
+    context = {
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "sidebar_active": "crm",
+        "can_admin": bool({"admin", "super_admin"} & roles),
+    }
+    context.update(extra)
+    return templates.TemplateResponse(request=request, name=template, context=context)
+
+
+@app.get("/crm")
+def crm_cuentas_page(request: Request):
+    return _crm_page(request, "crm_cuentas.html")
+
+
+@app.get("/crm/cuentas/nueva")
+def crm_cuenta_nueva_page(request: Request):
+    return _crm_page(request, "crm_cuenta.html", account_id="")
+
+
+@app.get("/crm/cuentas/{account_id}")
+def crm_cuenta_page(request: Request, account_id: int):
+    return _crm_page(request, "crm_cuenta.html", account_id=account_id)
 
 
 @app.get("/clientes")

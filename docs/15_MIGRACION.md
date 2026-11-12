@@ -1033,3 +1033,9 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 - [ ] **Sin ejecutar:** `tests/test_crm_cuentas_api.py`, `test_crm_contactos.py`, `test_crm_permisos.py`, `test_crm_supresion.py` (necesitan PostgreSQL; procedimiento del documento 43) y la suite completa.
 - Siguiente: C1b-2 (pantallas de lista y ficha).
 
+
+## 2026-11-12 · CRM pieza C1b-2: pantallas de lista y ficha (rama `crm/c1b-pantallas`; sin desplegar)
+- Rutas de página `/crm`, `/crm/cuentas/nueva`, `/crm/cuentas/{id}`: 404 con `CRM_ENABLED` apagado; comercial, admin y super_admin entran (el coordinador puro vuelve al inicio; el doble rol coordinador+comercial sí entra). Enlace «CRM» en el menú lateral solo con CRM encendido y rol real comercial+ (`crm_nav_visible`).
+- Lista: buscador (300 ms), filtros estado/responsable/ciudad y «Ver archivadas» (admin+) guardados en la dirección, paginación compartida, estados cargando/vacío/error. Ficha: grupos Datos, Facturación, Envío, Pagos y Notas; guarda con la versión vista (409 → aviso de recarga); aviso de duplicado con confirmación; convertir en cliente; archivar/restaurar (admin+). Las pestañas Contactos/Notas/Historial llegan en C1b-3.
+- Revisión visual con `scripts/visual_harness/` a 1000/1100/1280/1500 px, claro y oscuro: sin desbordes ni errores de consola; se corrigieron columnas que partían palabras a 1000 px y el espaciado entre filas de campos. El arnés ahora tolera que falte `tpl.json`.
+- Pruebas: `tests/test_crm_pantallas_texto.py` (sin base, pasan) y `tests/test_crm_pantallas.py` (con base, **sin ejecutar** hasta que Juan David las corra).
