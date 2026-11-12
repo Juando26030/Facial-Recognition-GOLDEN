@@ -2885,8 +2885,8 @@ def _person_form_files(db: Session, event: Event, user_id: str) -> list:
 
 
 @router.get("/events/{event_id}/users/{user_id}/form-files")
-def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Coordinador o superior."""
+def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Digitador o superior (incluye cliente temporal y digitador temporal; el acceso al evento lo valida get_event_for_staff)."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     if not _person_of_event(db, event, user_id):
@@ -2898,7 +2898,7 @@ def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db)
 
 
 @router.get("/events/{event_id}/users/{user_id}/form-files/{submission_id}/{field_id}")
-def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
     import json as _json
     from app.models import FormSubmission
     from app.storage import form_file_key
