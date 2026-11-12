@@ -40,3 +40,12 @@ def test_score_and_buckets():
     assert got["c"] == (None, got["c"][1], "sin_pareja") and got["c"][1] < 70
     assert got["d"][2] == "dudoso"          # dos candidatos casi iguales: sin margen
     assert got["b"][2] in ("dudoso", "seguro") and got["b"][0] == 2
+
+
+def test_runner_guarantees_in_the_source():
+    import pathlib
+    src = pathlib.Path("app/crm/importer/runner.py").read_text()
+    assert "begin_nested" in src and "delete_prefix" in src and "finally" in src          # SAVEPOINT por fila y archivos borrados siempre
+    router = pathlib.Path("app/routers/crm_import.py").read_text()
+    assert "CRM_IMPORT_APPLY" in router and "CARGAR" in router and "La carga real está desactivada en este entorno." in router
+    assert "async def" not in router

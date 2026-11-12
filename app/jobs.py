@@ -41,10 +41,10 @@ BACKOFF_SECONDS = (15, 60, 300, 900, 3600)
 
 _handlers: Dict[str, Callable[[dict], None]] = {}
 FACE_KINDS = frozenset({"face_enroll"})                  # cálculos faciales: van por su propia cola, en el servicio de biometría (CLOUD_TASKS_FACES_*)
-GENERAL_KINDS = frozenset({"accept_mail", "consent_receipt", "form_feed", "payments_reconcile", "reprint_notify", "reprint_mail", "staff_credentials", "final_db_notice", "event_change_mail", "delivery_mail", "next_event_mail", "notification_mail", "system_alert_mail"})      # la cola general (Cloud Tasks → /internal/jobs/run del servicio web)
+GENERAL_KINDS = frozenset({"accept_mail", "consent_receipt", "form_feed", "payments_reconcile", "reprint_notify", "reprint_mail", "staff_credentials", "final_db_notice", "event_change_mail", "delivery_mail", "next_event_mail", "notification_mail", "system_alert_mail", "crm_import"})      # la cola general (Cloud Tasks → /internal/jobs/run del servicio web)
 # Módulos que REGISTRAN los manejadores al importarse (un manejador existe solo si su módulo se importó en ESE proceso: Hallazgo 4, 21-oct-2026).
 HANDLER_MODULES = {"accept_mail": "app.acceptmail", "consent_receipt": "app.consent_receipt", "form_feed": "app.formsvc",
-                   "payments_reconcile": "app.reconcile", "face_enroll": "app.enroll", "reprint_notify": "app.reprint", "reprint_mail": "app.reprint", "staff_credentials": "app.staff_credentials", "final_db_notice": "app.final_db", "event_change_mail": "app.event_history", "delivery_mail": "app.delivery", "next_event_mail": "app.delivery", "notification_mail": "app.notifications", "system_alert_mail": "app.mass_delete"}
+                   "payments_reconcile": "app.reconcile", "face_enroll": "app.enroll", "reprint_notify": "app.reprint", "reprint_mail": "app.reprint", "staff_credentials": "app.staff_credentials", "final_db_notice": "app.final_db", "event_change_mail": "app.event_history", "delivery_mail": "app.delivery", "next_event_mail": "app.delivery", "notification_mail": "app.notifications", "system_alert_mail": "app.mass_delete", "crm_import": "app.crm.import_job"}
 _wake = threading.Event()
 
 
