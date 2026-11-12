@@ -16,18 +16,11 @@ from sqlalchemy.orm import Session
 
 from app.crm import history, normalize, validate_status
 from app.crm.codes import next_code
+from app.crm.errors import CrmError  # noqa: F401  (se re-exporta: el router y las pruebas lo usan como svc.CrmError)
 from app.models import CrmAccount, CrmContact, CrmNote, StaffUser, Tenant
 from app.timeutil import utcnow
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-class CrmError(Exception):
-    """Error de reglas del CRM con el código HTTP que le corresponde (el router lo convierte en respuesta)."""
-
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
-        self.message, self.status = message, status
 
 
 ACCOUNT_LIMITS = {"name": 200, "nit": 40, "email": 200, "phone": 60, "billing_address": 300, "billing_city": 120, "billing_state": 120, "billing_country": 120,
