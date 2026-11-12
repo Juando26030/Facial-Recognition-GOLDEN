@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Construye el instalador de Windows (GoldenLocal-Setup-<versión>.exe) DESDE LINUX: sirve en Cloud Shell, que ya tiene Docker e internet. No hace falta Windows.
+#   bash deploy/windows/build_en_cloudshell.sh            -> deja el .exe en build/windows/out/
+# Paso 1 (Python 3.13 en un contenedor): app + Python de Windows + PostgreSQL + WinSW (deploy/windows/build_cross.py).
+# Paso 2 (Inno Setup bajo Wine, imagen amake/innosetup): compila el instalador con deploy/windows/GoldenLocal.iss.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+COMMIT=$(git rev-parse --short=12 HEAD)
+VERSION="${1:-$(date +%Y.%m.%d)-$COMMIT}"
+echo "== Golden Local $VERSION (commit $COMMIT) =="
+docker run --rm -v "$PWD:/repo" -w /repo python:3.13-slim python deploy/windows/build_cross.py "$VERSION" "$COMMIT"
+# El .iss lee la versión de una variable de entorno; aquí se fija en una copia para no depender de que Wine la pase.
+sed -E "s|^#define AppVersion GetEnv\(\"GOLDEN_LOCAL_VERSION\"\)|#define AppVersion \"$VERSION\"|" deploy/windows/GoldenLocal.iss > deploy/windows/GoldenLocal.build.iss
+docker run --rm -v "$PWD:/work" amake/innosetup deploy/windows/GoldenLocal.build.iss
+rm -f deploy/windows/GoldenLocal.build.iss
+echo; echo "Listo. En build/windows/out/:"; ls -lh build/windows/out/
