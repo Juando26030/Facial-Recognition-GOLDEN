@@ -1,5 +1,5 @@
 {# CRM - Ficha de oportunidad (C2): etapa, datos, actividades e historial. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_oportunidad.js; API: /api/crm/opportunities y /api/crm/activities. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Oportunidad" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_oportunidad.js"] %}{% set crm_section = 'oportunidades' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="oppDetail" data-opportunity-id="{{ opportunity_id }}" data-can-admin="{{ '1' if can_admin else '0' }}">

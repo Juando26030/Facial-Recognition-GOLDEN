@@ -1,5 +1,5 @@
 {# CRM - Búsqueda global (C3): una sola caja para cuentas, contactos, oportunidades, cotizaciones y leads. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_buscar.js; API: /api/crm/search. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Buscar" %}{% set page_css = ["css/p-crm-c3.css"] %}{% set page_js = ["js/crm_buscar.js"] %}{% set crm_section = 'buscar' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="searchRoot">

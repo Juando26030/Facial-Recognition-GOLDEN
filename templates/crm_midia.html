@@ -1,5 +1,5 @@
 {# CRM - Mi día (C4): lo que tengo que hacer hoy, lo vencido y lo que se puede perder. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_midia.js; API: /api/crm/today. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Mi día" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c4.css"] %}{% set page_js = ["js/crm_midia.js"] %}{% set crm_section = 'midia' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="dayRoot">

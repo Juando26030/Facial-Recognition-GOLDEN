@@ -1,6 +1,7 @@
 """Que ningún módulo nuevo del CRM deje de importar. Sin base de datos."""
 import ast
 import importlib
+import re
 from pathlib import Path
 
 import pytest
@@ -52,3 +53,16 @@ def test_the_whole_app_imports():
     import app.main  # noqa: F401
     for name in ("app.crm.won", "app.crm.today", "app.routers.crm_today", "app.crm.importer.more", "app.crm.importer.runner", "app.routers.crm_import", "app.crm.sqlfold"):
         importlib.import_module(name)
+
+
+def test_mi_dia_route_exists_exactly_once():
+    src = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert len(re.findall(r'@app\.get\("/crm/mi-dia"\)', src)) == 1 and '"crm_midia.html"' in src
+
+
+def test_crm_macro_imports_pass_the_context():
+    """Jinja no pasa el contexto a las macros importadas: las que usan url_for (vía _url_for → request) necesitan «with context»."""
+    for f in sorted((ROOT / "templates").glob("*.html")):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if re.search(r"\{%\s*(from|import)\s+[\"']_crm_macros\.html[\"']", line):
+                assert "with context" in line, f"{f.name}: {line.strip()}"

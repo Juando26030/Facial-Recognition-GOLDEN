@@ -1,5 +1,5 @@
 {# CRM - Cotizaciones (C3): lista, nueva cotización y filtros guardados. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_cotizaciones.js; API: /api/crm/quotes. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Cotizaciones" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/crm_cotizaciones.js"] %}{% set crm_section = 'cotizaciones' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="quotesRoot" data-can-admin="{{ '1' if can_admin else '0' }}">

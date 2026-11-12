@@ -1,5 +1,5 @@
 {# CRM - Leads (C2): clientes potenciales, con conversión en cuenta + contacto (+ oportunidad). Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_leads.js; API: /api/crm/leads. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Leads" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_leads.js"] %}{% set crm_section = 'leads' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="leadsRoot" data-can-admin="{{ '1' if can_admin else '0' }}">

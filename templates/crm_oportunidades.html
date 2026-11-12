@@ -1,5 +1,5 @@
 {# CRM - Oportunidades (C2): tablero Kanban y lista. Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). JS: static/js/crm_kanban.js; API: /api/crm/opportunities. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Oportunidades" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_kanban.js"] %}{% set crm_section = 'oportunidades' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="oppRoot" data-can-admin="{{ '1' if can_admin else '0' }}">

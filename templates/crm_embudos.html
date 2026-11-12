@@ -1,5 +1,5 @@
 {# CRM - Embudos (C2, solo administradores): crear embudos y editar sus etapas (nombre, probabilidad, orden, archivar). Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_embudos.js; API: /api/crm/pipelines y /api/crm/stages. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Embudos" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_embudos.js"] %}{% set crm_section = 'embudos' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="pipeRoot">

@@ -1,5 +1,5 @@
 {# CRM - Importar de SuiteCRM (C1c, solo administradores): 1 subir, 2 probar, 3 revisar parejas, 4 cargar. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_importar.js; API: /api/crm/import/*. #}
-{% from "_crm_macros.html" import ic, ayuda %}
+{% from "_crm_macros.html" import ic, ayuda with context %}
 {% set page_title = "CRM - Importar de SuiteCRM" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_importar.js"] %}{% set crm_section = 'importar' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="impRoot">
