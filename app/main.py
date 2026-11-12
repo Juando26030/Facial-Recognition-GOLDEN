@@ -44,7 +44,7 @@ from app.routers import reprint as reprint_router      # Fase 1B: reimpresión c
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
 from app.routers import crm as crm_router
-from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router
+from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router
 from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
@@ -355,6 +355,7 @@ _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla d
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(crm_import_router.router, prefix="/api")      # CRM C1c: importador de SuiteCRM (/api/crm/import/*; solo admin)
+_include(crm_quotes_router.router, prefix="/api")      # CRM C3: productos, cotizaciones, proformas (/api/crm/*)
 _include(crm_pipeline_router.router, prefix="/api")      # CRM C2: embudos, oportunidades, leads y actividades (/api/crm/*; mismo apagado por CRM_ENABLED)
 _include(crm_router.router, prefix="/api")      # CRM C1b: /api/crm/* (cada ruta responde 404 mientras CRM_ENABLED esté apagado; ver app/routers/crm.py)
 _include(downloads.router, prefix="/api")      # Fase 4: bases de digitadores y de clientes (app/download_perms.py)

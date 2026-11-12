@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.crm import normalize
 from app.crm.history import FREE_TEXT
 from app.crm.matching import ACCOUNT_PERSONAL_FIELDS, digits, identifiers, mentions, value_matches
-from app.models import CrmAccount, CrmActivity, CrmChangeLog, CrmContact, CrmLead, CrmNote, CrmOpportunity, Tenant
+from app.models import CrmAccount, CrmActivity, CrmChangeLog, CrmContact, CrmLead, CrmNote, CrmOpportunity, CrmProforma, CrmQuote, Tenant
 
 def _history_hits(db: Session, account: CrmAccount, ids: dict) -> tuple:
     """Filas del historial de la cuenta que traen datos de esta persona: (ids a BORRAR, filas de texto libre a VACIAR).
@@ -79,7 +79,24 @@ def review_hints(db: Session, account: CrmAccount, ids: dict, *, skip_contact_id
 
 
 def _empty_review() -> dict:
-    return {"description": False, "general_notes": 0, "opportunity_texts": 0, "activity_texts": 0, "leads_to_check": 0}
+    return {"description": False, "general_notes": 0, "opportunity_texts": 0, "activity_texts": 0, "leads_to_check": 0, "quote_texts": 0}
+
+
+def _delete_files(keys) -> None:
+    """Borra del almacenamiento los PDF guardados (llevan el nombre de la persona o de la cuenta). Un fallo del almacenamiento no debe frenar la supresión de la base."""
+    from app.storage import get_storage
+    st = get_storage()
+    for key in keys:
+        if key:
+            try:
+                st.delete(key)
+            except Exception:
+                pass
+
+
+def _quote_texts(db: Session, account_id: int, ids: dict) -> int:
+    rows = db.execute(select(CrmQuote.meeting_notes, CrmQuote.terms_text, CrmQuote.title).where(CrmQuote.account_id == account_id)).all()
+    return sum(1 for n, t, ti in rows if mentions(n, ids) or mentions(t, ids) or mentions(ti, ids))
 
 
 def _leads_by_email(db: Session, ids: dict) -> list:
@@ -112,7 +129,7 @@ def erase_contact(db: Session, contact_id: int) -> dict:
     """Borra el contacto y todo su rastro (ver el encabezado). Devuelve conteos y `review` (sin datos personales)."""
     contact = db.get(CrmContact, contact_id)
     if contact is None:
-        return {"contacts": 0, "notes": 0, "changes": 0, "account_history": 0, "account_fields": 0, "tenant_fields": 0, "activities": 0, "opportunities": 0, "leads": 0, "review": _empty_review()}
+        return {"contacts": 0, "notes": 0, "changes": 0, "account_history": 0, "account_fields": 0, "tenant_fields": 0, "activities": 0, "opportunities": 0, "leads": 0, "quotes": 0, "review": _empty_review()}
     from app.crm.lead_erase import erase_lead          # import tardío: lead_erase no depende de este módulo, pero así se evita un ciclo si algún día lo hace
     account = db.get(CrmAccount, contact.account_id)
     ids = identifiers(contact)
@@ -121,6 +138,11 @@ def erase_contact(db: Session, contact_id: int) -> dict:
     out["changes"] = db.execute(delete(CrmChangeLog).where(CrmChangeLog.entity == "contact", CrmChangeLog.entity_id == contact_id)).rowcount
     out["activities"] = db.execute(delete(CrmActivity).where(CrmActivity.contact_id == contact_id)).rowcount
     out["opportunities"] = db.execute(update(CrmOpportunity).where(CrmOpportunity.primary_contact_id == contact_id).values(primary_contact_id=None)).rowcount
+    quotes = db.execute(select(CrmQuote).where(CrmQuote.contact_id == contact_id)).scalars().all()          # cotizaciones dirigidas a él: sin contacto y sin PDF (el PDF trae su nombre)
+    _delete_files(q.pdf_key for q in quotes)
+    for q in quotes:
+        q.contact_id, q.pdf_key, q.pdf_generated_at = None, None, None
+    out["quotes"] = len(quotes)
     out.update(_scrub_account(db, account, ids) if account is not None else {"account_history": 0, "account_fields": 0})
     out["tenant_fields"] = _clear_tenant_mirror(db, account.tenant_id if account is not None else None, contact)
     lead_ids = _leads_by_email(db, ids)
@@ -129,6 +151,7 @@ def erase_contact(db: Session, contact_id: int) -> dict:
         out["leads"] += erase_lead(db, lid)["leads"]
     review = review_hints(db, account, ids, skip_contact_id=contact_id) if account is not None else _empty_review()
     review["leads_to_check"] = _leads_to_check(db, ids, lead_ids)
+    review["quote_texts"] = _quote_texts(db, account.id, ids) if account is not None else 0
     out["review"] = {**_empty_review(), **review}
     db.delete(contact)
     db.flush()
@@ -140,7 +163,7 @@ def erase_account(db: Session, account_id: int) -> dict:
     Las cotizaciones y proformas de la cuenta las cubre la pieza C3 al fusionarse."""
     account = db.get(CrmAccount, account_id)
     if account is None:
-        return {"accounts": 0, "contacts": 0, "notes": 0, "changes": 0, "tenant_fields": 0, "opportunities": 0, "activities": 0}
+        return {"accounts": 0, "contacts": 0, "notes": 0, "changes": 0, "tenant_fields": 0, "opportunities": 0, "activities": 0, "quotes": 0, "proformas": 0}
     contacts = db.execute(select(CrmContact).where(CrmContact.account_id == account_id)).scalars().all()
     contact_ids = [c.id for c in contacts]
     opp_ids = list(db.execute(select(CrmOpportunity.id).where(CrmOpportunity.account_id == account_id)).scalars().all())
@@ -153,9 +176,16 @@ def erase_account(db: Session, account_id: int) -> dict:
     if opp_ids:
         changes += db.execute(delete(CrmChangeLog).where(CrmChangeLog.entity == "opportunity", CrmChangeLog.entity_id.in_(opp_ids))).rowcount
     changes += db.execute(delete(CrmChangeLog).where(CrmChangeLog.entity == "account", CrmChangeLog.entity_id == account_id)).rowcount
+    quote_rows = db.execute(select(CrmQuote.id, CrmQuote.pdf_key).where(CrmQuote.account_id == account_id)).all()
+    proforma_keys = list(db.execute(select(CrmProforma.pdf_key).where(CrmProforma.account_id == account_id)).scalars().all())
+    quote_ids = [r[0] for r in quote_rows]
+    _delete_files([r[1] for r in quote_rows] + proforma_keys)
+    if quote_ids:
+        changes += db.execute(delete(CrmChangeLog).where(CrmChangeLog.entity == "quote", CrmChangeLog.entity_id.in_(quote_ids))).rowcount
     db.delete(account)          # sus contactos y oportunidades caen por cascada (la base; el ORM borra los ya cargados)
     db.flush()
-    return {"accounts": 1, "contacts": len(contact_ids), "notes": notes, "changes": changes, "tenant_fields": tenant_fields, "opportunities": len(opp_ids), "activities": activities}
+    return {"accounts": 1, "contacts": len(contact_ids), "notes": notes, "changes": changes, "tenant_fields": tenant_fields, "opportunities": len(opp_ids), "activities": activities,
+            "quotes": len(quote_ids), "proformas": len(proforma_keys)}
 
 
 def preview_contact(db: Session, contact_id: int) -> Optional[dict]:
@@ -172,7 +202,8 @@ def preview_contact(db: Session, contact_id: int) -> Optional[dict]:
            "changes": db.execute(select(func.count()).select_from(CrmChangeLog).where(CrmChangeLog.entity == "contact", CrmChangeLog.entity_id == contact_id)).scalar() or 0,
            "activities": db.execute(select(func.count()).select_from(CrmActivity).where(CrmActivity.contact_id == contact_id)).scalar() or 0,
            "opportunities": db.execute(select(func.count()).select_from(CrmOpportunity).where(CrmOpportunity.primary_contact_id == contact_id)).scalar() or 0,
-           "leads": len(lead_ids), "account_history": 0, "account_fields": 0, "tenant_fields": 0, "review": _empty_review()}
+           "leads": len(lead_ids), "account_history": 0, "account_fields": 0, "tenant_fields": 0, "review": _empty_review(),
+           "quotes": db.execute(select(func.count()).select_from(CrmQuote).where(CrmQuote.contact_id == contact_id)).scalar() or 0}
     out["review"]["leads_to_check"] = _leads_to_check(db, ids, lead_ids)
     if account is None:
         return out
@@ -185,5 +216,5 @@ def preview_contact(db: Session, contact_id: int) -> Optional[dict]:
                                 + (1 if tenant.contact_email and normalize(tenant.contact_email) in ids["emails"] else 0)
                                 + (1 if tenant.contact_phone and digits(tenant.contact_phone) in ids["phones"] else 0))
     review = review_hints(db, account, ids, skip_contact_id=contact_id)
-    out["review"] = {**review, "leads_to_check": out["review"]["leads_to_check"]}
+    out["review"] = {**_empty_review(), **review, "leads_to_check": out["review"]["leads_to_check"], "quote_texts": _quote_texts(db, account.id, ids)}
     return out

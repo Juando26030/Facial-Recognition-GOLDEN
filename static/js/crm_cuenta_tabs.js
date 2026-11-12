@@ -139,6 +139,7 @@
     if (k.tenant_fields) out.push(PLURAL(k.tenant_fields, "dato copiado al cliente de la plataforma", "datos copiados al cliente de la plataforma"));
     if (k.activities) out.push(PLURAL(k.activities, "actividad suya", "actividades suyas"));
     if (k.opportunities) out.push(done ? PLURAL(k.opportunities, "oportunidad desvinculada de este contacto", "oportunidades desvinculadas de este contacto") : PLURAL(k.opportunities, "oportunidad que dejará de tenerlo como contacto", "oportunidades que dejarán de tenerlo como contacto"));
+    if (k.quotes) out.push(PLURAL(k.quotes, "cotización dirigida a él pierde el contacto y su PDF guardado", "cotizaciones dirigidas a él pierden el contacto y su PDF guardado"));
     if (k.leads) out.push(PLURAL(k.leads, "lead con su mismo correo, con sus actividades e historial", "leads con su mismo correo, con sus actividades e historial"));
     return out;
   }
@@ -148,6 +149,7 @@
     if (r && r.general_notes) out.push(r.general_notes === 1 ? "1 nota general parece mencionarla." : r.general_notes + " notas generales parecen mencionarla.");
     if (r && r.opportunity_texts) out.push(PLURAL(r.opportunity_texts, "oportunidad de la cuenta tiene texto que parece mencionarla.", "oportunidades de la cuenta tienen texto que parece mencionarla."));
     if (r && r.activity_texts) out.push(PLURAL(r.activity_texts, "actividad de la cuenta parece mencionarla.", "actividades de la cuenta parecen mencionarla."));
+    if (r && r.quote_texts) out.push(PLURAL(r.quote_texts, "cotización de la cuenta tiene texto que parece mencionarla.", "cotizaciones de la cuenta tienen texto que parece mencionarla."));
     if (r && r.leads_to_check) out.push(PLURAL(r.leads_to_check, "lead podría ser la misma persona (coincide el nombre o el teléfono): revísalo en Leads.", "leads podrían ser la misma persona (coinciden el nombre o el teléfono): revísalos en Leads."));
     return out;
   }
