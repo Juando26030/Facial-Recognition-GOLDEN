@@ -222,6 +222,8 @@ def factory(db):
 
         def staff(self, role, username=None, password=PASSWORD, email=None, tenant_id=None, phone=None, **extra):
             self.counter += 1
+            if tenant_id:
+                self.tenant(tenant_id)          # el cliente debe existir antes que su staff (llave foránea)
             full_name = extra.pop("full_name", None) or f"{role} {self.counter}"
             s = StaffUser(
                 username=username or f"{role}{self.counter}", password_hash=hash_password(password), role=role,
