@@ -107,7 +107,7 @@ def test_validation_duplicates_archive_and_restore(client, factory):
 
 def test_event_create_update_with_type_and_archived_rules(client, factory):
     factory.tenant("acme")
-    root = factory.staff("super_admin", "root")
+    factory.staff("super_admin", "root")
     com = factory.staff("comercial", "com1")
     coord = factory.staff("coordinador", "coord1")          # el coordinador del evento tiene que ser un coordinador de verdad          # la plantilla de eventos exige comercial asignada
     login(client, "root")
@@ -131,7 +131,7 @@ def test_event_create_update_with_type_and_archived_rules(client, factory):
 def test_history_snapshot_uses_the_type_name(client, factory, db):
     from app import event_history
     factory.tenant("acme")
-    root = factory.staff("super_admin", "root")
+    factory.staff("super_admin", "root")
     com = factory.staff("comercial", "com1")
     coord = factory.staff("coordinador", "coord1")          # el coordinador del evento tiene que ser un coordinador de verdad
     login(client, "root")
