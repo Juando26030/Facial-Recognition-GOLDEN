@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 # Migraciones de solo datos con downgrade nulo documentado (no borran nada al subir).
-DATA_ONLY_NOOP_DOWNGRADE = {"0109_inventory_unify.py"}
+DATA_ONLY_NOOP_DOWNGRADE = {"0109_inventory_unify.py", "0141_merge_crm_subcat.py"}          # 0141 solo une dos cadenas: no cambia el esquema
 
 VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 
