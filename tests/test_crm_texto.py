@@ -55,7 +55,7 @@ def test_account_status_has_no_check_constraint_and_is_validated_in_code():
     crm_models = models[models.index("class CrmCounter"):]
     assert "CheckConstraint" not in crm_models                                               # la lista de estados se edita en app/crm/__init__.py sin migración
     from app.crm import ACCOUNT_STATUSES, validate_status
-    assert ACCOUNT_STATUSES == ("activo", "inactivo", "masivo")
+    assert ACCOUNT_STATUSES[:3] == ("activo", "inactivo", "masivo") and len(ACCOUNT_STATUSES) == 7
     assert validate_status(" Activo ") == "activo" and validate_status("MASIVO") == "masivo"
     for bad in ("", None, "borrado"):
         try:

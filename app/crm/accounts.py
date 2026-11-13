@@ -7,6 +7,7 @@ Reglas (docs/crm/README.md y plan C1b):
 * Con el contacto principal manda el CRM: `tenants.contact_name/phone/email` se rellenan desde él, en un solo sentido (CRM → cliente) y solo si la cuenta ya es cliente de la plataforma.
 * Cada cambio de campo queda en `crm_change_log` (app/crm/history.py). Los valores viven solo en la base, nunca en los logs.
 """
+import json
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -25,7 +26,7 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 ACCOUNT_LIMITS = {"name": 200, "nit": 40, "email": 200, "phone": 60, "billing_address": 300, "billing_city": 120, "billing_state": 120, "billing_country": 120,
                   "shipping_address": 300, "shipping_city": 120, "shipping_country": 120, "billing_contact_name": 200, "billing_contact_phone": 60,
-                  "payment_term": 60, "billing_close": 60, "description": 20000}
+                  "payment_term": 60, "billing_close": 60, "description": 20000, "category": 40, "account_type": 40, "industry": 60, "website": 300}
 ACCOUNT_TEXT = tuple(ACCOUNT_LIMITS)
 CONTACT_LIMITS = {"first_name": 120, "last_name": 120, "job_title": 120, "email": 200, "phone": 60, "mobile": 60, "notes": 20000}
 NOTE_MAX = 5000
@@ -235,6 +236,10 @@ def serialize_account(a: CrmAccount, primary: Optional[CrmContact] = None, *, de
         out["payment_days"] = a.payment_days
         out["agency_percent"] = str(a.agency_percent) if a.agency_percent is not None else None
         out["created_at"] = a.created_at.isoformat()
+        try:
+            out["legacy"] = json.loads(a.legacy_json) if a.legacy_json else None          # datos originales de SuiteCRM (solo lectura)
+        except ValueError:
+            out["legacy"] = None
     return out
 
 

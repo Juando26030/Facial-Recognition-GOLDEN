@@ -109,7 +109,11 @@
         <div class="gw-form-group__body">
           <div class="gw-fields-row gw-fields-row--2">
             {{ campo('name', 'Nombre de la cuenta *', 'required maxlength="200" autocomplete="off"', cls='gw-field--wide') }}
-            <div class="gw-field"><label class="gw-label" for="status">Estado</label><select class="gw-select" id="status" name="status" data-field><option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="masivo">Masivo</option></select></div>
+            <div class="gw-field"><label class="gw-label" for="status">Estado</label><select class="gw-select" id="status" name="status" data-field><option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="masivo">Masivo</option><option value="no_gestionar">No gestionar</option><option value="liquidado">Liquidado</option><option value="moroso">Moroso</option><option value="restringido">Con restricción</option></select></div>
+            <div class="gw-field"><label class="gw-label" for="category">Categoría</label><input class="gw-input" type="text" id="category" name="category" maxlength="40" data-field></div>
+            <div class="gw-field"><label class="gw-label" for="account_type">Tipo de cuenta</label><input class="gw-input" type="text" id="account_type" name="account_type" maxlength="40" data-field></div>
+            <div class="gw-field"><label class="gw-label" for="industry">Industria</label><input class="gw-input" type="text" id="industry" name="industry" maxlength="60" data-field></div>
+            <div class="gw-field"><label class="gw-label" for="website">Sitio web</label><input class="gw-input" type="text" id="website" name="website" maxlength="300" data-field></div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">
             {{ campo('nit', 'NIT', 'maxlength="40" autocomplete="off" inputmode="text"') }}

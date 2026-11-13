@@ -9,7 +9,8 @@ import unicodedata
 from typing import Optional
 
 # Estados de una cuenta. Se validan en el código (no con CHECK en la base) para poder ajustar la lista cuando se vea la exportación de SuiteCRM: editar esta tupla y listo, sin migración.
-ACCOUNT_STATUSES = ("activo", "inactivo", "masivo")
+ACCOUNT_STATUSES = ("activo", "inactivo", "masivo", "no_gestionar", "liquidado", "moroso", "restringido")          # los últimos cuatro vienen de SuiteCRM (NoGestionar, Liquidado, Moroso, ConRestriccion)
+ACCOUNT_STATUS_LABELS = {"activo": "Activo", "inactivo": "Inactivo", "masivo": "Masivo", "no_gestionar": "No gestionar", "liquidado": "Liquidado", "moroso": "Moroso", "restringido": "Con restricción"}
 
 _TRUE = {"1", "true", "yes", "on", "si", "sí"}
 

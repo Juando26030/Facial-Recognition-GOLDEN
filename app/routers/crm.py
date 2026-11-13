@@ -80,6 +80,10 @@ class AccountIn(BaseModel):
     agency_percent: Optional[Union[str, float]] = None
     owner_staff_id: Optional[Union[int, str]] = None
     description: Optional[str] = None
+    category: Optional[str] = None
+    account_type: Optional[str] = None
+    industry: Optional[str] = None
+    website: Optional[str] = None
     confirm_duplicate: bool = False
     updated_at: Optional[str] = None          # versión que vio quien edita (solo al editar)
 
