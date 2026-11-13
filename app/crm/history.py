@@ -15,7 +15,7 @@ from app.person_history import MAX_VALUE, _norm
 from app.timeutil import utcnow
 
 ACCOUNT_FIELDS = ("name", "status", "nit", "email", "phone", "billing_address", "billing_city", "billing_state", "billing_country", "shipping_address", "shipping_city", "shipping_country",
-                  "billing_contact_name", "billing_contact_phone", "payment_term", "payment_days", "billing_close", "agency_percent", "owner_staff_id", "description", "archived_at")
+                  "billing_contact_name", "billing_contact_phone", "payment_term", "payment_days", "billing_close", "agency_percent", "owner_staff_id", "description", "category", "account_type", "industry", "website", "archived_at")
 CONTACT_FIELDS = ("first_name", "last_name", "job_title", "email", "phone", "mobile", "is_primary", "notes", "archived_at")
 # Etapa C1c–C4: los leads y las oportunidades también dejan historial. NO se registran los textos libres (FREE_TEXT) ni las llaves a datos de una persona.
 LEAD_FIELDS = ("first_name", "last_name", "company_name", "job_title", "email", "phone", "source", "status", "owner_staff_id", "description", "archived_at")

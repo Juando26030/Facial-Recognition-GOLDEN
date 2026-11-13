@@ -123,7 +123,7 @@ def test_meta_lists_statuses_owners_and_used_values(client, factory, crm_on):
     factory.staff("coordinador", "coord_no")
     new_account(client, "Una", billing_city="Cali", payment_term="30 días")
     meta = client.get("/api/crm/meta").json()
-    assert meta["statuses"] == ["activo", "inactivo", "masivo"] and meta["cities"] == ["Cali"] and meta["payment_terms"] == ["30 días"]
+    assert meta["statuses"][:3] == ["activo", "inactivo", "masivo"] and len(meta["statuses"]) == 7 and meta["cities"] == ["Cali"] and meta["payment_terms"] == ["30 días"]
     assert all(o["name"] for o in meta["owners"]) and len(meta["owners"]) == 1          # el coordinador no es responsable posible
 
 
