@@ -1973,6 +1973,7 @@ def roster_template(event_id: int, db: Session = Depends(get_db), staff: StaffUs
     """Plantilla de la base de asistentes de ESTE evento: la de siempre y, si el evento usa código (0140), con la columna «codigo» justo después de la cédula."""
     import openpyxl
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
     wb = openpyxl.load_workbook(os.path.join(os.path.dirname(__file__), "..", "..", "static", "templates", "plantilla_carga_base_asistentes.xlsx"))
     if event.code_enabled:
         ws = wb["Base de Asistentes"]
