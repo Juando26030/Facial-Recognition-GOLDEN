@@ -12,7 +12,7 @@ from tests.test_forms import _event, _submit
 from tests.test_form_payments import PROD, SANDBOX, _staff, _values, _with_payment  # noqa: F401
 
 ACC = {"name": "Feria del Libro", "holder": "Libros S.A.S.", "public_key": "pub_prod_ACCOUNT01", "private_key": "prv_prod_ACCOUNTPRIV1",
-       "integrity_secret": "prod_integrity_acc01xx", "events_secret": "prod_events_acc01xx"}
+       "integrity_secret": "prod_integrity_acc01abcd", "events_secret": "prod_events_acc01abcd"}
 
 
 @pytest.fixture(autouse=True)

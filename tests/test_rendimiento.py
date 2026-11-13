@@ -135,7 +135,8 @@ def loaded(client, factory, db):
 
 
 def _cells(content):
-    ws = load_workbook(io.BytesIO(content)).active
+    wb = load_workbook(io.BytesIO(content))
+    ws = wb["Reporte"] if "Reporte" in wb.sheetnames else wb.active          # el libro trae una Portada al inicio; las personas están en «Reporte»
     return [[c.value for c in row] for row in ws.iter_rows()]
 
 

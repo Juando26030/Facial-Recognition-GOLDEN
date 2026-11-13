@@ -26,7 +26,9 @@ def test_decide_by_action_window_or_disabled():
 @pytest.fixture
 def mails(monkeypatch):
     sent = []
-    monkeypatch.setattr("app.mailer.send_mail", lambda to, subject, body, attachments=None, html=None, reply_to=None: sent.append({"to": to, "subject": subject, "body": body}) or {"sent": True, "detail": "prueba"})
+    fake = lambda to, subject, body, attachments=None, html=None, reply_to=None: sent.append({"to": to, "subject": subject, "body": body}) or {"sent": True, "detail": "prueba"}          # noqa: E731
+    monkeypatch.setattr("app.mailer.send_mail", fake)
+    monkeypatch.setattr("app.notifications.send_mail", fake)          # el correo de la campana importa send_mail al cargar el módulo
     return sent
 
 

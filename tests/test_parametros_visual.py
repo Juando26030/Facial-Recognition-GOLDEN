@@ -70,7 +70,8 @@ def test_no_emojis_or_symbols_as_icons():
 
 def test_no_technical_jargon_in_the_visible_text():
     text = _visible_text(TEMPLATE)
-    for word in ("SMTP", "Twilio", "encoding", ".env", "FACE_ENCRYPTION_KEY", "Paso 0", "/rostro", "Paso 1", "Paso 2", "Paso 3", "token", "endpoint"):
+    # «Paso 1» y «Paso 2» son los títulos reales del bloque de permanencia (dos pasos: medir y exigir), no jerga
+    for word in ("SMTP", "Twilio", "encoding", ".env", "FACE_ENCRYPTION_KEY", "Paso 0", "/rostro", "Paso 3", "token", "endpoint"):
         assert word not in text, word
     assert "Abrir pantalla de la puerta" in text and "Parámetros del evento" in text
     assert "FACE_ENCRYPTION_KEY" not in TEMPLATE

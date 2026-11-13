@@ -253,6 +253,8 @@ def test_summary_allocates_by_event_and_ignores_test_person(client, factory, db)
     e1 = factory.event("finalizado", start_date=date(2026, 11, 3), end_date=date(2026, 11, 4))
     e2 = factory.event("finalizado", start_date=date(2026, 11, 10), end_date=date(2026, 11, 10))
     ts = datetime(2026, 11, 5, 15, 0)
+    for uid in ("c0", "c1", "c2", "d1", "PRUEBA"):          # access_logs apunta a la persona por llave foránea: tienen que existir
+        factory.person(e1, uid, attend=False)
     for i in range(3):
         db.add(AccessLog(tenant_id=e1.tenant_id, user_id=f"c{i}", timestamp=ts, event_id=e1.id))
     db.add(AccessLog(tenant_id=e2.tenant_id, user_id="d1", timestamp=ts, event_id=e2.id))

@@ -177,6 +177,7 @@ def _set(db: Session, key: str, value: Optional[str]) -> None:
         db.add(AppSetting(key=key, value=value))
     else:
         row.value, row.updated_at = value, utcnow()
+    db.flush()          # la sesión no autoflushea: sin esto la lectura de justo después (la respuesta del PUT) veía el valor viejo
 
 
 def save_settings(db: Session, data: dict) -> dict:

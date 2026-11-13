@@ -201,5 +201,8 @@ def test_history_goes_with_the_event(client, factory, db):
     client.patch(f"/api/users/1001?event_id={ev.id}", json={"role": "Jefe"})
     client.post("/logout")
     login(client, "root")
+    ev.status = "finalizado"          # solo se archivan eventos finalizados y solo se borran los ya archivados
+    db.commit()
+    assert client.post(f"/api/events/{ev.id}/archive").status_code == 200
     assert client.delete(f"/api/events/{ev.id}").status_code == 200
     assert db.query(PersonChangeLog).count() == 0

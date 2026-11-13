@@ -115,7 +115,7 @@ def test_no_download_without_the_survey_then_download_after_it(client, env, db):
     assert s.status_code == 200 and s.json()["can_download"] is True
     d = client.get(f"/entrega/{token}/base")
     assert d.status_code == 200 and d.content == FILE_BYTES
-    assert d.headers["content-disposition"].startswith("attachment") and "Base final ACME.xlsx" in d.headers["content-disposition"]
+    assert d.headers["content-disposition"].startswith("attachment") and "Base%20final%20ACME.xlsx" in d.headers["content-disposition"]
     assert "no-store" in d.headers["cache-control"]
     rows = db.query(AuditAction).filter(AuditAction.action == "delivery_download").all()
     assert len(rows) == 1 and rows[0].entity == "delivery_link" and "@" not in (rows[0].detail or "") and "1001" not in str(rows[0].detail)       # solo conteo

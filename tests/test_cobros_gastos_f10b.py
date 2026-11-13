@@ -24,7 +24,7 @@ def _admin(client, factory, name="admin1"):
 
 
 def _acc(n, **extra):
-    return {**ACC, "name": f"Cuenta {n}", "public_key": f"pub_prod_ACCOUNT{n:02d}", "integrity_secret": f"prod_integrity_acc{n:02d}xx", "events_secret": f"prod_events_acc{n:02d}xx", **extra}
+    return {**ACC, "name": f"Cuenta {n}", "public_key": f"pub_prod_ACCOUNT{n:02d}", "integrity_secret": f"prod_integrity_acc{n:02d}abcd", "events_secret": f"prod_events_acc{n:02d}abcd", **extra}
 
 
 # ------------------------------------------------------------------ cuentas de cobro

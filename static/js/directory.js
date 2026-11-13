@@ -458,7 +458,7 @@
             const ul = document.createElement('ul'); ul.className = 'gw-list';
             d.items.forEach((r) => {
               const li = document.createElement('li');
-              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: ${r.old || '(vacío)'} → ${r.new || '(vacío)'}`;
+              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: de ${r.old || '(vacío)'} pasó a ${r.new || '(vacío)'}`;
               ul.appendChild(li);
             });
             body.appendChild(ul);

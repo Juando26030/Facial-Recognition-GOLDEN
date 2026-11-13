@@ -1,4 +1,6 @@
 """Alertas del sistema (Fase 9-A): quién recibe el aviso de borrado masivo y desde cuántos registros se envía. Solo admin y super admin (Configuración → «Alertas del sistema»)."""
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -134,7 +136,7 @@ def send_test(db: Session = Depends(get_db), staff: StaffUser = Depends(require_
     now = utcnow()
     alert = SystemAlert(kind="test", title="Prueba: alerta del sistema de GoldenWeb",
                         body=f"Este es un mensaje de prueba enviado por {staff.username}. Si lo recibe, las alertas de borrado masivo le van a llegar a este correo.",
-                        actor_id=staff.id, actor_label=staff.username, dedupe_key=f"test:{staff.id}:{int(now.timestamp())}", created_at=now)
+                        actor_id=staff.id, actor_label=staff.username, dedupe_key=f"test:{staff.id}:{uuid.uuid4().hex}", created_at=now)
     db.add(alert)
     db.flush()
     count = mass_delete.deliver(db, alert)
