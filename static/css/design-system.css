@@ -1177,6 +1177,7 @@
 .gw-kcard__move { min-height: var(--gw-tap); }
 @media (max-width: 640px) { .gw-kanban__col { flex-basis: 88%; } }
 
+/* Movimiento reducido (prefers-reduced-motion) del tablero: la regla vive en el bloque @media de la rueda de carga (arriba), que debe seguir siendo el último de esa consulta. */
 /* Barra de etapas de una oportunidad: una fila de pasos (ganada/perdida cierran). Cada paso dice su estado con palabras (`__state`) además del color. En celular se apila. */
 .gw-stagebar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: 0; padding: 0; list-style: none; }
 .gw-stagebar__step { flex: 1 1 8rem; display: flex; flex-direction: column; gap: var(--gw-sp-1); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
