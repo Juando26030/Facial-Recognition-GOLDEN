@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import audit_actions
-from app.models import Event, StaffUser, Tenant
+from app.models import CrmAccount, CrmContact, Event, StaffUser, Tenant
 from app.auth import require_role
+from app.crm import accounts as crm_accounts, crm_enabled, normalize as crm_normalize
+from app.crm.codes import CodeCounterNotReady, next_code
 from app.timeutil import utcnow
 from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 
@@ -36,6 +38,11 @@ def _slugify(name: str) -> str:
 
 
 def _generate_client_code(db: Session) -> str:
+    if crm_enabled():          # CRM C1a: con el CRM encendido (solo en la nube) el código de cliente es el siguiente número consecutivo; el servidor local sigue con el hexadecimal de siempre
+        try:
+            return str(next_code(db, "account"))
+        except CodeCounterNotReady as exc:
+            raise HTTPException(status_code=409, detail="No se puede crear el cliente: el contador de códigos del CRM no está listo. Pide a un administrador que lo fije antes de crear clientes.") from exc
     code = secrets.token_hex(4).upper()
     while db.query(Tenant).filter(Tenant.client_code == code).first():
         code = secrets.token_hex(4).upper()
@@ -83,8 +90,34 @@ def create_tenant(
         contact_name=data.contact_name, contact_phone=data.contact_phone, contact_email=data.contact_email,
     )
     db.add(tenant)
+    if crm_enabled():          # CRM C1b (D2): todo cliente nuevo nace con su cuenta del CRM, con EL MISMO número, en la misma transacción
+        db.flush()
+        _create_crm_account(db, staff, tenant)
     db.commit()
     return _serialize(tenant)
+
+
+def _clip(value, limit: int):
+    """Recorta a lo que admite la columna del CRM: la cuenta que se crea sola desde /clientes nunca debe hacer fallar la creación del cliente (los campos de `tenants` no tienen tope)."""
+    v = (value or "").strip()
+    return v[:limit] or None
+
+
+def _create_crm_account(db: Session, staff: StaffUser, tenant: Tenant) -> None:
+    name = _clip(tenant.name, 200) or "Cliente"
+    account = CrmAccount(code=int(tenant.client_code), tenant_id=tenant.id, name=name, name_norm=crm_normalize(name)[:200], status="activo", created_by_id=staff.id)
+    db.add(account)
+    db.flush()
+    if (tenant.contact_name or "").strip():          # con nombre de contacto, sus datos pasan a ser el contacto principal (la fuente es el CRM)
+        first, _, last = (tenant.contact_name or "").strip().partition(" ")
+        email = (tenant.contact_email or "").strip()
+        email = email if 0 < len(email) <= 200 else None          # un correo cortado ya no sería ese correo: si no cabe, no se copia al CRM (en el cliente queda completo)
+        contact = CrmContact(account_id=account.id, first_name=_clip(first, 120), last_name=_clip(last, 120), email=email, phone=_clip(tenant.contact_phone, 60),
+                             is_primary=True, created_by_id=staff.id)
+        contact.full_name_norm = crm_normalize(crm_accounts.full_name(contact))[:240]
+        contact.email_norm = crm_normalize(contact.email)[:200] or None
+        db.add(contact)
+        db.flush()
 
 
 @router.patch("/tenants/{tenant_id}")
@@ -101,6 +134,10 @@ def update_tenant(
     changes = data.dict(exclude_unset=True)
     if "name" in changes and not str(changes["name"] or "").strip():
         raise HTTPException(status_code=400, detail="El cliente necesita un nombre")
+    if crm_enabled() and crm_accounts.tenant_contact_locked(db, tenant.id):          # CRM C1b (D3): con contacto principal en el CRM, estos tres datos se editan allí (un solo sentido)
+        moved = [f for f in ("contact_name", "contact_phone", "contact_email") if f in changes and ((changes[f] or "").strip() or None) != getattr(tenant, f)]
+        if moved:
+            raise HTTPException(status_code=409, detail="Los datos de contacto de este cliente se editan en el CRM (contacto principal de su cuenta).")
     for field, value in changes.items():
         setattr(tenant, field, value.strip() if isinstance(value, str) else value)
     audit_actions.record(db, staff, "edit", "tenant", tenant.id, tenant.name, "campos: " + ", ".join(sorted(changes)))          # solo QUÉ campos, nunca los valores (contactos)

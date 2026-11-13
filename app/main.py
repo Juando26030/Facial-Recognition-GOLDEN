@@ -43,6 +43,8 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
+from app.routers import crm as crm_router
+from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
 from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
@@ -309,6 +311,23 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+
+
+def _crm_nav_visible(request) -> bool:
+    """Enlace «CRM» del menú lateral: solo con CRM_ENABLED encendido y para quien tenga comercial o más (rol real de la sesión, no el que se muestra: el
+    coordinador+comercial ve la etiqueta «coordinador» pero sí entra al CRM; el coordinador puro no)."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        return False
+    try:
+        role = request.session.get("staff_role")
+        roles = [role] + split_roles(request.session.get("staff_secondary_role"))
+        return bool(role) and max(ROLE_HIERARCHY.get(r, 0) for r in roles) >= ROLE_HIERARCHY["comercial"]
+    except Exception:
+        return False
+
+
+templates.env.globals["crm_nav_visible"] = _crm_nav_visible
 templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
@@ -335,6 +354,12 @@ _include(gastos_router.router, prefix="/api")      # Fase 9C: /api/gastos/infra/
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
+_include(crm_import_router.router, prefix="/api")      # CRM C1c: importador de SuiteCRM (/api/crm/import/*; solo admin)
+_include(crm_tools_router.router, prefix="/api")      # CRM C3: búsqueda global, filtros guardados, exportar CSV
+_include(crm_quotes_router.router, prefix="/api")      # CRM C3: productos, cotizaciones, proformas (/api/crm/*)
+_include(crm_today_router.router, prefix="/api")      # CRM C4: «Mi día», tableros y ganar una oportunidad (/api/crm/*)
+_include(crm_pipeline_router.router, prefix="/api")      # CRM C2: embudos, oportunidades, leads y actividades (/api/crm/*; mismo apagado por CRM_ENABLED)
+_include(crm_router.router, prefix="/api")      # CRM C1b: /api/crm/* (cada ruta responde 404 mientras CRM_ENABLED esté apagado; ver app/routers/crm.py)
 _include(downloads.router, prefix="/api")      # Fase 4: bases de digitadores y de clientes (app/download_perms.py)
 _include(badges.router, prefix="/api")
 _include(cedula.router, prefix="/api")
@@ -496,6 +521,118 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     # Cliente→Eventos) se partió en secciones del menú lateral nuevo — Clientes es el punto de
     # entrada por defecto ahora, ver templates/clientes.html.
     return RedirectResponse("/clientes", status_code=302)
+
+
+def _crm_page(request: Request, template: str, **extra):
+    """Pantallas del CRM (C1b-2): 404 con CRM_ENABLED apagado; comercial, admin y super_admin entran (D1); el coordinador puro vuelve al inicio.
+    `can_admin` (archivar/restaurar/suprimir) es admin+ según el rol REAL de la sesión."""
+    from app import crm as crm_pkg
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "comercial")
+    if redirect:
+        return redirect
+    roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
+    context = {
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "sidebar_active": "crm",
+        "can_admin": bool({"admin", "super_admin"} & roles),
+    }
+    context["crm_nav"] = crm_pkg.sections(context["can_admin"])
+    context.update(extra)
+    return templates.TemplateResponse(request=request, name=template, context=context)
+
+
+@app.get("/crm")
+def crm_cuentas_page(request: Request):
+    return _crm_page(request, "crm_cuentas.html")
+
+
+@app.get("/crm/cuentas/nueva")
+def crm_cuenta_nueva_page(request: Request):
+    return _crm_page(request, "crm_cuenta.html", account_id="")
+
+
+@app.get("/crm/cuentas/{account_id}")
+def crm_cuenta_page(request: Request, account_id: int):
+    return _crm_page(request, "crm_cuenta.html", account_id=account_id)
+
+
+@app.get("/crm/oportunidades")
+def crm_oportunidades_page(request: Request):
+    return _crm_page(request, "crm_oportunidades.html")
+
+
+@app.get("/crm/oportunidades/{opportunity_id}")
+def crm_oportunidad_page(request: Request, opportunity_id: int):
+    return _crm_page(request, "crm_oportunidad.html", opportunity_id=opportunity_id)
+
+
+@app.get("/crm/leads")
+def crm_leads_page(request: Request):
+    return _crm_page(request, "crm_leads.html")
+
+
+@app.get("/crm/embudos")
+def crm_embudos_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_embudos.html")
+
+
+@app.get("/crm/importar")
+def crm_importar_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")          # sin sesión → /login
+    if redirect:
+        if request.session.get("staff_role"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede importar.")          # con sesión pero rol menor: 403, no redirección
+        return redirect
+    return _crm_page(request, "crm_importar.html")
+
+
+@app.get("/crm/cotizaciones")
+def crm_cotizaciones_page(request: Request):
+    return _crm_page(request, "crm_cotizaciones.html")
+
+
+@app.get("/crm/cotizaciones/{quote_id}")
+def crm_cotizacion_page(request: Request, quote_id: int):
+    return _crm_page(request, "crm_cotizacion.html", quote_id=quote_id)
+
+
+@app.get("/crm/buscar")
+def crm_buscar_page(request: Request):
+    return _crm_page(request, "crm_buscar.html")
+
+
+@app.get("/crm/mi-dia")
+def crm_midia_page(request: Request):
+    return _crm_page(request, "crm_midia.html")
+
+
+@app.get("/crm/tableros")
+def crm_tableros_page(request: Request):
+    return _crm_page(request, "crm_tableros.html")
+
+
+@app.get("/crm/productos")
+def crm_productos_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_productos.html")
 
 
 @app.get("/clientes")

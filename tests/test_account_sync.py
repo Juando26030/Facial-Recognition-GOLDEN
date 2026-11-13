@@ -142,3 +142,70 @@ def test_f5_9_local_server_never_creates_accounts(client, factory, db, monkeypat
     r = client.post(f"/api/events/{ev_id}/staff-users/import", files={"file": ("d.xlsx", b"x", "application/octet-stream")})
     assert r.status_code == 403
     assert db.query(StaffUser).filter_by(username="99887766").first() is None
+
+
+# ------------------------------------------------------------------------------------------------ CRM C1a: el código de cliente pasa a número (alias hexadecimal)
+def _cloud(db, factory):
+    """La «nube»: un cliente con código hexadecimal y dos cuentas (una admin sin cliente y una coordinadora del cliente)."""
+    from app.models import Tenant
+    factory.tenant("acme")
+    factory.staff("admin", "root")
+    factory.staff("coordinador", "ana", tenant_id="acme")
+    return db.query(Tenant).filter_by(id="acme").one()
+
+
+def _tenant_row(p, tid="acme"):
+    return next(t for t in p["tenants"] if t["id"] == tid)
+
+
+def test_snapshot_carries_the_legacy_client_code(db, factory):
+    t = _cloud(db, factory)
+    t.legacy_client_code, t.client_code = t.client_code, "21500"
+    db.commit()
+    row = _tenant_row(account_sync.snapshot(db))
+    assert row["client_code"] == "21500" and row["legacy_client_code"] == "Cacme"
+
+
+def test_apply_updates_the_client_code_of_an_existing_tenant_without_duplicating_it(db, factory):
+    from app.models import Tenant
+    t = _cloud(db, factory)
+    p = _payload(db)
+    row = _tenant_row(p)
+    row["legacy_client_code"], row["client_code"] = row["client_code"], "21500"
+    account_sync.apply(db, _reseal(p))
+    db.commit()
+    db.expire_all()
+    assert db.query(Tenant).count() == 1                                                         # el mismo cliente, no uno nuevo
+    t = db.query(Tenant).filter_by(id="acme").one()
+    assert t.client_code == "21500" and t.legacy_client_code == "Cacme"
+
+
+def test_apply_creates_a_tenant_that_does_not_exist_here_with_its_number_and_alias(db, factory):
+    from app.models import Tenant
+    _cloud(db, factory)
+    p = _payload(db)
+    p["tenants"].append({**_tenant_row(p), "id": "nuevo", "client_code": "21501", "legacy_client_code": "HEXNUEVO", "name": "NUEVO"})
+    for r in p["staff"]:
+        if r["username"] == "ana":
+            r["tenant_id"] = "nuevo"
+    account_sync.apply(db, _reseal(p))
+    db.commit()
+    db.expire_all()
+    t = db.query(Tenant).filter_by(id="nuevo").one()
+    assert (t.client_code, t.legacy_client_code) == ("21501", "HEXNUEVO") and db.query(Tenant).count() == 2
+
+
+def test_apply_accepts_a_payload_from_a_cloud_older_than_the_crm_and_keeps_the_alias_already_here(db, factory):
+    from app.models import Tenant
+    t = _cloud(db, factory)
+    t.legacy_client_code = "ALIAS-VIEJO"
+    db.commit()
+    p = _payload(db)
+    row = _tenant_row(p)
+    row.pop("legacy_client_code")                                                                # la nube anterior no manda el campo
+    row["client_code"] = "21500"
+    account_sync.apply(db, _reseal(p))
+    db.commit()
+    db.expire_all()
+    t = db.query(Tenant).filter_by(id="acme").one()
+    assert t.client_code == "21500" and t.legacy_client_code == "ALIAS-VIEJO"

@@ -1,0 +1,73 @@
+/* CRM (C1b-2): lista de cuentas y ficha. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md); lo demás viene de design-system.css. */
+.crm-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gw-sp-3) var(--gw-sp-4); align-items: end; }
+.crm-filters > * { min-width: 0; }
+.crm-filters__check { grid-column: 1 / -1; }
+@media (max-width: 720px) { .crm-filters { grid-template-columns: minmax(0, 1fr); } }
+
+.crm-table td { vertical-align: middle; }
+.crm-table .crm-name { font-weight: var(--gw-fw-bold); color: var(--gw-text); text-decoration: underline; text-decoration-color: var(--gw-gold-text); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.crm-table .crm-name:hover { color: var(--gw-gold-text); }
+.crm-name-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); min-width: 0; }
+.crm-row--archived { color: var(--gw-text-muted); }
+@media (max-width: 720px) {
+  .crm-table td[data-label]::before { content: attr(data-label) ": "; font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+}
+
+.crm-back { display: inline-flex; align-items: center; gap: var(--gw-sp-1); min-height: var(--gw-tap); color: var(--gw-text-muted); text-decoration: none; font-size: var(--gw-fs-sm); }
+.crm-back:hover { color: var(--gw-text); text-decoration: underline; }
+.crm-back__icon { transform: rotate(180deg); }
+.crm-badges { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+.crm-badges:empty { display: none; }
+
+.crm-form { max-width: 56rem; }
+.crm-primary { margin: 0; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); overflow-wrap: anywhere; }
+.crm-meta { margin: 0; }
+.crm-actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); }
+
+/* Columnas cortas sin partir palabras (a 1000 px la tabla es angosta); la de cuenta y la de contacto son las que se doblan. */
+@media (min-width: 721px) {
+  .crm-table th, .crm-table td { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .crm-table td:nth-child(1), .crm-table td:nth-child(3), .crm-table td:nth-child(4), .crm-table th { white-space: nowrap; }
+  .crm-table .gw-badge { white-space: nowrap; }
+}
+.crm-form .gw-fields-row, .crm-form .gw-form-group__body > .gw-field { margin-bottom: var(--gw-sp-3); }
+.crm-form .gw-form-group__body > :last-child { margin-bottom: 0; }
+
+/* Pestañas de la ficha: fila horizontal (no la lista lateral de Parámetros) */
+.crm-tablist { flex-direction: row; flex: none; position: static; overflow-x: auto; }
+.crm-tablist .gw-tab { min-width: 0; grid-template-columns: auto auto; }
+.crm-panel { min-width: 0; }
+.crm-panel[hidden] { display: none; }
+.crm-panel__bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-3); }
+.crm-panel__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+
+.crm-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); }
+@media (max-width: 720px) { .crm-cards { grid-template-columns: minmax(0, 1fr); } }
+.crm-card { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; overflow-wrap: anywhere; }
+.crm-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.crm-card__name { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); margin: 0; }
+.crm-card__line { margin: 0; }
+.crm-card__label { color: var(--gw-text-muted); }
+.crm-card__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+
+.crm-notes { list-style: none; margin: var(--gw-sp-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.crm-note { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gw-sp-2); }
+.crm-note__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.crm-note__body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.crm-history td { vertical-align: top; }
+.crm-history__change { overflow-wrap: anywhere; }
+
+/* Aviso de revisión tras suprimir: se queda a la vista hasta cerrarlo */
+.crm-review { position: sticky; top: var(--gw-sp-2); z-index: 20; }
+.crm-review__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.crm-erase__list { margin: 0; padding-left: var(--gw-sp-5); }
+.gw-modal .gw-fields-row { row-gap: var(--gw-sp-3); }
+/* Ventanas del CRM: más anchas que el confirmar común y con los botones siempre a la vista aunque el contenido se desplace */
+.gw-modal--dialog.crm-dialog { max-width: 36rem; }
+.crm-dialog .gw-modal__foot { position: sticky; bottom: 0; background: var(--gw-surface); }
+@media (max-width: 520px) {      /* celular: las cuatro pestañas caben sin deslizar (sin ícono) */
+  .crm-tablist { gap: var(--gw-sp-1); overflow-x: visible; }
+  .crm-tablist .gw-tab { grid-template-columns: auto; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); flex: 1 1 0; justify-items: center; }
+  .crm-tablist .gw-tab__icon { display: none; }
+}

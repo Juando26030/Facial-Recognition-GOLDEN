@@ -1,0 +1,93 @@
+"""CRM C1a: registro de cambios con la forma de person_history (app/crm/history.py). La comparación (`diff`) es pura; `record` necesita PostgreSQL."""
+import pytest
+
+from app import models as m
+from app.crm import history, normalize
+
+
+def test_diff_lists_only_what_changed_in_the_given_fields():
+    before = {"name": "Acme", "city": "Bogotá", "phone": ""}
+    after = {"name": "Acme SAS", "city": "Bogotá", "phone": "300"}
+    assert history.diff(before, after) == [("name", "Acme", "Acme SAS"), ("phone", "", "300")]
+    assert history.diff(before, after, ["city"]) == []
+
+
+def test_fields_cover_the_expected_columns_and_never_the_ids_or_codes():
+    for f in ("name", "status", "billing_city", "payment_term", "agency_percent"):
+        assert f in history.ACCOUNT_FIELDS
+    for f in ("first_name", "email", "mobile", "job_title"):
+        assert f in history.CONTACT_FIELDS
+    assert "code" not in history.ACCOUNT_FIELDS and "tenant_id" not in history.ACCOUNT_FIELDS and "legacy_sugar_id" not in history.ACCOUNT_FIELDS
+
+
+def _acc(db, **kw):
+    a = m.CrmAccount(code=1, name="Acme", name_norm=normalize("Acme"), **kw)
+    db.add(a)
+    db.commit()
+    return a
+
+
+def test_record_writes_one_row_per_changed_field_with_who_when_and_source(db, factory):
+    staff = factory.staff("comercial", "com")
+    a = _acc(db, billing_city="Bogotá")
+    before = history.snapshot(a, "account")
+    a.name, a.billing_city, a.phone = "Acme SAS", "Medellín", "3001112233"
+    n = history.record(db, a, "account", before, staff_id=staff.id)
+    db.commit()
+    assert n == 3
+    rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="account", entity_id=a.id)}
+    assert set(rows) == {"name", "billing_city", "phone"}
+    assert (rows["billing_city"].old_value, rows["billing_city"].new_value) == ("Bogotá", "Medellín")
+    assert rows["phone"].old_value is None and rows["phone"].new_value == "3001112233"            # vacío antes → NULL
+    assert all(r.changed_by_id == staff.id and r.source == "edit" and r.changed_at is not None for r in rows.values())
+
+
+def test_record_writes_nothing_when_nothing_changed(db):
+    a = _acc(db)
+    before = history.snapshot(a, "account")
+    assert history.record(db, a, "account", before) == 0
+    db.commit()
+    assert db.query(m.CrmChangeLog).count() == 0
+
+
+def test_values_are_cut_to_500_characters_and_contacts_have_their_own_entity(db):
+    """Ninguna columna del CRM que el historial registra admite 500 caracteres o más (la mayor es billing_address, 300; las demás ≤ 200), y los textos libres no guardan
+    contenido. Por eso el recorte a 500 se prueba con un objeto de reemplazo que NO se guarda en la base: `record()` solo lee atributos."""
+    import types
+    a = _acc(db)
+    c = m.CrmContact(account_id=a.id, first_name="Ana", full_name_norm="ana")
+    db.add(c)
+    db.commit()
+    before = history.snapshot(c, "contact")
+    stand_in = types.SimpleNamespace(id=c.id, job_title="x" * 900, email="ana@ejemplo.test")          # 900 > 120 de la columna real: por eso no se persiste
+    history.record(db, stand_in, "contact", before, source="import")
+    db.commit()
+    rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=c.id)}
+    assert len(rows["job_title"].new_value) == history.MAX_VALUE == 500 and rows["email"].source == "import"
+
+
+def test_free_text_fields_record_the_change_but_not_the_content(db):
+    a = _acc(db)
+    c = m.CrmContact(account_id=a.id, first_name="Ana", full_name_norm="ana")
+    db.add(c)
+    db.commit()
+    before = history.snapshot(c, "contact")
+    c.notes = "texto libre"
+    c.job_title = "Gerente"
+    history.record(db, c, "contact", before, source="edit")
+    db.commit()
+    rows = {r.field_key: r for r in db.query(m.CrmChangeLog).filter_by(entity="contact", entity_id=c.id)}
+    assert rows["notes"].new_value is None and rows["notes"].old_value is None          # texto libre: consta el cambio, no el contenido (history.FREE_TEXT)
+    assert rows["job_title"].new_value == "Gerente"
+
+
+def test_the_history_never_stores_longer_text_than_its_columns():
+    from app.crm import history as h
+    assert h.MAX_VALUE == 500
+    assert "description" in h.FREE_TEXT["account"] and "notes" in h.FREE_TEXT["contact"]
+
+
+def test_an_unknown_source_is_rejected(db):
+    a = _acc(db)
+    with pytest.raises(ValueError):
+        history.record(db, a, "account", history.snapshot(a, "account"), source="otra")

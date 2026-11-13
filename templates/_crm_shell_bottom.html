@@ -1,0 +1,8 @@
+{# Cierre común de las pantallas del CRM nuevas: cierra <main>, carga los scripts de la página (`page_js`, lista de rutas bajo static/) y cierra el documento. #}
+</main>
+
+<script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_common.js') }}"></script>
+{% for js in page_js or [] %}<script src="{{ url_for('static', path=js) }}"></script>
+{% endfor %}</body>
+</html>

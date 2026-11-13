@@ -1015,3 +1015,48 @@ Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista
 
 ## Fase 1.5 — ronda 2 (2026-11-05, noche)
 Íconos de colores por tipo (`--gw-ic-*`), tablas sin scroll lateral (`gw-tablas.css`, Respuestas/Pagos en el editor), botón único de guardado en el editor de formularios (estado, cupo y calendario ya no tienen botón propio), control de archivo propio (`.gwe-file`) con aviso «imagen ya cargada», negrilla corregida en los editores de texto con formato (el peso 600 de `--gw-fw-normal` hacía que Chrome contara el texto como negrilla y «N» la quitara; los `.rt-ed` usan 599), mensaje de cupo lleno con formato, buscador al asignar cuenta existente, retiro del rol «cliente» temporal de evento (enlaces con vencimiento), ruleta rediseñada (huellas de `roulette_display.html`/`roulette-render.js`/`form-render.js` actualizadas en `test_publico_congelado.py` a pedido de Juan David). Arnés de navegador: `scripts/editor_roundtrip_playwright.py` (no corre en el CI).
+
+## 2026-11-12 · CRM pieza C1a (rama `crm/c1-cuentas`, sin migrar en ningún entorno)
+- [x] Migración `0130_crm_cuentas_base`: `crm_counters`, `crm_accounts`, `crm_contacts`, `crm_notes`, `crm_change_log` y `tenants.legacy_client_code`. NO cambia ningún `client_code`. Reversible (restaura el hexadecimal).
+- [x] `app/crm/` (`next_code` consecutivo sin huecos, `bump_floor`, registro de cambios con la forma de `person_history`, supresión de contactos), `scripts/crm_set_counter.py` (simulacro por defecto), interruptor `CRM_ENABLED` (apagado), aviso en `/sistema`, alias `legacy_client_code` en `account_sync` y `event_transfer`.
+- [x] Verificado con psql en un PostgreSQL 16 temporal: subida y reversa del SQL, contador y concurrencia (`docs/crm/verificacion_sql/correr.sh`). Verificado: `ruff check .` y `tests/test_crm_texto.py` (sin base de datos).
+- [ ] **Sin ejecutar:** las pruebas de `pytest` que necesitan PostgreSQL (`tests/test_crm_*.py`, ampliaciones de `test_account_sync.py` y `test_event_transfer.py`) y la suite completa: correrlas con el procedimiento del documento 43 antes de desplegar.
+- [ ] Primera ejecución real de la migración: despliegue a staging con respaldo de Neon staging antes (`docs/crm/STAGING_C1A.md`, criterios de éxito).
+- Siguiente: C1b (pantallas de cuentas y contactos, con aprobación aparte) y C1c (importador de SuiteCRM; informe de emparejamiento de clientes viejos).
+
+## 2026-11-12 · CRM pieza C1b-1 (rama `crm/c1b-pantallas`, desde `crm/c1-cuentas`; sin desplegar)
+- [x] API `/api/crm/*` (`app/routers/crm.py`, lógica en `app/crm/accounts.py`): cuentas (alta con número consecutivo, edición con control de versión, búsqueda sin tildes, filtros, archivar/restaurar), contactos (único principal), notas, historial, convertir en cliente. Permisos: comercial/admin/super_admin; archivar y suprimir, admin+; coordinador puro no entra.
+- [x] Regla del contacto principal (CRM → `tenants.contact_*`), D2 (cliente nuevo crea su cuenta con el mismo número) y D3 (contacto del cliente de solo lectura en `/clientes` con principal en el CRM).
+- [x] Supresión completa (`app/crm/erase.py`): fila, notas, historial del contacto, historial y campos de la cuenta con sus valores, y copia en `tenants`; el texto libre se avisa en `review`.
+- [x] `CRM_ENABLED` por entorno en `config.sh`/`deploy.sh` (staging 1, producción 0); cubre `manual_deploy.sh` y Actions. Sin migración nueva.
+- [x] Verificado: `ruff check .`, `bash -n` de los tres scripts y 50 pruebas de texto sin base de datos (`tests/test_crm_c1b_texto.py`, `tests/test_crm_texto.py`).
+- [ ] **Sin ejecutar:** `tests/test_crm_cuentas_api.py`, `test_crm_contactos.py`, `test_crm_permisos.py`, `test_crm_supresion.py` (necesitan PostgreSQL; procedimiento del documento 43) y la suite completa.
+- Siguiente: C1b-2 (pantallas de lista y ficha).
+
+
+## 2026-11-12 · CRM pieza C1b-2: pantallas de lista y ficha (rama `crm/c1b-pantallas`; sin desplegar)
+- Rutas de página `/crm`, `/crm/cuentas/nueva`, `/crm/cuentas/{id}`: 404 con `CRM_ENABLED` apagado; comercial, admin y super_admin entran (el coordinador puro vuelve al inicio; el doble rol coordinador+comercial sí entra). Enlace «CRM» en el menú lateral solo con CRM encendido y rol real comercial+ (`crm_nav_visible`).
+- Lista: buscador (300 ms), filtros estado/responsable/ciudad y «Ver archivadas» (admin+) guardados en la dirección, paginación compartida, estados cargando/vacío/error. Ficha: grupos Datos, Facturación, Envío, Pagos y Notas; guarda con la versión vista (409 → aviso de recarga); aviso de duplicado con confirmación; convertir en cliente; archivar/restaurar (admin+). Las pestañas Contactos/Notas/Historial llegan en C1b-3.
+- Revisión visual con `scripts/visual_harness/` a 1000/1100/1280/1500 px, claro y oscuro: sin desbordes ni errores de consola; se corrigieron columnas que partían palabras a 1000 px y el espaciado entre filas de campos. El arnés ahora tolera que falte `tpl.json`.
+- Pruebas: `tests/test_crm_pantallas_texto.py` (sin base, pasan) y `tests/test_crm_pantallas.py` (con base, **sin ejecutar** hasta que Juan David las corra).
+
+## 2026-11-12 · CRM piezas C1b-3 y C1b-4 (rama `crm/c1b-pantallas`; sin desplegar)
+- C1b-3a (commit aparte): `GET /api/crm/contacts/{id}/erase-preview` (adelanto de la supresión, solo admin+, solo conteos) y `tenant_contacts` en `account_sync`: el contacto vigente de las empresas ligadas al CRM que ningún personal usa viaja al servidor local, que lo aplica solo a empresas que ya tiene. Resuelve la limitación «el local conserva el contacto suprimido» (obligatoria antes de encender el CRM en producción).
+- C1b-3b: pestañas Contactos (crear, editar, hacer principal, archivar/restaurar, suprimir con adelanto y motivo + nombre tecleado), Notas (por cuenta o por contacto, borrar) e Historial (paginado, con el nombre del contacto). Aviso de revisión persistente tras suprimir. Revisión visual a 1000/1100/1280/1500 px, claro y oscuro. Bug arreglado en la revisión: el menú «Más» de cada contacto se abría y cerraba solo por un manejador duplicado.
+- C1b-4: `docs/crm/STAGING_C1B.md` con los 10 criterios y los pasos para staging con datos ficticios.
+- Pruebas: de texto pasan (58); con base de datos, nuevas y **sin ejecutar** hasta que Juan David las corra.
+
+## 2026-11-12 · CRM etapa C3 (rama `crm/c1c-c4`; sin desplegar)
+- Migración `0133_crm_quotes` (productos, condiciones, plantillas, cotizaciones y líneas, proformas, filtros guardados; contadores `quote` y `proforma`).
+- Reglas y servicios: `app/crm/quote_rules.py`, `quotes.py`, `pdfdoc.py`/`quote_pdf.py` (PDF propio sin dependencias), `tools.py` (búsqueda, filtros guardados, exportación CSV solo admin); APIs `crm_quotes.py` y `crm_tools.py`.
+- Supresión Ley 1581 ampliada: contactos y cuentas arrastran sus cotizaciones, proformas y PDF.
+- Pantallas `/crm/cotizaciones`, `/crm/cotizaciones/{id}`, `/crm/productos` (admin), `/crm/buscar`. Revisión visual hecha. Criterios y decisiones: `docs/crm/STAGING_C3.md`.
+- Pruebas: de texto pasan; `tests/test_crm_cotizaciones.py` (con base) **sin ejecutar** hasta que Juan David la corra.
+
+## 2026-11-12 · CRM etapa C4 (rama `crm/c1c-c4`; sin desplegar)
+- Ganar una oportunidad crea el cliente (si falta) y el evento con el mismo número en la misma transacción (`app/crm/won.py`; `POST /api/crm/opportunities/{id}/win` para las ganadas sin evento). 409 todo o nada si el código ya existe.
+- «Mi día» (`/crm/mi-dia`) y tableros (`/crm/tableros`): `app/crm/today.py`, `app/routers/crm_today.py`; sin migración nueva (la 0134 queda sin usar); sin sondeos.
+- Criterios y decisiones: `docs/crm/STAGING_C4.md`. Pruebas de texto pasan; `tests/test_crm_ganada.py` (con base) **sin ejecutar** hasta que Juan David la corra.
+
+- **C1c-2 (importar oportunidades, actividades, productos, cotizaciones con líneas y proformas):** `app/crm/importer/more.py` + `parsing.py` (lectura pura), `formats.py` (alias por tipo), `runner.py` (orden y registro de la corrida para que la prueba en seco resuelva referencias), `/crm/importar` con 8 archivos, generador sintético ampliado. Mismos tres candados. Lo importado no crea eventos ni historial. Ver `docs/crm/IMPORTADOR.md` y `docs/crm/STAGING_C1C2.md`.
+

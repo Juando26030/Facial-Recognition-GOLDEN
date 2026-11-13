@@ -393,3 +393,26 @@ def test_m8_clear_search_component_exists_and_uses_the_sprite_trash_icon():
     assert 'id="i-trash"' in SPRITE
     assert "#i-trash" in JS and "Vaciar búsqueda" in JS and "data-gw-clear" in JS
 
+
+
+def test_kanban_components_use_only_verified_token_pairs():
+    """Etapa C2: el tablero Kanban y la barra de etapas están en la base, solo con tokens y con pares de contraste ya verificados (claro y oscuro); la guía los muestra."""
+    for cls in (".gw-kanban", ".gw-kanban__col", ".gw-kanban__head", ".gw-kanban__count", ".gw-kcard", ".gw-kcard__flag", ".gw-kcard__move", ".gw-stagebar", ".gw-stagebar__step"):
+        assert cls + " {" in CSS, cls
+    pairs = {(fg, bg) for fg, bg, _ in TEXT_PAIRS}
+    col, card = _rule(".gw-kanban__col"), _rule(".gw-kcard")
+    assert "background: var(--gw-surface-2)" in col and "color: var(--gw-text)" in col and ("--gw-text", "--gw-surface-2") in pairs
+    assert "background: var(--gw-surface)" in card and "color: var(--gw-text)" in card and ("--gw-text", "--gw-surface") in pairs
+    assert "color: var(--gw-text-muted)" in _rule(".gw-kanban__sum") and ("--gw-text-muted", "--gw-surface-2") in pairs
+    assert "color: var(--gw-text-muted)" in _rule(".gw-kcard__sub") and ("--gw-text-muted", "--gw-surface") in pairs
+    flag = _rule(".gw-kcard__flag")
+    assert "background: var(--gw-warn-bg)" in flag and "color: var(--gw-warn-text)" in flag and ("--gw-warn-text", "--gw-warn-bg") in pairs and ("--gw-warn-line", "--gw-warn-bg", 3) in NON_TEXT_PAIRS
+    assert "min-height: var(--gw-tap)" in _rule(".gw-kcard__move") and "min-height: var(--gw-tap)" in _rule(".gw-stagebar__step")
+    for sel, bg, fg in ((".gw-stagebar__step.is-done", "ok", "ok"), (".gw-stagebar__step[aria-current=\"step\"]", "info", "info"), (".gw-stagebar__step.is-lost", "err", "err")):
+        r = _rule(sel)
+        assert f"background: var(--gw-{bg}-bg)" in r and f"color: var(--gw-{fg}-text)" in r and (f"--gw-{fg}-text", f"--gw-{bg}-bg") in pairs, sel
+    block = CSS[CSS.index("CRM · tablero Kanban"):]
+    assert not re.search(r"#[0-9a-fA-F]{3,6}\b|rgba?\(", block), "solo tokens --gw-*"
+    assert "prefers-reduced-motion" in block
+    for needle in ("gw-kanban", "gw-kcard", "gw-kcard__flag", "gw-stagebar", 'aria-current="step"'):
+        assert needle in GUIDE, needle

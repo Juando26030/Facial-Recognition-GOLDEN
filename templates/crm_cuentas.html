@@ -1,0 +1,97 @@
+{# CRM - Cuentas (C1b-2): lista con buscador, filtros, paginación y estados vacío/cargando/error. Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md).
+   El JS vive en static/js/crm_cuentas.js; la API es /api/crm/*. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+<!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM - Cuentas | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm-nav.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page gw-shell has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  {% set crm_section = 'cuentas' %}{% include "_crm_nav.html" %}
+  <div class="gw-container gw-stack-lg" id="crmRoot" data-gw-tour="crm_cuentas" data-gw-tour-auto data-can-admin="{{ '1' if can_admin else '0' }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Cuentas</h1>
+        <p class="gw-page-head__sub">Las empresas y personas con las que trabajamos, con su contacto principal y su historial.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="crm_cuentas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+        <a class="gw-btn gw-btn--primary" href="/crm/cuentas/nueva">{{ ic('plus', 'gw-icon--sm') }} Nueva cuenta</a>
+      </div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Busca la cuenta</span>
+        {% call ayuda('ay_crm1', 'Busca la cuenta') %}Escribe parte del nombre, el código, el NIT, el correo o el nombre de un contacto. No importan las tildes ni las mayúsculas.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Filtra si hace falta</span>
+        {% call ayuda('ay_crm2', 'Filtra si hace falta') %}Acota por estado, responsable o ciudad. Los filtros quedan en la dirección de la página: puedes copiarla y compartirla.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Abre la ficha</span>
+        {% call ayuda('ay_crm3', 'Abre la ficha') %}Pulsa el nombre de la cuenta para ver y editar sus datos. «Nueva cuenta» crea una cuenta con el siguiente código disponible.{% endcall %}</li>
+    </ol>
+
+    <div class="gw-search gw-search--hero" data-gw-tour-step="1" data-gw-tour-title="1. Busca la cuenta" data-gw-tour-text="Escribe parte del nombre, el código, el NIT, el correo o un contacto; la lista se filtra mientras escribes.">
+      <label class="gw-sr-only" for="crmSearch">Buscar cuenta</label>
+      <div class="gw-search__row"><div class="gw-search__field">{{ ic('search', 'gw-search__icon') }}<input type="search" id="crmSearch" class="gw-input" placeholder="Buscar cuenta, código, NIT..." autocomplete="off"></div></div>
+    </div>
+
+    <div class="crm-filters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Estado, responsable y ciudad acotan la lista. Se recuerdan en la dirección de la página.">
+      <div class="gw-field"><label class="gw-label" for="crmStatus">Estado</label><select class="gw-select" id="crmStatus"><option value="">Todos</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="crmOwner">Responsable</label><select class="gw-select" id="crmOwner"><option value="">Todos</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="crmCity">Ciudad</label><select class="gw-select" id="crmCity"><option value="">Todas</option></select></div>
+      {% if can_admin %}<label class="gw-check crm-filters__check"><input type="checkbox" id="crmArchived"> Ver archivadas</label>{% endif %}
+    </div>
+
+    <section aria-labelledby="crmListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Abre la ficha" data-gw-tour-text="Pulsa el nombre de una cuenta para ver y editar sus datos.">
+      <h2 class="gw-sr-only" id="crmListTitle">Lista de cuentas</h2>
+      <div id="crmResults" aria-live="polite" aria-busy="true">
+        <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-table">
+          <thead><tr><th scope="col">Código</th><th scope="col">Cuenta</th><th scope="col">Estado</th><th scope="col">Ciudad</th><th scope="col">Responsable</th><th scope="col">Contacto principal</th></tr></thead>
+          <tbody id="crmBody">{{ skeleton('table', rows=6, cols=6, label='Cargando cuentas…') }}</tbody>
+        </table></div>
+        <div id="crmPager"></div>
+      </div>
+      <div id="crmState" hidden></div>
+    </section>
+  </div>
+</main>
+
+<script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_cuentas.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+{# CRM - Cotización (C3): editor con líneas, totales, etapa, versiones, PDF y proforma. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_cotizacion.js; API: /api/crm/quotes/{id}. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Cotización" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/crm_cotizacion.js"] %}{% set crm_section = 'cotizaciones' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="quoteRoot" data-quote-id="{{ quote_id }}" data-can-admin="{{ '1' if can_admin else '0' }}">
+    <a class="crm-back" href="/crm/cotizaciones">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a las cotizaciones</a>
+    <div id="quoteState" hidden></div>
+    <div id="quoteMain" hidden class="gw-stack-lg">
+      <div class="gw-page-head">
+        <div class="gw-page-head__text">
+          <p class="gw-eyebrow" id="qNumber"></p>
+          <h1 class="gw-page-head__title" id="qTitle"></h1>
+          <p class="gw-page-head__sub" id="qSub"></p>
+        </div>
+        <div class="gw-page-head__actions" id="qActions"></div>
+      </div>
+      <div id="qNotice" class="gw-alert gw-alert--warn" role="status" hidden><div class="gw-alert__body"></div></div>
+      <div id="qError" class="gw-alert gw-alert--err" role="alert" hidden><div class="gw-alert__body"></div></div>
+
+      <section class="gw-card gw-stack" aria-labelledby="qDataTitle">
+        <h2 class="gw-card__title" id="qDataTitle">Datos de la cotización</h2>
+        <div class="crm-quote-grid">
+          <div class="gw-field is-wide"><label class="gw-label" for="fTitle">Título</label><input class="gw-input" id="fTitle" maxlength="200"></div>
+          <div class="gw-field"><label class="gw-label" for="fContact">Contacto</label><select class="gw-select" id="fContact"><option value="">Sin contacto</option></select></div>
+          <div class="gw-field"><label class="gw-label" for="fCurrency">Moneda</label><select class="gw-select" id="fCurrency"></select></div>
+          <div class="gw-field"><label class="gw-label" for="fValid">Válida hasta</label><input type="date" class="gw-input" id="fValid"></div>
+          <div class="gw-field"><label class="gw-label" for="fEvent">Inicio del evento</label><input type="date" class="gw-input" id="fEvent"></div>
+          <div class="gw-field"><label class="gw-label" for="fTemplate">Plantilla del PDF</label><select class="gw-select" id="fTemplate"><option value="">Predeterminada</option></select></div>
+          <div class="gw-field"><label class="gw-label" for="fTerms">Condiciones</label><select class="gw-select" id="fTerms"><option value="">Sin condiciones guardadas</option></select></div>
+          <div class="gw-field is-wide"><label class="gw-label" for="fTermsText">Texto de las condiciones</label><textarea class="gw-textarea crm-textarea" id="fTermsText" maxlength="20000"></textarea></div>
+          <div class="gw-field is-wide"><label class="gw-label" for="fNotes">Notas internas de la reunión</label><textarea class="gw-textarea crm-textarea" id="fNotes" maxlength="20000"></textarea><p class="gw-hint">Estas notas no salen en el PDF.</p></div>
+        </div>
+      </section>
+
+      <section class="gw-card gw-stack" aria-labelledby="qLinesTitle">
+        <div class="crm-card-head"><h2 class="gw-card__title" id="qLinesTitle">Líneas</h2>
+          <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAddProduct">{{ ic('plus', 'gw-icon--sm') }} Desde un producto</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAddLine">{{ ic('plus', 'gw-icon--sm') }} Línea libre</button></div></div>
+        <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-lines">
+          <thead><tr><th scope="col">Concepto</th><th scope="col">Cant.</th><th scope="col">Precio</th><th scope="col">Desc. %</th><th scope="col">Imp. %</th><th scope="col">Total</th><th scope="col"><span class="gw-sr-only">Quitar</span></th></tr></thead>
+          <tbody id="qLines"></tbody>
+        </table></div>
+        <div id="qLinesEmpty" class="gw-hint" hidden>Todavía no hay líneas. Agrega un producto o una línea libre.</div>
+        <dl class="crm-totals" id="qTotals" aria-live="polite"></dl>
+        <p class="gw-hint">Los totales se calculan en el servidor al guardar; aquí ves una vista previa.</p>
+      </section>
+
+      <div class="crm-savebar" id="qSaveBar">
+        <button type="button" class="gw-btn gw-btn--primary" id="qSave">Guardar cambios</button>
+      </div>
+
+      <section class="gw-card gw-stack" aria-labelledby="qVersionsTitle">
+        <h2 class="gw-card__title" id="qVersionsTitle">Versiones</h2>
+        <ul class="crm-versions" id="qVersions"></ul>
+      </section>
+
+      <section class="gw-card gw-stack" aria-labelledby="qHistTitle">
+        <h2 class="gw-card__title" id="qHistTitle">Historial de cambios</h2>
+        <div id="qHistory"></div>
+      </section>
+    </div>
+  </div>
+{% include "_crm_shell_bottom.html" %}

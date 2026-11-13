@@ -1,0 +1,21 @@
+{# CRM - Tableros (C4): embudo, cerradas, actividades y cotizaciones. El comercial ve lo suyo; el admin ve todo el equipo. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_tableros.js; API: /api/crm/dashboards. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Tableros" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c4.css"] %}{% set page_js = ["js/crm_tableros.js"] %}{% set crm_section = 'tableros' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="boardsRoot" data-can-admin="{{ '1' if can_admin else '0' }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Tableros</h1>
+        <p class="gw-page-head__sub" id="boardsSub">Cómo va el embudo, qué se ganó y qué se perdió.</p>
+      </div>
+    </div>
+    <form class="crm-filters crm-filters--boards" id="boardsFilters">
+      <div class="gw-field"><label class="gw-label" for="boardsDays">Periodo</label><select class="gw-select" id="boardsDays"><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Último año</option></select></div>
+      {% if can_admin %}<div class="gw-field"><label class="gw-label" for="boardsOwner">Responsable</label><select class="gw-select" id="boardsOwner"><option value="">Todo el equipo</option></select></div>{% endif %}
+      <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">Ver</button></div>
+    </form>
+    <div id="boardsState" hidden></div>
+    <div id="boardsMain" class="gw-stack-lg" aria-live="polite" aria-busy="true"></div>
+  </div>
+{% include "_crm_shell_bottom.html" %}

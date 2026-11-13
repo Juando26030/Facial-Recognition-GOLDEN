@@ -6,6 +6,7 @@
 #   git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN && cd Facial-Recognition-GOLDEN && git checkout <rama o commit>
 #   nohup bash deploy/gcp/manual_deploy.sh staging    <ID-del-proyecto> > ~/deploy.log 2>&1 &     # luego: tail -f ~/deploy.log
 #   nohup bash deploy/gcp/manual_deploy.sh production <ID-del-proyecto> > ~/deploy.log 2>&1 &     # respeta el congelamiento; FORCE=1 lo salta
+#   CRM: staging lo enciende solo (CRM_ENABLED=1 por defecto); producción queda apagado (0) salvo `CRM_ENABLED=1 nohup bash …` con autorización de Juan David. Ver deploy/gcp/config.sh.
 #
 # Lecciones de la primera vez (producción, 5-nov-2026): el build de dlib tarda 20-60 min (por eso nohup y no cerrar la pestaña); el push desde
 # Cloud Shell falló con «connection refused» con varias capas en paralelo → aquí se sube de a una capa y con reintentos; si se corta, volver a correr
@@ -27,6 +28,9 @@ fi
 export FIREBASE_SITE="$HOSTING_SITE"
 source deploy/gcp/config.sh "$ENV_NAME"
 SHA="$(git rev-parse HEAD)"
+# CRM: el valor sale de config.sh (staging 1, producción 0 salvo CRM_ENABLED=1 en este comando) y deploy.sh lo escribe en el servicio `web`. Se muestra aquí para verlo ANTES de desplegar.
+echo "CRM_ENABLED=$CRM_ENABLED (entorno $ENV_NAME)"
+if [ "$ENV_NAME" = production ] && [ "$CRM_ENABLED" = 1 ]; then echo "AVISO: vas a ENCENDER el CRM en PRODUCCIÓN. Solo con autorización explícita de Juan David y con el contador fijado (scripts/crm_set_counter.py)." >&2; fi
 IMAGE="${IMAGE_BASE}:${SHA}"
 say() { echo -e "\n== $*"; }
 if [ -n "$(git status --porcelain)" ]; then echo "ERROR: hay cambios sin guardar en la copia del código; se despliega solo lo que está en un commit." >&2; exit 1; fi

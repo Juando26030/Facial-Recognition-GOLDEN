@@ -15,14 +15,14 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, StaffUser, Tenant
+from app.models import AppSetting, CrmAccount, StaffUser, Tenant
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.account_sync")
 VERSION_KEY = "account_sync_version"
 SYNCED_AT_KEY = "account_sync_at"
 STAFF_FIELDS = ("username", "password_hash", "full_name", "role", "secondary_role", "extra_roles", "tenant_id", "email", "phone", "is_active", "must_change_password", "print_station", "tours_auto_off")
-TENANT_FIELDS = ("id", "client_code", "name", "contact_name", "contact_phone", "contact_email")
+TENANT_FIELDS = ("id", "client_code", "legacy_client_code", "name", "contact_name", "contact_phone", "contact_email")          # CRM C1a: legacy_client_code = el hexadecimal anterior (alias)
 FETCH_TIMEOUT = 20.0
 MAX_BYTES = 5_000_000
 NO_PASSWORD = "!"          # F5-9 A-08: una cuenta inactiva o archivada viaja SIN su hash (no sirve para entrar en el local y no se expone si el token del nodo se filtra); bcrypt nunca acepta «!»
@@ -39,16 +39,33 @@ def _staff_row(s: StaffUser) -> dict:
     return row
 
 
+CONTACT_FIELDS = ("contact_name", "contact_phone", "contact_email")
+
+
+def tenant_contacts(db: Session, used: set) -> dict:
+    """CRM C1b-3: lo que la nube tiene HOY como contacto de las empresas ligadas a una cuenta del CRM que NINGUNA cuenta de personal usa (esas no viajan en `tenants`).
+    Sirve para que un servidor local que todavía guarda la copia vieja de un contacto suprimido la reemplace (Ley 1581): el local solo lo aplica a empresas que YA tiene, nunca crea filas."""
+    rows = db.query(Tenant).join(CrmAccount, CrmAccount.tenant_id == Tenant.id).order_by(Tenant.id).all()
+    return {t.id: {f: getattr(t, f) for f in CONTACT_FIELDS} for t in rows if t.id not in used}
+
+
 def snapshot(db: Session) -> dict:
-    """Lo que la nube entrega: empresas (solo las que usan las cuentas) y todas las cuentas, ordenadas, con su huella."""
+    """Lo que la nube entrega: empresas (solo las que usan las cuentas), todas las cuentas, ordenadas, y el contacto vigente de las demás empresas del CRM; con su huella."""
     staff = [_staff_row(s) for s in db.query(StaffUser).order_by(StaffUser.username).all()]
     used = {s["tenant_id"] for s in staff if s["tenant_id"]}
     tenants = [_tenant_row(t) for t in db.query(Tenant).order_by(Tenant.id).all() if t.id in used]
-    return {"version": version_of(tenants, staff), "tenants": tenants, "staff": staff}
+    contacts = tenant_contacts(db, used)
+    snap = {"version": version_of(tenants, staff, contacts), "tenants": tenants, "staff": staff}
+    if contacts:
+        snap["tenant_contacts"] = contacts
+    return snap
 
 
-def version_of(tenants: list, staff: list) -> str:
-    raw = json.dumps({"t": tenants, "s": staff}, sort_keys=True, default=str, separators=(",", ":"))
+def version_of(tenants: list, staff: list, contacts: Optional[dict] = None) -> str:
+    body = {"t": tenants, "s": staff}
+    if contacts:
+        body["c"] = contacts          # solo si hay: una nube sin CRM sigue dando la misma huella de siempre
+    raw = json.dumps(body, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
@@ -82,7 +99,10 @@ def apply(db: Session, payload: dict) -> dict:
     staff_rows, tenant_rows, version = payload.get("staff"), payload.get("tenants"), payload.get("version")
     if not isinstance(staff_rows, list) or not isinstance(tenant_rows, list) or not version:
         raise ValueError("Respuesta de cuentas no válida")
-    if version != version_of(tenant_rows, staff_rows):
+    contacts = payload.get("tenant_contacts") or {}
+    if not isinstance(contacts, dict):
+        raise ValueError("Respuesta de cuentas no válida")
+    if version != version_of(tenant_rows, staff_rows, contacts):
         raise ValueError("La huella de las cuentas no coincide: respuesta dañada")
     if not any(r.get("is_active") and not r.get("archived") for r in staff_rows):
         raise ValueError("La nube no entregó ninguna cuenta activa: no se cambia nada")          # nunca dejar el servidor sin quién entre
@@ -92,9 +112,16 @@ def apply(db: Session, payload: dict) -> dict:
         if row is None:
             row = Tenant(id=t["id"], client_code=t["client_code"], name=t["name"])
             db.add(row)
-        for f in ("client_code", "name", "contact_name", "contact_phone", "contact_email"):
+        for f in ("client_code", "legacy_client_code", "name", "contact_name", "contact_phone", "contact_email"):
+            if f == "legacy_client_code" and f not in t:
+                continue                       # carga de una nube anterior al CRM: no trae el alias, el que ya hay aquí se conserva
             setattr(row, f, t.get(f))
         row.archived_at = (row.archived_at or utcnow()) if t.get("archived") else None
+    for tid, vals in contacts.items():          # CRM C1b-3: la copia local de un contacto suprimido se reemplaza por lo que la nube tiene hoy (nunca se crean empresas)
+        row = db.get(Tenant, tid)
+        if row is not None and isinstance(vals, dict):
+            for f in CONTACT_FIELDS:
+                setattr(row, f, vals.get(f))
     db.flush()
     seen = set()
     for r in staff_rows:

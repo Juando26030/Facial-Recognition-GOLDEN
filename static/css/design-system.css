@@ -958,7 +958,7 @@
   .gw-page .gw-stack > * + * { margin-top: var(--gw-sp-2); }
   .gw-page .gw-stack-lg > .gw-page-head + .gw-steps, .gw-page .gw-stack-lg > .gw-stack:first-child + .gw-steps { margin-top: var(--gw-sp-1); }
   .gw-page .gw-parametros__wrap { gap: var(--gw-sp-2); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-3); }
-  .gw-page .gw-container { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .gw-page .gw-container, .gw-page .gw-crm-nav { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
   .gw-page .golden-main > .gw-container { padding-top: var(--gw-sp-2); }
   .gw-page .gw-card { padding: var(--gw-sp-3); }
   .gw-page .gw-card__head { margin-bottom: var(--gw-sp-2); }
@@ -1146,3 +1146,51 @@
 .gw-backchip:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-backrow { display: flex; padding: var(--gw-sp-2) 0 0; }
 @media (max-width: 760px) { .gw-page .golden-event-strip-inner > .gw-backchip { display: inline-flex; margin-right: var(--gw-sp-2); } }
+
+/* ============================================================ CRM · tablero Kanban y barra de etapas (etapa C2, 12-nov-2026). Solo tokens --gw-*; ningún color suelto.
+   `.gw-kanban` es una fila de columnas con desplazamiento horizontal PROPIO (la página nunca se desplaza de lado); en celular cada columna ocupa casi todo el ancho y se encaja al desplazar.
+   `.gw-kcard` es una tarjeta: el título es un enlace; «Mover a…» (menú `.gw-menu`) es la alternativa de teclado y de pantalla táctil al arrastre. Una tarjeta sin próxima actividad lleva
+   la franja `.gw-kcard__flag` con ícono y texto (el color nunca va solo). Pares de texto: --gw-text y --gw-text-muted sobre --gw-surface / --gw-surface-2; --gw-warn-text sobre --gw-warn-bg. */
+.gw-kanban { display: flex; align-items: flex-start; gap: var(--gw-sp-4); overflow-x: auto; padding: var(--gw-sp-1) var(--gw-sp-1) var(--gw-sp-4); scroll-snap-type: x proximity; max-width: 100%; }
+.gw-kanban__col { flex: 0 0 min(320px, 100%); min-width: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md);
+  background: var(--gw-surface-2); color: var(--gw-text); scroll-snap-align: start; }
+.gw-kanban__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gw-sp-1) var(--gw-sp-2); }
+.gw-kanban__title { margin: 0; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-kanban__count { display: inline-block; min-width: 1.75rem; padding: 0 var(--gw-sp-2); border-radius: var(--gw-radius-pill); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); text-align: center; }
+.gw-kanban__sum { flex: 1 0 100%; margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-kanban__body { display: flex; flex-direction: column; gap: var(--gw-sp-3); min-height: var(--gw-tap); border: 2px dashed transparent; border-radius: var(--gw-radius-sm); }
+.gw-kanban__body.is-over { border-color: var(--gw-border-strong); }
+.gw-kanban__more { align-self: stretch; }
+.gw-kanban__empty { margin: 0; padding: var(--gw-sp-3); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); text-align: center; }
+.gw-kcard { display: flex; flex-direction: column; gap: var(--gw-sp-2); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); color: var(--gw-text); box-shadow: var(--gw-shadow-sm); }
+.gw-kcard[draggable="true"] { cursor: grab; }
+.gw-kcard.is-dragging { opacity: 0.5; cursor: grabbing; }
+.gw-kcard__title { margin: 0; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-kcard__title a { color: var(--gw-link); text-decoration: none; }
+.gw-kcard__title a:hover { text-decoration: underline; }
+.gw-kcard__sub { margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); overflow-wrap: anywhere; }
+.gw-kcard__amount { margin: 0; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
+.gw-kcard__meta { display: flex; flex-wrap: wrap; gap: var(--gw-sp-1) var(--gw-sp-3); margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-kcard__flag { display: inline-flex; align-items: center; gap: var(--gw-sp-1); align-self: flex-start; padding: var(--gw-sp-1) var(--gw-sp-2); border-radius: var(--gw-radius-sm); background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 1px solid var(--gw-warn-line); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-kcard__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-kcard__move { min-height: var(--gw-tap); }
+@media (max-width: 640px) { .gw-kanban__col { flex-basis: 88%; } }
+@media (prefers-reduced-motion: reduce) { .gw-kanban { scroll-behavior: auto; scroll-snap-type: none; } }
+
+/* Barra de etapas de una oportunidad: una fila de pasos (ganada/perdida cierran). Cada paso dice su estado con palabras (`__state`) además del color. En celular se apila. */
+.gw-stagebar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: 0; padding: 0; list-style: none; }
+.gw-stagebar__step { flex: 1 1 8rem; display: flex; flex-direction: column; gap: var(--gw-sp-1); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-stagebar__step button { all: unset; cursor: pointer; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; min-height: var(--gw-tap); width: calc(100% + 2 * var(--gw-sp-3)); margin: calc(-1 * var(--gw-sp-2)) calc(-1 * var(--gw-sp-3)); padding: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-stagebar__step button:focus-visible { box-shadow: var(--gw-ring); border-radius: var(--gw-radius-sm); }
+.gw-stagebar__state { font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
+.gw-stagebar__step.is-done { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-stagebar__step.is-done .gw-stagebar__state { color: var(--gw-ok-text); }
+.gw-stagebar__step[aria-current="step"] { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }
+.gw-stagebar__step[aria-current="step"] .gw-stagebar__state { color: var(--gw-info-text); }
+.gw-stagebar__step.is-lost { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
+.gw-stagebar__step.is-lost .gw-stagebar__state { color: var(--gw-err-text); }
+
+/* CRM · barra de secciones (etapa C1c–C4): fila de píldoras con desplazamiento propio; la sección actual lleva `aria-current="page"`. Misma columna que .gw-container (alineada con el título). Las pantallas del CRM además cargan p-crm-nav.css con la misma regla (URL propia: una caché vieja de este archivo no la desalinea). */
+.gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; box-sizing: border-box; width: 100%; max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-1) var(--gw-sp-4); }
+.gw-crm-nav .gw-chip { flex: 0 0 auto; text-decoration: none; }
+.gw-chip--current { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }

@@ -608,6 +608,44 @@ GWMap.enhance(el, { countryCode: 'co' })   // evento gw:map-change {text, lat, l
 </section>
 
 
+<section class="g-sec" id="kanban">
+  <h2 class="gw-title">CRM · tablero Kanban y barra de etapas (etapa C2)</h2>
+  <p class="gw-lead">El tablero <code class="g-code">.gw-kanban</code> es una fila de columnas <code class="g-code">.gw-kanban__col</code> con desplazamiento horizontal propio. Cada tarjeta <code class="g-code">.gw-kcard</code> se arrastra con el ratón y SIEMPRE tiene «Mover a…» (menú) para teclado y pantalla táctil. La franja <code class="g-code">.gw-kcard__flag</code> avisa «Sin próxima actividad» con ícono y palabras. La barra <code class="g-code">.gw-stagebar</code> muestra la etapa de una oportunidad: pasos hechos, el actual (<code class="g-code">aria-current="step"</code>) y los que faltan.</p>
+  <div class="gw-kanban" role="list" aria-label="Ejemplo de tablero">
+    <section class="gw-kanban__col" role="listitem" aria-label="Etapa Propuesta de valor">
+      <div class="gw-kanban__head"><h3 class="gw-kanban__title">Propuesta de valor</h3><span class="gw-kanban__count">2</span><p class="gw-kanban__sum">$ 18.500.000 · ponderado $ 9.250.000</p></div>
+      <div class="gw-kanban__body">
+        <article class="gw-kcard">
+          <h4 class="gw-kcard__title"><a href="#kanban">Feria Pyme 2027</a></h4>
+          <p class="gw-kcard__sub">Cámara de Comercio Ejemplo</p>
+          <p class="gw-kcard__amount">$ 12.000.000</p>
+          <p class="gw-kcard__meta"><span>Cierre 15 dic</span><span>Marta R.</span></p>
+          <span class="gw-kcard__flag">⚠ Sin próxima actividad</span>
+          <div class="gw-kcard__foot"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gw-kcard__move">Mover a…</button></div>
+        </article>
+        <article class="gw-kcard is-dragging">
+          <h4 class="gw-kcard__title"><a href="#kanban">Congreso de Logística</a></h4>
+          <p class="gw-kcard__sub">Asociación de Ejemplo</p>
+          <p class="gw-kcard__amount">$ 6.500.000</p>
+          <p class="gw-kcard__meta"><span>Cierre 20 ene</span><span>Luis P.</span></p>
+          <div class="gw-kcard__foot"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gw-kcard__move">Mover a…</button></div>
+        </article>
+      </div>
+    </section>
+    <section class="gw-kanban__col" role="listitem" aria-label="Etapa Negociación">
+      <div class="gw-kanban__head"><h3 class="gw-kanban__title">Negociación</h3><span class="gw-kanban__count">0</span><p class="gw-kanban__sum">$ 0</p></div>
+      <div class="gw-kanban__body is-over"><p class="gw-kanban__empty">Suelta aquí una oportunidad o usa «Mover a…».</p></div>
+    </section>
+  </div>
+  <ol class="gw-stagebar" aria-label="Etapas de la oportunidad">
+    <li class="gw-stagebar__step is-done"><span>Prospecto</span><span class="gw-stagebar__state">✓ Hecha</span></li>
+    <li class="gw-stagebar__step is-done"><span>Calificado</span><span class="gw-stagebar__state">✓ Hecha</span></li>
+    <li class="gw-stagebar__step" aria-current="step"><span>Propuesta de valor</span><span class="gw-stagebar__state">Etapa actual</span></li>
+    <li class="gw-stagebar__step"><span>Negociación</span><span class="gw-stagebar__state">Pendiente</span></li>
+    <li class="gw-stagebar__step is-lost"><span>Perdida</span><span class="gw-stagebar__state">✕ Cerrada sin venta</span></li>
+  </ol>
+</section>
+
 <section id="fase15"><h2>Fase 1.5 · piezas compartidas</h2>
 <p>Barra de guardado única (<code>.gw-savebar</code>), botón que trabaja (<code>GW.busy</code>, rueda con <code>aria-busy</code>), encabezado de página (<code>.gw-page-head</code>), vacío (<code>.gw-empty</code>), cargando (<code>.gw-skeleton</code>), lista en tarjetas (<code>.gw-cards</code>, <code>.gw-card-row</code>) y tabla que se vuelve tarjetas en el celular (<code>.gw-table-cards</code>). Las acciones de cada fila van siempre a la vista, dentro de la tarjeta.</p>
 </section>

@@ -1,0 +1,46 @@
+{# CRM - Leads (C2): clientes potenciales, con conversión en cuenta + contacto (+ oportunidad). Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_leads.js; API: /api/crm/leads. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Leads" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_leads.js"] %}{% set crm_section = 'leads' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="leadsRoot" data-can-admin="{{ '1' if can_admin else '0' }}">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Leads</h1>
+        <p class="gw-page-head__sub">Personas y empresas que todavía no son cuenta. Cuando avanzan, se convierten en cuenta, contacto y oportunidad.</p>
+      </div>
+      <div class="gw-page-head__actions"><button type="button" class="gw-btn gw-btn--primary" id="leadNew">{{ ic('plus', 'gw-icon--sm') }} Nuevo lead</button></div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Registra el lead</span>
+        {% call ayuda('ay_lead1', 'Registra el lead') %}Anota quién es, de dónde llegó y su correo o teléfono. Si ya hay un lead con el mismo correo te avisamos antes de duplicarlo.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Dale seguimiento</span>
+        {% call ayuda('ay_lead2', 'Dale seguimiento') %}Programa llamadas, tareas o reuniones desde «Actividades» y cambia su estado: nuevo, contactado o calificado.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Conviértelo</span>
+        {% call ayuda('ay_lead3', 'Conviértelo') %}«Convertir» crea la cuenta (o usa una existente), el contacto y, si quieres, la oportunidad. Un lead se convierte una sola vez.{% endcall %}</li>
+    </ol>
+
+    <form class="crm-filters" id="leadFilters" role="search">
+      <div class="gw-field crm-filters__wide"><label class="gw-label" for="leadQ">Buscar</label><input type="search" class="gw-input" id="leadQ" maxlength="200" placeholder="Nombre, empresa o correo" autocomplete="off"></div>
+      <div class="gw-field"><label class="gw-label" for="leadStatus">Estado</label><select class="gw-select" id="leadStatus"><option value="">Todos</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="leadOwner">Responsable</label><select class="gw-select" id="leadOwner"><option value="">Todos</option></select></div>
+      {% if can_admin %}<label class="gw-check"><input type="checkbox" id="leadArchived"> Ver archivados</label>{% endif %}
+      <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">{{ ic('search', 'gw-icon--sm') }} Buscar</button><button type="button" class="gw-btn gw-btn--secondary" id="leadClear">Quitar filtros</button></div>
+    </form>
+
+    <div class="gw-alert gw-alert--warn" id="leadReview" role="status" hidden></div>
+
+    <section aria-labelledby="leadListTitle">
+      <h2 class="gw-sr-only" id="leadListTitle">Lista de leads</h2>
+      <div id="leadResults" aria-live="polite" aria-busy="true">
+        <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-table">
+          <thead><tr><th scope="col">Lead</th><th scope="col">Empresa</th><th scope="col">Estado</th><th scope="col">Origen</th><th scope="col">Responsable</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
+          <tbody id="leadBody"></tbody>
+        </table></div>
+        <div id="leadPager"></div>
+      </div>
+      <div id="leadState" hidden></div>
+    </section>
+  </div>
+{% include "_crm_shell_bottom.html" %}

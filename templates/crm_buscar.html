@@ -1,0 +1,19 @@
+{# CRM - Búsqueda global (C3): una sola caja para cuentas, contactos, oportunidades, cotizaciones y leads. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_buscar.js; API: /api/crm/search. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Buscar" %}{% set page_css = ["css/p-crm-c3.css"] %}{% set page_js = ["js/crm_buscar.js"] %}{% set crm_section = 'buscar' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="searchRoot">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM</p>
+        <h1 class="gw-page-head__title">Buscar en el CRM</h1>
+        <p class="gw-page-head__sub">Escribe un nombre, un correo o un número y pulsa «Buscar». Mira cuentas, contactos, oportunidades, cotizaciones y leads a la vez.</p>
+      </div>
+    </div>
+    <form class="crm-filters" id="searchForm" role="search">
+      <div class="gw-field crm-filters__wide"><label class="gw-label" for="searchQ">Qué buscas</label><input type="search" class="gw-input" id="searchQ" maxlength="100" minlength="2" autocomplete="off" placeholder="Nombre, correo, NIT o número" required></div>
+      <div class="crm-filters__actions"><button type="submit" class="gw-btn gw-btn--primary">{{ ic('search', 'gw-icon--sm') }} Buscar</button></div>
+    </form>
+    <div id="searchResults" class="gw-stack-lg" aria-live="polite" aria-busy="false"></div>
+  </div>
+{% include "_crm_shell_bottom.html" %}
