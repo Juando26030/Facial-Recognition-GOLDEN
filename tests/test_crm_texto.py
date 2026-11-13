@@ -24,16 +24,18 @@ def test_there_is_a_single_alembic_head_and_it_descends_from_0130():
     for p in (ROOT / "alembic" / "versions").glob("*.py"):
         s = p.read_text(encoding="utf-8")
         r = re.search(r'^revision\s*=\s*["\']([^"\']+)["\']', s, re.M)
-        d = re.search(r'^down_revision\s*=\s*["\']([^"\']+)["\']', s, re.M)
+        d = re.search(r'^down_revision\s*=\s*(.+)$', s, re.M)
         if r:
-            revs[r.group(1)] = d.group(1) if d else None
-    parents = {d for d in revs.values() if d}
+            revs[r.group(1)] = re.findall(r'["\']([^"\']+)["\']', d.group(1)) if d else []          # una migración de unión trae dos padres
+    parents = {x for v in revs.values() for x in v}
     heads = [r for r in revs if r not in parents]
     assert len(heads) == 1, heads          # una sola cadena, sin ramas
-    chain, cur = [], heads[0]
-    while cur:
-        chain.append(cur)
-        cur = revs.get(cur)
+    chain, todo = set(), [heads[0]]          # todos los antepasados (una migración de unión tiene dos)
+    while todo:
+        cur = todo.pop()
+        if cur not in chain:
+            chain.add(cur)
+            todo.extend(revs.get(cur) or [])
     assert "0130_crm_cuentas_base" in chain          # la etapa C1c–C4 (0131 en adelante) cuelga de la 0130 de C1a
 
 

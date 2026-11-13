@@ -761,7 +761,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const areas = await api(`${base}/areas${archToggle('showArchivedAreas') ? '?include_archived=true' : ''}`);
         fillParent('newAreaParent', areas);
         document.getElementById('areasBody').innerHTML = areas.length ? treeOrder(areas).map(a => `
-            <tr data-area="${a.id}"><td data-label="Zona">${a.parent_id ? '<span aria-hidden="true">↳ </span>' : ''}<input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+            <tr data-area="${a.id}"><td data-label="Zona"><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
             <td data-label="Dentro de (subcategoría)"><select class="gw-select area-parent" aria-label="Zona principal de ${esc(a.name)}" ${a.archived || a.is_group ? 'disabled' : ''}>${optionsFor(areas, a.parent_id, a.id)}</select></td>
             <td data-label="Permitir reingresos"><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} ${a.archived ? 'disabled' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
             <td data-label="Máx. entradas por persona"><input type="number" class="gw-input gw-input--short area-max" min="1" value="${a.max_per_person == null ? '' : a.max_per_person}" placeholder="Sin límite" aria-label="Máximo de entradas por persona a ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
@@ -803,7 +803,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const items = await api(`${base}/inventory${archToggle('showArchivedItems') ? '?include_archived=true' : ''}`);
         fillParent('newItemParent', items);
         document.getElementById('itemsBody').innerHTML = items.length ? treeOrder(items).map(i => `
-            <tr data-item="${i.id}"><td data-label="Ítem">${i.parent_id ? '<span aria-hidden="true">↳ </span>' : ''}<input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+            <tr data-item="${i.id}"><td data-label="Ítem"><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
             <td data-label="Dentro de (subcategoría)"><select class="gw-select item-parent" aria-label="Ítem principal de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}>${optionsFor(items, i.parent_id, i.id)}</select></td>
             <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}></td>
             <td data-label="Varias unidades a la vez"><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
