@@ -165,6 +165,7 @@ def test_cannot_change_account_after_real_payments_and_cannot_delete_used_accoun
 def test_non_admin_cannot_assign_account(client, factory):
     ev = _event(client, factory)
     form = _with_payment(client, ev)
+    login(client, "coord1")          # publicar el formulario cierra la sesión (_open): el coordinador entra de nuevo
     assert client.put(f"/api/events/{ev.id}/forms/{form['id']}", json={"payment_account_id": 1}).status_code == 403
 
 

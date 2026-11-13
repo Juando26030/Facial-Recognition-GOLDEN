@@ -62,6 +62,7 @@ def test_scope_validation(client, factory):
 def test_form_scope_derives_event_and_restricts_assignment(client, factory):
     ev = _event(client, factory)
     form = _with_payment(client, ev)
+    login(client, "coord1")          # _with_payment publica el formulario y cierra la sesión: se entra de nuevo para crear el segundo
     other = _with_payment(client, ev)
     _admin(client, factory)
     acc = client.post("/api/payment-accounts", json=_acc(1, scope="formulario", form_id=form["id"])).json()

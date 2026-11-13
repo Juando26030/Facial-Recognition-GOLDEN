@@ -108,18 +108,19 @@ def test_validation_duplicates_archive_and_restore(client, factory):
 def test_event_create_update_with_type_and_archived_rules(client, factory):
     factory.tenant("acme")
     root = factory.staff("super_admin", "root")
-    com = factory.staff("comercial", "com1")          # la plantilla de eventos exige comercial asignada
+    com = factory.staff("comercial", "com1")
+    coord = factory.staff("coordinador", "coord1")          # el coordinador del evento tiene que ser un coordinador de verdad          # la plantilla de eventos exige comercial asignada
     login(client, "root")
     a = client.post("/api/event-types", json={"name": "Tipo A", "color": "#010203"}).json()
     b = client.post("/api/event-types", json={"name": "Tipo B"}).json()
-    assert client.post("/api/events", json=_payload(root.id, commercial_staff_id=com.id, event_type_id=999999)).status_code == 400
-    ev = client.post("/api/events", json=_payload(root.id, commercial_staff_id=com.id, event_type_id=a["id"])).json()
+    assert client.post("/api/events", json=_payload(coord.id, commercial_staff_id=com.id, event_type_id=999999)).status_code == 400
+    ev = client.post("/api/events", json=_payload(coord.id, commercial_staff_id=com.id, event_type_id=a["id"])).json()
     assert ev["event_type_id"] == a["id"] and ev["event_type_name"] == "Tipo A" and ev["event_type_color"] == "#010203"
     # archivar A: el evento lo conserva, pero no se puede asignar a otro evento
     client.post(f"/api/event-types/{a['id']}/archive")
     ev2 = client.get(f"/api/events/{ev['id']}").json()
     assert ev2["event_type_id"] == a["id"]
-    assert client.post("/api/events", json=_payload(root.id, commercial_staff_id=com.id, code="TE-2", event_type_id=a["id"])).status_code == 400
+    assert client.post("/api/events", json=_payload(coord.id, commercial_staff_id=com.id, code="TE-2", event_type_id=a["id"])).status_code == 400
     assert client.patch(f"/api/events/{ev['id']}", json={"event_type_id": a["id"]}).status_code == 200  # conservarlo sí
     r = client.patch(f"/api/events/{ev['id']}", json={"event_type_id": b["id"]})
     assert r.status_code == 200 and r.json()["event_type_name"] == "Tipo B"
@@ -132,9 +133,10 @@ def test_history_snapshot_uses_the_type_name(client, factory, db):
     factory.tenant("acme")
     root = factory.staff("super_admin", "root")
     com = factory.staff("comercial", "com1")
+    coord = factory.staff("coordinador", "coord1")          # el coordinador del evento tiene que ser un coordinador de verdad
     login(client, "root")
     t = client.post("/api/event-types", json={"name": "Historial"}).json()
-    ev = client.post("/api/events", json=_payload(root.id, commercial_staff_id=com.id, code="TE-H", event_type_id=t["id"])).json()
+    ev = client.post("/api/events", json=_payload(coord.id, commercial_staff_id=com.id, code="TE-H", event_type_id=t["id"])).json()
     from app.models import Event
     assert event_history.snapshot(db, db.get(Event, ev["id"]))["event_type_id"] == "Historial"
 
