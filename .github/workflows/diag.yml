@@ -1,0 +1,64 @@
+name: Diagnóstico de pruebas (corto)
+
+# Solo en ramas diag/*: corre SOLO los archivos de prueba que se están limpiando y, de cada respuesta HTTP de error, imprime el cuerpo
+# (las pruebas viejas solo dicen «KeyError»). Sirve para arreglar muchas pruebas de una vez y dejar una sola corrida completa al final.
+on:
+  push:
+    branches: ["diag/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diag-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/golden_db
+      SECRET_KEY: ci-only-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dependencias
+        run: |
+          grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
+          pip install -r /tmp/requirements-ci.txt pytest httpx pyyaml
+      - name: Complemento que imprime el cuerpo de cada respuesta de error
+        run: |
+          cat > /tmp/diagplug.py <<'PY'
+          from starlette.testclient import TestClient
+          _orig = TestClient.request
+          def _req(self, method, url, **kw):
+              r = _orig(self, method, url, **kw)
+              if r.status_code >= 400:
+                  print(f"DIAG {method} {url} -> {r.status_code} {r.text[:300]}")
+              return r
+          TestClient.request = _req
+          PY
+      - name: Pruebas que se están limpiando
+        run: |
+          F=$(for f in turnos cuentas_cobro cobros_gastos_f10b event_acts analitica_eventos gastos_infra tipos_evento seguridad_f5_9_c rendimiento parametros_visual impresion_compartida design_system alertas_borrado trabajos_huerfanos ruleta_fase10 roulette roster_visual roles_almacen_contabilidad registro_visual observability instalador_local_descarga historial_personas forms fase10_a_texto event_transfer evento_desde_eventos entrega_encuesta base_archivada_guard autorregistro_kiosco; do echo tests/test_$f.py; done)
+          PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=short $F

@@ -5,8 +5,14 @@ name: CI (pruebas)
 # deploy: si las pruebas fallan, no se llega ni a migrar ni a reiniciar.
 on:
   push:
+    branches-ignore: ["diag/**"]          # las ramas diag/* tienen su propio flujo corto (diag.yml)
   pull_request:
   workflow_call:
+
+# Un push nuevo a la misma rama cancela la corrida anterior (ahorra minutos de Actions). Nunca en main: ahí corre antes de un despliegue.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
