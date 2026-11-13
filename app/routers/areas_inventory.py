@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role, require_role_excluding
-from app import area_dwell_svc, audit_actions, event_history, faces, heavy
+from app import area_dwell_svc, audit_actions, event_history, faces, heavy, person_code, subcat
 from app import event_archive
 from app.database import get_db
 from app.timeutil import to_local
@@ -63,10 +63,16 @@ def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         event.areas_enabled = bool(data["areas_enabled"])
     if "inventory_enabled" in data:
         event.inventory_enabled = bool(data["inventory_enabled"])
+    if "code_enabled" in data:          # 0140: el evento usa «código» (serial del QR distinto de la cédula)
+        event.code_enabled = bool(data["code_enabled"])
+    if "code_required" in data:
+        event.code_required = bool(data["code_required"])
+    if event.code_required and not event.code_enabled:
+        raise HTTPException(status_code=400, detail="Para hacer el código obligatorio primero activa «Usar código»")
     _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
     event_history.kick_after(_hr)
-    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled}
+    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled, "code_enabled": event.code_enabled, "code_required": event.code_required}
 
 
 def _person_data(user: User) -> dict:
@@ -75,9 +81,8 @@ def _person_data(user: User) -> dict:
 
 def _find_person(db: Session, event, cedula: str) -> User:
     """La persona debe estar en la base de ESTE evento (no cualquier persona del cliente)."""
-    cedula = (cedula or "").strip()
-    user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
-    in_event = user and db.query(EventAttendee).filter_by(event_id=event.id, user_id=cedula).first()
+    user, _via = person_code.find_user(db, event, cedula)          # 0140: primero identificación y, si el evento usa código, el código
+    in_event = user and db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     if not in_event:
         raise HTTPException(status_code=404, detail="Esa persona no está en la base de este evento")
     return user
@@ -86,13 +91,19 @@ def _find_person(db: Session, event, cedula: str) -> User:
 # ---------------------------------------------------------------------------------------- Áreas
 
 def _area_json(db: Session, a: EventArea) -> dict:
-    last_by_user = {}
-    for m in db.query(AreaMovement).filter(AreaMovement.area_id == a.id).order_by(AreaMovement.timestamp, AreaMovement.id):
-        last_by_user[m.user_id] = m.direction
+    """Una zona (o un grupo: cuenta lo de todas sus subcategorías; «adentro» = personas cuya última marca en alguna subcategoría es una entrada)."""
+    is_group = subcat.has_children(db, EventArea, a.id)
+    ids = subcat.group_ids(db, EventArea, a) if is_group else [a.id]
+    last_by_pair = {}
+    for m in db.query(AreaMovement).filter(AreaMovement.area_id.in_(ids)).order_by(AreaMovement.timestamp, AreaMovement.id):
+        last_by_pair[(m.area_id, m.user_id)] = m.direction
+    inside = {u for (_a, u), d in last_by_pair.items() if d == "in"}
+    visited = {u for (_a, u) in last_by_pair}
     return {
         "id": a.id, "name": a.name, "allow_reentry": a.allow_reentry,
-        "inside": sum(1 for d in last_by_user.values() if d == "in"), "visited": len(last_by_user),
+        "inside": len(inside), "visited": len(visited),
         "archived": a.archived_at is not None,
+        "parent_id": a.parent_id, "stats_enabled": bool(a.stats_enabled), "max_per_person": a.max_per_person, "is_group": is_group,
     }
 
 
@@ -120,7 +131,15 @@ def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail="La zona necesita un nombre")
     if db.query(EventArea).filter(EventArea.event_id == event.id, func.lower(EventArea.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe una zona con ese nombre en este evento (si no la ves, está archivada: restáurala)")
-    area = EventArea(event_id=event.id, name=name, allow_reentry=bool(data.get("allow_reentry", True)), created_at=utcnow())
+    try:
+        parent = subcat.validate_parent(db, EventArea, event.id, data.get("parent_id"))
+        limit = subcat.clean_limit(data.get("max_per_person"))
+    except subcat.SubcatError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if parent is not None and db.query(AreaMovement.id).filter(AreaMovement.area_id == parent.id).first():
+        raise HTTPException(status_code=400, detail="«%s» ya tiene movimientos registrados: no se le pueden agregar subcategorías (créala como zona nueva)" % parent.name)
+    area = EventArea(event_id=event.id, name=name, allow_reentry=bool(data.get("allow_reentry", True)), created_at=utcnow(),
+                     parent_id=parent.id if parent else None, stats_enabled=bool(data.get("stats_enabled", True)), max_per_person=limit)
     db.add(area)
     db.commit()
     return _area_json(db, area)
@@ -128,11 +147,27 @@ def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff:
 
 @router.patch("/events/{event_id}/areas/{area_id}")
 def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
-    area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id, active_only=True)
+    event = get_event_for_staff(event_id, db, staff)
+    area = _get_area(db, event, area_id, active_only=True)
     if "name" in data and str(data["name"]).strip():
         area.name = str(data["name"]).strip()
     if "allow_reentry" in data:
         area.allow_reentry = bool(data["allow_reentry"])
+    if "stats_enabled" in data:
+        area.stats_enabled = bool(data["stats_enabled"])
+    try:
+        if "max_per_person" in data:
+            area.max_per_person = subcat.clean_limit(data["max_per_person"])
+        if "parent_id" in data:
+            parent = subcat.validate_parent(db, EventArea, event.id, data["parent_id"], self_row=area)
+            new_pid = parent.id if parent else None
+            if new_pid != area.parent_id:
+                if db.query(AreaMovement.id).filter(AreaMovement.area_id.in_([area.id] + ([new_pid] if new_pid else []))).first():
+                    raise subcat.SubcatError("No se puede mover una zona con movimientos registrados (ni dentro de una con movimientos): crea una nueva")
+                area.parent_id = new_pid
+    except subcat.SubcatError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
     return _area_json(db, area)
 
@@ -144,6 +179,8 @@ def archive_area(event_id: int, area_id: int, db: Session = Depends(get_db), sta
     if area.archived_at is not None:
         raise HTTPException(status_code=400, detail="La zona ya está archivada")
     area.archived_at, area.archived_by_id = utcnow(), staff.id
+    for child in subcat.active_children(db, EventArea, area.id):          # archivar un grupo archiva sus subcategorías
+        child.archived_at, child.archived_by_id = area.archived_at, staff.id
     audit_actions.record(db, staff, "archive", "event_area", area.id, area.name, f"evento {area.event_id}")
     db.commit()
     return _area_json(db, area)
@@ -154,6 +191,10 @@ def restore_area(event_id: int, area_id: int, db: Session = Depends(get_db), sta
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
     if area.archived_at is None:
         raise HTTPException(status_code=400, detail="La zona no está archivada")
+    if area.parent_id:
+        parent = db.get(EventArea, area.parent_id)
+        if parent is not None and parent.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Primero restaura la zona principal «%s»" % parent.name)
     area.archived_at, area.archived_by_id = None, None
     audit_actions.record(db, staff, "restore", "event_area", area.id, area.name, f"evento {area.event_id}")
     db.commit()
@@ -166,6 +207,8 @@ def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staf
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
     if area.archived_at is None:
         raise HTTPException(status_code=400, detail="Primero archiva la zona; el borrado definitivo solo aplica a zonas archivadas")
+    if subcat.has_children(db, EventArea, area.id):
+        raise HTTPException(status_code=400, detail="La zona tiene subcategorías: bórralas primero")
     if db.query(AreaMovement).filter(AreaMovement.area_id == area.id).first():
         raise HTTPException(status_code=400, detail="La zona tiene movimientos registrados: se conserva archivada (el historial no se borra)")
     audit_actions.record(db, staff, "delete", "event_area", area.id, area.name, f"evento {area.event_id}")
@@ -177,7 +220,19 @@ def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staf
 def _apply_movement(db: Session, event, area: EventArea, user: User, direction: str, confirm: bool, method: str, staff: StaffUser) -> dict:
     """Reglas de una entrada/salida. Devuelve el resultado (nunca lanza por reglas de negocio):
     OK (guardado) | FOUND_PENDING (autoregistro apagado y sin confirmar) | ALREADY_ENTERED (alerta roja:
-    reingreso no permitido) | NOT_INSIDE (salida de alguien que no está adentro)."""
+    reingreso no permitido) | NOT_INSIDE (salida de alguien que no está adentro) | LIMIT (pasó el máximo de entradas por persona).
+    Subcategorías (0140): la zona principal MANDA: si no permite reingresos, entrar por A bloquea B; si lo permite, A y luego B son dos entradas al grupo."""
+    group = subcat.has_children(db, EventArea, area.id)
+    if group:
+        raise HTTPException(status_code=400, detail="«%s» tiene subcategorías: elige una de ellas" % area.name)
+    parent = db.get(EventArea, area.parent_id) if area.parent_id else None
+    if parent is not None and parent.archived_at is not None:
+        raise HTTPException(status_code=400, detail="La zona principal «%s» está archivada: restáurala para usarla" % parent.name)
+    if parent is not None:
+        # turno por persona: las filas del grupo se bloquean en orden de id (dos puestos escaneando a la misma persona se esperan)
+        locked = subcat.lock_rows(db, EventArea, [parent.id] + [a.id for a in subcat.active_children(db, EventArea, parent.id)])
+    else:
+        locked = {}
     last = db.query(AreaMovement).filter(AreaMovement.area_id == area.id, AreaMovement.user_id == user.id) \
         .order_by(AreaMovement.timestamp.desc(), AreaMovement.id.desc()).first()
     if direction == "auto":
@@ -185,20 +240,29 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
     if direction not in ("in", "out"):
         raise HTTPException(status_code=400, detail="direction debe ser in, out o auto")
     data = _person_data(user)
+    who = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    label = f"{parent.name}{subcat.SEP}{area.name}" if parent is not None else area.name
 
-    if direction == "in" and not area.allow_reentry:
-        already = db.query(AreaMovement).filter(
-            AreaMovement.area_id == area.id, AreaMovement.user_id == user.id, AreaMovement.direction == "in"
-        ).first()
-        if already:
-            return {"result": "ALREADY_ENTERED", "direction": "in", "area": area.name, "data": data,
-                    "details": f"{user.first_name or ''} {user.last_name or ''}".strip() + f" YA había entrado a «{area.name}» y esta zona no permite reingresos"}
+    if direction == "in":
+        member_ids = [parent.id] + [a.id for a in locked.values() if a.parent_id == parent.id] if parent is not None else [area.id]
+        no_reentry_group = parent is not None and not parent.allow_reentry
+        if no_reentry_group or not area.allow_reentry:
+            scope = member_ids if no_reentry_group else [area.id]
+            already = db.query(AreaMovement.id).filter(
+                AreaMovement.area_id.in_(scope), AreaMovement.user_id == user.id, AreaMovement.direction == "in").first()
+            if already:
+                where = parent.name if no_reentry_group else area.name
+                return {"result": "ALREADY_ENTERED", "direction": "in", "area": label, "data": data,
+                        "details": f"{who} YA había entrado a «{where}» y esta zona no permite reingresos"}
+        problem = subcat.area_limit_problem(db, area, locked, user.id)
+        if problem:
+            return {"result": "LIMIT", "direction": "in", "area": label, "data": data, "details": f"{who}: {problem}"}
     if direction == "out" and not (last and last.direction == "in"):
-        return {"result": "NOT_INSIDE", "direction": "out", "area": area.name, "data": data,
-                "details": f"{user.first_name or ''} {user.last_name or ''}".strip() + f" no figura adentro de «{area.name}»"}
+        return {"result": "NOT_INSIDE", "direction": "out", "area": label, "data": data,
+                "details": f"{who} no figura adentro de «{label}»"}
 
     if not event.auto_register and not event.areas_autoscan and not confirm:          # Fase 10: «escanear = ingreso automático» registra sin pulsar «Acreditar»
-        return {"result": "FOUND_PENDING", "direction": direction, "area": area.name, "data": data}
+        return {"result": "FOUND_PENDING", "direction": direction, "area": label, "data": data}
 
     now = utcnow()
     db.add(AreaMovement(
@@ -206,7 +270,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
         method=method, timestamp=now, registered_by_staff_id=staff.id,
     ))
     db.commit()
-    return {"result": "OK", "direction": direction, "area": area.name, "data": data, "time": now.isoformat()}
+    return {"result": "OK", "direction": direction, "area": label, "data": data, "time": now.isoformat()}
 
 
 @router.post("/events/{event_id}/areas/{area_id}/movement")
@@ -248,8 +312,9 @@ def area_presence(event_id: int, area_id: int, db: Session = Depends(get_db), st
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     area = _get_area(db, event, area_id)
+    ids = subcat.group_ids(db, EventArea, area) if subcat.has_children(db, EventArea, area.id) else [area.id]          # un grupo muestra a todos los de sus subcategorías
     last = {}
-    for m in db.query(AreaMovement).filter(AreaMovement.area_id == area.id).order_by(AreaMovement.timestamp, AreaMovement.id):
+    for m in db.query(AreaMovement).filter(AreaMovement.area_id.in_(ids)).order_by(AreaMovement.timestamp, AreaMovement.id):
         last[m.user_id] = m
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(list(last.keys()) or [""])).all()}
     rows = [{
@@ -286,7 +351,8 @@ def areas_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     """Todos los movimientos con hora EXACTA (con segundos) y zona."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    areas = {a.id: a.name for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
+    area_rows = {a.id: a for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
+    areas = {i: subcat.label_of(area_rows, a) for i, a in area_rows.items()}          # «Salón A › Entrada A»
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     staff_names = {s.id: (s.full_name or s.username) for s in db.query(StaffUser)}
     rows = []
@@ -308,12 +374,29 @@ def _delivered_by_item(db: Session, event_id: int) -> dict:
     return {item_id: int(total or 0) for item_id, total in rows}
 
 
-def _item_json(item: InventoryItem, delivered: int) -> dict:
+def _item_json(item: InventoryItem, delivered: int, children: list = None, delivered_map: dict = None) -> dict:
+    """`children` (lista de InventoryItem) = es un grupo: lo entregado y lo disponible suman el de sus subcategorías."""
+    is_group = bool(children)
+    if is_group:
+        dm = delivered_map or {}
+        delivered = sum(dm.get(c.id, 0) for c in children) + delivered
+        available = sum(c.initial_qty - dm.get(c.id, 0) for c in children if c.archived_at is None)
+        initial = sum(c.initial_qty for c in children if c.archived_at is None)
+    else:
+        available, initial = item.initial_qty - delivered, item.initial_qty
     return {
-        "id": item.id, "name": item.name, "initial_qty": item.initial_qty, "allow_multiple": item.allow_multiple,
+        "id": item.id, "name": item.name, "initial_qty": initial, "allow_multiple": item.allow_multiple,
         "allow_repeat_delivery": item.allow_repeat_delivery is not False, "requires_dwell": bool(item.requires_dwell),
-        "delivered": delivered, "available": item.initial_qty - delivered, "archived": item.archived_at is not None,
+        "delivered": delivered, "available": available, "archived": item.archived_at is not None,
+        "parent_id": item.parent_id, "stats_enabled": bool(item.stats_enabled), "max_per_person": item.max_per_person, "is_group": is_group,
     }
+
+
+def _children_map(db: Session, event_id: int) -> dict:
+    out = {}
+    for i in db.query(InventoryItem).filter(InventoryItem.event_id == event_id, InventoryItem.parent_id.isnot(None)).order_by(InventoryItem.id):
+        out.setdefault(i.parent_id, []).append(i)
+    return out
 
 
 def _get_item(db: Session, event, item_id: int, *, active_only: bool = False) -> InventoryItem:
@@ -340,7 +423,8 @@ def list_inventory(event_id: int, include_archived: bool = False, db: Session = 
     event = get_event_for_staff(event_id, db, staff)
     delivered = _delivered_by_item(db, event.id)
     query = _only_active(db.query(InventoryItem).filter(InventoryItem.event_id == event.id), InventoryItem, include_archived, staff)
-    return [_item_json(i, delivered.get(i.id, 0)) for i in query.order_by(InventoryItem.id)]
+    kids = _children_map(db, event.id)
+    return [_item_json(i, delivered.get(i.id, 0), kids.get(i.id), delivered) for i in query.order_by(InventoryItem.id)]
 
 
 @router.post("/events/{event_id}/inventory")
@@ -351,7 +435,15 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail="El ítem necesita un nombre")
     if db.query(InventoryItem).filter(InventoryItem.event_id == event.id, func.lower(InventoryItem.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento (si no lo ves, está archivado: restáuralo)")
+    try:
+        parent = subcat.validate_parent(db, InventoryItem, event.id, data.get("parent_id"))
+        limit = subcat.clean_limit(data.get("max_per_person"))
+    except subcat.SubcatError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if parent is not None and db.query(InventoryDelivery.id).filter(InventoryDelivery.item_id == parent.id).first():
+        raise HTTPException(status_code=400, detail="«%s» ya tiene entregas registradas: no se le pueden agregar subcategorías (créala como ítem nuevo)" % parent.name)
     item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")),
+                         parent_id=parent.id if parent else None, stats_enabled=bool(data.get("stats_enabled", True)), max_per_person=limit,
                          allow_repeat_delivery=bool(data.get("allow_repeat_delivery", False)), requires_dwell=bool(data.get("requires_dwell", False)), created_at=utcnow())      # D7: los ítems NUEVOS no repiten la entrega a la misma persona salvo que se pida
     db.add(item)
     db.commit()
@@ -379,8 +471,24 @@ def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(g
         item.allow_repeat_delivery = bool(data["allow_repeat_delivery"])
     if "requires_dwell" in data:          # Fase 10: solo se entrega a quien llegó al porcentaje de estadía del evento
         item.requires_dwell = bool(data["requires_dwell"])
+    if "stats_enabled" in data:
+        item.stats_enabled = bool(data["stats_enabled"])
+    try:
+        if "max_per_person" in data:
+            item.max_per_person = subcat.clean_limit(data["max_per_person"])
+        if "parent_id" in data:
+            parent = subcat.validate_parent(db, InventoryItem, event.id, data["parent_id"], self_row=item)
+            new_pid = parent.id if parent else None
+            if new_pid != item.parent_id:
+                if db.query(InventoryDelivery.id).filter(InventoryDelivery.item_id.in_([item.id] + ([new_pid] if new_pid else []))).first():
+                    raise subcat.SubcatError("No se puede mover un ítem con entregas registradas (ni dentro de uno con entregas): crea uno nuevo")
+                item.parent_id = new_pid
+    except subcat.SubcatError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
-    return _item_json(item, delivered)
+    kids = subcat.active_children(db, InventoryItem, item.id)
+    return _item_json(item, delivered, kids, _delivered_by_item(db, event.id))
 
 
 @router.post("/events/{event_id}/inventory/{item_id}/archive")
@@ -390,6 +498,8 @@ def archive_item(event_id: int, item_id: int, db: Session = Depends(get_db), sta
     if item.archived_at is not None:
         raise HTTPException(status_code=400, detail="El ítem ya está archivado")
     item.archived_at, item.archived_by_id = utcnow(), staff.id
+    for child in subcat.active_children(db, InventoryItem, item.id):          # archivar un grupo archiva sus subcategorías
+        child.archived_at, child.archived_by_id = item.archived_at, staff.id
     audit_actions.record(db, staff, "archive", "inventory_item", item.id, item.name, f"evento {item.event_id}")
     db.commit()
     return _item_json(item, _delivered_by_item(db, item.event_id).get(item.id, 0))
@@ -400,6 +510,10 @@ def restore_item(event_id: int, item_id: int, db: Session = Depends(get_db), sta
     item = _get_item(db, get_event_for_staff(event_id, db, staff), item_id)
     if item.archived_at is None:
         raise HTTPException(status_code=400, detail="El ítem no está archivado")
+    if item.parent_id:
+        parent = db.get(InventoryItem, item.parent_id)
+        if parent is not None and parent.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Primero restaura el ítem principal «%s»" % parent.name)
     item.archived_at, item.archived_by_id = None, None
     audit_actions.record(db, staff, "restore", "inventory_item", item.id, item.name, f"evento {item.event_id}")
     db.commit()
@@ -413,6 +527,8 @@ def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db), staf
     item = _get_item(db, event, item_id)
     if item.archived_at is None:
         raise HTTPException(status_code=400, detail="Primero archiva el ítem; el borrado definitivo solo aplica a ítems archivados")
+    if subcat.has_children(db, InventoryItem, item.id):
+        raise HTTPException(status_code=400, detail="El ítem tiene subcategorías: bórralas primero")
     if db.query(InventoryDelivery).filter(InventoryDelivery.item_id == item.id).first():
         raise HTTPException(status_code=400, detail="Este ítem ya tiene entregas registradas: se conserva archivado (el historial no se borra)")
     audit_actions.record(db, staff, "delete", "inventory_item", item.id, item.name, f"evento {item.event_id}")
@@ -442,7 +558,14 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         wanted[item_id] = wanted.get(item_id, 0) + _qty(line.get("qty", 1), minimum=1)
 
     # Con lock de fila: dos digitadores entregando el último ítem a la vez no lo pueden vender dos veces.
-    items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id, InventoryItem.id.in_(list(wanted))).with_for_update().all()}
+    items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id, InventoryItem.id.in_(list(wanted))).order_by(InventoryItem.id).with_for_update().all()}
+    # Subcategorías (0140): se bloquean también el grupo y sus hermanas (en orden de id) para que el límite por persona del grupo no se pase con dos puestos a la vez
+    group_rows = {}
+    parent_ids = {i.parent_id for i in items.values() if i.parent_id}
+    if parent_ids:
+        family = set(parent_ids) | {cid for (cid,) in db.query(InventoryItem.id).filter(InventoryItem.parent_id.in_(list(parent_ids)))}
+        group_rows = subcat.lock_rows(db, InventoryItem, list(family))
+        items.update({k: v for k, v in group_rows.items() if k in wanted})
     delivered = _delivered_by_item(db, event.id)
     # D7: «Permitir repetir la entrega a la misma persona» apagado -> un segundo intento para la misma persona e ítem es 409. Se comprueba con los ítems YA bloqueados
     # (FOR UPDATE): dos digitadores (o un doble clic) entregando el mismo ítem a la misma persona se turnan en ese candado y el segundo ve la entrega del primero.
@@ -453,6 +576,10 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
             raise HTTPException(status_code=404, detail="Uno de los ítems no existe en este evento")
         if item.archived_at is not None:
             raise HTTPException(status_code=400, detail=f"«{item.name}» está archivado: restáuralo para entregarlo")
+        if subcat.has_children(db, InventoryItem, item.id):
+            raise HTTPException(status_code=400, detail=f"«{item.name}» tiene subcategorías: elige cuál se entrega")
+        if item.parent_id and group_rows.get(item.parent_id) is not None and group_rows[item.parent_id].archived_at is not None:
+            raise HTTPException(status_code=400, detail=f"«{group_rows[item.parent_id].name}» está archivado: restáuralo para entregar «{item.name}»")
         if item_id in already and item.allow_repeat_delivery is False:
             raise HTTPException(status_code=409, detail=f"«{item.name}» ya se le entregó a esta persona y este ítem no se puede repetir. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
         if item.requires_dwell and area_dwell_svc.prize_active(event) and not area_dwell_svc.qualifies(db, event, user.id):
@@ -462,6 +589,9 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         available = item.initial_qty - delivered.get(item_id, 0)
         if qty > available:
             raise HTTPException(status_code=400, detail=f"No alcanza «{item.name}»: quedan {available} y se pidieron {qty}")
+        problem = subcat.inventory_limit_problem(db, event.id, item, qty, group_rows, user.id, {k: v for k, v in wanted.items() if k != item_id})
+        if problem:
+            raise HTTPException(status_code=409, detail=problem)
 
     batch, now = uuid.uuid4().hex, utcnow()
     for item_id, qty in wanted.items():
@@ -482,7 +612,8 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
 def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    items = {i.id: i.name for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
+    item_rows = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
+    items = {k: subcat.label_of(item_rows, v) for k, v in item_rows.items()}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     rows = db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id).order_by(InventoryDelivery.delivered_at.desc(), InventoryDelivery.id.desc()).limit(60).all()
     return [{
@@ -500,16 +631,27 @@ def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffU
     items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id).order_by(InventoryItem.id)}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     staff_names = {s.id: (s.full_name or s.username) for s in db.query(StaffUser)}
+    labels = {k: subcat.label_of(items, v) for k, v in items.items()}          # «Comida › Perro»
     deliveries = []
     for r in db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id).order_by(InventoryDelivery.delivered_at, InventoryDelivery.id):
         u = users.get(r.user_id)
         deliveries.append([
             to_local(r.delivered_at).strftime("%Y-%m-%d"), to_local(r.delivered_at).strftime("%H:%M:%S"), r.user_id,
-            f"{u.first_name or ''} {u.last_name or ''}".strip() if u else "", items[r.item_id].name if r.item_id in items else "",
+            f"{u.first_name or ''} {u.last_name or ''}".strip() if u else "", labels.get(r.item_id, ""),
             r.qty, staff_names.get(r.delivered_by_staff_id, ""),
         ])
     delivered = _delivered_by_item(db, event.id)
-    stock = [[i.name, i.initial_qty, delivered.get(i.id, 0), i.initial_qty - delivered.get(i.id, 0)] for i in items.values()]
+    kids = {}
+    for i in items.values():
+        if i.parent_id:
+            kids.setdefault(i.parent_id, []).append(i)
+    stock = []
+    for i in items.values():
+        if i.id in kids:          # grupo: suma de sus subcategorías
+            ini = sum(c.initial_qty for c in kids[i.id]); ent = sum(delivered.get(c.id, 0) for c in kids[i.id])
+        else:
+            ini, ent = i.initial_qty, delivered.get(i.id, 0)
+        stock.append([labels[i.id] + (" (total del grupo)" if i.id in kids else ""), ini, ent, ini - ent])
     return _xlsx_response({
         "Entregas": pd.DataFrame(deliveries, columns=["Fecha", "Hora", "Cédula", "Persona", "Ítem", "Cantidad", "Entregado por"]),
         "Inventario": pd.DataFrame(stock, columns=["Ítem", "Cantidad inicial", "Entregado", "Disponible"]),

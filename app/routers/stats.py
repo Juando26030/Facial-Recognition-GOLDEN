@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth import effective_roles, get_event_for_staff, require_role_or_client
 from app import event_archive
 from app.database import get_db
-from app import testperson
+from app import subcat, testperson
 from app.models import AccessLog, EventAttendee, StaffUser, User
 from app.routers.parametros import field_configs_for_event
 
@@ -99,6 +99,8 @@ def variables_for(db: Session, event, staff_view: bool = False) -> list:
             "default_stat_enabled": bool(cfg and cfg["default_stat_enabled"]),
             "default_chart_type": cfg["default_chart_type"] if cfg else None,
         })
+    result.extend(subcat.area_variables(db, event))          # 0140: zonas / inventario con «genera estadísticas» (cada subcategoría y su grupo)
+    result.extend(subcat.inventory_variables(db, event))
     return result
 
 
@@ -112,6 +114,14 @@ def list_stats_variables(
 
 def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dict:
     """Conteos agregados de UNA variable del evento (sin nombres ni cédulas); los usa la pantalla del personal y el enlace de solo lectura."""
+    if variable.startswith("zona:") or variable.startswith("inv:"):          # 0140: variables de zonas / inventario
+        kind, _, raw_id = variable.partition(":")
+        data = None
+        if raw_id.isdigit():
+            data = subcat.area_data(db, event, int(raw_id)) if kind == "zona" else subcat.inventory_data(db, event, int(raw_id))
+        if data is None:
+            raise HTTPException(status_code=400, detail="Variable no válida para este evento")
+        return data
     valid_keys = {k for k, _ in _FIXED_VARIABLES if staff_view or k != "origin"} | set(event.get_optional_labels().keys())
     if variable not in valid_keys:
         raise HTTPException(status_code=400, detail="Variable no válida para este evento")

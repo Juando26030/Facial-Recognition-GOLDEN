@@ -361,7 +361,7 @@
     const pfDef = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;          // formulario de persona diseñado (apagado por defecto: sin él, nada cambia)
     const keyed = (cfg, html) => (pfDef ? `<div data-field-key="${esc(cfg.key)}">${html}</div>` : html);
     const configuredHtml = fieldConfigs.map((cfg) => keyed(cfg, (() => {
-      if (cfg.key === 'id') return cedulaRow(cfg.label);
+      if (cfg.key === 'id') return cedulaRow(cfg.label) + (Object.prototype.hasOwnProperty.call(user, 'code') ? fieldRow('Código del QR', 'code', user.code, 'text', false) : '');          // 0140: solo si el evento usa código
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
@@ -579,6 +579,7 @@
       }
 
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
+      if (Object.prototype.hasOwnProperty.call(user, 'code')) payload.code = val('code');
       const newExtras = {};
       fieldConfigs.filter((cfg) => !cfg.locked).forEach((cfg) => {
         if (Object.prototype.hasOwnProperty.call(user, cfg.key)) payload[cfg.key] = val(cfg.key);

@@ -42,10 +42,14 @@
     }
     $('itemsLoading').hidden = true;
     const keep = AUTOSCAN ? selection() : {};          // con entrega automática lo marcado se conserva entre personas
-    $('statStock').textContent = items.filter(i => i.available > 0).length;
-    $('statOut').textContent = items.filter(i => i.available <= 0).length;
-    $('statOutBox').classList.toggle('gw-stat--err', items.some(i => i.available <= 0));
-    box.innerHTML = items.length ? items.map(i => `
+    const real = items.filter(i => !i.is_group);
+    $('statStock').textContent = real.filter(i => i.available > 0).length;
+    $('statOut').textContent = real.filter(i => i.available <= 0).length;
+    $('statOutBox').classList.toggle('gw-stat--err', real.some(i => i.available <= 0));
+    // Subcategorías: se entrega una subcategoría (nunca el grupo); se muestra «Comida › Perro» y el disponible es el de cada una.
+    const byId = {}; items.forEach(i => { byId[i.id] = i; });
+    const leaves = items.filter(i => !i.is_group).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
+    box.innerHTML = leaves.length ? leaves.map(i => `
       <div class="gw-card-row gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
         <div><strong class="gw-card-row__title">${esc(i.name)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
         <div>${i.allow_multiple
@@ -95,7 +99,9 @@
     $('suggest').innerHTML = ''; $('nameSearch').value = '';
   }
   function byId(id, auto) {
-    const u = users.find(x => x.id === id);
+    // Primero identificación y, si el evento usa código, el código (0140)
+    const low = String(id || '').trim().toLowerCase();
+    const u = users.find(x => x.id === id) || (low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null);
     if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
     setPerson(u);
     if (auto && AUTOSCAN) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado

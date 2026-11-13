@@ -17,7 +17,7 @@ import logging
 from openpyxl.utils import get_column_letter
 from PIL import Image
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import UnidentifiedImageError
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PersonChangeLog, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app import testperson
+from app import testperson, person_code
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
@@ -539,6 +539,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "digital_sent_at": att.digital_sent_at.isoformat() if att and att.digital_sent_at else None,
             "recent_at": recent_at,
             "test": testperson.is_test(u.id),          # la persona de prueba del evento: se ve y se acredita, pero no cuenta en contadores, reportes ni estadísticas
+            **({"code": (att.code or "") if att else ""} if event.code_enabled else {}),          # 0140: código del QR (la clave solo existe si el evento lo usa)
         })
     return result
 
@@ -847,7 +848,7 @@ def checkin_cedula(
         if replay:
             return replay
 
-    user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+    user, _via = person_code.find_user(db, event, cedula)          # 0140: identificación y, si el evento usa código, código
     if not user:
         full_name = f"{first_name} {last_name}".strip()
         name_matches = []
@@ -1448,6 +1449,15 @@ def update_user(
         certificate = data.pop("certificate", None)  # ítem 5: también por evento
         if certificate is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, certificate=_truthy(certificate))
+        code_raw = data.pop("code", None)  # 0140: código del evento (serial del QR); por evento, no una columna de User
+        if code_raw is not None and event.code_enabled:
+            clean_code = _validated_code(db, event, user.id, code_raw)
+            if not clean_code and event.code_required:
+                raise HTTPException(status_code=400, detail="En este evento el código es obligatorio")
+            _upsert_attendee(db, event.id, user.id, event.tenant_id)
+            db.flush()
+            row = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+            row.code = clean_code or None
         extra_fields = data.pop("extra_fields", None)
         if extra_fields is not None:
             merged = user.get_extras()
@@ -1545,6 +1555,10 @@ def update_user_cedula(
     conflict = db.query(User).filter(User.id == new_id, User.tenant_id == event.tenant_id).first()
     if conflict:
         raise HTTPException(status_code=409, detail="Ya existe otra persona con esa cédula en este cliente")
+    try:
+        person_code.require_free_id(db, event, new_id)          # 0140: la nueva identificación no puede ser igual a un código ya usado en el evento
+    except person_code.CodeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
     new_user = User(
         id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
@@ -1724,7 +1738,7 @@ def manual_register(
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
-    took_ms: str = Form(""), ui_flow: str = Form(""),
+    took_ms: str = Form(""), ui_flow: str = Form(""), code: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -1744,13 +1758,38 @@ def manual_register(
     return _manual_register(**locals())          # a esta altura `locals()` son solo los parámetros del endpoint: se pasan tal cual al cuerpo (sin repetirlos a mano)
 
 
+def _validated_code(db: Session, event: Event, user_id: str, code, enforce_required: bool = True) -> str:
+    """0140: valida el código que llega con un alta o edición (único, distinto de cualquier identificación, obligatorio si el evento lo exige). Con el código apagado se ignora."""
+    if not event.code_enabled:
+        return ""
+    try:
+        clean = person_code.validate(db, event, code, user_id)
+        person_code.require_free_id(db, event, user_id)
+        if enforce_required and event.code_required and not clean and not person_code.code_of(db, event, user_id):
+            raise person_code.CodeError("En este evento el código es obligatorio")
+    except person_code.CodeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return clean
+
+
+def _store_code(db: Session, event: Event, user_id: str, clean: str) -> None:
+    """Guarda el código ya validado (tras crear o actualizar la inscripción de la persona en el evento)."""
+    if clean and event.code_enabled:
+        db.flush()
+        try:
+            person_code.set_code(db, event, user_id, clean, required=False)
+        except person_code.CodeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional"):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional", code: str = ""):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
+    code_clean = _validated_code(db, event, id, code, enforce_required=(method != "autoregistro"))          # 0140: código opcional del evento (vacío si el evento no lo usa)
 
     extras = _parse_extra_fields(extra_fields)
     pf = personform.active(db, event)          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» también se aplica aquí, no solo en pantalla
@@ -1804,6 +1843,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         )
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, origin=origin, touch=True)
+        _store_code(db, event, existing.id, code_clean)
         db.commit()
         reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
         if contact_clean and event.digital_badge_enabled:
@@ -1877,6 +1917,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     )
     db.add(log)
     _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, origin=origin, touch=True)
+    _store_code(db, event, id, code_clean)
     db.commit()
 
     if img_array is not None:
@@ -1925,6 +1966,28 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
     event.set_optional_labels(labels)
     db.flush()
     return ids, source.name
+
+
+@router.get("/events/{event_id}/roster-template")
+def roster_template(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Plantilla de la base de asistentes de ESTE evento: la de siempre y, si el evento usa código (0140), con la columna «codigo» justo después de la cédula."""
+    import openpyxl
+    event = get_event_for_staff(event_id, db, staff)
+    wb = openpyxl.load_workbook(os.path.join(os.path.dirname(__file__), "..", "..", "static", "templates", "plantilla_carga_base_asistentes.xlsx"))
+    if event.code_enabled:
+        ws = wb["Base de Asistentes"]
+        ws.insert_cols(2)
+        ws.cell(row=1, column=2, value="codigo")
+        ws.cell(row=2, column=2, value="A1B2C3D4")
+        ws.cell(row=1, column=2)._style = ws.cell(row=1, column=1)._style
+        ws.cell(row=2, column=2)._style = ws.cell(row=2, column=1)._style
+        ws.column_dimensions["B"].width = 18
+        if "Instrucciones" in wb.sheetnames:
+            wb["Instrucciones"].append(["codigo", "Código del QR de la persona (serial aparte de la cédula). No se puede repetir ni ser igual a ninguna cédula." + (" Obligatorio en este evento." if event.code_required else " Opcional.")])
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return StreamingResponse(out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="plantilla_carga_base_asistentes.xlsx"'})
 
 
 @router.post("/bulk_roster")
@@ -2154,6 +2217,42 @@ def _reset_event_fields(db: Session, event: Event, header_columns: dict, kept_la
     db.flush()
 
 
+_CODE_KEYS = ("codigo", "código")
+
+
+def _bulk_code_state(db: Session, event: Event, row_infos: list):
+    """0140: estado en memoria para validar los códigos de UNA tanda de la carga masiva sin una consulta por fila. None = el evento no usa código.
+    `owner` = códigos ya usados en el evento (en minúsculas -> identificación); `id_clash` = códigos del archivo que son iguales a una identificación del cliente."""
+    if not event.code_enabled:
+        return None
+    owner = {(c or "").lower(): uid for uid, c in db.query(EventAttendee.user_id, EventAttendee.code).filter(EventAttendee.event_id == event.id, EventAttendee.code.isnot(None))}
+    file_codes = {person_code.normalize(next((i["clean_row"][k] for k in _CODE_KEYS if i["clean_row"].get(k)), "")).lower() for i in row_infos}
+    file_codes.discard("")
+    id_clash = set()
+    for part in _chunks(sorted(file_codes), _LOOKUP_CHUNK):
+        for (uid,) in db.query(User.id).filter(User.tenant_id == event.tenant_id, func.lower(User.id).in_(part)):
+            id_clash.add(uid.lower())
+    return {"owner": owner, "id_clash": id_clash, "file_ids": {(i["identificador"] or "").lower() for i in row_infos if i["identificador"]}}
+
+
+def _bulk_code_problem(state: dict, event: Event, identificador: str, code: str, current_code) -> Optional[str]:
+    """Motivo (sin datos personales) por el que el código de la fila no sirve, o None. Se evalúa ANTES de crear a la persona: una fila con código inválido se omite."""
+    low = (code or "").lower()
+    clash = state["owner"].get(identificador.lower())
+    if clash and clash != identificador:
+        return "la identificación es igual a un código ya asignado en este evento"
+    if not code:
+        return "el código es obligatorio en este evento" if (event.code_required and not current_code) else None
+    if len(code) > person_code.MAX_CODE_LENGTH:
+        return "el código es demasiado largo"
+    if low == identificador.lower() or low in state["id_clash"] or low in state["file_ids"]:
+        return "el código es igual a una identificación"
+    holder = state["owner"].get(low)
+    if holder and holder != identificador:
+        return "el código ya está asignado a otra persona"
+    return None
+
+
 def _bulk_register_impl(
     db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None, append_only: bool = False,
     text_case: str = "", keep_duplicates: bool = False, dup_offsets=None,
@@ -2239,6 +2338,9 @@ def _bulk_register_impl(
         if not birth_used:
             birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
             roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
+
+        if not event.code_enabled:          # 0140: la columna «código» solo se usa con el código activado en el evento; si no, se informa como no usada
+            roster_columns.drop_column(header_columns, rows, columns_report, "codigo", "este evento no usa código (actívalo en Parámetros del evento)")
 
         # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
         # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -2466,6 +2568,7 @@ def _bulk_register_impl(
             for att in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(part)):
                 attendees_by_user[att.user_id] = att
     new_users, new_attendees = [], []
+    code_state = _bulk_code_state(db, event, row_infos)          # 0140: None si el evento no usa código
 
     phases.mark("consultas_en_bloque")
     photo_state = {"calls": 0, "keys": None}
@@ -2515,6 +2618,16 @@ def _bulk_register_impl(
                             # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
                             errors.append(f"ℹ️ Fila {row_num}: la cédula '{identificador}' ya venía del evento anterior — se conservaron sus datos del evento anterior (no se duplicó).")
                             continue
+
+                        row_code = ""
+                        if code_state is not None:          # 0140: código opcional del evento (columna «código»); una fila con código inválido se omite
+                            row_code = person_code.normalize(next((clean_row[k] for k in _CODE_KEYS if clean_row.get(k)), ""))
+                            known_att = attendees_by_user.get(identificador)
+                            problem = _bulk_code_problem(code_state, event, identificador, row_code, known_att.code if known_att is not None else None)
+                            if problem:
+                                where = info["id_cell"] or f"fila {row_num}"
+                                errors.append(f"❌ Fila {row_num} ({where}): se omitió, {problem}.")
+                                continue
 
                         # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
                         # exactamente en qué celda está el problema para que el operador lo revise si quiere.
@@ -2631,6 +2744,12 @@ def _bulk_register_impl(
                                     _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
                                     certificate=_truthy(raw_certificate) if raw_certificate else None,
                                 )
+                                if code_state is not None and row_code:
+                                    att_row = attendees_by_user[identificador]
+                                    if att_row.code:
+                                        code_state["owner"].pop(att_row.code.lower(), None)
+                                    att_row.code = row_code
+                                    code_state["owner"][row_code.lower()] = identificador
                                 if _truthy(clean_row.get('registrado en formulario') or ''):
                                     form_registered_ids.append(identificador)
                                 if isolate:

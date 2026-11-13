@@ -93,7 +93,8 @@
             <div class="gw-field">
               <label class="gw-label" for="rosterFileInput">Archivo de la lista (.xlsx o .csv)</label>
               <input class="gw-input" type="file" name="roster_file" id="rosterFileInput" accept=".xlsx,.csv" required aria-describedby="rosterFileHelp">
-              <p id="rosterFileHelp" class="gw-hint">¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download>Descarga la plantilla de Excel</a>.</p>
+              <p id="rosterFileHelp" class="gw-hint">¿No tienes el formato? {% if code_enabled %}<a href="/api/events/{{ event.id }}/roster-template" download>Descarga la plantilla de Excel (trae la columna «código»)</a>{% else %}<a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download>Descarga la plantilla de Excel</a>{% endif %}.</p>
+            {% if code_enabled %}<p class="gw-hint">Este evento usa <b>código</b>: la columna <b>«código»</b> trae el serial del QR de cada persona{% if code_required %} (es <b>obligatorio</b>: la fila sin código no se carga){% else %} (opcional){% endif %}. No se puede repetir ni ser igual a ninguna cédula.</p>{% endif %}
             </div>
             <p class="gw-hint">Columna opcional <b>«Registrado en formulario»</b> (sí / no): con «sí» la persona queda como <b>ya inscrita</b> en los formularios de este evento y no podrá inscribirse otra vez; no ocupa cupo. Se aplica a los formularios que ya existan al cargar la lista.</p>
             <p class="gw-hint">Si la lista tiene miles de personas con foto, no hace falta partir el archivo: el sistema lo envía solo en varios grupos seguidos.</p>

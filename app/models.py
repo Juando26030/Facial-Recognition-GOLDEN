@@ -91,6 +91,7 @@ class EventAttendee(Base):
     accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
+    code = Column(String(64), nullable=True)  # 0140: código de la persona EN este evento (serial del QR, aparte de la cédula); único por evento sin distinguir mayúsculas; app/person_code.py
     last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
     archived_at = Column(DateTime, nullable=True)  # sin uso: reservado (0091). Las personas se BORRAN del evento (decisión 7-nov-2026); lo que se archiva es la base del evento (events.data_archived_at). Nada la lee ni la escribe
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -276,6 +277,8 @@ class Event(Base):
     dwell_reference_minutes = Column(Integer, nullable=True)  # 0122: el 100 % en minutos (lo define el coordinador); NULL = la duración del evento
     dwell_threshold_pct = Column(Integer, nullable=True)  # 0122: porcentaje mínimo para cumplir (NULL = 80)
     areas_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter registra la entrada o salida sin pulsar «Acreditar»
+    code_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: el evento usa «código» (serial del QR distinto de la cédula); al escanear se busca primero por ID y luego por código (app/person_code.py)
+    code_required = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: con el código activo, ¿es obligatorio al registrar?
     inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
@@ -935,6 +938,9 @@ class EventArea(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    parent_id = Column(Integer, ForeignKey('event_areas.id'), nullable=True)  # 0140: subcategoría (p. ej. «Entrada A» dentro de «Salón A»); NULL = zona principal
+    stats_enabled = Column(Boolean, default=True, server_default='true', nullable=False)  # 0140: genera estadísticas en la sección de Estadísticas
+    max_per_person = Column(Integer, nullable=True)  # 0140: entradas permitidas por persona (en un grupo cuentan todas sus subcategorías y manda sobre ellas); NULL = sin límite
 
 
 class AreaMovement(Base):
@@ -966,6 +972,9 @@ class InventoryItem(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    parent_id = Column(Integer, ForeignKey('inventory_items.id'), nullable=True)  # 0140: subcategoría (p. ej. «Perro» dentro de «Comida»); NULL = ítem o categoría principal
+    stats_enabled = Column(Boolean, default=True, server_default='true', nullable=False)  # 0140: genera estadísticas en la sección de Estadísticas
+    max_per_person = Column(Integer, nullable=True)  # 0140: unidades por persona (en un grupo cuentan todas sus subcategorías y manda sobre ellas); NULL = sin límite
 
 
 class InventoryDelivery(Base):

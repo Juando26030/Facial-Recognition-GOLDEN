@@ -421,12 +421,16 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=3, label='Cargando zonas…') }}</tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Permitir reingresos</th><th scope="col">Máx. entradas por persona</th><th scope="col">Genera estadísticas</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=6, label='Cargando zonas…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
+                <div class="gw-field"><label class="gw-label" for="newAreaParent">Dentro de (opcional)</label><select class="gw-select" id="newAreaParent"><option value="">— Zona principal —</option></select></div>
+                <div class="gw-field"><label class="gw-label" for="newAreaMax">Máx. entradas por persona</label><input class="gw-input gw-input--short" type="number" id="newAreaMax" min="1" placeholder="Sin límite"></div>
                 <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
+                <label class="gw-check"><input type="checkbox" id="newAreaStats" checked> Genera estadísticas</label>
                 <button type="button" id="addAreaBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar zona</button>
               </div>
+              <p class="gw-hint"><strong>Subcategorías:</strong> elige «Dentro de» para crear, por ejemplo, Entrada A, B y C dentro de «Salón A». La configuración de la zona principal manda: si no permite reingresos, entrar por A bloquea B; si lo permite, A y luego B cuentan como dos entradas al salón (y en Estadísticas se ve que fue una sola persona). Cada una puede tener su propio máximo de entradas.</p>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/areas">Ir a Control de áreas</a></p>
             </div>
           </div>
@@ -440,16 +444,28 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=7, label='Cargando ítems…') }}</tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Máx. por persona</th><th scope="col">Genera estadísticas</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=10, label='Cargando ítems…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
+                <div class="gw-field"><label class="gw-label" for="newItemParent">Dentro de (opcional)</label><select class="gw-select" id="newItemParent"><option value="">— Ítem principal —</option></select></div>
+                <div class="gw-field"><label class="gw-label" for="newItemMax">Máx. por persona</label><input class="gw-input gw-input--short" type="number" id="newItemMax" min="1" placeholder="Sin límite"></div>
+                <label class="gw-check"><input type="checkbox" id="newItemStats" checked> Genera estadísticas</label>
                 <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
                 <label class="gw-check"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
                 <label class="gw-check"><input type="checkbox" id="newItemRepeat"> Permitir repetir la entrega a la misma persona</label>
                 <label class="gw-check"><input type="checkbox" id="newItemDwell"> Solo a quien cumple la estadía</label>
                 <button type="button" id="addItemBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar ítem</button>
               </div>
+              <p class="gw-hint"><strong>Subcategorías:</strong> por ejemplo «Comida» con Hamburguesa, Perro y Comida china dentro (elige «Dentro de»). El «Máx. por persona» del ítem principal manda sobre todas sus subcategorías juntas (Comida = 1 por persona, sea cual sea); cada subcategoría puede tener además el suyo (si quieres que una repita, activa «Permitir repetir la entrega»). La cantidad inicial se define en cada subcategoría. En el puesto, quien entrega elige qué subcategoría reparte.</p>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
+            </div>
+          </div>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al escanear (registro, zonas o inventario) el sistema busca primero por identificación y luego por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
+            <div data-psave="mod_code">
+              <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
+              <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
             </div>
           </div>
 
@@ -720,6 +736,14 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         } });
     });
 
+    (function () {          // 0140: código de la persona (QR)
+        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired');
+        en.addEventListener('change', () => { rq.disabled = !en.checked; if (!en.checked) rq.checked = false; });
+        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, save: async () => {
+            await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked }), 'No se pudo guardar el código del evento');
+        } });
+    })();
+
     const ROLE = {{ staff_role|tojson }}, CAN_ARCHIVE = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), CAN_HARD_DELETE = ROLE === 'super_admin';
     const archToggle = (id) => { const el = document.getElementById(id); return !!(el && el.checked && CAN_ARCHIVE); };
     // Archivar = ocultar y conservar el historial (coordinador+); restaurar (coordinador+); borrado definitivo solo super_admin, de lo archivado y sin historial.
@@ -729,18 +753,29 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         return `<span class="gw-badge">Archivado</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm ${kind}-rest" aria-label="Restaurar ${label} ${esc(x.name)}">Restaurar</button>`
             + (CAN_HARD_DELETE ? ` <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm ${kind}-del" aria-label="Eliminar definitivamente ${label} ${esc(x.name)}">${gwIcon('trash')} Eliminar definitivamente</button>` : '');
     };
+    // Subcategorías (0140): las subcategorías salen justo debajo de su principal, con sangría; «Dentro de» solo ofrece principales (un nivel).
+    const optionsFor = (rows, selected, selfId) => '<option value="">— Principal —</option>' + rows.filter(r => !r.parent_id && !r.archived && r.id !== selfId).map(r => `<option value="${r.id}" ${String(selected) === String(r.id) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    const treeOrder = (rows) => { const out = []; rows.filter(r => !r.parent_id || !rows.some(p => p.id === r.parent_id)).forEach(r => { out.push(r); rows.filter(c => c.parent_id === r.id).forEach(c => out.push(c)); }); return out; };
+    const fillParent = (id, rows) => { const el = document.getElementById(id); if (el) { const cur = el.value; el.innerHTML = optionsFor(rows, cur); } };
     async function loadAreas() {
         const areas = await api(`${base}/areas${archToggle('showArchivedAreas') ? '?include_archived=true' : ''}`);
-        document.getElementById('areasBody').innerHTML = areas.length ? areas.map(a => `
-            <tr data-area="${a.id}"><td data-label="Zona"><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+        fillParent('newAreaParent', areas);
+        document.getElementById('areasBody').innerHTML = areas.length ? treeOrder(areas).map(a => `
+            <tr data-area="${a.id}"><td data-label="Zona">${a.parent_id ? '<span aria-hidden="true">↳ </span>' : ''}<input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+            <td data-label="Dentro de (subcategoría)"><select class="gw-select area-parent" aria-label="Zona principal de ${esc(a.name)}" ${a.archived || a.is_group ? 'disabled' : ''}>${optionsFor(areas, a.parent_id, a.id)}</select></td>
             <td data-label="Permitir reingresos"><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} ${a.archived ? 'disabled' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
+            <td data-label="Máx. entradas por persona"><input type="number" class="gw-input gw-input--short area-max" min="1" value="${a.max_per_person == null ? '' : a.max_per_person}" placeholder="Sin límite" aria-label="Máximo de entradas por persona a ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+            <td data-label="Genera estadísticas"><label class="gw-check"><input type="checkbox" class="area-stats" ${a.stats_enabled ? 'checked' : ''} ${a.archived ? 'disabled' : ''} aria-label="${esc(a.name)} genera estadísticas"></label></td>
             <td class="gw-pm-act">${rowActions(a, 'area', 'la zona')}</td></tr>`).join('')
-            : '<tr><td colspan="3">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
+            : '<tr><td colspan="6">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
-        await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked });
-        showToast('Zona actualizada', 'success');
+        try {
+            await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked, parent_id: tr.querySelector('.area-parent').value, max_per_person: tr.querySelector('.area-max').value, stats_enabled: tr.querySelector('.area-stats').checked });
+            showToast('Zona actualizada', 'success');
+        } catch (err) { /* el toast ya lo mostró api() */ }
+        loadAreas();
     });
     async function archiveAction(url, msg, confirmLabel, okMsg, reload, method) {
         if (!await showConfirm(msg, { confirmLabel })) return;
@@ -760,26 +795,32 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const name = document.getElementById('newAreaName').value.trim();
         if (!name) { showToast('Escribe el nombre de la zona', 'error'); return; }
         await GWParams.flush('mod_areas');                    // agregar es inmediato: si el módulo se acaba de activar, primero se guarda eso
-        await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked });
-        document.getElementById('newAreaName').value = ''; loadAreas();
+        await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked, parent_id: document.getElementById('newAreaParent').value, max_per_person: document.getElementById('newAreaMax').value, stats_enabled: document.getElementById('newAreaStats').checked });
+        document.getElementById('newAreaName').value = ''; document.getElementById('newAreaMax').value = ''; loadAreas();
     });
 
     async function loadItems() {
         const items = await api(`${base}/inventory${archToggle('showArchivedItems') ? '?include_archived=true' : ''}`);
-        document.getElementById('itemsBody').innerHTML = items.length ? items.map(i => `
-            <tr data-item="${i.id}"><td data-label="Ítem"><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
-            <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+        fillParent('newItemParent', items);
+        document.getElementById('itemsBody').innerHTML = items.length ? treeOrder(items).map(i => `
+            <tr data-item="${i.id}"><td data-label="Ítem">${i.parent_id ? '<span aria-hidden="true">↳ </span>' : ''}<input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+            <td data-label="Dentro de (subcategoría)"><select class="gw-select item-parent" aria-label="Ítem principal de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}>${optionsFor(items, i.parent_id, i.id)}</select></td>
+            <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}></td>
             <td data-label="Varias unidades a la vez"><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
             <td data-label="Repetir la entrega a la misma persona"><label class="gw-check"><input type="checkbox" class="item-repeat" ${i.allow_repeat_delivery ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Permitir repetir la entrega de ${esc(i.name)} a la misma persona"></label></td>
             <td data-label="Solo a quien cumple la estadía"><label class="gw-check"><input type="checkbox" class="item-dwell" ${i.requires_dwell ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Entregar ${esc(i.name)} solo a quien cumple el porcentaje de estadía"></label></td>
+            <td data-label="Máx. por persona"><input type="number" class="gw-input gw-input--short item-max" min="1" value="${i.max_per_person == null ? '' : i.max_per_person}" placeholder="Sin límite" aria-label="Máximo por persona de ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+            <td data-label="Genera estadísticas"><label class="gw-check"><input type="checkbox" class="item-stats" ${i.stats_enabled ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="${esc(i.name)} genera estadísticas"></label></td>
             <td data-label="Entregado / Disponible">${i.delivered} / <strong>${i.available}</strong></td>
             <td class="gw-pm-act">${rowActions(i, 'item', 'el ítem')}</td></tr>`).join('')
-            : '<tr><td colspan="7">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
+            : '<tr><td colspan="10">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
+        const body = { name: tr.querySelector('.item-name').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked, parent_id: tr.querySelector('.item-parent').value, max_per_person: tr.querySelector('.item-max').value, stats_enabled: tr.querySelector('.item-stats').checked };
+        const qty = tr.querySelector('.item-qty'); if (!qty.disabled) body.initial_qty = qty.value;          // un grupo no tiene cantidad propia: es la suma de sus subcategorías
         try {
-            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', { name: tr.querySelector('.item-name').value, initial_qty: tr.querySelector('.item-qty').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked });
+            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', body);
             showToast('Ítem actualizado', 'success');
         } catch (err) { /* el toast ya lo mostró api() */ }
         loadItems();
@@ -795,8 +836,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const name = document.getElementById('newItemName').value.trim();
         if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
         await GWParams.flush('mod_inventory');
-        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked });
-        document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
+        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked, parent_id: document.getElementById('newItemParent').value, max_per_person: document.getElementById('newItemMax').value, stats_enabled: document.getElementById('newItemStats').checked });
+        document.getElementById('newItemMax').value = ''; document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
     const failBox = (id) => () => { const b = document.getElementById(id); if (b && b.querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error(b, { text: 'Recarga la página para intentarlo de nuevo.' }); };
     loadAreas().catch(failBox('areasBody')); loadItems().catch(failBox('itemsBody'));

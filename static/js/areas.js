@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   let direction = 'auto', users = [], scanner = null;
-  const FOUND = ['OK', 'FOUND_PENDING', 'ALREADY_ENTERED', 'NOT_INSIDE'];          // resultados en los que la persona sí se encontró
+  const FOUND = ['OK', 'FOUND_PENDING', 'ALREADY_ENTERED', 'NOT_INSIDE', 'LIMIT'];          // resultados en los que la persona sí se encontró
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const areaId = () => $('areaSelect').value;
@@ -31,7 +31,10 @@
   }
 
   async function loadAreas(keep) {
-    const areas = await getJson(`/api/events/${window.EVENT_ID}/areas`);
+    const all = await getJson(`/api/events/${window.EVENT_ID}/areas`);
+    // Subcategorías: solo se elige una zona «hoja» (suelta o subcategoría); la principal con subcategorías no recibe movimientos y se muestra como «Salón A › Entrada A».
+    const byId = {}; all.forEach(a => { byId[a.id] = a; });
+    const areas = all.filter(a => !a.is_group).map(a => (a.parent_id && byId[a.parent_id] ? Object.assign({}, a, { name: byId[a.parent_id].name + ' › ' + a.name }) : a));
     const current = keep || areaId();
     $('areaSelect').innerHTML = areas.length
       ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('')
@@ -104,6 +107,8 @@
       $('confirmBtn').addEventListener('click', (e) => busy(e.currentTarget, () => retry(true, result.direction)));
     } else if (result.result === 'ALREADY_ENTERED') {
       show('err', 'Ya está adentro', esc(result.details));
+    } else if (result.result === 'LIMIT') {
+      show('err', 'Llegó al máximo', esc(result.details));
     } else if (result.result === 'NOT_INSIDE') {
       show('warn', 'No está adentro', esc(result.details));
     } else {
