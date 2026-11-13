@@ -62,3 +62,10 @@ jobs:
         run: |
           F=$(for f in turnos cuentas_cobro cobros_gastos_f10b event_acts analitica_eventos gastos_infra tipos_evento seguridad_f5_9_c rendimiento parametros_visual impresion_compartida design_system alertas_borrado trabajos_huerfanos ruleta_fase10 roulette roster_visual roles_almacen_contabilidad registro_visual observability instalador_local_descarga historial_personas forms fase10_a_texto event_transfer evento_desde_eventos entrega_encuesta base_archivada_guard autorregistro_kiosco; do echo tests/test_$f.py; done)
           PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=short $F
+      - name: Dependencias de las pruebas de JS
+        run: npm ci
+      - name: Pruebas de JS (todas, sin detenerse en la primera que falle)
+        run: |
+          rc=0
+          for f in tests/js/*_check.js; do node "$f" >/tmp/js.out 2>&1 || { echo "FALLA $f"; tail -5 /tmp/js.out; rc=1; }; done
+          exit $rc
