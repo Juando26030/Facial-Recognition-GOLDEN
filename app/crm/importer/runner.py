@@ -48,7 +48,8 @@ def _reject(rejected: list, lineno: int, reason: str) -> None:
 
 def _account_fields(row: dict) -> dict:
     data = {"name": row.get("name"), "nit": row.get("nit"), "phone": row.get("phone"), "email": row.get("email"), "billing_city": row.get("city"),
-            "billing_address": row.get("address"), "description": row.get("description")}
+            "billing_address": row.get("address"), "description": row.get("description"), "website": row.get("website"), "category": row.get("category"),
+            "account_type": row.get("account_type"), "industry": row.get("industry")}
     return {k: v for k, v in data.items() if v}
 
 
@@ -65,6 +66,7 @@ def import_accounts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
             if not fields.get("name"):
                 raise CrmError("Fila sin nombre.")
             legacy = (row.get("legacy_id") or "")[:40] or None
+            status = acc_svc.validate_status(row["status"]) if row.get("status") else "activo"         # un estado que no existe → rechazo (el conversor ya lo traduce)
             code = int(row["code"]) if (row.get("code") or "").isdigit() else None
             if code is not None and code in seen_codes:
                 raise CrmError("Número de cuenta repetido en el archivo.")
@@ -79,7 +81,7 @@ def import_accounts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
                 with db.begin_nested():
                     from app.crm.codes import next_code
                     db.add(CrmAccount(code=code if code is not None else next_code(db, "account"), name_norm=normalize(fields["name"])[:200], legacy_sugar_id=legacy,
-                                      owner_staff_id=staff_id, created_by_id=staff_id, status="activo", **fields))
+                                      owner_staff_id=staff_id, created_by_id=staff_id, status=status, legacy_json=(row.get("legacy_json") or None), **fields))
                     db.flush()
             counts["created"] += 1
         except CrmError as e:
@@ -114,12 +116,13 @@ def import_contacts(db: Session, staff_id: int, raw: bytes, mode: str, virtual: 
             if account is None:
                 counts["without_account"] += 1
                 raise CrmError("El contacto no tiene una cuenta conocida.")
-            data = {k: row.get(k) for k in ("first_name", "last_name", "job_title", "email", "phone") if row.get(k)}
+            data = {k: row.get(k) for k in ("first_name", "last_name", "job_title", "email", "phone", "mobile", "notes") if row.get(k)}
             acc_svc.clean_contact(data)                                  # valida topes
             if save:
                 with db.begin_nested():
                     c = acc_svc.create_contact(db, _Actor(staff_id), account, data)
                     c.legacy_sugar_id = legacy
+                    c.legacy_json = row.get("legacy_json") or None
             counts["created"] += 1
         except CrmError as e:
             counts["rejected"] += 1

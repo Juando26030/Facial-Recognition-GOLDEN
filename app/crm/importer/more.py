@@ -158,7 +158,7 @@ def import_opportunities(ctx: Ctx, staff_id: int, raw: bytes, mode: str) -> dict
                 with db.begin_nested():
                     o = CrmOpportunity(code=code if code is not None else next_code(db, "event"), account_id=ctx.acc[account_norm], pipeline_id=pid, stage_id=stage_id, outcome=kind,
                                        closed_at=closed_at, lost_reason=lost_reason, stage_entered_at=closed_at or utcnow(), owner_staff_id=staff_id, created_by_id=staff_id,
-                                       legacy_sugar_id=legacy, **fields)
+                                       legacy_sugar_id=legacy, legacy_json=(row.get("legacy_json") or None), **fields)
                     db.add(o)
                     db.flush()
                     if legacy:
@@ -223,7 +223,7 @@ def import_activities(ctx: Ctx, staff_id: int, raw: bytes, mode: str) -> dict:
                         opp = db.get(CrmOpportunity, opp_id)
                         account_id = opp.account_id                                # la oportunidad manda sobre el nombre de cuenta
                     a = CrmActivity(status=status, done_at=(due or utcnow()) if status == "done" else None, account_id=account_id, opportunity_id=opp_id, owner_staff_id=staff_id,
-                                    created_by_id=staff_id, legacy_sugar_id=legacy, **fields)
+                                    created_by_id=staff_id, legacy_sugar_id=legacy, legacy_json=(row.get("legacy_json") or None), **fields)
                     db.add(a)
                     db.flush()
                     if opp_id and status == "planned":
@@ -291,7 +291,7 @@ def import_quotes(ctx: Ctx, staff_id: int, raw: bytes, mode: str, lines_by_quote
                         opp_id = None                                  # la oportunidad es de otra cuenta: no se liga
                     q = CrmQuote(number=number if number is not None else next_code(db, "quote"), version=1, account_id=acc_id, opportunity_id=opp_id, stage=stage,
                                  approval_status=stage if stage in ("aprobada", "rechazada") else "pendiente", owner_staff_id=staff_id, created_by_id=staff_id, legacy_sugar_id=legacy,
-                                 sent_at=utcnow() if stage != "borrador" else None, **fields)
+                                 legacy_json=(row.get("legacy_json") or None), sent_at=utcnow() if stage != "borrador" else None, **fields)
                     db.add(q)
                     db.flush()
                     for c in cleaned:

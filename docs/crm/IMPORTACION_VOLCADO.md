@@ -48,5 +48,10 @@ No vienen: **notas** (no hay tabla), **archivos** adjuntos (524 documentos: solo
 - Pasos: 1) *muestra* (20 filas por tabla, no guarda) → 2) *prueba en seco* (todo, no guarda, informe de rechazos) → 3) *aplicar*. Corre como trabajo largo (Cloud Run Job), nunca en la petición web. Los archivos se borran al terminar.
 - Sin datos personales en logs ni informes (solo conteos y motivos).
 
-## Estado
-Hecho: lector del volcado + pruebas. Falta: migración 0142, transformación por tabla, subida/ejecución, pantalla de avance.
+## Estado (13-nov-2026)
+Hecho: lector del volcado (`dump.py`), migración 0142, **conversor** `app/crm/importer/convert.py` + `scripts/crm_dump_to_csv.py` (volcado → 7 archivos por tipo con los encabezados de `formats.py`), y el importador existente (`runner.py`/`more.py`) ya guarda estado, categoría, tipo, industria, sitio web y `legacy_json`.
+Cómo se corre: 1) `python scripts/crm_dump_to_csv.py <volcado.csv> <carpeta fuera del repo>` (solo imprime conteos) → 2) en `/crm/importar` (admin) se suben los archivos, «Muestra» → «Prueba completa» → «Cargar de verdad».
+Resultado de la conversión con el volcado real (conteos): cuentas 3.666 · contactos 9.116 · oportunidades 22.274 · actividades 21.279 (llamadas 15.949, reuniones 2.735, tareas 2.595) · cotizaciones 21.575 con 61.098 líneas · productos 366. Todos los archivos pesan menos de 25 MB (tope del importador; el mayor, 12 MB).
+Decisiones tomadas por el conversor (todas dejan el original en `legacy_json`): 27 cuentas con el mismo nombre → la repetida lleva « (cuenta <número>)» para poder ligar por nombre; 31 códigos de cuenta, 134 de oportunidad y 3 números de cotización repetidos → reciben el siguiente del contador; 7 teléfonos de cuenta y 4 de contacto/cargo por encima del tope → recortados; importes con 8 decimales → 2; descuento en pesos (522 líneas) → porcentaje; moneda `-99` → COP; etapas de cotización propias (Tarifarios, Opcionales, Licitaciones) → borrador con la etapa original anotada.
+Quedan fuera (no tienen dónde vivir hoy): leads sueltos, actividades de Proyectos/Casos/Contratos (≈ 280), 198 contactos sin cuenta, 133 oportunidades y 169 cotizaciones sin cuenta viva, facturas (proformas), historial de cambios, notas y archivos. Responsables: sin emparejar (todo queda a nombre de quien importa; el usuario original en `legacy_json`).
+Falta: ejecutarlo en staging (lo hace el administrador con los archivos), verificar conteos contra este informe y recién ahí producción (con respaldo de Neon).

@@ -22,11 +22,14 @@ ACCOUNT_ALIASES = {
     "city": ("ciudad", "billing city", "ciudad de facturacion"),
     "address": ("direccion", "billing street", "direccion de facturacion"),
     "description": ("descripcion", "description"),
+    "status": ("estado", "status"), "category": ("categoria", "category"), "account_type": ("tipo", "account type", "tipo de cuenta"), "industry": ("industria", "industry"),
+    "legacy_json": ("legacy_json",),
 }
 CONTACT_ALIASES = {
     "legacy_id": ("id",), "first_name": ("nombre", "first name"), "last_name": ("apellidos", "apellido", "last name"),
     "job_title": ("cargo", "title", "job title"), "email": ("correo electronico", "email address", "email", "correo"),
-    "phone": ("telefono de la oficina", "telefono movil", "mobile", "office phone", "telefono", "phone"),
+    "phone": ("telefono de la oficina", "office phone", "telefono", "phone"), "mobile": ("telefono movil", "mobile"),
+    "notes": ("notas", "notes"), "legacy_json": ("legacy_json",),
     "account_name": ("nombre de la cuenta", "account name", "cuenta"),
 }
 PRODUCT_ALIASES = {
@@ -39,21 +42,21 @@ OPPORTUNITY_ALIASES = {
     "account_name": ("nombre de la cuenta", "account name", "cuenta"), "stage": ("etapa de ventas", "sales stage", "etapa"), "amount": ("importe", "amount", "monto", "valor"),
     "currency": ("moneda", "currency"), "expected_close": ("fecha de cierre esperada", "expected close date", "fecha de cierre", "cierre esperado"),
     "opp_type": ("tipo", "type"), "source": ("fuente de la oportunidad", "lead source", "fuente", "origen"), "next_step": ("siguiente paso", "next step"),
-    "description": ("descripcion", "description"), "city": ("ciudad", "city"), "event_start": ("fecha del evento", "fecha de inicio del evento", "event date", "event start"),
+    "description": ("descripcion", "description"), "legacy_json": ("legacy_json",), "city": ("ciudad", "city"), "event_start": ("fecha del evento", "fecha de inicio del evento", "event date", "event start"),
     "lost_reason": ("motivo de perdida", "motivo", "lost reason"), "closed_at": ("fecha de cierre real", "closed date", "fecha cierre real"),
 }
 ACTIVITY_ALIASES = {
     "legacy_id": ("id",), "kind": ("tipo", "type", "tipo de actividad", "module"), "subject": ("asunto", "subject", "tema", "nombre", "name"), "status": ("estado", "status"),
     "due": ("fecha de vencimiento", "fecha de inicio", "date due", "date start", "fecha", "vence"), "description": ("descripcion", "description"),
     "opportunity_legacy_id": ("id oportunidad", "opportunity id", "id de la oportunidad"), "opportunity_name": ("oportunidad", "opportunity", "nombre de la oportunidad"),
-    "account_name": ("nombre de la cuenta", "account name", "cuenta"),
+    "account_name": ("nombre de la cuenta", "account name", "cuenta"), "legacy_json": ("legacy_json",),
 }
 QUOTE_ALIASES = {
     "legacy_id": ("id",), "number": ("numero", "number", "numero de cotizacion", "quote number"), "title": ("titulo", "title", "nombre", "name", "asunto"),
     "account_name": ("nombre de la cuenta", "account name", "cuenta"), "opportunity_legacy_id": ("id oportunidad", "opportunity id", "id de la oportunidad"),
     "opportunity_name": ("oportunidad", "opportunity", "nombre de la oportunidad"), "stage": ("etapa", "stage", "estado", "etapa de la cotizacion", "quote stage"),
     "valid_until": ("valida hasta", "valid until", "fecha de validez", "valido hasta"), "terms": ("terminos y condiciones", "terms", "terminos"),
-    "currency": ("moneda", "currency"), "total": ("total", "total amount", "importe total"),
+    "currency": ("moneda", "currency"), "total": ("total", "total amount", "importe total"), "legacy_json": ("legacy_json",),
 }
 QUOTE_LINE_ALIASES = {
     "quote_legacy_id": ("id cotizacion", "quote id", "id de la cotizacion"), "quote_number": ("numero de cotizacion", "quote number", "cotizacion"),
