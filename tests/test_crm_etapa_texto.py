@@ -52,7 +52,8 @@ def test_models_match_the_migrations_table_by_table():
             body = body.split("op.create_table(", 2)[1] if body.count("op.create_table(") > 1 else body
             body = body[:body.index("op.create_index") if "op.create_index" in body else len(body)]
             migrated = set(re.findall(r'sa\.Column\("(\w+)"', body))
-            assert migrated == cols[table], f"{table}: migración {sorted(migrated ^ cols[table])}"
+            model_cols = cols[table] - {"legacy_json"}          # 0142 la agrega después (otra migración): aquí se compara solo lo que crea esta
+            assert migrated == model_cols, f"{table}: migración {sorted(migrated ^ model_cols)}"
 
 
 def test_the_default_pipeline_is_seeded_and_has_one_won_and_one_lost_stage():
