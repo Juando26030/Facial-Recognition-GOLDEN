@@ -278,7 +278,12 @@ def convert(tables: Dict[str, List[dict]]) -> Tuple[Dict[str, Tuple[List[str], L
             tax = str(Decimal(vat).quantize(Decimal("0.01"))) if vat else "0.00"
         except (InvalidOperation, ValueError):
             tax = "0.00"
-        rows_l.append([r["parent_id"], dump.clean(r.get("name")) or "(sin nombre)", dump.clean(r.get("item_description")), qty, price, disc, tax])
+        lname, ldesc = dump.clean(r.get("name")) or "(sin nombre)", dump.clean(r.get("item_description"))
+        if len(lname) > 200:                                                   # tope del CRM: nombre de 200; el texto completo pasa al inicio de la descripción
+            ldesc = (lname + ("\n" + ldesc if ldesc else ""))[:20000]
+            lname = lname[:199].rstrip() + "…"
+            report["quote_lines"]["name_trimmed"] += 1
+        rows_l.append([r["parent_id"], lname, ldesc, qty, price, disc, tax])
         report["quote_lines"]["out"] += 1
 
     # --- productos
