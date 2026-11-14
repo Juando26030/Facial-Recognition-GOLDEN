@@ -28,7 +28,7 @@ def _reject(rejected: list, lineno: int, reason: str) -> None:
 
 
 def _generic(e: Exception) -> str:
-    return "No se pudo guardar la fila (dato repetido o fuera de rango)."
+    return f"No se pudo guardar la fila (dato repetido o fuera de rango) [{parsing.describe_error(e)}]."
 
 
 # ------------------------------------------------------------------ referencias entre archivos

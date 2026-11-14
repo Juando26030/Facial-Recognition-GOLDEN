@@ -123,3 +123,22 @@ def line_data(r: dict) -> dict:
 
 PROFORMA_STATUS_ALIASES = {"paid": "pagado", "pagado": "pagado", "pagada": "pagado", "unpaid": "no_pagado", "no pagado": "no_pagado", "no pagada": "no_pagado", "pendiente": "no_pagado",
                            "cancelled": "anulado", "anulado": "anulado", "anulada": "anulado"}
+
+
+def describe_error(e: Exception) -> str:
+    """Motivo técnico de una fila no guardada, SIN valores de datos: clase del error, restricción/columna de la base y código de Postgres (o, para fallos del propio código, su mensaje)."""
+    orig = getattr(e, "orig", None)
+    diag = getattr(orig, "diag", None)
+    parts = [type(e).__name__]
+    if orig is not None:
+        parts.append(type(orig).__name__)
+        for attr in ("constraint_name", "column_name"):
+            v = getattr(diag, attr, None)
+            if v:
+                parts.append(str(v))
+        code = getattr(orig, "pgcode", None)
+        if code:
+            parts.append("pg " + str(code))
+    elif isinstance(e, (TypeError, AttributeError, NameError)):
+        parts.append(str(e)[:120])                         # nombres de código, nunca datos
+    return " · ".join(parts)

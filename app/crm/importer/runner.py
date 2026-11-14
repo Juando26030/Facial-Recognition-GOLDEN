@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.crm import accounts as acc_svc, normalize
 from app.crm.codes import bump_floor
 from app.crm.errors import CrmError
-from app.crm.importer import formats, more, scoring
+from app.crm.importer import formats, more, parsing, scoring
 from app.models import CrmAccount, CrmContact, CrmImportPair, CrmImportRun, Tenant
 from app.storage import get_storage
 from app.timeutil import utcnow
@@ -87,9 +87,9 @@ def import_accounts(db: Session, staff_id: int, raw: bytes, mode: str) -> dict:
         except CrmError as e:
             counts["rejected"] += 1
             _reject(rejected, lineno, str(e))
-        except Exception:                                              # p. ej. número de cuenta ya existente: sin detalles de la fila
+        except Exception as e:                                         # p. ej. número de cuenta ya existente: sin detalles de la fila
             counts["rejected"] += 1
-            _reject(rejected, lineno, "No se pudo guardar la fila (dato repetido o fuera de rango).")
+            _reject(rejected, lineno, f"No se pudo guardar la fila (dato repetido o fuera de rango) [{parsing.describe_error(e)}].")
         if save and counts["read"] % COMMIT_EVERY == 0:
             db.commit()
     if save and max_code:
