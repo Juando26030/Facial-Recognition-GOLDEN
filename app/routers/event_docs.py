@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.timeutil import to_local
-from app.models import EventDocument, EventExpense, StaffUser
+from app.models import EventDocument, EventExpense, EventLegalization, StaffUser
 from app import uploads
 from app.storage import get_storage, key_of
 
@@ -65,6 +65,7 @@ def delete_event_files(db: Session, event_id: int) -> None:
         _remove(exp.evidence_path)
     db.query(EventDocument).filter(EventDocument.event_id == event_id).delete()
     db.query(EventExpense).filter(EventExpense.event_id == event_id).delete()
+    db.query(EventLegalization).filter(EventLegalization.event_id == event_id).delete()
 
 
 # ---------------------------------------------------------------- Documentos del Evento (ítem 8)
