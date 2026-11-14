@@ -50,7 +50,7 @@ FILE_NAME_RE = re.compile(r"^files/[0-9a-f]{64}$")
 KDF_ITERATIONS = int(os.getenv("EVENT_TRANSFER_KDF_ITERATIONS", "600000"))
 BIO_CHECK = b"goldenweb-biometria"
 MIN_PASSPHRASE = 8
-OPTIONAL_TABLES = ("event_documents", "event_expenses")          # los paquetes de la fase F1 no las traen
+OPTIONAL_TABLES = ("event_documents", "event_expenses", "event_legalizations")          # los paquetes de la fase F1 no las traen
 BIOMETRIC_USER_COLUMNS = ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source", "is_biometric_enabled")
 
 
@@ -90,7 +90,8 @@ TABLES = [
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
     {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id", "archived_by_id")},
-    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id")},
+    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id", "approved_by_id")},
+    {"name": "event_legalizations", "kind": "event", "staff": ("submitted_by_id", "reviewed_by_id")},
 ]
 SPEC = {t["name"]: t for t in TABLES}
 PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "person_change_log", "audit_consent_logs", "web_acceptances")

@@ -907,6 +907,60 @@ class EventExpense(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0093 (Fase 3)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    # 0131 (legalizaciones en el formato oficial de Golden, 14-nov-2026). Todo opcional: los gastos viejos quedan como kind='otro'.
+    # `category`/`responsible` siguen siendo obligatorias: en un gasto nuevo `category` lleva el nombre del rubro y `responsible` al coordinador.
+    # `amount` es SIEMPRE el valor total de la línea (en alimentación, la suma de las comidas).
+    kind = Column(String(20), nullable=False, default='otro', server_default='otro')   # EXPENSE_KINDS
+    expense_date = Column(Date, nullable=True)
+    tax_id = Column(String, nullable=True)        # NIT o cédula de quien cobra
+    vendor_name = Column(String, nullable=True)   # establecimiento, taxista, hotel, digitador(a)…
+    address = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    origin = Column(String, nullable=True)        # desde / hasta (pasajes y taxis)
+    destination = Column(String, nullable=True)
+    concept = Column(String, nullable=True)       # concepto (en «otros gastos»: el detalle)
+    plate = Column(String, nullable=True)
+    vehicle = Column(String(10), nullable=True)   # taxis en la ciudad: 'taxi' | 'otro'
+    iva = Column(Numeric(14, 2), nullable=True)
+    has_support = Column(Boolean, nullable=True)  # SOPORTE (S/N): tiene recibo o factura
+    breakfast = Column(Numeric(14, 2), nullable=True)
+    lunch = Column(Numeric(14, 2), nullable=True)
+    dinner = Column(Numeric(14, 2), nullable=True)
+    snack = Column(Numeric(14, 2), nullable=True)
+    unit_value = Column(Numeric(14, 2), nullable=True)
+    observation = Column(Text, nullable=True)
+    approved = Column(Boolean, nullable=True)     # APROBADO: NULL = pendiente de revisar
+    approved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_event_expenses_event_kind', 'event_id', 'kind'),)
+
+
+# Tipos de gasto de una legalización: cada uno cae en una hoja/tabla del Excel (app/legalization_xlsx.py).
+EXPENSE_KINDS = ("hospedaje", "pasaje", "taxi_terminal", "taxi_ciudad", "alimentacion", "digitador", "otro")
+# Ciclo de una legalización: el coordinador la arma (borrador), la envía, el director la aprueba o la devuelve para corregir.
+LEGALIZATION_STATUSES = ("borrador", "enviada", "aprobada", "devuelta")
+
+
+class EventLegalization(Base):
+    """Encabezado de la legalización de un evento (una por evento): quién responde, el anticipo en pesos que se le
+    entregó y en qué etapa va. El consecutivo, el CE final y las observaciones contables los escribe el área
+    administrativa en el Excel, por eso no están aquí."""
+    __tablename__ = 'event_legalizations'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False, unique=True)
+    responsible_name = Column(String, nullable=True)
+    responsible_cc = Column(String, nullable=True)
+    advance_amount = Column(Numeric(14, 2), nullable=True)      # «CE. # (Anticipo)»: valor en pesos entregado al coordinador
+    legalization_date = Column(Date, nullable=True)
+    status = Column(String(12), nullable=False, default='borrador', server_default='borrador')
+    submitted_at = Column(DateTime, nullable=True)
+    submitted_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    review_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow)
 
 
 class SuperEvent(Base):
