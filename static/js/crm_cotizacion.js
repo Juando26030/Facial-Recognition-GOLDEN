@@ -145,7 +145,11 @@
     try {
       [q, meta] = await Promise.all([api("GET", "/api/crm/quotes/" + id), api("GET", "/api/crm/quotes/meta")]);
       meta.currencies.forEach((c) => $("fCurrency").appendChild(new Option(c, c)));
-      meta.templates.filter((t) => t.kind === "quote").forEach((t) => $("fTemplate").appendChild(new Option(t.name, String(t.id))));
+      const qts = meta.templates.filter((t) => t.kind === "quote"), qdef = qts.find((t) => t.is_default);
+      $("fTemplate").firstChild.textContent = qdef ? "Usar la predeterminada (" + qdef.name + ")" : "Formato básico (no hay plantillas)";
+      qts.forEach((t) => $("fTemplate").appendChild(new Option(t.name + (t.is_default ? " · predeterminada" : ""), String(t.id))));
+      const thint = $("fTemplate").parentNode.appendChild(el("p", "gw-hint", qts.length > 1 ? "Elige con qué diseño sale el PDF." : "Solo hay una plantilla de cotización." + (root.dataset.canAdmin === "1" ? " Crea más en Productos y plantillas." : "")));
+      if (root.dataset.canAdmin === "1") { const a = el("a", "crm-sub-link", " Administrar plantillas"); a.href = "/crm/productos"; thint.appendChild(a); }
       meta.terms.forEach((t) => $("fTerms").appendChild(new Option(t.name, String(t.id))));
       try { const cs = await api("GET", "/api/crm/accounts/" + q.account_id + "/contacts"); cs.forEach((c) => $("fContact").appendChild(new Option(c.full_name, String(c.id)))); } catch (e) { /* sin contactos se puede cotizar igual */ }
       fillForm(); paint(); state.hidden = true; main.hidden = false; loadHistory();

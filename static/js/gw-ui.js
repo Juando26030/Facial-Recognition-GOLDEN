@@ -186,7 +186,7 @@
   function foldInit() {
     Array.prototype.forEach.call(document.querySelectorAll('.gw-group__item'), function (item, i) {
       var head = item.firstElementChild;
-      if (!head || !head.classList.contains('gw-item-head') || item.children.length < 2 || item.hasAttribute('data-gw-nofold')) return;
+      if (!head || !head.classList.contains('gw-item-head') || item.children.length < 2 || item.hasAttribute('data-gw-nofold') || item.hasAttribute('data-gw-foldable')) return;
       foldMake(item, head, i);
     });
     var page = document.querySelector('main[data-gw-fold]');
@@ -203,8 +203,8 @@
     if (page) {                                                  // tarjetas con título directo (p. ej. «Subir un documento»): también se pliegan
       Array.prototype.forEach.call(page.querySelectorAll('.gw-card'), function (card, i) {
         if (card.hasAttribute('data-gw-foldable') || card.hasAttribute('data-gw-nofold') || card.closest('[data-gw-foldable], details') || card.children.length < 2) return;
-        var h = card.querySelector(':scope > h2.gw-card__title, :scope > h3.gw-card__title');
-        if (h) foldMake(card, h, 200 + i);
+        var h = card.querySelector(':scope > h2.gw-card__title, :scope > h3.gw-card__title') || card.querySelector(':scope > .crm-card-head');   // CRM: el título va dentro de .crm-card-head (junto a contadores y botones)
+        if (h && (h.matches('h2,h3') || h.querySelector('h2,h3'))) foldMake(card, h, 200 + i);
       });
     }
     var scopes = Array.prototype.slice.call(document.querySelectorAll('.gw-tabpanel, .pane, [role="tabpanel"]'));
@@ -213,10 +213,11 @@
       var own = foldItems(scope).filter(function (el) {                  // en `main` solo lo que no está dentro de una pestaña (cada pestaña tiene su barra)
         return scope !== page || !el.closest('.gw-tabpanel, .pane, [role="tabpanel"]');
       });
+      if (scope._gwBar && scope._gwBar.isConnected) { scope._gwBar._own = own; return; }          // ya tiene su barra (se vuelve a llamar cuando una pantalla pinta contenido nuevo): solo se actualiza la lista
       if (own.length < 2 || (scope !== page && own[0].parentNode.querySelector(':scope > .gw-fold__bar'))) return;
       var bar = mk('div', 'gw-fold__bar'), a = mk('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Plegar todo'), z = mk('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Desplegar todo');
       a.type = z.type = 'button'; a.setAttribute('data-gw-fold-all', '1'); z.setAttribute('data-gw-fold-all', '0'); bar._scope = scope; bar._own = own;
-      bar.appendChild(a); bar.appendChild(z);
+      bar.appendChild(a); bar.appendChild(z); scope._gwBar = bar;
       var first = own[0];                                   // la barra va justo ENCIMA de lo primero que se pliega: misma posición en todas las pantallas
       var ref = scope === page ? (outsideDetails(page, '.gw-steps') || outsideDetails(page, '.gw-page-head')) : null;     // en la pantalla: justo debajo del título y la guía de pasos
       if (ref && ref.parentNode) ref.parentNode.insertBefore(bar, ref.nextSibling); else first.parentNode.insertBefore(bar, first);
@@ -437,7 +438,7 @@
     }
   });
 
-  window.GW = Object.assign(window.GW || {}, { tour: { start: startTour, seen: tourSeen, setOff: setToursOff }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo } });
+  window.GW = Object.assign(window.GW || {}, { tour: { start: startTour, seen: tourSeen, setOff: setToursOff }, theme: { get: currentTheme, set: function (t) { applyTheme(t); store(false, KEY_THEME, t); } }, help: { close: closeHelp }, wizard: { go: wizardGo }, fold: { refresh: foldInit } });
 
   function init() {
     applyTheme(currentTheme());

@@ -70,5 +70,6 @@
     await busy(b, async () => { try { await api("POST", "/api/crm/activities/" + b.dataset.done + "/complete", {}); showToast("Actividad marcada como hecha.", "success"); await load(); } catch (err) { showToast(err.message, "error"); } });
   });
   $("dayReload").addEventListener("click", load);
+  $("dayNew").addEventListener("click", () => X.activityForm({ pick: true }, null, load));
   load();
 })();

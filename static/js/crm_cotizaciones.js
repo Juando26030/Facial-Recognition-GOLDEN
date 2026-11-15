@@ -58,18 +58,16 @@
 
   /* ---------------------------------------------------------------- nueva cotización */
   async function newQuote() {
-    const search = input("search", 100), found = select([], "Escribe y pulsa «Buscar cuenta»"), title = input("text", 200), err = errorBox();
-    const find = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Buscar cuenta"); find.type = "button";
+    const accPick = window.CRMX.accountPicker("nqAccount"), title = input("text", 200), err = errorBox();
     const body = el("div", "gw-stack"); body.appendChild(err);
-    body.appendChild(field("nqSearch", "Cuenta (nombre o código)", search)); body.appendChild(find); body.appendChild(field("nqFound", "Cuenta elegida", found)); body.appendChild(field("nqTitle", "Título de la cotización", title));
+    body.appendChild(window.CRMX.pickerField("nqAccount", "Cuenta", accPick, "Escribe parte del nombre, el código o el NIT y elige de la lista.")); body.appendChild(field("nqTitle", "Título de la cotización", title));
     const d = dialog({ title: "Nueva cotización", bodyHtml: "", onEscape: () => d.close(), buttons: [{ id: "nqCancel", cls: "gw-btn--secondary", label: "Cancelar" }, { id: "nqSave", cls: "gw-btn--primary", label: "Crear" }] });
     d.dlg.querySelector(".gw-modal__body").replaceChildren(body);
-    const lookup = async () => { try { const r = await api("GET", "/api/crm/accounts" + qs({ q: search.value.trim(), size: 20 })); found.replaceChildren(new Option(r.items.length ? "Elige una cuenta…" : "Sin resultados", "")); r.items.forEach((a) => found.appendChild(new Option(a.name + " (" + a.code + ")", String(a.id)))); } catch (e) { err.show(e.message); } };
-    find.addEventListener("click", lookup); search.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(); } });
+    accPick.focus();
     d.dlg.querySelector("#nqCancel").addEventListener("click", () => d.close());
     d.dlg.querySelector("#nqSave").addEventListener("click", async (e) => {
-      err.clear(); if (!found.value || !title.value.trim()) { err.show("Elige la cuenta y escribe un título."); return; }
-      try { await busy(e.currentTarget, async () => { const q = await api("POST", "/api/crm/quotes", { account_id: Number(found.value), title: title.value.trim() }); window.location.href = "/crm/cotizaciones/" + q.id; }); } catch (e2) { err.show(e2.message); }
+      err.clear(); if (!accPick.value || !title.value.trim()) { err.show("Elige la cuenta de la lista que aparece al escribir y escribe un título."); return; }
+      try { await busy(e.currentTarget, async () => { const q = await api("POST", "/api/crm/quotes", { account_id: Number(accPick.value), title: title.value.trim() }); window.location.href = "/crm/cotizaciones/" + q.id; }); } catch (e2) { err.show(e2.message); }
     });
   }
 

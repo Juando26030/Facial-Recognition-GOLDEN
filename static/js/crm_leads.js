@@ -89,13 +89,10 @@
     const bNew = el("button", "gw-segment__opt", "Crear cuenta nueva"), bOld = el("button", "gw-segment__opt", "Usar una cuenta que ya existe"); [bNew, bOld].forEach((b) => { b.type = "button"; mode.appendChild(b); }); form.appendChild(mode);
     const newBox = el("div", "gw-stack"), oldBox = el("div", "gw-stack"); oldBox.hidden = true;
     const accName = X.input("text", 200); accName.value = lead.company_name || lead.full_name || ""; newBox.appendChild(X.field("cv_name", "Nombre de la cuenta nueva", accName));
-    const search = X.input("search", 200), found = X.select([], "Primero busca la cuenta"), go = el("button", "gw-btn gw-btn--secondary", "Buscar cuenta"); go.type = "button";
-    const srow = el("div", "crm-inline"); srow.appendChild(search); srow.appendChild(go); const sw = el("div", "gw-field"), sl = el("label", "gw-label", "Buscar la cuenta"); sl.htmlFor = "cv_search"; search.id = "cv_search"; sw.appendChild(sl); sw.appendChild(srow); oldBox.appendChild(sw); found.id = "cv_found"; found.setAttribute("aria-label", "Cuentas encontradas"); oldBox.appendChild(found);
+    const accPick = X.accountPicker("cv_found"); oldBox.appendChild(X.pickerField("cv_found", "Cuenta que ya existe", accPick, "Escribe parte del nombre, el código o el NIT y elige de la lista."));
     form.appendChild(newBox); form.appendChild(oldBox);
     function setMode(useOld) { oldBox.hidden = !useOld; newBox.hidden = useOld; bNew.setAttribute("aria-pressed", useOld ? "false" : "true"); bOld.setAttribute("aria-pressed", useOld ? "true" : "false"); }
     setMode(false); bNew.addEventListener("click", () => setMode(false)); bOld.addEventListener("click", () => setMode(true));
-    async function lookup() { err.clear(); try { const data = await api("GET", "/api/crm/accounts" + qs({ q: search.value.trim(), size: 20 })); found.replaceChildren(); if (!data.items.length) { found.appendChild(new Option("Ninguna cuenta coincide", "")); return; } data.items.forEach((a) => found.appendChild(new Option(a.code + " · " + a.name, a.id))); found.selectedIndex = 0; } catch (e) { err.show(e.message); } }
-    go.addEventListener("click", lookup); search.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(); } });
     const chk = el("label", "gw-check"), cb = el("input"); cb.type = "checkbox"; chk.appendChild(cb); chk.appendChild(document.createTextNode(" Crear también una oportunidad")); form.appendChild(chk);
     const oppBox = el("div", "gw-stack"); oppBox.hidden = true;
     const oName = X.input("text", 200), oAmount = X.input("text", 20), oCur = X.select(m.currencies.map((c) => ({ value: c, label: c }))), oClose = X.input("date");
@@ -105,7 +102,7 @@
     d.dlg.querySelector(".gw-modal__body").replaceChildren(form); d.dlg.querySelector("#cvCancel").addEventListener("click", () => d.close());
     const run = (confirmDup) => busy(d.dlg.querySelector("#cvGo"), async () => {
       err.clear(); const useOld = !oldBox.hidden, body = {};
-      if (useOld) { if (!found.value) { err.show("Busca y elige la cuenta."); return; } body.account_id = Number(found.value); } else { body.account_name = accName.value.trim(); if (confirmDup) body.confirm_duplicate = true; }
+      if (useOld) { if (!accPick.value) { err.show("Elige la cuenta de la lista que aparece al escribir."); return; } body.account_id = Number(accPick.value); } else { body.account_name = accName.value.trim(); if (confirmDup) body.confirm_duplicate = true; }
       if (cb.checked) { body.create_opportunity = true; body.name = oName.value.trim() || undefined; body.amount = oAmount.value.trim(); body.currency = oCur.value; body.expected_close = oClose.value; }
       try {
         const r2 = await api("POST", "/api/crm/leads/" + lead.id + "/convert", body); d.close(); showToast("Lead convertido.", "success");

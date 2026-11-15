@@ -41,7 +41,7 @@
 </header>
 <div class="golden-content-spacer"></div>
 
-<main class="golden-main">
+<main class="golden-main" data-gw-fold>
   {% set crm_section = 'cuentas' %}{% include "_crm_nav.html" %}
   <div class="gw-container gw-stack-lg" id="crmRoot" data-gw-tour="crm_cuentas" data-gw-tour-auto data-can-admin="{{ '1' if can_admin else '0' }}">
     <div class="gw-page-head">
@@ -92,6 +92,7 @@
 </main>
 
 <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_fold.js') }}"></script>
 <script src="{{ url_for('static', path='js/crm_cuentas.js') }}"></script>
 </body>
 </html>

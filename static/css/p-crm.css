@@ -71,3 +71,14 @@
   .crm-tablist .gw-tab { grid-template-columns: auto; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); flex: 1 1 0; justify-items: center; }
   .crm-tablist .gw-tab__icon { display: none; }
 }
+
+/* Buscador predictivo (CRM): un campo, sugerencias debajo. La lista va en el flujo normal (no flota) para que ningún diálogo la recorte. */
+.crm-picker { position: relative; display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.crm-picker__ok { align-self: flex-start; font-size: var(--gw-fs-sm, .875rem); color: var(--gw-ok-text); background: var(--gw-ok-bg); border: 1px solid var(--gw-ok-line); border-radius: var(--gw-radius-pill); padding: 0 var(--gw-sp-2); }
+.crm-picker.is-chosen > .gw-input { border-color: var(--gw-ok-line); }
+.crm-picker__list { list-style: none; margin: 0; padding: var(--gw-sp-1); max-height: 14rem; overflow-y: auto; background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+.crm-picker__opt { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gw-sp-2); padding: var(--gw-sp-2); border-radius: var(--gw-radius-sm); cursor: pointer; min-height: var(--gw-tap); }
+.crm-picker__opt:hover, .crm-picker__opt.is-active { background: var(--gw-surface-2); }
+.crm-picker__name { color: var(--gw-text); font-weight: 600; overflow-wrap: anywhere; }
+.crm-picker__sub, .crm-picker__empty { color: var(--gw-text-muted); font-size: var(--gw-fs-sm, .875rem); }
+.crm-picker__empty { padding: var(--gw-sp-2); }

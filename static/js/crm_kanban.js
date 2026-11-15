@@ -175,10 +175,7 @@
     const form = el("form", "gw-stack"); form.noValidate = true; const err = X.errorBox(); form.appendChild(err);
     const name = X.input("text", 200), amount = X.input("text", 20), curr = X.select(m.currencies.map((c) => ({ value: c, label: c }))), close = X.input("date"), start = X.input("date"), city = X.input("text", 120);
     const stage = X.select(pipe.stages.filter((s) => s.kind === "open").map((s) => ({ value: s.id, label: s.name }))), ownerSel = X.select(own.map((o) => ({ value: o.id, label: o.name })), "Yo");
-    const search = X.input("search", 200), found = X.select([], "Primero busca la cuenta"); found.size = 1;
-    const row = el("div", "crm-inline"); row.appendChild(search); const go = el("button", "gw-btn gw-btn--secondary", "Buscar cuenta"); go.type = "button"; row.appendChild(go);
-    const accWrap = el("div", "gw-field"); const lab = el("label", "gw-label", "Cuenta"); lab.htmlFor = "no_search"; search.id = "no_search"; accWrap.appendChild(lab); accWrap.appendChild(row);
-    found.id = "no_account"; found.setAttribute("aria-label", "Cuentas encontradas"); accWrap.appendChild(found);
+    const accPick = X.accountPicker("no_account"); const accWrap = X.pickerField("no_account", "Cuenta", accPick, "Escribe parte del nombre, el código o el NIT y elige de la lista.");
     form.appendChild(accWrap); form.appendChild(X.field("no_name", "Nombre de la oportunidad", name));
     const r1 = el("div", "gw-fields-row gw-fields-row--2"); r1.appendChild(X.field("no_amount", "Monto", amount)); r1.appendChild(X.field("no_curr", "Moneda", curr)); form.appendChild(r1);
     const r2 = el("div", "gw-fields-row gw-fields-row--2"); r2.appendChild(X.field("no_close", "Cierre esperado", close)); r2.appendChild(X.field("no_start", "Inicio del evento", start)); form.appendChild(r2);
@@ -186,21 +183,11 @@
     form.appendChild(X.field("no_owner", "Responsable", ownerSel));
     const d = X.dialog({ title: "Nueva oportunidad", bodyHtml: "", onEscape: () => d.close(), buttons: [{ id: "noCancel", cls: "gw-btn--secondary", label: "Cancelar" }, { id: "noSave", cls: "gw-btn--primary", label: "Crear oportunidad" }] });
     d.dlg.querySelector(".gw-modal__body").replaceChildren(form); d.dlg.querySelector("#noCancel").addEventListener("click", () => d.close());
-    async function lookup() {
-      err.clear();
-      try {
-        const data = await api("GET", "/api/crm/accounts" + qs({ q: search.value.trim(), size: 20 }));
-        found.replaceChildren(); if (!data.items.length) { found.appendChild(new Option("Ninguna cuenta coincide", "")); found.size = 1; return; }
-        data.items.forEach((a) => found.appendChild(new Option(a.code + " · " + a.name, a.id))); found.size = Math.min(6, data.items.length + 1); found.selectedIndex = 0;
-      } catch (e) { err.show(e.message); }
-    }
-    go.addEventListener("click", lookup); search.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(); } });
-    if (presetAccountId) { try { const a = await api("GET", "/api/crm/accounts/" + presetAccountId); search.value = a.name; await lookup(); found.value = String(a.id); } catch (e) { /* queda para buscar a mano */ } }
-    search.focus();
+    if (presetAccountId) { try { const a = await api("GET", "/api/crm/accounts/" + presetAccountId); accPick.set({ id: a.id, label: a.name, sub: "Cód. " + a.code }); name.focus(); } catch (e) { accPick.focus(); } } else accPick.focus();
     const save = () => busy(d.dlg.querySelector("#noSave"), async () => {
       err.clear();
-      if (!found.value) { err.show("Busca y elige la cuenta de la oportunidad."); return; }
-      const payload = { account_id: Number(found.value), name: name.value.trim(), amount: amount.value.trim(), currency: curr.value, expected_close: close.value, event_start: start.value, city: city.value.trim(), pipeline_id: pipe.id, stage_id: Number(stage.value) };
+      if (!accPick.value) { err.show("Elige la cuenta de la oportunidad de la lista que aparece al escribir."); return; }
+      const payload = { account_id: Number(accPick.value), name: name.value.trim(), amount: amount.value.trim(), currency: curr.value, expected_close: close.value, event_start: start.value, city: city.value.trim(), pipeline_id: pipe.id, stage_id: Number(stage.value) };
       if (ownerSel.value) payload.owner_staff_id = Number(ownerSel.value);
       try { const o = await api("POST", "/api/crm/opportunities", payload); d.close(); window.location.href = "/crm/oportunidades/" + o.id; } catch (e) { err.show(e.message); }
     });

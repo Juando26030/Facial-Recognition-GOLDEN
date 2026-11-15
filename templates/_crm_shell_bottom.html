@@ -2,7 +2,9 @@
 </main>
 
 <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_fold.js') }}"></script>
 <script src="{{ url_for('static', path='js/crm_common.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_live.js') }}"></script>
 {% for js in page_js or [] %}<script src="{{ url_for('static', path=js) }}"></script>
 {% endfor %}</body>
 </html>

@@ -85,25 +85,29 @@
     const err = errorBox(); body.appendChild(err);
     const kind = select(m.activity_kinds.filter((k) => k.key !== "note" || !existing).map((k) => ({ value: k.key, label: k.label })));
     const subject = input("text", 200), when = input("datetime-local"), remind = input("datetime-local"), desc = el("textarea", "gw-textarea"); desc.rows = 3; desc.maxLength = 20000;
+    const pick = !!(link && link.pick && !existing), accPick = pick ? window.CRMX.accountPicker("act_account") : null, oppPick = pick ? window.CRMX.opportunityPicker("act_opp", () => accPick.value) : null;
+    if (pick) { body.appendChild(window.CRMX.pickerField("act_account", "¿Con qué cuenta?", accPick, "Toda tarea va ligada a una cuenta. Escribe parte del nombre o el código y elige de la lista.")); body.appendChild(window.CRMX.pickerField("act_opp", "Oportunidad (opcional)", oppPick, "Solo si la tarea es de una oportunidad en particular.")); }
     body.appendChild(field("act_kind", "Tipo", kind)); body.appendChild(field("act_subject", "Asunto", subject)); body.appendChild(field("act_due", "Fecha y hora", when));
     body.appendChild(field("act_remind", "Recordar antes (opcional)", remind)); body.appendChild(field("act_desc", "Detalle (opcional)", desc));
     const hint = el("p", "gw-hint", "No escribas datos personales de terceros en el asunto ni en el detalle: ese texto es libre."); body.appendChild(hint);
     if (existing) { kind.value = existing.kind; subject.value = existing.subject; when.value = toInputLocal(existing.due_at); remind.value = toInputLocal(existing.remind_at); desc.value = existing.description || ""; kind.disabled = true; }
-    const d = dialog({ title: existing ? "Editar actividad" : "Programar actividad", bodyHtml: "", onEscape: () => d.close(),
-      buttons: [{ id: "actCancel", cls: "gw-btn--secondary", label: "Cancelar" }, { id: "actSave", cls: "gw-btn--primary", label: existing ? "Guardar" : "Programar" }] });
+    const d = dialog({ title: existing ? "Editar actividad" : (pick ? "Nueva tarea" : "Programar actividad"), bodyHtml: "", onEscape: () => d.close(),
+      buttons: [{ id: "actCancel", cls: "gw-btn--secondary", label: "Cancelar" }, { id: "actSave", cls: "gw-btn--primary", label: existing ? "Guardar" : (pick ? "Crear tarea" : "Programar") }] });
     d.dlg.querySelector(".gw-modal__body").replaceChildren(body);
     d.dlg.querySelector("#actCancel").addEventListener("click", () => d.close());
-    subject.focus();
+    (pick ? accPick : subject).focus();
     const save = () => busy(d.dlg.querySelector("#actSave"), async () => {
       err.clear();
+      if (pick && !accPick.value) { err.show("Elige la cuenta de la lista que aparece al escribir."); return; }
       const payload = { subject: subject.value.trim(), description: desc.value.trim(), due_at: localToIso(when.value), remind_at: localToIso(remind.value) };
       try {
         if (existing) { payload.updated_at = existing.updated_at; await api("PUT", "/api/crm/activities/" + existing.id, payload); }
-        else { payload.kind = kind.value; Object.assign(payload, link); await api("POST", "/api/crm/activities", payload); }
+        else { payload.kind = kind.value; if (pick) { payload.account_id = Number(accPick.value); if (oppPick.value) payload.opportunity_id = Number(oppPick.value); } else Object.assign(payload, link); await api("POST", "/api/crm/activities", payload); }
         d.close(); showToast(existing ? "Cambios guardados." : "Actividad programada.", "success"); onDone();
       } catch (e) { err.show(e.message); }
     });
     d.dlg.querySelector("#actSave").addEventListener("click", save);
+    if (pick) d.dlg.querySelector(".gw-modal__body").appendChild(el("p", "gw-hint", "Tipos: Llamada, Tarea (comunicado, correo, trámite) o Reunión."));
     body.addEventListener("submit", (ev) => { ev.preventDefault(); save(); });
   }
 
@@ -171,6 +175,7 @@
     reload();
     return { reload, schedule: () => activityForm(link, null, reload) };
   }
+
 
   window.CRMX = { $, el, icon, api, qs, plural, fmtDateTime, fmtDay, fmtMoney, localToIso, stateBlock, dialog, field, input, select, errorBox, menu, closeMenus, menuClick, meta, owners, busy, activityList, activityForm };
 })();
