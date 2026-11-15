@@ -27,7 +27,7 @@ def test_buscador_predictivo_reemplaza_buscar_cuenta():
 
 
 def test_todo_el_crm_es_plegable_y_busca_al_escribir():
-    assert '<main class="golden-main" data-gw-fold>' in read("templates/_crm_shell_top.html")
+    assert "\n<main class=\"golden-main\" data-gw-fold>\n" in read("templates/_crm_shell_top.html")          # la etiqueta real, no el comentario de arriba
     ui = read("static/js/gw-ui.js")
     assert "fold: { refresh: foldInit }" in ui and ":scope > .crm-card-head" in ui and "scope._gwBar" in ui
     assert "window.GW.fold.refresh()" in read("static/js/crm_fold.js")
@@ -35,7 +35,7 @@ def test_todo_el_crm_es_plegable_y_busca_al_escribir():
     for t in ("_crm_shell_bottom", "crm_cuenta", "crm_cuentas"):
         assert "js/crm_fold.js" in read(f"templates/{t}.html"), t
     for t in ("_crm_shell_top", "crm_cuenta", "crm_cuentas"):
-        assert '<main class="golden-main" data-gw-fold>' in read(f"templates/{t}.html"), t
+        assert "\n<main class=\"golden-main\" data-gw-fold>\n" in read(f"templates/{t}.html"), t
 
 
 def test_plantilla_del_pdf_muestra_cual_es_la_predeterminada():

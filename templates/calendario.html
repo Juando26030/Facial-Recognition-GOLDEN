@@ -323,7 +323,6 @@ CalendarCatsUI.loadCatalog().then((t) => { catCatalog = t; renderCatChips(); });
 renderCatChips();
 
 // ---- Modo CRM (lo de cada comercial: tareas, cierres de oportunidades, cotizaciones por vencer). Cada elemento abre su pantalla del CRM.
-const CRM_TYPE_LABEL = { activity: 'Tarea', close: 'Cierre', quote: 'Cotización' };
 async function loadCrm(start, end) {
   const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
   if (crmOwner && crmOwner.value) params.set('owner_id', crmOwner.value);
@@ -339,10 +338,11 @@ async function loadCrm(start, end) {
 }
 function crmForDay(iso) { return crmCache.filter((i) => i.date === iso && crmTypes.has(i.type)); }
 function crmChip(i) {
-  const label = CRM_TYPE_LABEL[i.type] || '';
+  const label = i.label || '';
+  const sub = i.sub && !i.title.includes(i.sub) ? i.sub : '';          // si la cuenta ya sale en el título no se repite
   return `<a class="cal-crm cal-crm--${i.type}${i.status === 'done' ? ' cal-crm--done' : ''}" href="${esc(i.href)}" title="${esc(i.title + (i.sub ? ' — ' + i.sub : ''))}">
       <span class="cal-crm__tag">${esc(label)}${i.time ? ' · ' + esc(i.time) : ''}${i.status === 'done' ? ' · hecha' : ''}</span>
-      <span class="cal-crm__title">${esc(i.title)}</span>${i.sub ? `<span class="cal-crm__sub">${esc(i.sub)}</span>` : ''}</a>`;
+      <span class="cal-crm__title">${esc(i.title)}</span>${sub ? `<span class="cal-crm__sub">${esc(sub)}</span>` : ''}</a>`;
 }
 function setCalMode(m) {
   calMode = (CRM_CAL && m === 'crm') ? 'crm' : 'events';
@@ -427,10 +427,10 @@ function noteChip(n, withAuthor) {
 
 function dayCellContent(d, iso, extraClass) {
   if (calMode === 'crm') {
-    const its = crmForDay(iso);
+    const its = crmForDay(iso), month = !extraClass.includes('cal-cell--week'), shown = month ? its.slice(0, 3) : its;          // en el mes caben 3; el resto se ve en «Día»
     return `<div class="cal-cell ${extraClass}${its.length ? '' : ' cal-cell--empty'}" data-date="${iso}">
       <div class="cal-daynum"><span class="cal-dow">${DAY_LABELS[(d.getDay() + 6) % 7]}</span> ${d.getDate()}</div>
-      <div class="cal-cell__body">${its.map(crmChip).join('')}</div></div>`;
+      <div class="cal-cell__body">${shown.map(crmChip).join('')}${its.length > shown.length ? `<button type="button" class="cal-add" data-crm-day="${iso}">+ ${its.length - shown.length} más: ver el día</button>` : ''}</div></div>`;
   }
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
@@ -516,6 +516,8 @@ calBody.addEventListener('click', async (ev) => {
   if (ev.target.closest('[data-retry-cal]')) { loadAndRender(); return; }
   const evBtn = ev.target.closest('[data-event-id]');
   if (evBtn) { openEventActions(evBtn); return; }
+  const moreBtn = ev.target.closest('[data-crm-day]');
+  if (moreBtn) { refDate = fromISO(moreBtn.dataset.crmDay); currentView = 'day'; updateViewButtons(); loadAndRender(); return; }
   const addBtn = ev.target.closest('[data-add-note]');
   if (addBtn) { openNoteModal(addBtn.dataset.addNote, addBtn); return; }
   const delBtn = ev.target.closest('[data-note-del]');

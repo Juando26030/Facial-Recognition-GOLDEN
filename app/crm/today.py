@@ -147,7 +147,7 @@ CAL_LIMIT = 500
 def calendar_range(db: Session, *, owner_id: Optional[int], start: date, end: date) -> dict:
     """Lo del CRM para el Calendario, entre `start` y `end` (fechas locales, inclusive; máximo ~6 semanas). `owner_id` None = todo el equipo (solo admin).
     Tres consultas con LIMIT: actividades (llamadas, tareas, reuniones; con hora), cierres esperados de oportunidades abiertas y cotizaciones abiertas que vencen.
-    Cada elemento: {type, id, date, time, title, sub, href, status}. Solo nombres de cuenta/oportunidad: sin datos personales."""
+    Cada elemento: {type, id, date, time, label, title, sub, href, status}. Solo nombres de cuenta/oportunidad: sin datos personales."""
     if end < start:
         start, end = end, start
     end = min(end, start + timedelta(days=45))
@@ -161,18 +161,18 @@ def calendar_range(db: Session, *, owner_id: Optional[int], start: date, end: da
     for a, an, on in act_q.order_by(CrmActivity.due_at).limit(CAL_LIMIT).all():
         local = to_local(a.due_at)
         href = f"/crm/oportunidades/{a.opportunity_id}" if a.opportunity_id else (f"/crm/cuentas/{a.account_id}" if a.account_id else "/crm/leads")
-        items.append({"type": "activity", "id": a.id, "date": local.date().isoformat(), "time": local.strftime("%H:%M"), "title": f"{ACTIVITY_KINDS.get(a.kind, a.kind)}: {a.subject}",
+        items.append({"type": "activity", "id": a.id, "date": local.date().isoformat(), "time": local.strftime("%H:%M"), "label": ACTIVITY_KINDS.get(a.kind, a.kind), "title": a.subject,
                       "sub": on or an or "", "href": href, "status": a.status})
     opp_q = (db.query(CrmOpportunity.id, CrmOpportunity.name, CrmOpportunity.expected_close, CrmAccount.name).join(CrmAccount, CrmAccount.id == CrmOpportunity.account_id)
              .filter(CrmOpportunity.outcome == "open", CrmOpportunity.archived_at.is_(None), CrmOpportunity.expected_close >= start, CrmOpportunity.expected_close <= end))
     if owner_id:
         opp_q = opp_q.filter(CrmOpportunity.owner_staff_id == owner_id)
     for oid, name, close, an in opp_q.order_by(CrmOpportunity.expected_close).limit(CAL_LIMIT).all():
-        items.append({"type": "close", "id": oid, "date": close.isoformat(), "time": None, "title": "Cierre esperado: " + name, "sub": an, "href": f"/crm/oportunidades/{oid}", "status": "open"})
+        items.append({"type": "close", "id": oid, "date": close.isoformat(), "time": None, "label": "Cierre esperado", "title": name, "sub": an, "href": f"/crm/oportunidades/{oid}", "status": "open"})
     quote_q = (db.query(CrmQuote.id, CrmQuote.number, CrmQuote.title, CrmQuote.valid_until, CrmAccount.name).join(CrmAccount, CrmAccount.id == CrmQuote.account_id)
                .filter(CrmQuote.stage.in_(OPEN_QUOTE_STAGES), CrmQuote.archived_at.is_(None), CrmQuote.valid_until >= start, CrmQuote.valid_until <= end))
     if owner_id:
         quote_q = quote_q.filter(CrmQuote.owner_staff_id == owner_id)
     for qid, number, title, valid, an in quote_q.order_by(CrmQuote.valid_until).limit(CAL_LIMIT).all():
-        items.append({"type": "quote", "id": qid, "date": valid.isoformat(), "time": None, "title": f"Vence la cotización N.º {number}: {title}", "sub": an, "href": f"/crm/cotizaciones/{qid}", "status": "open"})
+        items.append({"type": "quote", "id": qid, "date": valid.isoformat(), "time": None, "label": "Vence cotización", "title": f"N.º {number} · {title}", "sub": an, "href": f"/crm/cotizaciones/{qid}", "status": "open"})
     return {"items": items}

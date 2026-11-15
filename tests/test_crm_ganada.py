@@ -193,5 +193,6 @@ def test_calendar_lists_my_crm_items_by_day_and_only_mine(client, factory, crm_o
     db.commit()
     d = client.get(f"/api/crm/calendar?start={day.isoformat()}&end={day.isoformat()}").json()
     titles = [i["title"] for i in d["items"]]
-    assert any("Cierre esperado: Cierra pronto" in t for t in titles) and any("Llamar" in t for t in titles) and not any("Ajena" in t for t in titles)
+    assert "Cierra pronto" in titles and "Llamar" in titles and "Ajena" not in titles
+    assert {i["label"] for i in d["items"]} >= {"Cierre esperado", "Llamada"}
     assert all(i["href"].startswith("/crm/") for i in d["items"])
