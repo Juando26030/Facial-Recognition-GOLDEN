@@ -2,7 +2,7 @@
 from datetime import timedelta
 
 from app.models import CrmActivity, CrmOpportunity, Event, EventAttendee, Tenant
-from app.timeutil import utcnow
+from app.timeutil import to_local, utcnow
 from tests.crm_helpers import crm_on, new_account, staff_client  # noqa: F401
 
 
@@ -180,3 +180,18 @@ def test_c4_routes_are_off_with_the_crm_off_and_closed_to_the_coordinator(client
     for path in ("/api/crm/today", "/api/crm/dashboards"):
         assert client.get(path).status_code == 404
     assert client.post("/api/crm/opportunities/1/win").status_code == 404
+
+
+def test_calendar_lists_my_crm_items_by_day_and_only_mine(client, factory, crm_on, db):
+    staff_client(client, factory)
+    acc = new_account(client)
+    day = to_local(utcnow()).date()          # el calendario habla en fecha LOCAL (Bogotá)
+    _opp(client, acc["id"], "Cierra pronto", expected_close=day.isoformat())
+    _act(client, account_id=acc["id"], subject="Llamar", due_at=utcnow().isoformat())
+    other = factory.staff("comercial", "otra_cal")
+    db.add(CrmActivity(kind="task", subject="Ajena", status="planned", due_at=utcnow(), account_id=acc["id"], owner_staff_id=other.id))
+    db.commit()
+    d = client.get(f"/api/crm/calendar?start={day.isoformat()}&end={day.isoformat()}").json()
+    titles = [i["title"] for i in d["items"]]
+    assert any("Cierre esperado: Cierra pronto" in t for t in titles) and any("Llamar" in t for t in titles) and not any("Ajena" in t for t in titles)
+    assert all(i["href"].startswith("/crm/") for i in d["items"])

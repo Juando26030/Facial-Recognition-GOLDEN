@@ -41,3 +41,14 @@ def test_todo_el_crm_es_plegable_y_busca_al_escribir():
 def test_plantilla_del_pdf_muestra_cual_es_la_predeterminada():
     js = read("static/js/crm_cotizacion.js")
     assert "Usar la predeterminada (" in js and "Administrar plantillas" in js
+
+
+def test_calendario_tiene_boton_grande_eventos_crm_solo_con_lo_de_cada_comercial():
+    html = read("templates/calendario.html")
+    assert 'id="calMode"' in html and 'data-mode="crm"' in html and "{% if crm_calendar %}" in html
+    assert "/api/crm/calendar" in html and "function setCalMode" in html and "modo=crm" in html
+    main = read("app/main.py")
+    assert '"crm_calendar": crm_enabled() and bool({"comercial", "admin", "super_admin"} & roles)' in main
+    router = read("app/routers/crm_today.py")
+    assert '@router.get("/calendar")' in router and "owner = staff.id" in router          # el comercial solo ve lo suyo
+    assert ".cal-mode" in read("static/css/gw-eventos.css")

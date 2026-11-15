@@ -3,6 +3,7 @@
 * Con `CRM_ENABLED` apagado TODA ruta responde 404. Ver: comercial, admin y super_admin. El comercial solo ve lo suyo; el admin ve todo el equipo y puede filtrar por responsable.
 * Endpoints `def`; solo lectura salvo `win`; sin sondeos: una carga por pantalla.
 """
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -21,6 +22,16 @@ router.dependencies.append(Depends(crm_router._check_path_ids))
 @router.get("/today")
 def my_day(db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     return today_svc.my_day(db, staff.id)
+
+
+@router.get("/calendar")
+def calendar(start: date, end: date, owner_id: Optional[int] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    """Lo del CRM para el Calendario: actividades, cierres esperados y cotizaciones por vencer. El comercial solo ve lo suyo; el admin ve todo el equipo o filtra por responsable."""
+    if staff.role in ("admin", "super_admin"):
+        owner = owner_id if owner_id and 0 < owner_id <= crm_router.svc.MAX_ID else None
+    else:
+        owner = staff.id
+    return today_svc.calendar_range(db, owner_id=owner, start=start, end=end)
 
 
 @router.get("/dashboards")

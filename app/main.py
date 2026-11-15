@@ -710,11 +710,15 @@ def calendario_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
     if redirect:
         return redirect
+    from app.crm import crm_enabled
+    roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
     return templates.TemplateResponse(request=request, name="calendario.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "calendario",
+        "crm_calendar": crm_enabled() and bool({"comercial", "admin", "super_admin"} & roles),          # el botón grande «Eventos / CRM» del calendario
+        "crm_calendar_admin": bool({"admin", "super_admin"} & roles),                                   # el admin ve a todo el equipo y elige comercial
     })
 
 
