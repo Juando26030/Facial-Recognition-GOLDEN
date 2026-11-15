@@ -3,7 +3,8 @@
 .crm-cats .gw-chip[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: transparent; }
 .crm-day-group { border-top: 1px solid var(--gw-border); padding-top: var(--gw-sp-2); }
 .crm-day-group__sum { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); cursor: pointer; min-height: var(--gw-tap); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
-.crm-day-group__name { text-transform: capitalize; }
+.crm-day-group__name { display: inline-block; }
+.crm-day-group__name::first-letter { text-transform: uppercase; }
 .crm-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); }
 .crm-day-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-3); }
 .crm-day-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding-bottom: var(--gw-sp-3); border-bottom: 1px solid var(--gw-border); }

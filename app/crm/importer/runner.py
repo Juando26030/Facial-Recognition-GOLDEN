@@ -2,6 +2,7 @@
 Un SAVEPOINT por fila: una fila mala se rechaza con un motivo SIN valores de datos y el resto sigue. Idempotente: lo ya importado (legacy_sugar_id) se salta."""
 import hashlib
 import json
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -11,7 +12,7 @@ from app.crm import accounts as acc_svc, normalize
 from app.crm.codes import bump_floor
 from app.crm.errors import CrmError
 from app.crm.importer import formats, more, parsing, scoring
-from app.models import CrmAccount, CrmContact, CrmImportPair, CrmImportRun, Tenant
+from app.models import CrmAccount, CrmContact, CrmImportPair, CrmImportRun, StaffUser, Tenant
 from app.storage import get_storage
 from app.timeutil import utcnow
 
@@ -179,6 +180,16 @@ def apply_pairs(db: Session, run_id: int) -> dict:
     return {"applied": done, "skipped": skipped}
 
 
+def owner_for_import(db: Session, fallback_id: int) -> int:
+    """Responsable de lo importado: el usuario de CRM_IMPORT_OWNER_USERNAME si existe (p. ej. la comercial); si no, quien lanzó la carga."""
+    name = (os.environ.get("CRM_IMPORT_OWNER_USERNAME") or "").strip()
+    if name:
+        found = db.query(StaffUser.id).filter(StaffUser.username == name).first()
+        if found:
+            return found[0]
+    return fallback_id
+
+
 def run(db: Session, run_id: int) -> None:
     """Ejecuta una corrida completa. Los archivos se borran SIEMPRE al terminar."""
     row = db.get(CrmImportRun, run_id)
@@ -186,18 +197,19 @@ def run(db: Session, run_id: int) -> None:
         return
     row.status, row.started_at = "running", row.started_at or utcnow()
     db.commit()
+    owner_id = owner_for_import(db, row.started_by_id)
     st = get_storage()
     try:
         summary, suite, grouped = {}, [], None
         files = {k: st.get(prefix(run_id) + k + ".csv") for k in FILE_KINDS if st.exists(prefix(run_id) + k + ".csv")}
         save = row.mode == "apply"
         if "accounts" in files:
-            res = import_accounts(db, row.started_by_id, files["accounts"], row.mode)
+            res = import_accounts(db, owner_id, files["accounts"], row.mode)
             suite = res["names"]
             summary["accounts"] = {"counts": res["counts"], "rejected": res["rejected"]}
         if "contacts" in files:
             virtual = {normalize(n)[:200] for _l, n, _c in suite}
-            res = import_contacts(db, row.started_by_id, files["contacts"], row.mode, virtual)
+            res = import_contacts(db, owner_id, files["contacts"], row.mode, virtual)
             summary["contacts"] = {"counts": res["counts"], "rejected": res["rejected"]}
         later = [k for k in ("products", "opportunities", "activities", "quotes", "proformas") if k in files]
         if later or "quote_lines" in files:
@@ -211,15 +223,15 @@ def run(db: Session, run_id: int) -> None:
                 grouped = more.group_lines(files.get("quote_lines"))
             for kind in later:
                 if kind == "products":
-                    res = more.import_products(ctx, row.started_by_id, files[kind], row.mode)
+                    res = more.import_products(ctx, owner_id, files[kind], row.mode)
                 elif kind == "opportunities":
-                    res = more.import_opportunities(ctx, row.started_by_id, files[kind], row.mode)
+                    res = more.import_opportunities(ctx, owner_id, files[kind], row.mode)
                 elif kind == "activities":
-                    res = more.import_activities(ctx, row.started_by_id, files[kind], row.mode)
+                    res = more.import_activities(ctx, owner_id, files[kind], row.mode)
                 elif kind == "quotes":
-                    res = more.import_quotes(ctx, row.started_by_id, files[kind], row.mode, grouped or {})
+                    res = more.import_quotes(ctx, owner_id, files[kind], row.mode, grouped or {})
                 else:
-                    res = more.import_proformas(ctx, row.started_by_id, files[kind], row.mode)
+                    res = more.import_proformas(ctx, owner_id, files[kind], row.mode)
                 summary[kind] = {"counts": res["counts"], "rejected": res["rejected"]}
                 if save:
                     db.commit()
