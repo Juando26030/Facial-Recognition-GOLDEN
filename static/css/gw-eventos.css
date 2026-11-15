@@ -176,11 +176,12 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
 
 /* ---------- Calendario: botón grande «Eventos / CRM» y elementos del CRM ---------- */
 .cal-mode { display: flex; gap: var(--gw-sp-2); }
+.cal-mode__hint { margin: var(--gw-sp-2) 0 var(--gw-sp-4); }          /* el texto de «qué estoy viendo» deja el mismo aire en Eventos y en CRM */
 .cal-mode .gw-btn { flex: 1 1 0; min-height: 3.5rem; font-size: var(--gw-fs-lg); }
 .cal-mode .gw-btn[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: transparent; }
 .cal-types { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
 .cal-types .gw-chip[aria-pressed="true"] { background: var(--gw-gold-grad); color: var(--gw-on-gold); border-color: transparent; }
-.cal-crm { display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); border-left: 4px solid var(--gw-border-strong); background: var(--gw-surface-2); color: var(--gw-text); text-decoration: none; font-size: var(--gw-fs-sm); }
+.cal-crm { width: 100%; text-align: left; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: var(--gw-sp-1); min-width: 0; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); border-left: 4px solid var(--gw-border-strong); background: var(--gw-surface-2); color: var(--gw-text); text-decoration: none; font-size: var(--gw-fs-sm); }
 .cal-crm:hover { box-shadow: var(--gw-shadow-sm); }
 .cal-crm__tag { font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); }
 .cal-crm__title { overflow-wrap: anywhere; }

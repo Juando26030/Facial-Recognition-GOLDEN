@@ -52,3 +52,13 @@ def test_calendario_tiene_boton_grande_eventos_crm_solo_con_lo_de_cada_comercial
     router = read("app/routers/crm_today.py")
     assert '@router.get("/calendar")' in router and "owner = staff.id" in router          # el comercial solo ve lo suyo
     assert ".cal-mode" in read("static/css/gw-eventos.css")
+
+
+def test_staff_tiene_buscador_y_el_calendario_deja_elegir_entre_tarea_y_cuenta():
+    assert 'id="staffSearch"' in read("templates/staff.html") and "searchTerm" in read("static/js/gw-staff.js")
+    html = read("templates/calendario.html")
+    assert "function openCrmItem" in html and "Ir a la cuenta" in html and "Abrir y editar la tarea" in html and "data-crm-new" in html
+    assert 'id="calModeHint"' in html and "MODE_HINT" in html          # el texto de «qué estoy viendo» está en Eventos Y en CRM
+    assert '@router.get("/activities/{activity_id}")' in read("app/routers/crm_pipeline.py")
+    midia = read("static/js/crm_midia.js")
+    assert "function categoryBar" in midia and "crm-day-group" in midia and "byMonth" in midia

@@ -44,12 +44,12 @@ def _act(a: CrmActivity, account_name, opp_name) -> dict:
 def my_day(db: Session, staff_id: int, now=None) -> dict:
     now = now or utcnow()
     start, end, today = day_bounds(now)
-    rows = (db.query(CrmActivity, CrmAccount.name, CrmOpportunity.name).join(CrmAccount, CrmAccount.id == CrmActivity.account_id, isouter=True)
-            .join(CrmOpportunity, CrmOpportunity.id == CrmActivity.opportunity_id, isouter=True)
-            .filter(CrmActivity.owner_staff_id == staff_id, CrmActivity.status == "planned", CrmActivity.due_at.isnot(None), CrmActivity.due_at < end)
-            .order_by(CrmActivity.due_at).limit(2 * LIST_LIMIT + 1).all())
-    overdue = [_act(a, an, on) for a, an, on in rows if a.due_at < start][:LIST_LIMIT]
-    due_today = [_act(a, an, on) for a, an, on in rows if a.due_at >= start][:LIST_LIMIT]
+    base_act = (db.query(CrmActivity, CrmAccount.name, CrmOpportunity.name).join(CrmAccount, CrmAccount.id == CrmActivity.account_id, isouter=True)
+                .join(CrmOpportunity, CrmOpportunity.id == CrmActivity.opportunity_id, isouter=True)
+                .filter(CrmActivity.owner_staff_id == staff_id, CrmActivity.status == "planned", CrmActivity.due_at.isnot(None)))
+    overdue_total = db.query(func.count(CrmActivity.id)).filter(CrmActivity.owner_staff_id == staff_id, CrmActivity.status == "planned", CrmActivity.due_at.isnot(None), CrmActivity.due_at < start).scalar() or 0
+    overdue = [_act(a, an, on) for a, an, on in base_act.filter(CrmActivity.due_at < start).order_by(CrmActivity.due_at.desc()).limit(LIST_LIMIT).all()]          # las MÁS RECIENTES primero
+    due_today = [_act(a, an, on) for a, an, on in base_act.filter(CrmActivity.due_at >= start, CrmActivity.due_at < end).order_by(CrmActivity.due_at).limit(LIST_LIMIT).all()]
     remind = (db.query(CrmActivity, CrmAccount.name, CrmOpportunity.name).join(CrmAccount, CrmAccount.id == CrmActivity.account_id, isouter=True)
               .join(CrmOpportunity, CrmOpportunity.id == CrmActivity.opportunity_id, isouter=True)
               .filter(CrmActivity.owner_staff_id == staff_id, CrmActivity.status == "planned", CrmActivity.remind_at.isnot(None), CrmActivity.remind_at <= now, CrmActivity.due_at >= end)
@@ -67,7 +67,7 @@ def my_day(db: Session, staff_id: int, now=None) -> dict:
               for q, an in (db.query(CrmQuote, CrmAccount.name).join(CrmAccount, CrmAccount.id == CrmQuote.account_id)
                             .filter(CrmQuote.owner_staff_id == staff_id, CrmQuote.stage.in_(OPEN_QUOTE_STAGES), CrmQuote.archived_at.is_(None), CrmQuote.valid_until.isnot(None),
                                     CrmQuote.valid_until <= today + timedelta(days=QUOTE_SOON_DAYS)).order_by(CrmQuote.valid_until).limit(LIST_LIMIT).all())]
-    return {"today": today.isoformat(), "overdue": overdue, "due_today": due_today, "reminders": [_act(a, an, on) for a, an, on in remind],
+    return {"today": today.isoformat(), "overdue": overdue, "overdue_total": overdue_total, "due_today": due_today, "reminders": [_act(a, an, on) for a, an, on in remind],
             "no_next_activity": no_next[:LIST_LIMIT], "no_next_activity_more": len(no_next) > LIST_LIMIT, "closing_soon": closing, "quotes_expiring": quotes,
             "close_soon_days": CLOSE_SOON_DAYS, "quote_soon_days": QUOTE_SOON_DAYS}
 
@@ -162,17 +162,17 @@ def calendar_range(db: Session, *, owner_id: Optional[int], start: date, end: da
         local = to_local(a.due_at)
         href = f"/crm/oportunidades/{a.opportunity_id}" if a.opportunity_id else (f"/crm/cuentas/{a.account_id}" if a.account_id else "/crm/leads")
         items.append({"type": "activity", "id": a.id, "date": local.date().isoformat(), "time": local.strftime("%H:%M"), "label": ACTIVITY_KINDS.get(a.kind, a.kind), "title": a.subject,
-                      "sub": on or an or "", "href": href, "status": a.status})
-    opp_q = (db.query(CrmOpportunity.id, CrmOpportunity.name, CrmOpportunity.expected_close, CrmAccount.name).join(CrmAccount, CrmAccount.id == CrmOpportunity.account_id)
+                      "sub": on or an or "", "href": href, "status": a.status, "account_id": a.account_id, "opportunity_id": a.opportunity_id})
+    opp_q = (db.query(CrmOpportunity.id, CrmOpportunity.name, CrmOpportunity.expected_close, CrmAccount.name, CrmOpportunity.account_id).join(CrmAccount, CrmAccount.id == CrmOpportunity.account_id)
              .filter(CrmOpportunity.outcome == "open", CrmOpportunity.archived_at.is_(None), CrmOpportunity.expected_close >= start, CrmOpportunity.expected_close <= end))
     if owner_id:
         opp_q = opp_q.filter(CrmOpportunity.owner_staff_id == owner_id)
-    for oid, name, close, an in opp_q.order_by(CrmOpportunity.expected_close).limit(CAL_LIMIT).all():
-        items.append({"type": "close", "id": oid, "date": close.isoformat(), "time": None, "label": "Cierre esperado", "title": name, "sub": an, "href": f"/crm/oportunidades/{oid}", "status": "open"})
-    quote_q = (db.query(CrmQuote.id, CrmQuote.number, CrmQuote.title, CrmQuote.valid_until, CrmAccount.name).join(CrmAccount, CrmAccount.id == CrmQuote.account_id)
+    for oid, name, close, an, acc_id in opp_q.order_by(CrmOpportunity.expected_close).limit(CAL_LIMIT).all():
+        items.append({"type": "close", "id": oid, "date": close.isoformat(), "time": None, "label": "Cierre esperado", "title": name, "sub": an, "href": f"/crm/oportunidades/{oid}", "status": "open", "account_id": acc_id, "opportunity_id": oid})
+    quote_q = (db.query(CrmQuote.id, CrmQuote.number, CrmQuote.title, CrmQuote.valid_until, CrmAccount.name, CrmQuote.account_id).join(CrmAccount, CrmAccount.id == CrmQuote.account_id)
                .filter(CrmQuote.stage.in_(OPEN_QUOTE_STAGES), CrmQuote.archived_at.is_(None), CrmQuote.valid_until >= start, CrmQuote.valid_until <= end))
     if owner_id:
         quote_q = quote_q.filter(CrmQuote.owner_staff_id == owner_id)
-    for qid, number, title, valid, an in quote_q.order_by(CrmQuote.valid_until).limit(CAL_LIMIT).all():
-        items.append({"type": "quote", "id": qid, "date": valid.isoformat(), "time": None, "label": "Vence cotización", "title": f"N.º {number} · {title}", "sub": an, "href": f"/crm/cotizaciones/{qid}", "status": "open"})
+    for qid, number, title, valid, an, acc_id in quote_q.order_by(CrmQuote.valid_until).limit(CAL_LIMIT).all():
+        items.append({"type": "quote", "id": qid, "date": valid.isoformat(), "time": None, "label": "Vence cotización", "title": f"N.º {number} · {title}", "sub": an, "href": f"/crm/cotizaciones/{qid}", "status": "open", "account_id": acc_id, "opportunity_id": None})
     return {"items": items}

@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-calendario.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-calendar-cats.css') }}">
+    {% if crm_calendar %}<link rel="stylesheet" href="{{ url_for('static', path='css/p-crm.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm-c2.css') }}">{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
@@ -68,7 +70,7 @@
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="events" aria-pressed="true">{{ ic('calendar') }} Eventos</button>
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="crm" aria-pressed="false">{{ ic('users') }} CRM</button>
     </div>
-    <p class="gw-hint" id="calModeHint" hidden>{% if crm_calendar_admin %}Tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Eliges de qué comercial.{% else %}Tus tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Solo ves lo tuyo.{% endif %}</p>
+    <p class="gw-hint cal-mode__hint" id="calModeHint" role="status">Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.</p>
     {% endif %}
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
@@ -105,6 +107,7 @@
           <button type="button" class="gw-chip" data-crm-type="close" aria-pressed="true">Cierres de oportunidades</button>
           <button type="button" class="gw-chip" data-crm-type="quote" aria-pressed="true">Cotizaciones por vencer</button>
         </div></div>
+      <div class="gw-field"><span class="gw-label">Crear</span><button type="button" class="gw-btn gw-btn--primary" id="crmNewTask">{{ ic('plus', 'gw-icon--sm') }} Nueva tarea</button></div>
       {% if crm_calendar_admin %}<div class="gw-field"><label class="gw-label" for="crmOwner">Comercial</label>
         <select id="crmOwner" class="gw-select"><option value="">Todo el equipo</option></select></div>{% endif %}
     </div>
@@ -163,10 +166,16 @@
   </div>
 </div>
 
+{% if crm_calendar %}<script src="{{ url_for('static', path='js/crm_common.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_live.js') }}"></script>{% endif %}
 <script>
 const STAFF_ROLE = {{ staff_role|tojson }};
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
-const CRM_CAL = {{ 'true' if crm_calendar else 'false' }};          // el botón grande Eventos / CRM (comercial, admin y super_admin, con el CRM encendido)
+const CRM_CAL = {{ 'true' if crm_calendar else 'false' }};
+const CRM_ADMIN = {{ 'true' if crm_calendar_admin else 'false' }};
+const MODE_HINT = { events: 'Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.',
+  crm: CRM_ADMIN ? 'CRM: tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Eliges de qué comercial. Toca un elemento para abrirlo o ir a su cuenta.'
+                 : 'CRM: tus tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Solo ves lo tuyo. Toca un elemento para abrirlo o ir a su cuenta.' };          // el botón grande Eventos / CRM (comercial, admin y super_admin, con el CRM encendido)
 const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
 const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
 
@@ -340,16 +349,33 @@ function crmForDay(iso) { return crmCache.filter((i) => i.date === iso && crmTyp
 function crmChip(i) {
   const label = i.label || '';
   const sub = i.sub && !i.title.includes(i.sub) ? i.sub : '';          // si la cuenta ya sale en el título no se repite
-  return `<a class="cal-crm cal-crm--${i.type}${i.status === 'done' ? ' cal-crm--done' : ''}" href="${esc(i.href)}" title="${esc(i.title + (i.sub ? ' — ' + i.sub : ''))}">
+  return `<button type="button" class="cal-crm cal-crm--${i.type}${i.status === 'done' ? ' cal-crm--done' : ''}" data-crm-key="${esc(i.type + ':' + i.id)}" aria-haspopup="dialog" title="${esc(i.title + (i.sub ? ' — ' + i.sub : ''))}">
       <span class="cal-crm__tag">${esc(label)}${i.time ? ' · ' + esc(i.time) : ''}${i.status === 'done' ? ' · hecha' : ''}</span>
-      <span class="cal-crm__title">${esc(i.title)}</span>${sub ? `<span class="cal-crm__sub">${esc(sub)}</span>` : ''}</a>`;
+      <span class="cal-crm__title">${esc(i.title)}</span>${sub ? `<span class="cal-crm__sub">${esc(sub)}</span>` : ''}</button>`;
+}
+// Al tocar un elemento del CRM: elegir entre abrir ESO (tarea, oportunidad, cotización) o ir a la cuenta.
+function openCrmItem(key) {
+  const i = crmCache.find((x) => (x.type + ':' + x.id) === key); if (!i) return;
+  const X = window.CRMX, body = document.createElement('div'); body.className = 'gw-stack';
+  const p = document.createElement('p'); p.className = 'gw-modal__text'; p.textContent = [i.label, i.time ? i.time : '', i.sub].filter(Boolean).join(' · '); body.appendChild(p);
+  const link = (label, href) => { const a = document.createElement('a'); a.className = 'gw-btn gw-btn--secondary gw-btn--xl'; a.href = href; a.textContent = label; body.appendChild(a); return a; };
+  const act = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-btn ' + cls + ' gw-btn--xl'; b.textContent = label; b.addEventListener('click', fn); body.appendChild(b); return b; };
+  const d = X.dialog({ title: i.title, bodyHtml: '', onEscape: () => d.close(), buttons: [{ id: 'cmClose', cls: 'gw-btn--secondary', label: 'Cerrar' }] });
+  d.dlg.querySelector('.gw-modal__body').replaceChildren(body); d.dlg.querySelector('#cmClose').addEventListener('click', () => d.close());
+  if (i.type === 'activity') {
+    act('Abrir y editar la tarea', 'gw-btn--primary', async () => { try { const a = await X.api('GET', '/api/crm/activities/' + i.id); d.close(); X.activityForm({}, a, loadAndRender); } catch (e) { showToast(e.message, 'error'); } });
+    if (i.status !== 'done') act('Marcar como hecha', 'gw-btn--secondary', async () => { try { const a = await X.api('GET', '/api/crm/activities/' + i.id); d.close(); X.completeForm(a, loadAndRender); } catch (e) { showToast(e.message, 'error'); } });
+    if (i.opportunity_id) link('Ir a la oportunidad', '/crm/oportunidades/' + i.opportunity_id);
+  } else if (i.type === 'close') link('Abrir la oportunidad', i.href); else link('Abrir la cotización', i.href);
+  if (i.account_id) link('Ir a la cuenta', '/crm/cuentas/' + i.account_id);
 }
 function setCalMode(m) {
   calMode = (CRM_CAL && m === 'crm') ? 'crm' : 'events';
   const crm = calMode === 'crm';
   document.querySelectorAll('#calMode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === calMode ? 'true' : 'false'));
   const set = (id, hide) => { const n = document.getElementById(id); if (n) n.hidden = hide; };
-  set('evFilters', crm); set('crmFilters', !crm); set('calModeHint', !crm); set('catBar', true);
+  set('evFilters', crm); set('crmFilters', !crm); set('catBar', true);
+  const mh = document.getElementById('calModeHint'); if (mh) mh.textContent = MODE_HINT[calMode];
   foldBtn.hidden = crm; document.getElementById('addNoteTodayBtn').hidden = crm;
   if (!crm) renderCatChips();
   calBody.innerHTML = '';
@@ -362,6 +388,7 @@ function setCalMode(m) {
     const t = b.dataset.crmType; if (crmTypes.has(t)) crmTypes.delete(t); else crmTypes.add(t);
     b.setAttribute('aria-pressed', crmTypes.has(t) ? 'true' : 'false'); render();
   }));
+  const nt = document.getElementById('crmNewTask'); if (nt) nt.addEventListener('click', () => window.CRMX.activityForm({ pick: true, due: toISO(refDate) }, null, loadAndRender));
   if (crmOwner) {
     fetch('/api/staff/commercials').then((r) => (r.ok ? r.json() : [])).then((list) => { crmOwner.innerHTML = '<option value="">Todo el equipo</option>' + list.map((c) => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join(''); }).catch(() => {});
     crmOwner.addEventListener('change', loadAndRender);
@@ -430,7 +457,8 @@ function dayCellContent(d, iso, extraClass) {
     const its = crmForDay(iso), month = !extraClass.includes('cal-cell--week'), shown = month ? its.slice(0, 3) : its;          // en el mes caben 3; el resto se ve en «Día»
     return `<div class="cal-cell ${extraClass}${its.length ? '' : ' cal-cell--empty'}" data-date="${iso}">
       <div class="cal-daynum"><span class="cal-dow">${DAY_LABELS[(d.getDay() + 6) % 7]}</span> ${d.getDate()}</div>
-      <div class="cal-cell__body">${shown.map(crmChip).join('')}${its.length > shown.length ? `<button type="button" class="cal-add" data-crm-day="${iso}">+ ${its.length - shown.length} más: ver el día</button>` : ''}</div></div>`;
+      <div class="cal-cell__body">${shown.map(crmChip).join('')}${its.length > shown.length ? `<button type="button" class="cal-add" data-crm-day="${iso}">+ ${its.length - shown.length} más: ver el día</button>` : ''}</div>
+      <button type="button" class="cal-add" data-crm-new="${iso}">+ tarea</button></div>`;
   }
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
@@ -467,7 +495,7 @@ function renderMonth() {
   }
   html += '</div>';
   calBody.innerHTML = html;
-  if (calMode === 'crm') { if (!crmCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay tareas, cierres ni cotizaciones por vencer en este mes. Crea una tarea desde CRM → Mi día.</p>'); }
+  if (calMode === 'crm') { if (!crmCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay tareas, cierres ni cotizaciones por vencer en este mes. Usa «+ tarea» en cualquier día para crear una.</p>'); }
   else if (!eventsCache.length && !notesCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay eventos ni recordatorios en este mes. Usa «Agregar recordatorio» o crea un evento desde Clientes - Cuentas.</p>');
 }
 
@@ -495,7 +523,8 @@ function renderDay() {
   if (calMode === 'crm') {
     const its = crmForDay(iso);
     calBody.innerHTML = `<div class="cal-day"><h3 class="cal-day__title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</h3>` +
-      (its.length ? its.map(crmChip).join('') : `<div class="gw-empty" role="status">${icon('calendar', 'gw-icon--lg')}<p><strong>Nada del CRM para este día.</strong></p><p>Crea una tarea desde CRM → Mi día.</p></div>`) + '</div>';
+      (its.length ? its.map(crmChip).join('') : `<div class="gw-empty" role="status">${icon('calendar', 'gw-icon--lg')}<p><strong>Nada del CRM para este día.</strong></p><p>Puedes crear una tarea para esta fecha.</p></div>`) +
+      `<div><button type="button" class="gw-btn gw-btn--secondary" data-crm-new="${iso}">${icon('plus', 'gw-icon--sm')} Nueva tarea para este día</button></div></div>`;
     return;
   }
   const evs = eventsForDay(iso);
@@ -516,6 +545,10 @@ calBody.addEventListener('click', async (ev) => {
   if (ev.target.closest('[data-retry-cal]')) { loadAndRender(); return; }
   const evBtn = ev.target.closest('[data-event-id]');
   if (evBtn) { openEventActions(evBtn); return; }
+  const crmBtn = ev.target.closest('[data-crm-key]');
+  if (crmBtn) { openCrmItem(crmBtn.dataset.crmKey); return; }
+  const newBtn = ev.target.closest('[data-crm-new]');
+  if (newBtn) { window.CRMX.activityForm({ pick: true, due: newBtn.dataset.crmNew }, null, loadAndRender); return; }
   const moreBtn = ev.target.closest('[data-crm-day]');
   if (moreBtn) { refDate = fromISO(moreBtn.dataset.crmDay); currentView = 'day'; updateViewButtons(); loadAndRender(); return; }
   const addBtn = ev.target.closest('[data-add-note]');

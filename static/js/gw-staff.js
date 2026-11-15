@@ -68,7 +68,19 @@
     return parts.join('');
   }
 
-  function render(list) {
+  /* Buscador: se filtra mientras se escribe (sin tildes ni mayúsculas) por usuario, nombre, correo y rol. */
+  const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const searchEl = document.getElementById('staffSearch');
+  let searchTerm = '';
+  const matches = (s) => !searchTerm || norm([s.username, s.full_name, s.email, [s.role].concat(s.extra_roles || []).map(roleLabel).join(' ')].join(' ')).includes(searchTerm);
+  if (searchEl) searchEl.addEventListener('input', () => { searchTerm = norm(searchEl.value.trim()); render(staffList); });
+
+  function render(all) {
+    const list = all.filter(matches);
+    if (all.length && !list.length) {
+      listEl.innerHTML = '<div class="gw-empty" role="status"><p><strong>Ninguna cuenta coincide con «' + esc(searchEl ? searchEl.value.trim() : '') + '»</strong></p><p>Prueba con otra parte del nombre, el usuario o el correo.</p></div>';
+      return;
+    }
     if (!list.length) {
       listEl.innerHTML = showArchived
         ? '<div class="gw-empty" role="status"><p><strong>No hay cuentas archivadas</strong></p><p>Cuando archives una, aparecerá aquí para poder restaurarla.</p></div>'

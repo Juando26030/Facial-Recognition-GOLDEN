@@ -102,6 +102,8 @@
       </div>
     </details>
 
+    <div class="gw-field gw-staff__search"><label class="gw-label" for="staffSearch">Buscar una cuenta</label>
+      <input class="gw-input" type="search" id="staffSearch" maxlength="100" placeholder="Escribe el usuario, el nombre, el correo o el rol…" autocomplete="off" aria-controls="staffBody"></div>
     {% if staff_role in ("admin", "super_admin") %}
     <label class="gw-check"><input type="checkbox" id="showArchivedStaff"> Ver archivados</label>
     {% endif %}

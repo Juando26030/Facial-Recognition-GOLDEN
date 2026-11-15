@@ -95,6 +95,7 @@
       buttons: [{ id: "actCancel", cls: "gw-btn--secondary", label: "Cancelar" }, { id: "actSave", cls: "gw-btn--primary", label: existing ? "Guardar" : (pick ? "Crear tarea" : "Programar") }] });
     d.dlg.querySelector(".gw-modal__body").replaceChildren(body);
     d.dlg.querySelector("#actCancel").addEventListener("click", () => d.close());
+    if (pick && link.due) when.value = link.due + "T09:00";          // «+ tarea» desde un día del calendario: ya trae la fecha
     (pick ? accPick : subject).focus();
     const save = () => busy(d.dlg.querySelector("#actSave"), async () => {
       err.clear();
@@ -177,5 +178,5 @@
   }
 
 
-  window.CRMX = { $, el, icon, api, qs, plural, fmtDateTime, fmtDay, fmtMoney, localToIso, stateBlock, dialog, field, input, select, errorBox, menu, closeMenus, menuClick, meta, owners, busy, activityList, activityForm };
+  window.CRMX = { $, el, icon, api, qs, plural, fmtDateTime, fmtDay, fmtMoney, localToIso, stateBlock, dialog, field, input, select, errorBox, menu, closeMenus, menuClick, meta, owners, busy, activityList, activityForm, completeForm };
 })();

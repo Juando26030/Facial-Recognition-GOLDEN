@@ -124,7 +124,7 @@ def test_my_day_groups_overdue_today_reminders_and_only_my_own(client, factory, 
     d = r.json()
     assert [a["subject"] for a in d["overdue"]] == ["Vencida"] and [a["subject"] for a in d["reminders"]] == ["Mañana con aviso"]
     assert "Hoy" in [a["subject"] for a in d["due_today"]] and "Ajena" not in [a["subject"] for a in d["overdue"] + d["due_today"]]
-    assert d["overdue"][0]["account_name"] == acc["name"]
+    assert d["overdue"][0]["account_name"] == acc["name"] and d["overdue_total"] == 1
     assert o["id"] in [x["id"] for x in d["no_next_activity"]]
     assert me.id and d["quote_soon_days"] == 7
 

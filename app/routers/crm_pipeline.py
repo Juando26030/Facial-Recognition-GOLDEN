@@ -381,6 +381,11 @@ def list_activities(account_id: Optional[int] = None, contact_id: Optional[int] 
     return _run(db, lambda: act_svc.list_for(db, account_id=account_id, contact_id=contact_id, lead_id=lead_id, opportunity_id=opportunity_id, status=status, page=page))
 
 
+@router.get("/activities/{activity_id}")
+def get_activity(activity_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    return _run(db, lambda: act_svc.serialize(act_svc.get_activity(db, activity_id)))
+
+
 @router.post("/activities")
 def create_activity(data: ActivityIn, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     return _run(db, lambda: act_svc.serialize(act_svc.create_activity(db, staff, _fields(data, ("updated_at",)))))
