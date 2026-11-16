@@ -124,3 +124,28 @@ def test_template_signature_changes_with_the_design_and_the_photos():
     assert quote_pdf.template_sig(a) != quote_pdf.template_sig(b) and quote_pdf.template_sig(a) == quote_pdf.template_sig(dict(a))
     assert quote_pdf.template_sig(a, "foto1") != quote_pdf.template_sig(a, "foto2") and quote_pdf.template_sig(None) == ""
     assert quote_pdf.quote_key(type("Q", (), {"id": 3, "number": 5, "version": 1})()).endswith(f"-d{quote_pdf.LAYOUT}.pdf")
+
+
+def test_copy_layout_duplicates_files_into_the_new_templates_folder(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    pytest.importorskip("sqlalchemy")
+    from app.crm import doc_assets
+
+    class Mem:
+        def __init__(self):
+            self.d = {}
+        def put(self, k, b): self.d[k] = b
+        def get(self, k): return self.d[k]
+        def exists(self, k): return k in self.d
+    mem = Mem()
+    monkeypatch.setattr(doc_assets, "get_storage", lambda: mem)
+    mem.d["crm/doc_assets/5/a.png"] = b"PNG"
+    lay = ql.starter("blank")
+    lay["blocks"] = [{"id": "b1", "type": "logo", "asset": "crm/doc_assets/5/a.png", "width": 100, "align": "left"}, {"id": "b2", "type": "logo", "asset": "crm/doc_assets/5/falta.png", "width": 100, "align": "left"}, {"id": "b3", "type": "spacer", "height": 8}]
+    src = SimpleNamespace(id=5, layout_json=json.dumps(lay))
+    out = doc_assets.copy_layout(src, SimpleNamespace(id=9))
+    a1 = out["blocks"][0]["asset"]
+    assert a1.startswith("crm/doc_assets/9/") and a1 != "crm/doc_assets/5/a.png" and mem.d[a1] == b"PNG" and mem.d["crm/doc_assets/5/a.png"] == b"PNG"
+    assert [b["id"] for b in out["blocks"]] == ["b1", "b3"]
+    assert doc_assets.copy_layout(SimpleNamespace(id=5, layout_json=None), SimpleNamespace(id=9)) is None

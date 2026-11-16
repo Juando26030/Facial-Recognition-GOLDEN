@@ -12,7 +12,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.crm import history, normalize
+from app.crm import doc_assets, history, normalize
 from app.crm import quote_layout as ql
 from app.crm import quote_rules as qr
 from app.crm.accounts import MAX_ID, _check_owner, _check_version, get_account
@@ -148,6 +148,26 @@ def create_template(db: Session, data: dict) -> CrmDocTemplate:
     db.add(t)
     db.flush()
     return t
+
+
+def duplicate_template(db: Session, template_id: int) -> CrmDocTemplate:
+    """Copia una plantilla (textos y diseño con sus archivos) como una nueva, no predeterminada: «Nombre (copia)»."""
+    src = _get(db, CrmDocTemplate, template_id, "Plantilla")
+    t = CrmDocTemplate(kind=src.kind, name=f"{src.name} (copia)"[:80], header_text=src.header_text, greeting_text=src.greeting_text, footer_text=src.footer_text, logo_key=src.logo_key, is_default=False)
+    db.add(t)
+    db.flush()
+    lay = doc_assets.copy_layout(src, t)
+    t.layout_json = None if lay is None else json.dumps(lay, ensure_ascii=False, separators=(",", ":"))
+    return t
+
+
+def copy_template_layout(db: Session, template_id: int, from_id: int) -> Optional[dict]:
+    """Diseño de otra plantilla para empezar desde él (con los archivos copiados a ésta); no se guarda hasta que el administrador pulse «Guardar diseño»."""
+    dst = _get(db, CrmDocTemplate, template_id, "Plantilla")
+    src = _get(db, CrmDocTemplate, from_id, "Plantilla")
+    if src.kind != dst.kind:
+        raise CrmError("Solo se puede copiar el diseño de una plantilla del mismo tipo.")
+    return doc_assets.copy_layout(src, dst)
 
 
 def update_template(db: Session, template_id: int, data: dict) -> CrmDocTemplate:

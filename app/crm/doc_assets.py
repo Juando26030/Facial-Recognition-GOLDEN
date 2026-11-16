@@ -75,3 +75,28 @@ def images_signature(db: Session, product_ids: Iterable[Optional[int]]) -> str:
     keys = [k for (k,) in db.query(CrmProduct.image_key).filter(CrmProduct.id.in_(ids), CrmProduct.image_key.isnot(None)).order_by(CrmProduct.id).all()]
     import hashlib
     return hashlib.sha1("|".join(keys).encode()).hexdigest()[:6] if keys else ""
+
+
+def copy_layout(src: CrmDocTemplate, dst: CrmDocTemplate) -> Optional[dict]:
+    """Copia el diseño de `src` para `dst`: cada logo, imagen y PDF se duplica en la carpeta de `dst` (así borrar o cambiar uno no afecta al otro). Devuelve el diseño limpio SIN guardarlo
+    (quien llama lo guarda); None si `src` usa la plantilla sencilla. Un bloque cuyo archivo ya no existe no se copia."""
+    import json
+    if not src.layout_json:
+        return None
+    layout = json.loads(src.layout_json)
+    st = get_storage()
+    prefix = f"{ql.ASSET_PREFIX}{src.id}/"
+    keep = []
+    for b in layout.get("blocks", []):
+        key = b.get("asset")
+        if key is None or key == "" and b.get("type") not in ("logo", "image", "pdf"):
+            keep.append(b)
+            continue
+        if not key or not key.startswith(prefix) or not st.exists(key):
+            continue                                  # su archivo ya no existe: el bloque no se copia (no deja el diseño roto)
+        new_key = f"{ql.ASSET_PREFIX}{dst.id}/{uuid.uuid4().hex}.{key.rsplit('.', 1)[-1]}"
+        st.put(new_key, st.get(key))
+        b["asset"] = new_key
+        keep.append(b)
+    layout["blocks"] = keep
+    return ql.clean_layout(layout, dst.id)

@@ -76,6 +76,19 @@ def create_template(data: dict = Body(...), db: Session = Depends(get_db), staff
     return _run(db, lambda: svc.serialize_template(svc.create_template(db, data)))
 
 
+@router.post("/doc-templates/{template_id}/duplicate")
+def duplicate_template(template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    return _run(db, lambda: svc.serialize_template(svc.duplicate_template(db, template_id)))
+
+
+@router.post("/doc-templates/{template_id}/copy-layout")
+def copy_template_layout(template_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    fid = data.get("from_id")
+    if not isinstance(fid, int) or isinstance(fid, bool) or not 0 < fid <= svc.MAX_ID:
+        raise HTTPException(status_code=400, detail="Elige la plantilla de la que copiar el diseño.")
+    return _run(db, lambda: {"layout": svc.copy_template_layout(db, template_id, fid)})
+
+
 @router.put("/doc-templates/{template_id}")
 def update_template(template_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
     return _run(db, lambda: svc.serialize_template(svc.update_template(db, template_id, data)))

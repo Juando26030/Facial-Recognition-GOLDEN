@@ -228,6 +228,15 @@
   }));
   async function start(name) { try { const s = await api("GET", "/api/crm/doc-layout/starter" + qs({ name })); layout = s.layout; nextId = layout.blocks.length + 1; selected = null; show(); setDirty(true); preview(); } catch (x) { showToast(x.message, "error"); } }
   $("plStart").addEventListener("click", (e) => { const b = e.target.closest("[data-start]"); if (b) start(b.dataset.start); });
+  $("plCopy").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    const from = Number($("plCopyFrom").value); if (!from) return;
+    try { const r = await api("POST", BASE + "/copy-layout", { from_id: from }); layout = r.layout; nextId = layout.blocks.length + 1; selected = null; show(); setDirty(true); preview(); showToast("Diseño copiado. Revísalo y pulsa «Guardar diseño».", "success"); }
+    catch (x) { showToast(x.message, "error"); }
+  }));
+  function fillCopy(list) {
+    const s = $("plCopyFrom"); s.replaceChildren(); const others = (list || []).filter((t) => t.id !== TID && t.kind === "quote" && t.has_layout);
+    others.forEach((t) => { const o = el("option", null, t.name); o.value = String(t.id); s.appendChild(o); }); $("plCopyWrap").hidden = !others.length;
+  }
   $("plClassic").addEventListener("click", async () => {
     if (!(await showConfirm("Se reemplaza el diseño que ves por uno nuevo (no se guarda hasta que pulses «Guardar diseño»). ¿Empezar de nuevo?", { confirmLabel: "Sí, empezar de nuevo" }))) return;
     $("plStart").hidden = false; $("plEditor").hidden = true;
@@ -244,6 +253,7 @@
       const [list, starter] = await Promise.all([api("GET", "/api/crm/doc-templates"), api("GET", "/api/crm/doc-layout/starter")]);
       meta = starter; tpl = (list.items || []).find((t) => t.id === TID);
       if (!tpl || tpl.kind !== "quote") { state.replaceChildren(stateBlock("error", "Esta plantilla no se puede diseñar", "Solo las plantillas de cotización tienen diseñador.", null)); return; }
+      fillCopy(list.items);
       $("plTitle").textContent = "Diseñar la plantilla «" + tpl.name + "»";
       loadQuotes();
       if (tpl.layout) { layout = clone(tpl.layout); nextId = layout.blocks.length + 1; show(); preview(); } else { $("plStart").hidden = false; }

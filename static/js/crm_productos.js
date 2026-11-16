@@ -71,10 +71,11 @@
   $("prodNew").addEventListener("click", () => productDialog(null));
 
   /* ---------------------------------------------------------------- condiciones */
-  function simpleItem(title, sub, attr, id, archived, designHref) {
+  function simpleItem(title, sub, attr, id, archived, designHref, dupAttr) {
     const li = document.createElement("li"), t = el("div", "crm-name-wrap"); t.appendChild(el("span", "crm-name", title)); if (sub) t.appendChild(el("span", "crm-sub", sub)); li.appendChild(t);
     const a = el("div", "crm-card-actions"), ed = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Editar"); ed.type = "button"; ed.dataset[attr] = String(id); ed.setAttribute("aria-label", "Editar " + title); a.appendChild(ed);
     if (designHref) { const dz = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Diseñar"); dz.href = designHref; dz.setAttribute("aria-label", "Diseñar el PDF de " + title); a.appendChild(dz); }
+    if (dupAttr) { const dp = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Duplicar"); dp.type = "button"; dp.dataset[dupAttr] = String(id); dp.setAttribute("aria-label", "Duplicar " + title); a.appendChild(dp); }
     const ar = el("button", "gw-btn gw-btn--secondary gw-btn--sm", archived ? "Restaurar" : "Archivar"); ar.type = "button"; ar.dataset[attr + "Archive"] = String(id); ar.setAttribute("aria-label", (archived ? "Restaurar " : "Archivar ") + title); a.appendChild(ar); li.appendChild(a); return li;
   }
   function termDialog(t) {
@@ -110,10 +111,11 @@
   async function loadTemplates() {
     const ul = $("tplList");
     try { templates = (await api("GET", "/api/crm/doc-templates")).items; ul.replaceChildren(); if (!templates.length) ul.appendChild(el("li", "gw-hint", "Todavía no hay plantillas: el PDF sale con el formato básico."));
-      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false, t.kind === "quote" ? "/crm/plantillas/" + t.id + "/disenar" : null))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
+      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false, t.kind === "quote" ? "/crm/plantillas/" + t.id + "/disenar" : null, "tplDup"))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
   }
   $("tplList").addEventListener("click", async (e) => {
-    const ed = e.target.closest("[data-tpl]"), ar = e.target.closest("[data-tpl-archive]");
+    const ed = e.target.closest("[data-tpl]"), ar = e.target.closest("[data-tpl-archive]"), dp = e.target.closest("[data-tpl-dup]");
+    if (dp) { try { await api("POST", "/api/crm/doc-templates/" + dp.dataset.tplDup + "/duplicate"); showToast("Plantilla duplicada: la copia se llama «… (copia)».", "success"); loadTemplates(); } catch (x) { showToast(x.message, "error"); } return; }
     if (ed) templateDialog(templates.find((x) => String(x.id) === ed.dataset.tpl));
     if (ar) { const t = templates.find((x) => String(x.id) === ar.dataset.tplArchive); try { await api("PUT", "/api/crm/doc-templates/" + t.id, { archived: true }); loadTemplates(); } catch (x) { showToast(x.message, "error"); } }
   });
