@@ -34,8 +34,10 @@ cd ~/gw-hosting && git stash push -u -q -m "antes-de-desplegar" ; git fetch -q &
 - Confirmar que el menú CRM **no** aparece (apagado).
 - Correo: en producción sí hay Graph/SMTP → la primera encuesta/informe sí saldrá. Probar solo con un evento y un contacto propios de Juan David.
 
-## Antes de mirar el código sugerido
-En producción el código sugerido sale del número más alto SOLO NUMÉRICO que exista. Si hay un código con muchos dígitos (p. ej. 23060004), la serie empieza ahí. Revisar en producción: `SELECT max(event_code::int) FROM events WHERE event_code ~ '^[0-9]{1,9}$';` (lo corre Juan David en Neon → SQL Editor, rama `production`) y, si no es el esperado, corregir el código raro antes de crear eventos nuevos.
+## Hallazgos en producción (16-nov-2026, consulta de solo lectura sobre la rama de respaldo)
+- **Respaldo hecho:** rama de Neon `antes-produccion-16nov` (proyecto goldenweb PRODUCTION, creada 12:41, vence el 23-nov).
+- **Eventos en curso:** 23164 (en proceso, inicia 31-oct) y 23698 y 2369801 (en proceso, inician el 17-nov). El despliegue se congela mientras haya eventos en proceso: **esperar a que terminen** (no usar `FORCE=1`).
+- **Código sugerido:** los códigos de producción son 0002, 23306, 23164, 23775, 23698, 2369801 y PRUEBA-FASE1. El 2369801 (7 dígitos) desplazaría la serie a 2369802, así que el sugerido **solo cuenta códigos numéricos de hasta 6 dígitos**: el siguiente sería **23776**.
 
 ## Vuelta atrás
 1. `gcloud run services update-traffic golden-web golden-publico golden-biometria --to-revisions <revisión anterior>=100 --region us-east4` (las revisiones anteriores salen en el encabezado del despliegue, «REVISIONES ACTUALES»).
