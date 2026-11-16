@@ -28,7 +28,10 @@ if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=1; else CONTINGENCY_
 # CRM (docs/crm/README.md): staging lo ENCIENDE por defecto; producción queda APAGADO hasta que Juan David lo autorice (en ese momento: CRM_ENABLED=1 en el comando del despliegue).
 # `gcloud run deploy --env-vars-file` REEMPLAZA todas las variables del servicio: un CRM_ENABLED puesto a mano se pierde en el siguiente despliegue; por eso el valor vive aquí y deploy.sh lo escribe
 # (solo en el servicio `web`). Sirve igual para deploy/gcp/manual_deploy.sh y para GitHub Actions, porque ambos pasan por deploy.sh.
-if [ "$GOLDEN_ENV" = production ]; then CRM_ENABLED="${CRM_ENABLED:-0}"; else CRM_ENABLED="${CRM_ENABLED:-1}"; fi
+# 16-nov-2026: Juan David AUTORIZÓ encender el CRM en producción (aviso a la auditora aprobado). OJO: el contador `account` debe estar fijado ANTES (scripts/crm_set_counter.py), si no /sistema sale en rojo y crear clientes responde 409.
+if [ "$GOLDEN_ENV" = production ]; then CRM_ENABLED="${CRM_ENABLED:-1}"; else CRM_ENABLED="${CRM_ENABLED:-1}"; fi
+# Responsable de lo importado (usuario de la plataforma, p. ej. la comercial): CRM_IMPORT_OWNER_USERNAME=<usuario> en el comando del despliegue; vacío = quien lance la carga. Solo se escribe en `web` si trae valor.
+CRM_IMPORT_OWNER_USERNAME="${CRM_IMPORT_OWNER_USERNAME:-}"
 # Carga real del importador de SuiteCRM (docs/crm/IMPORTADOR.md): solo staging (1); producción 0 salvo autorización expresa de Juan David (CRM_IMPORT_APPLY=1 en el comando del despliegue).
 if [ "$GOLDEN_ENV" = production ]; then CRM_IMPORT_APPLY="${CRM_IMPORT_APPLY:-0}"; else CRM_IMPORT_APPLY="${CRM_IMPORT_APPLY:-1}"; fi
 # Firebase Hosting solo da permisos a nivel de PROYECTO (no por sitio). Por eso la cuenta de despliegue de staging NO los recibe salvo
