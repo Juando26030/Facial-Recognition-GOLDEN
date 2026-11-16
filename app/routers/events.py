@@ -18,6 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
+from app.crm import platform_link as crm_link
 from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
 from app import event_template_svc
@@ -511,6 +512,7 @@ def create_event(
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     if pledge.text_available():
         pledge.create_or_regenerate(db, event, staff)          # el enlace del compromiso queda listo desde el primer día (sin texto aprobado no se publica: ver pledge.missing_for_login)
+    crm_link.link_new_event(db, staff, event)          # CRM: el evento nace con su oportunidad ganada (y su cuenta, si faltaba); un fallo del CRM no impide crear el evento
     db.commit()
     db.refresh(event)
     return _serialize(event)

@@ -67,7 +67,9 @@ def test_win_endpoint_wins_an_open_opportunity_and_a_second_try_is_a_409(client,
     r = client.post(f"/api/crm/opportunities/{o['id']}/win")
     assert r.status_code == 200 and r.json()["outcome"] == "won" and r.json()["event"]["event_code"] == str(o["code"])
     assert client.post(f"/api/crm/opportunities/{o['id']}/win").status_code == 409
-    assert client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": _stages(client)["Negociación"]["id"]}).status_code == 409          # con evento no sale de «ganada»
+    back = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": _stages(client)["Negociación"]["id"]})
+    assert back.status_code == 200 and back.json()["outcome"] == "open"          # evento «creado» y sin uso: sale de «ganada» y el evento se archiva (regla del 16-nov-2026)
+    assert db.query(Event).filter_by(event_code=str(o["code"])).first().archived_at is not None
 
 
 def test_win_endpoint_creates_only_the_event_for_an_already_won_opportunity(client, factory, crm_on, db):

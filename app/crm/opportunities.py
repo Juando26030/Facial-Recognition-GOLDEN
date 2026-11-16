@@ -18,7 +18,7 @@ from app.crm.codes import next_code
 from app.crm.errors import CrmError
 from app.crm.sqlfold import fold
 from app.crm.pipeline_rules import BOARD_PAGE, board_paging, clean_opportunity, effective_probability, move_effects
-from app.models import CrmAccount, CrmContact, CrmOpportunity, CrmStage, StaffUser
+from app.models import CrmAccount, CrmContact, CrmOpportunity, CrmStage, Event, StaffUser
 from app.timeutil import utcnow
 
 CLOSED_DAYS = 90          # en el tablero, ganadas y perdidas se muestran si cerraron en los últimos N días (la lista las trae todas)
@@ -39,6 +39,9 @@ def on_won(db: Session, opportunity: CrmOpportunity, staff: StaffUser) -> None:
     from app.crm import won
     if opportunity.event_id is None:
         won.create_event_for(db, staff, opportunity)
+    else:
+        from app.crm import platform_link
+        platform_link.rewin(db, staff, opportunity)          # su evento quedó archivado al salir de «ganada»: se restaura
 
 
 def _check_contact(db: Session, account_id: int, contact_id: Optional[int]) -> None:
@@ -116,7 +119,8 @@ def move_stage(db: Session, staff: StaffUser, o: CrmOpportunity, stage_id: int, 
     if stage_id == o.stage_id:
         raise CrmError("La oportunidad ya está en esa etapa.", 409)
     if o.event_id is not None and stage["kind"] != "won":
-        raise CrmError("Esta oportunidad ya tiene un evento creado: no se puede sacar de «ganada».", 409)
+        from app.crm import platform_link
+        platform_link.leave_won(db, staff, o)          # el evento «creado» y sin uso se archiva; en proceso o finalizado, se niega (409)
     now = utcnow()
     effects = move_effects(stage["kind"], o.outcome, lost_reason, now)
     before = history.snapshot(o, "opportunity")
@@ -159,6 +163,8 @@ def detail(db: Session, o: CrmOpportunity) -> dict:
                 "event_start": o.event_start.isoformat() if o.event_start else None, "city": o.city, "closed_at": o.closed_at.isoformat() if o.closed_at else None,
                 "lost_reason": o.lost_reason, "event_id": o.event_id, "own_probability": o.probability, "created_at": o.created_at.isoformat(),
                 "account_is_client": bool(account and account.tenant_id)})
+    ev = db.get(Event, o.event_id) if o.event_id else None          # el evento enlazado: su código real, su estado y si quedó archivado (decide si la oportunidad puede salir de «ganada»)
+    out.update({"event_code": ev.event_code if ev else None, "event_status": ev.status if ev else None, "event_archived": bool(ev and ev.archived_at is not None)})
     return out
 
 

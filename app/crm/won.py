@@ -98,7 +98,9 @@ def win(db: Session, staff: StaffUser, o: CrmOpportunity) -> Event:
     from app.crm import opportunities as opp_svc
     from app.models import CrmStage
     if o.event_id is not None:
-        raise CrmError("Esta oportunidad ya tiene su evento creado.", 409)
+        ev = db.get(Event, o.event_id)
+        if ev is None or ev.archived_at is None:
+            raise CrmError("Esta oportunidad ya tiene su evento creado.", 409)          # (un evento archivado al salir de «ganada» se restaura al volver a ganarla: sigue abajo)
     if o.archived_at is not None:
         raise CrmError("La oportunidad está archivada: restáurala primero.")
     if o.outcome == "won":
