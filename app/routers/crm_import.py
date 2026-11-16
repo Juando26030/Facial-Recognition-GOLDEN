@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import audit_actions, jobs
 from app.crm.importer import runner
+from app.crm.importer.gz import maybe_gunzip
 from app.database import get_db
 from app.models import CrmImportPair, CrmImportRun, StaffUser
 from app.routers import crm as crm_router
@@ -29,6 +30,13 @@ def _run_dict(r: CrmImportRun) -> dict:
             "created_at": r.created_at.isoformat(), "finished_at": r.finished_at.isoformat() if r.finished_at else None, "apply_enabled": apply_enabled()}
 
 
+def _unpack(raw: bytes) -> bytes:
+    try:
+        return maybe_gunzip(raw)
+    except ValueError as exc:
+        raise runner.CrmError(str(exc)) from exc
+
+
 @router.post("/runs")
 def start_run(mode: str = Form(...), accounts: Optional[UploadFile] = File(None), contacts: Optional[UploadFile] = File(None), products: Optional[UploadFile] = File(None),
               opportunities: Optional[UploadFile] = File(None), activities: Optional[UploadFile] = File(None), quotes: Optional[UploadFile] = File(None),
@@ -38,7 +46,7 @@ def start_run(mode: str = Form(...), accounts: Optional[UploadFile] = File(None)
         raise HTTPException(status_code=400, detail="Modo no válido.")
 
     def work():
-        files = {k: f.file.read() for k, f in (("accounts", accounts), ("contacts", contacts), ("products", products), ("opportunities", opportunities),
+        files = {k: _unpack(f.file.read()) for k, f in (("accounts", accounts), ("contacts", contacts), ("products", products), ("opportunities", opportunities),
                                                     ("activities", activities), ("quotes", quotes), ("quote_lines", quote_lines), ("proformas", proformas)) if f is not None}
         if not files:
             raise runner.CrmError("Sube al menos un archivo.")

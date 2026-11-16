@@ -50,10 +50,19 @@
     finally { box.setAttribute("aria-busy", "false"); }
   }
 
+  // Cloud Run rechaza peticiones de más de 32 MB: los CSV se comprimen aquí (el servidor los descomprime solo).
+  async function gzipFile(file) {
+    if (typeof CompressionStream === "undefined") return [file];
+    const blob = await new Response(file.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+    return [blob, file.name + ".gz"];
+  }
+
   async function start(mode) {
-    const fd = new FormData(); let any = false;
-    root.querySelectorAll("input[type=file][data-kind]").forEach((i) => { if (i.files[0]) { fd.append(i.dataset.kind, i.files[0]); any = true; } });
-    if (!any) { say("Elige al menos un archivo."); return; }
+    const fd = new FormData();
+    const picked = [...root.querySelectorAll("input[type=file][data-kind]")].filter((i) => i.files[0]);
+    if (!picked.length) { say("Elige al menos un archivo."); return; }
+    say("Preparando archivos…");
+    try { for (const i of picked) fd.append(i.dataset.kind, ...(await gzipFile(i.files[0]))); } catch (e) { say("No se pudo preparar el archivo: " + e.message); return; }
     fd.append("mode", mode);
     if (mode === "apply") {
       if (!lastDry) { say("Primero termina una prueba completa con estos mismos archivos."); return; }
