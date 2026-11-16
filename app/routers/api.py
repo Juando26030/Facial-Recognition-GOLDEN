@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import event_archive, audit_actions, person_history
+from app import event_archive, audit_actions, person_history, roster_delete
 import re
 import json
 from typing import List, Optional
@@ -16,7 +16,7 @@ import time
 import logging
 from openpyxl.utils import get_column_letter
 from PIL import Image
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, File, UploadFile, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import UnidentifiedImageError
 from sqlalchemy import func, or_, text
@@ -1675,6 +1675,30 @@ def delete_user_from_event(
         ),
         "fully_deleted": fully_deleted,
     }
+
+
+@router.get("/events/{event_id}/roster-loaded")
+def roster_loaded_preview(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Cuántas personas trajo «Adjuntar base de datos» y cuántas se borrarían (ver app/roster_delete.py)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    return roster_delete.preview(db, event)
+
+
+@router.delete("/events/{event_id}/roster-loaded")
+def roster_loaded_delete(event_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Borra de este evento a las personas cargadas por «Adjuntar base de datos» (origen base) que no tengan ingresos: sirve para corregir una carga equivocada. Exige escribir BORRAR.
+    Queda en `audit_actions` (solo cantidades, nunca cédulas ni nombres). No se puede con la base archivada (L7) ni con el evento finalizado."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if event.status == "finalizado":
+        raise HTTPException(status_code=409, detail="El evento ya finalizó: su base no se puede borrar.")
+    if str(data.get("confirm") or "").strip().upper() != "BORRAR":
+        raise HTTPException(status_code=400, detail="Para borrar la base cargada escribe BORRAR.")
+    out = roster_delete.delete_loaded(db, event)
+    audit_actions.record(db, staff, "delete", "roster_loaded", event.id, None, f"evento {event.id}: {out['removed']} persona(s) de la base cargada, {out['kept_registered']} conservadas por tener ingresos")
+    db.commit()
+    return {**out, "message": f"Se borraron {out['removed']} persona(s) de la base cargada." + (f" Se conservaron {out['kept_registered']} que ya tienen ingresos registrados." if out["kept_registered"] else "")}
 
 
 @router.patch("/events/{event_id}/users/{user_id}/status")

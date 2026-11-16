@@ -301,7 +301,7 @@ def _person_ids(db: Session, event) -> set:
     return ids
 
 
-def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None, progress=None, record: bool = True) -> tuple:
+def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None, progress=None, record: bool = True, exclude_tables: frozenset = frozenset()) -> tuple:
     """Arma el paquete de un evento. Devuelve (bytes del .zip, manifest). Escribe una fila en la bitácora (sin datos personales). `include_biometrics` (solo super_admin: lo exige el
     endpoint) lleva vectores y fotos CIFRADOS con la frase de transporte `passphrase`, que no se guarda."""
     if include_biometrics and len(passphrase or "") < MIN_PASSPHRASE:
@@ -328,7 +328,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                 progress(f"Tabla {spec['name']}", int(75 * idx / len(TABLES)))
             n, h = 0, hashlib.sha256()
             with zf.open(f"data/{spec['name']}.jsonl", "w") as out:
-                for row in _select_rows(db, spec, event, ctx):
+                for row in (() if spec["name"] in exclude_tables else _select_rows(db, spec, event, ctx)):          # exclude_tables: «Duplicar evento» no lleva la historia (ingresos, pagos, sorteos)
                     d = {k: _ser(v) for k, v in row.items()}
                     extra = {}
                     ref = str(d["id"]) if isinstance(d.get("id"), int) else f"{d.get('tenant_id')}|{d.get('user_id')}|{d.get('event_id')}"

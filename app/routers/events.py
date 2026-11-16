@@ -3,7 +3,7 @@ import unicodedata
 from datetime import date
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, field_validator
 
 from app.inputcheck import check_text, check_username, text_validator
@@ -18,6 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
+from app import event_duplicate, event_transfer as et
 from app.crm import platform_link as crm_link
 from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
@@ -647,6 +648,31 @@ def list_event_staff(
         .all()
     )
     return [_serialize_staff(s) for s in staff_list]
+
+
+@router.get("/events/{event_id}/duplicate-suggestion")
+def duplicate_suggestion(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Código y nombre libres para «Duplicar evento» (el usuario puede cambiarlos antes de confirmar)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    return event_duplicate.suggest(db, event)
+
+
+@router.post("/events/{event_id}/duplicate")
+def duplicate_event(event_id: int, data: dict = Body(default={}), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Duplica el evento (app/event_duplicate.py): nuevo código y nombre «… (copia)», todo lo configurado y las personas, sin la historia. Coordinador+ (igual que crear eventos).
+    Queda en `audit_actions` (ids de evento; nunca nombres de personas)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    try:
+        new = event_duplicate.duplicate(db, event, staff, event_code=str(data.get("event_code") or "").strip() or None, name=str(data.get("name") or "").strip() or None)
+        crm_link.link_new_event(db, staff, new)                      # como al crear un evento a mano: queda su oportunidad ganada en el CRM (si el CRM está encendido)
+        audit_actions.record(db, staff, "create", "event", new.id, None, f"duplicado del evento {event.id}")
+        db.commit()
+    except et.TransferError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"id": new.id, "event_code": new.event_code, "name": new.name, "message": f"Evento duplicado: «{new.name}» ({new.event_code})."}
 
 
 @router.post("/events/{event_id}/staff-users")
