@@ -52,7 +52,7 @@ def test_models_match_the_migrations_table_by_table():
             body = body.split("op.create_table(", 2)[1] if body.count("op.create_table(") > 1 else body
             body = body[:body.index("op.create_index") if "op.create_index" in body else len(body)]
             migrated = set(re.findall(r'sa\.Column\("(\w+)"', body))
-            model_cols = cols[table] - {"legacy_json"}          # 0142 la agrega después (otra migración): aquí se compara solo lo que crea esta
+            model_cols = cols[table] - {"legacy_json", "image_key", "layout_json"}          # 0142 (legacy_json) y 0144 (image_key, layout_json) las agregan después (otras migraciones): aquí se compara solo lo que crea esta
             assert migrated == model_cols, f"{table}: migración {sorted(migrated ^ model_cols)}"
 
 

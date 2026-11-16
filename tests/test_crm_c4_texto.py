@@ -85,9 +85,9 @@ def test_staging_findings_nov12_won_stagebar_event_link_subtotal_label_and_count
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
     opp = (root / "static/js/crm_oportunidad.js").read_text(encoding="utf-8")
-    assert "const locked = Boolean(opp.event_id) && s.kind !== \"won\"" in opp and "b.disabled = isCurrent || opp.archived || locked" in opp          # botones deshabilitados con evento
+    assert "const locked = live && opp.event_status !== \"creado\" && s.kind !== \"won\"" in opp and "b.disabled = isCurrent || opp.archived || locked" in opp          # con el evento en proceso o finalizado, deshabilitados (16-nov: «creado» sí deja salir)
     assert "No disponible" in opp and "no puede volver a una etapa anterior" in opp                                                      # y un aviso visible
-    assert "\"Ver evento \" + opp.code" in opp and "\"/kiosk/\" + opp.event_id" in opp
+    assert "\"Ver evento \" + (opp.event_code || opp.code)" in opp and "\"/kiosk/\" + opp.event_id" in opp
     assert "Subtotal con descuento" in (root / "static/js/crm_cotizacion.js").read_text(encoding="utf-8")
     assert "Subtotal con descuento" in (root / "app/crm/quote_pdf.py").read_text(encoding="utf-8")
     script = (root / "scripts/crm_set_counter.py").read_text(encoding="utf-8")

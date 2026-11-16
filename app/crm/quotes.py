@@ -5,6 +5,7 @@
 * Edición concurrente por `updated_at` (409). El texto libre `meeting_notes` no se guarda en el historial.
 * El PDF se genera bajo demanda (app/crm/quote_pdf.py) y se guarda con `get_storage()` en `crm/quotes/<id>/`; se borra al suprimir al contacto de la cotización.
 """
+import json
 from datetime import date
 from typing import Optional
 
@@ -12,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.crm import history, normalize
+from app.crm import quote_layout as ql
 from app.crm import quote_rules as qr
 from app.crm.accounts import MAX_ID, _check_owner, _check_version, get_account
 from app.crm.codes import next_code
@@ -38,7 +40,7 @@ def _page(page, size):
 # ------------------------------------------------------------------ productos
 def serialize_product(p: CrmProduct) -> dict:
     return {"id": p.id, "sku": p.sku, "name": p.name, "description": p.description, "category": p.category, "cost": str(p.cost), "price": str(p.price), "currency": p.currency,
-            "tax_percent": str(p.tax_percent), "active": p.active, "updated_at": p.updated_at.isoformat()}
+            "tax_percent": str(p.tax_percent), "active": p.active, "has_image": bool(p.image_key), "updated_at": p.updated_at.isoformat()}
 
 
 def _check_sku(db: Session, sku: Optional[str], own_id: Optional[int] = None) -> None:
@@ -117,8 +119,19 @@ def update_term(db: Session, term_id: int, data: dict) -> CrmTerm:
     return t
 
 
+def _layout_of(t: CrmDocTemplate) -> Optional[dict]:
+    if not t.layout_json:
+        return None
+    try:
+        return json.loads(t.layout_json)
+    except ValueError:
+        return None          # un diseño ilegible no tumba la lista: la plantilla se comporta como sencilla
+
+
 def serialize_template(t: CrmDocTemplate) -> dict:
-    return {"id": t.id, "kind": t.kind, "name": t.name, "header_text": t.header_text, "greeting_text": t.greeting_text, "footer_text": t.footer_text, "is_default": t.is_default, "archived": t.archived_at is not None}
+    layout = _layout_of(t)
+    return {"id": t.id, "kind": t.kind, "name": t.name, "header_text": t.header_text, "greeting_text": t.greeting_text, "footer_text": t.footer_text, "is_default": t.is_default, "archived": t.archived_at is not None,
+            "layout": layout, "has_layout": layout is not None}
 
 
 def list_templates(db: Session, kind: str = "") -> list:
@@ -142,6 +155,8 @@ def update_template(db: Session, template_id: int, data: dict) -> CrmDocTemplate
     for k, v in qr.clean_template(data).items():
         if k != "kind":
             setattr(t, k, v)
+    if "layout" in data:          # el diseño por bloques: null vuelve a la plantilla sencilla
+        t.layout_json = None if data["layout"] is None else json.dumps(ql.clean_layout(data["layout"], t.id), ensure_ascii=False, separators=(",", ":"))
     if data.get("is_default") and not t.is_default:
         db.query(CrmDocTemplate).filter(CrmDocTemplate.kind == t.kind, CrmDocTemplate.is_default.is_(True)).update({"is_default": False})
         db.flush()

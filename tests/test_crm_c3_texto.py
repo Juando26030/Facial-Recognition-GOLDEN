@@ -225,4 +225,4 @@ def test_real_quote_pdf_prints_the_new_subtotal_label_and_cached_pdfs_are_versio
     obj = types.SimpleNamespace(id=5, number=7001, version=1)
     assert quote_pdf.quote_key(obj).endswith(f"-d{quote_pdf.LAYOUT}.pdf") and quote_pdf.proforma_key(obj).endswith(f"-d{quote_pdf.LAYOUT}.pdf")
     router = (pathlib.Path(__file__).resolve().parent.parent / "app/routers/crm_quotes.py").read_text(encoding="utf-8")
-    assert "key != quote_pdf.quote_key(q)" in router and "p.pdf_key != quote_pdf.proforma_key(p)" in router
+    assert "key != quote_pdf.quote_key(q, sig)" in router and "p.pdf_key != quote_pdf.proforma_key(p)" in router

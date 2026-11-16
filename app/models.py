@@ -2034,6 +2034,7 @@ class CrmProduct(Base):
     currency = Column(String(3), nullable=False, default='COP', server_default='COP')
     tax_percent = Column(Numeric(5, 2), nullable=False, default=19, server_default='19')
     active = Column(Boolean, nullable=False, default=True, server_default=text('true'))
+    image_key = Column(String(300))          # 0144: foto del producto; sale en la cotización si el diseño del PDF tiene la columna «Foto»
     legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
     legacy_sugar_id = Column(String(40))
     created_at = Column(DateTime, nullable=False, default=utcnow)
@@ -2063,6 +2064,7 @@ class CrmDocTemplate(Base):
     greeting_text = Column(Text)
     footer_text = Column(Text)
     logo_key = Column(String(300))
+    layout_json = Column(Text)          # 0144: diseño por bloques (app/crm/quote_layout.py); NULL = la plantilla sencilla de siempre (encabezado, saludo y pie)
     is_default = Column(Boolean, nullable=False, default=False, server_default=text('false'))
     archived_at = Column(DateTime, nullable=True)
     __table_args__ = (Index('uq_crm_doc_templates_default', 'kind', unique=True, postgresql_where=text('is_default AND archived_at IS NULL')),)

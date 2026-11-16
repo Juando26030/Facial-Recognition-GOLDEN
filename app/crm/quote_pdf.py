@@ -55,8 +55,12 @@ def _pair(doc: Doc, label: str, value: Optional[str]) -> None:
         doc.text(MARGIN + 110, doc.y, ln, 10)
 
 
-def render_quote(q: dict, tpl: Optional[dict] = None) -> bytes:
-    """`q`: el detalle de la cotización (quotes.quote_detail). El nombre del contacto solo aparece si la cotización todavía lo tiene."""
+def render_quote(q: dict, tpl: Optional[dict] = None, fetch=None, images: Optional[dict] = None) -> bytes:
+    """`q`: el detalle de la cotización (quotes.quote_detail). El nombre del contacto solo aparece si la cotización todavía lo tiene. Con una plantilla que trae diseño por bloques
+    (`tpl["layout"]`) el PDF lo arma app/crm/quote_layout.py (`fetch` lee los archivos guardados, `images` son las fotos de los productos); sin diseño, el PDF sencillo de siempre."""
+    if tpl and tpl.get("layout") and fetch is not None:
+        from app.crm import quote_layout
+        return quote_layout.render(tpl["layout"], q, fetch, images, utcnow().date().isoformat())
     doc = Doc(f"Cotización {q['number']}")
     _head(doc, "COTIZACIÓN", f"N.º {q['number']}" + (f" · versión {q['version']}" if q["version"] > 1 else ""), tpl)
     _pair(doc, "Cliente", q.get("account_name"))
@@ -123,8 +127,18 @@ def render_proforma(p: dict, q: Optional[dict] = None, tpl: Optional[dict] = Non
 LAYOUT = 2          # súbelo cuando cambie el diseño o los rótulos del PDF: los guardados con otro número se regeneran solos (v2: «Subtotal con descuento»)
 
 
-def quote_key(q) -> str:
-    return f"crm/quotes/{q.id}/cotizacion-{q.number}-v{q.version}-d{LAYOUT}.pdf"
+def template_sig(tpl: Optional[dict], extra: str = "") -> str:
+    """Huella corta de la plantilla (textos + diseño) y de las fotos usadas: si cambian, el PDF guardado ya no coincide y se regenera. Sin plantilla ni fotos, vacía."""
+    if not tpl and not extra:
+        return ""
+    import hashlib
+    import json
+    raw = json.dumps([(tpl or {}).get(k) for k in ("id", "header_text", "greeting_text", "footer_text", "layout")], sort_keys=True, ensure_ascii=False) + "|" + extra
+    return hashlib.sha1(raw.encode()).hexdigest()[:8]
+
+
+def quote_key(q, sig: str = "") -> str:
+    return f"crm/quotes/{q.id}/cotizacion-{q.number}-v{q.version}-d{LAYOUT}{('-' + sig) if sig else ''}.pdf"
 
 
 def proforma_key(p) -> str:

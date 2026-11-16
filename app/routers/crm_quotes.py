@@ -2,11 +2,11 @@
 Comerciales y administradores usan cotizaciones y proformas; productos, condiciones y plantillas solo los edita un administrador (todos los leen). Cuerpos como dicts: cada campo lo valida `quote_rules`."""
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app import audit_actions
-from app.crm import quote_pdf, quotes as svc
+from app.crm import doc_assets, quote_layout, quote_pdf, quotes as svc
 from app.database import get_db
 from app.models import CrmAccount, CrmProforma, StaffUser
 from app.routers import crm as crm_router
@@ -81,6 +81,95 @@ def update_template(template_id: int, data: dict = Body(...), db: Session = Depe
     return _run(db, lambda: svc.serialize_template(svc.update_template(db, template_id, data)))
 
 
+# ------------------------------------------------------------------ diseñador del PDF (bloques, archivos y vista previa)
+MAX_UPLOAD = max(quote_layout.MAX_IMAGE_BYTES, quote_layout.MAX_PDF_BYTES)
+
+
+def _read_upload(file: UploadFile) -> bytes:
+    raw = file.file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="El archivo es demasiado grande (máximo 10 MB).")
+    if not raw:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    return raw
+
+
+@router.get("/doc-layout/starter")
+def layout_starter(name: str = "classic", staff: StaffUser = Depends(admin_staff)):
+    """Diseño inicial («classic» = el PDF de siempre en bloques, «blank» = solo un título) y el catálogo de bloques, datos, columnas y variables para el diseñador."""
+    return {"layout": quote_layout.starter("blank" if name == "blank" else "classic"), "blocks": quote_layout.BLOCK_TYPES, "fields": quote_layout.FIELD_KEYS, "columns": quote_layout.TABLE_COLUMNS,
+            "variables": list(quote_layout.VARIABLES), "limits": {"blocks": quote_layout.MAX_BLOCKS, "image_mb": 3, "pdf_mb": 10, "pdf_pages": quote_layout.MAX_PDF_PAGES}}
+
+
+@router.post("/doc-templates/{template_id}/assets")
+def upload_template_asset(template_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    raw = _read_upload(file)
+    return _run(db, lambda: doc_assets.save_template_asset(db, svc._get(db, svc.CrmDocTemplate, template_id, "Plantilla"), raw, file.filename or ""))
+
+
+@router.get("/doc-templates/{template_id}/assets/{name}")
+def template_asset(template_id: int, name: str, staff: StaffUser = Depends(view_staff)):
+    """Sirve un archivo del diseño (para mostrar la miniatura en el diseñador). Solo dentro de la carpeta de esa plantilla."""
+    if not 0 < template_id <= svc.MAX_ID or "/" in name or ".." in name or not name.lower().endswith((".png", ".jpg", ".pdf")):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    key = f"{quote_layout.ASSET_PREFIX}{template_id}/{name}"
+    st = get_storage()
+    if not st.exists(key):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    mt = "application/pdf" if name.endswith(".pdf") else ("image/png" if name.endswith(".png") else "image/jpeg")
+    return st.response(key, media_type=mt, headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
+@router.post("/doc-templates/{template_id}/preview")
+def preview_template(template_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    """Vista previa EXACTA del PDF con el diseño que se está editando (aún sin guardar) y una cotización real (`quote_id`) o la de ejemplo. No guarda nada."""
+    try:
+        tpl = svc.serialize_template(svc._get(db, svc.CrmDocTemplate, template_id, "Plantilla"))
+        layout = quote_layout.clean_layout(data.get("layout"), template_id)
+        quote_id = data.get("quote_id")
+        if quote_id:
+            q = svc.quote_detail(db, svc.get_quote(db, int(quote_id)))
+        else:
+            q = quote_layout.SAMPLE_QUOTE
+        images = doc_assets.product_images(db, [ln.get("product_id") for ln in q.get("lines", [])])
+        pdf = quote_pdf.render_quote(q, {**tpl, "layout": layout}, get_storage().get, images)
+    except svc.CrmError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="La cotización elegida no es válida.") from exc
+    return Response(content=pdf, media_type="application/pdf", headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="vista-previa.pdf"'})
+
+
+@router.post("/products/{product_id}/image")
+def upload_product_image(product_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    raw = _read_upload(file)
+
+    def work():
+        p = svc._get(db, svc.CrmProduct, product_id, "Producto")
+        doc_assets.save_product_image(db, p, raw)
+        audit_actions.record(db, staff, "update", "crm_product", p.id, p.name, "foto")
+        return svc.serialize_product(p)
+    return _run(db, work)
+
+
+@router.delete("/products/{product_id}/image")
+def delete_product_image(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    def work():
+        p = svc._get(db, svc.CrmProduct, product_id, "Producto")
+        doc_assets.clear_product_image(p)
+        return svc.serialize_product(p)
+    return _run(db, work)
+
+
+@router.get("/products/{product_id}/image")
+def product_image(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    p = db.get(svc.CrmProduct, product_id) if 0 < product_id <= svc.MAX_ID else None
+    st = get_storage()
+    if p is None or not p.image_key or not st.exists(p.image_key):
+        raise HTTPException(status_code=404, detail="Este producto no tiene foto.")
+    return st.response(p.image_key, media_type="image/png" if p.image_key.endswith(".png") else "image/jpeg", headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
 # ------------------------------------------------------------------ cotizaciones
 @router.get("/quotes")
 def list_quotes(q: str = "", stage: str = "", account_id: Optional[int] = None, opportunity_id: Optional[int] = None, owner_id: Optional[int] = None, archived: bool = False, page: int = 1,
@@ -152,12 +241,14 @@ def quote_pdf_download(quote_id: int, db: Session = Depends(get_db), staff: Staf
     q = svc.get_quote(db, quote_id)
     key = q.pdf_key
     st = get_storage()
-    if not key or key != quote_pdf.quote_key(q) or not st.exists(key):          # otro diseño de PDF (LAYOUT) = se regenera
+    detail = svc.quote_detail(db, q)
+    tpl = next((t for t in svc.list_templates(db, "quote") if t["id"] == q.template_id), None) or next(iter(svc.list_templates(db, "quote")), None)
+    pids = [ln.get("product_id") for ln in detail["lines"]]
+    sig = quote_pdf.template_sig(tpl, doc_assets.images_signature(db, pids))
+    if not key or key != quote_pdf.quote_key(q, sig) or not st.exists(key):          # otro diseño de PDF (LAYOUT), otra plantilla o otras fotos = se regenera
         old = key
-        detail = svc.quote_detail(db, q)
-        tpl = next((t for t in svc.list_templates(db, "quote") if t["id"] == q.template_id), None) or next(iter(svc.list_templates(db, "quote")), None)
-        key = quote_pdf.quote_key(q)
-        st.put(key, quote_pdf.render_quote(detail, tpl))
+        key = quote_pdf.quote_key(q, sig)
+        st.put(key, quote_pdf.render_quote(detail, tpl, st.get, doc_assets.product_images(db, pids)))
         q.pdf_key, q.pdf_generated_at = key, utcnow()
         db.commit()
         _drop_old(st, old, key)
