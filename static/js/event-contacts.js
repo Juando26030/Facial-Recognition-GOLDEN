@@ -22,6 +22,10 @@
     const list = normalize(rows);
     for (let i = 0; i < list.length; i++) {
       if (!list[i].name) return 'El contacto ' + (i + 1) + ' necesita un nombre.';
+      if (!list[i].crm_contact_id) {          // a mano (no está en el CRM): teléfono y correo obligatorios
+        if (!list[i].phone) return 'Falta el teléfono de «' + list[i].name + '» (los contactos que no están en el CRM llevan teléfono y correo).';
+        if (!list[i].email) return 'Falta el correo de «' + list[i].name + '» (los contactos que no están en el CRM llevan teléfono y correo).';
+      }
       if (list[i].email && !EMAIL.test(list[i].email)) return 'El correo de «' + list[i].name + '» no parece un correo válido.';
     }
     return list.length > MAX ? 'Un evento admite hasta ' + MAX + ' contactos.' : '';
@@ -78,8 +82,8 @@
       head.appendChild(rad); head.appendChild(rm); c.appendChild(head);
       const grid = el('div', 'gw-evc__grid');
       grid.appendChild(field('Nombre *', textInput(r.name, 200, 'text', (v) => { r.name = v; })));
-      grid.appendChild(field('Teléfono', textInput(r.phone, 60, 'tel', (v) => { r.phone = v; })));
-      grid.appendChild(field('Correo', textInput(r.email, 200, 'email', (v) => { r.email = v; })));
+      grid.appendChild(field(r.crm_contact_id ? 'Teléfono' : 'Teléfono *', textInput(r.phone, 60, 'tel', (v) => { r.phone = v; })));
+      grid.appendChild(field(r.crm_contact_id ? 'Correo' : 'Correo *', textInput(r.email, 200, 'email', (v) => { r.email = v; })));
       grid.appendChild(field('Quién es en este evento (opcional)', textInput(r.note, 200, 'text', (v) => { r.note = v; })));
       c.appendChild(grid);
       if (r.is_primary && !EMAIL.test(String(r.email || '').trim())) c.appendChild(el('p', 'gw-hint gw-evc__warn', 'Sin correo no recibirá el informe ni la encuesta.'));

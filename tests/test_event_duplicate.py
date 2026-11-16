@@ -57,6 +57,6 @@ def test_delete_loaded_base_keeps_registered_people_and_manual_ones(db, factory)
 def test_duplicate_route_copies_event_contacts(db, factory):
     from app import event_contacts
     ev = _build(db, factory)
-    event_contacts.replace(db, ev, [{"name": "Ana", "email": "ana@x.co", "note": "Compras"}])
+    event_contacts.replace(db, ev, [{"name": "Ana", "email": "ana@x.co", "phone": "301", "note": "Compras"}])
     db.commit()
     assert event_contacts.copy_to(db, ev.id, event_duplicate.duplicate(db, ev, factory.staff("admin", "admin_dup2")).id) == 1

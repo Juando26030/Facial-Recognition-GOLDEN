@@ -29,11 +29,17 @@ def list_for(db: Session, event_id: int) -> List[dict]:
     return [serialize(r) for r in rows]
 
 
+def _is_inactive(c: CrmContact) -> bool:
+    """SuiteCRM no trae una columna de estado: los contactos dados de baja llevan «INACTIVO» en el nombre. No se ofrecen para elegir."""
+    return "inactiv" in _full_name(c).lower()
+
+
 def _account_contacts(db: Session, tenant_id: str) -> List[CrmContact]:
     acc = db.query(CrmAccount).filter(CrmAccount.tenant_id == tenant_id, CrmAccount.archived_at.is_(None)).first() if tenant_id else None
     if acc is None:
         return []
-    return db.query(CrmContact).filter(CrmContact.account_id == acc.id, CrmContact.archived_at.is_(None)).order_by(CrmContact.is_primary.desc(), CrmContact.id).all()
+    rows = db.query(CrmContact).filter(CrmContact.account_id == acc.id, CrmContact.archived_at.is_(None)).order_by(CrmContact.is_primary.desc(), CrmContact.id).all()
+    return [c for c in rows if not _is_inactive(c)]
 
 
 def crm_options(db: Session, tenant_id: str) -> List[dict]:
@@ -72,6 +78,9 @@ def clean(items, allowed_crm_ids: Optional[set] = None) -> List[dict]:
             raise ContactError(f"El correo del contacto «{name}» no parece un correo válido.")
         crm_id = raw.get("crm_contact_id")
         crm_id = int(crm_id) if isinstance(crm_id, int) and not isinstance(crm_id, bool) and (allowed_crm_ids is None or crm_id in allowed_crm_ids) else None
+        phone_raw = str(raw.get("phone") or "").strip()
+        if crm_id is None and (not phone_raw or not email):          # a mano (no está en el CRM): teléfono y correo obligatorios
+            raise ContactError(f"El contacto «{name}» no está en el CRM: escribe su teléfono y su correo.")
         primary = bool(raw.get("is_primary"))
         seen_primary += 1 if primary else 0
         out.append({"crm_contact_id": crm_id, "name": name, "phone": str(raw.get("phone") or "").strip()[:PHONE_MAX] or None, "email": email or None,
@@ -86,6 +95,7 @@ def clean(items, allowed_crm_ids: Optional[set] = None) -> List[dict]:
 def replace(db: Session, event, items) -> List[dict]:
     """Deja exactamente `items` como los contactos del evento (reemplaza lo anterior)."""
     allowed = {c.id for c in _account_contacts(db, event.tenant_id)}
+    allowed |= {r[0] for r in db.query(EventContact.crm_contact_id).filter(EventContact.event_id == event.id, EventContact.crm_contact_id.isnot(None))}          # los que ya tenía siguen siendo del CRM aunque hoy estén dados de baja
     rows = clean(items, allowed)
     db.query(EventContact).filter(EventContact.event_id == event.id).delete(synchronize_session=False)
     db.flush()
