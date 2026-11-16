@@ -3,7 +3,7 @@
 Autorización de Juan David (16-nov-2026, 12:39): **«sí» para PREPARAR** el paso. Ejecutarlo requiere otro «sí» para ESA acción, con el commit exacto. Claude no corre nada en la nube: lo ejecuta Juan David en Cloud Shell.
 
 ## Commit a desplegar
-`e9e3ce85a8ccdf97dd7205a2b5956167a9e36a36` (el mismo que corre y se probó en staging; los commits posteriores son solo de documentación).
+`1d5ed06eba54ff70ae588d5fbdd8d91863ef8644` (el mismo que corre y se probó en staging; los commits posteriores son solo de documentación).
 
 ## Qué llega (rama `crm/importar-aplicar`, ~99 commits sobre `f5/integracion`, que es lo que corre hoy)
 - **CRM completo** (cuentas, contactos, oportunidades, cotizaciones con diseñador de PDF, plantillas, productos, importación de SuiteCRM). **Apagado en producción** (`CRM_ENABLED=0` por defecto; no se enciende sin autorización aparte y sin fijar el contador con `scripts/crm_set_counter.py`).
@@ -24,7 +24,7 @@ Autorización de Juan David (16-nov-2026, 12:39): **«sí» para PREPARAR** el p
 
 ## Ejecución (un solo comando, en Cloud Shell, proyecto de producción)
 ```
-cd ~/gw-hosting && git stash push -u -q -m "antes-de-desplegar" ; git fetch -q && git checkout -q --detach e9e3ce85a8ccdf97dd7205a2b5956167a9e36a36 && nohup bash deploy/gcp/manual_deploy.sh production goldenweb-prod > ~/deploy.log 2>&1 &
+cd ~/gw-hosting && git stash push -u -q -m "antes-de-desplegar" ; git fetch -q && git checkout -q --detach 1d5ed06eba54ff70ae588d5fbdd8d91863ef8644 && nohup bash deploy/gcp/manual_deploy.sh production goldenweb-prod > ~/deploy.log 2>&1 &
 ```
 (el script corre el Job de migraciones 0130→0145, despliega los 3 servicios y los Jobs, y publica Firebase; tarda ~15 min. Ver avance: `tail -f ~/deploy.log`.)
 
