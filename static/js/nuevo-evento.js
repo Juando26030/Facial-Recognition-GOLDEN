@@ -73,6 +73,7 @@
     addSuperEventButton();
     mountInventory();
     mountContacts();
+    loadNextCode();
     nextBtn.disabled = false;
     if (window.GW && GW.wizard) GW.wizard.go(form, 0);
     document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl, enhanced: mounted } }));
@@ -88,6 +89,18 @@
   }
   // Contactos del cliente (16-nov-2026): se envían dentro del POST /api/events; cambian solos al cambiar de cliente.
   let contactsCtrl = null;
+  /* Código sugerido: el siguiente al más alto que exista; se ve en gris (placeholder) y, si se deja vacío, el servidor lo asigna. Se puede escribir a mano. */
+  let suggestedCode = '';
+  async function loadNextCode() {
+    const inp = form.querySelector('[data-evf-field="event_code"] input');
+    if (!inp) return;
+    try {
+      const r = await fetch('/api/events/next-code');
+      if (!r.ok) return;
+      suggestedCode = String((await r.json()).event_code || '');
+      if (suggestedCode) { inp.placeholder = suggestedCode; inp.title = 'Si lo dejas vacío se usa ' + suggestedCode + '. Puedes escribir otro.'; }
+    } catch (e) { /* sin sugerencia: el código sigue siendo obligatorio */ }
+  }
   async function mountContacts() {
     contactsCtrl = null;
     const box = document.getElementById('neContacts'), wrap = document.getElementById('neContactsWrap');
@@ -156,7 +169,7 @@
       const holder = panel.querySelector('[data-evf-field="' + key + '"]');
       const first = holder.querySelector('input, select, textarea');
       const v = readKey(key);
-      let msg = EF.validateValue(f, v);
+      let msg = key === 'event_code' && !v && suggestedCode ? '' : EF.validateValue(f, v);
       if (!msg && key === 'event_code' && v && !CODE_RE.test(v)) msg = CODE_HELP;
       if (msg) {
         markInvalid(holder, true);

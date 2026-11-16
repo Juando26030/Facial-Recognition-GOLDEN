@@ -18,7 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
-from app import event_contacts, event_duplicate, event_transfer as et
+from app import event_codes, event_contacts, event_duplicate, event_transfer as et
 from app.crm import platform_link as crm_link
 from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
@@ -81,7 +81,7 @@ class EventIn(BaseModel):
     (todo menos observaciones, pañoleta y superevento). Solo `tenant_id`, `event_code` y `name` son obligatorios siempre. Los interruptores (nombre de su columna) y `extra` (campos
     personalizados de la plantilla, claves `c_…`) son opcionales."""
     tenant_id: str
-    event_code: str
+    event_code: str = ""          # vacío = el servidor pone el siguiente número libre (app/event_codes.py)
     name: str
     location: Optional[str] = None
     address: Optional[str] = None
@@ -438,6 +438,7 @@ def create_event(
         data.coordinator_staff_id = staff.id          # el coordinador «puro» siempre queda como coordinador de lo que crea (aunque la plantilla no le muestre ese campo)
     if pure_coordinator and data.coordinator_staff_id != staff.id:
         raise HTTPException(status_code=403, detail="Un coordinador solo puede crear eventos asignados a sí mismo")
+    data.event_code = (data.event_code or "").strip() or event_codes.next_code(db)
     if db.query(Event).filter(Event.event_code == data.event_code).first():
         raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
     # Solo eventos NUEVOS (orden del 21-oct-2026): el código va en direcciones públicas (/aceptar/<código>, QR y enlaces personales). Los existentes no se tocan.
@@ -656,6 +657,12 @@ def list_event_staff(
         .all()
     )
     return [_serialize_staff(s) for s in staff_list]
+
+
+@router.get("/events/next-code")
+def next_event_code(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Código que se propone (en gris) al crear un evento: el siguiente al más alto solo numérico."""
+    return {"event_code": event_codes.next_code(db)}
 
 
 @router.get("/event-contacts/options")
