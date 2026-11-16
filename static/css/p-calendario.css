@@ -168,3 +168,7 @@
 .cal-pop__enter { width: 100%; justify-content: flex-start; gap: var(--gw-sp-3); text-align: left; }
 
 /* Categorías de evento (Fase 10, C): chips clicables arriba del calendario. */
+
+/* «Revisar el detalle» (0143): triángulo rojo con «!» */
+#calBody .cal-card__review { display: inline-flex; align-items: center; flex: none; color: var(--gw-danger); }
+#calBody .cal-mini .cal-card__review { margin-right: var(--gw-sp-1); }

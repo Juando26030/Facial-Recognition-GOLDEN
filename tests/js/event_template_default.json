@@ -151,6 +151,13 @@
     "title": "Escarapela digital"
    },
    {
+    "field_key": "sw_review_detail",
+    "help": "Márcalo si hay algo largo en el evento que el equipo debe leer (entra a «Editar» para verlo). En el calendario sale un triángulo rojo con «!». Si no está activo, no sale nada.",
+    "key": "review_detail",
+    "requires": null,
+    "title": "Revisar el detalle"
+   },
+   {
     "field_key": "sw_auto_print_badge",
     "help": "Al registrar a alguien se imprime la escarapela sin tocar el botón.",
     "key": "auto_print_badge",
@@ -340,7 +347,8 @@
     "id": "revisa",
     "keys": [
      "bandana",
-     "notes"
+     "notes",
+     "sw_review_detail"
     ],
     "title": "Revisa y crea"
    }
@@ -653,6 +661,18 @@
    "required": false,
    "retired": false,
    "title": "Escarapela digital",
+   "type": "switch"
+  },
+  {
+   "config": {
+    "switch": "review_detail"
+   },
+   "help": "Márcalo si hay algo largo en el evento que el equipo debe leer (entra a «Editar» para verlo). En el calendario sale un triángulo rojo con «!». Si no está activo, no sale nada.",
+   "key": "sw_review_detail",
+   "options": [],
+   "required": false,
+   "retired": false,
+   "title": "Revisar el detalle",
    "type": "switch"
   },
   {

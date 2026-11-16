@@ -90,6 +90,7 @@ SWITCHES = [
     {"key": "areas_enabled", "title": "Control de áreas", "help": "Entrada y salida por zonas.", "requires": None},
     {"key": "certificates_enabled", "title": "Certificados", "help": "Certificados descargables para los asistentes.", "requires": None},
     {"key": "digital_badge_enabled", "title": "Escarapela digital", "help": "Escarapela enviada por correo.", "requires": None},
+    {"key": "review_detail", "title": "Revisar el detalle", "help": "Márcalo si hay algo largo en el evento que el equipo debe leer (entra a «Editar» para verlo). En el calendario sale un triángulo rojo con «!». Si no está activo, no sale nada.", "requires": None},
     {"key": "auto_print_badge", "title": "Imprimir la escarapela sola", "help": "Al registrar a alguien se imprime la escarapela sin tocar el botón.", "requires": None},
     {"key": "auto_register", "title": "Modo autoregistro", "help": "Un acierto en la puerta acredita a la persona de una vez, sin confirmar.", "requires": None},
     {"key": "shared_print_enabled", "title": "Impresión compartida", "help": "Varias personas imprimen en una misma impresora.", "requires": None},
@@ -187,6 +188,9 @@ def default_template() -> dict:
     for s in SWITCHES:
         fields.append({"key": switch_field_key(s["key"]), "type": "switch", "title": s["title"], "required": False, "options": [], "config": {"switch": s["key"]}, "help": s["help"], "retired": False})
     sections = [{"id": sid, "title": title, "keys": [b["key"] for b in BASE_FIELDS if b["section"] == sid]} for sid, title in DEFAULT_SECTIONS]
+    for sec in sections:
+        if sec["id"] == "revisa":          # «Revisar el detalle» nace en «Revisa y crea», al lado de las observaciones
+            sec["keys"].append(switch_field_key("review_detail"))
     cal = {z: [{"key": k, "label": lab} for k, lab in DEFAULT_CALENDAR[z]] for z in ZONES}
     return {"fields": fields, "creation_layout": {"sections": sections}, "calendar_layout": {"zones": cal}}
 
@@ -353,6 +357,11 @@ def merge_missing_base(tpl: dict) -> dict:
             if sec.get("id") == "datos" and "event_type_id" not in sec.get("keys", []):
                 keys = sec.setdefault("keys", [])
                 keys.insert(keys.index("name") + 1 if "name" in keys else len(keys), "event_type_id")
+                break
+    if switch_field_key("review_detail") not in have:          # 0143: «Revisar el detalle» aparece SOLA en «Revisa y crea» de las plantillas guardadas antes; el administrador puede quitarla
+        for sec in out.get("creation_layout", {}).get("sections", []):
+            if sec.get("id") == "revisa" and switch_field_key("review_detail") not in sec.get("keys", []):
+                sec.setdefault("keys", []).append(switch_field_key("review_detail"))
                 break
     return out
 

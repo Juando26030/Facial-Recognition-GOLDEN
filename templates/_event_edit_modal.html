@@ -36,6 +36,7 @@
                 <p class="gw-hint" id="eeBilledInfo" hidden></p>
               </div>
               <div class="gw-field"><label class="gw-label" for="eeNotes">Observaciones</label><input class="gw-input" type="text" id="eeNotes" name="notes"></div>
+              <div class="gw-field"><label class="gw-check" for="eeReview"><input type="checkbox" id="eeReview" name="review_detail"> <span class="gw-choice__text">Revisar el detalle</span></label><p class="gw-hint">Si lo marcas, en el calendario sale un triángulo rojo con «!» para que el equipo lea lo que dejaste en este evento.</p></div>
             </div>
           </div>
         </details>
@@ -714,6 +715,7 @@
     form.location.value = ev.location || '';
     form.address.value = ev.address || '';
     form.notes.value = ev.notes || '';
+    form.review_detail.checked = !!ev.review_detail;
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
     await paintState(ev);
@@ -762,6 +764,7 @@
     const payload = Object.fromEntries(new FormData(form).entries());
     const eventId = payload.event_id;
     delete payload.event_id;
+    payload.review_detail = form.review_detail.checked;          // una casilla sin marcar no viaja en FormData: se manda el Sí/No explícito
     payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
     if (typeSel.dataset.loaded) payload.event_type_id = payload.event_type_id ? parseInt(payload.event_type_id, 10) : null; else delete payload.event_type_id;
 

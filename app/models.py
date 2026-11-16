@@ -311,6 +311,7 @@ class Event(Base):
     precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)
+    review_detail = Column(Boolean, default=False, server_default='false', nullable=False)  # 0143: «Revisar el detalle»: la comercial lo marca para que el equipo lea las observaciones; en el calendario sale un triángulo rojo con «!»
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
     selfreg_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0115 (Fase 8): «Autorregistro sin base de datos»: pantalla de kiosco para que la persona se cree sola (app/selfreg.py). APAGADO por defecto
     face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)

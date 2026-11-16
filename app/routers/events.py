@@ -107,6 +107,7 @@ class EventIn(BaseModel):
     areas_enabled: Optional[bool] = None
     certificates_enabled: Optional[bool] = None
     digital_badge_enabled: Optional[bool] = None
+    review_detail: Optional[bool] = None
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     shared_print_enabled: Optional[bool] = None
@@ -135,6 +136,7 @@ class EventUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     state_id: Optional[int] = None          # estado configurable (docs/18); al elegirlo, `status` pasa a su estado base
+    review_detail: Optional[bool] = None          # 0143: «Revisar el detalle»
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
@@ -171,6 +173,7 @@ def _serialize(e: Event) -> dict:
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
+        "review_detail": bool(e.review_detail),
         "event_type_id": e.event_type_id, "event_type_name": e.event_type.name if e.event_type else None, "event_type_color": (e.event_type.color or None) if e.event_type else None,
         "super_event_id": e.super_event_id,
         "super_event_name": e.super_event.name if e.super_event else None,
