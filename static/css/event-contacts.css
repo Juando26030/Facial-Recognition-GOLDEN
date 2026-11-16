@@ -8,3 +8,6 @@
 .gw-evc__warn { color: var(--gw-text-muted); }
 .gw-evc__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }
 .gw-evc__bar .gw-select { width: auto; min-width: 14rem; max-width: 100%; }
+
+/* Código sugerido al crear un evento: se ve apagado (gris) para distinguirlo de lo que se escribe; vacío = se usa ese número. */
+.gw-code-suggested::placeholder { color: color-mix(in srgb, var(--gw-text-muted) 65%, transparent); font-style: italic; opacity: 1; }

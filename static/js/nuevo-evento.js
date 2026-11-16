@@ -98,7 +98,7 @@
       const r = await fetch('/api/events/next-code');
       if (!r.ok) return;
       suggestedCode = String((await r.json()).event_code || '');
-      if (suggestedCode) { inp.placeholder = suggestedCode; inp.title = 'Si lo dejas vacío se usa ' + suggestedCode + '. Puedes escribir otro.'; }
+      if (suggestedCode) { inp.placeholder = suggestedCode; inp.classList.add('gw-code-suggested'); inp.title = 'Si lo dejas vacío se usa ' + suggestedCode + '. Puedes escribir otro.'; }
     } catch (e) { /* sin sugerencia: el código sigue siendo obligatorio */ }
   }
   async function mountContacts() {
