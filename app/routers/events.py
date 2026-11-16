@@ -3,7 +3,7 @@ import unicodedata
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, field_validator
 
 from app.inputcheck import check_text, check_username, text_validator
@@ -528,9 +528,36 @@ def create_event(
     return _serialize(event)
 
 
+def _auto_send_survey(db: Session, event: Event, staff: StaffUser, request_base: str) -> dict:
+    """16-nov-2026 (pedido de Juan David): al pasar a «Facturado» la encuesta se envía sola al contacto PRINCIPAL del evento (misma cola y mismo enlace que el envío manual). Nunca lanza ni deshace el cambio de estado:
+    si falta algo (correo, base final, dirección pública) lo dice y la comercial la envía a mano desde Editar evento."""
+    from app import delivery, publicurl
+    try:
+        db.refresh(event)
+        if not delivery.is_billed(event) or delivery.final_db(event) is None:
+            return {"sent": False, "detail": "No se envió la encuesta: el evento no está listo para la entrega al cliente."}
+        contact = delivery.client_contact(db, event)
+        if contact is None:
+            return {"sent": False, "detail": "No se envió la encuesta: el evento no tiene un contacto principal con correo. Agrégalo y envíala desde Editar evento."}
+        base = publicurl.base(request_base)
+        if not base:
+            return {"sent": False, "detail": "No se envió la encuesta: falta la dirección pública (PUBLIC_BASE_URL)."}
+        link = delivery.ensure_link(db, event, staff)
+        if delivery.mail_sent_recently(db, link.id):
+            return {"sent": False, "detail": "La encuesta ya se había enviado hace menos de una hora."}
+        delivery.enqueue_mail(db, event, link, base, staff)
+        db.commit()
+        jobs.kick()
+        return {"sent": True, "recipient": contact["email"], "detail": f"La encuesta va en camino a {contact['email']}."}
+    except Exception:                                   # el estado ya quedó guardado: un fallo aquí no puede devolver error al usuario
+        db.rollback()
+        log.exception("No se pudo encolar la encuesta automática del evento %s", getattr(event, "id", "?"))
+        return {"sent": False, "detail": "No se pudo enviar la encuesta sola; envíala desde Editar evento."}
+
+
 @router.patch("/events/{event_id}")
 def update_event(
-    event_id: int, data: EventUpdate, db: Session = Depends(get_db),
+    event_id: int, data: EventUpdate, request: Request, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
     event = db.query(Event).filter(Event.id == event_id).first()
@@ -635,7 +662,10 @@ def update_event(
         jobs.kick()                  # despierta el envío del aviso de campos clave (si se encoló alguno)
     if status_changed:
         warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora
-    return _serialize(event)
+    out = _serialize(event)
+    if entering_billing:
+        out["survey_email"] = _auto_send_survey(db, event, staff, str(request.base_url))
+    return out
 
 
 @router.get("/events/{event_id:int}")          # «:int»: sin él esta ruta (incluida ANTES que calendar) se tragaba GET /events/calendar y el calendario respondía 422

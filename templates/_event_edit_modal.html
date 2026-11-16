@@ -832,7 +832,9 @@
         return;
       }
       if (res.ok) {
-        showToast('Evento actualizado', 'success');
+        const saved = await res.json().catch(() => ({}));
+        const sv = saved && saved.survey_email;          // al pasar a «Facturado» la encuesta sale sola al contacto principal
+        showToast('Evento actualizado' + (sv ? '. ' + sv.detail : ''), sv && !sv.sent ? 'error' : 'success');
         markClean();
         closeModal();
         if (savedCallback) savedCallback();
