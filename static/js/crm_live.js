@@ -69,5 +69,8 @@
   })();
 
 
-  Object.assign(X, { picker, pickerField, accountPicker, opportunityPicker });
+  /* Espera corta después de una acción de la persona (p. ej. refrescar la vista previa al dejar de editar): se junta lo escrito en una sola llamada. */
+  function debounce(fn, ms) { let t = null; return function () { const a = arguments, self = this; clearTimeout(t); t = setTimeout(() => fn.apply(self, a), ms); }; }
+
+  Object.assign(X, { picker, pickerField, accountPicker, opportunityPicker, debounce });
 })();

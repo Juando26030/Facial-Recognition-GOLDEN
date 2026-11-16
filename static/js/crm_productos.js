@@ -17,11 +17,25 @@
   const area = (max, rows) => { const t = el("textarea", "gw-textarea"); t.maxLength = max; t.rows = rows || 4; return t; };
 
   /* ---------------------------------------------------------------- productos */
+  function photoControl(p) {
+    const box = el("div", "pl-photo"), file = el("input"); file.type = "file"; file.accept = "image/png,image/jpeg,.png,.jpg,.jpeg";
+    const img = el("img", "pl-thumb"), rm = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Quitar foto"); rm.type = "button";
+    const show = (on) => { img.hidden = !on; rm.hidden = !on; if (on) img.src = "/api/crm/products/" + p.id + "/image?v=" + Date.now(); };
+    img.alt = "Foto de " + p.name; show(!!p.has_image);
+    file.addEventListener("change", async () => {
+      const f = file.files[0]; if (!f) return; const fd = new FormData(); fd.append("file", f);
+      try { const r = await fetch("/api/crm/products/" + p.id + "/image", { method: "POST", body: fd }), d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "No se pudo subir la foto."); p.has_image = true; show(true); showToast("Foto guardada.", "success"); }
+      catch (x) { showToast(x.message, "error"); file.value = ""; }
+    });
+    rm.addEventListener("click", async () => { try { await api("DELETE", "/api/crm/products/" + p.id + "/image"); p.has_image = false; show(false); file.value = ""; showToast("Foto quitada.", "success"); } catch (x) { showToast(x.message, "error"); } });
+    box.appendChild(img); box.appendChild(file); box.appendChild(rm); return box;
+  }
   function productDialog(p) {
     const sku = input("text", 60), name = input("text", 200), cat = input("text", 80), price = input("text"), cost = input("text"), tax = input("text"), cur = select(["COP", "USD", "EUR"].map((c) => ({ value: c, label: c }))), desc = area(20000, 3);
     if (p) { sku.value = p.sku || ""; name.value = p.name; cat.value = p.category || ""; price.value = p.price; cost.value = p.cost; tax.value = p.tax_percent; cur.value = p.currency; desc.value = p.description || ""; } else { price.value = "0"; cost.value = "0"; tax.value = "19"; }
     [price, cost, tax].forEach((c) => { c.inputMode = "decimal"; });
-    editor(p ? "Editar producto" : "Nuevo producto", [["pdName", "Nombre", name], ["pdSku", "Código (SKU, opcional)", sku], ["pdCat", "Categoría (opcional)", cat], ["pdPrice", "Precio", price], ["pdCost", "Costo (opcional)", cost], ["pdCur", "Moneda", cur], ["pdTax", "Impuesto (%)", tax], ["pdDesc", "Descripción (opcional)", desc]], async () => {
+    const photo = p ? photoControl(p) : null;
+    editor(p ? "Editar producto" : "Nuevo producto", [["pdName", "Nombre", name], ["pdSku", "Código (SKU, opcional)", sku], ["pdCat", "Categoría (opcional)", cat], ["pdPrice", "Precio", price], ["pdCost", "Costo (opcional)", cost], ["pdCur", "Moneda", cur], ["pdTax", "Impuesto (%)", tax], ["pdDesc", "Descripción (opcional)", desc]].concat(photo ? [["pdPhoto", "Foto para la cotización (opcional)", photo]] : []), async () => {
       const data = { name: name.value.trim(), sku: sku.value.trim() || null, category: cat.value.trim() || null, price: price.value.replace(",", "."), cost: cost.value.replace(",", "."), currency: cur.value, tax_percent: tax.value.replace(",", "."), description: desc.value };
       if (p) await api("PUT", "/api/crm/products/" + p.id, Object.assign(data, { updated_at: p.updated_at })); else await api("POST", "/api/crm/products", data);
       showToast("Producto guardado.", "success"); loadProducts();
@@ -57,9 +71,10 @@
   $("prodNew").addEventListener("click", () => productDialog(null));
 
   /* ---------------------------------------------------------------- condiciones */
-  function simpleItem(title, sub, attr, id, archived) {
+  function simpleItem(title, sub, attr, id, archived, designHref) {
     const li = document.createElement("li"), t = el("div", "crm-name-wrap"); t.appendChild(el("span", "crm-name", title)); if (sub) t.appendChild(el("span", "crm-sub", sub)); li.appendChild(t);
     const a = el("div", "crm-card-actions"), ed = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Editar"); ed.type = "button"; ed.dataset[attr] = String(id); ed.setAttribute("aria-label", "Editar " + title); a.appendChild(ed);
+    if (designHref) { const dz = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Diseñar"); dz.href = designHref; dz.setAttribute("aria-label", "Diseñar el PDF de " + title); a.appendChild(dz); }
     const ar = el("button", "gw-btn gw-btn--secondary gw-btn--sm", archived ? "Restaurar" : "Archivar"); ar.type = "button"; ar.dataset[attr + "Archive"] = String(id); ar.setAttribute("aria-label", (archived ? "Restaurar " : "Archivar ") + title); a.appendChild(ar); li.appendChild(a); return li;
   }
   function termDialog(t) {
@@ -95,7 +110,7 @@
   async function loadTemplates() {
     const ul = $("tplList");
     try { templates = (await api("GET", "/api/crm/doc-templates")).items; ul.replaceChildren(); if (!templates.length) ul.appendChild(el("li", "gw-hint", "Todavía no hay plantillas: el PDF sale con el formato básico."));
-      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
+      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false, t.kind === "quote" ? "/crm/plantillas/" + t.id + "/disenar" : null))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
   }
   $("tplList").addEventListener("click", async (e) => {
     const ed = e.target.closest("[data-tpl]"), ar = e.target.closest("[data-tpl-archive]");

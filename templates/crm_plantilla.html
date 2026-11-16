@@ -1,0 +1,52 @@
+{# CRM - Diseñador del PDF de cotización (solo admin). Bloques que se arrastran y ordenan, con vista previa del PDF real. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_plantilla.js; API: /api/crm/doc-templates, /doc-layout/starter. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Diseñar plantilla del PDF" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css", "css/p-crm-c5.css"] %}{% set page_js = ["js/crm_plantilla.js"] %}{% set crm_section = 'cotizaciones' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="plRoot" data-template-id="{{ template_id }}">
+    <a class="crm-back" href="/crm/productos">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a productos y plantillas</a>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM · Administración</p>
+        <h1 class="gw-page-head__title" id="plTitle">Diseñar la plantilla del PDF</h1>
+        <p class="gw-page-head__sub">Arma la cotización con bloques: agrega, arrastra para ordenar y mira cómo queda el PDF a la derecha. Nada cambia en las cotizaciones hasta que guardes.</p>
+      </div>
+      <div class="crm-card-actions">
+        <span class="gw-badge" id="plDirty" hidden>Cambios sin guardar</span>
+        <button type="button" class="gw-btn gw-btn--primary" id="plSave" disabled>Guardar diseño</button>
+      </div>
+    </div>
+
+    <div id="plState" aria-live="polite"></div>
+
+    <section class="gw-card gw-stack" id="plStart" hidden aria-labelledby="plStartTitle">
+      <h2 class="gw-card__title" id="plStartTitle">¿Con qué quieres empezar?</h2>
+      <p class="gw-hint">Esta plantilla todavía usa el formato sencillo (encabezado, saludo y pie). Elige un punto de partida: después puedes cambiarlo todo.</p>
+      <div class="crm-card-actions">
+        <button type="button" class="gw-btn gw-btn--primary" data-start="classic">Diseño clásico (recomendado)</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-start="blank">En blanco</button>
+      </div>
+    </section>
+
+    <div class="pl-grid" id="plEditor" hidden>
+      <section class="gw-card gw-stack pl-palette" aria-labelledby="plPalTitle">
+        <h2 class="gw-card__title" id="plPalTitle">1. Agrega bloques</h2>
+        <p class="gw-hint">Toca un bloque para agregarlo, o arrástralo hasta donde lo quieras.</p>
+        <ul class="pl-palette__list" id="plPalette"></ul>
+      </section>
+
+      <section class="gw-card gw-stack pl-doc" aria-labelledby="plDocTitle">
+        <div class="crm-card-head"><h2 class="gw-card__title" id="plDocTitle">2. Ordena y ajusta</h2>
+          <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plClassic">Volver a empezar…</button></div></div>
+        <p class="gw-hint">Toca un bloque para cambiarlo. Con las flechas o arrastrando lo mueves de lugar.</p>
+        <ol class="pl-blocks" id="plBlocks"></ol>
+      </section>
+
+      <section class="gw-card gw-stack pl-preview" aria-labelledby="plPrevTitle">
+        <div class="crm-card-head"><h2 class="gw-card__title" id="plPrevTitle">3. Así se ve el PDF</h2></div>
+        <div class="gw-field"><label class="gw-label" for="plQuote">Ver con esta cotización</label><select class="gw-select" id="plQuote"><option value="">Cotización de ejemplo</option></select></div>
+        <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plRefresh">Actualizar vista previa</button><span class="gw-hint" id="plPrevState" role="status"></span></div>
+        <iframe class="pl-preview__frame" id="plFrame" title="Vista previa del PDF de la cotización"></iframe>
+      </section>
+    </div>
+  </div>
+{% include "_crm_shell_bottom.html" %}

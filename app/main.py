@@ -624,6 +624,18 @@ def crm_tableros_page(request: Request):
     return _crm_page(request, "crm_tableros.html")
 
 
+@app.get("/crm/plantillas/{template_id}/disenar")
+def crm_plantilla_disenador_page(request: Request, template_id: int):
+    """Diseñador del PDF de cotización (bloques que se arrastran). Solo administradores."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_plantilla.html", template_id=template_id)
+
+
 @app.get("/crm/productos")
 def crm_productos_page(request: Request):
     from app.crm import crm_enabled
