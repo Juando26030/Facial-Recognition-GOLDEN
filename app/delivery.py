@@ -22,7 +22,7 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import event_rules, jobs, publicurl, survey_def
+from app import event_contacts, event_rules, jobs, publicurl, survey_def
 from app.database import SessionLocal
 from app.mailer import clean_subject, send_mail
 from app.models import AuditAction, Event, EventDeliveryLink, EventStaffAuthorization, StaffUser, SurveyAnswer, SurveyResponse, Tenant
@@ -255,7 +255,10 @@ def check_state(db: Session, link: EventDeliveryLink, event: Optional[Event]) ->
 
 # ------------------------------------------------------------------ correo al cliente
 def client_contact(db: Session, event: Event) -> Optional[dict]:
-    """{email, name, source} de quien recibe la entrega: el correo de contacto de la cuenta (cliente) del evento; si no tiene, una cuenta de tipo «cliente» autorizada al evento. None si no hay ninguno válido."""
+    """{email, name, source} de quien recibe la entrega: el contacto PRINCIPAL del evento; si no tiene correo, el correo de contacto de la cuenta (cliente) del evento; si no tiene, una cuenta de tipo «cliente» autorizada al evento. None si no hay ninguno válido."""
+    principal = event_contacts.primary(db, event.id)          # 16-nov-2026: primero el contacto principal del evento; luego el del cliente y, al final, una cuenta «cliente»
+    if principal is not None:
+        return {"email": principal["email"], "name": principal["name"], "source": "event_contact"}
     tenant = db.get(Tenant, event.tenant_id)
     mail = valid_email(tenant.contact_email) if tenant is not None else ""
     if mail:

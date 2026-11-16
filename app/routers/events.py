@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from datetime import date
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, field_validator
@@ -18,7 +18,7 @@ from app import audit_actions, jobs, security, staff_credentials, status_changes
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
-from app import event_duplicate, event_transfer as et
+from app import event_contacts, event_duplicate, event_transfer as et
 from app.crm import platform_link as crm_link
 from app import event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
@@ -114,6 +114,7 @@ class EventIn(BaseModel):
     auto_register: Optional[bool] = None
     shared_print_enabled: Optional[bool] = None
     extra: Optional[Dict[str, Any]] = None      # campos personalizados de la plantilla {clave: valor}
+    contacts: Optional[List[Dict[str, Any]]] = None      # 16-nov-2026: contactos del cliente en el evento (app/event_contacts.py); sin este campo, entra el contacto principal de la cuenta del CRM
 
 
 class EventUpdate(BaseModel):
@@ -495,7 +496,7 @@ def create_event(
         if sup.archived_at is not None:
             raise HTTPException(status_code=400, detail="El superevento está archivado: restáuralo para asignarle eventos")
 
-    event_data = data.dict(exclude={"extra", *event_tpl.SWITCH_KEYS})
+    event_data = data.dict(exclude={"extra", "contacts", *event_tpl.SWITCH_KEYS})
     event_data["commercial_staff_id"] = commercial_id
     event_data.setdefault("accept_no_birth_mode", "require_personal_link")      # D5: los eventos nuevos exigen el enlace personal si la base no trae fecha de nacimiento (los existentes quedan en 'any'; se cambia en Parámetros)
     event_data["pledge_enabled"] = True          # Fase 4: todo evento nuevo EXIGE el compromiso digital de sus digitadores (se puede apagar en «Usuarios temporales»); los existentes no cambian
@@ -513,6 +514,13 @@ def create_event(
     testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     if pledge.text_available():
         pledge.create_or_regenerate(db, event, staff)          # el enlace del compromiso queda listo desde el primer día (sin texto aprobado no se publica: ver pledge.missing_for_login)
+    try:
+        if data.contacts is None:
+            event_contacts.replace(db, event, event_contacts.default_from_crm(db, event.tenant_id))          # por defecto: el contacto principal de la cuenta en el CRM
+        else:
+            event_contacts.replace(db, event, data.contacts)
+    except event_contacts.ContactError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     crm_link.link_new_event(db, staff, event)          # CRM: el evento nace con su oportunidad ganada (y su cuenta, si faltaba); un fallo del CRM no impide crear el evento
     db.commit()
     db.refresh(event)
@@ -650,6 +658,35 @@ def list_event_staff(
     return [_serialize_staff(s) for s in staff_list]
 
 
+@router.get("/event-contacts/options")
+def event_contact_options(tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Contactos de la cuenta del CRM de un cliente, para elegirlos como contactos del evento (el principal de la cuenta, primero). Vacío si el cliente no tiene cuenta en el CRM."""
+    if not db.query(Tenant.id).filter(Tenant.id == tenant_id).first():
+        raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
+    return {"contacts": event_contacts.crm_options(db, tenant_id)}
+
+
+@router.get("/events/{event_id}/contacts")
+def get_event_contacts(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    return {"contacts": event_contacts.list_for(db, event.id), "crm_options": event_contacts.crm_options(db, event.tenant_id)}
+
+
+@router.put("/events/{event_id}/contacts")
+def put_event_contacts(event_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Deja la lista de contactos del evento (reemplaza la anterior). Uno principal: recibe el informe final y la encuesta. Queda en `audit_actions` (cantidad; nunca nombres, teléfonos ni correos)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    try:
+        rows = event_contacts.replace(db, event, data.get("contacts"))
+    except event_contacts.ContactError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    audit_actions.record(db, staff, "update", "event_contacts", event.id, None, f"evento {event.id}: {len(rows)} contacto(s)")
+    db.commit()
+    return {"contacts": rows}
+
+
 @router.get("/events/{event_id}/duplicate-suggestion")
 def duplicate_suggestion(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Código y nombre libres para «Duplicar evento» (el usuario puede cambiarlos antes de confirmar)."""
@@ -666,6 +703,7 @@ def duplicate_event(event_id: int, data: dict = Body(default={}), db: Session = 
     event_archive.require_data_open(event, staff)
     try:
         new = event_duplicate.duplicate(db, event, staff, event_code=str(data.get("event_code") or "").strip() or None, name=str(data.get("name") or "").strip() or None)
+        event_contacts.copy_to(db, event.id, new.id)                 # los mismos contactos del cliente (con su principal)
         crm_link.link_new_event(db, staff, new)                      # como al crear un evento a mano: queda su oportunidad ganada en el CRM (si el CRM está encendido)
         audit_actions.record(db, staff, "create", "event", new.id, None, f"duplicado del evento {event.id}")
         db.commit()

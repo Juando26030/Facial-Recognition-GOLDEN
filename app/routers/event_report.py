@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.storage import get_storage, key_of, normalize_key
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
+from app import event_contacts
 from app.mailer import send_mail
 from app.models import StaffUser
 
@@ -26,6 +27,17 @@ REPORT_TYPES = {
     ".xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", (bytes.fromhex("504b0304"),)),  # ZIP
     ".xls": ("application/vnd.ms-excel", (bytes.fromhex("d0cf11e0"),)),  # OLE2
 }
+
+
+def _send_to_primary_contact(db: Session, event, ext: str, content: bytes, mime: str) -> dict:
+    """16-nov-2026: el informe también sale, solo, al contacto PRINCIPAL del evento (app/event_contacts.py). Sin principal o sin correo no se envía y se dice por qué; nunca lanza."""
+    contact = event_contacts.primary(db, event.id)
+    if contact is None:
+        return {"sent": False, "detail": "El evento no tiene un contacto principal con correo: el informe no se envió al cliente"}
+    name = contact["name"] or "cliente"
+    body = (f"Hola {name}, adjuntamos el informe final del evento «{event.name}» ({event.event_code}). Gracias por confiar en Golden Eventos y Logística.")
+    res = send_mail(contact["email"], f"Informe final — {event.name}", body, attachments=[(f"Informe_{event.event_code}{ext}", content, mime)])
+    return {"sent": bool(res.get("sent")), "detail": "Informe enviado al contacto principal del evento" if res.get("sent") else str(res.get("detail") or "No se pudo enviar al contacto principal")}
 
 
 @router.post("/events/{event_id}/final-report")
@@ -67,7 +79,8 @@ def upload_final_report(
             commercial.email, f"Informe final — {event.event_code} {event.name}", body,
             attachments=[(f"Informe_{event.event_code}{ext}", content, mime)],
         )
-    return {"message": "Informe subido", "report_uploaded": True, "email": email}
+    client_email = _send_to_primary_contact(db, event, ext, content, mime)
+    return {"message": "Informe subido", "report_uploaded": True, "email": email, "client_email": client_email}
 
 
 @router.get("/events/{event_id}/final-report")

@@ -52,3 +52,11 @@ def test_delete_loaded_base_keeps_registered_people_and_manual_ones(db, factory)
     assert "1003" not in left and {"1001", "1002", "2001"} <= left
     assert db.query(m.User).filter_by(id="1003", tenant_id=ev.tenant_id).first() is None          # no está en otro evento: se va su ficha
     assert db.query(m.User).filter_by(id="1001", tenant_id=ev.tenant_id).first() is not None
+
+
+def test_duplicate_route_copies_event_contacts(db, factory):
+    from app import event_contacts
+    ev = _build(db, factory)
+    event_contacts.replace(db, ev, [{"name": "Ana", "email": "ana@x.co", "note": "Compras"}])
+    db.commit()
+    assert event_contacts.copy_to(db, ev.id, event_duplicate.duplicate(db, ev, factory.staff("admin", "admin_dup2")).id) == 1

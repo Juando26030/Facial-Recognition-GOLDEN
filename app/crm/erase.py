@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.crm import normalize
 from app.crm.history import FREE_TEXT
 from app.crm.matching import ACCOUNT_PERSONAL_FIELDS, digits, identifiers, mentions, value_matches
-from app.models import CrmAccount, CrmActivity, CrmChangeLog, CrmContact, CrmLead, CrmNote, CrmOpportunity, CrmProforma, CrmQuote, Tenant
+from app.models import CrmAccount, CrmActivity, CrmChangeLog, CrmContact, CrmLead, CrmNote, CrmOpportunity, CrmProforma, CrmQuote, EventContact, Tenant
 
 def _history_hits(db: Session, account: CrmAccount, ids: dict) -> tuple:
     """Filas del historial de la cuenta que traen datos de esta persona: (ids a BORRAR, filas de texto libre a VACIAR).
@@ -46,6 +46,17 @@ def _scrub_account(db: Session, account: CrmAccount, ids: dict) -> dict:
             setattr(account, f, None)
             cleared += 1
     return {"account_history": removed + len(blank), "account_fields": cleared}
+
+
+def _erase_event_contacts(db: Session, contact_ids: list, emails=()) -> int:
+    """Borra las copias de este contacto como contacto de eventos (event_contacts): las enlazadas por id y las que alguien escribió a mano con el mismo correo (Ley 1581)."""
+    n = 0
+    if contact_ids:
+        n += db.execute(delete(EventContact).where(EventContact.crm_contact_id.in_(contact_ids))).rowcount
+    mails = [e for e in emails if e]
+    if mails:
+        n += db.execute(delete(EventContact).where(func.lower(EventContact.email).in_([m.lower() for m in mails]))).rowcount
+    return n
 
 
 def _clear_tenant_mirror(db: Session, tenant_id: Optional[str], contact: CrmContact) -> int:
@@ -145,6 +156,7 @@ def erase_contact(db: Session, contact_id: int) -> dict:
     out["quotes"] = len(quotes)
     out.update(_scrub_account(db, account, ids) if account is not None else {"account_history": 0, "account_fields": 0})
     out["tenant_fields"] = _clear_tenant_mirror(db, account.tenant_id if account is not None else None, contact)
+    _erase_event_contacts(db, [contact_id], ids["emails"])
     lead_ids = _leads_by_email(db, ids)
     out["leads"] = 0
     for lid in lead_ids:
@@ -168,6 +180,7 @@ def erase_account(db: Session, account_id: int) -> dict:
     contact_ids = [c.id for c in contacts]
     opp_ids = list(db.execute(select(CrmOpportunity.id).where(CrmOpportunity.account_id == account_id)).scalars().all())
     tenant_fields = sum(_clear_tenant_mirror(db, account.tenant_id, c) for c in contacts)
+    _erase_event_contacts(db, contact_ids, [e for c in contacts for e in identifiers(c)["emails"]])
     notes = db.execute(delete(CrmNote).where(CrmNote.account_id == account_id)).rowcount
     activities = db.execute(delete(CrmActivity).where(CrmActivity.account_id == account_id)).rowcount
     changes = 0

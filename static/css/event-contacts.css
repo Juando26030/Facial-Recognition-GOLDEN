@@ -1,0 +1,10 @@
+/* Contactos del cliente en el evento. SOLO tokens --gw-* (nada de colores ni tamaños sueltos). */
+.gw-evc__list { list-style: none; margin: 0 0 var(--gw-sp-3); padding: 0; display: grid; gap: var(--gw-sp-3); }
+.gw-evc__card { background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); padding: var(--gw-sp-3); display: grid; gap: var(--gw-sp-3); }
+.gw-evc__card.is-primary { border-color: var(--gw-focus); }
+.gw-evc__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-evc__grid { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.gw-evc__field { display: grid; gap: var(--gw-sp-1); }
+.gw-evc__warn { color: var(--gw-text-muted); }
+.gw-evc__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }
+.gw-evc__bar .gw-select { width: auto; min-width: 14rem; max-width: 100%; }

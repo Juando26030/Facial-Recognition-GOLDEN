@@ -435,6 +435,25 @@ class EventType(Base):
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
 
+class EventContact(Base):
+    """Contacto del CLIENTE en UN evento (16-nov-2026): quién es y para qué (`note`, p. ej. «Quien aprueba» o «Logística en sitio»). Puede venir de un contacto del CRM (`crm_contact_id`, copia de sus datos
+    al elegirlo) o escribirse a mano (nombre + teléfono). El PRINCIPAL (uno solo por evento) recibe el informe final y la encuesta. DATOS PERSONALES (Ley 1581): al suprimir el contacto en el CRM
+    se borran estas filas (app/crm/erase.py). No viaja en el paquete de exportar/importar; «Duplicar evento» sí los copia."""
+    __tablename__ = 'event_contacts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    crm_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    phone = Column(String(60), nullable=True)
+    email = Column(String(200), nullable=True)
+    note = Column(String(200), nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (Index('ix_event_contacts_event', 'event_id'), Index('uq_event_contacts_primary', 'event_id', unique=True, postgresql_where=text('is_primary')))
+
+
 class EventStaffAuthorization(Base):
     """Qué staff_user puede operar en qué evento. Obligatorio para digitadores (acceso temporal);
     para coordinador/admin/super_admin no se exige (tienen alcance de tenant/global)."""

@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-event-fields.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-map.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/event-contacts.css') }}">
 
 <div class="gw-modal-backdrop" id="eventModalOverlay">
   <div class="gw-modal ee-modal" role="dialog" aria-modal="true" aria-labelledby="eeTitle">
@@ -167,6 +168,12 @@
           </div>
         </details>
 
+        {# Contactos del cliente en el evento (16-nov-2026): varios, uno principal (recibe el informe final y la encuesta). Se guardan con «Guardar cambios». #}
+        <details class="gw-form-group" id="eeContactsGroup" open>
+          <summary class="gw-form-group__summary">Contactos del cliente</summary>
+          <div class="gw-form-group__body"><p class="gw-hint">El contacto principal recibe el informe final y la encuesta. Elígelos del CRM o agrégalos a mano, con una nota de quién es en este evento.</p><div id="eeContactsBox"></div></div>
+        </details>
+
         {# Inventario del evento (Fase 5): productos del catálogo con cantidades y estado del cuadre; lo que cada rol puede editar lo decide el servidor. Se guarda con «Guardar cambios» o con su propio botón. #}
         <details class="gw-form-group" id="eeInvGroup" open hidden>
           <summary class="gw-form-group__summary">Inventario</summary>
@@ -237,6 +244,7 @@
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
 <script src="{{ url_for('static', path='js/workday.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-contacts.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-history-panel.js') }}"></script>
 <script>
@@ -672,6 +680,13 @@
   }
 
   /* Inventario del evento (Fase 5): se pinta con event-inventory-plan.js; si el rol no puede verlo o el catálogo está vacío, la sección no aparece. */
+  let contactsCtrl = null;
+  async function mountContacts(ev) {
+    contactsCtrl = null;
+    if (!window.GWEventContacts) return;
+    try { contactsCtrl = await GWEventContacts.mount(document.getElementById('eeContactsBox'), { eventId: ev.id, onChange: markDirty }); } catch (e) { contactsCtrl = null; }
+    if (!contactsCtrl || !contactsCtrl.loaded) document.getElementById('eeContactsGroup').hidden = true;          // sin permiso o sin red: la sección no aparece
+  }
   const invGroup = document.getElementById('eeInvGroup');
   let invCtrl = null;
   async function mountInventory(ev) {
@@ -726,6 +741,7 @@
     paintWorkday(tpl);
     paintHistory(ev);
     mountInventory(ev);
+    mountContacts(ev);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     document.getElementById('eeFinalDbFile').value = '';
@@ -754,7 +770,7 @@
       if (!res.ok) { showToast(data.detail || 'No se pudo subir el informe', 'error'); return; }
       current.report_uploaded = true; current.report_uploaded_at = new Date().toISOString().replace('Z', '');
       paintReport(current);
-      showToast(data.email && data.email.sent ? 'Informe subido y correo enviado' : `Informe subido. ${data.email ? data.email.detail : ''}`, 'success');
+      showToast((data.email && data.email.sent ? 'Informe subido y correo enviado a la comercial. ' : `Informe subido. ${data.email ? data.email.detail + '. ' : ''}`) + (data.client_email ? data.client_email.detail + '.' : ''), 'success');
       if (savedCallback) savedCallback();
     });
   });
@@ -796,6 +812,10 @@
       else if (stateValue.startsWith('st:')) payload.status = stateValue.slice(3);
       const base = (stateSel.selectedOptions[0] && stateSel.selectedOptions[0].dataset.base) || (stateValue.startsWith('st:') ? stateValue.slice(3) : '');
       if (base === 'finalizado' && stateSel.dataset.initialBase !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
+    }
+    if (contactsCtrl && contactsCtrl.loaded && contactsCtrl.dirty()) {
+      const cs = await contactsCtrl.save();
+      if (!cs.ok) { setStatus('error', cs.error); showToast(cs.error, 'error'); return; }
     }
     if (invCtrl && invCtrl.dirty()) {          // primero el inventario: si el cuadre impide el cambio de estado, ya quedó guardado lo que escribiste
       const inv = await invCtrl.save();
