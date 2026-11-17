@@ -11,6 +11,9 @@
   const HEX = /^#[0-9a-fA-F]{6}$/;
   if ($('typeColor')) $('typeColor').value = '#D4AF37';
   let showArchived = false;
+  let cache = [];
+  const pending = {};            // id -> color nuevo ('' = quitar el color): queda pendiente hasta el «Guardar cambios» general (GWParams, clave «tipos_color»)
+  const colorOf = (t) => (Object.prototype.hasOwnProperty.call(pending, t.id) ? pending[t.id] : (t.color || ''));
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -21,8 +24,8 @@
     const btns = [];
     if (!t.archived) {
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-rename="${t.id}" data-name="${esc(t.name)}" aria-label="Renombrar ${esc(t.name)}">${icon('edit')} Renombrar</button>`);
-      btns.push(`<label class="gw-check gw-check--inline"><input type="color" class="gw-config__swatch" data-color-of="${t.id}" value="${HEX.test(t.color) ? esc(t.color) : '#D4AF37'}" aria-label="Color de ${esc(t.name)}"></label>`);
-      if (t.color) btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nocolor="${t.id}" aria-label="Quitar el color de ${esc(t.name)}">Quitar color</button>`);
+      btns.push(`<label class="gw-check gw-check--inline"><input type="color" class="gw-config__swatch" data-color-of="${t.id}" value="${HEX.test(colorOf(t)) ? esc(colorOf(t)) : '#D4AF37'}" aria-label="Color de ${esc(t.name)}"></label>`);
+      if (colorOf(t)) btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nocolor="${t.id}" aria-label="Quitar el color de ${esc(t.name)}">Quitar color</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-archive="${t.id}" data-name="${esc(t.name)}" aria-label="Archivar ${esc(t.name)}">${icon('trash')} Archivar</button>`);
     } else {
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${t.id}" aria-label="Restaurar ${esc(t.name)}">${icon('undo')} Restaurar</button>`);
@@ -40,14 +43,18 @@
     box.setAttribute('aria-busy', 'true');
     try {
       const d = await j(`/api/event-types?include_archived=true`, { cache: 'no-store' });
-      const list = d.types.filter((t) => t.archived === showArchived);
-      box.innerHTML = list.map(row).join('') || (showArchived
-        ? '<div class="gw-state" role="status"><p class="gw-state__title">No hay tipos archivados</p><p class="gw-state__text">Cuando archives uno, aparecerá aquí para poder restaurarlo.</p></div>'
-        : '<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay tipos de evento</p><p class="gw-state__text">Agrega el primero con el formulario de arriba.</p></div>');
-      paintDots();
+      cache = d.types;
+      paintList();
     } catch (e) {
       box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudieron cargar los tipos de evento</p><p class="gw-state__text">${esc(e.message)}. Inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry>Reintentar</button></div>`;
     } finally { box.setAttribute('aria-busy', 'false'); }
+  }
+  function paintList() {
+    const list = cache.filter((t) => t.archived === showArchived);
+    $('tiposList').innerHTML = list.map(row).join('') || (showArchived
+      ? '<div class="gw-state" role="status"><p class="gw-state__title">No hay tipos archivados</p><p class="gw-state__text">Cuando archives uno, aparecerá aquí para poder restaurarlo.</p></div>'
+      : '<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay tipos de evento</p><p class="gw-state__text">Agrega el primero con el formulario de arriba.</p></div>');
+    paintDots();
   }
 
   $('typeForm').addEventListener('submit', async (e) => {
@@ -67,8 +74,16 @@
   $('tiposList').addEventListener('change', async (e) => {
     const c = e.target.closest('[data-color-of]');
     if (!c) return;
-    try { await send(`/api/event-types/${c.dataset.colorOf}`, 'PATCH', { color: c.value }); showToast('Color guardado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
+    pending[c.dataset.colorOf] = c.value;          // no se guarda al elegir: queda pendiente hasta «Guardar cambios»
+    if (window.GWParams) GWParams.markDirty('tipos_color');
   });
+  if (window.GWParams) GWParams.register({ key: 'tipos_color', label: 'Colores de los tipos de evento', order: 40, save: async () => {
+    for (const id of Object.keys(pending)) {
+      await send(`/api/event-types/${id}`, 'PATCH', { color: pending[id] });
+      delete pending[id];
+    }
+    await load();
+  } });
   $('tiposList').addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry]')) { load(); return; }
     const ren = e.target.closest('[data-rename]');
@@ -79,7 +94,7 @@
       return;
     }
     const nc = e.target.closest('[data-nocolor]');
-    if (nc) { try { await busy(nc, () => send(`/api/event-types/${nc.dataset.nocolor}`, 'PATCH', { color: '' })); load(); } catch (err) { showToast(err.message, 'error'); } return; }
+    if (nc) { pending[nc.dataset.nocolor] = ''; if (window.GWParams) GWParams.markDirty('tipos_color'); paintList(); return; }
     const arch = e.target.closest('[data-archive]');
     if (arch) {
       if (!(await showConfirm(`¿Archivar el tipo «${esc(arch.dataset.name)}»? Deja de ofrecerse al crear o editar eventos; los eventos que ya lo tienen lo conservan. Se puede restaurar.`, { confirmLabel: 'Archivar' }))) return;
