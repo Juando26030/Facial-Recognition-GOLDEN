@@ -60,6 +60,7 @@
 
 /* Escritorio (≥ 901 px): los eventos de cada cuenta son filas delgadas de UNA línea, con columnas alineadas (Fase 1.7, ancho).
    Bajo 901 px sigue la tarjeta de siempre (celular sin cambios). */
+.p-cli__states { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-1); }          /* los chips de estado (Finalizado, Archivado, Facturado) son UNA sola pieza de la fila, para que ninguno empuje los botones */
 .p-cli__cols, .p-cli__rep--dot { display: none; }          /* el aviso del informe se ve completo («Informe pendiente») en celular y en computador */
 @media (min-width: 901px) {
   .gw-tenant__body { --cli-cols: minmax(0, 2.4fr) minmax(0, 2fr) 6.5rem minmax(0, 1.5fr) max-content; }
@@ -89,6 +90,7 @@
   .p-cli__sep, .p-cli__pfx { display: none; }
   .p-cli__coord .ev-who .p-cli__pfx { display: inline; font-weight: var(--gw-fw-bold); }          /* Eventos: «Comercial: …» y «Coordinador: …», cada quien con su título */
   .gw-event-card .gw-card-row__head .gw-badge { display: none; order: 5; }
+  .gw-event-card .gw-card-row__head .p-cli__states { display: none; order: 5; }
   /* a la derecha, en una línea: Editar · ⋯ · estado · Ingresar (mismo orden que Eventos) */
   .gw-event-card .p-cli__acts { order: 6; display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: var(--gw-sp-2); min-width: 0; margin: 0; }
   .gw-event-card .p-cli__acts > [data-edit-event] { order: 1; }
@@ -105,7 +107,8 @@
 @media (min-width: 1760px) {
   .gw-tenant__body { --cli-cols: minmax(0, 2.4fr) minmax(0, 2fr) 6.5rem minmax(0, 1.5fr) max-content max-content; }
   .p-cli__c5 { display: block; }
-  .gw-event-card .gw-card-row__head .gw-badge { display: inline-flex; order: 5; justify-self: start; }
+  .gw-event-card .gw-card-row__head .p-cli__states { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gw-sp-1); justify-self: start; }          /* «Facturado» queda DEBAJO de «Finalizado», sin ocupar otra columna */
+  .gw-event-card .gw-card-row__head .p-cli__states .gw-badge { display: inline-flex; order: 0; justify-self: auto; }
 }
 
 /* «Ingresar» dorado (primario) como en el resto de la plataforma, en celular Y en computador; «Editar» conserva su lápiz y su contorno. */

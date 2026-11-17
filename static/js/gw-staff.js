@@ -77,6 +77,7 @@
 
   function render(all) {
     const list = all.filter(matches);
+    if (!list.length) setLayout(false);          // avisos de «sin resultados / sin cuentas»: con el contenedor de filas de siempre
     if (all.length && !list.length) {
       listEl.innerHTML = '<div class="gw-empty" role="status"><p><strong>Ninguna cuenta coincide con «' + esc(searchEl ? searchEl.value.trim() : '') + '»</strong></p><p>Prueba con otra parte del nombre, el usuario o el correo.</p></div>';
       return;
@@ -87,9 +88,33 @@
         : '<div class="gw-empty" role="status"><p><strong>Todavía no hay cuentas de staff</strong></p><p>Abre «Nueva cuenta» arriba para crear la primera.</p></div>';
       return;
     }
-    listEl.innerHTML = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>' + list.map((s) => {
-      const roles = [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).map(roleLabel).join(' + ');
-      return `
+    if (searchTerm) { setLayout(false); listEl.innerHTML = COLHEAD + list.map(rowHtml).join(''); return; }          // buscando: lista plana, solo quien coincide
+    // Sin búsqueda: un panel desplegable por rol; quien tiene doble rol sale en los dos (principal + extras).
+    setLayout(true);
+    const rolesOf = (s) => [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).filter(Boolean);
+    const present = [];
+    list.forEach((s) => rolesOf(s).forEach((r) => { if (present.indexOf(r) < 0) present.push(r); }));
+    const ordered = GROUP_ORDER.filter((r) => present.indexOf(r) >= 0).concat(present.filter((r) => GROUP_ORDER.indexOf(r) < 0));
+    listEl.innerHTML = ordered.map((r) => {
+      const members = list.filter((s) => rolesOf(s).indexOf(r) >= 0);
+      return `<details class="gw-group gw-staff__group" data-role="${esc(r)}"${openGroups.has(r) ? ' open' : ''}>
+        <summary class="gw-group__sum"><span class="gw-group__title">${esc(GROUP_LABELS[r] || roleLabel(r))}</span><span class="gw-badge gw-badge--info">${members.length}</span></summary>
+        <div class="gw-group__body"><div class="gw-cards gw-rows gw-staff__list">${COLHEAD}${members.map(rowHtml).join('')}</div></div>
+      </details>`;
+    }).join('');
+  }
+
+  const COLHEAD = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>';
+  const GROUP_ORDER = ['super_admin', 'admin', 'comercial', 'dir_coordinadores', 'coordinador', 'contabilidad', 'almacen', 'digitador', 'cliente'];
+  const GROUP_LABELS = { super_admin: 'Super administradores', admin: 'Administradores', comercial: 'Comerciales', dir_coordinadores: 'Directores de coordinadores', coordinador: 'Coordinadores', contabilidad: 'Contabilidad', almacen: 'Almacén', digitador: 'Digitadores', cliente: 'Clientes' };
+  const openGroups = new Set();          // paneles que la persona dejó abiertos (se conservan al recargar o al cambiar algo)
+  listEl.addEventListener('toggle', (e) => { const d = e.target; if (d && d.matches && d.matches('details.gw-staff__group')) { if (d.open) openGroups.add(d.dataset.role); else openGroups.delete(d.dataset.role); } }, true);
+  /* En vista agrupada el contenedor deja de ser la rejilla de filas (cada panel trae la suya); buscando, vuelve a serlo. */
+  function setLayout(grouped) { ['gw-cards', 'gw-rows', 'gw-staff__list'].forEach((c) => listEl.classList.toggle(c, !grouped)); }
+
+  function rowHtml(s) {
+    const roles = [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).map(roleLabel).join(' + ');
+    return `
       <article class="gw-card-row gw-staff__row">
         <div class="gw-card-row__head gw-staff__head">
           <h3 class="gw-card-row__title gw-staff__who gw-staff__c-user" title="${esc(s.username)}">${esc(s.username)}</h3>
@@ -101,7 +126,6 @@
         <p class="gw-staff__c-role"><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
         <div class="gw-card-row__actions gw-staff__actions gw-staff__c-act">${actionsHtml(s)}</div>
       </article>`;
-    }).join('');
   }
 
   /* ---------------------------------------------------------------- Acciones */
