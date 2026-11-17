@@ -1,4 +1,5 @@
-/* CRM - Ficha de cuenta y cuenta nueva (C1b-2). Guarda con la versión (`updated_at`) que la persona vio: si alguien más la cambió, el servidor responde 409 y se muestra el aviso de recarga.
+/* CRM - Ficha de cuenta y cuenta nueva (C1b-2). Cuenta existente: los datos se guardan con la barra única de la pantalla (GWParams, bloque «cuenta»); cuenta nueva: «Crear cuenta» es una sola transacción.
+   Guarda con la versión (`updated_at`) que la persona vio: si alguien más la cambió, el servidor responde 409 y se muestra el aviso de recarga.
    Lo escrito por personas se pinta solo con textContent / .value. Sin onclick en línea; avisos con showToast/showConfirm. */
 (function () {
   "use strict";
@@ -53,7 +54,8 @@
     $("crmMakeClient").hidden = !!(a.is_client || a.archived);
     const lbl = $("crmArchiveLabel"); if (lbl) lbl.textContent = a.archived ? "Restaurar cuenta" : "Archivar cuenta";
     $("crmActions").hidden = false;
-    saveBtn.disabled = !!a.archived;
+    if (saveBtn) saveBtn.disabled = !!a.archived;
+    else fieldInputs().forEach((i) => { i.disabled = !!a.archived; });       // archivada: no se edita (antes se bloqueaba el botón Guardar)
     dirty = false;
   }
   function fillOwners(select, owners) {
@@ -79,6 +81,7 @@
       if (meta) fillOwners($("owner_staff_id"), meta.owners);
       if (account.owner_staff_id && meta && !meta.owners.some((o) => o.id === account.owner_staff_id)) $("owner_staff_id").appendChild(new Option("Responsable anterior", String(account.owner_staff_id)));
       fill(account);
+      if (window.GWParams) GWParams.markClean("cuenta");
       loading.hidden = true; showMain(true);
     } catch (e) {
       if (e.status === 404) showError("No encontramos esta cuenta", "Puede que el enlace esté mal escrito o que la hayan eliminado.");
@@ -93,38 +96,46 @@
     if ("owner_staff_id" in out) out.owner_staff_id = out.owner_staff_id || null;
     return out;
   }
-  async function save(e) {
+  function validName() {
+    const n = $("name");
+    if (!n.value.trim()) { n.setAttribute("aria-invalid", "true"); n.focus(); return false; }
+    n.removeAttribute("aria-invalid"); return true;
+  }
+  /* Cuenta nueva: una sola transacción («Crear cuenta»). */
+  async function create(e) {
     e.preventDefault();
+    if (!validName()) { showToast("Escribe el nombre de la cuenta.", "error"); return; }
     const data = payload();
-    if (!data.name) { const n = $("name"); n.setAttribute("aria-invalid", "true"); n.focus(); showToast("Escribe el nombre de la cuenta.", "error"); return; }
-    $("name").removeAttribute("aria-invalid");
     await busy(saveBtn, async () => {
       try {
-        if (isNew) {
-          let created;
-          try { created = await api("POST", "/api/crm/accounts", data); }
-          catch (err) {
-            if (err.status !== 409) throw err;
-            const ok = await showConfirm("", { variant: "warning", title: "Ya hay una cuenta parecida", text: err.message, confirmLabel: "Crear de todos modos" });
-            if (!ok) return;
-            created = await api("POST", "/api/crm/accounts", Object.assign({}, data, { confirm_duplicate: true }));
-          }
-          dirty = false;
-          showToast("Cuenta creada.", "success");
-          window.location.href = "/crm/cuentas/" + created.id;
-          return;
+        let created;
+        try { created = await api("POST", "/api/crm/accounts", data); }
+        catch (err) {
+          if (err.status !== 409) throw err;
+          const ok = await showConfirm("", { variant: "warning", title: "Ya hay una cuenta parecida", text: err.message, confirmLabel: "Crear de todos modos" });
+          if (!ok) return;
+          created = await api("POST", "/api/crm/accounts", Object.assign({}, data, { confirm_duplicate: true }));
         }
-        data.updated_at = account.updated_at;
-        account = await api("PUT", "/api/crm/accounts/" + encodeURIComponent(accountId), data);
-        if (meta && account.owner_staff_id && !meta.owners.some((o) => o.id === account.owner_staff_id) && !$("owner_staff_id").querySelector('option[value="' + account.owner_staff_id + '"]')) $("owner_staff_id").appendChild(new Option("Responsable anterior", String(account.owner_staff_id)));
-        fill(account);
-        conflict.hidden = true;
-        showToast("Cambios guardados.", "success");
-      } catch (err) {
-        if (err.status === 409 && !isNew) { conflict.hidden = false; conflict.scrollIntoView({ block: "center" }); }
-        else showToast(err.message || "No se pudo guardar.", "error");
-      }
+        dirty = false;
+        showToast("Cuenta creada.", "success");
+        window.location.href = "/crm/cuentas/" + created.id;
+      } catch (err) { showToast(err.message || "No se pudo guardar.", "error"); }
     });
+  }
+  /* Cuenta existente: lo guarda la barra única. Lanza Error(mensaje) si falla (la barra lo muestra y lo pendiente queda pendiente). */
+  async function saveAccount() {
+    if (!validName()) throw new Error("Escribe el nombre de la cuenta.");
+    const data = payload();
+    data.updated_at = account.updated_at;
+    try {
+      account = await api("PUT", "/api/crm/accounts/" + encodeURIComponent(accountId), data);
+    } catch (err) {
+      if (err.status === 409) { conflict.hidden = false; conflict.scrollIntoView({ block: "center" }); throw new Error("Alguien más modificó esta cuenta. Recarga la ficha."); }
+      throw err;
+    }
+    if (meta && account.owner_staff_id && !meta.owners.some((o) => o.id === account.owner_staff_id) && !$("owner_staff_id").querySelector('option[value="' + account.owner_staff_id + '"]')) $("owner_staff_id").appendChild(new Option("Responsable anterior", String(account.owner_staff_id)));
+    fill(account);
+    conflict.hidden = true;
   }
 
   /* ---------------------------------------------------------------- acciones de la cabecera */
@@ -161,10 +172,15 @@
     api, el, icon };
 
   /* ---------------------------------------------------------------- arranque */
-  form.addEventListener("submit", save);
-  form.addEventListener("input", () => { dirty = true; });
-  window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
-  $("crmReload").addEventListener("click", () => { dirty = false; if (isNew) window.location.reload(); else loadAccount(); });
+  if (isNew) {
+    form.addEventListener("submit", create);
+    form.addEventListener("input", () => { dirty = true; });
+    window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });         // cuenta nueva: la barra única no aplica
+  } else {
+    form.addEventListener("submit", (e) => { e.preventDefault(); const b = $("paramsSaveBtn"); if (b && !b.disabled) b.click(); });       // Enter en un campo = el mismo botón de la barra
+    if (window.GWParams) GWParams.register({ key: "cuenta", label: "Datos de la cuenta", order: 10, save: saveAccount });
+  }
+  $("crmReload").addEventListener("click", () => { dirty = false; if (isNew) window.location.reload(); else { if (window.GWParams) GWParams.markClean("cuenta"); loadAccount(); } });
   if (!isNew) {
     $("crmMakeClient").addEventListener("click", makeClient);
     const arch = $("crmArchive"); if (arch) arch.addEventListener("click", toggleArchive);
