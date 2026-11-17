@@ -378,17 +378,11 @@
 
     const mailToggle = document.getElementById('staffMailToggle');
     if (mailToggle) {
-        mailToggle.addEventListener('change', async () => {
-            const want = mailToggle.checked;
-            try {
-                const res = await fetch(`/api/events/${eventId}/staff-mail`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: want }) });
-                if (!res.ok) throw new Error('http ' + res.status);
-                showToast(want ? 'Se avisará por correo a quienes se asignen' : 'No se enviarán correos al asignar', 'success');
-            } catch (e) {
-                mailToggle.checked = !want;
-                showToast('No se pudo guardar el cambio', 'error');
-            }
-        });
+        // Queda pendiente hasta «Guardar cambios» (barra única); el aviso lo da el guardado general.
+        GWParams.register({ key: 'staffmail', label: 'Aviso por correo a los digitadores', order: 10, save: async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-mail`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: mailToggle.checked }) });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo guardar el aviso por correo'); }
+        } });
     }
 
     async function decideLogin(btn, staffId, username, allow) {

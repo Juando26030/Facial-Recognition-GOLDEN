@@ -9,6 +9,7 @@
     const $ = (sel) => panel.querySelector(sel);
     const api = `/api/events/${eventId}/pledge`;
     let info = null, byStaff = {};
+    let pending = null;                 // valor de «Exigir el compromiso» editado y aún sin guardar (null = nada pendiente)
 
     async function call(url, method, body) {
         const res = await fetch(url, { method, cache: 'no-store', headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
@@ -21,7 +22,7 @@
     function paint() {
         if (!info) return;
         panel.hidden = false;
-        $('[data-pl-enabled]').checked = !!info.enabled;
+        $('[data-pl-enabled]').checked = pending == null ? !!info.enabled : pending;
         const url = $('[data-pl-url]');
         url.value = info.link || '';
         $('[data-pl-copy]').disabled = !info.link;
@@ -106,11 +107,15 @@
             }
         } catch (err) { showToast(err.message, 'error'); }
     });
-    panel.addEventListener('change', async (e) => {
-        if (!e.target.matches('[data-pl-enabled]')) return;
-        try { info = await call(api + '/enabled', 'PUT', { enabled: e.target.checked }); paint(); await loadState(); }
-        catch (err) { e.target.checked = !e.target.checked; showToast(err.message, 'error'); }
-    });
+    // «Exigir el compromiso» queda pendiente hasta «Guardar cambios» (barra única de la pantalla).
+    panel.addEventListener('change', (e) => { if (e.target.matches('[data-pl-enabled]')) pending = e.target.checked; });
+    GWParams.register({ key: 'pledge', label: 'Compromiso digital', order: 20, save: async () => {
+        if (pending == null) return;
+        info = await call(api + '/enabled', 'PUT', { enabled: pending });
+        pending = null;
+        paint();
+        await loadState();
+    } });
 
     document.addEventListener('click', async (e) => {
         const btn = e.target.closest && e.target.closest('button[data-pledge-act]');
