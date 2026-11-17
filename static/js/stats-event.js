@@ -55,7 +55,7 @@
     busy(exportBtn, async function () {
       try {
         show('Preparando el reporte…', 3);
-        var st = await (await fetch('/api/report/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: EVENT_ID }) })).json().then(function (d) { return d; }, function () { return {}; });
+        var st = await (await fetch('/api/report/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: EVENT_ID, prune_unused: !!($('exportPrune') && $('exportPrune').checked) }) })).json().then(function (d) { return d; }, function () { return {}; });
         for (var i = 0; i < 300 && st.job_id && (st.status === 'queued' || st.status === 'running'); i++) {      // hasta 5 min mirando el avance cada segundo
           show((st.stage || 'Preparando el reporte') + '… ' + (st.percent || 0) + '%', st.percent || 3);
           await new Promise(function (r) { setTimeout(r, 1000); });

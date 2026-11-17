@@ -68,6 +68,28 @@ def _event_directory_users(db: Session, event_id: int, tenant_id: str):
     return db.query(User).filter(User.tenant_id == tenant_id, User.id.in_(all_ids)).all()
 
 
+# Columnas que nunca se quitan aunque estén vacías: identifican a la persona y su estado.
+PRUNE_PROTECTED = {"Cédula", "Nombres", "Apellidos", "Origen de carga", "Estado"}
+NOT_REGISTERED_LABEL = "No registrado"
+SHEET_REGISTERED = "Personas registradas"
+SHEET_NOT_REGISTERED = "Personas no registradas"
+
+
+def prune_unused_columns(df: "pd.DataFrame", protected=PRUNE_PROTECTED) -> "pd.DataFrame":
+    """Quita las columnas en las que NINGUNA persona tiene dato (vacío, espacios, o «No registrado» en «Tipo de Registro» cuando nadie se registró). Pura: no toca la base."""
+    keep = []
+    for col in df.columns:
+        if col in protected:
+            keep.append(col)
+            continue
+        values = [v for v in df[col] if _has_value(v)]
+        if col == "Tipo de Registro":
+            values = [v for v in values if v != NOT_REGISTERED_LABEL]
+        if values:
+            keep.append(col)
+    return df[keep]
+
+
 def _has_value(value) -> bool:
     if value is None:
         return False
@@ -88,7 +110,7 @@ def _read_optional(key) -> "bytes | None":
 
 class ReportManager:
     @staticmethod
-    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str, progress=None):
+    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str, progress=None, prune_unused: bool = False):
         progress = progress or (lambda *a, **k: None)
         progress("Leyendo las personas del evento", 5, 100, force=True)
         event = db.query(Event).filter(Event.id == event_id).first()
@@ -193,22 +215,22 @@ class ReportManager:
             data.append(out)
 
         progress("Armando el Excel", 60, 100, force=True)
-        df = pd.DataFrame(data, columns=all_headers)
-        headers = list(df.columns)
-        n_cols = len(headers)
-        last_col_letter = get_column_letter(n_cols)
-
+        df = pd.DataFrame(data, columns=all_headers)          # tabla completa: la usan la portada y los gráficos aunque se quiten columnas vacías en las hojas
         TITLE_ROWS = 4  # cliente/cuenta, evento, código, fila en blanco
         header_row = TITLE_ROWS + 1
+        tenant_name = event.tenant.name if event and event.tenant else tenant_id
 
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            safe_frame(df).to_excel(writer, index=False, sheet_name="Reporte", startrow=header_row - 1)
-            ws = writer.sheets["Reporte"]
+        def write_report_sheet(writer, frame, rows, sheet_name):
+            """Escribe una hoja con el formato del «Reporte» (título, encabezados, autofiltro, firmas). `rows` = filas crudas en el mismo orden que `frame`."""
+            frame = prune_unused_columns(frame) if prune_unused else frame
+            headers = list(frame.columns)
+            last_col_letter = get_column_letter(len(headers))
+            safe_frame(frame).to_excel(writer, index=False, sheet_name=sheet_name, startrow=header_row - 1)
+            ws = writer.sheets[sheet_name]
 
             # Título arriba de la tabla (2026-09-17, pedido explícito): nombre del cliente/cuenta,
             # nombre del evento y código — para que quien reciba el Excel sepa de qué es sin
             # tener que preguntar, ya que se manda directo al cliente.
-            tenant_name = event.tenant.name if event and event.tenant else tenant_id
             title_lines = [
                 f"Cliente/Cuenta: {tenant_name}",
                 f"Evento: {event.name if event else ''}",
@@ -230,17 +252,17 @@ class ReportManager:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
                 max_len = len(str(header))
-                for value in df[header]:
+                for value in frame[header]:
                     max_len = max(max_len, len(str(value)) if value is not None else 0)
                 ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 45)
 
             # Firmas: la imagen queda pegada en la celda de esa persona (fila más alta para verla).
             for key, label in optional_columns:
-                if key not in signature_keys:
+                if key not in signature_keys or label not in headers:
                     continue
                 col_idx = headers.index(label) + 1
                 ws.column_dimensions[get_column_letter(col_idx)].width = 24
-                for offset, row in enumerate(raw_rows, start=1):
+                for offset, row in enumerate(rows, start=1):
                     sig = _signature_file(row["id"], key)
                     if not sig:
                         continue
@@ -249,9 +271,12 @@ class ReportManager:
                     ws.add_image(img, f"{get_column_letter(col_idx)}{header_row + offset}")
                     ws.row_dimensions[header_row + offset].height = 46
 
-            last_data_row = header_row + len(df)
+            last_data_row = header_row + len(frame)
             ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_data_row}"
             ws.freeze_panes = f"A{header_row + 1}"
+
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            write_report_sheet(writer, df, raw_rows, "Reporte")
 
             # Fase 10 E: el libro queda «Portada» → «Reporte» → «Gráficos» → «Historial de cambios» (esta última solo si hubo cambios de datos después del registro).
             changes = person_history.event_rows(db, event) if event else []
@@ -272,6 +297,15 @@ class ReportManager:
                     hws.column_dimensions[get_column_letter(col_idx)].width = min(max([len(header)] + [len(str(v)) for v in hist[header]]) + 3, 45)
                 hws.auto_filter.ref = f"A1:{get_column_letter(len(hist_cols))}{len(hist) + 1}"
                 hws.freeze_panes = "A2"
+
+            # Hojas derivadas del reporte (17-nov-2026): lo mismo que «Reporte», separado por estado (al final del libro, después del historial).
+            registered_idx = [i for i, out in enumerate(data) if out["Estado"] == "Registrado"]
+            pending_idx = [i for i, out in enumerate(data) if out["Estado"] != "Registrado"]
+            for sheet_name, idx in ((SHEET_REGISTERED, registered_idx), (SHEET_NOT_REGISTERED, pending_idx)):
+                write_report_sheet(writer, df.iloc[idx].reset_index(drop=True), [raw_rows[i] for i in idx], sheet_name)
+            first = "Portada" if "Portada" in writer.book.sheetnames else writer.book.sheetnames[0]
+            for ws in writer.book.worksheets:          # una sola hoja seleccionada (si no, Excel las agrupa)
+                ws.sheet_view.tabSelected = ws.title == first
 
         progress("Excel listo", 95, 100, force=True)
         return output_path

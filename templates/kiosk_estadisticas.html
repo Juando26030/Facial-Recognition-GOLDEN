@@ -81,7 +81,8 @@
       <div class="gw-page-head__actions">
         {% if tour_on %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="estadisticas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>{% endif %}
         {# 2026-09-17 (pedido explícito): cliente ve Estadísticas pero NO exporta la base: el botón no se dibuja y el backend (GET /api/report) lo rechaza igual. #}
-        {% if staff_role != "cliente" %}<button type="button" id="exportBtn" class="gw-btn gw-btn--primary">{{ ic('download', 'gw-icon--sm') }} Exportar base de datos (Excel)</button>{% endif %}
+        {% if staff_role != "cliente" %}<div class="gw-stats-exportbox"><button type="button" id="exportBtn" class="gw-btn gw-btn--primary">{{ ic('download', 'gw-icon--sm') }} Exportar base de datos (Excel)</button>
+        <label class="gw-check gw-stats-exportbox__opt" for="exportPrune"><input type="checkbox" id="exportPrune"><span>Eliminar del reporte campos no usados</span></label></div>{% endif %}
       </div>
     </div>
 

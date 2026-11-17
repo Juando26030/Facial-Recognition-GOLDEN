@@ -159,13 +159,13 @@ def test_excel_has_history_sheet_only_when_there_are_changes(client, factory, db
     coord, ev = _setup(factory)
     out = tmp_path / "a.xlsx"
     ReportManager.generate_excel_report(db, ev.id, ev.tenant_id, str(out))
-    assert load_workbook(out).sheetnames == ["Portada", "Reporte", "Gráficos"]
+    assert load_workbook(out).sheetnames == ["Portada", "Reporte", "Gráficos", "Personas registradas", "Personas no registradas"]
     login(client, "coord")
     client.patch(f"/api/users/1001?event_id={ev.id}", json={"role": "Gerente"})
     out2 = tmp_path / "b.xlsx"
     ReportManager.generate_excel_report(db, ev.id, ev.tenant_id, str(out2))
     wb = load_workbook(out2)
-    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Historial de cambios"]
+    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Historial de cambios", "Personas registradas", "Personas no registradas"]
     rows = list(wb["Historial de cambios"].iter_rows(values_only=True))
     assert rows[0][:5] == ("Cédula", "Nombre", "Campo", "Valor anterior", "Valor nuevo") and rows[1][0] == "1001" and rows[1][2] == "Cargo" and rows[1][4] == "Gerente"
 

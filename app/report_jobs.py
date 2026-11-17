@@ -61,11 +61,11 @@ def purge_expired(db: Session) -> int:
     return n
 
 
-def _work(event_id: int, tenant_id: str, job_id: str):
+def _work(event_id: int, tenant_id: str, job_id: str, prune_unused: bool = False):
     def work(job_db, reporter):
         with heavy.heavy_slot(), tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "reporte.xlsx")
-            ReportManager.generate_excel_report(job_db, event_id, tenant_id, path, progress=reporter)
+            ReportManager.generate_excel_report(job_db, event_id, tenant_id, path, progress=reporter, prune_unused=prune_unused)
             reporter("Guardando el archivo", 97, 100, force=True)
             with open(path, "rb") as fh:
                 data = fh.read()
@@ -109,7 +109,7 @@ def start_report(data: dict, db: Session = Depends(get_db), staff: StaffUser = D
             raise HTTPException(status_code=409, detail="Hay una carga o un reporte en curso para este evento: espera a que termine y vuelve a pedirlo.")
     else:
         job_id = bulk_jobs.create_job(db, event.id, staff.id, {"kind": "report"})
-        bulk_jobs.start(job_id, _work(event.id, event.tenant_id, job_id))
+        bulk_jobs.start(job_id, _work(event.id, event.tenant_id, job_id, prune_unused=data.get("prune_unused") is True))
         job = db.get(BulkJob, job_id)
     deadline = time.time() + START_WAIT
     while time.time() < deadline and job.status in ("queued", "running"):

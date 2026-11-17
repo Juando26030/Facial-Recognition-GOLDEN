@@ -2841,7 +2841,7 @@ def _bulk_register_impl(
 
 @router.get("/report")
 def download_report(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    event_id: int, prune_unused: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
     # 2026-09-17 (pedido explícito): 'cliente' ve Estadísticas (gráficos, vía
     # require_role_or_client en stats.py) pero YA NO puede exportar la base — antes usaba el mismo
     # require_role_or_client que las gráficas, ahora exige coordinador+ como cualquier otra
@@ -2849,7 +2849,7 @@ def download_report(
 ):
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))
+    return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path, prune_unused=prune_unused), heavy.event_report_filename(event, "Reporte final"))
 
 
 @router.get("/events/{event_id}/users/{user_id}/change-history")
