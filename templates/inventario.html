@@ -17,6 +17,9 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-calendar-cats.css') }}">
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}" defer></script>{% endif %}
+    {% if almacen_on %}<link rel="stylesheet" href="{{ url_for('static', path='css/gw-almacen.css') }}">
+    <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/almacen-page.js') }}" defer></script>{% endif %}
     <script src="{{ url_for('static', path='js/calendar-cats.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/calendar-cats-ui.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/inventario-page.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
@@ -60,6 +63,7 @@
     <div class="gw-segment gw-invpg__tabs" role="tablist" aria-label="Secciones del inventario">
       <button type="button" class="gw-segment__opt" role="tab" id="invTabCat" data-tab="cat" aria-controls="invPanelCat" aria-selected="true">Catálogo</button>
       <button type="button" class="gw-segment__opt" role="tab" id="invTabCal" data-tab="cal" aria-controls="invPanelCal" aria-selected="false" tabindex="-1">Dónde está cada equipo</button>
+      {% if almacen_on %}<button type="button" class="gw-segment__opt" role="tab" id="invTabAlm" data-tab="alm" aria-controls="invPanelAlm" aria-selected="false" tabindex="-1">Almacén</button>{% endif %}
       {% if inv_manager %}<button type="button" class="gw-segment__opt" role="tab" id="tab_inventario" data-tab="adm" aria-controls="inventario" aria-selected="false" tabindex="-1">Administrar catálogo</button>{% endif %}
     </div>
 
@@ -110,6 +114,8 @@
       <div id="invCalBody" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=4, label='Cargando el calendario…') }}</div>
       <div class="gw-invcal__detail" id="invCalDetail"></div>
     </section>
+
+    {% if almacen_on %}{% include "_almacen_panel.html" %}{% endif %}
 
     {% if inv_manager %}{% include "_inventory_catalog_admin.html" %}{% endif %}
 

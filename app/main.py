@@ -45,7 +45,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import crm as crm_router
 from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
-from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -406,6 +406,7 @@ _include(system_alerts_router.router, prefix="/api")      # Fase 9-A: destinatar
 _include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
 _include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
+_include(almacen_router.router, prefix="/api")      # Almacén (Pieza 1): controles, unidades con serial, QR y etiquetas (/api/almacen/*; 404 con ALMACEN_ENABLED apagado)
 _include(analytics.router, prefix="/api")
 _include(gastos_eventos_router.router, prefix="/api")      # Fase 9 D: /api/gastos/eventos/* (satisfacción y tiempos; solo admin)
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
@@ -813,8 +814,26 @@ def inventario_page(request: Request):
     return templates.TemplateResponse(request=request, name="inventario.html", context={
         "staff_name": request.session.get("staff_name"),
         "inv_manager": bool(roles & {"almacen", "admin", "super_admin"}),          # Fase 10: administran el catálogo (crear, renombrar, archivar)
+        "almacen_on": _almacen_visible(roles),          # pestaña «Almacén» (Pieza 1): con ALMACEN_ENABLED y para almacén, admin y super_admin
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
+
+
+def _almacen_visible(roles) -> bool:
+    from app import almacen as almacen_mod
+    return almacen_mod.almacen_enabled() and bool(set(roles) & {"almacen", "admin", "super_admin"})
+
+
+@app.get("/inventario/etiquetas")
+def inventario_etiquetas_page(request: Request):
+    """Ventana de impresión de las etiquetas QR del almacén (Pieza 1). Es una página PROPIA: no toca la impresión compartida de escarapelas ni sus parámetros inamovibles."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not _almacen_visible(roles):
+        raise HTTPException(status_code=404, detail="No encontrado")
+    return templates.TemplateResponse(request=request, name="almacen_etiquetas.html", context={"staff_name": request.session.get("staff_name")})
 
 
 @app.get("/gastos")

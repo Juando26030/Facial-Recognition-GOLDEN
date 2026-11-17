@@ -1,0 +1,7 @@
+/* Pestaña «Almacén» del Inventario (Pieza 1). Solo tokens --gw-* y clases .gw-* del sistema de diseño; aquí solo lo que falta. */
+#invPanelAlm .gw-alm__actions { white-space: nowrap; }
+#invPanelAlm .gw-alm__actions .gw-btn + .gw-btn { margin-inline-start: var(--gw-sp-2); }
+#invPanelAlm .gw-table code { font-weight: var(--gw-fw-bold); letter-spacing: 0.05em; }
+#invPanelAlm .gw-table .gw-select, #invPanelAlm .gw-table .gw-input { min-width: 11rem; }
+#invPanelAlm .gw-alm__pick { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
+:root[data-theme="dark"] #invPanelAlm .gw-alm__pick { accent-color: var(--gw-gold-2); }

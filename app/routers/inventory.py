@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app import audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
 from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any
 from app.database import get_db
-from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, StaffUser
+from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, InventoryUnit, StaffUser
 from app.timeutil import to_local, utcnow
 
 router = APIRouter()
@@ -268,6 +268,8 @@ def delete_product(product_id: int, db: Session = Depends(get_db), staff: StaffU
         _err("Archiva el producto antes de eliminarlo")
     if db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).count():
         _err("El producto está en el inventario de algún evento: no se puede eliminar (queda archivado)")
+    if db.query(InventoryUnit.id).filter(InventoryUnit.product_id == p.id).first() is not None:
+        _err("El producto tiene unidades con serial en el almacén (activas o archivadas): no se puede eliminar (queda archivado)")          # almacén, Pieza 1
     audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name)
     db.delete(p)
     db.commit()

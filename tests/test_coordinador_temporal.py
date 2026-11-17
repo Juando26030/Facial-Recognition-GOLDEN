@@ -36,7 +36,7 @@ def test_every_global_family_is_closed():
     """Ninguna ruta de estas familias (clientes, CRM, dinero, inventario, nodos, importar/exportar…) se le abre por ningún método, existan hoy o se agreguen después."""
     pytest.importorskip("sqlalchemy")
     from app.main import app
-    closed = ("/api/crm", "/api/tenants", "/api/gastos", "/api/inventory", "/api/event-transfer", "/api/payment-accounts", "/api/system-alerts", "/api/nodes", "/api/node", "/api/node-sync",
+    closed = ("/api/crm", "/api/tenants", "/api/gastos", "/api/inventory", "/api/almacen", "/api/event-transfer", "/api/payment-accounts", "/api/system-alerts", "/api/nodes", "/api/node", "/api/node-sync",
               "/api/local", "/api/local-installer", "/api/privacy-requests", "/api/super-events", "/api/form-transfer", "/api/staff/coordinators", "/api/staff/assignable", "/api/internal")
     for route in app.routes:
         path = getattr(route, "path", "")
