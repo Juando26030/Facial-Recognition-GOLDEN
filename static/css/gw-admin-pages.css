@@ -21,3 +21,7 @@
 /* Staff */
 .gw-staff__who { overflow-wrap: anywhere; }
 .gw-staff__actions .gw-btn { flex: 0 1 auto; }
+/* Barra de guardado única con el menú lateral fijo (220 px): no puede quedar debajo de él (Clientes, Cuentas de cobro; Configuración ya lo tenía en p-configuracion.css) */
+@media (min-width: 901px) {
+  body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
+}
