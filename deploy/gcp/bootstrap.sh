@@ -210,6 +210,13 @@ LISTER="projects/${PROJECT_ID}/roles/goldenBackupLister"
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectCreator          # respaldos: crear…
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "$LISTER"                            # …y revisar (check-backups lista; no lee ni borra)
 bucket_bind "$BACKUP_BUCKET" "$SA_APP" "$LISTER"                            # «Último respaldo» en /sistema
+# Copia semanal a OneDrive (docs/24): el Job de operaciones LEE el respaldo más reciente para cifrarlo y subirlo. Rol propio con UN solo permiso (storage.objects.get), solo para
+# esa cuenta y solo en el bucket de respaldos (el objectViewer completo se le quita más abajo a propósito). Concedido en producción el 17-nov-2026.
+if ! exists gcloud iam roles describe goldenBackupReader --project "$PROJECT_ID"; then
+  gcloud iam roles create goldenBackupReader --project "$PROJECT_ID" --title "Golden: leer respaldos (copia semanal)" --permissions storage.objects.get --quiet >/dev/null
+  sleep 45     # un rol recién creado tarda unos segundos en verse desde el bucket
+fi
+if [ "$APP_BUCKET" != "$BACKUP_BUCKET" ]; then bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "projects/${PROJECT_ID}/roles/goldenBackupReader"; fi
 if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then                                  # E8: archivos para los 3 servicios; listar respaldos solo el panel (web)
   for sa in "$SA_SVC_WEB" "$SA_SVC_PUBLICO" "$SA_SVC_BIOMETRIA"; do bucket_bind "$APP_BUCKET" "$sa" roles/storage.objectAdmin; done
   bucket_bind "$BACKUP_BUCKET" "$SA_SVC_WEB" "$LISTER"
