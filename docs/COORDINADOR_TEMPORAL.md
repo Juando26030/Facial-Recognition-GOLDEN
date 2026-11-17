@@ -5,7 +5,7 @@ Pedido de Juan David: una persona con los permisos de un coordinador pero SOLO s
 ## Qué es
 - Cuenta `staff_users` con `role = coordinador` y `event_only = true` (migración `0146_event_only_staff`). Se asigna a uno o varios eventos con `EventStaffAuthorization`, igual que un digitador temporal.
 - Se crea en **Usuarios del evento → Nueva cuenta → Rol «Coordinador temporal (solo este evento)»**. Solo la crea una **comercial, un admin o el super admin** (un coordinador, ni siquiera temporal, no crea coordinadores).
-- Usuario `ct-xxxxxx` y contraseña aleatoria que genera el servidor y se muestran **una sola vez** (igual que el cliente temporal): nunca van por correo. Si se pierden: «Eliminar cuenta» y crear otra.
+- **Se crea igual que un coordinador normal** (cambio del 16-nov-2026, 21:25): quien lo crea (comercial, admin o super admin) escribe usuario, contraseña inicial (política estricta), nombre y teléfono (obligatorio y único); el correo es opcional y, si lo hay, sale el aviso de siempre (sin contraseña). La persona elige su contraseña en el primer ingreso. La ÚNICA diferencia con un coordinador normal es el alcance: solo el evento asignado.
 - Queda en `audit_actions` (`entity = event_only_coordinator`; ids, nunca el usuario).
 
 ## Qué puede hacer

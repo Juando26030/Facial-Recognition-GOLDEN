@@ -244,13 +244,19 @@
     const roleHint = document.getElementById('uRoleHint');
     const credBox = document.getElementById('clientCreds');
     const HINT_DIG = 'La contraseña de la cuenta es la misma cédula: no hay que escribirla.';
-    const HINT_COO = 'Tiene los permisos de un coordinador, pero SOLO sobre este evento: no ve otros eventos, clientes, CRM ni configuraciones, y su acceso termina cuando el evento finaliza. Entra con un usuario y una contraseña que se generan solos. Escribe solo su nombre.';
+    const HINT_COO = 'Tiene los permisos de un coordinador, pero SOLO sobre este evento: no ve otros eventos, clientes, CRM ni configuraciones, y su acceso termina cuando el evento finaliza. Se crea igual que un coordinador normal: tú le pones usuario, contraseña inicial y teléfono (el correo es opcional); la persona cambia la contraseña al primer ingreso.';
     const HINT_CLI = 'Para el cliente que también interviene en la base: tiene los mismos permisos del digitador, pero entra con un usuario y una contraseña propios que se generan solos, sin que el coordinador tenga que autorizar cada ingreso. Escribe solo su nombre.';
     function syncRole() {
         const isClient = !!roleSel && roleSel.value === 'cliente_temp';
         const isCoord = !!roleSel && roleSel.value === 'coordinador_temp';
-        if (userField) userField.hidden = isClient || isCoord;
-        if (userInput) userInput.required = !(isClient || isCoord);
+        if (userField) userField.hidden = isClient;
+        if (userInput) userInput.required = !isClient;
+        const pwField = document.getElementById('uPasswordField'), pwInput = document.getElementById('uPassword'), phInput = document.getElementById('uPhone'), phLabel = document.getElementById('uPhoneLabel');
+        if (pwField) pwField.hidden = !isCoord;
+        if (pwInput) { pwInput.required = isCoord; if (!isCoord) pwInput.value = ''; }
+        if (phInput) phInput.required = isCoord;
+        if (phLabel) phLabel.textContent = isCoord ? 'Teléfono (obligatorio)' : 'Teléfono (opcional, para notificaciones por WhatsApp)';
+        if (userInput) userInput.placeholder = isCoord ? 'Ej. maria.perez' : '';
         if (roleHint) roleHint.textContent = isCoord ? HINT_COO : (isClient ? HINT_CLI : HINT_DIG);
     }
     function showCredentials(user, pass, coord) {
@@ -289,8 +295,9 @@
         const payload = Object.fromEntries(new FormData(form).entries());
         const isClient = payload.role === 'cliente_temp';
         const isCoord = payload.role === 'coordinador_temp';
-        if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; }          // el servidor genera el usuario y la contraseña
-        if (isCoord) { payload.role = 'digitador'; payload.temp_coordinator = true; delete payload.username; delete payload.email; delete payload.phone; }          // coordinador temporal (16-nov-2026): igual, sin cédula ni correo
+        if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; delete payload.password; }
+        if (!isCoord && !isClient) delete payload.password;          // el servidor genera el usuario y la contraseña
+        if (isCoord) { payload.role = 'digitador'; payload.temp_coordinator = true; }          // coordinador temporal (16-nov-2026): se crea como un coordinador normal (usuario, contraseña y teléfono los pone quien lo crea)
         return busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -298,7 +305,7 @@
             if (res.ok && (isClient || isCoord)) {
                 const d = await res.json().catch(() => ({}));
                 form.reset(); syncRole(); loadTempUsers();
-                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password, isCoord);
+                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password, false);
                 showToast(isCoord ? 'Coordinador temporal creado y asignado al evento' : 'Cliente creado y asignado al evento', 'success');
             }
             else if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }

@@ -46,22 +46,54 @@ def test_every_global_family_is_closed():
 
 
 # ------------------------------------------------------------------ de punta a punta
-def _make(client, factory, ev, name="Ana Prueba"):
-    """Una comercial crea el coordinador temporal de `ev`; devuelve (usuario, contraseña)."""
+_N = [0]
+TEMP_PASSWORD = "Temporal#2026x"
+
+
+def _make(client, factory, ev, name="Ana Prueba", keep_must_change=False):
+    """Una comercial crea el coordinador temporal de `ev` como a un coordinador normal (usuario, contraseña inicial y teléfono); devuelve (usuario, contraseña, cuerpo)."""
+    from app.database import SessionLocal
+    from app.models import StaffUser
+    _N[0] += 1
+    username = f"coord.temp{_N[0]}"
     factory.staff("comercial", "comer")
     assert login(client, "comer").status_code == 302
-    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": name})
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": name, "username": username,
+                                                               "password": TEMP_PASSWORD, "phone": f"+5730000{_N[0]:05d}"})
     assert r.status_code == 200, r.text
-    cred = r.json()["credentials"]
     client.post("/logout")
-    return cred["username"], cred["password"], r.json()
+    if not keep_must_change:                    # en la práctica la persona cambia su contraseña al entrar; aquí se salta ese paso para probar el alcance
+        s = SessionLocal()
+        try:
+            s.query(StaffUser).filter_by(username=username).update({"must_change_password": False})
+            s.commit()
+        finally:
+            s.close()
+    return username, TEMP_PASSWORD, r.json()
+
+
+def test_created_like_a_normal_coordinator(client, factory, db):
+    from app.models import StaffUser
+    ev = factory.event("en_proceso")
+    user, password, body = _make(client, factory, ev, keep_must_change=True)
+    assert "credentials" not in body and body["username"] == user and body["role"] == "coordinador" and body["event_only"] is True
+    row = db.query(StaffUser).filter_by(username=user).one()
+    assert row.must_change_password is True and row.phone and row.password_hash != password          # elige su contraseña al primer ingreso, como cualquier coordinador
+    assert login(client, user, password).status_code == 302
+    assert client.get("/api/events").status_code in (200, 302, 403)
+    client.post("/logout")
+    assert login(client, "comer").status_code == 302
+    base = {"role": "digitador", "temp_coordinator": True, "full_name": "Otra", "username": "otra.temp", "password": TEMP_PASSWORD, "phone": "+573009990001"}
+    for patch, code in ((dict(password="123"), 400), (dict(phone=""), 400), (dict(username=""), 400), (dict(username=user, phone="+573009990002"), 400), (dict(phone=row.phone), 400), ({}, 200)):
+        r = client.post(f"/api/events/{ev.id}/staff-users", json={**base, **patch})
+        assert r.status_code == code, (patch, r.text)
 
 
 def test_creation_and_scope(client, factory, db):
     from app.models import AuditAction, StaffUser
     ev, other = factory.event("en_proceso"), factory.event("en_proceso")
     user, password, body = _make(client, factory, ev)
-    assert user.startswith("ct-") and len(password) >= 10 and body["event_only"] is True and body["role"] == "coordinador"
+    assert body["event_only"] is True and body["role"] == "coordinador"
     row = db.query(StaffUser).filter_by(username=user).one()
     assert row.event_only and row.role == "coordinador" and row.password_hash != password and row.tenant_id == ev.tenant_id
     assert db.query(AuditAction).filter(AuditAction.entity == "event_only_coordinator").count() == 1
@@ -111,7 +143,7 @@ def test_cannot_make_other_coordinators_or_touch_other_events(client, factory):
     ev, other = factory.event("en_proceso"), factory.event("en_proceso")
     user, password, body = _make(client, factory, ev)
     assert login(client, user, password).status_code == 302
-    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Otro"})
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Otro", "username": "otro.temp", "password": TEMP_PASSWORD, "phone": "+573001112233"})
     assert r.status_code == 403                                                            # un coordinador (ni siquiera temporal) no crea coordinadores
     assert client.post(f"/api/events/{other.id}/staff-users", json={"role": "digitador", "username": "1020304051", "full_name": "X"}).status_code == 404
     assert client.delete(f"/api/events/{ev.id}/staff-users/{body['id']}").status_code == 403           # ni se quita a sí mismo ni a otro coordinador temporal
@@ -121,12 +153,12 @@ def test_only_commercial_or_more_creates_them(client, factory):
     ev = factory.event("en_proceso")
     factory.staff("coordinador", "coord")
     assert login(client, "coord").status_code == 302
-    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Ana"})
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Ana", "username": "ana.temp", "password": TEMP_PASSWORD, "phone": "+573001112244"})
     assert r.status_code == 403
     client.post("/logout")
     factory.staff("digitador", "dig")
     assert login(client, "dig").status_code == 302
-    assert client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Ana"}).status_code == 403
+    assert client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "temp_coordinator": True, "full_name": "Ana", "username": "ana.temp", "password": TEMP_PASSWORD, "phone": "+573001112244"}).status_code == 403
 
 
 def test_access_ends_when_the_event_finishes(client, factory, db):

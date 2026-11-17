@@ -98,6 +98,11 @@
               <label class="gw-label" for="uUsername">Usuario (para digitador, la cédula)</label>
               <input class="gw-input" type="text" id="uUsername" name="username" required data-gw-username-input autocapitalize="none">
             </div>
+            <div class="gw-field" id="uPasswordField" hidden>
+              <label class="gw-label" for="uPassword">Contraseña inicial</label>
+              <input class="gw-input" type="password" id="uPassword" name="password" autocomplete="new-password" minlength="8">
+              <p class="gw-hint">La persona la cambia al primer ingreso, igual que un coordinador normal.</p>
+            </div>
             <div class="gw-field">
               <label class="gw-label" for="uFullName">Nombre completo</label>
               <input class="gw-input" type="text" id="uFullName" name="full_name" autocomplete="name">
@@ -111,14 +116,14 @@
                 <option value="digitador">Digitador (temporal)</option>
                 <option value="cliente_temp">Cliente (temporal, con usuario y contraseña propios)</option>
                 {% endif %}
-                {% if can_temp_coordinator %}<option value="coordinador_temp">Coordinador temporal (solo este evento)</option>{% endif %}
+                {% if can_temp_coordinator %}<option value="coordinador_temp">Coordinador (temporal, solo este evento)</option>{% endif %}
               </select>
               <p class="gw-hint" id="uRoleHint">La contraseña de la cuenta es la misma cédula: no hay que escribirla.</p>
             </div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">
             <div class="gw-field">
-              <label class="gw-label" for="uPhone">Teléfono (opcional, para notificaciones por WhatsApp)</label>
+              <label class="gw-label" for="uPhone" id="uPhoneLabel">Teléfono (opcional, para notificaciones por WhatsApp)</label>
               <input class="gw-input" type="tel" id="uPhone" name="phone" placeholder="Ej. +57 300 1234567" autocomplete="tel">
             </div>
             <div class="gw-field">

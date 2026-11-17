@@ -757,8 +757,8 @@ def can_manage_event_only(staff: StaffUser) -> bool:
 
 
 def _create_temp_coordinator(event_id: int, data: EventStaffIn, db: Session, staff: StaffUser) -> dict:
-    """Coordinador temporal (16-nov-2026, app/event_only.py): rol `coordinador` con `event_only`, autorizado SOLO para este evento. Usuario y contraseña los genera el servidor y se entregan UNA vez en esta
-    respuesta (la contraseña no se guarda en claro ni va por correo). Queda en `audit_actions` (ids; nunca el usuario)."""
+    """Coordinador temporal (16-nov-2026, app/event_only.py): se crea EXACTAMENTE como un coordinador normal (usuario, contraseña inicial y teléfono los pone quien lo crea; correo opcional,
+    la persona elige su contraseña al primer ingreso) y la única diferencia es el alcance: rol `coordinador` con `event_only`, autorizado SOLO para este evento. Queda en `audit_actions` (ids; nunca el usuario)."""
     if not can_manage_event_only(staff):
         raise HTTPException(status_code=403, detail="Solo una comercial, un administrador o el super administrador crea coordinadores temporales")
     event = db.query(Event).filter(Event.id == event_id).first()
@@ -768,18 +768,33 @@ def _create_temp_coordinator(event_id: int, data: EventStaffIn, db: Session, sta
     assert_event_scope(event, staff, db)
     if event.status == "finalizado" or event.archived_at is not None:
         raise HTTPException(status_code=400, detail="Este evento ya finalizó o está archivado: no se le pueden agregar coordinadores temporales")
+    username = (data.username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Escribe el usuario del coordinador")
     if not (data.full_name or "").strip():
         raise HTTPException(status_code=400, detail="Escribe el nombre de la persona")
-    username = temp_client.new_username(lambda n: db.query(StaffUser.id).filter(StaffUser.username == n).first() is not None, prefix=event_only.USER_PREFIX)
-    password = temp_client.new_password(username)
-    new_user = StaffUser(username=username, password_hash=hash_password(password), full_name=data.full_name.strip(), role="coordinador", event_only=True,
-                         tenant_id=event.tenant_id, created_by_id=staff.id, must_change_password=False)
+    if db.query(StaffUser.id).filter(StaffUser.username == username).first():
+        raise HTTPException(status_code=400, detail="Ese usuario ya existe")
+    problem = security.password_problem(data.password or "", username, strict=True)          # misma política que el coordinador normal
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    phone = (data.phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="El teléfono es obligatorio para esta cuenta")
+    if db.query(StaffUser.id).filter(StaffUser.phone == phone).first():
+        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
+    new_user = StaffUser(username=username, password_hash=hash_password(data.password), full_name=data.full_name.strip(), role="coordinador", event_only=True,
+                         tenant_id=event.tenant_id, created_by_id=staff.id, phone=phone, email=(data.email or "").strip() or None,
+                         must_change_password=security.must_change_on_set_by_other("coordinador"))
     db.add(new_user)
     db.flush()
     db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
     audit_actions.record(db, staff, "create", "event_only_coordinator", new_user.id, None, f"evento {event.id}: coordinador temporal creado")
+    mail_queued = staff_credentials.enqueue(db, new_user, "created", pw=staff_credentials.password_mode(new_user, data.password))          # igual que el coordinador normal: el correo (sin contraseña) sale en segundo plano
     db.commit()
-    return {**_serialize_staff(new_user), "credentials": {"username": username, "password": password}, "credentials_mail": "disabled"}
+    if mail_queued:
+        jobs.kick()
+    return {**_serialize_staff(new_user), "credentials_mail": "queued" if mail_queued else "no_email"}
 
 
 @router.post("/events/{event_id}/staff-users")
