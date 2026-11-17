@@ -105,8 +105,8 @@
   }
 
   const COLHEAD = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>';
-  const GROUP_ORDER = ['super_admin', 'admin', 'comercial', 'coordinador', 'contabilidad', 'almacen', 'digitador', 'cliente'];
-  const GROUP_LABELS = { super_admin: 'Super administradores', admin: 'Administradores', comercial: 'Comerciales', coordinador: 'Coordinadores', contabilidad: 'Contabilidad', almacen: 'Almacén', digitador: 'Digitadores', cliente: 'Clientes' };
+  const GROUP_ORDER = ['super_admin', 'admin', 'comercial', 'dir_coordinadores', 'coordinador', 'contabilidad', 'almacen', 'digitador', 'cliente'];
+  const GROUP_LABELS = { super_admin: 'Super administradores', admin: 'Administradores', comercial: 'Comerciales', dir_coordinadores: 'Directores de coordinadores', coordinador: 'Coordinadores', contabilidad: 'Contabilidad', almacen: 'Almacén', digitador: 'Digitadores', cliente: 'Clientes' };
   const openGroups = new Set();          // paneles que la persona dejó abiertos (se conservan al recargar o al cambiar algo)
   listEl.addEventListener('toggle', (e) => { const d = e.target; if (d && d.matches && d.matches('details.gw-staff__group')) { if (d.open) openGroups.add(d.dataset.role); else openGroups.delete(d.dataset.role); } }, true);
   /* En vista agrupada el contenedor deja de ser la rejilla de filas (cada panel trae la suya); buscando, vuelve a serlo. */
