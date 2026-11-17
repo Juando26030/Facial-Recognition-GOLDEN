@@ -65,7 +65,7 @@
   $("prodBody").addEventListener("click", async (e) => {
     const ed = e.target.closest("[data-edit]"), tg = e.target.closest("[data-toggle]");
     if (ed) { const p = products.find((x) => String(x.id) === ed.dataset.edit); if (p) productDialog(p); }
-    if (tg) { const p = products.find((x) => String(x.id) === tg.dataset.toggle); if (!p) return; try { await api("PUT", "/api/crm/products/" + p.id, { active: !p.active, updated_at: p.updated_at }); loadProducts(); } catch (x) { showToast(x.message, "error"); } }
+    if (tg) { const p = products.find((x) => String(x.id) === tg.dataset.toggle); if (!p) return; try { await api("PUT", "/api/crm/products/" + p.id, { active: !p.active, updated_at: p.updated_at }); showToast(p.active ? "Producto desactivado." : "Producto activado.", "success"); loadProducts(); } catch (x) { showToast(x.message, "error"); } }
   });
   $("prodFilters").addEventListener("submit", (e) => { e.preventDefault(); page = 1; loadProducts(); });
   $("prodNew").addEventListener("click", () => productDialog(null));
@@ -93,7 +93,7 @@
   $("termList").addEventListener("click", async (e) => {
     const ed = e.target.closest("[data-term]"), ar = e.target.closest("[data-term-archive]");
     if (ed) termDialog(terms.find((x) => String(x.id) === ed.dataset.term));
-    if (ar) { const t = terms.find((x) => String(x.id) === ar.dataset.termArchive); try { await api("PUT", "/api/crm/terms/" + t.id, { archived: !t.archived }); loadTerms(); } catch (x) { showToast(x.message, "error"); } }
+    if (ar) { const t = terms.find((x) => String(x.id) === ar.dataset.termArchive); if (!t.archived && !await showConfirm("", { variant: "warning", title: "Archivar condición", text: "Deja de ofrecerse al cotizar, pero no se borra. Podrás restaurarla cuando quieras.", confirmLabel: "Archivar" })) return; try { await api("PUT", "/api/crm/terms/" + t.id, { archived: !t.archived }); showToast(t.archived ? "Condición restaurada." : "Condición archivada.", "success"); loadTerms(); } catch (x) { showToast(x.message, "error"); } }
   });
   $("termNew").addEventListener("click", () => termDialog(null));
 
@@ -117,7 +117,7 @@
     const ed = e.target.closest("[data-tpl]"), ar = e.target.closest("[data-tpl-archive]"), dp = e.target.closest("[data-tpl-dup]");
     if (dp) { try { await api("POST", "/api/crm/doc-templates/" + dp.dataset.tplDup + "/duplicate"); showToast("Plantilla duplicada: la copia se llama «… (copia)».", "success"); loadTemplates(); } catch (x) { showToast(x.message, "error"); } return; }
     if (ed) templateDialog(templates.find((x) => String(x.id) === ed.dataset.tpl));
-    if (ar) { const t = templates.find((x) => String(x.id) === ar.dataset.tplArchive); try { await api("PUT", "/api/crm/doc-templates/" + t.id, { archived: true }); loadTemplates(); } catch (x) { showToast(x.message, "error"); } }
+    if (ar) { const t = templates.find((x) => String(x.id) === ar.dataset.tplArchive); if (!await showConfirm("", { variant: "warning", title: "Archivar plantilla", text: "Deja de ofrecerse al cotizar, pero no se borra.", confirmLabel: "Archivar" })) return; try { await api("PUT", "/api/crm/doc-templates/" + t.id, { archived: true }); showToast("Plantilla archivada.", "success"); loadTemplates(); } catch (x) { showToast(x.message, "error"); } }
   });
   $("tplNew").addEventListener("click", () => templateDialog(null));
 
