@@ -113,25 +113,26 @@
 
   /* ---- catálogo */
   let catalog = null;
+  const pendingProd = new Map();          // id -> { stock?, cat? }: lo editado en las tarjetas queda pendiente hasta «Guardar cambios» (barra única)
   let catDay = '';          // día que se mira en el catálogo (vacío = hoy)
   const dayWord = () => (!catDay || catDay === toIso(new Date()) ? 'hoy' : 'ese día');
   const unitText = (p, n) => `${n} ${p.unit || ''}`.trim();
   function productCard(p, canManage) {
     const short = p.available != null && p.available < 0;
-    const edit = canManage ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-edit="${p.id}" aria-label="Cambiar categoría o existencias de ${esc(p.name)}">Cambiar</button>` : '';
-    const catOptions = (catalog.categories || []).map((c) => `<option value="${c.id}"${c.id === p.category_id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
-    const editor = canManage ? `<div class="gw-invpg__edit" data-editor="${p.id}" hidden>
-        <div class="gw-field"><label class="gw-label" for="invStock${p.id}">Existencias de Golden</label><input class="gw-input gw-input--short" type="number" min="0" id="invStock${p.id}" value="${p.stock == null ? '' : p.stock}" placeholder="Sin control"></div>
-        <div class="gw-field"><label class="gw-label" for="invCat${p.id}">Categoría</label><select class="gw-select" id="invCat${p.id}"><option value="">Sin categorizar</option>${catOptions}</select></div>
-        <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-save="${p.id}">Guardar</button>
-        <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-cancel="${p.id}">Cancelar</button>
+    const pend = pendingProd.get(p.id) || {};
+    const stockVal = 'stock' in pend ? pend.stock : (p.stock == null ? '' : p.stock);
+    const catVal = 'cat' in pend ? pend.cat : (p.category_id == null ? '' : p.category_id);
+    const catOptions = (catalog.categories || []).map((c) => `<option value="${c.id}"${String(c.id) === String(catVal) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    const editor = canManage ? `<div class="gw-invpg__edit" data-editor="${p.id}">
+        <div class="gw-field"><label class="gw-label" for="invStock${p.id}">Existencias de Golden</label><input class="gw-input gw-input--short" type="number" min="0" id="invStock${p.id}" data-edit-stock="${p.id}" value="${esc(stockVal)}" placeholder="Sin control"></div>
+        <div class="gw-field"><label class="gw-label" for="invCat${p.id}">Categoría</label><select class="gw-select" id="invCat${p.id}" data-edit-cat="${p.id}"><option value="">Sin categorizar</option>${catOptions}</select></div>
       </div>` : '';
     return `<article class="gw-invpg__prod" data-product="${p.id}">
       <div class="gw-invpg__name">${esc(p.name)}${p.sku ? ` <span class="gw-hint">${esc(p.sku)}</span>` : ''}</div>
       <div class="gw-invpg__num"><span class="gw-invpg__lbl">Existencias</span><span class="gw-invpg__val">${p.stock == null ? 'Sin control' : esc(unitText(p, p.stock))}</span></div>
       <div class="gw-invpg__num"><span class="gw-invpg__lbl">En uso ${dayWord()}</span><span class="gw-invpg__val">${esc(unitText(p, p.in_use || 0))}</span></div>
       <div class="gw-invpg__num"><span class="gw-invpg__lbl">Disponible ${dayWord()}</span><span class="gw-invpg__val${short ? ' gw-invpg__val--short' : ''}">${p.available == null ? '—' : esc(unitText(p, p.available))}${short ? ' · falta material' : ''}</span></div>
-      <div>${edit}</div>${editor}</article>`;
+      ${editor}</article>`;
   }
   function renderCatalog() {
     const box = $('invCatalog');
@@ -153,7 +154,7 @@
       $('invAdminLink').hidden = !(catalog.can_edit_catalog && $('inventario'));
       const hint = $('invCatHint');
       hint.hidden = false;
-      hint.textContent = catalog.can_manage ? 'Puedes cambiar la categoría y las existencias de cada producto. Crear, renombrar o archivar productos y categorías lo hace el Super Admin en Configuración.' : 'Solo consulta: las existencias y categorías las ajustan Admin y Almacén.';
+      hint.textContent = catalog.can_manage ? 'Puedes cambiar la categoría y las existencias de cada producto; se guardan con «Guardar cambios». Crear, renombrar o archivar productos y categorías lo hace el Super Admin en Configuración.' : 'Solo consulta: las existencias y categorías las ajustan Admin y Almacén.';
       renderCatalog();
     } catch (err) { $('invCatalog').setAttribute('aria-busy', 'false'); $('invCatalog').innerHTML = stateBox(err.message, true); }
   }
@@ -167,18 +168,29 @@
   let searchTimer = null;
   $('invSearch').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => catalog && renderCatalog(), 200); });
   $('invCatFilter').addEventListener('change', () => catalog && renderCatalog());
-  $('invCatalog').addEventListener('click', (e) => {
-    const edit = e.target.closest('[data-edit]'), cancel = e.target.closest('[data-cancel]'), save = e.target.closest('[data-save]');
-    if (edit || cancel) { const id = (edit || cancel).dataset.edit || (edit || cancel).dataset.cancel; const ed = $('invCatalog').querySelector(`[data-editor="${id}"]`); if (ed) ed.hidden = !edit; return; }
-    if (save) {
-      const id = Number(save.dataset.save);
-      const stock = $(`invStock${id}`).value.trim(), cat = $(`invCat${id}`).value;
-      busy(save, async () => {
-        try { await send(`/api/inventory/products/${id}/manage`, 'PATCH', { stock, category_id: cat }); showToast('Producto actualizado', 'success'); await loadCatalog(); }
-        catch (err) { showToast(err.message, 'error'); }
-      });
+  // Edición en línea (existencias y categoría): pendiente en la barra única; nada se guarda al cambiar el valor.
+  const onProdEdit = (e) => {
+    const st = e.target.closest('[data-edit-stock]'), ct = e.target.closest('[data-edit-cat]');
+    const el = st || ct; if (!el) return;
+    const id = Number((st || ct).dataset.editStock || (st || ct).dataset.editCat);
+    const cur = pendingProd.get(id) || {};
+    if (st) cur.stock = el.value.trim(); else cur.cat = el.value;
+    pendingProd.set(id, cur);
+    if (root.GWParams) root.GWParams.markDirty('inventario-catalogo');
+  };
+  $('invCatalog').addEventListener('input', onProdEdit);
+  $('invCatalog').addEventListener('change', onProdEdit);
+  if (root.GWParams) root.GWParams.register({ key: 'inventario-catalogo', label: 'Catálogo: existencias y categorías', order: 10, save: async () => {
+    const fails = [];
+    for (const [id, v] of Array.from(pendingProd)) {
+      const p = (catalog.products || []).find((x) => x.id === id) || {};
+      const body = { stock: 'stock' in v ? v.stock : (p.stock == null ? '' : String(p.stock)), category_id: 'cat' in v ? v.cat : (p.category_id == null ? '' : String(p.category_id)) };
+      try { await send(`/api/inventory/products/${id}/manage`, 'PATCH', body); pendingProd.delete(id); }
+      catch (err) { fails.push((p.name || 'Producto') + ': ' + err.message); }
     }
-  });
+    await loadCatalog();
+    if (fails.length) throw new Error(fails.join(' · '));
+  } });
 
   /* ---- calendario */
   const today = toIso(new Date());
@@ -404,17 +416,24 @@
 
   /* ---- bloque de inventario de un evento (el mismo de siempre), abierto desde el calendario */
   let plan = null;
+  if (root.GWParams) root.GWParams.register({ key: 'inventario-plan', label: 'Inventario del evento', order: 20, save: async () => {
+    if (!plan) return;
+    const r = await plan.save();
+    if (!r.ok) throw new Error(r.error || 'No se pudo guardar el inventario');
+  } });
   async function openEvent(id, name) {
     if (plan && plan.dirty() && !(await showConfirm('Hay cambios sin guardar en el inventario abierto. ¿Descartarlos y abrir otro evento?', { variant: 'warning', confirmLabel: 'Descartar' }))) return;
     $('invPanelTitle').textContent = 'Inventario de ' + name;
     $('invPanel').hidden = false;
     if (root.GW && root.GW.skeleton) root.GW.skeleton($('invPlanBox'), { kind: 'list', rows: 4, label: 'Cargando el inventario del evento…' });
-    plan = await root.GWInvPlan.mount($('invPlanBox'), { eventId: id, icons, onChange: () => {} });
+    if (root.GWParams) root.GWParams.markClean('inventario-plan');
+    plan = await root.GWInvPlan.mount($('invPlanBox'), { eventId: id, icons, saveButton: false, onChange: () => { if (root.GWParams) root.GWParams.markDirty('inventario-plan'); } });          // sin botón propio: se guarda con la barra única
     $('invPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   $('invPanelClose').addEventListener('click', async () => {
     if (plan && plan.dirty() && !(await showConfirm('Hay cambios sin guardar. ¿Cerrar y descartarlos?', { variant: 'warning', confirmLabel: 'Descartar' }))) return;
-    plan = null; $('invPanel').hidden = true; $('invPlanBox').innerHTML = '';
+    plan = null; if (root.GWParams) root.GWParams.markClean('inventario-plan');
+    $('invPanel').hidden = true; $('invPlanBox').innerHTML = '';
     if (cal.data) { cal.key = ''; loadCalendar(); }          // el inventario pudo cambiar: se vuelve a leer
     loadCatalog();
   });
