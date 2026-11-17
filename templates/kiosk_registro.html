@@ -32,7 +32,7 @@
     </a>
     <nav class="golden-nav gw-registro__nav" aria-label="Cuenta">
       {% if staff_role in ["digitador", "cliente"] %}
-      <a href="/configuracion" class="gw-registro__apariencia" aria-label="Apariencia de la pantalla" title="Apariencia de la pantalla"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg></a>
+      {% if not (event_only_session is defined and event_only_session(request)) %}<a href="/configuracion" class="gw-registro__apariencia" aria-label="Apariencia de la pantalla" title="Apariencia de la pantalla"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg></a>{% endif %}
       {% endif %}
       {% include "_gw_theme_toggle.html" %}
       {% set role_names = {"cliente": "Cliente", "digitador": "Digitador", "coordinador": "Coordinador", "comercial": "Comercial", "admin": "Administrador", "super_admin": "Administrador general"} %}

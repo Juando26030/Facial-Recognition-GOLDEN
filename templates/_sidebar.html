@@ -16,8 +16,9 @@
 <script src="{{ url_for('static', path='js/kiosk-back.js') }}" defer></script>
 <aside class="golden-sidebar" id="gwSidebar">
   <nav>
-    <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>
-    {% if crm_nav_visible is defined and crm_nav_visible(request) %}<a href="/crm"{% if sidebar_active == "crm" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/></svg> CRM</a>{% endif %}
+    {% set eo = event_only_session is defined and event_only_session(request) %}{# coordinador temporal: solo Eventos y Calendario (app/event_only.py) #}
+    {% if not eo %}<a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>{% endif %}
+    {% if crm_nav_visible is defined and crm_nav_visible(request) and not eo %}<a href="/crm"{% if sidebar_active == "crm" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/></svg> CRM</a>{% endif %}
     <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Eventos</a>
     <a href="/calendario"{% if sidebar_active == "calendario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Calendario</a>
     {# Bug real corregido (2026-09-16, pedido explícito): el link SIEMPRE estuvo oculto para
@@ -25,13 +26,13 @@
        Sprint 2.4 (ver app/main.py: configuracion_page) — nadie con sidebar salvo admin/super_admin
        tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
        pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
-    <a href="/inventario"{% if sidebar_active == "inventario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-inbox"/></svg> Inventario</a>
-    {% if local_server %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>
+    {% if not eo %}<a href="/inventario"{% if sidebar_active == "inventario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-inbox"/></svg> Inventario</a>{% endif %}
+    {% if local_server and not eo %}<a href="/servidor-local"{% if sidebar_active == "servidor_local" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Servidor local</a>
     <a href="/sincronizacion"{% if sidebar_active == "sincronizacion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg> Sincronización</a>{% endif %}
-    {% if staff_role in ["admin", "super_admin"] %}<a href="/cuentas-de-cobro"{% if sidebar_active == "cuentas_cobro" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Cuentas de cobro</a>{% endif %}
-    <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>
-    {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}
-    {% if staff_role in ["admin", "super_admin", "contabilidad"] %}<a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}
+    {% if not eo %}{% if staff_role in ["admin", "super_admin"] %}<a href="/cuentas-de-cobro"{% if sidebar_active == "cuentas_cobro" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Cuentas de cobro</a>{% endif %}{% endif %}
+    {% if not eo %}<a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>{% endif %}
+    {% if not eo %}{% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}{% endif %}
+    {% if not eo %}{% if staff_role in ["admin", "super_admin", "contabilidad"] %}<a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}{% endif %}
   </nav>
 </aside>
 <script>

@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import audit_actions, jobs, security, staff_credentials, status_changes, temp_client, warmup
+from app import audit_actions, event_only, jobs, security, staff_credentials, status_changes, temp_client, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
@@ -48,6 +48,7 @@ def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinad
 
 class EventStaffIn(BaseModel):
     username: Optional[str] = None  # cédula, para digitador; vacío si `client` (el servidor genera el usuario)
+    temp_coordinator: bool = False  # 16-nov-2026: coordinador temporal (app/event_only.py): permisos de coordinador SOLO sobre este evento; usuario `ct-…` y contraseña aleatoria, sin correo. Lo crea una comercial, un admin o el super admin
     client: bool = False  # 12-nov-2026: cliente temporal (app/temp_client.py): mismos permisos que el digitador, usuario y contraseña aleatorios, sin autorización del coordinador
     password: Optional[str] = None      # 6-nov-2026: el digitador temporal entra con su cédula como usuario Y contraseña; solo se manda una si alguien quiere otra distinta (esa sí pasa la política estricta)
     full_name: Optional[str] = None
@@ -64,7 +65,7 @@ class AssignExistingIn(BaseModel):
 
 
 def _serialize_staff(s: StaffUser) -> dict:
-    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip()), "client_temp": bool(getattr(s, "client_temp", False))}
+    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active, "has_email": bool((s.email or "").strip()), "client_temp": bool(getattr(s, "client_temp", False)), "event_only": bool(getattr(s, "event_only", False))}
 
 
 # Código del evento (orden del 21-oct-2026). Va en direcciones públicas: /aceptar/<código>, el QR del cartel y los enlaces personales ya enviados por correo.
@@ -683,7 +684,7 @@ def list_event_staff(
     staff_list = (
         db.query(StaffUser)
         .join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
-        .filter(EventStaffAuthorization.event_id == event_id, StaffUser.role.in_(("digitador", "cliente")))
+        .filter(EventStaffAuthorization.event_id == event_id, or_(StaffUser.role.in_(("digitador", "cliente")), StaffUser.event_only.is_(True)))
         .all()
     )
     return [_serialize_staff(s) for s in staff_list]
@@ -750,6 +751,37 @@ def duplicate_event(event_id: int, data: dict = Body(default={}), db: Session = 
     return {"id": new.id, "event_code": new.event_code, "name": new.name, "message": f"Evento duplicado: «{new.name}» ({new.event_code})."}
 
 
+def can_manage_event_only(staff: StaffUser) -> bool:
+    """Crear y quitar coordinadores temporales: comercial, admin o super admin (un coordinador, ni siquiera uno temporal, no crea otros coordinadores)."""
+    return bool(effective_roles(staff) & {"comercial", "admin", "super_admin"})
+
+
+def _create_temp_coordinator(event_id: int, data: EventStaffIn, db: Session, staff: StaffUser) -> dict:
+    """Coordinador temporal (16-nov-2026, app/event_only.py): rol `coordinador` con `event_only`, autorizado SOLO para este evento. Usuario y contraseña los genera el servidor y se entregan UNA vez en esta
+    respuesta (la contraseña no se guarda en claro ni va por correo). Queda en `audit_actions` (ids; nunca el usuario)."""
+    if not can_manage_event_only(staff):
+        raise HTTPException(status_code=403, detail="Solo una comercial, un administrador o el super administrador crea coordinadores temporales")
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
+    if event.status == "finalizado" or event.archived_at is not None:
+        raise HTTPException(status_code=400, detail="Este evento ya finalizó o está archivado: no se le pueden agregar coordinadores temporales")
+    if not (data.full_name or "").strip():
+        raise HTTPException(status_code=400, detail="Escribe el nombre de la persona")
+    username = temp_client.new_username(lambda n: db.query(StaffUser.id).filter(StaffUser.username == n).first() is not None, prefix=event_only.USER_PREFIX)
+    password = temp_client.new_password(username)
+    new_user = StaffUser(username=username, password_hash=hash_password(password), full_name=data.full_name.strip(), role="coordinador", event_only=True,
+                         tenant_id=event.tenant_id, created_by_id=staff.id, must_change_password=False)
+    db.add(new_user)
+    db.flush()
+    db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
+    audit_actions.record(db, staff, "create", "event_only_coordinator", new_user.id, None, f"evento {event.id}: coordinador temporal creado")
+    db.commit()
+    return {**_serialize_staff(new_user), "credentials": {"username": username, "password": password}, "credentials_mail": "disabled"}
+
+
 @router.post("/events/{event_id}/staff-users")
 def create_event_staff(
     event_id: int, data: EventStaffIn, db: Session = Depends(get_db),
@@ -769,6 +801,8 @@ def create_event_staff(
     from app import localmode
     if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
         raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
+    if data.temp_coordinator:
+        return _create_temp_coordinator(event_id, data, db, staff)
     if data.role == "cliente":
         # 2026-11-05 (pedido de Juan David): ya no se crean cuentas «cliente» temporales de evento; para compartir estadísticas están los enlaces con vencimiento (/ver/e/{token}, stats_links.py). Las cuentas cliente existentes y el cliente de FORMULARIO (/mi-formulario) no se tocan.
         raise HTTPException(status_code=400, detail="Ya no se crean cuentas de cliente para el evento. Para compartir las estadísticas usa un enlace con vencimiento.")
@@ -872,6 +906,15 @@ def _temp_password_hash(ident: str) -> str:
 def _can_manage_temp(staff: StaffUser) -> None:
     if effective_roles(staff).issubset({"comercial"}):
         raise HTTPException(status_code=403, detail="Un comercial no puede administrar cuentas digitador")
+
+
+def _assert_can_manage_target(staff: StaffUser, target: StaffUser) -> None:
+    """Quién puede quitar o eliminar una cuenta temporal del evento: los digitadores, como siempre (`_can_manage_temp`); un coordinador temporal, solo una comercial, un admin o el super admin."""
+    if target.event_only:
+        if not can_manage_event_only(staff):
+            raise HTTPException(status_code=403, detail="Solo una comercial, un administrador o el super administrador administra coordinadores temporales")
+        return
+    _can_manage_temp(staff)
 
 
 @router.get("/events/{event_id}/staff-users/template")
@@ -1059,12 +1102,12 @@ def purge_event_staff(event_id: int, db: Session = Depends(get_db), staff: Staff
 @router.post("/events/{event_id}/staff-users/{staff_id}/delete-account")
 def delete_event_staff_account(event_id: int, staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """«Eliminar cuenta» de UN digitador temporal de este evento (la misma regla que eliminar a todos). Solo digitadores asignados a este evento; el resto de roles no se borran desde aquí."""
-    _can_manage_temp(staff)
     event = get_event_for_staff(event_id, db, staff)          # 0C (N2)
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
-    if not target or not auth or target.role != "digitador":
+    if not target or not auth or not (target.role == "digitador" or target.event_only):
         raise HTTPException(status_code=404, detail="Esa cuenta de digitador no está en este evento")
+    _assert_can_manage_target(staff, target)
     out = _delete_event_accounts(db, staff, event, [staff_id])
     db.commit()
     return out
@@ -1077,12 +1120,12 @@ def revoke_event_staff(
 ):
     """Revoca el acceso de un digitador/cliente a ESTE evento y SOLO a este (E-N1, 0C). Su cuenta, su sesión y sus autorizaciones en otros eventos no se tocan (desactivar la cuenta es otra acción: /staff/{id}/deactivate).
     Se quitan además los restos por evento: su equipo de impresión registrado aquí, su ruta de impresión y las rutas de otros que imprimían en su equipo."""
-    _can_manage_temp(staff)          # P7: igual que crear, importar y borrar en bloque, una comercial pura no administra digitadores
     event = get_event_for_staff(event_id, db, staff)          # 0C (N2)
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
-    if not target or not auth or target.role not in ("digitador", "cliente"):
+    if not target or not auth or not (target.role in ("digitador", "cliente") or target.event_only):
         raise HTTPException(status_code=404, detail="Esa cuenta no tiene acceso a este evento")      # coordinador+ no se autoriza por evento: no hay nada que revocar aquí
+    _assert_can_manage_target(staff, target)          # P7: una comercial pura no administra digitadores; los coordinadores temporales solo los administra una comercial o más
     audit_actions.record(db, staff, "revoke", "event_staff_access", auth.id, None, f"evento {event.id}: acceso de la cuenta {staff_id} revocado")          # nunca el usuario (el del digitador es su cédula)
     db.delete(auth)
     db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff_id).delete()

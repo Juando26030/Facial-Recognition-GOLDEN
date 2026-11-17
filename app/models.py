@@ -219,6 +219,7 @@ class StaffUser(Base):
     login_req_status = Column(String(12), nullable=True)
     session_epoch = Column(Integer, default=0, server_default='0', nullable=False)
     client_temp = Column(Boolean, default=False, server_default='false', nullable=False)  # 0129 (12-nov-2026): cliente temporal del evento = digitador (mismos permisos) con usuario y contraseña aleatorios, sin solicitud de ingreso (app/temp_client.py)
+    event_only = Column(Boolean, default=False, server_default='false', nullable=False)  # 0146 (16-nov-2026): coordinador temporal del evento = rol coordinador SOLO sobre los eventos que se le asignan (EventStaffAuthorization), sin las pantallas globales (app/event_only.py)
     archived_at = Column(DateTime, nullable=True)  # 0089 (Fase 3): NULL = normal; con fecha = archivada (no inicia sesión, no sale en listas ni selectores; se restaura). Ver app/routers/staff.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)

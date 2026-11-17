@@ -20,7 +20,7 @@
 
     function cardHtml(u) {
         const PL = window.UsuariosCompromiso;
-        const rol = u.client_temp ? 'Cliente (temporal)' : (ROLES[u.role] || u.role);
+        const rol = u.event_only ? 'Coordinador (temporal)' : (u.client_temp ? 'Cliente (temporal)' : (ROLES[u.role] || u.role));
         const nombre = u.full_name || 'Sin nombre';
         const st = loginState[u.id] || {};
         const estado = (u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>')
@@ -56,7 +56,7 @@
                 ${resend}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
-                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-role="${esc(u.role)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>${u.role === 'digitador' ? 'Eliminar cuenta' : 'Archivar cuenta'}</span></button></div></div>
+                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-role="${esc(u.event_only ? 'digitador' : u.role)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>${u.role === 'digitador' || u.event_only ? 'Eliminar cuenta' : 'Archivar cuenta'}</span></button></div></div>
             </div>
         </article>`;
     }
@@ -244,15 +244,20 @@
     const roleHint = document.getElementById('uRoleHint');
     const credBox = document.getElementById('clientCreds');
     const HINT_DIG = 'La contraseña de la cuenta es la misma cédula: no hay que escribirla.';
+    const HINT_COO = 'Tiene los permisos de un coordinador, pero SOLO sobre este evento: no ve otros eventos, clientes, CRM ni configuraciones, y su acceso termina cuando el evento finaliza. Entra con un usuario y una contraseña que se generan solos. Escribe solo su nombre.';
     const HINT_CLI = 'Para el cliente que también interviene en la base: tiene los mismos permisos del digitador, pero entra con un usuario y una contraseña propios que se generan solos, sin que el coordinador tenga que autorizar cada ingreso. Escribe solo su nombre.';
     function syncRole() {
         const isClient = !!roleSel && roleSel.value === 'cliente_temp';
-        if (userField) userField.hidden = isClient;
-        if (userInput) userInput.required = !isClient;
-        if (roleHint) roleHint.textContent = isClient ? HINT_CLI : HINT_DIG;
+        const isCoord = !!roleSel && roleSel.value === 'coordinador_temp';
+        if (userField) userField.hidden = isClient || isCoord;
+        if (userInput) userInput.required = !(isClient || isCoord);
+        if (roleHint) roleHint.textContent = isCoord ? HINT_COO : (isClient ? HINT_CLI : HINT_DIG);
     }
-    function showCredentials(user, pass) {
+    function showCredentials(user, pass, coord) {
         if (!credBox) return;
+        const title = document.getElementById('clientCredTitle'), lost = document.getElementById('clientCredLost');
+        if (title) title.textContent = coord ? 'Datos de ingreso del coordinador temporal' : 'Datos de ingreso del cliente';
+        if (lost) lost.textContent = coord ? 'Si se pierden, elimina esta cuenta y crea otra.' : 'Si se pierden, usa «Restablecer contraseña» para generar una nueva.';
         document.getElementById('clientCredUser').textContent = user;
         document.getElementById('clientCredPass').textContent = pass;
         credBox.hidden = false;
@@ -283,16 +288,18 @@
         const btn = form.querySelector('[data-gw-submit]');
         const payload = Object.fromEntries(new FormData(form).entries());
         const isClient = payload.role === 'cliente_temp';
+        const isCoord = payload.role === 'coordinador_temp';
         if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; }          // el servidor genera el usuario y la contraseña
+        if (isCoord) { payload.role = 'digitador'; payload.temp_coordinator = true; delete payload.username; delete payload.email; delete payload.phone; }          // coordinador temporal (16-nov-2026): igual, sin cédula ni correo
         return busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
             });
-            if (res.ok && isClient) {
+            if (res.ok && (isClient || isCoord)) {
                 const d = await res.json().catch(() => ({}));
                 form.reset(); syncRole(); loadTempUsers();
-                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password);
-                showToast('Cliente creado y asignado al evento', 'success');
+                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password, isCoord);
+                showToast(isCoord ? 'Coordinador temporal creado y asignado al evento' : 'Cliente creado y asignado al evento', 'success');
             }
             else if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }
             else showToast(await errDetail(res, 'Revisa los datos: falta algún campo o no es válido'), 'error');

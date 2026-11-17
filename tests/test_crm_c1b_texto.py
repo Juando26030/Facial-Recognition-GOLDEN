@@ -66,9 +66,10 @@ def test_crm_routes_belong_to_web_and_all_only(path):
 
 
 # ------------------------------------------------------------------ despliegue: CRM_ENABLED por entorno
-def test_config_sh_staging_on_production_off_by_default():
+def test_config_sh_crm_on_in_staging_and_production():
+    """16-nov-2026: Juan David autorizó el CRM en producción (con el contador de cuentas ya fijado); el valor vive en config.sh para que cada despliegue lo conserve."""
     cfg = _read("deploy/gcp/config.sh")
-    assert re.search(r'if \[ "\$GOLDEN_ENV" = production \]; then CRM_ENABLED="\$\{CRM_ENABLED:-0\}"; else CRM_ENABLED="\$\{CRM_ENABLED:-1\}"; fi', cfg)
+    assert re.search(r'if \[ "\$GOLDEN_ENV" = production \]; then CRM_ENABLED="\$\{CRM_ENABLED:-1\}"; else CRM_ENABLED="\$\{CRM_ENABLED:-1\}"; fi', cfg)
 
 
 def test_deploy_sh_writes_crm_enabled_only_to_the_web_service():

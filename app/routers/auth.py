@@ -59,6 +59,8 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["ep"] = int(staff.session_epoch or 0)         # S2: época de sesión de la cuenta (cambiar/restablecer la contraseña la sube)
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
+    if getattr(staff, "event_only", False):
+        request.session["staff_event_only"] = True          # coordinador temporal (app/event_only.py): main.py y el menú lateral lo leen sin consultar la base
     request.session["staff_secondary_role"] = ",".join(all_extra_roles(staff)) or None  # Fase 15 + 0103: los roles que se suman al principal (coma); las páginas lo leen con auth.split_roles
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username

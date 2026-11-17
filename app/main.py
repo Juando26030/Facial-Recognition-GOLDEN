@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
 from app import node_sync, local_installer
-from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -149,6 +149,23 @@ async def csrf_and_password_gate(request, call_next):
         if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
             return RedirectResponse("/cambiar-contrasena", status_code=302)
         return JSONResponse({"detail": "Debes cambiar tu contraseña antes de continuar"}, status_code=403)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def event_only_gate(request, call_next):
+    """Coordinador temporal del evento (app/event_only.py): su sesión solo abre las pantallas del evento y las llamadas de la API que sirven para operar dentro de él; lo demás se cierra aquí,
+    antes de llegar a la ruta (las rutas que usan `get_current_staff` lo vuelven a comprobar con la base, y cada ruta de evento valida que el evento sea uno de los suyos)."""
+    session = request.scope.get("session")
+    if session and session.get("staff_event_only"):
+        path = request.url.path
+        if path.startswith("/api/"):
+            if not event_only.api_allowed(request.method, path):
+                return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
+        elif not event_only.page_allowed(path):
+            if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
+                return RedirectResponse("/", status_code=302)
+            return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
     return await call_next(request)
 
 
@@ -328,6 +345,7 @@ def _crm_nav_visible(request) -> bool:
 
 
 templates.env.globals["crm_nav_visible"] = _crm_nav_visible
+templates.env.globals["event_only_session"] = lambda request: bool(request.session.get("staff_event_only")) if request.scope.get("session") is not None else False          # coordinador temporal: el menú lateral solo ofrece Eventos y Calendario
 templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
@@ -461,6 +479,11 @@ def _display_role(role: str, secondary_role: str = None) -> str:
     return role
 
 
+def effective_roles_from_session(request: Request) -> set:
+    """Los roles de la cuenta (principal y sumados) tal como quedaron en la sesión al ingresar."""
+    return {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
+
+
 def _require_page_role(request: Request, minimum_role: str):
     """Para páginas simples que solo necesitan el rol (no el objeto completo): sin sesión -> /login;
     sin permiso suficiente -> /. Considera el rol secundario (Fase 15, doble rol coordinador+
@@ -499,6 +522,11 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
     if is_inventory_only(staff_user):
         return RedirectResponse("/inventario", status_code=302)          # almacén / contabilidad sin otro rol: su única pantalla es el inventario
+
+    if staff_user.event_only:          # coordinador temporal: su evento (si es uno solo) o la lista de sus eventos; nunca el panel de clientes
+        mine = db.query(Event).join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id).filter(
+            EventStaffAuthorization.staff_user_id == staff_user.id, Event.status != "finalizado", Event.archived_at.is_(None)).all()
+        return RedirectResponse(f"/kiosk/{mine[0].id}" if len(mine) == 1 else "/eventos", status_code=302)
 
     if staff_user.role in ("digitador", "cliente"):
         # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
@@ -1025,7 +1053,8 @@ def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db
     vivía como pestaña "Usuarios del Evento" dentro de /kiosk/{event_id}/registro; se mueve a su
     propia ruta, mismo patrón que "Escarapelas"/"Adjuntar Base de Datos". Mismo mínimo de rol que
     antes (coordinador+ para crear digitador, admin+ dentro del template para cliente/asignar)."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador")
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador",
+                               extra_context={"can_temp_coordinator": bool(effective_roles_from_session(request) & {"comercial", "admin", "super_admin"})})          # crear coordinadores temporales (16-nov-2026): comercial o más, por el rol REAL de la sesión
 
 
 @app.get("/kiosk/{event_id}/usuarios/hoja")

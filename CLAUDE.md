@@ -79,6 +79,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - **Frontend:** `showToast`/`showConfirm`/`showPrompt` de `toast.js`, nunca `alert`/`confirm`/`prompt`; delegación de eventos para HTML
   generado (nada de `onclick` inline); en plantillas siempre `url_for('static', ...)` (agrega `?v=`); no mutar el subárbol de `e.target`
   antes de que el evento termine de burbujear; los formularios de datos no se cierran al hacer clic afuera.
+- **Coordinador temporal (16-nov-2026):** `staff_users.event_only` (rol coordinador SOLO sobre sus eventos asignados; sin clientes, CRM, configuración ni otros eventos). La regla de rutas permitidas es `app/event_only.py` (lista de PERMITIDOS: una ruta global nueva queda cerrada hasta agregarla); detalle y decisiones en [`docs/COORDINADOR_TEMPORAL.md`](docs/COORDINADOR_TEMPORAL.md).
 - **Permisos:** `STAFF_ROLES` = cliente < digitador < coordinador < comercial < admin < super_admin, con excepciones por rol
   (`require_role_excluding`, `effective_roles` para el doble rol coordinador+comercial). Dos puertas distintas: `get_event_for_staff`
   (acceso) y `require_event_in_progress` (registrar/reconocer).

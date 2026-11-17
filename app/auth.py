@@ -52,7 +52,19 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
         if grant is not None and grant.expires_at <= utcnow():
             request.session.clear()
             raise HTTPException(status_code=401, detail="Tu acceso venció. Pide uno nuevo a tu contacto de Golden.")
+    if staff.event_only:          # coordinador temporal (app/event_only.py): solo las rutas de operar dentro de un evento y solo con los eventos que se le asignaron
+        _guard_event_only(request, db, staff)
     return staff
+
+
+def _guard_event_only(request: Request, db: Session, staff: StaffUser) -> None:
+    from app import event_only
+    path = request.url.path
+    if not event_only.api_allowed(request.method, path):
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+    eid = event_only.event_id_in_path(path)
+    if eid is not None and not db.query(EventStaffAuthorization.id).filter_by(event_id=eid, staff_user_id=staff.id).first():
+        raise HTTPException(status_code=404, detail="Evento no encontrado")          # 404 (no 403): no confirma que el evento exista
 
 
 def effective_roles(staff: StaffUser) -> set:
@@ -244,7 +256,14 @@ def event_scope_enforced() -> bool:
     return os.getenv("ENFORCE_STAFF_EVENT_SCOPE", "0") == "1"
 
 
+def is_event_only(staff) -> bool:
+    """¿Es un coordinador temporal (16-nov-2026, app/event_only.py)? Rol coordinador, pero solo con los eventos que se le asignaron."""
+    return bool(getattr(staff, "event_only", False))
+
+
 def _scope_applies(staff: StaffUser) -> bool:
+    if is_event_only(staff):
+        return True          # el coordinador temporal SIEMPRE queda limitado a sus eventos, con ENFORCE_STAFF_EVENT_SCOPE encendido o no
     return event_scope_enforced() and staff.role not in ("digitador", "cliente") and not ({"admin", "super_admin"} & effective_roles(staff))
 
 
@@ -252,8 +271,8 @@ def assert_event_scope(event: Event, staff: StaffUser, db: Session) -> None:
     """Pertenencia al evento (A6/A7) para coordinador/comercial; ver `event_scope_enforced`. 404 (no 403) para no confirmar que el evento existe."""
     if not _scope_applies(staff):
         return
-    if staff.id in (event.coordinator_staff_id, event.commercial_staff_id, event.created_by_id):
-        return
+    if not is_event_only(staff) and staff.id in (event.coordinator_staff_id, event.commercial_staff_id, event.created_by_id):
+        return          # (el coordinador temporal solo pertenece a un evento por su autorización explícita)
     if db.query(EventStaffAuthorization.id).filter_by(event_id=event.id, staff_user_id=staff.id).first():
         return
     raise HTTPException(status_code=404, detail="Evento no encontrado")
@@ -264,8 +283,10 @@ def scope_events_query(query, staff: StaffUser):
     if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None:
         query = query.filter(Event.tenant_id == staff.tenant_id)
     if _scope_applies(staff):
-        mine = [Event.coordinator_staff_id == staff.id, Event.commercial_staff_id == staff.id, Event.created_by_id == staff.id,
-                Event.id.in_(select(EventStaffAuthorization.event_id).where(EventStaffAuthorization.staff_user_id == staff.id))]
+        authorized = Event.id.in_(select(EventStaffAuthorization.event_id).where(EventStaffAuthorization.staff_user_id == staff.id))
+        if is_event_only(staff):
+            return query.filter(authorized, Event.status != "finalizado")          # solo lo que se le asignó y que no haya terminado
+        mine = [Event.coordinator_staff_id == staff.id, Event.commercial_staff_id == staff.id, Event.created_by_id == staff.id, authorized]
         query = query.filter(or_(*mine))
     return query
 
@@ -283,6 +304,8 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
         # (/api/users), el formulario de persona, el quiosco… Su única puerta a un evento es el inventario (app/routers/inventory.py, que no usa esta función).
         raise HTTPException(status_code=403, detail="Tu rol solo tiene acceso al inventario de los eventos")
     assert_event_scope(event, staff, db)
+    if is_event_only(staff) and event.status == "finalizado":
+        raise HTTPException(status_code=403, detail="Tu acceso como coordinador temporal terminó: el evento ya finalizó")
     idle.note_event(event)                      # tiempo de inactividad propio del evento (solo en proceso); ver app/idle.py
 
     if staff.role in ("digitador", "cliente"):

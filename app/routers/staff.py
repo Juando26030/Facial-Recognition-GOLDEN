@@ -95,7 +95,7 @@ def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(
     'coordinador' como rol PRIMARIO o SECUNDARIO (Fase 15: doble rol coordinador+comercial)."""
     coords = db.query(StaffUser).filter(
         or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
-        StaffUser.is_active == True, StaffUser.archived_at.is_(None),
+        StaffUser.is_active == True, StaffUser.archived_at.is_(None), StaffUser.event_only.is_(False),          # el coordinador temporal (16-nov-2026) no se asigna como coordinador de un evento: se administra desde «Usuarios del evento»
     ).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
 
@@ -128,7 +128,7 @@ def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depe
 @router.get("/staff")
 def list_staff(include_archived: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     """Por defecto SOLO las cuentas no archivadas. `include_archived=true` (admin+, pantalla «Ver archivados») devuelve las archivadas."""
-    query = db.query(StaffUser)
+    query = db.query(StaffUser).filter(StaffUser.event_only.is_(False))          # los coordinadores temporales viven en «Usuarios del evento», no en la lista de cuentas permanentes
     query = query.filter(StaffUser.archived_at.isnot(None) if include_archived else StaffUser.archived_at.is_(None))
     if staff.role != "super_admin":
         query = query.filter(StaffUser.role.in_(ROLES_CREATABLE_BY_ADMIN))
