@@ -377,9 +377,7 @@
     const originalStatus = isRegistered ? 'registrado' : 'no_registrado';
     // 2026-09-23, pedido explícito: al darle Editar a alguien que aún no llegó, "Registrado" queda
     // preseleccionado — guardar sin tocar nada ya lo deja acreditado (en verde).
-    // 17-nov-2026 (pedido de Juan David, evento Páramo): quien edita desde una cuenta CLIENTE TEMPORAL completa datos (p. ej. «autorizo entrada») y NO registra: para ella el estado
-    // preseleccionado es el que la persona ya tiene. Registrar sigue siendo posible, pero escogiéndolo a propósito.
-    const defaultStatus = window.CLIENT_TEMP ? originalStatus : 'registrado';
+    const defaultStatus = 'registrado';
 
     const overlay = document.createElement('div');
     overlay.className = 'gw-modal-backdrop gw-registro__edit'; overlay.setAttribute('data-open', 'true');
