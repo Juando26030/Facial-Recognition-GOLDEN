@@ -1,7 +1,8 @@
 /* Ventana de impresión de las etiquetas QR del almacén (Pieza 1). Medidas físicas en mm (es una etiqueta impresa, no una pantalla); el alto lo fija almacen-etiquetas.js con @page.
-   Solo tokens --gw-* para color y tipografía de la pantalla; en el papel todo va en negro sobre blanco. NO toca la impresión compartida de escarapelas. */
+   Solo tokens --gw-* para color y tipografía de la pantalla; en el papel todo va en negro sobre blanco a propósito (white/black literales: es papel, no tema; no se tocan). NO toca la impresión compartida de escarapelas. */
 .gw-almlbl__bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-3); padding: var(--gw-sp-3); background: var(--gw-surface-2); border-bottom: 1px solid var(--gw-border); }
-.gw-almlbl__bar .gw-hint { flex: 1 1 16rem; margin: 0; }
+.gw-almlbl__head { flex: 1 1 16rem; min-width: 0; }
+.gw-almlbl__head .gw-hint { margin: var(--gw-sp-1) 0 0; }
 .gw-almlbl__sheet { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-3); padding: var(--gw-sp-4); }
 .gw-almlbl__label { display: flex; align-items: center; gap: 2mm; box-sizing: border-box; padding: 2mm; background: white; color: black; border: 1px dashed var(--gw-border); overflow: hidden; break-after: page; page-break-after: always; }
 .gw-almlbl__qr { flex: none; }

@@ -13,6 +13,11 @@
   async function j(url) { const r = await fetch(url); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const trackingLabel = (k) => ((tracking || []).find((t) => t.key === k) || {}).label || k;
 
+  const icon = (name, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${esc(root.dataset.icons || '')}#i-${name}"/></svg>`;
+  function verdict(kind, title, text) {          // kind: 'ok' | 'err'
+    return `<div class="gw-verdict gw-verdict--${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${icon(kind === 'ok' ? 'check-lg' : 'error', 'gw-verdict__icon')}<div class="gw-verdict__body"><p class="gw-verdict__title">${esc(title)}</p><p class="gw-verdict__text">${esc(text)}</p></div></div>`;
+  }
+
   async function scan(text) {
     const out = $('almScanResult');
     const code = String(text || '').trim();
@@ -22,15 +27,13 @@
       const d = await j('/api/almacen/scan?code=' + encodeURIComponent(code));
       if (d.kind === 'unit') {
         const u = d.unit;
-        out.innerHTML = `<div class="gw-state" role="status"><p class="gw-state__title"><span class="gw-badge gw-badge--ok">Encontrado</span> ${esc(u.title)}</p>
-          <p class="gw-hint">Código ${esc(u.code)} · ${u.serial ? 'Serial ' + esc(u.serial) + ' · ' : ''}${esc(u.status_label)}${u.event_name ? ' · ' + esc(u.event_name) : ''}</p></div>`;
+        out.innerHTML = verdict('ok', u.title, `Código ${u.code} · ${u.serial ? 'Serial ' + u.serial + ' · ' : ''}${u.status_label}${u.event_name ? ' · ' + u.event_name : ''}`);
       } else {
         const p = d.product;
-        out.innerHTML = `<div class="gw-state" role="status"><p class="gw-state__title"><span class="gw-badge gw-badge--ok">Encontrado</span> ${esc(p.name)}</p>
-          <p class="gw-hint">Código ${esc(d.code)} · ${esc(trackingLabel(p.tracking))}</p></div>`;
+        out.innerHTML = verdict('ok', p.name, `Código ${d.code} · ${trackingLabel(p.tracking)}`);
       }
     } catch (e) {
-      out.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title"><span class="gw-badge gw-badge--err">No encontrado</span> ${esc(e.message)}</p></div>`;
+      out.innerHTML = verdict('err', 'No encontrado', e.message);
     }
   }
 
@@ -42,4 +45,16 @@
     scan(v);
   });
   if (tab) tab.addEventListener('gw:tabshow', () => { const s = $('almScan'); if (s) s.focus(); });
+
+  /* ---- barra de guardado única (params-save.js): vive dentro de #paramsRoot, que envuelve el panel «Almacén» y «Administrar catálogo». Solo se ve con una de esas dos pestañas abiertas, o si quedan
+     cambios sin guardar (así nunca se pierden de vista). Los bloques se registran por su clave: almacen-checklist (almacen-moves.js) y almacen-seriales (almacen-catalog.js). */
+  const wrap = $('paramsRoot');
+  const bar = $('paramsSaveBar');
+  const adm = $('inventario');
+  if (wrap && bar) {
+    const sync = () => { bar.hidden = root.hidden && !(adm && !adm.hidden) && !(window.GWParams && window.GWParams.hasDirty()); };
+    const mo = new MutationObserver(sync);
+    [root, adm, bar].forEach((el) => { if (el) mo.observe(el, { attributes: true, attributeFilter: ['hidden', 'data-state'] }); });
+    sync();
+  }
 })();

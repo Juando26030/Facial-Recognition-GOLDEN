@@ -14,15 +14,18 @@
 {# Pieza 1 de almacén: ventana de impresión PROPIA de las etiquetas QR (rollo de 62 mm de la Brother QL-800). No usa ni cambia la impresión compartida de escarapelas (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md). #}
 <body class="gw-page gw-almlbl">
 <header class="gw-almlbl__bar gw-no-print">
+  <div class="gw-almlbl__head">
+    <h1 class="gw-page-head__title">Etiquetas QR del almacén</h1>
+    <p class="gw-hint" id="lblStatus" role="status" aria-live="polite">Preparando las etiquetas…</p>
+  </div>
   <div class="gw-field"><label class="gw-label" for="lblHeight">Alto de la etiqueta</label>
     <select class="gw-select" id="lblHeight">
       <option value="29" selected>29 mm (etiqueta troquelada 29 × 62)</option>
       <option value="40">40 mm</option>
       <option value="62">62 mm (cuadrada)</option>
     </select></div>
-  <button type="button" class="gw-btn gw-btn--primary" id="lblPrint" disabled>Imprimir</button>
+  <button type="button" class="gw-btn gw-btn--primary" id="lblPrint" disabled><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-printer"/></svg> Imprimir</button>
   <button type="button" class="gw-btn gw-btn--secondary" id="lblClose">Cerrar</button>
-  <p class="gw-hint" id="lblStatus" role="status" aria-live="polite">Preparando las etiquetas…</p>
 </header>
 <main class="gw-almlbl__sheet" id="lblSheet" aria-label="Vista previa de las etiquetas"></main>
 </body>

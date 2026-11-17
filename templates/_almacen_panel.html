@@ -1,51 +1,61 @@
-{# Almacén (Piezas 1 y 2): modo escáner y salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo manejan static/js/almacen-page.js (modo escáner) y static/js/almacen-moves.js (salidas, entradas, alistado). #}
+{# Almacén (Piezas 1 y 2): modo escáner y salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo manejan static/js/almacen-page.js (modo escáner y barra de guardado), static/js/almacen-moves.js (salidas, entradas, alistado) y static/js/almacen-catalog.js (seriales).
+   Guardado unificado (ux/almacen): el checklist (OK y observaciones) y los seriales son EDICIONES y quedan pendientes hasta «Guardar cambios» (barra única de inventario.html, bloques almacen-checklist y almacen-seriales). Escanear, registrar un movimiento, anular, imprimir y subir fotos son ACTOS y siguen inmediatos con aviso. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
     <section class="gw-invpg__panel gw-stack" id="invPanelAlm" role="tabpanel" aria-labelledby="invTabAlm" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
-      <p class="gw-hint">Aquí se registran las salidas y entradas de material por evento escaneando el QR y se lleva el checklist de cada evento.</p>
+      <div class="gw-tabpanel__head">
+        <h2 class="gw-tabpanel__title">Almacén</h2>
+        <p class="gw-tabpanel__lead">Registra las salidas y entradas de material de cada evento escaneando su QR y lleva el checklist del evento.</p>
+      </div>
 
-      <section class="gw-card gw-stack" aria-labelledby="almMoveTitle">
-        <h2 class="gw-card__title" id="almMoveTitle">Salidas y entradas por evento</h2>
-        <div class="gw-fields-row gw-fields-row--3">
+      <section class="gw-card gw-stack" aria-labelledby="almMoveTitle" data-pnodirty>
+        <h3 class="gw-card__title" id="almMoveTitle">Salidas y entradas por evento</h3>
+        <div class="gw-fields-row gw-fields-row--2">
           <div class="gw-field"><label class="gw-label" for="almMvEventFilter">Buscar evento</label><input class="gw-input" type="search" id="almMvEventFilter" autocomplete="off" placeholder="Nombre o código"></div>
           <div class="gw-field"><label class="gw-label" for="almMvEvent">Evento</label><select class="gw-select" id="almMvEvent"></select></div>
-          <fieldset class="gw-field gw-fieldset"><legend class="gw-label">¿Qué registras?</legend>
-            <label class="gw-check"><input type="radio" name="almMvMode" value="salida" checked> <span>Salida (sale de bodega al evento)</span></label>
-            <label class="gw-check"><input type="radio" name="almMvMode" value="entrada"> <span>Entrada (vuelve a bodega)</span></label></fieldset>
         </div>
+        <fieldset class="gw-field gw-fieldset"><legend class="gw-label">¿Qué registras?</legend>
+          <div class="gw-segment gw-segment--fit">
+            <label class="gw-segment__opt"><input type="radio" name="almMvMode" value="salida" checked> {{ ic('arrow-out', 'gw-icon--sm') }}<span>Salida: sale de bodega al evento</span></label>
+            <label class="gw-segment__opt"><input type="radio" name="almMvMode" value="entrada"> {{ ic('arrow-in', 'gw-icon--sm') }}<span>Entrada: vuelve a bodega</span></label>
+          </div>
+        </fieldset>
         <div class="gw-fields-row gw-fields-row--2">
           <div class="gw-field"><label class="gw-label" for="almMvScan">Escanea el código</label>
-            <input class="gw-input" type="text" id="almMvScan" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almMvHint" disabled>
+            <div class="gw-search__field gw-alm__scanfield">{{ ic('scan', 'gw-search__icon') }}<input class="gw-input" type="text" id="almMvScan" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almMvHint" disabled></div>
             <p class="gw-hint" id="almMvHint">Primero elige el evento. El lector escribe el código y pulsa Enter; cada lectura registra un movimiento.</p></div>
-          <div class="gw-field"><label class="gw-label" for="almMvQty">Cantidad <span class="gw-hint">(solo para elementos por modelo o por cantidad)</span></label>
-            <input class="gw-input" type="number" id="almMvQty" min="1" value="1" inputmode="numeric"></div>
+          <div class="gw-field"><label class="gw-label" for="almMvQty">Cantidad</label>
+            <input class="gw-input gw-input--short" type="number" id="almMvQty" min="1" value="1" inputmode="numeric" aria-describedby="almMvQtyHint">
+            <p class="gw-hint" id="almMvQtyHint">Solo cuenta para elementos por modelo o por cantidad.</p></div>
         </div>
-        <form id="almMvReason" class="gw-card gw-stack" hidden aria-labelledby="almMvReasonTitle">
-          <h3 class="gw-card__title" id="almMvReasonTitle">Esto excede lo que pidió el evento</h3>
+        <form id="almMvReason" class="gw-stack gw-alm__reason" hidden aria-labelledby="almMvReasonTitle">
+          <h4 class="gw-card__title" id="almMvReasonTitle">Esto excede lo que pidió el evento</h4>
           <p class="gw-hint" id="almMvReasonMsg"></p>
           <div class="gw-field"><label class="gw-label" for="almMvReasonText">¿Por qué se incluye?</label><input class="gw-input" type="text" id="almMvReasonText" maxlength="300" autocomplete="off"></div>
           <label class="gw-check"><input type="checkbox" id="almMvPlanB"> <span>Es Plan B (equipo de reemplazo o de respaldo)</span></label>
-          <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="almMvReasonOk">Registrar la salida</button>
+          <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="almMvReasonOk">Registrar el movimiento</button>
             <button type="button" class="gw-btn gw-btn--secondary" id="almMvReasonCancel">Cancelar</button></div>
         </form>
         <div id="almMvResult" aria-live="polite"></div>
       </section>
 
       <section class="gw-card gw-stack" id="almBoardCard" aria-labelledby="almBoardTitle" hidden>
-        <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almBoardTitle">Checklist del evento</h2><span id="almBoardSummary" class="gw-hint"></span></div>
+        <div class="gw-row gw-row--between"><h3 class="gw-card__title" id="almBoardTitle">Checklist del evento</h3><span id="almBoardSummary" class="gw-badge gw-badge--info" hidden></span></div>
+        <p class="gw-hint">Marca «OK» cuando el elemento esté alistado y anota observaciones. Los cambios quedan pendientes hasta que pulses «Guardar cambios».</p>
         <div id="almBoardUnmapped" role="status"></div>
-        <div id="almBoard" aria-live="polite"></div>
-        <h3 class="gw-section-title">Fuera de bodega (equipos con serial que siguen en el evento)</h3>
+        <div id="almBoard" data-psave="almacen-checklist" aria-live="polite"></div>
+        <h4 class="gw-section-title">Fuera de bodega <span class="gw-hint">(equipos con serial que siguen en el evento)</span></h4>
         <div id="almOutside" aria-live="polite"></div>
-        <h3 class="gw-section-title">Últimos movimientos</h3>
+        <h4 class="gw-section-title">Últimos movimientos</h4>
         <div id="almMovements" aria-live="polite"></div>
       </section>
 
-      <section class="gw-card gw-stack" aria-labelledby="almScanTitle">
-        <h2 class="gw-card__title" id="almScanTitle">Modo escáner</h2>
+      <section class="gw-card gw-stack" aria-labelledby="almScanTitle" data-pnodirty>
+        <h3 class="gw-card__title" id="almScanTitle">Modo escáner</h3>
         <div class="gw-field"><label class="gw-label" for="almScan">Escanea un código con el lector</label>
-          <input class="gw-input" type="text" id="almScan" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almScanHint">
-          <p class="gw-hint" id="almScanHint">El lector escribe el código y pulsa Enter. También puedes escribirlo a mano.</p></div>
+          <div class="gw-search__field gw-alm__scanfield">{{ ic('scan', 'gw-search__icon') }}<input class="gw-input" type="text" id="almScan" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almScanHint"></div>
+          <p class="gw-hint" id="almScanHint">El lector escribe el código y pulsa Enter. También puedes escribirlo a mano. Solo muestra qué es; no registra ningún movimiento.</p></div>
         <div id="almScanResult" aria-live="polite"></div>
       </section>
 
-      <p class="gw-hint">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p>
+      <div class="gw-alert">{{ ic('info') }}<p class="gw-alert__body">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p></div>
     </section>
