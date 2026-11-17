@@ -19,7 +19,7 @@
 .gw-invcal__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
 .gw-invcal__title { margin: 0; font-size: var(--gw-fs-lg); flex: 1 1 10rem; }
 .gw-invcal__title::first-letter { text-transform: uppercase; }
-.gw-invcal__month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.gw-invcal__month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--gw-sp-1); }
 .gw-invcal__dow { padding: var(--gw-sp-1); text-align: center; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 .gw-invcal__cell { display: flex; flex-direction: column; align-items: stretch; gap: var(--gw-sp-1); min-width: 0; min-height: 6.5rem; padding: var(--gw-sp-1); font: inherit; text-align: left; color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); cursor: pointer; }
 .gw-invcal__cell:hover { background: var(--gw-surface-2); }
@@ -78,7 +78,7 @@
 /* «Dónde está cada equipo» más visual (11-nov-2026): cintas legibles con su cantidad, total por día y tablero del día seleccionado. */
 .gw-invcal__top { display: flex; align-items: center; gap: var(--gw-sp-1); }
 .gw-invcal__dn { display: none; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); text-transform: capitalize; }
-.gw-invcal__tot { margin-left: auto; padding: 0 var(--gw-sp-2); border-radius: 999px; background: var(--gw-text); color: var(--gw-surface); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); white-space: nowrap; }
+.gw-invcal__tot { margin-left: auto; padding: 0 var(--gw-sp-2); border-radius: var(--gw-radius-pill); background: var(--gw-text); color: var(--gw-surface); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); white-space: nowrap; }
 .gw-invcal__cell { min-height: 8.5rem; }
 .gw-invcal__chip { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-2); font-size: var(--gw-fs-sm); line-height: 1.25; border-left: 4px solid var(--evc, var(--gw-gold-2)); white-space: normal; }
 .gw-invcal__chipname { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-weight: var(--gw-fw-bold); }

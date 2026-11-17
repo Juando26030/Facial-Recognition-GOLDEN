@@ -33,7 +33,7 @@
 }
 .gw-ai__wrap [hidden] { display: none !important; }
 /* Auditoría de botones (Áreas; prefijo propio .gw-ar para no chocar con Inventario). */
-.gw-ar .gw-page-head__actions .gw-btn, .gw-ar .gw-steps__guide .gw-btn { min-height: 44px; }
+.gw-ar .gw-page-head__actions .gw-btn, .gw-ar .gw-steps__guide .gw-btn { min-height: var(--gw-tap); }
 .gw-ar .gw-segment__opt { justify-content: center; text-align: center; overflow-wrap: break-word; }
 .gw-ar .gw-search__field .gw-input { text-overflow: ellipsis; }
 .gw-ar .gw-verdict__text .gw-btn { justify-content: center; }
