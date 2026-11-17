@@ -272,6 +272,34 @@ def test_summary_allocates_by_event_and_ignores_test_person(client, factory, db)
     assert s["series"]["google"][-1] == 4000 and s["series"]["otros"][-1] == 300
 
 
+def test_summary_counts_web_form_signups_and_lists_every_event(client, factory, db):
+    """Un evento que se llena por formulario web (sin puerta) también recibe costo; las de prueba, las que esperan pago y la persona de prueba no cuentan;
+    y la lista trae TODOS los eventos del periodo, también el que no recibió nada."""
+    from app.models import FormSubmission, WebForm
+    factory.staff("admin", username="adm")
+    door = factory.event("finalizado", start_date=date(2026, 11, 3), end_date=date(2026, 11, 3))
+    web = factory.event("en_proceso", start_date=date(2026, 11, 1), end_date=date(2026, 12, 25))
+    idle = factory.event("finalizado", start_date=date(2026, 11, 8), end_date=date(2026, 11, 8))
+    ts = datetime(2026, 11, 5, 15, 0)
+    factory.person(door, "p1", attend=False)
+    db.add(AccessLog(tenant_id=door.tenant_id, user_id="p1", timestamp=ts, event_id=door.id))
+    form = WebForm(event_id=web.id, name="F", slug="fcolab", design_json="{}", test_key="k")
+    db.add(form)
+    db.flush()
+    for i, (st, test, pid) in enumerate([("confirmed", False, "1"), ("confirmed", False, None), ("confirmed", False, "2"), ("confirmed", True, "3"),
+                                         ("awaiting_payment", False, "4"), ("confirmed", False, "PRUEBA")]):
+        db.add(FormSubmission(event_id=web.id, form_id=form.id, data_json="{}", person_id=pid, is_test=test, status=st, created_at=ts))
+    db.commit()
+    login(client, "adm")
+    client.post("/api/gastos/infra/costs", json=_body(amount="4000", kind="variable"))
+    s = client.get("/api/gastos/infra/summary?from=2026-11&to=2026-11").json()
+    by = {e["event_id"]: e for e in s["events"]}
+    assert by[web.id]["forms"] == 3 and by[web.id]["door"] == 0 and by[door.id]["door"] == 1      # 3 formularios válidos; 1 de prueba, 1 sin pagar y la PRUEBA no cuentan
+    assert by[web.id]["variable"] == 3000 and by[door.id]["variable"] == 1000
+    assert idle.id in by and by[idle.id]["total"] == 0                                              # aparece aunque no recibió nada
+    assert by[web.id]["by_month"]["2026-11"] == 3000
+
+
 def test_settings_and_export(client, factory):
     factory.staff("admin", username="adm")
     login(client, "adm")

@@ -8,6 +8,7 @@
   var GROUPS = ['google', 'neon', 'microsoft', 'cloudflare', 'otros'];
   var data = null;           // último resumen
   var costs = [];            // gastos del rango
+  var evFilter = '';         // id del evento elegido en «Costo de un evento» ('' = ninguno)
   var tableViews = {};       // gráfico -> mostrar tabla
   var nf = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
 
@@ -173,7 +174,7 @@
   }
 
   function eventsChart() {
-    var rows = data.events.slice(0, 12), W = 760, rowH = 34, ML = 190, H = rows.length * rowH + 40;
+    var rows = data.events.filter(function (r) { return r.total > 0; }).slice(0, 12), W = 760, rowH = 34, ML = 190, H = rows.length * rowH + 40;
     var max = niceMax(Math.max.apply(null, rows.map(function (r) { return r.total; }).concat([1])));
     var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'gw-gx__svg', role: 'img', 'aria-label': 'Costo de infraestructura por evento, en pesos' });
     var plot = W - ML - 70;
@@ -221,13 +222,35 @@
       data.events.map(function (e) { return '<tr><th scope="row">' + esc(e.name) + ' <span class="gw-muted">' + esc(e.code) + '</span></th><td class="gw-gx__num"><strong>' + cop(e.total) + '</strong></td><td class="gw-gx__num">' + cop(e.fixed) + '</td><td class="gw-gx__num">' + cop(e.variable) + '</td><td class="gw-gx__num">' + nf.format(e.activity) + '</td><td class="gw-gx__num">' + e.days + '</td></tr>'; }).join('') + '</tbody></table>';
   }
 
+  function eventDetailPanel() {
+    if (!data.events.length) return '';
+    var opts = '<option value="">Elige un evento…</option>' + data.events.map(function (e) {
+      return '<option value="' + e.event_id + '"' + (String(e.event_id) === evFilter ? ' selected' : '') + '>' + esc(e.name) + ' (' + esc(e.code) + ') · ' + cop(e.total) + '</option>';
+    }).join('');
+    var ev = data.events.filter(function (e) { return String(e.event_id) === evFilter; })[0];
+    var detail = '<p class="gw-hint">Elige un evento para ver cuánto costó, mes por mes, y de dónde sale su parte.</p>';
+    if (ev) {
+      var rows = data.months.map(function (m) { return [m, ev.by_month[m] || 0]; }).filter(function (r) { return r[1] > 0; });
+      detail = '<div class="gw-gx__kpis">' +
+        '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Costo total</span><span class="gw-gx__kpi-value">' + cop(ev.total) + '</span><span class="gw-gx__kpi-hint">' + esc(ev.status || '') + '</span></div>' +
+        '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Parte fija</span><span class="gw-gx__kpi-value">' + cop(ev.fixed) + '</span><span class="gw-gx__kpi-hint">' + ev.days + ' día(s) activo(s)</span></div>' +
+        '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Parte variable</span><span class="gw-gx__kpi-value">' + cop(ev.variable) + '</span><span class="gw-gx__kpi-hint">' + nf.format(ev.activity) + ' registro(s)</span></div>' +
+        '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Registros</span><span class="gw-gx__kpi-value">' + nf.format(ev.door) + ' + ' + nf.format(ev.forms) + '</span><span class="gw-gx__kpi-hint">Puerta + formularios web</span></div></div>' +
+        (rows.length ? '<div class="gw-table-wrap gw-scroll-x"><table class="gw-table"><caption>Costo de este evento por mes (COP)</caption><thead><tr><th scope="col">Mes</th><th scope="col" class="gw-gx__num">Costo</th></tr></thead><tbody>' +
+          rows.map(function (r) { return '<tr><th scope="row">' + esc(mlabel(r[0])) + '</th><td class="gw-gx__num">' + cop(r[1]) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+          : '<p class="gw-hint">Este evento no recibió costo en el periodo: no tuvo registros por la puerta ni por formulario, y no hay costos fijos que repartir por días.</p>');
+    }
+    return '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Costo de un evento</h3>' +
+      '<label class="gw-label" for="gxEvSel">Evento</label><select id="gxEvSel" class="gw-select">' + opts + '</select>' + detail + '</section>';
+  }
+
   function kpis() {
     var un = data.unassigned > 0 ? 'Sin repartir: ' + cop(data.unassigned) + ' (' + data.unassigned_months.map(mlabel).join(', ') + ')' : 'Todo el costo quedó repartido';
     return '<div class="gw-gx__kpis">' +
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Total del periodo</span><span class="gw-gx__kpi-value">' + cop(data.grand_total) + '</span><span class="gw-gx__kpi-hint">' + data.months.length + ' mes(es) consultado(s)</span></div>' +
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Promedio por mes</span><span class="gw-gx__kpi-value">' + cop(data.monthly_avg) + '</span><span class="gw-gx__kpi-hint">Solo meses con gasto registrado</span></div>' +
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Promedio por evento</span><span class="gw-gx__kpi-value">' + cop(data.avg_per_event) + '</span><span class="gw-gx__kpi-hint">' + esc(un) + '</span></div>' +
-      '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Eventos con costo</span><span class="gw-gx__kpi-value">' + data.events.length + '</span><span class="gw-gx__kpi-hint">Sin contar la persona de prueba</span></div></div>';
+      '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Eventos con costo</span><span class="gw-gx__kpi-value">' + data.events.filter(function (r) { return r.total > 0; }).length + '</span><span class="gw-gx__kpi-hint">De ' + data.events.length + ' evento(s) del periodo, sin la persona de prueba</span></div></div>';
   }
 
   function settingsPanel() {
@@ -264,11 +287,12 @@
       panel('month', 'Gasto por mes y proveedor', legend(GROUPS.map(function (g) { return [g, data.group_labels[g]]; })), null, monthTable()) +
       panel('trend', 'Tendencia del gasto total', '', null, trendTable()) +
       panel('events', 'Costo por evento', legend([['fixed', 'Parte fija (días activos)'], ['variable', 'Parte variable (ingresos)']]), null, eventsTable(),
-        data.events.length ? '' : '<p class="gw-hint">Aún no hay eventos con costo asignado en este periodo.</p>') +
+        data.events.some(function (r) { return r.total > 0; }) ? '' : '<p class="gw-hint">Aún no hay eventos con costo asignado en este periodo.</p>') +
+      eventDetailPanel() +
       settingsPanel() +
       '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Gastos registrados</h3>' + costsTable() + '</section>';
     mount('month', stackedChart); mount('trend', trendChart);
-    if (data.events.length) mount('events', eventsChart);
+    if (data.events.some(function (r) { return r.total > 0; })) mount('events', eventsChart);
     if (data.neon_configured) loadNeon();
   }
   function mount(id, fn) {
@@ -298,6 +322,7 @@
     tip.style.top = Math.max(0, eb.top - cb.top - tip.offsetHeight - 8) + 'px';
   }
   function hideTip() { if (tip && tip.parentNode) tip.parentNode.removeChild(tip); }
+  root.addEventListener('change', function (e) { if (e.target.id === 'gxEvSel') { evFilter = e.target.value; render(); var el = root.querySelector('#gxEvSel'); if (el) el.focus(); } });
   root.addEventListener('pointerover', function (e) { var t = e.target.closest('[data-tip]'); if (t) showTip(t); });
   root.addEventListener('pointerout', function (e) { if (e.target.closest('[data-tip]')) hideTip(); });
   root.addEventListener('focusin', function (e) { var t = e.target.closest('[data-tip]'); if (t) showTip(t); });

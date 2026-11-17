@@ -24,7 +24,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import AccessLog, AppSetting, Event, InfraCost
+from app.models import AccessLog, AppSetting, Event, FormSubmission, InfraCost
 from app.testperson import TEST_ID
 from app.timeutil import utcnow
 
@@ -209,8 +209,34 @@ def event_days_in_month(start: Optional[date], end: Optional[date], month: str) 
     return max(0, (hi - lo).days + 1)
 
 
-def activity_by_event_month(db: Session, first: str, last: str) -> dict:
-    """{(event_id, 'AAAA-MM'): ingresos} en el rango (hora local), SIN la persona de prueba."""
+def _local_range(first: str, last: str):
+    y, mo = int(first[:4]), int(first[5:7])
+    ny = month_add(last, 1)
+    return datetime(y, mo, 1) + timedelta(hours=LOCAL_UTC_OFFSET_H), datetime(int(ny[:4]), int(ny[5:7]), 1) + timedelta(hours=LOCAL_UTC_OFFSET_H)
+
+
+def forms_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): inscripciones por formulario web} en el rango (hora local). Solo las confirmadas y que no son de prueba (ni la persona de prueba):
+    un evento que se llena por formulario también gasta (páginas, pagos, correos) aunque nadie pase por la puerta."""
+    lo, hi = _local_range(first, last)
+    local = func.to_char(FormSubmission.created_at - timedelta(hours=LOCAL_UTC_OFFSET_H), "YYYY-MM")
+    rows = (db.query(FormSubmission.event_id, local, func.count(FormSubmission.id))
+            .filter(FormSubmission.status == "confirmed", FormSubmission.is_test.is_(False), FormSubmission.created_at >= lo, FormSubmission.created_at < hi,
+                    func.upper(func.trim(func.coalesce(FormSubmission.person_id, ""))) != TEST_ID)
+            .group_by(FormSubmission.event_id, local).all())
+    return {(eid, m): int(n) for eid, m, n in rows}
+
+
+def merge_activity(*parts: dict) -> dict:
+    out: dict = defaultdict(int)
+    for part in parts:
+        for k, n in part.items():
+            out[k] += n
+    return dict(out)
+
+
+def door_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): ingresos por la puerta} en el rango (hora local), SIN la persona de prueba."""
     y, mo = int(first[:4]), int(first[5:7])
     lo = datetime(y, mo, 1) + timedelta(hours=LOCAL_UTC_OFFSET_H)
     ny = month_add(last, 1)
@@ -220,6 +246,11 @@ def activity_by_event_month(db: Session, first: str, last: str) -> dict:
             .filter(AccessLog.event_id.isnot(None), AccessLog.timestamp >= lo, AccessLog.timestamp < hi, func.upper(func.trim(AccessLog.user_id)) != TEST_ID)
             .group_by(AccessLog.event_id, local).all())
     return {(eid, m): int(n) for eid, m, n in rows}
+
+
+def activity_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): actividad} = ingresos por la puerta + inscripciones por formulario web, SIN la persona de prueba."""
+    return merge_activity(door_by_event_month(db, first, last), forms_by_event_month(db, first, last))
 
 
 def events_info(db: Session, ids) -> dict:
@@ -295,7 +326,9 @@ def summary(db: Session, first: str, last: str) -> dict:
         by_provider[c.provider] += c.amount_cop
         by_concept[(c.provider, c.concept)] += c.amount_cop
         costs.append({"month": c.month, "kind": c.kind, "amount_cop": c.amount_cop})
-    activity = activity_by_event_month(db, months[0], months[-1])
+    door = door_by_event_month(db, months[0], months[-1])
+    forms = forms_by_event_month(db, months[0], months[-1])
+    activity = merge_activity(door, forms)
     candidates = db.query(Event).filter(Event.start_date.isnot(None), Event.status != "creado").all()
     y, mo = int(months[0][:4]), int(months[0][5:7])
     lo_d = date(y, mo, 1)
@@ -311,18 +344,22 @@ def summary(db: Session, first: str, last: str) -> dict:
                 days[(e.id, m)] = n
     basis = get_basis(db)
     alloc = allocate(costs, activity, days, basis)
-    info = events_info(db, alloc["events"].keys())
+    seen = set(alloc["events"].keys()) | {e for (e, _m) in days} | {e for (e, _m) in activity}          # TODOS los eventos del periodo, también los de costo cero
+    info = events_info(db, seen)
     ev_rows = []
-    for eid, v in alloc["events"].items():
+    for eid in seen:
         e = info.get(eid)
-        if not e or v["total"] <= 0:
+        if not e:
             continue
-        ev_rows.append({"event_id": eid, "code": e.event_code, "name": e.name, "total": float(v["total"]), "fixed": float(v["fixed"]), "variable": float(v["variable"]),
-                        "activity": v["activity"], "days": v["days"]})
-    ev_rows.sort(key=lambda r: -r["total"])
+        v = alloc["events"].get(eid) or {"total": Decimal(0), "fixed": Decimal(0), "variable": Decimal(0), "activity": 0, "days": 0}
+        ev_rows.append({"event_id": eid, "code": e.event_code, "name": e.name, "status": e.status, "total": float(v["total"]), "fixed": float(v["fixed"]), "variable": float(v["variable"]),
+                        "activity": v["activity"], "days": v["days"],
+                        "door": sum(n for (x, _m), n in door.items() if x == eid), "forms": sum(n for (x, _m), n in forms.items() if x == eid),
+                        "by_month": {m: float(alloc["by_month"].get(m, {}).get(eid, 0)) for m in months}})
+    ev_rows.sort(key=lambda r: (-r["total"], r["name"] or ""))
     grand = sum(totals.values(), Decimal(0))
     n_active = sum(1 for m in months if totals[m] > 0)
-    n_events = len(ev_rows)
+    n_events = sum(1 for r in ev_rows if r["total"] > 0)
     unassigned = sum(alloc["unassigned"].values(), Decimal(0))
     return {
         "months": months,
