@@ -16,6 +16,7 @@
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/kiosk-legalizaciones.js') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -48,7 +49,7 @@
 <script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = {{ staff_role|tojson }}; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
 
 <main class="golden-main" data-gw-fold>
-  <div class="gw-container gw-stack-lg" data-gw-tour="legalizaciones" data-gw-tour-auto>
+  <div id="paramsRoot" class="gw-container gw-stack-lg" data-gw-tour="legalizaciones" data-gw-tour-auto>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name|upper }}</p>
@@ -64,7 +65,7 @@
 
     <section class="gw-card gw-stack" aria-labelledby="legHeadTitle" data-gw-tour-step="1" data-gw-tour-title="1. Completa el encabezado" data-gw-tour-text="Quién responde por la legalización, su cédula y el anticipo en pesos que le entregaron. El consecutivo y el CE final los escribe administrativa en el Excel.">
       <h2 class="gw-card__title" id="legHeadTitle">Encabezado de la legalización</h2>
-      <form id="legHeadForm" class="gw-stack" novalidate>
+      <form id="legHeadForm" class="gw-stack" data-psave="leghead" novalidate>
         <div class="gw-fields-row gw-fields-row--4">
           <div class="gw-field"><label class="gw-label" for="hName">Responsable *</label><input class="gw-input" type="text" id="hName" name="responsible_name" maxlength="200" autocomplete="off"></div>
           <div class="gw-field"><label class="gw-label" for="hCc">Cédula *</label><input class="gw-input" type="text" id="hCc" name="responsible_cc" maxlength="40" inputmode="numeric" autocomplete="off"></div>
@@ -72,7 +73,6 @@
           <div class="gw-field"><label class="gw-label" for="hDate">Fecha de la legalización</label><input class="gw-input" type="date" id="hDate" name="legalization_date"></div>
         </div>
         <p class="gw-hint" id="legEventLine"></p>
-        <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="hSave">Guardar encabezado</button></div>
       </form>
     </section>
 
@@ -103,6 +103,7 @@
       {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
       <span class="gw-hint">Un gasto equivocado se archiva y se registra de nuevo; los archivados no suman ni salen en el Excel.</span>
     </div>
+    {% include "_gw_savebar.html" %}
   </div>
 </main>
 </body>
