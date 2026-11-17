@@ -100,8 +100,9 @@
         <button type="button" class="gw-tab" role="tab" id="tab_historial" data-tab="historial" aria-controls="panel_historial" aria-selected="false" tabindex="-1">{{ ic('clock', 'gw-tab__icon') }}<span class="gw-tab__name">Historial</span></button>
       </div>
       <div class="crm-panel" role="tabpanel" id="panel_datos" aria-labelledby="tab_datos" data-panel="datos">
+      <div id="paramsRoot">
     {% endif %}
-    <form id="crmForm" class="gw-stack crm-form" novalidate hidden>
+    <form id="crmForm" class="gw-stack crm-form" novalidate hidden{% if not is_new %} data-psave="cuenta"{% endif %}>
       <p class="crm-primary" id="crmPrimary" hidden></p>
 
       <details class="gw-form-group" open data-gw-tour-step="1" data-gw-tour-title="Datos principales" data-gw-tour-text="Nombre, estado, NIT, correo, teléfono y responsable de la cuenta.">
@@ -180,12 +181,15 @@
       {% endif %}
 
       <p class="gw-hint crm-meta" id="crmMeta" hidden></p>
+      {% if is_new %}
       <div class="gw-actions crm-actions">
-        <button type="submit" class="gw-btn gw-btn--primary" id="crmSave">{{ 'Crear cuenta' if is_new else 'Guardar cambios' }}</button>
+        <button type="submit" class="gw-btn gw-btn--primary" id="crmSave">Crear cuenta</button>
         <a class="gw-btn gw-btn--secondary" href="/crm">Cancelar</a>
       </div>
+      {% endif %}
     </form>
     {% if not is_new %}
+      </div>
       </div>
 
       <div class="crm-panel" role="tabpanel" id="panel_contactos" aria-labelledby="tab_contactos" data-panel="contactos" hidden>
@@ -214,6 +218,8 @@
         <div id="crmHistory" aria-live="polite">{{ skeleton('table', rows=5, cols=5, label='Cargando historial…') }}</div>
         <div id="crmHistoryPager"></div>
       </div>
+      {# Barra única de guardado (Datos de la cuenta): se ve en todas las pestañas para que lo pendiente no se pierda de vista. #}
+      {% include "_gw_savebar.html" %}
     </div>
     {% endif %}
   </div>
@@ -221,6 +227,7 @@
 
 <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
 <script src="{{ url_for('static', path='js/crm_fold.js') }}"></script>
+{% if not is_new %}<script src="{{ url_for('static', path='js/params-save.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/crm_cuenta.js') }}"></script>
 {% if not is_new %}<script src="{{ url_for('static', path='js/crm_cuenta_tabs.js') }}"></script>{% endif %}
 </body>
