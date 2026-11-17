@@ -14,7 +14,7 @@ Lo ejecuta **Juan David en Cloud Shell**; ningún agente corre comandos de nube.
 bash deploy/gcp/manual_deploy.sh <staging|production> <ID-del-proyecto>
 ```
 - Staging:    `REGION=us-east4 CLOUDSDK_CORE_PROJECT=goldenweb-staging bash deploy/gcp/manual_deploy.sh staging goldenweb-staging`
-- Producción: `FORCE=1 REGION=us-east4 CLOUDSDK_CORE_PROJECT=goldenweb-prod ONEDRIVE_DRIVE_ID=<id> nohup bash deploy/gcp/manual_deploy.sh production goldenweb-prod > ~/deploy.log 2>&1 & sleep 2; tail -f ~/deploy.log`
+- Producción: `(FORCE=1 REGION=us-east4 CLOUDSDK_CORE_PROJECT=goldenweb-prod nohup bash deploy/gcp/manual_deploy.sh production goldenweb-prod > ~/deploy.log 2>&1 < /dev/null &) ; sleep 3; tail -f ~/deploy.log` (los valores no secretos salen de `~/.golden-production.env`, sección 6). **No pongas `&` al final de una cadena con `&&`**: manda TODA la cadena a segundo plano y Bash la detiene («Stopped») sin desplegar; el `tail` entonces muestra el log VIEJO. Por eso va entre paréntesis y con `< /dev/null`.
 - Errores típicos: `Uso: …` (falta `staging|production`), `Falta el ID del proyecto` (falta el segundo argumento), «No existe golden-web-staging» (faltó `REGION`/`CLOUDSDK_CORE_PROJECT`).
 - `FORCE=1` salta el congelamiento cuando hay eventos en curso; solo con autorización de Juan David y sabiendo que los servicios cambian de revisión.
 - Un build largo (dlib) se corre con `nohup … &` y `tail -f`; no cerrar la pestaña. Si se corta, repetir el mismo comando.
