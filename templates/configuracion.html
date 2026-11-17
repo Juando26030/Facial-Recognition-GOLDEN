@@ -102,9 +102,9 @@
               <div id="themeFonts" aria-labelledby="themeFontsLabel"></div>
             </div>
           </div>
-          <div class="gw-group__item" data-pnodirty>
+          <div class="gw-group__item" data-psave="guias">
             <div class="gw-item-head"><h4>Guías automáticas</h4>{% call ayuda('ay_tours', 'Guías automáticas') %}Al entrar a una pantalla por primera vez en un dispositivo, el sistema muestra una guía paso a paso. Si ya conoces el sistema puedes apagarlas: esta preferencia es de TU CUENTA, así que vale igual en el computador y en el celular. El botón «Guía» de cada pantalla siempre funciona a mano.{% endcall %}</div>
-            <label class="gw-check"><input type="checkbox" id="toursOff" data-gw-tour-off{% if request.session.get('tours_off') %} checked{% endif %}> Deshabilitar demos automáticas <span class="gw-badge gw-badge--info">Por cuenta</span></label>
+            <label class="gw-check"><input type="checkbox" id="toursOff"{% if request.session.get('tours_off') %} checked{% endif %}> Deshabilitar demos automáticas <span class="gw-badge gw-badge--info">Por cuenta</span></label>
           </div>
           {% if staff_role == "super_admin" %}
           <div class="gw-group__item" data-psave="logosize" id="logoSizeCard">
