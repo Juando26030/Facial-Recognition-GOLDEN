@@ -155,7 +155,7 @@ gcloud run jobs deploy "$JOB_BULK" --image "$IMAGE" --region "$REGION" --service
   --command python --args=-m,app.bulk_runner --tasks 1 --max-retries 0 --task-timeout 86400 --cpu 2 --memory 4Gi \
   --env-vars-file "$TMP/bulk.yaml" ${APP_SECRET_FLAGS:+--set-secrets "$APP_SECRET_FLAGS"} --quiet
 say "Job de operaciones ($JOB_OPS)"
-env_file "$TMP/ops.yaml" FACE_PROCESSES=0 ${ONEDRIVE_DRIVE_ID:+"ONEDRIVE_DRIVE_ID=$ONEDRIVE_DRIVE_ID"} ${GCP_BILLING_EXPORT_TABLE:+"GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE"}
+env_file "$TMP/ops.yaml" FACE_PROCESSES=0 ${ONEDRIVE_DRIVE_ID:+"ONEDRIVE_DRIVE_ID=$ONEDRIVE_DRIVE_ID"}
 gcloud run jobs deploy "$JOB_OPS" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_OPS")" \
   --command python --args=-m,app.ops_runner,hourly --tasks 1 --max-retries 0 --task-timeout 1800 --cpu 1 --memory 1Gi \
   --env-vars-file "$TMP/ops.yaml" ${OPS_SECRET_FLAGS:+--set-secrets "$OPS_SECRET_FLAGS"} --quiet

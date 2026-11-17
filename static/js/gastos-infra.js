@@ -233,7 +233,7 @@
   function settingsPanel() {
     var opts = Object.keys(data.basis_labels).map(function (k) { return '<option value="' + k + '"' + (k === data.basis ? ' selected' : '') + '>' + esc(data.basis_labels[k]) + '</option>'; }).join('');
     var imp = data.gcp_export_configured
-      ? '<button type="button" class="gw-btn gw-btn--secondary" data-act="import-google">Importar Google ahora</button><span class="gw-hint">La importación de Google corre sola cada mes en el Job de operaciones.</span>'
+      ? '<button type="button" class="gw-btn gw-btn--secondary" data-act="import-google">Importar Google ahora</button><span class="gw-hint">La importación de Google corre sola cada domingo a las 12 m. en el Job de operaciones.</span>'
       : '<span class="gw-hint">Google no está conectado (mira «Conexiones» arriba). Mientras tanto, registra el gasto de Google a mano o sube un archivo.</span>';
     return '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Cómo se reparte entre eventos</h3><p class="gw-gx__formula"><strong>Fórmula:</strong> ' + esc(data.formula) + '</p>' +
       '<form class="gw-gx__settings" id="gxSettings"><div class="gw-field"><label class="gw-label" for="gxBasis">Criterio de reparto</label><select class="gw-select" id="gxBasis" name="basis">' + opts + '</select></div>' +

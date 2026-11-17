@@ -598,7 +598,7 @@ def connections(db: Optional[Session] = None) -> list:
         google.update(state="error", summary="La variable GCP_BILLING_EXPORT_TABLE está mal escrita: debe verse como proyecto.conjunto.tabla.",
                       steps=["Corrige el valor (tres partes separadas por puntos, sin comillas ni espacios) y vuelve a desplegar."])
     else:
-        google.update(state="ok", summary="Conectado: la facturación de Google se importa sola cada mes y con el botón «Importar Google ahora».", steps=[])
+        google.update(state="ok", summary="Conectado: la facturación de Google se importa sola cada domingo a las 12 m. (hora de Colombia) y también con el botón «Importar Google ahora».", steps=[])
         if db is not None:
             try:
                 last = db.query(func.max(InfraCost.updated_at)).filter(InfraCost.source == "gcp_export").scalar()

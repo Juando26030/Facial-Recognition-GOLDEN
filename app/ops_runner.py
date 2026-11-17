@@ -235,7 +235,7 @@ def purge_reports() -> str:
 
 def import_infra_costs() -> str:
     """Fase 9C: importa de la exportación de facturación de Google (BigQuery) el costo neto del mes en curso y del anterior a `infra_costs`. OPCIONAL: sin GCP_BILLING_EXPORT_TABLE no hace
-    nada. Corre UNA vez al mes (OPS_INFRA_DAY, por defecto el 2, a las OPS_INFRA_HOUR, por defecto las 6) o a mano (`infra-costs-import`); no consulta nada más de seguido. Solo conteos en el resultado."""
+    nada. Corre UNA vez por semana (OPS_INFRA_WEEKDAY, por defecto 6 = domingo, a las OPS_INFRA_HOUR, por defecto las 12 del día, hora local) o a mano (botón «Importar Google ahora» / `infra-costs-import`); no consulta nada más de seguido. Solo conteos en el resultado."""
     from app import infra_costs
     from app.database import SessionLocal
     with SessionLocal() as db:
@@ -254,8 +254,8 @@ def hourly(now=None) -> dict:
         steps.append(("purge", purge))
     if now.weekday() == int(os.getenv("OPS_WEEKLY_DAY", "6")) and now.hour == int(os.getenv("OPS_WEEKLY_HOUR", "5")):
         steps.append(("archive-events", archive_events))          # L7: UNA vez por semana (domingo 5 a. m.), para no despertar la base de Neon cada hora
-    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and now.day == int(os.getenv("OPS_INFRA_DAY", "2")) and now.hour == int(os.getenv("OPS_INFRA_HOUR", "6")):
-        steps.append(("infra-costs", import_infra_costs))          # Fase 9C: UNA vez al mes, y solo si el entorno activó la exportación de Google
+    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and now.weekday() == int(os.getenv("OPS_INFRA_WEEKDAY", "6")) and now.hour == int(os.getenv("OPS_INFRA_HOUR", "12")):
+        steps.append(("infra-costs", import_infra_costs))          # Fase 9C: UNA vez por semana (domingo 12 m., hora local), y solo si el entorno activó la exportación de Google
     steps += [("check-backups", check_backups), ("offsite-copy", offsite_copy), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
@@ -342,7 +342,7 @@ def economic(now=None, now_utc=None, steps=None, probe_fn=None) -> dict:
     if S.due_weekly(steps, "archive-events", now, int(os.getenv("OPS_WEEKLY_DAY", "6")), int(os.getenv("OPS_WEEKLY_HOUR", "5"))):
         run("archive-events", archive_events, "archive-events")
         awake.append("archive-events")
-    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and S.due_monthly(steps, "infra-costs", now, int(os.getenv("OPS_INFRA_DAY", "2")), int(os.getenv("OPS_INFRA_HOUR", "6"))):
+    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and S.due_weekly(steps, "infra-costs", now, int(os.getenv("OPS_INFRA_WEEKDAY", "6")), int(os.getenv("OPS_INFRA_HOUR", "12"))):
         run("infra-costs", import_infra_costs, "infra-costs")
         awake.append("infra-costs")
     if ran_backup or S.due_every(steps, "check-backups", 6, now_utc):          # solo lee el bucket: no despierta la base
