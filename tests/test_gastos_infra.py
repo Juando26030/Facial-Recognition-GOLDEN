@@ -183,7 +183,7 @@ def test_neon_usage_without_key_and_with_fake(monkeypatch):
     assert ic.neon_usage("2026-11")["available"] is False
     monkeypatch.setenv("NEON_API_KEY", "k")
     monkeypatch.setenv("NEON_ORG_ID", "org-1")
-    fake = {"projects": [{"project_id": "p", "periods": [{"consumption": [{"compute_time_seconds": 7200}, {"compute_time_seconds": 3600}]}]}]}
+    fake = {"projects": [{"project_id": "p", "periods": [{"consumption": [{"metrics": [{"metric_name": "compute_unit_seconds", "value": 7200}]}, {"metrics": [{"metric_name": "compute_unit_seconds", "value": 3600}, {"metric_name": "root_branch_bytes_month", "value": 99}]}]}]}]}
     r = ic.neon_usage("2026-11", fetch=lambda url: fake)
     assert r["available"] and r["compute_hours"] == 3.0 and r["projects"] == 1
 

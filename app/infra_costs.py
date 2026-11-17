@@ -561,7 +561,9 @@ def neon_usage(month: str, fetch=None) -> dict:
     for p in data.get("projects", []) or []:
         for per in p.get("periods", []) or []:
             for c in per.get("consumption", []) or []:
-                compute += float(c.get("compute_time_seconds") or 0)
+                for m in c.get("metrics", []) or []:                    # forma real de la API v2: metrics[{metric_name, value}], verificada en producción (17-nov-2026)
+                    if m.get("metric_name") == "compute_unit_seconds":
+                        compute += float(m.get("value") or 0)
     return {"available": True, "month": month, "compute_hours": round(compute / 3600, 1), "projects": len(data.get("projects", []) or [])}
 
 

@@ -280,7 +280,7 @@
   function loadNeon() {
     api('/api/gastos/infra/neon-usage?month=' + encodeURIComponent(data.to)).then(function (r) {
       var el = document.getElementById('gxNeon'); if (!el) return;
-      el.textContent = r.available ? 'Uso de Neon en ' + mlabel(r.month) + ': ' + nf.format(r.compute_hours) + ' horas de cómputo en ' + r.projects + ' proyecto(s). Es solo uso: el costo se registra a mano.' : 'Neon: ' + r.reason;
+      el.textContent = r.available ? 'Uso de Neon en ' + mlabel(r.month) + ': ' + nf.format(r.compute_hours) + ' horas de cómputo (CU) en ' + r.projects + ' proyecto(s). Es solo uso: el costo se registra a mano.' : 'Neon: ' + r.reason;
     }).catch(function () { /* informativo */ });
   }
 
