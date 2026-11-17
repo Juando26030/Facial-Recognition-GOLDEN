@@ -25,3 +25,5 @@
 @media (min-width: 901px) {
   body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
 }
+/* Cuentas de cobro: el QR de las ventanas (antes con estilo en línea) */
+.gw-qrbox { max-width: 16rem; margin: 0 auto; }
