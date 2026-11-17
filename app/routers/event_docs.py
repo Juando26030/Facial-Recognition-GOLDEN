@@ -272,6 +272,28 @@ def add_expense(
     return _expense_json(expense)
 
 
+def store_evidence(event, evidence: UploadFile | None, evidence_upload: str | None):
+    """Valida y guarda la foto de un soporte (misma regla que `add_expense`). Devuelve (ruta, nombre, subida_directa); (None, None, None) si no vino archivo.
+    Lo usa también la pantalla de legalizaciones por rubro (app/routers/legalizations.py)."""
+    up = uploads.fetch(evidence_upload, "expense_evidence", {"e": event.id})
+    if up is None and not (evidence is not None and evidence.filename):
+        return None, None, None
+    filename = up.filename if up else evidence.filename
+    if os.path.splitext(filename)[1].lower() not in IMAGE_EXT:
+        raise HTTPException(status_code=400, detail="La evidencia debe ser una imagen (PNG, JPG, WebP o GIF)")
+    content = up.content if up else evidence.file.read()
+    if not content or len(content) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 25 MB")
+    try:
+        safe_limits.check_image_dimensions(content)
+        Image.open(io.BytesIO(content)).verify()
+    except safe_limits.LimitError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
+    except Exception:
+        raise HTTPException(status_code=400, detail="La evidencia no es una imagen válida")
+    return _store(event.tenant_id, "event_expenses", event.id, filename, content), os.path.basename(filename), up
+
+
 def _get_expense(db: Session, event_id: int, expense_id: int, staff: StaffUser) -> EventExpense:
     event = get_event_for_staff(event_id, db, staff)
     exp = db.query(EventExpense).filter(EventExpense.id == expense_id, EventExpense.event_id == event.id).first()
@@ -282,58 +304,11 @@ def _get_expense(db: Session, event_id: int, expense_id: int, staff: StaffUser) 
 
 @router.get("/events/{event_id}/expenses/report")
 def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Reporte Excel de legalizaciones: título del evento, una fila por gasto con su evidencia
-    incrustada como imagen, y el total al final. Se puede bajar en cualquier momento (normalmente al
-    finalizar el evento)."""
+    """Reporte Excel de legalizaciones en el formato oficial de Golden (PLANTILLA-LEG.xlsx, ver app/legalization_svc.py). Se conserva esta ruta
+    de siempre; la pantalla usa /legalization/report, que entrega lo mismo."""
+    from app import legalization_svc
     event = get_event_for_staff(event_id, db, staff)
-    rows = db.query(EventExpense).filter(EventExpense.event_id == event.id, EventExpense.archived_at.is_(None)).order_by(EventExpense.created_at).all()
-    headers = ["Fecha", "Categoría", "Responsable", "Descripción", "Aplica a", "Valor", "Evidencia"]
-    df = pd.DataFrame(
-        [[to_local(e.created_at).strftime("%Y-%m-%d") if e.created_at else "", e.category, e.responsible, e.description or "",
-          e.applies_to or "", float(e.amount or 0), "" if e.evidence_path else "Sin evidencia"] for e in rows],
-        columns=headers,
-    )
-    header_row = 5
-    out = io.BytesIO()
-    with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        heavy.safe_frame(df).to_excel(writer, index=False, sheet_name="Legalizaciones", startrow=header_row - 1)
-        ws = writer.sheets["Legalizaciones"]
-        for i, text in enumerate([
-            f"Legalizaciones — {event.name} ({event.event_code})",
-            f"Cliente/Cuenta: {event.tenant.name if event.tenant else event.tenant_id}",
-            f"Total de gastos: {sum((e.amount or 0) for e in rows):,.2f}",
-        ], start=1):
-            ws.merge_cells(f"A{i}:G{i}")
-            ws.cell(row=i, column=1, value=text).font = Font(bold=True, size=13 if i == 1 else 11, color="0A0E2E")
-        for col in range(1, len(headers) + 1):
-            cell = ws.cell(row=header_row, column=col)
-            cell.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
-            cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(horizontal="center")
-        for col, width in zip("ABCDEFG", (12, 20, 24, 44, 24, 16, 30)):
-            ws.column_dimensions[col].width = width
-        for offset, e in enumerate(rows, start=1):
-            row = header_row + offset
-            ws.cell(row=row, column=6).number_format = "#,##0.00"
-            ws.cell(row=row, column=4).alignment = Alignment(wrap_text=True, vertical="top")
-            if e.evidence_path and get_storage().exists(e.evidence_path):
-                thumb = Image.open(io.BytesIO(get_storage().get(e.evidence_path))).convert("RGB")
-                thumb.thumbnail((220, 165))
-                buf = io.BytesIO()
-                thumb.save(buf, "PNG")
-                buf.seek(0)
-                img = XLImage(buf)
-                ws.add_image(img, f"G{row}")
-                ws.row_dimensions[row].height = 130
-        total_row = header_row + len(rows) + 1
-        ws.cell(row=total_row, column=5, value="TOTAL").font = Font(bold=True)
-        total_cell = ws.cell(row=total_row, column=6, value=float(sum((e.amount or 0) for e in rows)))
-        total_cell.font, total_cell.number_format = Font(bold=True), "#,##0.00"
-    out.seek(0)
-    return StreamingResponse(
-        out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="Legalizaciones_{event.event_code}.xlsx"'},
-    )
+    return legalization_svc.report_response(db, event)
 
 
 @router.get("/events/{event_id}/expenses/{expense_id}/evidence")

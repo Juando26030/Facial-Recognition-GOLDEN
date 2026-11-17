@@ -45,7 +45,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import crm as crm_router
 from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
-from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -393,6 +393,7 @@ _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públi
 _include(event_report.router, prefix="/api")
 _include(final_database.router, prefix="/api")      # Fase 5: base de datos final del evento (subir/reemplazar/descargar; coordinador+)
 _include(event_docs.router, prefix="/api")
+_include(legalizations_router.router, prefix="/api")      # legalizaciones en el formato oficial (por rubro, envío y aprobación)
 _include(event_acts_router.router, prefix="/api")      # Fase 10: acta de novedades (texto + firma del coordinador y del cliente)
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")

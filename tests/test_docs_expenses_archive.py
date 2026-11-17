@@ -148,9 +148,9 @@ def test_expense_archive_leaves_total_list_and_report_but_keeps_evidence(client,
     assert {x["id"] for x in with_arch["expenses"]} == {e1, e2} and with_arch["total"] == 50      # el archivado no suma
     rep = client.get(f"/api/events/{ev.id}/expenses/report")
     assert rep.status_code == 200
-    import pandas as pd
-    df = pd.read_excel(io.BytesIO(rep.content), header=4)
-    assert len(df[df["Categoría"] == "Transporte"]) == 1
+    import openpyxl
+    ws = openpyxl.load_workbook(io.BytesIO(rep.content))["Otros gastos"]          # el reporte es el formato oficial: los gastos viejos caen en «Otros gastos»
+    assert [ws[f"H{r}"].value for r in range(9, 37) if ws[f"H{r}"].value] == ["Transporte"] and ws["J9"].value == 50       # solo el activo (el archivado no sale)
     assert get_storage().exists(epath) and client.get(f"/api/events/{ev.id}/expenses/{e1}/evidence").status_code == 200
     assert client.post(f"/api/events/{ev.id}/expenses/{e1}/restore").status_code == 200
     assert client.get(f"/api/events/{ev.id}/expenses").json()["total"] == 150
