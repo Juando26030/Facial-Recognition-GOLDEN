@@ -136,10 +136,11 @@
 
     {% if staff_role != "comercial" %}
     <label class="gw-check gw-check--top"><input type="checkbox" id="staffMailToggle" {% if event.staff_mail_enabled %}checked{% endif %}> <span>Avisar por correo a los digitadores que se asignan a este evento (si tienen correo)</span></label>
+    {% endif %}
     <details class="gw-group" id="grpExistente">
       <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuentas ya existentes</span><span class="gw-group__hint">Dos formas: buscar una por una o cargar un Excel.</span></summary>
       <div class="gw-group__body gw-stack">
-        {% if staff_role in ["admin", "super_admin"] %}
+        {% if staff_role in ["admin", "super_admin", "comercial"] %}
         <form id="assignExistingForm" class="gw-stack">
           <h3 class="gw-sub">Buscar una por una</h3>
           <div class="gw-field">
@@ -156,6 +157,7 @@
           </div>
         </form>
         {% endif %}
+        {% if staff_role != "comercial" %}
         <form id="importStaffForm" class="gw-stack">
           <h3 class="gw-sub">Cargar un Excel</h3>
           <p class="gw-hint">Sube un Excel con Identificación, Nombres y Apellidos. Las cédulas nuevas se crean (usuario y contraseña = la cédula) y todas quedan asignadas a este evento; si la cédula ya tenía cuenta, solo se asigna.</p>
@@ -169,9 +171,9 @@
           </div>
           <div id="importStaffResult" role="status" aria-live="polite" class="gw-msg"></div>
         </form>
+        {% endif %}
       </div>
     </details>
-    {% endif %}
 
     {% if staff_role != "comercial" %}
     <section class="gw-stack" id="pledgePanel" aria-labelledby="tituloCompromiso" hidden>

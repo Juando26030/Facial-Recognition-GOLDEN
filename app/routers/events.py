@@ -865,25 +865,36 @@ def create_event_staff(
 @router.post("/events/{event_id}/staff-users/assign-existing")
 def assign_existing_staff(
     event_id: int, data: AssignExistingIn, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("admin")),
+    staff: StaffUser = Depends(require_role("comercial")),
 ):
-    """Autoriza una cuenta digitador/cliente YA existente (de otro evento) para ESTE evento —
-    admin+ únicamente. Para crear una cuenta nueva usar POST .../staff-users en su lugar."""
+    """Autoriza una cuenta YA existente para ESTE evento. Digitadores: admin+. Coordinadores temporales
+    (los que quedaron «creados» al terminar su evento): comercial+, buscándolos. Para una cuenta nueva usar POST .../staff-users."""
     get_event_for_staff(event_id, db, staff)          # 0C (N2): el evento debe existir y ser accesible para quien asigna
     target = db.query(StaffUser).filter(
-        StaffUser.id == data.staff_id, StaffUser.role.in_(("digitador", "cliente"))
+        StaffUser.id == data.staff_id, or_(StaffUser.role.in_(("digitador", "cliente")), StaffUser.event_only.is_(True))
     ).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    if target.role == "cliente":
-        raise HTTPException(status_code=400, detail="Ya no se asignan cuentas de cliente a un evento. Para compartir las estadísticas usa un enlace con vencimiento.")
+    if target.event_only:
+        if not can_manage_event_only(staff):
+            raise HTTPException(status_code=403, detail="No tienes permiso para asignar coordinadores temporales")
+        if not target.is_active or target.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Esta cuenta está inactiva o archivada")
+        ev = db.get(Event, event_id)
+        if ev.status == "finalizado" or ev.archived_at is not None:
+            raise HTTPException(status_code=400, detail="No se puede asignar a un evento finalizado o archivado")
+    else:
+        if not effective_roles(staff) & {"admin", "super_admin"}:
+            raise HTTPException(status_code=403, detail="Solo un administrador asigna cuentas digitador existentes")
+        if target.role == "cliente":
+            raise HTTPException(status_code=400, detail="Ya no se asignan cuentas de cliente a un evento. Para compartir las estadísticas usa un enlace con vencimiento.")
     assert_same_tenant(staff, target.tenant_id, "Usuario no encontrado")          # P5: limitado a su cliente, solo asigna cuentas de su cliente
     existing = db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first()
     if existing:
         return {"message": "Ya estaba autorizado para este evento"}
     db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
     event = db.get(Event, event_id)
-    mail_queued = staff_credentials.enqueue_for_event(db, target, "assigned", event)          # Fase 4: aviso de la asignación (una sola vez por persona y evento)
+    mail_queued = False if target.event_only else staff_credentials.enqueue_for_event(db, target, "assigned", event)          # Fase 4: aviso (una sola vez por persona y evento); a los coordinadores temporales nunca por correo
     db.commit()
     if mail_queued:
         jobs.kick()

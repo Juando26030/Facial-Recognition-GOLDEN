@@ -166,3 +166,57 @@ def test_login_still_needs_the_password(client, factory):
     ev = factory.event("en_proceso")
     user, password, _ = _make(client, factory, ev)
     assert login(client, user, PASSWORD).status_code != 302
+
+
+def test_temp_coordinator_manages_digitadores_and_their_logins(client, factory, db):
+    from app.models import StaffUser
+    ev, other = factory.event("en_proceso"), factory.event("en_proceso")
+    user, password, _ = _make(client, factory, ev)
+    assert login(client, user, password).status_code == 302
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "digitador", "username": "1020304050", "full_name": "Luis Digitador"})
+    assert r.status_code == 200, r.text
+    dig_id = r.json()["id"]
+    assert client.get(f"/api/events/{ev.id}/staff-users/login-state").status_code == 200          # ve quién intenta ingresar
+    assert client.post(f"/api/events/{ev.id}/staff-users/{dig_id}/unlock").status_code == 200
+    assert client.post(f"/api/events/{ev.id}/staff-users/approve-all", json={"reqs": {}}).status_code in (200, 400)
+    assert client.post(f"/api/events/{ev.id}/staff-users/{dig_id}/login-request", json={"allow": True}).status_code != 403
+    # y NADA de eso en otro evento
+    assert client.get(f"/api/events/{other.id}/staff-users/login-state").status_code == 404
+    assert client.post(f"/api/events/{other.id}/staff-users/{dig_id}/unlock").status_code == 404
+    assert db.query(StaffUser).filter_by(id=dig_id).one().role == "digitador"
+
+
+def test_account_survives_the_event_and_can_be_reassigned_by_search(client, factory, db):
+    from app.models import Event, EventStaffAuthorization, StaffUser
+    ev, nxt = factory.event("en_proceso"), factory.event("en_proceso")
+    user, password, body = _make(client, factory, ev)
+    db.query(Event).filter_by(id=ev.id).update({"status": "finalizado"})
+    db.commit()
+    row = db.query(StaffUser).filter_by(username=user).one()
+    assert row.is_active and row.archived_at is None                                       # la cuenta NO se borra ni se desactiva al terminar el evento
+    assert login(client, user, password).status_code == 302                                # puede entrar, pero sin eventos
+    assert client.get("/api/events").json() == []
+    client.post("/logout")
+    # la comercial la busca y la asigna a otro evento
+    assert login(client, "comer").status_code == 302
+    found = client.get("/api/staff/assignable").json()
+    assert [s["username"] for s in found] == [user] and found[0]["event_only"] is True      # el comercial solo ve coordinadores temporales
+    r = client.post(f"/api/events/{nxt.id}/staff-users/assign-existing", json={"staff_id": body["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["credentials_mail"] != "queued"
+    assert db.query(EventStaffAuthorization).filter_by(staff_user_id=body["id"], event_id=nxt.id).count() == 1
+    client.post("/logout")
+    assert login(client, user, password).status_code == 302
+    assert [e["id"] for e in client.get("/api/events").json()] == [nxt.id]                  # recupera el acceso, solo al evento nuevo
+
+
+def test_commercial_cannot_assign_digitadores_and_event_only_cannot_assign(client, factory):
+    ev = factory.event("en_proceso")
+    dig = factory.staff("digitador", "dig2")
+    user, password, _ = _make(client, factory, ev)
+    assert login(client, "comer").status_code == 302
+    assert client.post(f"/api/events/{ev.id}/staff-users/assign-existing", json={"staff_id": dig.id}).status_code == 403
+    client.post("/logout")
+    assert login(client, user, password).status_code == 302
+    assert client.post(f"/api/events/{ev.id}/staff-users/assign-existing", json={"staff_id": dig.id}).status_code in (403, 404)
+    assert client.get("/api/staff/assignable").status_code in (403, 404)

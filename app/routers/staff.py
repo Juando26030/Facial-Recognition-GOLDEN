@@ -48,7 +48,7 @@ def _serialize(s: StaffUser) -> dict:
     return {
         "id": s.id, "username": s.username, "full_name": s.full_name,
         "role": s.role, "secondary_role": s.secondary_role, "extra_roles": all_extra_roles(s), "is_active": s.is_active, "phone": s.phone, "email": s.email,
-        "archived": s.archived_at is not None, "archived_at": s.archived_at.isoformat() if s.archived_at else None,
+        "event_only": bool(s.event_only), "archived": s.archived_at is not None, "archived_at": s.archived_at.isoformat() if s.archived_at else None,
     }
 
 
@@ -113,13 +113,15 @@ def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(r
 
 
 @router.get("/staff/assignable")
-def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))):
     """digitador + cliente activos, para el desplegable de 'autorizar/reautorizar para un evento'
     en /admin/staff — independiente del filtro de ROLES_CREATABLE_BY_ADMIN de /staff (que oculta
     digitador/cliente de la tabla general a propósito, pero aquí sí hacen falta)."""
-    query = db.query(StaffUser).filter(
-        StaffUser.role.in_(("digitador", "cliente")), StaffUser.is_active == True, StaffUser.archived_at.is_(None)
-    )
+    query = db.query(StaffUser).filter(StaffUser.is_active == True, StaffUser.archived_at.is_(None))
+    if effective_roles(staff) & {"admin", "super_admin"}:
+        query = query.filter(or_(StaffUser.role.in_(("digitador", "cliente")), StaffUser.event_only.is_(True)))
+    else:
+        query = query.filter(StaffUser.event_only.is_(True))          # el comercial solo busca coordinadores temporales
     if staff_tenant_enforced(staff):          # P4: limitado a su cliente, solo las cuentas de su cliente
         query = query.filter(StaffUser.tenant_id == staff.tenant_id)
     return [_serialize(s) for s in query.all()]

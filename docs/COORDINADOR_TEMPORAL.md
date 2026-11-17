@@ -26,3 +26,10 @@ Su lista de eventos y su calendario solo muestran sus eventos (`auth.scope_event
 
 ## Pruebas
 `tests/test_coordinador_temporal.py` (reglas puras + de punta a punta) y la comprobación de que ninguna ruta de las familias globales queda abierta, existan hoy o se agreguen después.
+
+## Ciclo de vida de la cuenta (16-nov-2026, 2.ª parte)
+- **Digitadores:** el coordinador temporal crea digitadores temporales en SU evento y autoriza sus ingresos (`login-state`, `login-request`, `approve-all`, `unlock`); en otro evento recibe 404.
+- **Al terminar el evento la cuenta NO se borra ni se desactiva:** solo pierde el acceso a ese evento (queda sin eventos). El borrado sigue siendo manual (comercial+).
+- **Reasignar:** un comercial/admin la busca en «Asignar cuentas ya existentes» (`GET /api/staff/assignable`, el comercial solo ve coordinadores temporales; `POST .../staff-users/assign-existing`) y recupera el acceso solo al evento nuevo. Nunca se avisa por correo; el digitador existente sigue siendo solo de admin+.
+- El coordinador temporal NO puede asignar cuentas (`assign-existing` y `/api/staff/assignable` están cerradas para él).
+- Pruebas: `tests/test_coordinador_temporal.py` (requieren la base `golden_test`; en esta sesión sin psycopg2 solo se verificó sintaxis, ruff y plantilla).

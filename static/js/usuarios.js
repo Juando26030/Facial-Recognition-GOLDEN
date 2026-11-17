@@ -179,7 +179,7 @@
     const cList = document.getElementById('assignableList');
     const cValue = document.getElementById('assignableValue');
     const norm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const comboLabel = (s) => `${s.username}${s.full_name ? ' - ' + s.full_name : ''} (${s.role})`;
+    const comboLabel = (s) => `${s.username}${s.full_name ? ' - ' + s.full_name : ''} (${s.event_only ? 'coordinador temporal' : s.role})`;
 
     function comboOpen(open) {
         cList.hidden = !open;
@@ -195,7 +195,7 @@
     }
     function comboRender() {
         const q = norm(cInput.value).trim();
-        combo.shown = combo.items.filter((s) => !q || norm(`${s.username} ${s.full_name || ''} ${s.role} ${ROLES[s.role] || ''}`).includes(q));
+        combo.shown = combo.items.filter((s) => !q || norm(`${s.username} ${s.full_name || ''} ${s.role} ${ROLES[s.role] || ''} ${s.event_only ? 'coordinador temporal' : ''}`).includes(q));
         cList.innerHTML = combo.shown.length
             ? combo.shown.map((s, i) => `<li role="option" id="assignableOpt${i}" class="gw-combo__opt" data-i="${i}" aria-selected="false">${esc(comboLabel(s))}</li>`).join('')
             : '<li class="gw-combo__empty" role="presentation">No hay usuarios que coincidan.</li>';
