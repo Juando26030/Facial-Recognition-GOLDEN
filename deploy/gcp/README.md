@@ -5,6 +5,7 @@ Lo ejecuta **Juan David en Cloud Shell**; ningún agente corre comandos de nube.
 ## 1. Antes de dar el comando
 - **Autorización:** nada a producción sin el «sí» explícito de Juan David para ESA acción (regla de CLAUDE.md). Staging se puede desplegar sin pedirla.
 - **Qué se va a subir:** en Cloud Shell el repositorio es `~/gw-hosting`. Pídele que corra `git branch --show-current && git log --oneline -1` y confirma que es la rama/commit esperado. Pasó (17-nov-2026): producción salió con el commit de OTRA rama (Almacén) porque Cloud Shell no estaba donde se creía.
+- **La rama debe contener TODAS las migraciones que ya corrieron en ese entorno.** Si la base ya está en una revisión (p. ej. `0148_almacen_unidades`, que subió otra rama) y la rama que se despliega no tiene ese archivo, el Job de migraciones falla con «Can't locate revision identified by '…'» y el despliegue se detiene (pasó en staging el 17-nov-2026). Antes de desplegar: `git ls-tree -r --name-only HEAD alembic/versions | tail -3` y compara con la última revisión que corrió en el entorno; si falta, une primero la rama que la trae.
 - **Rama al día:** `git checkout <rama> && git pull`. Un despliegue sale de lo que hay en Cloud Shell, no de lo que acabas de empujar.
 - **Identidad de git** (solo si va a hacer commit desde Cloud Shell): `git config user.name "Juan David" && git config user.email "noreply@golden-eventos.com"` (sin `--global`).
 
