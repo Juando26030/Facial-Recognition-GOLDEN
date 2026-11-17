@@ -252,3 +252,11 @@ def test_commercial_cannot_assign_digitadores_and_event_only_cannot_assign(clien
     assert login(client, user, password).status_code == 302
     assert client.post(f"/api/events/{ev.id}/staff-users/assign-existing", json={"staff_id": dig.id}).status_code in (403, 404)
     assert client.get("/api/staff/assignable").status_code in (403, 404)
+
+
+def test_editar_no_registra_solo_a_cuenta_cliente_temporal():
+    """17-nov-2026 (Páramo): el modal «Editar» preselecciona «Registrado» salvo para cuentas cliente temporal (que completan datos sin registrar)."""
+    from pathlib import Path
+    js = Path("static/js/directory.js").read_text(encoding="utf-8")
+    assert "const defaultStatus = window.CLIENT_TEMP ? originalStatus : 'registrado';" in js
+    assert "window.CLIENT_TEMP" in Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
