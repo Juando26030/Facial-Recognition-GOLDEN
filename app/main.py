@@ -983,7 +983,6 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "person_form_can_design": personform.env_enabled() and max(ROLE_HIERARCHY[r] for r in staff_roles) >= ROLE_HIERARCHY["admin"],
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": _display_role(staff_user.role, staff_user.secondary_role),
-        "client_temp": bool(getattr(staff_user, "client_temp", False)),          # 17-nov-2026: «Editar» NO registra solo a quien edita desde una cuenta cliente temporal (directory.js)
         "event": event,
         "optional_labels": optional_labels,
         "optional_labels_json": optional_labels_json,
