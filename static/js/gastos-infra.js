@@ -128,26 +128,37 @@
     return 'M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z';
   }
 
+  function compact(n) {
+    n = Math.round(n || 0);
+    if (n >= 1e6) return '$ ' + (n / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + ' M';
+    if (n >= 1e3) return '$ ' + Math.round(n / 1e3) + ' mil';
+    return '$ ' + n;
+  }
+  // Barras SEPARADAS por proveedor y una más para el total del mes (antes iban apiladas en una sola barra).
   function stackedChart() {
-    var months = data.months, W = 760, H = 300, ML = 56, MB = 30;
-    var max = niceMax(Math.max.apply(null, data.totals.concat([1])));
+    var months = data.months, W = 760, H = 320, ML = 56, MB = 30;
+    var present = GROUPS.filter(function (g) { return data.series[g].some(function (v) { return v > 0; }); });
+    var keys = present.concat(['total']);
+    var max = niceMax(Math.max.apply(null, data.totals.concat([1])) * 1.25);          // aire arriba para la cifra de la barra más alta
     var s = frame(W, H, max, ML);
-    var slot = (W - ML - 8) / months.length, bw = Math.min(40, slot * 0.62), base = H - MB;
+    var slot = (W - ML - 8) / months.length, gap = 2, n = keys.length;
+    var bw = Math.max(6, Math.min(26, (slot * 0.86 - gap * (n - 1)) / n)), gw = bw * n + gap * (n - 1), base = H - MB;
     months.forEach(function (m, i) {
-      var x = ML + slot * i + (slot - bw) / 2, acc = 0, tipRows = [];
-      var present = GROUPS.filter(function (g) { return data.series[g][i] > 0; });
-      present.forEach(function (g, k) {
-        var v = data.series[g][i], h = (H - 40) * v / max, y = base - (H - 40) * acc / max - h;
-        acc += v;
-        var top = k === present.length - 1;
-        var el = svg(top ? 'path' : 'rect', top ? { d: roundedTop(x, y, bw, h, 4) } : { x: x, y: y, width: bw, height: h });
-        el.setAttribute('class', 'gw-gx__seg gw-gx-c-' + g); el.setAttribute('tabindex', '0');
-        el.setAttribute('data-tip', mlabel(m) + '|' + data.group_labels[g] + ': ' + cop(v) + '|Total del mes: ' + cop(data.totals[i]));
+      var x0 = ML + slot * i + (slot - gw) / 2;
+      keys.forEach(function (k, idx) {
+        var v = k === 'total' ? data.totals[i] : data.series[k][i];
+        if (!(v > 0)) return;
+        var x = x0 + idx * (bw + gap), h = (H - 40) * v / max, y = base - h;
+        var el = svg('path', { d: roundedTop(x, y, bw, h, 3) });
+        el.setAttribute('class', 'gw-gx__seg gw-gx-c-' + k); el.setAttribute('tabindex', '0');
+        el.setAttribute('data-tip', mlabel(m) + '|' + (k === 'total' ? 'Total del mes' : data.group_labels[k]) + ': ' + cop(v) + '|Total del mes: ' + cop(data.totals[i]));
         s.appendChild(el);
+        var t = svg('text', { x: x + bw / 2, y: y - 5, class: 'gw-gx__val', 'text-anchor': 'start', transform: 'rotate(-90 ' + (x + bw / 2) + ' ' + (y - 5) + ')' });
+        t.textContent = compact(v); s.appendChild(t);
       });
-      var lab = svg('text', { x: x + bw / 2, y: H - 10, 'text-anchor': 'middle' }); lab.textContent = mlabel(m); s.appendChild(lab);
+      var lab = svg('text', { x: x0 + gw / 2, y: H - 10, 'text-anchor': 'middle' }); lab.textContent = mlabel(m); s.appendChild(lab);
     });
-    s.setAttribute('aria-label', 'Gasto por mes y proveedor, en pesos');
+    s.setAttribute('aria-label', 'Gasto por mes: una barra por proveedor y una barra con el total del mes, en pesos');
     return s;
   }
 
@@ -285,7 +296,7 @@
     var empty = !costs.length;
     body.innerHTML = (empty ? '<div class="gw-alert gw-alert--warn"><div class="gw-alert__body"><p class="gw-alert__title">Aún no hay gastos en este periodo</p><p>Registra los gastos de cada proveedor, sube un archivo o conecta Google, y aquí aparecerán los gráficos.</p></div></div>' : '') +
       kpis() +
-      panel('month', 'Gasto por mes y proveedor', legend(GROUPS.map(function (g) { return [g, data.group_labels[g]]; })), null, monthTable()) +
+      panel('month', 'Gasto por mes y proveedor', legend(GROUPS.map(function (g) { return [g, data.group_labels[g]]; }).concat([['total', 'Total del mes']])), null, monthTable()) +
       panel('trend', 'Tendencia del gasto total', '', null, trendTable()) +
       panel('events', 'Costo por evento', legend([['fixed', 'Parte fija (días activos)'], ['variable', 'Parte variable (ingresos)']]), null, eventsTable(),
         data.events.some(function (r) { return r.total > 0; }) ? '' : '<p class="gw-hint">Aún no hay eventos con costo asignado en este periodo.</p>') +

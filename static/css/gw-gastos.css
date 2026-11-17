@@ -31,6 +31,7 @@
 .gw-gx-c-microsoft { fill: var(--gw-ic-violet); background: var(--gw-ic-violet); }
 .gw-gx-c-cloudflare { fill: var(--gw-ic-green); background: var(--gw-ic-green); }
 .gw-gx-c-otros { fill: var(--gw-ic-gray); background: var(--gw-ic-gray); }
+.gw-gx-c-total { fill: var(--gw-text); background: var(--gw-text); }
 .gw-gx-c-fixed { fill: var(--gw-ic-blue); background: var(--gw-ic-blue); }
 .gw-gx-c-variable { fill: var(--gw-ic-orange); background: var(--gw-ic-orange); }
 .gw-gx__tip { position: absolute; z-index: 5; pointer-events: none; max-width: 16rem; padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-navy-deep); color: #fff; border-radius: var(--gw-radius-sm); box-shadow: var(--gw-shadow-md); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-tight); }
