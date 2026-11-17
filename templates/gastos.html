@@ -11,6 +11,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/gastos-infra.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     {% if has_eventos_js %}<script src="{{ url_for('static', path='js/gastos-eventos.js') }}" defer></script>{% endif %}
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
@@ -51,6 +52,7 @@
           <h2 class="gw-tabpanel__title">Costo de la infraestructura</h2>
           <p class="gw-tabpanel__lead">Lo que se paga por mantener la plataforma: se registra a mano (con soporte opcional), se sube en un archivo de Excel (CSV) o, si se conecta, Google se importa solo.</p>
         </div>
+        <div id="paramsRoot" data-tabs-key="gastos">
         <div class="gw-gx" id="gxRoot" aria-busy="true">
           <form class="gw-gx__bar" id="gxRange" autocomplete="off">
             <div class="gw-field"><label class="gw-label" for="gxFrom">Desde</label><input class="gw-input" type="month" id="gxFrom" name="from" required></div>
@@ -64,6 +66,8 @@
           <div id="gxConn" aria-live="polite">{{ skeleton('list', rows=2, label='Revisando las conexiones…') }}</div>
           <div id="gxBody">{{ skeleton('stats', rows=4, label='Cargando los gastos…') }}{{ skeleton('list', rows=4, label='') }}</div>
         </div>
+        </div>
+        {% include "_gw_savebar.html" %}
       </section>
       {% if is_admin %}
       <section class="gw-tabpanel" role="tabpanel" id="gastos-eventos" aria-labelledby="tab_eventos" hidden>
