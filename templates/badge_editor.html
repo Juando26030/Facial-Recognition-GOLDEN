@@ -112,7 +112,7 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
 
     <div class="gw-ed-toolbar" id="categoryBar" hidden>
       <!-- Categorías (ítem 14, reunión 2026-09-21): solo aparece si el evento tiene categorías. -->
-      <div class="gw-ed-field">
+      <div class="gw-ed-field" data-psave="badge_mode">
         <label class="gw-label" for="badgeModeSelect">Escarapela por categoría</label>
         <select class="gw-select" id="badgeModeSelect">
           <option value="all">Una plantilla para todas las categorías</option>
@@ -342,20 +342,30 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     catSel.innerHTML = '<option value="">Plantilla general (todas)</option>' + info.categories.map(c => `<option value="${window.escapeHtml(c)}">${window.escapeHtml(c)}</option>`).join('');
     modeSel.value = info.badge_per_category ? 'per' : 'all';
     document.getElementById('categorySelectGroup').hidden = !info.badge_per_category;
+    // Modo por categoría: queda PENDIENTE hasta «Guardar cambios» (bloque «badge_mode», antes que el diseño). Aquí solo se muestra u oculta el selector de categoría (la barra única lo marca pendiente por estar dentro de data-psave).
+    let shownCategory = '';
+    if (GWP) GWP.register({ key: 'badge_mode', label: 'Escarapela por categoría', order: 0, save: async () => {
+      const per = modeSel.value === 'per';
+      let res;
+      try { res = await fetch(`/api/events/${window.EVENT_ID}/badge-mode`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ per_category: per }) }); }
+      catch (e) { throw new Error('Error de red'); }
+      if (!res.ok) throw new Error('No se pudo cambiar el modo');
+    } });
     modeSel.addEventListener('change', async () => {
       const per = modeSel.value === 'per';
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-mode`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ per_category: per }) });
-      if (!res.ok) { showToast('No se pudo cambiar el modo', 'error'); modeSel.value = per ? 'all' : 'per'; return; }
+      if (!per && currentCategory) {                            // volver a «una para todas» deja de editar la de la categoría: descartaría lo editado
+        if (designDirty() && !(await showConfirm('Hay cambios sin guardar en la plantilla de esta categoría. Si vuelves a «una plantilla para todas» se pierden. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, descartar' }))) { modeSel.value = 'per'; return; }
+        currentCategory = null; catSel.value = ''; shownCategory = '';
+        await loadTemplate();
+      }
       document.getElementById('categorySelectGroup').hidden = !per;
-      if (!per) { currentCategory = null; catSel.value = ''; await loadTemplate(); }
-      showToast(per ? 'Ahora cada categoría puede tener su propia escarapela' : 'Todas las categorías usan la misma escarapela', 'success');
     });
-    let shownCategory = '';
     catSel.addEventListener('change', async () => {
-      if (GWP && GWP.hasDirty()) {                              // cambiar de plantilla descartaría lo editado
+      if (designDirty()) {                                      // cambiar de plantilla descartaría lo editado
         const ok = await showConfirm('Hay cambios sin guardar en esta plantilla. Si cambias de categoría se pierden. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, descartar' });
         if (!ok) { catSel.value = shownCategory; return; }
       }
+      if (GWP) await GWP.flush('badge_mode');                   // la plantilla de la categoría solo vale con el modo ya guardado
       shownCategory = catSel.value;
       currentCategory = catSel.value || null; selectedId = null; await loadTemplate();
     });
@@ -402,6 +412,7 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     return JSON.stringify([document.getElementById('tplName').value.trim(), template.width_mm, template.height_mm, template.orientation, template.background_type,
       isColor ? document.getElementById('bgColor').value : template.background_value, template.elements]);
   }
+  function designDirty() { return !!template && designSnap() !== savedSnap; }          // solo el diseño (el modo por categoría es otro bloque)
   function markSaved() { savedSnap = designSnap(); if (GWP) GWP.markClean(DESIGN_KEY); }
   function checkDirty() {
     checkQueued = false;
