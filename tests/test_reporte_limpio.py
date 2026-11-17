@@ -71,5 +71,6 @@ def test_empty_columns_are_always_removed_and_registered_come_first_newest_first
     assert _ids(wb["Personas registradas"]) == ["1003", "1001"]
     assert _ids(wb["Personas no registradas"]) == ["1002"]
     assert "Registrado por" not in [c.value for c in wb["Reporte"][5]]                  # nadie lo tiene: se quita siempre
-    assert "Hora de Registro" in [c.value for c in wb["Personas registradas"][5]]
-    assert "Hora de Registro" not in [c.value for c in wb["Personas no registradas"][5]]
+    header = [c.value for c in wb["Reporte"][5]]
+    assert [c.value for c in wb["Personas registradas"][5]] == header == [c.value for c in wb["Personas no registradas"][5]]          # mismas columnas en las tres hojas
+    assert "Hora de Registro" in header

@@ -224,9 +224,11 @@ class ReportManager:
         header_row = TITLE_ROWS + 1
         tenant_name = event.tenant.name if event and event.tenant else tenant_id
 
+        keep_columns = list(prune_unused_columns(df).columns)          # se quitan SOLO las columnas que nadie usó en todo el evento; el resto va igual en las tres hojas
+
         def write_report_sheet(writer, frame, rows, sheet_name):
             """Escribe una hoja con el formato del «Reporte» (título, encabezados, autofiltro, firmas). `rows` = filas crudas en el mismo orden que `frame`."""
-            frame = prune_unused_columns(frame)          # siempre: sin columnas donde nadie tiene dato
+            frame = frame[keep_columns]          # las tres hojas llevan las MISMAS columnas
             headers = list(frame.columns)
             last_col_letter = get_column_letter(len(headers))
             safe_frame(frame).to_excel(writer, index=False, sheet_name=sheet_name, startrow=header_row - 1)
