@@ -419,9 +419,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-check"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %}> Activar el control de entrada y salida por zonas</label>
             </div>
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
-              <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
+              <p class="gw-hint">Los cambios de esta tabla quedan pendientes hasta pulsar «Guardar cambios». Archivar, restaurar, eliminar y agregar son actos inmediatos.</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Permitir reingresos</th><th scope="col">Máx. entradas por persona</th><th scope="col">Genera estadísticas</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=6, label='Cargando zonas…') }}</tbody></table></div>
+              <div class="gw-table-wrap" data-psave="areas_rows"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Permitir reingresos</th><th scope="col">Máx. entradas por persona</th><th scope="col">Genera estadísticas</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=6, label='Cargando zonas…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
                 <div class="gw-field"><label class="gw-label" for="newAreaParent">Dentro de (opcional)</label><select class="gw-select" id="newAreaParent"><option value="">— Zona principal —</option></select></div>
@@ -441,10 +441,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-check"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %}> Activar el control de inventario (repartir insumos)</label>
             </div>
             <div id="inventoryConfig" class="gw-stack" {% if not event.inventory_enabled %}hidden{% endif %}>
-              <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
+              <p class="gw-hint">Los cambios de esta tabla quedan pendientes hasta pulsar «Guardar cambios». Archivar, restaurar, eliminar y agregar son actos inmediatos.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Máx. por persona</th><th scope="col">Genera estadísticas</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=10, label='Cargando ítems…') }}</tbody></table></div>
+              <div class="gw-table-wrap" data-psave="items_rows"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Máx. por persona</th><th scope="col">Genera estadísticas</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=10, label='Cargando ítems…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
                 <div class="gw-field"><label class="gw-label" for="newItemParent">Dentro de (opcional)</label><select class="gw-select" id="newItemParent"><option value="">— Ítem principal —</option></select></div>
@@ -769,16 +769,28 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <td class="gw-pm-act">${rowActions(a, 'area', 'la zona')}</td></tr>`).join('')
             : '<tr><td colspan="6">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
     }
-    document.getElementById('areasBody').addEventListener('change', async (e) => {
-        const tr = e.target.closest('tr[data-area]'); if (!tr) return;
-        try {
-            await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked, parent_id: tr.querySelector('.area-parent').value, max_per_person: tr.querySelector('.area-max').value, stats_enabled: tr.querySelector('.area-stats').checked });
-            showToast('Zona actualizada', 'success');
-        } catch (err) { /* el toast ya lo mostró api() */ }
-        loadAreas();
-    });
+    // Edición en línea de zonas: queda PENDIENTE (barra única, bloque «areas_rows»); se guardan solo las filas tocadas.
+    const touchedAreas = new Set();
+    const markRow = (set, attr) => (e) => { const tr = e.target.closest('tr[' + attr + ']'); if (tr) set.add(tr.dataset[attr.replace('data-', '')]); };
+    document.getElementById('areasBody').addEventListener('input', markRow(touchedAreas, 'data-area'));
+    document.getElementById('areasBody').addEventListener('change', markRow(touchedAreas, 'data-area'));
+    GWParams.register({ key: 'areas_rows', label: 'Zonas de control', order: 68, save: async () => {
+        const fails = [];
+        for (const id of Array.from(touchedAreas)) {
+            const tr = document.querySelector(`#areasBody tr[data-area="${id}"]`);
+            if (!tr) { touchedAreas.delete(id); continue; }
+            const name = tr.querySelector('.area-name').value;
+            try {
+                await must(await fetch(`${base}/areas/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, allow_reentry: tr.querySelector('.area-reentry').checked, parent_id: tr.querySelector('.area-parent').value, max_per_person: tr.querySelector('.area-max').value, stats_enabled: tr.querySelector('.area-stats').checked }) }), 'No se pudo guardar la zona');
+                touchedAreas.delete(id);
+            } catch (err) { fails.push((name || 'Zona') + ': ' + err.message); }
+        }
+        if (fails.length) throw new Error(fails.join(' · '));
+        await loadAreas();
+    } });
     async function archiveAction(url, msg, confirmLabel, okMsg, reload, method) {
         if (!await showConfirm(msg, { confirmLabel })) return;
+        await Promise.all([GWParams.flush('areas_rows'), GWParams.flush('items_rows')]);          // la tabla se vuelve a dibujar: lo pendiente se guarda antes, no se pierde
         try { await api(url, method || 'POST'); showToast(okMsg, 'success'); } catch (err) { /* el toast ya lo mostró api() */ }
         reload();
     }
@@ -789,12 +801,12 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         else if (e.target.closest('.area-rest')) archiveAction(url + '/restore', '¿Restaurar esta zona?', 'Restaurar', 'Zona restaurada', loadAreas);
         else if (e.target.closest('.area-del')) archiveAction(url, '¿Eliminar DEFINITIVAMENTE esta zona? No se puede deshacer (solo es posible si no tiene movimientos).', 'Eliminar', 'Zona eliminada', loadAreas, 'DELETE');
     });
-    const sa = document.getElementById('showArchivedAreas'); if (sa) sa.addEventListener('change', () => loadAreas().catch(() => {}));
-    const si = document.getElementById('showArchivedItems'); if (si) si.addEventListener('change', () => loadItems().catch(() => {}));
+    const sa = document.getElementById('showArchivedAreas'); if (sa) sa.addEventListener('change', async () => { await GWParams.flush('areas_rows'); loadAreas().catch(() => {}); });
+    const si = document.getElementById('showArchivedItems'); if (si) si.addEventListener('change', async () => { await GWParams.flush('items_rows'); loadItems().catch(() => {}); });
     document.getElementById('addAreaBtn').addEventListener('click', async () => {
         const name = document.getElementById('newAreaName').value.trim();
         if (!name) { showToast('Escribe el nombre de la zona', 'error'); return; }
-        await GWParams.flush('mod_areas');                    // agregar es inmediato: si el módulo se acaba de activar, primero se guarda eso
+        await GWParams.flush('mod_areas'); await GWParams.flush('areas_rows');                    // agregar es inmediato: si el módulo se acaba de activar, primero se guarda eso
         await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked, parent_id: document.getElementById('newAreaParent').value, max_per_person: document.getElementById('newAreaMax').value, stats_enabled: document.getElementById('newAreaStats').checked });
         document.getElementById('newAreaName').value = ''; document.getElementById('newAreaMax').value = ''; loadAreas();
     });
@@ -815,16 +827,26 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <td class="gw-pm-act">${rowActions(i, 'item', 'el ítem')}</td></tr>`).join('')
             : '<tr><td colspan="10">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
-    document.getElementById('itemsBody').addEventListener('change', async (e) => {
-        const tr = e.target.closest('tr[data-item]'); if (!tr) return;
-        const body = { name: tr.querySelector('.item-name').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked, parent_id: tr.querySelector('.item-parent').value, max_per_person: tr.querySelector('.item-max').value, stats_enabled: tr.querySelector('.item-stats').checked };
-        const qty = tr.querySelector('.item-qty'); if (!qty.disabled) body.initial_qty = qty.value;          // un grupo no tiene cantidad propia: es la suma de sus subcategorías
-        try {
-            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', body);
-            showToast('Ítem actualizado', 'success');
-        } catch (err) { /* el toast ya lo mostró api() */ }
-        loadItems();
-    });
+    // Edición en línea de ítems (cantidad inicial, banderas, categoría, nombre): PENDIENTE hasta «Guardar cambios» (bloque «items_rows»).
+    const touchedItems = new Set();
+    document.getElementById('itemsBody').addEventListener('input', markRow(touchedItems, 'data-item'));
+    document.getElementById('itemsBody').addEventListener('change', markRow(touchedItems, 'data-item'));
+    GWParams.register({ key: 'items_rows', label: 'Inventario del evento', order: 69, save: async () => {
+        const fails = [];
+        for (const id of Array.from(touchedItems)) {
+            const tr = document.querySelector(`#itemsBody tr[data-item="${id}"]`);
+            if (!tr) { touchedItems.delete(id); continue; }
+            const name = tr.querySelector('.item-name').value;
+            const body = { name, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked, parent_id: tr.querySelector('.item-parent').value, max_per_person: tr.querySelector('.item-max').value, stats_enabled: tr.querySelector('.item-stats').checked };
+            const qty = tr.querySelector('.item-qty'); if (!qty.disabled) body.initial_qty = qty.value;          // un grupo no tiene cantidad propia: es la suma de sus subcategorías
+            try {
+                await must(await fetch(`${base}/inventory/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), 'No se pudo guardar el ítem');
+                touchedItems.delete(id);
+            } catch (err) { fails.push((name || 'Ítem') + ': ' + err.message); }
+        }
+        if (fails.length) throw new Error(fails.join(' · '));
+        await loadItems();
+    } });
     document.getElementById('itemsBody').addEventListener('click', (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
         const url = `${base}/inventory/${tr.dataset.item}`;
@@ -835,7 +857,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     document.getElementById('addItemBtn').addEventListener('click', async () => {
         const name = document.getElementById('newItemName').value.trim();
         if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
-        await GWParams.flush('mod_inventory');
+        await GWParams.flush('mod_inventory'); await GWParams.flush('items_rows');
         await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked, parent_id: document.getElementById('newItemParent').value, max_per_person: document.getElementById('newItemMax').value, stats_enabled: document.getElementById('newItemStats').checked });
         document.getElementById('newItemMax').value = ''; document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
