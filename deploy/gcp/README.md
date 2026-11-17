@@ -1,0 +1,31 @@
+# Cómo se despliega GoldenWeb (léelo ANTES de dar un comando de despliegue)
+
+Lo ejecuta **Juan David en Cloud Shell**; ningún agente corre comandos de nube. Aquí está lo que ya salió mal alguna vez. Detalle y porqués: `docs/19_GUIA_PRODUCCION.md`, `docs/historial.md`.
+
+## 1. Antes de dar el comando
+- **Autorización:** nada a producción sin el «sí» explícito de Juan David para ESA acción (regla de CLAUDE.md). Staging se puede desplegar sin pedirla.
+- **Qué se va a subir:** en Cloud Shell el repositorio es `~/gw-hosting`. Pídele que corra `git branch --show-current && git log --oneline -1` y confirma que es la rama/commit esperado. Pasó (17-nov-2026): producción salió con el commit de OTRA rama (Almacén) porque Cloud Shell no estaba donde se creía.
+- **Rama al día:** `git checkout <rama> && git pull`. Un despliegue sale de lo que hay en Cloud Shell, no de lo que acabas de empujar.
+- **Identidad de git** (solo si va a hacer commit desde Cloud Shell): `git config user.name "Juan David" && git config user.email "noreply@golden-eventos.com"` (sin `--global`).
+
+## 2. El comando (los dos argumentos son obligatorios)
+```
+bash deploy/gcp/manual_deploy.sh <staging|production> <ID-del-proyecto>
+```
+- Staging:    `REGION=us-east4 CLOUDSDK_CORE_PROJECT=goldenweb-staging bash deploy/gcp/manual_deploy.sh staging goldenweb-staging`
+- Producción: `FORCE=1 REGION=us-east4 CLOUDSDK_CORE_PROJECT=goldenweb-prod ONEDRIVE_DRIVE_ID=<id> nohup bash deploy/gcp/manual_deploy.sh production goldenweb-prod > ~/deploy.log 2>&1 & sleep 2; tail -f ~/deploy.log`
+- Errores típicos: `Uso: …` (falta `staging|production`), `Falta el ID del proyecto` (falta el segundo argumento), «No existe golden-web-staging» (faltó `REGION`/`CLOUDSDK_CORE_PROJECT`).
+- `FORCE=1` salta el congelamiento cuando hay eventos en curso; solo con autorización de Juan David y sabiendo que los servicios cambian de revisión.
+- Un build largo (dlib) se corre con `nohup … &` y `tail -f`; no cerrar la pestaña. Si se corta, repetir el mismo comando.
+- Termina con `== LISTO (<entorno>, commit <sha>)`. Se verifica en `/sistema` → «Versión desplegada» (el sha debe ser el esperado).
+
+## 3. `ONEDRIVE_DRIVE_ID` (copia semanal a OneDrive, solo producción)
+La copia semanal usa el sitio de SharePoint «Respaldos GoldenWeb»; el id de su biblioteca «Documentos» (empieza con `b!`, NO es secreto) llega al Job `golden-ops` por la variable `ONEDRIVE_DRIVE_ID`, y `deploy.sh` la copia **solo si está en el entorno del comando**. **Si un despliegue de producción no la lleva, el Job la pierde y /sistema vuelve a decir «copia semanal no configurada».** Se la pide a Juan David (o se saca de Graph Explorer, `docs/24_COPIA_SEMANAL_ONEDRIVE.md`); no se escribe en el repo. Si ya se perdió: `gcloud run jobs update golden-ops --region us-east4 --project goldenweb-prod --update-env-vars ONEDRIVE_DRIVE_ID=<id>`.
+
+## 4. Cosas de Bash que ya mordieron
+- Un `!` dentro de comillas dobles lo toma Bash como historial («event not found»): no lo pongas en mensajes de `read -p`, `echo`, etc.
+- Un rol de IAM recién creado tarda ~45 s en poder asignarse a un bucket («does not exist in the resource's hierarchy»): `sleep 45` y repetir.
+- Un comando por mensaje, copiable tal cual; nada de secretos en el chat (los valores van a Secret Manager).
+
+## 5. Después de desplegar
+Verificar en el navegador (`/sistema` en verde, las pantallas tocadas) y avisar a Juan David. Migraciones: las corre el Job `golden-migrate` dentro del despliegue; revisa en el commit si trae `alembic/versions/*` nuevas ANTES de desplegar a producción y dilo.
