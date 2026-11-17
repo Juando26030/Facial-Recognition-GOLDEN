@@ -1,6 +1,6 @@
 {# CRM - Cotización (C3): editor con líneas, totales, etapa, versiones, PDF y proforma. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_cotizacion.js; API: /api/crm/quotes/{id}. #}
 {% from "_crm_macros.html" import ic, ayuda with context %}
-{% set page_title = "CRM - Cotización" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/crm_cotizacion.js"] %}{% set crm_section = 'cotizaciones' %}
+{% set page_title = "CRM - Cotización" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css"] %}{% set page_js = ["js/params-save.js", "js/crm_cotizacion.js"] %}{% set crm_section = 'cotizaciones' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="quoteRoot" data-quote-id="{{ quote_id }}" data-can-admin="{{ '1' if can_admin else '0' }}">
     <a class="crm-back" href="/crm/cotizaciones">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a las cotizaciones</a>
@@ -17,7 +17,8 @@
       <div id="qNotice" class="gw-alert gw-alert--warn" role="status" hidden><div class="gw-alert__body"></div></div>
       <div id="qError" class="gw-alert gw-alert--err" role="alert" hidden><div class="gw-alert__body"></div></div>
 
-      <section class="gw-card gw-stack" aria-labelledby="qDataTitle">
+      <div id="paramsRoot" class="gw-stack-lg">
+      <section class="gw-card gw-stack" aria-labelledby="qDataTitle" data-psave="cotizacion">
         <h2 class="gw-card__title" id="qDataTitle">Datos de la cotización</h2>
         <div class="crm-quote-grid">
           <div class="gw-field is-wide"><label class="gw-label" for="fTitle">Título</label><input class="gw-input" id="fTitle" maxlength="200"></div>
@@ -32,7 +33,7 @@
         </div>
       </section>
 
-      <section class="gw-card gw-stack" aria-labelledby="qLinesTitle">
+      <section class="gw-card gw-stack" aria-labelledby="qLinesTitle" data-psave="cotizacion">
         <div class="crm-card-head"><h2 class="gw-card__title" id="qLinesTitle">Líneas</h2>
           <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAddProduct">{{ ic('plus', 'gw-icon--sm') }} Desde un producto</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAddLine">{{ ic('plus', 'gw-icon--sm') }} Línea libre</button></div></div>
         <div class="gw-table-wrap"><table class="gw-table gw-table-cards crm-lines">
@@ -44,8 +45,6 @@
         <p class="gw-hint">Los totales se calculan en el servidor al guardar; aquí ves una vista previa.</p>
       </section>
 
-      <div class="crm-savebar" id="qSaveBar">
-        <button type="button" class="gw-btn gw-btn--primary" id="qSave">Guardar cambios</button>
       </div>
 
       <section class="gw-card gw-stack" aria-labelledby="qVersionsTitle">
@@ -57,6 +56,8 @@
         <h2 class="gw-card__title" id="qHistTitle">Historial de cambios</h2>
         <div id="qHistory"></div>
       </section>
+      {# Barra única de guardado (datos y líneas de la cotización). #}
+      {% include "_gw_savebar.html" %}
     </div>
   </div>
 {% include "_crm_shell_bottom.html" %}
