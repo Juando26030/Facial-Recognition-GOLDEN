@@ -16,19 +16,19 @@
     const card = el("section", "gw-card gw-stack"); card.setAttribute("aria-label", "Corrida " + r.id);
     const bar = el("div", "crm-panel__bar"); bar.appendChild(el("h2", "crm-panel__title", MODES[r.mode] + " #" + r.id));
     bar.appendChild(el("span", "gw-badge " + (r.status === "done" ? "gw-badge--ok" : r.status === "failed" ? "gw-badge--warn" : "gw-badge--info"), STATUS[r.status] || r.status)); card.appendChild(bar);
-    card.appendChild(el("p", "gw-help", X.fmtDateTime(r.created_at)));
+    card.appendChild(el("p", "gw-hint", X.fmtDateTime(r.created_at)));
     if (r.error) card.appendChild(el("p", "gw-text", r.error));
     Object.keys(KINDS).forEach((k) => {
       const s = r.counts && r.counts[k]; if (!s) return;
       card.appendChild(el("p", "gw-text", line(KINDS[k], s.counts)));
-      if (s.note) card.appendChild(el("p", "gw-help", s.note));
+      if (s.note) card.appendChild(el("p", "gw-hint", s.note));
       const c = s.counts || {}, extra = [];
       if (c.without_account) extra.push(c.without_account + " sin cuenta conocida"); if (c.unlinked) extra.push(c.unlinked + " sin oportunidad ni cuenta");
       if (c.without_quote) extra.push(c.without_quote + " sin cotización ligada"); if (c.stage_unmapped) extra.push(c.stage_unmapped + " con etapa no reconocida");
       if (c.currency_defaulted) extra.push(c.currency_defaulted + " con moneda no reconocida (COP)"); if (c.total_only) extra.push(c.total_only + " solo con total (sin líneas)");
       if (c.lines) extra.push(c.lines + " líneas");
-      if (extra.length) card.appendChild(el("p", "gw-help", extra.join(" · ")));
-      (s.rejected || []).slice(0, 10).forEach((x) => card.appendChild(el("p", "gw-help", "Fila " + x.row + ": " + x.reason)));
+      if (extra.length) card.appendChild(el("p", "gw-hint", extra.join(" · ")));
+      (s.rejected || []).slice(0, 10).forEach((x) => card.appendChild(el("p", "gw-hint", "Fila " + x.row + ": " + x.reason)));
     });
     if (r.counts && r.counts.pairs) {
       const p = r.counts.pairs; card.appendChild(el("p", "gw-text", "Parejas con clientes de la plataforma: " + p.seguro + " seguras · " + p.dudoso + " dudosas · " + p.sin_pareja + " sin pareja"));
@@ -79,7 +79,7 @@
 
   async function pairs(runId, box) {
     box.replaceChildren(); const d = await api("GET", "/api/crm/import/runs/" + runId + "/pairs");
-    if (!d.items.length) { box.appendChild(el("p", "gw-help", "No hay parejas para revisar.")); return; }
+    if (!d.items.length) { box.appendChild(el("p", "gw-hint", "No hay parejas para revisar.")); return; }
     d.items.forEach((p) => {
       const row = el("div", "crm-actions");
       row.appendChild(el("span", "gw-text", p.tenant_name + " ↔ " + (p.suitecrm_name || "—") + " (" + p.score + " · " + p.bucket + (p.decision !== "pending" ? " · " + p.decision : "") + ")"));
