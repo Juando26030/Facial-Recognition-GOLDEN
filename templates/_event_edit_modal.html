@@ -113,8 +113,7 @@
             <div class="gw-field"><label class="gw-label" for="eeLinkSlug">Nombre del evento en el enlace</label><input class="gw-input" type="text" id="eeLinkSlug" autocomplete="off" maxlength="60" spellcheck="false"><small class="gw-hint" id="eeLinkHint"></small></div>
             <div class="gw-field"><label class="gw-label" for="eeLinkPrimary">Formulario principal</label><select class="gw-select" id="eeLinkPrimary"><option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option></select></div>
             <p class="gw-hint" id="eeLinkPreview"></p>
-            <div class="ee-report__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeLinkSave">Guardar enlace</button></div>
-            <p class="gw-hint">Solo letras minúsculas sin tildes, números y guiones. Si lo cambias, el enlace anterior sigue funcionando (redirige al nuevo) y los enlaces ya enviados no se rompen.</p>
+            <p class="gw-hint">Solo letras minúsculas sin tildes, números y guiones. Se guarda con «Guardar cambios». Si lo cambias, el enlace anterior sigue funcionando (redirige al nuevo) y los enlaces ya enviados no se rompen.</p>
           </div>
         </details>
         {% endif %}
@@ -474,7 +473,19 @@
   });
 
   /* ---------- enlace limpio de inscripciones (D2.5k) ---------- */
-  let linkTimer = null, linkInfo = null;
+  let linkTimer = null, linkInfo = null, linkSaved = null;
+  const linkNow = () => ({ slug: document.getElementById('eeLinkSlug').value.trim().toLowerCase(), primary: document.getElementById('eeLinkPrimary').value });
+  const linkDirty = () => !!(linkInfo && linkSaved && document.getElementById('eeLinkGroup') && !document.getElementById('eeLinkGroup').hidden && (linkNow().slug !== linkSaved.slug || linkNow().primary !== linkSaved.primary));
+  async function saveLink() {            // se guarda con el «Guardar cambios» del evento (mismo endpoint de siempre); devuelve {ok, error}
+    const now = linkNow(), body = { slug: now.slug };
+    if (now.primary) body.primary_form_id = Number(now.primary); else body.clear_primary = true;
+    let res;
+    try { res = await fetch(`/api/events/${current.id}/public-link`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { return { ok: false, error: 'No se pudo guardar el enlace: sin conexión.' }; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el enlace' };
+    linkInfo = data; linkSaved = now; linkPreview();
+    return { ok: true };
+  }
   function linkPreview() {
     const slug = (document.getElementById('eeLinkSlug').value || '').trim().toLowerCase();
     const sel = document.getElementById('eeLinkPrimary');
@@ -497,6 +508,7 @@
     sel.innerHTML = '<option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option>' + linkInfo.forms.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
     const prim = linkInfo.forms.find((f) => f.is_primary);
     sel.value = prim ? String(prim.id) : '';
+    linkSaved = linkNow();
     linkPreview();
   }
   if (document.getElementById('eeLinkGroup')) {
@@ -511,19 +523,6 @@
       }, 350);
     });
     document.getElementById('eeLinkPrimary').addEventListener('change', linkPreview);
-    document.getElementById('eeLinkSave').addEventListener('click', async (e) => {
-      const slug = document.getElementById('eeLinkSlug').value.trim().toLowerCase();
-      const primary = document.getElementById('eeLinkPrimary').value;
-      await busy(e.currentTarget, async () => {
-        const body = { slug };
-        if (primary) body.primary_form_id = Number(primary); else body.clear_primary = true;
-        const res = await fetch(`/api/events/${current.id}/public-link`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el enlace', 'error'); return; }
-        linkInfo = data; linkPreview();
-        showToast('Enlace de inscripciones guardado', 'success');
-      });
-    });
   }
 
   /* ---------- servidor local (Fase 6) ---------- */
@@ -817,6 +816,10 @@
     if (contactsCtrl && contactsCtrl.loaded && contactsCtrl.dirty()) {
       const cs = await contactsCtrl.save();
       if (!cs.ok) { setStatus('error', cs.error); showToast(cs.error, 'error'); return; }
+    }
+    if (linkDirty()) {          // el enlace de inscripciones va con el mismo botón
+      const lk = await saveLink();
+      if (!lk.ok) { setStatus('error', lk.error); showToast(lk.error, 'error'); return; }
     }
     if (invCtrl && invCtrl.dirty()) {          // primero el inventario: si el cuadre impide el cambio de estado, ya quedó guardado lo que escribiste
       const inv = await invCtrl.save();
