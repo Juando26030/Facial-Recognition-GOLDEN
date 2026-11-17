@@ -540,8 +540,7 @@ def neon_usage(month: str, fetch=None) -> dict:
     month = valid_month(month)
     if not neon_configured():
         return {"available": False, "reason": "Falta NEON_API_KEY y NEON_ORG_ID en el entorno"}
-    y, mo = int(month[:4]), int(month[5:7])
-    q = urllib.parse.urlencode({"from": f"{month}-01T00:00:00Z", "to": f"{month}-{monthrange(y, mo)[1]:02d}T23:59:59Z", "granularity": "monthly",
+    q = urllib.parse.urlencode({"from": f"{month}-01T00:00:00Z", "to": f"{month_add(month, 1)}-01T00:00:00Z", "granularity": "monthly",
                                 "org_id": os.environ["NEON_ORG_ID"].strip(), "metrics": "compute_unit_seconds,root_branch_bytes_month,child_branch_bytes_month", "limit": "100"})
     url = f"https://console.neon.tech/api/v2/consumption_history/v2/projects?{q}"
 
