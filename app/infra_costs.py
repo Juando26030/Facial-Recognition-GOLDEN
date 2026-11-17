@@ -546,15 +546,18 @@ def neon_usage(month: str, fetch=None) -> dict:
     url = f"https://console.neon.tech/api/v2/consumption_history/v2/projects?{q}"
 
     def default_fetch(u):
-        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json"})
+        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json", "User-Agent": "GoldenWeb/2.0 (+gastos)"})
         with urllib.request.urlopen(req, timeout=15) as resp:             # noqa: S310 — URL fija de Neon
             return json.loads(resp.read().decode("utf-8"))
 
     try:
         data = (fetch or default_fetch)(url)
     except Exception as e:  # noqa: BLE001
-        log.warning("Neon consumo: %s", type(e).__name__)
-        return {"available": False, "reason": "No se pudo consultar la API de Neon (revisa la llave y el plan)"}
+        code = getattr(e, "code", None)                                      # HTTPError: solo el número, nunca el cuerpo ni la llave
+        log.warning("Neon consumo: %s %s", type(e).__name__, code or "")
+        hint = {401: "la llave no es válida", 403: "el plan no incluye esta consulta o la llave no tiene permiso", 404: "el id de la organización no corresponde a la llave",
+                406: "el rango de fechas no es válido", 429: "demasiadas consultas, intenta en un minuto"}.get(code, "revisa la llave, el id de la organización y el plan")
+        return {"available": False, "reason": f"No se pudo consultar la API de Neon ({'error ' + str(code) + ': ' if code else ''}{hint})"}
     compute = 0.0
     for p in data.get("projects", []) or []:
         for per in p.get("periods", []) or []:
