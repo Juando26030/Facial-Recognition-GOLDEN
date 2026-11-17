@@ -48,12 +48,14 @@
     return `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Elementos de bodega y cómo se controla cada uno</caption>
       <thead><tr><th scope="col">Elemento</th><th scope="col">¿Cómo se controla?</th><th scope="col">Fila del checklist</th><th scope="col">Consumible</th><th scope="col">Unidades</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
       <tbody>${products.map((p) => `<tr data-alm-prod="${p.id}">
-        <td>${esc(p.name)}<br><span class="gw-hint">${esc(p.category_name || 'Sin categoría')}</span></td>
+        <td class="gw-alm__prod">${p.photo_url ? `<img class="gw-alm__thumb" src="${esc(p.photo_url)}" alt="Foto de ${esc(p.name)}" width="48" height="48" loading="lazy">` : ''}<span>${esc(p.name)}<br><span class="gw-hint">${esc(p.category_name || 'Sin categoría')}</span></span></td>
         <td><select class="gw-select" data-f="tracking" aria-label="Cómo se controla ${esc(p.name)}">${meta.tracking.map((t) => `<option value="${esc(t.key)}"${t.key === p.tracking ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}</select></td>
         <td><select class="gw-select" data-f="checklist_row" aria-label="Fila del checklist de ${esc(p.name)}">${rowOptions(p.checklist_row || '')}</select></td>
         <td><label class="gw-check"><input type="checkbox" data-f="is_consumable"${p.is_consumable ? ' checked' : ''} aria-label="${esc(p.name)} es consumible"></label></td>
         <td>${p.tracking === 'serial' ? `<span class="gw-badge">${p.units}</span>` : '—'}</td>
         <td class="gw-alm__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-save="${p.id}">Guardar</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-photo="${p.id}">${p.has_photo ? 'Cambiar foto' : 'Agregar foto'}</button>
+          ${p.has_photo ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-alm-photo-del="${p.id}" data-name="${esc(p.name)}">Quitar foto</button>` : ''}
           ${p.tracking === 'serial' ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-units="${p.id}">Unidades</button>`
     : `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-label="${p.id}">Etiqueta QR</button>`}</td></tr>`).join('')}</tbody></table></div>`;
   }
@@ -67,6 +69,29 @@
     } catch (e) { box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(e.message)}</p></div>`; }
     box.setAttribute('aria-busy', 'false');
   }
+
+  /* ---- fotos del elemento (el servidor valida y reduce la imagen) */
+  async function uploadPhoto(productId, file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/almacen/products/' + productId + '/photo', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo subir la foto');
+    return d;
+  }
+  const photoPicker = document.createElement('input');          // un solo selector de archivos reutilizado por la tabla
+  photoPicker.type = 'file';
+  photoPicker.accept = 'image/*';
+  photoPicker.hidden = true;
+  root.appendChild(photoPicker);
+  let photoFor = null;
+  photoPicker.addEventListener('change', async () => {
+    const f = photoPicker.files && photoPicker.files[0];
+    const id = photoFor;
+    photoPicker.value = '';
+    if (!f || !id) return;
+    try { await uploadPhoto(id, f); showToast('Foto guardada', 'success'); await loadProducts(); } catch (err) { fail(err); }
+  });
 
   /* ---- unidades con serial */
   function unitsTable() {
@@ -147,8 +172,13 @@
       await busy($('almNewBtn'), async () => {
         const p = await send('/api/inventory/products', 'POST', { name, category_id: Number(cat), unit: 'unidad' });
         await send('/api/almacen/products/' + p.id, 'PATCH', { tracking: $('almNewTracking').value, checklist_row: $('almNewRow').value, is_consumable: $('almNewConsumable').checked });
+        const photo = $('almNewPhoto').files && $('almNewPhoto').files[0];
+        if (photo) {
+          try { await uploadPhoto(p.id, photo); } catch (perr) { showToast('El elemento se creó, pero la foto no se pudo guardar: ' + perr.message, 'error'); }
+        }
       });
       $('almNewName').value = '';
+      $('almNewPhoto').value = '';
       $('almNewConsumable').checked = false;
       showToast(`Elemento «${name}» creado`, 'success');
       loadProducts();
@@ -164,6 +194,14 @@
         const body = { tracking: row.querySelector('[data-f=tracking]').value, checklist_row: row.querySelector('[data-f=checklist_row]').value, is_consumable: row.querySelector('[data-f=is_consumable]').checked };
         await busy(b, () => send('/api/almacen/products/' + b.dataset.almSave, 'PATCH', body));
         showToast('Cambios guardados', 'success');
+        await loadProducts();
+      } else if (b.dataset.almPhoto) {
+        photoFor = Number(b.dataset.almPhoto);
+        photoPicker.click();
+      } else if (b.dataset.almPhotoDel) {
+        if (!(await showConfirm(`¿Quitar la foto de «${esc(b.dataset.name)}»?`, { confirmLabel: 'Quitar' }))) return;
+        await busy(b, () => send('/api/almacen/products/' + b.dataset.almPhotoDel + '/photo', 'DELETE'));
+        showToast('Foto quitada', 'success');
         await loadProducts();
       } else if (b.dataset.almUnits) {
         await openUnits(Number(b.dataset.almUnits));
