@@ -225,7 +225,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
         </section>
 
         {% if is_super %}<section class="gw-tabpanel" role="tabpanel" id="tipos" aria-labelledby="tab_tipos" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Tipos de evento</h2><p class="gw-tabpanel__lead">La lista de categorías (Feria, Congreso…) que se elige al crear o editar un evento y con la que el calendario filtra. Lo que hagas aquí actúa al instante.</p></div>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Tipos de evento</h2><p class="gw-tabpanel__lead">La lista de categorías (Feria, Congreso…) que se elige al crear o editar un evento y con la que el calendario filtra. Crear, renombrar y archivar actúan al instante; el color queda pendiente hasta «Guardar cambios».</p></div>
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Agregar un tipo</h4>{% call ayuda('ay_tipos', 'Archivar un tipo') %}Archivar deja de ofrecer el tipo al crear o editar eventos, pero los eventos que ya lo tienen lo conservan y el calendario lo sigue mostrando. Se puede restaurar. El color es opcional: sale en el calendario junto al nombre.{% endcall %}</div>
             <form id="typeForm" class="gw-stack">

@@ -151,7 +151,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               </div>
               <p class="gw-hint" id="capInfo"></p>
               <p class="gw-hint" id="statusLocked" role="status" hidden>{{ ic('info', 'gw-icon--sm') }} <b>Bloqueado: el estado lo controla el calendario.</b> Ahora mismo el formulario está <b id="statusLockedNow"></b> según el tramo que está en curso. Para volver a elegir el estado a mano, desactiva «Programar el estado por fechas».</p>
-              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
+              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar cambios» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
             </div>
             <div class="gw-group__item">
               <label class="gw-check" data-own-pending><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
@@ -170,7 +170,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <div id="qRules"></div>
               <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAdd">{{ ic('plus', 'gw-icon--sm') }} Agregar cupo</button>
                 <select id="qQuickField" class="gw-select gwe-select-auto" data-instant aria-label="Campo para crear un cupo por cada opción"></select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qQuick">Un cupo por cada opción del campo</button></div>
-              <p class="gw-hint">Se guardan con el botón «Guardar configuración» de abajo.</p>
+              <p class="gw-hint">Se guardan con el botón «Guardar cambios» de abajo.</p>
             </div>
           </div>
         </details>
@@ -264,7 +264,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div class="gw-group__item">
               <div class="gw-field gw-field--inline"><label class="gw-label" for="rfDays">Plazo para pedir el reembolso (días después del pago; vacío = el general)</label><input type="number" class="gw-input gw-input--short" id="rfDays" min="1" max="365"></div>
               <div class="gw-field"><label class="gw-label" for="rfNote">Nota para quien paga (opcional; por ejemplo, si la comisión de la pasarela se devuelve o no)</label><textarea class="gw-textarea" id="rfNote" rows="3"></textarea></div>
-              <p class="gw-hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con el botón «Guardar configuración» de abajo.</p>
+              <p class="gw-hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con el botón «Guardar cambios» de abajo.</p>
             </div>
           </div>
         </details>
@@ -333,7 +333,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     {# Barra de guardado ÚNICA (R1): guarda lo de la pestaña en que estás (Diseño o Configuración). Ctrl o Cmd + S hace lo mismo. #}
     <div class="gw-savebar" id="saveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}">
       <div class="gw-savebar__status" id="saveStatus" role="status" aria-live="polite">Sin cambios por guardar</div>
-      <button type="button" class="gw-btn gw-btn--primary" id="saveBtn">Guardar diseño</button>
+      <button type="button" class="gw-btn gw-btn--primary" id="saveBtn">Guardar cambios</button>
     </div>
   </div>
 </main>
@@ -416,6 +416,7 @@ let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
 let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
 const markDirty = () => { dirty = true; namesCache = null; paintSaveBar(); };
+['fname', 'fslug'].forEach((id) => $(id).addEventListener('input', markDirty));          // nombre y dirección del formulario también quedan pendientes hasta guardar
 const activeTabName = () => { const t = document.querySelector('#tabs [aria-selected="true"]'); return t ? t.dataset.tab : 'design'; };
 // Lo que la persona ve en Estado y enlaces (estado, cupo, calendario) NO se guarda solo: queda pendiente y se aplica con el botón de guardar (mismos endpoints PUT .../status de siempre).
 const capOf = () => ($('cfgCap').value === '' ? null : +$('cfgCap').value);
@@ -434,7 +435,7 @@ function pendingParts() {
 function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendiente y guarda el diseño, la configuración, el estado, el cupo y el calendario
   const bar = $('saveBar'), tab = activeTabName(), parts = pendingParts(), pend = parts.length > 0;
   if (!bar) return;
-  bar.hidden = !(tab === 'design' || tab === 'config');
+  bar.hidden = !(tab === 'design' || tab === 'config') && !pend;          // en las demás pestañas solo aparece si hay algo pendiente (así nunca queda un cambio sin botón)
   bar.dataset.state = pend ? 'dirty' : 'idle';
   const ico = (n) => `<svg class="gw-icon" aria-hidden="true"><use href="${(bar.dataset.icons || '').replace(/"/g, '')}#i-${n}"></use></svg>`;
   const st = $('saveStatus');   // alerta clara cuando hay algo por guardar (barra de color + signo de alerta); tranquila cuando no
@@ -443,7 +444,6 @@ function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendi
   line.innerHTML = ico(pend ? 'alert' : 'check');
   line.appendChild(document.createTextNode(!pend ? 'Sin cambios por guardar' : `Hay cambios sin guardar en ${parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0]}`));
   st.appendChild(line);
-  $('saveBtn').textContent = tab === 'config' ? 'Guardar configuración' : 'Guardar diseño';
 }
 window.addEventListener('beforeunload', (e) => { if (pendingParts().length) { e.preventDefault(); e.returnValue = ''; } });
 

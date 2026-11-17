@@ -508,8 +508,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
           </div>
 
-          <!-- Turnos y filas (Fase 8): módulo propio con su botón Guardar (fuera del seguimiento de «Sin guardar»). -->
-          <div class="gw-group__item" id="queueBox" data-pnodirty data-event="{{ event.id }}">
+          <!-- Turnos y filas (Fase 8): se guarda con el «Guardar cambios» general (clave «queue»). -->
+          <div class="gw-group__item" id="queueBox" data-psave="queue" data-event="{{ event.id }}">
             <div class="gw-item-head"><h4>Turnos y filas</h4>{% call ayuda('ay_turnos', 'Turnos y filas') %}La persona escanea un QR, ve su turno (A1, B7…) en su celular y le avisa cuando la llamen. En la pantalla del televisor se ve el turno llamado. El orden puede ser por llegada, por orden de inscripción, alfabético o el que tú subas en un Excel.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="queueEnabled" {% if event.queue_enabled %}checked{% endif %}> Activar turnos y filas</label>
             <div id="queueConfig" class="gw-stack" {% if not event.queue_enabled %}hidden{% endif %}>
@@ -525,8 +525,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <p class="gw-hint">Máximo 8 filas. Con una sola letra (A) todos van en la misma fila.</p></div>
               <label class="gw-check"><input type="checkbox" id="queueShowName"> Mostrar el primer nombre en el celular (nunca la cédula; nunca a menores de edad)</label>
               <label class="gw-check"><input type="checkbox" id="queueRequireReg"> Por llegada: dar turno solo a quien ya fue acreditado</label>
-              <div class="gw-actions"><button type="button" id="queueSave" class="gw-btn gw-btn--secondary">Guardar turnos y filas</button></div>
-              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
+                            <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
             </div>
           </div>
         </section>
@@ -739,7 +738,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     (function () {          // 0140: código de la persona (QR)
         const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired');
         en.addEventListener('change', () => { rq.disabled = !en.checked; if (!en.checked) rq.checked = false; });
-        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, save: async () => {
+        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, reload: true, save: async () => {
             await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked }), 'No se pudo guardar el código del evento');
         } });
     })();
