@@ -361,7 +361,7 @@
     const pfDef = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;          // formulario de persona diseñado (apagado por defecto: sin él, nada cambia)
     const keyed = (cfg, html) => (pfDef ? `<div data-field-key="${esc(cfg.key)}">${html}</div>` : html);
     const configuredHtml = fieldConfigs.map((cfg) => keyed(cfg, (() => {
-      if (cfg.key === 'id') return cedulaRow(cfg.label) + (Object.prototype.hasOwnProperty.call(user, 'code') ? fieldRow('Código del QR', 'code', user.code, 'text', false) : '');          // 0140: solo si el evento usa código
+      if (cfg.key === 'id') return cedulaRow(cfg.label);
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
@@ -370,7 +370,7 @@
         <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" class="gw-input">
         <p class="gw-hint">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
       </div>`;
-      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key], 'text', cfg.key === 'last_name' ? !!cfg.required : true);
+      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key], 'text', (cfg.key === 'last_name' || cfg.key === 'code') ? !!cfg.required : true);          // el código (solo existe con el interruptor activo) y el apellido: obligatorios según el evento
       return configuredFieldRow(cfg);
     })())).join('');
     const isRegistered = user.status !== 'No registrado';

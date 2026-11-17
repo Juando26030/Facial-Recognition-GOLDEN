@@ -72,6 +72,7 @@ window.EVENT_ID = {{ event.id }};
 window.STAFF_ROLE = "{{ staff_role }}";
 window.EVENT_FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};
 window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
+window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};          // 17-nov-2026: con el código de la persona activo, es una variable más (texto, QR o código de barras)
 </script>
 
 <main class="golden-main" data-gw-fold>
@@ -281,6 +282,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
     ['opt_1', 'Tipo de Asistente'], ['categories', 'Categoría'],
   ];
+  if (window.EVENT_CODE_ENABLED) FIXED_VARIABLES.splice(5, 0, ['code', 'Código de la persona (QR)']);          // solo con el interruptor activo (Parámetros › Campos); va junto a la cédula
   const ALL_VARIABLES = FIXED_VARIABLES.concat(window.OPTIONAL_VARIABLES || []);
 
   let template = null;      // {id, name, width_mm, height_mm, orientation, background_type, background_value, elements}
@@ -299,7 +301,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
     return {
       id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0',
-      role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP',
+      role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', code: 'A-0001',
       extra_fields: extras, has_photo: false,
     };
   }

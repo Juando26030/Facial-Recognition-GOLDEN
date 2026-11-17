@@ -293,14 +293,14 @@
 {% macro reg_field(cfg) %}
                         <div class="gw-field badge-input-group" data-field-key="{{ cfg.key }}">
                             {% set fid = "manualIdField" if (cfg.locked and cfg.key == "id") else ("regBirth" if cfg.field_type == "date" else "regF_" ~ cfg.key) %}
-                            <label class="gw-label"{% if cfg.field_type not in ("categories", "certificate", "digital_contact", "consent", "signature", "email") %} for="{{ fid }}"{% endif %}>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key != "last_name" and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
+                            <label class="gw-label"{% if cfg.field_type not in ("categories", "certificate", "digital_contact", "consent", "signature", "email") %} for="{{ fid }}"{% endif %}>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key not in ("last_name", "code") and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
                             {% if cfg.field_type in ("categories", "certificate", "digital_contact") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "date" %}
                             <input type="date" name="{{ cfg.key }}" id="regBirth" class="gw-input gw-registro__date">
                             <p class="gw-hint">Con ella se sabe si es menor de 18 años: un menor no pasa por el reconocimiento facial (solo cédula o QR).{% if event.facial_enabled %} Obligatoria si se sube foto.{% endif %}</p>
                             {% elif cfg.locked %}
-                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" or cfg.required %} required{% endif %}>
+                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key == "code" %}maxlength="64" autocomplete="off" placeholder="Serial impreso en el QR"{% endif %}{% if cfg.key not in ("last_name", "code") or cfg.required %} required{% endif %}>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
@@ -342,14 +342,6 @@
                         </div>
                         <p class="gw-hint">Se abre la cámara: lee el código de barras del reverso o, si no lo lee, toma la foto del reverso de la cédula nueva (se leen la cédula, los nombres y los apellidos).</p>
                     </div>
-
-                    {% if event.code_enabled %}
-                    <div class="gw-field" id="regCodeBox">
-                        <label class="gw-label" for="regCode">Código del QR{% if event.code_required %} <span class="gw-required">(obligatorio)</span>{% endif %}</label>
-                        <input class="gw-input" type="text" id="regCode" name="code" maxlength="64" autocomplete="off" {% if event.code_required %}required{% endif %} placeholder="Serial impreso en el QR">
-                        <p class="gw-hint">Distinto de la cédula; no puede repetirse en el evento ni ser igual a una identificación.</p>
-                    </div>
-                    {% endif %}
 
                     <!-- Todos los campos (identidad + fijos + opcionales) en UNA lista ordenada según
                          Parámetros del Evento (reunión 2026-09-21, ítems 3a/4): etiqueta propia del

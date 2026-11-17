@@ -4,7 +4,7 @@
    Los campos salen de Parámetros › Campos; aquí solo se decide DÓNDE va cada uno y cómo se escribe. Lo obligatorio se guarda en los parámetros del evento (una sola fuente de verdad). Funciones puras (toModel / fromModel / move) probadas en Node; la pantalla
    (mount) solo usa clases .gw-* y toast.js. */
 (function (root) {
-  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['categories', 'birth_date'], EVENT_DECIDES = ['last_name'];          // el apellido lo decide el evento (Parámetros › Apellido obligatorio; app/lastname.py): aquí solo se ve
+  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['categories', 'birth_date'], EVENT_DECIDES = ['last_name', 'code'];          // el apellido lo decide el evento (Parámetros › Apellido obligatorio; app/lastname.py): aquí solo se ve
   const FIXED_TEXT = ['first_name', 'last_name', 'role', 'entity', 'opt_1'];
   const MAX_PER_ROW = 4;
   const canCase = (cfg) => ['text_short', 'text_long'].includes(cfg.field_type) && (FIXED_TEXT.includes(cfg.key) || /^opcional_\d+$/.test(cfg.key));

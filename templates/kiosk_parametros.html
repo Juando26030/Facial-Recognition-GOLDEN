@@ -461,14 +461,6 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
           </div>
 
-          <div class="gw-group__item">
-            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al escanear (registro, zonas o inventario) el sistema busca primero por identificación y luego por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
-            <div data-psave="mod_code">
-              <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
-              <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
-            </div>
-          </div>
-
           <!-- Permanencia en zonas, premio por porcentaje de estadía y escaneo automático (Fase 10): se guarda con el «Guardar cambios» general (clave «dwell» de GWParams); «Calcular» y la lista van aparte (data-pnodirty). -->
           <div class="gw-group__item" id="dwellBox" data-event="{{ event.id }}">
             <div class="gw-item-head"><h4>Permanencia, premio por estadía y escaneo automático</h4>{% call ayuda('ay_dwell', 'Permanencia y premio por estadía') %}Con el conteo activo, cada entrada y salida de una zona se suma por persona (10 min + 5 min = 15 min). Tú defines el tiempo total de referencia (el 100 %, por ejemplo las 24 h del evento). Con el premio activo puedes ver cuántas personas pasan de un porcentaje (por ejemplo 80 %), bajar la lista en Excel o CSV, habilitar su certificado y dejar ítems de inventario solo para ellas. La persona de prueba nunca cuenta.{% endcall %}</div>
@@ -541,7 +533,15 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 
         {# ====================================================================================== CAMPOS #}
         <section class="gw-tabpanel" role="tabpanel" id="grp_campos" data-group="campos" aria-labelledby="tab_campos" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">Categorías de las personas y cómo se llama, se ordena y se pide cada dato.</p></div>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">El código de la persona, las categorías y cómo se llama, se ordena y se pide cada dato.</p></div>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al activarlo aparece el campo «Código de la persona (QR)» en «Campos de la persona», en Registrar y Editar, en el formulario de persona y en el diseñador de escarapelas (para poner el QR o el código de barras con este código). Al escanear (registro, zonas, inventario o cualquier control) el sistema busca primero por identificación y luego por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
+            <div data-psave="mod_code">
+              <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
+              <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
+            </div>
+          </div>
 
           <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar y las plantillas de escarapela por categoría (editor de escarapelas). -->
           <div class="gw-group__item">
@@ -1194,7 +1194,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         tr.innerHTML = `
             <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
             <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
-            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name', 'code'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
             <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>

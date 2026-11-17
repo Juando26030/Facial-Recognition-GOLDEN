@@ -586,7 +586,7 @@ def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     out = []
     for cfg in parametros.field_configs_for_event(db, event):
         key = cfg["key"]
-        if key in ("categories", "certificate", "digital_contact") or cfg["field_type"] == "signature":
+        if key in ("categories", "certificate", "digital_contact", "code") or cfg["field_type"] == "signature":
             continue
         kind = {"boolean": "checkbox", "consent": "checkbox", "email": "email"}.get(cfg["field_type"], cfg["field_type"])
         if key == "email":

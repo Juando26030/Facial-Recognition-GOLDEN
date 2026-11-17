@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app import audit_actions, crypto, form_client, reprint
+from app import audit_actions, crypto, form_client, person_code, reprint
 from app.timeutil import utcnow
 from app.eventpeople import require_person_of_event
 from app.storage import badge_asset_key, get_storage, photo_key
@@ -366,6 +366,7 @@ def get_badge_print_data(
         "optional_field_labels": event.get_optional_labels(),
         "has_photo": has_photo,
         "categories": ", ".join(attendee.get_categories()) if attendee else "",
+        **({"code": (attendee.code if attendee and attendee.code else "")} if event.code_enabled else {}),          # 17-nov-2026: el código de la persona (QR) como variable de la escarapela; la clave solo existe con el interruptor activo
         "template_category": template_category_for_user(event, db, user.id),  # qué plantilla usar (ítem 14)
     }
 
