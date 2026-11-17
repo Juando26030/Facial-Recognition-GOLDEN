@@ -5,7 +5,7 @@
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 {% from "_gw_skeleton.html" import skeleton %}
         <section class="gw-tabpanel" role="tabpanel" id="inventario" aria-labelledby="tab_inventario" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Inventario</h2><p class="gw-tabpanel__lead">El catálogo que usan Almacén y los eventos. Los productos activos aparecen solos en el inventario de cada evento nuevo o editado. Lo que hagas aquí actúa al instante.</p></div>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Inventario</h2><p class="gw-tabpanel__lead">El catálogo que usan Almacén y los eventos. Los productos activos aparecen solos en el inventario de cada evento nuevo o editado. Crear, archivar y eliminar actúan al instante; renombrar categorías y editar productos se guarda con «Guardar cambios».</p></div>
 
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Categorías</h4>{% call ayuda('ay_invcat', 'Categorías') %}Agrupan los productos (por ejemplo «Computadores» o «Papelería»). Un evento no puede pasar a «En proceso» si tiene productos sin categoría. Una categoría con productos activos no se puede archivar.{% endcall %}</div>

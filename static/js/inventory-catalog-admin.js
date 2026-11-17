@@ -13,6 +13,9 @@
   let showArchived = false;
   let editing = null;          // id del producto que se edita (null = crear)
   const PROD_TITLE = $('invProdFormTitle').textContent;
+  const pendingCat = new Map();          // id -> nombre nuevo: renombrar queda PENDIENTE hasta «Guardar cambios» (barra única de la pantalla)
+  const GWP = () => window.GWParams || null;
+  const dirty = (key) => { const g = GWP(); if (g) g.markDirty(key); };
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -30,13 +33,15 @@
   function catRow(c) {
     const btns = [];
     if (!c.archived) {
-      btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cat-rename="${c.id}" data-name="${esc(c.name)}" aria-label="Renombrar ${esc(c.name)}">${icon('edit')} Renombrar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-cat-archive="${c.id}" data-name="${esc(c.name)}" aria-label="Archivar ${esc(c.name)}">${icon('trash')} Archivar</button>`);
     } else {
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cat-restore="${c.id}" aria-label="Restaurar ${esc(c.name)}">${icon('undo')} Restaurar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-cat-del="${c.id}" data-name="${esc(c.name)}" aria-label="Eliminar definitivamente ${esc(c.name)}">${icon('trash')} Eliminar definitivamente</button>`);
     }
-    return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(c.name)}</span>${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
+    const nameVal = pendingCat.has(c.id) ? pendingCat.get(c.id) : c.name;
+    const title = c.archived ? `<span class="gw-card-row__title">${esc(c.name)}</span>`
+      : `<div class="gw-field gw-field--grow"><label class="gw-label" for="invCatName${c.id}">Nombre de la categoría</label><input class="gw-input" type="text" id="invCatName${c.id}" maxlength="80" value="${esc(nameVal)}" data-cat-name="${c.id}" autocomplete="off"></div>`;
+    return `<article class="gw-card-row"><div class="gw-card-row__head">${title}${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
       <p class="gw-card-row__meta">${c.archived ? 'Archivada' : (c.products === 1 ? '1 producto activo' : c.products + ' productos activos')}</p><div class="gw-card-row__actions">${btns.join('')}</div></article>`;
   }
 
@@ -82,7 +87,7 @@
   function resetProductForm() {
     editing = null;
     $('invProdName').value = ''; $('invProdSku').value = ''; $('invProdStock').value = ''; $('invProdFields').value = ''; $('invProdUnit').value = 'unidad'; $('invProdCat').value = '';
-    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = PROD_TITLE;
+    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdBtn').hidden = false; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = PROD_TITLE;
     root.dispatchEvent(new CustomEvent('gw:product-form-reset'));
   }
 
@@ -93,32 +98,58 @@
     try { await busy($('invCatBtn'), () => send('/api/inventory/categories', 'POST', { name })); $('invCatName').value = ''; showToast(`Categoría «${name}» creada`, 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
   });
 
+  /* Crear un producto es un acto aparte (botón «Crear producto»). EDITAR uno existente es una edición: el formulario queda pendiente y se guarda con la barra única («Guardar cambios»). */
+  async function saveProduct() {
+    const body = { name: $('invProdName').value.trim(), unit: $('invProdUnit').value.trim(), sku: $('invProdSku').value.trim(), stock: $('invProdStock').value.trim(), category_id: $('invProdCat').value || null, fields: parseFields($('invProdFields').value) };
+    if (!body.name) throw new Error('Escribe el nombre del producto');
+    const wasEditing = !!editing;
+    const saved = await (editing ? send(`/api/inventory/products/${editing}`, 'PATCH', body) : send('/api/inventory/products', 'POST', body));
+    const detail = { id: saved && saved.id, created: !wasEditing, work: null };
+    root.dispatchEvent(new CustomEvent('gw:product-saved', { detail }));          // Almacén (si está activo) pone en detail.work lo suyo: control, fila, foto
+    if (detail.work) await detail.work;
+    resetProductForm(); load();
+    return { wasEditing, name: body.name };
+  }
   $('invProdForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const body = { name: $('invProdName').value.trim(), unit: $('invProdUnit').value.trim(), sku: $('invProdSku').value.trim(), stock: $('invProdStock').value.trim(), category_id: $('invProdCat').value || null, fields: parseFields($('invProdFields').value) };
-    if (!body.name) { showToast('Escribe el nombre del producto', 'error'); return; }
+    if (editing && GWP()) { GWP().saveKey('inventario-producto'); return; }          // Enter al editar = «Guardar cambios»
     try {
-      const wasEditing = !!editing;
-      const saved = await busy($('invProdBtn'), () => (editing ? send(`/api/inventory/products/${editing}`, 'PATCH', body) : send('/api/inventory/products', 'POST', body)));
-      showToast(wasEditing ? 'Producto actualizado' : `Producto «${body.name}» creado`, 'success');
-      const detail = { id: saved && saved.id, created: !wasEditing, work: null };
-      root.dispatchEvent(new CustomEvent('gw:product-saved', { detail }));          // Almacén (si está activo) pone en detail.work lo suyo: control, fila, foto
-      if (detail.work) await detail.work;
-      resetProductForm(); load();
+      const r = await busy($('invProdBtn'), saveProduct);
+      showToast(`Producto «${r.name}» creado`, 'success');
     } catch (err) { showToast(err.message, 'error'); }
   });
-  $('invProdCancel').addEventListener('click', resetProductForm);
+  const prodForm = $('invProdForm');
+  const onProdFormEdit = (e) => { if (editing && e.target.closest('#invProdForm')) dirty('inventario-producto'); };
+  prodForm.addEventListener('input', onProdFormEdit);
+  prodForm.addEventListener('change', onProdFormEdit);
+  if (GWP()) {
+    GWP().register({ key: 'inventario-producto', label: 'Producto en edición', order: 30, save: async () => { if (editing) await saveProduct(); } });
+    GWP().register({ key: 'inventario-categorias', label: 'Nombres de categorías', order: 25, save: async () => {
+      const fails = [];
+      for (const [id, name] of Array.from(pendingCat)) {
+        const cat = catalog.categories.find((c) => c.id === id);
+        if (!cat || cat.archived || name.trim() === cat.name) { pendingCat.delete(id); continue; }
+        if (!name.trim()) { fails.push('Una categoría quedó sin nombre'); continue; }
+        try { await send(`/api/inventory/categories/${id}`, 'PATCH', { name: name.trim() }); pendingCat.delete(id); }
+        catch (err) { fails.push(cat.name + ': ' + err.message); }
+      }
+      await load();
+      if (fails.length) throw new Error(fails.join(' · '));
+    } });
+  }
+  root.addEventListener('input', (e) => {
+    const t = e.target.closest('[data-cat-name]'); if (!t) return;
+    pendingCat.set(Number(t.dataset.catName), t.value);
+    dirty('inventario-categorias');
+  });
+  $('invProdCancel').addEventListener('click', () => { resetProductForm(); if (GWP()) GWP().markClean('inventario-producto'); });          // «Cancelar edición» descarta lo pendiente del formulario
   $('invShowArchived').addEventListener('change', (e) => { showArchived = e.target.checked; paint(); });
 
   root.addEventListener('click', async (e) => {
     const t = (sel) => e.target.closest(sel);
     if (t('[data-inv-retry]')) { load(); return; }
     let b;
-    if ((b = t('[data-cat-rename]'))) {
-      const name = await showPrompt('Nuevo nombre de la categoría:', { title: 'Renombrar categoría', defaultValue: b.dataset.name, confirmLabel: 'Guardar' });
-      if (!name || name === b.dataset.name) return;
-      try { await busy(b, () => send(`/api/inventory/categories/${b.dataset.catRename}`, 'PATCH', { name })); showToast('Categoría renombrada', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
-    } else if ((b = t('[data-cat-archive]'))) {
+    if ((b = t('[data-cat-archive]'))) {
       if (!(await showConfirm(`¿Archivar la categoría «${esc(b.dataset.name)}»? No se puede si tiene productos activos.`, { confirmLabel: 'Archivar' }))) return;
       try { await busy(b, () => send(`/api/inventory/categories/${b.dataset.catArchive}/archive`, 'POST')); showToast('Categoría archivada', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
     } else if ((b = t('[data-cat-restore]'))) {
@@ -131,7 +162,7 @@
       if (!p) return;
       editing = p.id;
       $('invProdName').value = p.name; $('invProdSku').value = p.sku || ''; $('invProdStock').value = p.stock == null ? '' : String(p.stock); $('invProdUnit').value = p.unit; $('invProdCat').value = p.category_id == null ? '' : String(p.category_id); $('invProdFields').value = fieldsToText(p.fields);
-      $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false; $('invProdFormTitle').textContent = `Editando «${p.name}»`;
+      $('invProdBtn').hidden = !!GWP(); $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false;          // con barra única el guardado es «Guardar cambios» $('invProdFormTitle').textContent = GWP() ? `Editando «${p.name}» (se guarda con «Guardar cambios»)` : `Editando «${p.name}»`;
       root.dispatchEvent(new CustomEvent('gw:product-edit', { detail: { id: p.id } }));
       $('invProdName').focus();
     } else if ((b = t('[data-prod-archive]'))) {
