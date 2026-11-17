@@ -37,4 +37,5 @@ Verificar en el navegador (`/sistema` en verde, las pantallas tocadas) y avisar 
 ONEDRIVE_DRIVE_ID=b!...            # id de la biblioteca «Documentos» del sitio Respaldos GoldenWeb
 OFFSITE_FOLDER_URL=https://goldenlogisticas.sharepoint.com/sites/RespaldosGoldenWeb/Documentos%20compartidos/Base%20de%20datos
 ```
+Para Gastos (costos de infraestructura) el mismo archivo lleva `GCP_BILLING_EXPORT_TABLE=goldenweb-prod.billing_export.gcp_billing_export_v1_01D3FA_9264E8_E8058D` y `NEON_ORG_ID=<id de la organización en Neon>` (no son secretos; la llave de Neon va en el secreto `golden-neon-api-key`).
 `OFFSITE_FOLDER_URL` alimenta Configuración › Copias de seguridad (botón «Abrir carpeta de copias», solo admin y super admin).

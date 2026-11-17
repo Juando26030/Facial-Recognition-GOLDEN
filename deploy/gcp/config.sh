@@ -128,7 +128,7 @@ wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET 
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET
 wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET wompi-sandbox-private-key:WOMPI_SANDBOX_PRIVATE_KEY
 azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER
-payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY neon-api-key:NEON_API_KEY"   # neon-api-key: Gastos › uso de Neon (opcional; se omite si el secreto no existe)
 # E8: secretos por servicio (solo cuentan con SPLIT_SERVICE_ACCOUNTS=1; sin él cada servicio recibe APP_SECRETS completo, como hasta hoy). `web` (panel, cobros y reembolsos, correos) los lleva todos.
 # `publico` (abierto a internet: formularios, pagos, aceptación, escarapela digital) NO lleva las credenciales de correo de Microsoft ni la llave PRIVADA de Wompi (reembolsos): solo base, claves de la app,
 # ops-token y las claves públicas/de firma de eventos de Wompi. `biometria` NO lleva Microsoft ni nada de Wompi (el correo y los pagos salen por la cola general, que ejecuta `web`).

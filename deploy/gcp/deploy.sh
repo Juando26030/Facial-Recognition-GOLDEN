@@ -82,6 +82,8 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     echo "PUBLIC_BASE_URL: \"$PUBLIC_BASE_URL\""
     [ -z "${PUBLIC_FORMS_BASE_URL:-}" ] || echo "PUBLIC_FORMS_BASE_URL: \"$PUBLIC_FORMS_BASE_URL\""      # D2.5k: sin valor, los enlaces siguen siendo /f/<evento>/<formulario>
     [ -z "${OFFSITE_FOLDER_URL:-}" ] || echo "OFFSITE_FOLDER_URL: \"$OFFSITE_FOLDER_URL\""    # enlace a la carpeta de las copias semanales (Configuración › Copias de seguridad); no es secreto
+    [ -z "${GCP_BILLING_EXPORT_TABLE:-}" ] || echo "GCP_BILLING_EXPORT_TABLE: \"$GCP_BILLING_EXPORT_TABLE\""    # Gastos › Google Cloud: proyecto.conjunto.tabla de la exportación a BigQuery (web y Job de ops)
+    [ -z "${NEON_ORG_ID:-}" ] || echo "NEON_ORG_ID: \"$NEON_ORG_ID\""                                              # Gastos › uso de Neon (la llave va por secreto)
     echo "STORAGE_BACKEND: \"gcs\""
     echo "GCS_BUCKET: \"$APP_BUCKET\""
     echo "GCS_PREFIX: \"$APP_PREFIX\""
@@ -140,7 +142,7 @@ deploy_service() {   # nombre corto (web|publico|biometria), nombre, módulo, cp
     --env-vars-file "$TMP/$svc.yaml" ${secret_flags:+--set-secrets "$secret_flags"} "${probes[@]}" --quiet
 }
 # `web` (estaciones de cédula): límite alto con jitter grande para que los reciclajes de los procesos no coincidan bajo carga uniforme. Biometría: sin tocar (se mide en una prueba larga).
-deploy_service web       "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000 "CRM_ENABLED=$CRM_ENABLED" "ALMACEN_ENABLED=$ALMACEN_ENABLED" "CRM_IMPORT_APPLY=$CRM_IMPORT_APPLY" ${CRM_IMPORT_OWNER_USERNAME:+"CRM_IMPORT_OWNER_USERNAME=$CRM_IMPORT_OWNER_USERNAME"} ${GCP_BILLING_EXPORT_TABLE:+"GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE"}      # Fase 10 B: el botón «Importar Google ahora» y el estado de «Conexiones» del panel de gastos corren en `web`
+deploy_service web       "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000 "CRM_ENABLED=$CRM_ENABLED" "ALMACEN_ENABLED=$ALMACEN_ENABLED" "CRM_IMPORT_APPLY=$CRM_IMPORT_APPLY" ${CRM_IMPORT_OWNER_USERNAME:+"CRM_IMPORT_OWNER_USERNAME=$CRM_IMPORT_OWNER_USERNAME"}      # Fase 10 B: el botón «Importar Google ahora» y el estado de «Conexiones» del panel de gastos corren en `web`
 # GUNICORN_MAX_REQUESTS=0 SOLO aquí (corrida 9: con el límite por defecto los 20 procesos de las 10 instancias se reciclaron casi a la vez en pleno pico y cortaron conexiones). El público no lleva
 # dlib; `web` y `biometria` conservan el reciclaje. Por ir aquí (y no en common.yaml, que es de los tres servicios) sobrevive a cada despliegue de CI. Vigilar la memoria: docs/15.
 deploy_service publico   "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=0
