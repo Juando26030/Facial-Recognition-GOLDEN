@@ -1,4 +1,4 @@
-/* CRM - Diseñador del PDF de cotización (solo admin). Bloques que se agregan (clic o arrastrando), se ordenan (flechas o arrastrando) y se ajustan; la vista previa es el PDF REAL que arma el servidor.
+/* CRM - Diseñador del PDF de cotización (solo admin). El diseño se guarda con la barra única de la pantalla (GWParams, bloque «plantilla»). Bloques que se agregan (clic o arrastrando), se ordenan (flechas o arrastrando) y se ajustan; la vista previa es el PDF REAL que arma el servidor.
    Sin temporizadores propios (la espera de la vista previa usa CRMX.debounce de crm_live.js). Todo texto de personas con textContent / .value. */
 (function () {
   "use strict";
@@ -22,7 +22,7 @@
 
   /* ---------------------------------------------------------------- estado
      «dirty» avisa que hay cambios sin guardar; cada cambio refresca la vista previa (con una espera corta para juntar lo que se escribe). */
-  function setDirty(on) { dirty = on; $("plDirty").hidden = !on; $("plSave").disabled = !on || !layout; }
+  function setDirty(on) { dirty = on; if (window.GWParams) { if (on) GWParams.markDirty("plantilla"); else GWParams.markClean("plantilla"); } }
   const refreshSoon = X.debounce(() => preview(), 900);
   function changed() { setDirty(true); refreshSoon(); }
   function newId() { const used = new Set(layout.blocks.map((b) => b.id)); let id; do { id = "b" + (nextId++); } while (used.has(id)); return id; }
@@ -222,15 +222,17 @@
   $("plQuote").addEventListener("change", preview);
 
   /* ---------------------------------------------------------------- guardar y empezar */
-  $("plSave").addEventListener("click", (e) => busy(e.currentTarget, async () => {
-    try { const saved = await api("PUT", BASE, { layout }); tpl = saved; layout = clone(saved.layout); setDirty(false); paintBlocks(); showToast("Diseño guardado. Las cotizaciones nuevas y las que descargues usan este diseño.", "success"); preview(); }
-    catch (x) { showToast(x.message, "error"); }
-  }));
+  /* Lo guarda la barra única. Lanza Error(mensaje) si falla. */
+  async function saveLayout() {
+    const saved = await api("PUT", BASE, { layout });
+    tpl = saved; layout = clone(saved.layout); dirty = false; paintBlocks(); preview();
+  }
+  if (window.GWParams) GWParams.register({ key: "plantilla", label: "Diseño del PDF", order: 10, save: saveLayout });
   async function start(name) { try { const s = await api("GET", "/api/crm/doc-layout/starter" + qs({ name })); layout = s.layout; nextId = layout.blocks.length + 1; selected = null; show(); setDirty(true); preview(); } catch (x) { showToast(x.message, "error"); } }
   $("plStart").addEventListener("click", (e) => { const b = e.target.closest("[data-start]"); if (b) start(b.dataset.start); });
   $("plCopy").addEventListener("click", (e) => busy(e.currentTarget, async () => {
     const from = Number($("plCopyFrom").value); if (!from) return;
-    try { const r = await api("POST", BASE + "/copy-layout", { from_id: from }); layout = r.layout; nextId = layout.blocks.length + 1; selected = null; show(); setDirty(true); preview(); showToast("Diseño copiado. Revísalo y pulsa «Guardar diseño».", "success"); }
+    try { const r = await api("POST", BASE + "/copy-layout", { from_id: from }); layout = r.layout; nextId = layout.blocks.length + 1; selected = null; show(); setDirty(true); preview(); showToast("Diseño copiado. Revísalo y pulsa «Guardar cambios».", "success"); }
     catch (x) { showToast(x.message, "error"); }
   }));
   function fillCopy(list) {
@@ -238,10 +240,9 @@
     others.forEach((t) => { const o = el("option", null, t.name); o.value = String(t.id); s.appendChild(o); }); $("plCopyWrap").hidden = !others.length;
   }
   $("plClassic").addEventListener("click", async () => {
-    if (!(await showConfirm("Se reemplaza el diseño que ves por uno nuevo (no se guarda hasta que pulses «Guardar diseño»). ¿Empezar de nuevo?", { confirmLabel: "Sí, empezar de nuevo" }))) return;
+    if (!(await showConfirm("Se reemplaza el diseño que ves por uno nuevo (no se guarda hasta que pulses «Guardar cambios»). ¿Empezar de nuevo?", { confirmLabel: "Sí, empezar de nuevo" }))) return;
     $("plStart").hidden = false; $("plEditor").hidden = true;
   });
-  window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
   function show() { $("plStart").hidden = true; $("plEditor").hidden = false; paintPalette(); paintBlocks(); }
 
   async function loadQuotes() {
