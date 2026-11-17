@@ -19,7 +19,6 @@
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}" defer></script>{% endif %}
     {% if almacen_on %}<link rel="stylesheet" href="{{ url_for('static', path='css/gw-almacen.css') }}">
-    <script src="{{ url_for('static', path='js/params-save.js') }}" defer></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/almacen-page.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/almacen-moves.js') }}" defer></script>
@@ -121,14 +120,9 @@
       <div class="gw-invcal__detail" id="invCalDetail"></div>
     </section>
 
-    {# Almacén (ux/almacen): UNA barra de guardado para lo editable de «Almacén» (checklist) y de «Administrar catálogo» (seriales). El envoltorio es el paramsRoot de la pantalla; la lista de pestañas queda FUERA
-       (params-save.js solo maneja pestañas dentro de su raíz). almacen-page.js muestra la barra solo con esas pestañas abiertas o con cambios pendientes. Sin Almacén activo no existe nada de esto. #}
-    {% if almacen_on %}<div id="paramsRoot" class="gw-stack-lg">
-    {% include "_almacen_panel.html" %}
-
+    {# Almacén y Administrar catálogo comparten el paramsRoot y la barra única de esta pantalla (almacen-page.js muestra la barra con esas pestañas abiertas o con cambios pendientes). #}
+    {% if almacen_on %}{% include "_almacen_panel.html" %}{% endif %}
     {% if inv_manager %}{% include "_inventory_catalog_admin.html" %}{% endif %}
-    {% include "_gw_savebar.html" %}
-    </div>{% elif inv_manager %}{% include "_inventory_catalog_admin.html" %}{% endif %}
 
     <section id="invPanel" hidden aria-live="polite">
       <div class="gw-row gw-row--between"><h2 class="gw-section-title" id="invPanelTitle"></h2>

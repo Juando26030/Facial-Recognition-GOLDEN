@@ -46,15 +46,5 @@
   });
   if (tab) tab.addEventListener('gw:tabshow', () => { const s = $('almScan'); if (s) s.focus(); });
 
-  /* ---- barra de guardado única (params-save.js): vive dentro de #paramsRoot, que envuelve el panel «Almacén» y «Administrar catálogo». Solo se ve con una de esas dos pestañas abiertas, o si quedan
-     cambios sin guardar (así nunca se pierden de vista). Los bloques se registran por su clave: almacen-checklist (almacen-moves.js) y almacen-seriales (almacen-catalog.js). */
-  const wrap = $('paramsRoot');
-  const bar = $('paramsSaveBar');
-  const adm = $('inventario');
-  if (wrap && bar) {
-    const sync = () => { bar.hidden = root.hidden && !(adm && !adm.hidden) && !(window.GWParams && window.GWParams.hasDirty()); };
-    const mo = new MutationObserver(sync);
-    [root, adm, bar].forEach((el) => { if (el) mo.observe(el, { attributes: true, attributeFilter: ['hidden', 'data-state'] }); });
-    sync();
-  }
+  /* La barra de guardado única es de toda la pantalla (inventario.html); los bloques de Almacén se registran por clave: almacen-checklist (almacen-moves.js) y almacen-seriales (almacen-catalog.js). */
 })();
