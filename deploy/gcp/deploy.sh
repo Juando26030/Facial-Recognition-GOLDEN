@@ -81,6 +81,7 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     echo "PERSON_FORM_ENABLED: \"1\""   # Plan 4 (formulario de persona): encendido en staging y producción (5-nov-2026, orden de Juan David). Cada evento lo activa aparte en su diseño: sin activarlo, nada cambia.
     echo "PUBLIC_BASE_URL: \"$PUBLIC_BASE_URL\""
     [ -z "${PUBLIC_FORMS_BASE_URL:-}" ] || echo "PUBLIC_FORMS_BASE_URL: \"$PUBLIC_FORMS_BASE_URL\""      # D2.5k: sin valor, los enlaces siguen siendo /f/<evento>/<formulario>
+    [ -z "${OFFSITE_FOLDER_URL:-}" ] || echo "OFFSITE_FOLDER_URL: \"$OFFSITE_FOLDER_URL\""    # enlace a la carpeta de las copias semanales (Configuración › Copias de seguridad); no es secreto
     echo "STORAGE_BACKEND: \"gcs\""
     echo "GCS_BUCKET: \"$APP_BUCKET\""
     echo "GCS_PREFIX: \"$APP_PREFIX\""

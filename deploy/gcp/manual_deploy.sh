@@ -19,6 +19,9 @@ export PROJECT_ID="${2:?Falta el ID del proyecto de Google Cloud}"
 # OJO: config.sh deja FIREBASE_SITE vacío en staging (FIREBASE_DEPLOY=0), pero el workflow SÍ publica Hosting y fija PUBLIC_BASE_URL; por eso aquí se guarda el sitio
 # en HOSTING_SITE antes de cargar config.sh y PUBLIC_BASE_URL se exporta antes. (Primera vez en staging, 5-nov-2026: sin esto los servicios quedaron con la URL run.app
 # como dirección pública y Hosting sin publicar.)
+# Valores NO secretos que cada despliegue debe llevar (ONEDRIVE_DRIVE_ID, OFFSITE_FOLDER_URL…): se guardan una vez en ~/.golden-<entorno>.env (líneas CLAVE=valor) y se cargan aquí,
+# para que no dependan de que alguien los escriba delante del comando (si faltan, el Job pierde la copia semanal). Ver deploy/gcp/README.md.
+if [ -f "$HOME/.golden-${ENV_NAME}.env" ]; then set -a; . "$HOME/.golden-${ENV_NAME}.env"; set +a; echo "Cargado ~/.golden-${ENV_NAME}.env"; fi
 PROJECT_NUMBER_="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')" || exit 1
 if [ "$ENV_NAME" = production ]; then
   HOSTING_SITE="${FIREBASE_SITE:-golden-app-${PROJECT_NUMBER_}}"; export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"
