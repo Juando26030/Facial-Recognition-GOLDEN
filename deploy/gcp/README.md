@@ -29,3 +29,11 @@ La copia semanal usa el sitio de SharePoint «Respaldos GoldenWeb»; el id de su
 
 ## 5. Después de desplegar
 Verificar en el navegador (`/sistema` en verde, las pantallas tocadas) y avisar a Juan David. Migraciones: las corre el Job `golden-migrate` dentro del despliegue; revisa en el commit si trae `alembic/versions/*` nuevas ANTES de desplegar a producción y dilo.
+
+## 6. Valores no secretos del despliegue: `~/.golden-<entorno>.env`
+`manual_deploy.sh` carga, si existe, `~/.golden-production.env` (o `~/.golden-staging.env`) con líneas `CLAVE=valor`. Así `ONEDRIVE_DRIVE_ID` y `OFFSITE_FOLDER_URL` no dependen de que alguien las escriba delante del comando. Se crea UNA vez en Cloud Shell (el HOME de Cloud Shell persiste). Ejemplo (los valores los tiene Juan David; no van al repo):
+```
+ONEDRIVE_DRIVE_ID=b!...            # id de la biblioteca «Documentos» del sitio Respaldos GoldenWeb
+OFFSITE_FOLDER_URL=https://goldenlogisticas.sharepoint.com/sites/RespaldosGoldenWeb/Documentos%20compartidos/Base%20de%20datos
+```
+`OFFSITE_FOLDER_URL` alimenta Configuración › Copias de seguridad (botón «Abrir carpeta de copias», solo admin y super admin).

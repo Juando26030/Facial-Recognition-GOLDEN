@@ -79,6 +79,7 @@
         <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
         {% if is_super %}<button type="button" class="gw-tab" role="tab" id="tab_tipos" data-tab="tipos" aria-controls="tipos" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Tipos de evento</span><span class="gw-tab__sum">Categorías del calendario</span></button>{% endif %}
         {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
+        {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_copias" data-tab="copias" aria-controls="copias" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Copias de seguridad</span><span class="gw-tab__sum">Dónde está la copia semanal</span></button>{% endif %}
         <button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
@@ -236,6 +237,21 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           <label class="gw-check"><input type="checkbox" id="showArchivedTypes"> Ver archivados</label>
           <div class="gw-cards gw-estado__list" id="tiposList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando tipos de evento…') }}</div>
         </section>{% endif %}
+
+        {% if is_admin_plus %}
+        <section class="gw-tabpanel" role="tabpanel" id="copias" aria-labelledby="tab_copias" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Copias de seguridad</h2><p class="gw-tabpanel__lead">Cada semana el sistema toma el respaldo más reciente de la base, lo cifra y lo guarda en una carpeta de Microsoft 365, fuera de Google. Solo se puede abrir con la llave de cifrado.</p></div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Carpeta de las copias</h4></div>
+            {% if offsite_folder_url %}
+            <p><a class="gw-btn gw-btn--primary" href="{{ offsite_folder_url }}" target="_blank" rel="noopener noreferrer">{{ ic('sheet', 'gw-icon--sm') }} Abrir carpeta de copias</a></p>
+            <p class="gw-hint">Se abre en Microsoft 365 y pide tu cuenta de la empresa. Si no tienes acceso, pídeselo al administrador de Microsoft 365. El estado de la última copia está en «Estado del sistema».</p>
+            {% else %}
+            <p class="gw-hint">El enlace aún no está configurado en este entorno (variable <code>OFFSITE_FOLDER_URL</code>). El estado de la copia se ve en «Estado del sistema».</p>
+            {% endif %}
+          </div>
+        </section>
+        {% endif %}
 
         <section class="gw-tabpanel" role="tabpanel" id="alertas" aria-labelledby="tab_alertas" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Alertas del sistema</h2><p class="gw-tabpanel__lead">Si alguien borra muchos registros de golpe (eventos, formularios, inscripciones, personas, archivos), el sistema envía un correo al instante. El correo dice quién, qué, cuántos y cuándo, y <strong>nunca</strong> incluye datos de los asistentes. La limpieza automática de privacidad no cuenta como alerta.</p></div>

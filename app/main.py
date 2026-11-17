@@ -779,6 +779,7 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+        "offsite_folder_url": (os.getenv("OFFSITE_FOLDER_URL", "").strip() if os.getenv("OFFSITE_FOLDER_URL", "").strip().startswith("https://") else ""),   # carpeta de las copias semanales (no es secreto)
         "can_local_installer": local_installer.roles_allowed({request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))),      # tarjeta «Servidor local»: todos menos digitador y cliente
     })
 
