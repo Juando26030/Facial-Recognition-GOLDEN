@@ -11,6 +11,7 @@
   const busy = (btn, fn) => (window.GW && window.GW.busy ? window.GW.busy(btn, fn) : fn());
   let state = null;
   let loaded = false;
+  let settingsTouched = false;          // hay cambios del umbral sin guardar: no se pisan al recargar la lista de destinatarios
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo completar la acción'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -28,12 +29,16 @@
 
   const empty = (title, text) => `<div class="gw-state" role="status"><p class="gw-state__title">${title}</p><p class="gw-state__text">${text}</p></div>`;
 
-  function paint() {
+  function paintSettings() {
     const s = state.settings;
     $('alEnabled').checked = !!s.enabled;
     $('alPerAction').value = s.per_action;
     $('alWindowCount').value = s.window_count;
     $('alWindowMinutes').value = s.window_minutes;
+  }
+
+  function paint() {
+    if (!settingsTouched) paintSettings();
     $('alList').innerHTML = state.recipients.length ? state.recipients.map(recipientRow).join('') : empty('Nadie recibe las alertas', 'Agrega al menos un correo para enterarte de un borrado masivo.');
     const opts = state.staff_options;
     $('alStaff').innerHTML = opts.length ? opts.map((o) => `<option value="${o.id}">${esc(o.label)} · ${esc(o.role)}${o.has_email ? '' : ' (sin correo)'}</option>`).join('') : '<option value="">No hay más cuentas para agregar</option>';
@@ -50,15 +55,18 @@
     }
   }
 
-  $('alSettingsForm').addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    busy($('alSettingsBtn'), async () => {
-      try {
+  /* El umbral es una edición: queda pendiente (la barra única de Configuración, static/js/params-save.js) y se guarda con «Guardar cambios». */
+  $('alSettingsForm').addEventListener('input', () => { settingsTouched = true; });
+  $('alSettingsForm').addEventListener('change', () => { settingsTouched = true; });
+  if (window.GWParams) {
+    GWParams.register({
+      key: 'alertas', label: 'Alertas del sistema', order: 30,
+      save: async () => {
         const d = await send('/api/system-alerts/settings', 'PUT', { enabled: $('alEnabled').checked, per_action: +$('alPerAction').value || 0, window_count: +$('alWindowCount').value || 0, window_minutes: +$('alWindowMinutes').value || 0 });
-        state.settings = d.settings; paint(); showToast('Umbral guardado', 'success');
-      } catch (e) { fail(e); }
+        state.settings = d.settings; settingsTouched = false; paintSettings();
+      },
     });
-  });
+  }
 
   $('alEmailForm').addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -87,8 +95,10 @@
     const del = ev.target.closest('[data-al-del]');
     try {
       if (tog) {
-        await send('/api/system-alerts/recipients/' + tog.dataset.alToggle, 'PATCH', { active: tog.dataset.active !== '1' });
+        const on = tog.dataset.active !== '1';
+        await send('/api/system-alerts/recipients/' + tog.dataset.alToggle, 'PATCH', { active: on });
         await load();
+        showToast(on ? 'Destinatario activado' : 'Destinatario pausado', 'success');
       } else if (del) {
         const ok = await showConfirm('¿Quitar a ' + esc(del.dataset.name) + ' de las alertas? Dejará de recibir los avisos de borrado masivo.', { confirmLabel: 'Quitar' });
         if (!ok) return;

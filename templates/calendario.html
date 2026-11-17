@@ -29,6 +29,7 @@
     <script src="{{ url_for('static', path='js/event-actions.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
+    {% if assign_calendar %}<script src="{{ url_for('static', path='js/params-save.js') }}"></script>{% endif %}
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -52,7 +53,7 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="gw-container cal-shell gw-stack-lg" data-gw-tour="calendario" data-gw-tour-auto>
+  <div class="gw-container cal-shell gw-stack-lg"{% if assign_calendar %} id="paramsRoot" data-tabs-key="calendario"{% endif %} data-gw-tour="calendario" data-gw-tour-auto>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">Panel</p>
@@ -146,6 +147,12 @@
     <div id="calBody" aria-busy="false">{{ skeleton('block', label='Cargando el calendario…') }}</div>
   </div>
 </main>
+{% if assign_calendar %}{# Asignar coordinadores: las asignaciones quedan pendientes y se guardan con la barra única (solo se ve en ese modo o si quedó algo sin guardar). #}
+<div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+  <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+  <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+  <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+</div>{% endif %}
 
 {% include "_event_edit_modal.html" %}
 
@@ -384,6 +391,7 @@ function setCalMode(m) {
   calMode = (CRM_CAL && m === 'crm') ? 'crm' : (ASSIGN_CAL && m === 'assign') ? 'assign' : 'events';
   const crm = calMode === 'crm';
   const ab = document.getElementById('assignBar'); if (ab) ab.hidden = calMode !== 'assign';
+  syncAssignBar();
   if (calMode !== 'assign') selectedCoord = null;
   document.querySelectorAll('#calMode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === calMode ? 'true' : 'false'));
   const set = (id, hide) => { const n = document.getElementById(id); if (n) n.hidden = hide; };
@@ -457,8 +465,17 @@ function assignState(e) {
   return days < 2 ? 'urgent' : 'open';          // sin coordinador y empieza en menos de 2 días (o ya empezó) = rojo
 }
 const ASSIGN_LABEL = { ok: 'Con coordinador', open: 'Sin coordinador', urgent: 'Sin coordinador y empieza en menos de 2 días', none: 'Finalizado' };
-function assignChip(e) {
-  const st = assignState(e), who = e.coordinator_name ? `Coordina: ${e.coordinator_name}` : ASSIGN_LABEL[st];
+// Asignaciones pendientes (eventId -> id del coordinador, o null = quitar): se ven en pantalla marcadas «sin guardar» y se guardan con la barra única.
+const pendingAssign = new Map();
+function withPending(e) {
+  if (!pendingAssign.has(e.id)) return e;
+  const cid = pendingAssign.get(e.id), c = coordList.find((x) => x.id === cid);
+  return Object.assign({}, e, { coordinator_staff_id: cid, coordinator_name: c ? (c.full_name || c.username) : null, _pending: true });
+}
+function syncAssignBar() { const bar = document.getElementById('paramsSaveBar'); if (bar) bar.hidden = calMode !== 'assign' && !(window.GWParams && GWParams.hasDirty()); }
+function assignChip(e0) {
+  const e = withPending(e0);
+  const st = assignState(e), who = (e.coordinator_name ? `Coordina: ${e.coordinator_name}` : ASSIGN_LABEL[st]) + (e._pending ? ' (sin guardar)' : '');
   return `<div class="cal-assign-chip cal-assign-chip--${st}" data-assign-event="${e.id}" data-assign-ok="${e.status === 'finalizado' ? '0' : '1'}" tabindex="0" role="button" aria-label="${esc(e.name + '. ' + who + '. Suelta o elige un coordinador aquí para asignarlo')}">
       <strong class="cal-assign-chip__name">${esc(e.name)}</strong>
       <span class="cal-assign-chip__who">${esc(who)}</span>
@@ -467,21 +484,42 @@ function assignChip(e) {
 }
 function renderCoordCards() {
   const box = document.getElementById('assignCards'); if (!box) return;
-  const count = {}; eventsCache.forEach((e) => { if (e.coordinator_staff_id) count[e.coordinator_staff_id] = (count[e.coordinator_staff_id] || 0) + 1; });
+  const count = {}; eventsCache.map(withPending).forEach((e) => { if (e.coordinator_staff_id) count[e.coordinator_staff_id] = (count[e.coordinator_staff_id] || 0) + 1; });
   box.innerHTML = coordList.length ? coordList.map((c) => `<button type="button" role="listitem" class="cal-coord${selectedCoord === c.id ? ' cal-coord--on' : ''}" draggable="true" data-coord-id="${c.id}" aria-pressed="${selectedCoord === c.id}" title="Arrástrame sobre un evento">
       <span class="cal-coord__dot" aria-hidden="true">${esc((c.full_name || c.username).trim().charAt(0).toUpperCase())}</span>
       <span class="cal-coord__name">${esc(c.full_name || c.username)}</span><span class="cal-coord__n">${count[c.id] || 0}</span></button>`).join('')
     : '<p class="gw-hint">No hay coordinadores activos.</p>';
 }
-async function assignCoordinator(eventId, coordId) {
-  try {
-    const res = await fetch(`/api/events/${eventId}/assign-coordinator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinator_staff_id: coordId }) });
-    if (!res.ok) { const j = await res.json().catch(() => ({})); showToast(j.detail || 'No se pudo asignar el coordinador', 'error'); return; }
-    const upd = await res.json(), i = eventsCache.findIndex((x) => x.id === eventId);
-    if (i >= 0) eventsCache[i] = Object.assign({}, eventsCache[i], { coordinator_staff_id: upd.coordinator_staff_id, coordinator_name: upd.coordinator_name });
-    showToast(coordId ? 'Coordinador asignado' : 'Coordinador quitado', 'success');
-    renderCoordCards(); render();
-  } catch (err) { showToast('Sin conexión: no se pudo asignar', 'error'); }
+// Asignar o quitar un coordinador NO guarda: queda pendiente (barra «Cambios sin guardar») y se guarda con «Guardar cambios».
+function assignCoordinator(eventId, coordId) {
+  const orig = eventsCache.find((x) => x.id === eventId);
+  if (!orig) return;
+  if ((orig.coordinator_staff_id || null) === (coordId || null)) pendingAssign.delete(eventId); else pendingAssign.set(eventId, coordId || null);
+  if (window.GWParams) GWParams.markDirty('asignaciones');
+  renderCoordCards(); render();
+}
+if (ASSIGN_CAL && window.GWParams) {
+  GWParams.register({
+    key: 'asignaciones', label: 'Coordinadores asignados', order: 10,
+    save: async () => {
+      const failed = [];
+      for (const [eventId, coordId] of Array.from(pendingAssign.entries())) {
+        try {
+          const res = await fetch(`/api/events/${eventId}/assign-coordinator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinator_staff_id: coordId }) });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || 'No se pudo asignar el coordinador'); }
+          const upd = await res.json(), i = eventsCache.findIndex((x) => x.id === eventId);
+          if (i >= 0) eventsCache[i] = Object.assign({}, eventsCache[i], { coordinator_staff_id: upd.coordinator_staff_id, coordinator_name: upd.coordinator_name });
+          pendingAssign.delete(eventId);
+        } catch (err) {
+          const ev = eventsCache.find((x) => x.id === eventId);
+          failed.push((ev ? ev.name + ': ' : '') + (err.message || 'Sin conexión'));
+        }
+      }
+      renderCoordCards(); render();
+      setTimeout(syncAssignBar, 2500);
+      if (failed.length) throw new Error(failed.join(' · '));
+    },
+  });
 }
 (function wireAssign() {
   if (!ASSIGN_CAL) return;

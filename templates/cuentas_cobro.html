@@ -10,6 +10,8 @@
         <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
     <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
@@ -42,7 +44,7 @@
 </header>
 <div class="golden-content-spacer"></div>
 <main class="golden-main" id="contenido">
-  <div class="gw-container gw-stack-lg">
+  <div class="gw-container gw-stack-lg" id="paramsRoot" data-tabs-key="cuentas-cobro">
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">Cobros</p>
@@ -56,10 +58,11 @@
     </section>
     <section class="gw-card" aria-labelledby="frmTitle">
       <div class="gw-card__head"><h2 class="gw-card__title" id="frmTitle">Formularios y QR</h2></div>
-      <p class="gw-hint">Elige con qué cuenta cobra cada formulario (solo si aún no tiene pagos reales) y baja su QR.</p>
-      <div id="forms" aria-busy="true">{{ skeleton('list', rows=3, label='Cargando formularios…') }}</div>
+      <p class="gw-hint">Elige con qué cuenta cobra cada formulario (solo si aún no tiene pagos reales) y baja su QR. La elección se guarda con «Guardar cambios».</p>
+      <div id="forms" data-psave="formularios" aria-busy="true">{{ skeleton('list', rows=3, label='Cargando formularios…') }}</div>
     </section>
   </div>
 </main>
+{% include "_gw_savebar.html" %}
 </body>
 </html>
