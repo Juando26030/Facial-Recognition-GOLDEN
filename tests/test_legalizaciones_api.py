@@ -175,3 +175,14 @@ def test_la_legalizacion_es_una_por_evento(client, ev, db):
     _header(client, ev, advance_amount="1")
     _line(client, ev)
     assert db.query(EventLegalization).filter_by(event_id=ev.id).count() == 1
+
+
+def test_las_fotos_subidas_salen_en_la_hoja_soportes_del_excel(client, ev):
+    a, b = _line(client, ev), _line(client, ev, amount="5")
+    for line in (a, b):
+        assert client.post(_url(ev, f"/lines/{line['id']}/evidence"), files={"evidence": ("f.png", _png(), "image/png")}).status_code == 200
+    ws = openpyxl.load_workbook(io.BytesIO(client.get(_url(ev, "/report")).content))["Soportes"]
+    assert len(ws._images) == 1 + 2 and any(str(c.value).startswith("FOTOS DE SOPORTE (2)") for row in ws.iter_rows() for c in row if c.value)      # el logo del comprobante en blanco + las 2 fotos
+    client.post(f"/api/events/{ev.id}/expenses/{a['id']}/archive")
+    ws = openpyxl.load_workbook(io.BytesIO(client.get(_url(ev, "/report")).content))["Soportes"]
+    assert len(ws._images) == 1 + 1          # el gasto archivado no aporta su foto

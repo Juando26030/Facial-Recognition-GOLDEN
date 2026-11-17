@@ -3,12 +3,14 @@
 La lógica del Excel está en `app/legalization_xlsx.py` (pura, sin base). Aquí se lee el encabezado (`EventLegalization`) y los gastos
 (`EventExpense`) y se arma lo que ese módulo entiende. Los gastos viejos (anteriores al formato, `kind='otro'`) salen en «Otros gastos»."""
 import io
+from datetime import date
 
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import legalization_xlsx as lx
 from app.models import Event, EventExpense, EventLegalization
+from app.storage import get_storage
 from app.timeutil import to_local
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -103,9 +105,33 @@ def header_for_xlsx(event: Event, leg: EventLegalization | None) -> dict:
     }
 
 
+MAX_PHOTOS = 150      # tope de fotos en la hoja «Soportes» (el Excel se arma en memoria)
+
+
+def photo_caption(e: EventExpense) -> str:
+    d = line_date(e)
+    who = e.vendor_name or e.concept or e.category
+    return " · ".join(p for p in (RUBRO.get(e.kind or lx.OTRO, "Otros gastos"), who, d.strftime("%d/%m/%Y") if d else "", f"$ {float(e.amount or 0):,.0f}".replace(",", ".")) if p)
+
+
+def photos_for_xlsx(rows: list[EventExpense]) -> list[dict]:
+    """Las fotos de soporte de los gastos activos, agrupadas por rubro (en el orden del formato) para la hoja «Soportes». Una foto que falte en el almacenamiento se omite."""
+    store = get_storage()
+    order = {k: i for i, k in enumerate(lx.KINDS)}
+    out = []
+    for e in sorted((r for r in rows if r.evidence_path), key=lambda r: (order.get(r.kind or lx.OTRO, 99), line_date(r) or date.max, r.id)):
+        if len(out) >= MAX_PHOTOS:
+            break
+        try:
+            out.append({"caption": photo_caption(e), "data": store.get(e.evidence_path)})
+        except Exception:      # noqa: BLE001 — archivo ausente o ilegible: el resto del reporte sale igual
+            continue
+    return out
+
+
 def build_report(db: Session, event: Event) -> tuple[bytes, str]:
     rows = active_lines(db, event.id)
-    data = lx.build_workbook(header_for_xlsx(event, get_legalization(db, event.id)), [line_for_xlsx(e) for e in rows])
+    data = lx.build_workbook(header_for_xlsx(event, get_legalization(db, event.id)), [line_for_xlsx(e) for e in rows], photos_for_xlsx(rows))
     return data, lx.file_name(event.event_code, event.name)
 
 

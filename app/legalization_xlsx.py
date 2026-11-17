@@ -211,11 +211,67 @@ def _fill_vouchers(ws, vouchers: list[dict]) -> None:
         ws[f"B{11 + off}"].value = v.get("origin")
         ws[f"B{13 + off}"].value = v.get("destination")
         ws[f"D{16 + off}"].value = f"=SUM(D{9 + off}:D{15 + off})"
+    last = bottom + step * (max(len(vouchers), 1) - 1)
     if len(vouchers) > 1:
-        ws.print_area = f"A2:E{bottom + step * (len(vouchers) - 1)}"
+        ws.print_area = f"A2:E{last}"
+    return last
 
 
-def build_workbook(header: dict, lines: list[dict]) -> bytes:
+PHOTOS_PER_ROW = 2
+PHOTO_BOX = (250, 215)          # píxeles máximos de cada foto en la hoja (la fila mide 165 pt ≈ 220 px)
+PHOTO_MAX_SIDE = 900            # la foto se reduce antes de incrustarla para que el Excel no pese decenas de MB
+
+
+def _shrink(raw: bytes) -> tuple[bytes, int, int]:
+    """JPEG reducido de la foto original y su tamaño en pantalla (cabe en PHOTO_BOX sin deformarse)."""
+    from PIL import Image, ImageOps
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+    w, h = im.size
+    scale = min(PHOTO_BOX[0] / w, PHOTO_BOX[1] / h)
+    im.thumbnail((PHOTO_MAX_SIDE, PHOTO_MAX_SIDE))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=80)
+    return buf.getvalue(), max(int(w * scale), 1), max(int(h * scale), 1)
+
+
+def _fill_photos(ws, photos: list[dict], last_row: int) -> int:
+    """Soportes: debajo de los comprobantes, todas las fotos de soporte subidas en la legalización, en cuadrícula de 2 por fila,
+    cada una con su pie (rubro, nombre, fecha y valor). `photos`: [{"caption": str, "data": bytes}]. Devuelve la última fila usada."""
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.worksheet.properties import PageSetupProperties
+    if not photos:
+        return last_row
+    row = last_row + 2
+    title = ws.cell(row, 1, value=f"FOTOS DE SOPORTE ({len(photos)})")
+    title.font = Font(bold=True, size=12)
+    row += 2
+    for start in range(0, len(photos), PHOTOS_PER_ROW):
+        ws.row_dimensions[row].height = 30
+        ws.row_dimensions[row + 1].height = 165
+        ws.row_dimensions[row + 2].height = 10
+        for slot, ph in enumerate(photos[start:start + PHOTOS_PER_ROW]):
+            col, end_col = (1, 2) if slot == 0 else (3, 4)
+            ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
+            cap = ws.cell(row, col, value=ph.get("caption"))
+            cap.font = Font(size=9)
+            cap.alignment = Alignment(wrap_text=True, vertical="top")
+            try:
+                data, w, h = _shrink(ph["data"])
+            except Exception:       # una imagen dañada no debe tumbar el Excel: queda solo el pie
+                cap.value = f"{ph.get('caption')} (la imagen no se pudo incrustar)"
+                continue
+            img = XLImage(io.BytesIO(data))
+            img.width, img.height = w, h
+            ws.add_image(img, f"{ws.cell(row + 1, col).coordinate}")
+        row += 3
+    last = row - 1
+    ws.print_area = f"A2:E{last}"
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)      # al imprimir: todo el ancho (A–E) en una página, sin partir las fotos
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    return last
+
+
+def build_workbook(header: dict, lines: list[dict], photos: list[dict] | None = None) -> bytes:
     """Devuelve el .xlsx de la legalización. `header`: consecutivo, fecha_legalizacion, responsable, cc, cod_evento, evento,
     ciudad, fecha_evento, anticipo, ce_final, observaciones_contables. `lines`: gastos (ver FIELDS), en el orden en que
     deben salir."""
@@ -270,7 +326,8 @@ def build_workbook(header: dict, lines: list[dict]) -> bytes:
     ws[f"J{tot_otr}"].value = f"=SUM(J9:J{tot_otr - 1})"
 
     # Soportes: taxis (ciudad y terminales) marcados «sin recibo»
-    _fill_vouchers(wb[S_SOP], [ln for ln in by[TAXI_CIUDAD] + by[TAXI_TERMINAL] if ln.get("support") is False] or [{}])
+    last = _fill_vouchers(wb[S_SOP], [ln for ln in by[TAXI_CIUDAD] + by[TAXI_TERMINAL] if ln.get("support") is False] or [{}])
+    _fill_photos(wb[S_SOP], photos or [], last)
 
     # Resumen
     ws = wb[S_RES]

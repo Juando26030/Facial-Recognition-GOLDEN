@@ -81,3 +81,7 @@
 .gw-leg-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gw-sp-3); }
 @media (max-width: 900px) { .gw-leg-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .gw-leg-stats { grid-template-columns: minmax(0, 1fr); } }
+/* Revisión del director: gasto aprobado = fondo verde; no aprobado = naranja sutil (el texto «Aprobado» / «No aprobado» de la fila lo dice también, el color no va solo). */
+.gw-leg-table tr.gw-leg-row--ok > td { background: var(--gw-ok-bg); }
+.gw-leg-table tr.gw-leg-row--no > td { background: color-mix(in srgb, var(--gw-warn-line) 16%, var(--gw-surface)); }
+.gw-leg-table tbody tr.gw-leg-row--ok:hover > td, .gw-leg-table tbody tr.gw-leg-row--no:hover > td { filter: brightness(0.97); }

@@ -221,7 +221,7 @@
       html += `<div class="gw-state">${icon('form')}<p class="gw-state__title">Todavía no hay gastos en este rubro</p><p class="gw-state__text">${isEditable() ? 'Registra el primero con el formulario de arriba.' : 'No se registró ninguno.'}</p></div>`;
     } else {
       html += `<div class="gw-table-wrap"><table class="gw-table gw-leg-table"><thead><tr><th>Fecha</th><th>Nombre</th><th>Detalle</th><th>Valor</th><th>Soporte</th><th>Revisión</th><th>Acciones</th></tr></thead><tbody>` +
-        lines.map((x) => `<tr class="${x.archived ? 'gw-muted' : ''}">
+        lines.map((x) => `<tr class="${[x.archived ? 'gw-muted' : '', x.approved === true ? 'gw-leg-row--ok' : x.approved === false ? 'gw-leg-row--no' : ''].filter(Boolean).join(' ')}">
           <td>${esc(x.date || '')}</td><td>${esc(x.vendor_name) || '<span class="gw-muted">—</span>'}${x.tax_id ? '<br><span class="gw-text-sm gw-muted">' + esc(x.tax_id) + '</span>' : ''}${x.archived ? '<br><span class="gw-badge">Archivado</span>' : ''}</td>
           <td>${detailOf(x)}</td><td class="gw-leg-num">$ ${money(x.amount)}${x.iva ? '<br><span class="gw-text-sm gw-muted">IVA ' + money(x.iva) + '</span>' : ''}</td>
           <td>${supportCell(x)}</td><td>${reviewCell(x)}</td><td>${actionsCell(x)}</td></tr>`).join('') + '</tbody></table></div>';

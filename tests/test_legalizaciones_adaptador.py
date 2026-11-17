@@ -16,9 +16,9 @@ import pytest
 def svc():
     added = []
     try:
-        import fastapi.responses, sqlalchemy.orm, app.models  # noqa: F401, E401
+        import fastapi.responses, sqlalchemy.orm, app.models, app.storage  # noqa: F401, E401
     except ImportError:
-        for name, attrs in (("fastapi", {}), ("fastapi.responses", {"StreamingResponse": object}), ("sqlalchemy", {}), ("sqlalchemy.orm", {"Session": object}),
+        for name, attrs in (("fastapi", {"HTTPException": Exception}), ("app.storage", {"get_storage": lambda: None}), ("fastapi.responses", {"StreamingResponse": object}), ("sqlalchemy", {}), ("sqlalchemy.orm", {"Session": object}),
                             ("app.models", {"Event": object, "EventExpense": type("EventExpense", (), {}), "EventLegalization": object})):
             if name not in sys.modules:
                 mod = types.ModuleType(name)
@@ -85,3 +85,48 @@ def test_json_de_un_gasto_viejo_muestra_la_categoria_como_concepto(svc):
     j = svc.line_json(_e(category="Transporte", amount=Decimal("1500.5")))
     assert j["kind"] == "otro" and j["concept"] == "Transporte" and j["amount"] == 1500.5 and j["date"] == "2026-11-10"
     assert svc.line_json(_e(kind="digitador", vendor_name="Laura", category="Digitadores(as)"))["concept"] == ""
+
+
+def _png(color="white", size=(40, 30)):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_las_fotos_van_agrupadas_por_rubro_con_su_pie_y_se_omiten_las_que_faltan(svc, monkeypatch):
+    class Store:
+        files = {"a": _png("red"), "b": _png("blue")}
+
+        def get(self, key):
+            return self.files[key]          # «c» no existe: KeyError
+
+    monkeypatch.setattr(svc, "get_storage", lambda: Store())
+    rows = [
+        _e(id=1, kind="otro", concept="Cinta", amount=Decimal("8000"), expense_date=date(2026, 11, 5), evidence_path="a"),
+        _e(id=2, kind="hospedaje", vendor_name="Hotel Sol", amount=Decimal("200000"), expense_date=date(2026, 11, 3), evidence_path="b"),
+        _e(id=3, kind="taxi_ciudad", vendor_name="Pedro", amount=Decimal("20000"), expense_date=date(2026, 11, 3), evidence_path="c"),
+        _e(id=4, kind="pasaje", vendor_name="Avianca", amount=Decimal("1"), expense_date=date(2026, 11, 3)),          # sin foto
+    ]
+    photos = svc.photos_for_xlsx(rows)
+    assert [p["caption"] for p in photos] == ["Hospedaje · Hotel Sol · 03/11/2026 · $ 200.000", "Otros gastos · Cinta · 05/11/2026 · $ 8.000"]
+
+
+def test_hoja_soportes_con_fotos_en_cuadricula_y_sin_romper_los_comprobantes(svc):
+    from app import legalization_xlsx as lx
+    taxis = [svc.line_for_xlsx(_e(id=i, kind="taxi_ciudad", vendor_name=f"Taxista {i}", amount=Decimal("10000"), expense_date=date(2026, 11, 3), has_support=False)) for i in (1, 2)]
+    photos = [{"caption": f"Foto {i}", "data": _png(size=(1200, 800))} for i in range(5)]
+    wb = openpyxl.load_workbook(io.BytesIO(lx.build_workbook({}, taxis, photos)))
+    ws = wb["Soportes"]
+    assert len(ws._images) == 2 + 5                  # un logo por comprobante + las 5 fotos
+    anchors = sorted((im.anchor._from.row, im.anchor._from.col) for im in ws._images if im.anchor._from.row > 30)      # los logos de los comprobantes están más arriba
+    assert [c for _r, c in anchors] == [0, 2, 0, 2, 0]      # cuadrícula de 2 por fila
+    assert len(anchors) == 5 and anchors[0][0] > 16 + 14      # empiezan debajo del último comprobante
+    assert ws["A33"].value is not None or any(str(c.value).startswith("FOTOS DE SOPORTE (5)") for row in ws.iter_rows() for c in row if c.value)
+    assert all(ws.row_dimensions[r].height for r in (anchors[0][0],))      # la fila de la foto tiene su alto fijo
+
+
+def test_sin_fotos_la_hoja_soportes_queda_como_antes(svc):
+    from app import legalization_xlsx as lx
+    wb = openpyxl.load_workbook(io.BytesIO(lx.build_workbook({}, [], [])))
+    assert len(wb["Soportes"]._images) == 1 and not any("FOTOS DE SOPORTE" in str(c.value) for row in wb["Soportes"].iter_rows() for c in row)
