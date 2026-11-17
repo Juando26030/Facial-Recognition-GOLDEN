@@ -105,23 +105,6 @@
           </div>
         </details>
 
-        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
-        <details class="gw-form-group" open id="eeFinalDbGroup">
-          <summary class="gw-form-group__summary">Base de datos final</summary>
-          <div class="gw-form-group__body ee-report">
-            <div class="ee-report__head">
-              <span class="gw-hint" id="eeFinalDbInfo"></span>
-              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
-            </div>
-            <div class="ee-report__row">
-              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
-              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
-              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
-            </div>
-            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
-          </div>
-        </details>
-
         {# Enlace limpio de inscripciones (D2.5k): nombre del evento en la dirección pública y formulario principal. Solo comercial, admin y super_admin. #}
         {% if staff_role in ("comercial", "admin", "super_admin") %}
         <details class="gw-form-group" open id="eeLinkGroup">
@@ -178,6 +161,23 @@
         <details class="gw-form-group" id="eeInvGroup" open hidden>
           <summary class="gw-form-group__summary">Inventario</summary>
           <div class="gw-form-group__body"><div id="eeInvBox"></div></div>
+        </details>
+
+        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
+        <details class="gw-form-group" open id="eeFinalDbGroup">
+          <summary class="gw-form-group__summary">Base de datos final</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head">
+              <span class="gw-hint" id="eeFinalDbInfo"></span>
+              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
+            </div>
+            <div class="ee-report__row">
+              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
+              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
+            </div>
+            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
+          </div>
         </details>
 
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
