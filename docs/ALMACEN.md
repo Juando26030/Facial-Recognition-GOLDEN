@@ -18,7 +18,7 @@ Nada en `main`, nada en producción.
 - **Un solo catálogo:** se amplía `inventory_products` (unificado el 9-nov); no hay catálogo paralelo. Los productos que ya existen quedan «por cantidad».
 - **Tres controles:** *serial* (un QR por equipo; número visible consecutivo por producto que NUNCA se reutiliza), *modelo* (un QR por modelo, p. ej. impresoras) y *cantidad* (un QR por tipo).
 - **Códigos:** `GW` + 6 caracteres, solo mayúsculas y números, sin 0/O/1/I/L ni símbolos: el lector USB escribe como teclado y los símbolos cambian con la distribución. El QR lleva SOLO el código.
-- **Checklist:** cada producto elige una de las 36 filas de inventario del formato GEYL (las 5 filas de verificación —listado de personal, teléfonos, listado de equipos, Plan B, acarreo— no suman inventario y se llenan a mano). Necesario = lo que pide el evento; Cantidad = lo despachado; OK S/N = casilla «alistado» (Pieza 2).
+- **Checklist:** cada producto elige una de las 38 filas de inventario del formato GEYL (las 5 filas de verificación —listado de personal, teléfonos, listado de equipos, Plan B, acarreo— no suman inventario y se llenan a mano). Necesario = lo que pide el evento; Cantidad = lo despachado; OK S/N = casilla «alistado» (Pieza 2).
 - **Consumibles:** almacén los repone y los cuenta a mano.
 - **Etiquetas:** página propia para el rollo de 62 mm de la Brother QL-800 (alto 29 / 40 / 62 mm, por confirmar con prueba física). NO usa ni cambia la impresión compartida de escarapelas ni sus parámetros inamovibles.
 - `/api/almacen` queda cerrada para el coordinador temporal (`tests/test_coordinador_temporal.py` lo verifica) y `/inventario/etiquetas` cae bajo `/inventario`.
