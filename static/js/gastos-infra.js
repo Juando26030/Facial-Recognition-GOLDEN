@@ -250,7 +250,8 @@
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Total del periodo</span><span class="gw-gx__kpi-value">' + cop(data.grand_total) + '</span><span class="gw-gx__kpi-hint">' + data.months.length + ' mes(es) consultado(s)</span></div>' +
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Promedio por mes</span><span class="gw-gx__kpi-value">' + cop(data.monthly_avg) + '</span><span class="gw-gx__kpi-hint">Solo meses con gasto registrado</span></div>' +
       '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Promedio por evento</span><span class="gw-gx__kpi-value">' + cop(data.avg_per_event) + '</span><span class="gw-gx__kpi-hint">' + esc(un) + '</span></div>' +
-      '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Eventos con costo</span><span class="gw-gx__kpi-value">' + data.events.filter(function (r) { return r.total > 0; }).length + '</span><span class="gw-gx__kpi-hint">De ' + data.events.length + ' evento(s) del periodo, sin la persona de prueba</span></div></div>';
+      '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Eventos con costo</span><span class="gw-gx__kpi-value">' + data.events.filter(function (r) { return r.total > 0; }).length + '</span><span class="gw-gx__kpi-hint">De ' + data.events.length + ' evento(s) del periodo, sin la persona de prueba</span></div>' +
+      (data.neon_configured ? '<div class="gw-gx__kpi"><span class="gw-gx__kpi-label">Neon (uso del mes)</span><span class="gw-gx__kpi-value" id="gxNeonKpi">…</span><span class="gw-gx__kpi-hint" id="gxNeonHint">Consultando…</span></div>' : '') + '</div>';
   }
 
   function settingsPanel() {
@@ -304,6 +305,8 @@
   function loadNeon() {
     api('/api/gastos/infra/neon-usage?month=' + encodeURIComponent(data.to)).then(function (r) {
       var el = document.getElementById('gxNeon'); if (!el) return;
+      var kv = document.getElementById('gxNeonKpi'), kh = document.getElementById('gxNeonHint');
+      if (kv && kh) { kv.textContent = r.available ? nf.format(r.compute_hours) + ' h' : '—'; kh.textContent = r.available ? 'Cómputo (CU) de ' + mlabel(r.month) + ' en ' + r.projects + ' proyecto(s). Solo uso: el dinero va a mano.' : r.reason; }
       el.textContent = r.available ? 'Uso de Neon en ' + mlabel(r.month) + ': ' + nf.format(r.compute_hours) + ' horas de cómputo (CU) en ' + r.projects + ' proyecto(s). Es solo uso: el costo se registra a mano.' : 'Neon: ' + r.reason;
     }).catch(function () { /* informativo */ });
   }
