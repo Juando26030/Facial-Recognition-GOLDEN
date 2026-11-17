@@ -1,6 +1,43 @@
-{# Almacén (Pieza 1): cómo se controla cada elemento, unidades con serial, etiquetas QR y modo escáner. Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo maneja static/js/almacen-page.js. #}
+{# Almacén (Piezas 1 y 2): modo escáner y salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo manejan static/js/almacen-page.js (modo escáner) y static/js/almacen-moves.js (salidas, entradas, alistado). #}
     <section class="gw-invpg__panel gw-stack" id="invPanelAlm" role="tabpanel" aria-labelledby="invTabAlm" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
-      <p class="gw-hint">Aquí se define cómo se controla cada elemento de bodega, se crean los equipos con serial y se imprimen sus etiquetas QR. Las salidas y entradas por evento llegan en la siguiente entrega.</p>
+      <p class="gw-hint">Aquí se registran las salidas y entradas de material por evento escaneando el QR y se lleva el checklist de cada evento.</p>
+
+      <section class="gw-card gw-stack" aria-labelledby="almMoveTitle">
+        <h2 class="gw-card__title" id="almMoveTitle">Salidas y entradas por evento</h2>
+        <div class="gw-fields-row gw-fields-row--3">
+          <div class="gw-field"><label class="gw-label" for="almMvEventFilter">Buscar evento</label><input class="gw-input" type="search" id="almMvEventFilter" autocomplete="off" placeholder="Nombre o código"></div>
+          <div class="gw-field"><label class="gw-label" for="almMvEvent">Evento</label><select class="gw-select" id="almMvEvent"></select></div>
+          <fieldset class="gw-field gw-fieldset"><legend class="gw-label">¿Qué registras?</legend>
+            <label class="gw-check"><input type="radio" name="almMvMode" value="salida" checked> <span>Salida (sale de bodega al evento)</span></label>
+            <label class="gw-check"><input type="radio" name="almMvMode" value="entrada"> <span>Entrada (vuelve a bodega)</span></label></fieldset>
+        </div>
+        <div class="gw-fields-row gw-fields-row--2">
+          <div class="gw-field"><label class="gw-label" for="almMvScan">Escanea el código</label>
+            <input class="gw-input" type="text" id="almMvScan" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almMvHint" disabled>
+            <p class="gw-hint" id="almMvHint">Primero elige el evento. El lector escribe el código y pulsa Enter; cada lectura registra un movimiento.</p></div>
+          <div class="gw-field"><label class="gw-label" for="almMvQty">Cantidad <span class="gw-hint">(solo para elementos por modelo o por cantidad)</span></label>
+            <input class="gw-input" type="number" id="almMvQty" min="1" value="1" inputmode="numeric"></div>
+        </div>
+        <form id="almMvReason" class="gw-card gw-stack" hidden aria-labelledby="almMvReasonTitle">
+          <h3 class="gw-card__title" id="almMvReasonTitle">Esto excede lo que pidió el evento</h3>
+          <p class="gw-hint" id="almMvReasonMsg"></p>
+          <div class="gw-field"><label class="gw-label" for="almMvReasonText">¿Por qué se incluye?</label><input class="gw-input" type="text" id="almMvReasonText" maxlength="300" autocomplete="off"></div>
+          <label class="gw-check"><input type="checkbox" id="almMvPlanB"> <span>Es Plan B (equipo de reemplazo o de respaldo)</span></label>
+          <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="almMvReasonOk">Registrar la salida</button>
+            <button type="button" class="gw-btn gw-btn--secondary" id="almMvReasonCancel">Cancelar</button></div>
+        </form>
+        <div id="almMvResult" aria-live="polite"></div>
+      </section>
+
+      <section class="gw-card gw-stack" id="almBoardCard" aria-labelledby="almBoardTitle" hidden>
+        <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almBoardTitle">Checklist del evento</h2><span id="almBoardSummary" class="gw-hint"></span></div>
+        <div id="almBoardUnmapped" role="status"></div>
+        <div id="almBoard" aria-live="polite"></div>
+        <h3 class="gw-section-title">Fuera de bodega (equipos con serial que siguen en el evento)</h3>
+        <div id="almOutside" aria-live="polite"></div>
+        <h3 class="gw-section-title">Últimos movimientos</h3>
+        <div id="almMovements" aria-live="polite"></div>
+      </section>
 
       <section class="gw-card gw-stack" aria-labelledby="almScanTitle">
         <h2 class="gw-card__title" id="almScanTitle">Modo escáner</h2>
@@ -10,40 +47,5 @@
         <div id="almScanResult" aria-live="polite"></div>
       </section>
 
-      <section class="gw-card gw-stack" aria-labelledby="almNewTitle">
-        <h2 class="gw-card__title" id="almNewTitle">Nuevo elemento</h2>
-        <form id="almNewForm" class="gw-stack">
-          <div class="gw-fields-row gw-fields-row--2">
-            <div class="gw-field"><label class="gw-label" for="almNewName">Nombre</label><input class="gw-input" type="text" id="almNewName" maxlength="80" required autocomplete="off" placeholder="Portátil Lenovo, Cable USB impresora…"></div>
-            <div class="gw-field"><label class="gw-label" for="almNewCat">Categoría</label><select class="gw-select" id="almNewCat" required></select></div>
-            <div class="gw-field"><label class="gw-label" for="almNewTracking">¿Cómo se controla?</label><select class="gw-select" id="almNewTracking" aria-describedby="almNewTrackingHint"></select><p class="gw-hint" id="almNewTrackingHint"></p></div>
-            <div class="gw-field"><label class="gw-label" for="almNewRow">Fila del checklist <span class="gw-hint">(opcional)</span></label><select class="gw-select" id="almNewRow"></select></div>
-          </div>
-          <label class="gw-check"><input type="checkbox" id="almNewConsumable"> <span>Es consumible (se gasta y no vuelve; almacén lo repone y lo cuenta a mano)</span></label>
-          <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="almNewBtn">Crear elemento</button></div>
-        </form>
-      </section>
-
-      <section class="gw-stack" aria-labelledby="almListTitle">
-        <div class="gw-row gw-row--between">
-          <h2 class="gw-section-title" id="almListTitle">Elementos de bodega</h2>
-          <div class="gw-field"><label class="gw-label" for="almSearch">Buscar</label><input class="gw-input" type="search" id="almSearch" autocomplete="off" placeholder="Nombre o SKU"></div>
-        </div>
-        <div id="almProducts" aria-live="polite" aria-busy="true"></div>
-      </section>
-
-      <section class="gw-card gw-stack" id="almUnitsCard" aria-labelledby="almUnitsTitle" hidden>
-        <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almUnitsTitle"></h2>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-units-close>Cerrar</button></div>
-        <form id="almUnitsForm" class="gw-fields-row gw-fields-row--3">
-          <div class="gw-field"><label class="gw-label" for="almUnitsCount">¿Cuántas unidades nuevas?</label><input class="gw-input" type="number" id="almUnitsCount" min="1" max="100" value="1" inputmode="numeric" required></div>
-          <div class="gw-field"><label class="gw-label" for="almUnitsSerial">Serial <span class="gw-hint">(opcional, solo si es una)</span></label><input class="gw-input" type="text" id="almUnitsSerial" maxlength="80" autocomplete="off"></div>
-          <div class="gw-field"><span class="gw-label" aria-hidden="true">&nbsp;</span><button type="submit" class="gw-btn gw-btn--primary" id="almUnitsBtn">Crear unidades</button></div>
-        </form>
-        <div class="gw-actions">
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-print-selected>Imprimir etiquetas marcadas</button>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-print-all>Imprimir todas</button>
-        </div>
-        <div id="almUnits" aria-live="polite"></div>
-      </section>
+      <p class="gw-hint">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p>
     </section>

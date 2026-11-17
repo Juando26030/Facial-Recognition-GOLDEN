@@ -1095,6 +1095,7 @@ class InventoryProduct(Base):
     checklist_row = Column(String(40), nullable=True)          # 0148: clave de la fila del checklist GEYL a la que suma (app/almacen.py CHECKLIST_ROWS); NULL = no sale en el checklist
     is_consumable = Column(Boolean, nullable=False, default=False, server_default='false')          # 0148: se gasta y no vuelve (almacén lo repone y lo cuenta a mano)
     qr_code = Column(String(12), nullable=True, unique=True)          # 0148: código del QR del producto (solo 'modelo' y 'cantidad'; los 'serial' llevan el QR en cada unidad)
+    photo_key = Column(String(200), nullable=True)          # 0149: foto del elemento (almacenamiento: app/storage.py, clave almacen/elementos/…)
     position = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
@@ -1117,9 +1118,47 @@ class InventoryUnit(Base):
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)          # 0149: en qué evento está hoy (vacío = en bodega)
 
     product = relationship('InventoryProduct')
+    event = relationship('Event')
     __table_args__ = (UniqueConstraint('product_id', 'number', name='uq_inventory_unit_number'), Index('ix_inventory_units_product', 'product_id'))
+
+
+class InventoryMovement(Base):
+    """Salida o entrada de almacén por lectura de QR (0149, Pieza 2). Solo se agrega: anular marca `voided_*`, nunca se borra. `unit_id` = equipo con serial (null en los controlados por modelo o cantidad).
+    `extra` = cuánto de la salida excede lo asignado al evento (se justifica con `reason` o `is_plan_b`; sube `qty_assigned` pero no cuenta como NECESARIO)."""
+    __tablename__ = 'inventory_movements'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    kind = Column(String(10), nullable=False)          # salida | entrada
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    extra = Column(Integer, nullable=False, default=0, server_default='0')
+    reason = Column(String(300), nullable=True)
+    is_plan_b = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    __table_args__ = (Index('ix_inventory_movements_event', 'event_id', 'product_id'), Index('ix_inventory_movements_unit', 'unit_id'))
+
+
+class EventChecklistRow(Base):
+    """Casilla «OK S/N» (alistado) y observación de UNA fila del checklist GEYL en un evento (0149, Pieza 2). `row_key` = clave de app/almacen.py CHECKLIST_ROWS (incluye las 5 de verificación manual)."""
+    __tablename__ = 'event_checklist_rows'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    row_key = Column(String(40), nullable=False)
+    done = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    notes = Column(String(300), nullable=True)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint('event_id', 'row_key', name='uq_event_checklist_row'),)
 
 
 class LocalNode(Base):
