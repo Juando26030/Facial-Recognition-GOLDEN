@@ -36,7 +36,7 @@
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cat-restore="${c.id}" aria-label="Restaurar ${esc(c.name)}">${icon('undo')} Restaurar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-cat-del="${c.id}" data-name="${esc(c.name)}" aria-label="Eliminar definitivamente ${esc(c.name)}">${icon('trash')} Eliminar definitivamente</button>`);
     }
-    return `<article class="gw-card-row" data-prod-id="${p.id}"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(c.name)}</span>${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
+    return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(c.name)}</span>${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
       <p class="gw-card-row__meta">${c.archived ? 'Archivada' : (c.products === 1 ? '1 producto activo' : c.products + ' productos activos')}</p><div class="gw-card-row__actions">${btns.join('')}</div></article>`;
   }
 
@@ -51,7 +51,7 @@
     }
     const meta = [p.category_name ? esc(p.category_name) : '<span class="gw-badge gw-badge--warn">Sin categoría</span>', esc(p.unit), p.sku ? 'SKU ' + esc(p.sku) : '', p.stock != null ? 'Existencias ' + esc(p.stock) : '']
       .concat((p.fields || []).length ? ['Campos: ' + p.fields.map((f) => esc(f.label)).join(', ')] : []).filter(Boolean).join(' · ');
-    return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(p.name)}</span>${p.archived ? '<span class="gw-badge">Archivado</span>' : ''}</div>
+    return `<article class="gw-card-row" data-prod-id="${p.id}"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(p.name)}</span>${p.archived ? '<span class="gw-badge">Archivado</span>' : ''}</div>
       <p class="gw-card-row__meta">${meta}</p><div class="gw-card-row__actions">${btns.join('')}</div><div data-alm-slot="${p.id}"></div></article>`;          // el hueco lo llena almacen-catalog.js (solo con Almacén activo)
   }
 
