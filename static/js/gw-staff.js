@@ -20,7 +20,7 @@
     super_admin: ['admin', 'comercial', 'coordinador', 'almacen', 'contabilidad', 'digitador', 'cliente'],
   }[staffRole] || [];
   // Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17): lo hace el administrador. Solo admite este único par, en cualquier orden.
-  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente', almacen: 'Almacén', contabilidad: 'Contabilidad' };
+  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente', almacen: 'Almacén', contabilidad: 'Contabilidad', dir_coordinadores: 'Director de coordinadores' };
   const roleLabel = (r) => ROLE_LABELS[r] || r;
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -140,14 +140,14 @@
     const username = btn.dataset.username;
     const currentExtras = (btn.dataset.extras || '').split(',').filter(Boolean);
     const options = allowed.map((r) => `<option value="${r}" ${r === current ? 'selected' : ''}>${roleLabel(r)}</option>`).join('');
-    const extraChoices = ['coordinador', 'comercial', 'almacen', 'contabilidad'].concat(staffRole === 'super_admin' ? ['admin'] : []);          // Almacén y Contabilidad: rol principal o sumados (inventario)
+    const extraChoices = ['coordinador', 'comercial', 'almacen', 'contabilidad', 'dir_coordinadores'].concat(staffRole === 'super_admin' ? ['admin'] : []);          // Almacén y Contabilidad: rol principal o sumados (inventario)
     const d = openGwDialog({
       title: 'Roles de la cuenta',
       bodyHtml: `<p class="gw-modal__text">Cuenta <strong>${esc(username)}</strong>. Los permisos cambian en cuanto confirmes; si tiene varios roles, recibe la suma de todos.</p>` +
         '<div class="gw-field"><label class="gw-label" for="staffNewRole">Rol principal</label><select class="gw-select" id="staffNewRole">' + options + '</select></div>' +
         '<fieldset class="gw-field" id="staffExtraBox"><legend class="gw-label">Añadir roles</legend>' +
         extraChoices.map((r) => `<label class="gw-check" data-extra-row="${r}"><input type="checkbox" value="${r}" ${currentExtras.includes(r) ? 'checked' : ''}><span>${esc(roleLabel(r))}</span></label>`).join('') +
-        '<p class="gw-hint">Almacén puede ver y editar el inventario de los eventos; Contabilidad solo lo consulta. Ninguno de los dos administra cuentas ni ve datos de asistentes.</p></fieldset>',
+        '<p class="gw-hint">Director de coordinadores es un coordinador que además asigna coordinadores a los eventos y revisa las legalizaciones (requiere el rol Coordinador). Almacén puede ver y editar el inventario de los eventos; Contabilidad solo lo consulta. Ninguno de los dos administra cuentas ni ve datos de asistentes.</p></fieldset>',
       buttons: [{ id: 'staffRoleCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'staffRoleOk', cls: 'gw-btn--primary', label: 'Guardar roles' }],
       onEscape: () => d.close(),
     });
@@ -155,6 +155,9 @@
     const box = d.dlg.querySelector('#staffExtraBox');
     const syncBox = () => {          // el rol principal no se repite como extra; con «admin» como principal no hay extras
       box.hidden = sel.value === 'admin';
+      const dirRow = box.querySelector('[data-extra-row="dir_coordinadores"]');          // el director es un coordinador: solo con ese rol (principal o sumado)
+      const isCoord = sel.value === 'coordinador' || !!box.querySelector('[data-extra-row="coordinador"] input:checked');
+      if (dirRow) { dirRow.hidden = !isCoord; if (!isCoord) dirRow.querySelector('input').checked = false; }
       box.querySelectorAll('[data-extra-row]').forEach((row) => {
         const same = row.dataset.extraRow === sel.value;
         row.hidden = same;
@@ -162,6 +165,7 @@
       });
     };
     sel.addEventListener('change', syncBox);
+    box.addEventListener('change', syncBox);
     syncBox();
     d.dlg.querySelector('#staffRoleCancel').addEventListener('click', () => d.close());
     d.dlg.querySelector('#staffRoleOk').addEventListener('click', () => {

@@ -191,3 +191,18 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
 .cal-crm--quote { background: var(--gw-warn-bg); border-left-color: var(--gw-warn-line); }
 .cal-crm--done .cal-crm__title { text-decoration: line-through; }
 @media (max-width: 640px) { .cal-mode .gw-btn { font-size: var(--gw-fs-md); } }
+
+/* ---------- Calendario «Asignar coordinadores» (17-nov-2026) ---------- */
+.cal-assign { margin: var(--gw-sp-3) 0; }
+.cal-assign__cards { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+.cal-coord { display: inline-flex; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: 999px; background: var(--gw-surface); color: var(--gw-text); cursor: grab; font: inherit; }
+.cal-coord--on, .cal-coord:focus-visible { outline: 2px solid var(--gw-ok-line); }
+.cal-coord__dot { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--gw-gold-grad); color: var(--gw-on-gold); font-weight: 700; }
+.cal-coord__n { font-size: var(--gw-fs-sm); opacity: .7; }
+.cal-assign-chip { display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border); border-left-width: 6px; border-radius: var(--gw-radius, 8px); background: var(--gw-surface); margin-bottom: var(--gw-sp-2); cursor: pointer; }
+.cal-assign-chip__who { font-size: var(--gw-fs-sm); }
+.cal-assign-chip--ok { background: var(--gw-ok-bg); border-left-color: var(--gw-ok-line); color: var(--gw-ok-text); }
+.cal-assign-chip--open { background: var(--gw-warn-bg); border-left-color: var(--gw-warn-line); color: var(--gw-warn-text); }
+.cal-assign-chip--urgent { background: color-mix(in srgb, var(--gw-danger) 14%, var(--gw-surface)); border-left-color: var(--gw-danger); }
+.cal-assign-chip--none { opacity: .6; cursor: default; }
+.cal-assign-chip--over { outline: 3px dashed var(--gw-ok-line); }

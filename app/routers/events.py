@@ -20,7 +20,7 @@ from app.database import get_db
 from app import event_archive, event_rules, formsvc, inventory_svc
 from app import event_codes, event_contacts, event_duplicate, event_transfer as et
 from app.crm import platform_link as crm_link
-from app import event_history, event_lease, public_slug, person_history
+from app import coordination, event_history, event_lease, public_slug, person_history
 from app import event_template as event_tpl
 from app import event_template_svc
 from app import pledge, testperson, workday
@@ -481,12 +481,8 @@ def create_event(
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
-    if data.coordinator_staff_id is not None:      # 0C (N3): debe ser un coordinador activo (igual que en la creación)
-        coord = db.query(StaffUser).filter(
-            StaffUser.id == data.coordinator_staff_id,
-            or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
-            StaffUser.is_active == True,
-        ).first()
+    if data.coordinator_staff_id is not None:      # 0C (N3): debe ser un coordinador activo (igual que en la creación); 17-nov: también el director de coordinadores y los administradores (app/coordination.py)
+        coord = coordination.find_coordinator(db, data.coordinator_staff_id)
         if not coord:
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
 
@@ -609,11 +605,7 @@ def update_event(
     if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
     if data.coordinator_staff_id is not None and data.coordinator_staff_id != event.coordinator_staff_id:      # P8: misma validación que al crear (0C, N3)
-        coord = db.query(StaffUser).filter(
-            StaffUser.id == data.coordinator_staff_id,
-            or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
-            StaffUser.is_active == True,
-        ).first()
+        coord = coordination.find_coordinator(db, data.coordinator_staff_id)
         if not coord:
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
     if data.commercial_staff_id is not None:

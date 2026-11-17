@@ -4,7 +4,7 @@
 {% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
-{% set has_filters = staff_role in ("comercial", "admin", "super_admin") %}
+{% set has_filters = staff_role in ("comercial", "admin", "super_admin") or assign_calendar %}
 <!DOCTYPE html>
 {% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
@@ -65,12 +65,20 @@
       </div>
     </div>
 
-    {% if crm_calendar %}
+    {% if crm_calendar or assign_calendar %}
     <div class="cal-mode" role="group" aria-label="Qué quieres ver en el calendario" id="calMode">
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="events" aria-pressed="true">{{ ic('calendar') }} Eventos</button>
-      <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="crm" aria-pressed="false">{{ ic('users') }} CRM</button>
+      {% if crm_calendar %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="crm" aria-pressed="false">{{ ic('users') }} CRM</button>{% endif %}
+      {% if assign_calendar %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="assign" aria-pressed="false">{{ ic('users') }} Asignar coordinadores</button>{% endif %}
     </div>
     <p class="gw-hint cal-mode__hint" id="calModeHint" role="status">Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.</p>
+    {% endif %}
+
+    {% if assign_calendar %}
+    <section id="assignBar" class="cal-assign" aria-label="Coordinadores disponibles" hidden>
+      <p class="gw-hint" id="assignHelp">Arrastra un coordinador sobre un evento para asignarlo. Con teclado o en el celular: toca el coordinador y luego el evento. Verde: ya tiene coordinador · naranja: sin coordinador · rojo: sin coordinador y empieza en menos de 2 días.</p>
+      <div class="cal-assign__cards" id="assignCards" role="list"></div>
+    </section>
     {% endif %}
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
@@ -172,8 +180,9 @@
 const STAFF_ROLE = {{ staff_role|tojson }};
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 const CRM_CAL = {{ 'true' if crm_calendar else 'false' }};
+const ASSIGN_CAL = {{ 'true' if assign_calendar else 'false' }};
 const CRM_ADMIN = {{ 'true' if crm_calendar_admin else 'false' }};
-const MODE_HINT = { events: 'Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.',
+const MODE_HINT = { assign: 'Asignar coordinadores: los mismos eventos y filtros del calendario. Asigna arrastrando un coordinador sobre el evento (verde: asignado · naranja: sin coordinador · rojo: sin coordinador y a menos de 2 días).', events: 'Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.',
   crm: CRM_ADMIN ? 'CRM: tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Eliges de qué comercial. Toca un elemento para abrirlo o ir a su cuenta.'
                  : 'CRM: tus tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Solo ves lo tuyo. Toca un elemento para abrirlo o ir a su cuenta.' };          // el botón grande Eventos / CRM (comercial, admin y super_admin, con el CRM encendido)
 const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
@@ -206,6 +215,7 @@ try {                                                  // refrescar deja la vist
   if (['month', 'week', 'day'].includes(hp.get('vista'))) currentView = hp.get('vista');
   if (/^\d{4}-\d{2}-\d{2}$/.test(hp.get('fecha') || '')) refDate = fromISO(hp.get('fecha'));
   if (CRM_CAL && hp.get('modo') === 'crm') calMode = 'crm';
+  if (ASSIGN_CAL && hp.get('modo') === 'asignar') calMode = 'assign';
 } catch (e) { /* sin hash: vista de siempre */ }
 let eventsCache = [];
 let notesCache = [];
@@ -284,7 +294,7 @@ function currentRange() {
 }
 
 async function loadAndRender() {
-  try { history.replaceState(null, '', '#vista=' + currentView + '&fecha=' + toISO(refDate) + (calMode === 'crm' ? '&modo=crm' : '')); } catch (e) { /* sin historial */ }
+  try { history.replaceState(null, '', '#vista=' + currentView + '&fecha=' + toISO(refDate) + (calMode === 'crm' ? '&modo=crm' : calMode === 'assign' ? '&modo=asignar' : '')); } catch (e) { /* sin historial */ }
   const { start, end } = currentRange();
   if (calMode === 'crm') { await loadCrm(start, end); return; }
   const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
@@ -305,6 +315,7 @@ async function loadAndRender() {
     notesCache = noteRes.ok ? await noteRes.json() : [];
     renderCatChips();
     render();
+    if (calMode === 'assign') renderCoordCards();
   } catch (err) {
     calBody.innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar el calendario</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry-cal>Reintentar</button></div>';
   } finally {
@@ -370,8 +381,10 @@ function openCrmItem(key) {
   if (i.account_id) link('Ir a la cuenta', '/crm/cuentas/' + i.account_id);
 }
 function setCalMode(m) {
-  calMode = (CRM_CAL && m === 'crm') ? 'crm' : 'events';
+  calMode = (CRM_CAL && m === 'crm') ? 'crm' : (ASSIGN_CAL && m === 'assign') ? 'assign' : 'events';
   const crm = calMode === 'crm';
+  const ab = document.getElementById('assignBar'); if (ab) ab.hidden = calMode !== 'assign';
+  if (calMode !== 'assign') selectedCoord = null;
   document.querySelectorAll('#calMode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === calMode ? 'true' : 'false'));
   const set = (id, hide) => { const n = document.getElementById(id); if (n) n.hidden = hide; };
   set('evFilters', crm); set('crmFilters', !crm); set('catBar', true);
@@ -435,7 +448,60 @@ function loadCardLayout() {
 }
 
 // Mes, Semana y Día dibujan LA MISMA tarjeta (la de la plantilla de evento) o, si el calendario está plegado, la línea resumida (color, nombre y código).
+// ---- Asignar coordinadores (17-nov-2026): director de coordinadores y administradores. Mismos eventos y filtros que «Eventos»; arriba, una tarjeta por coordinador para arrastrar sobre el evento. ----
+let coordList = [], selectedCoord = null;
+function assignState(e) {
+  if (e.coordinator_staff_id) return 'ok';
+  if (e.status === 'finalizado') return 'none';
+  const days = Math.round((fromISO(e.start_date) - todayDate()) / 86400000);
+  return days < 2 ? 'urgent' : 'open';          // sin coordinador y empieza en menos de 2 días (o ya empezó) = rojo
+}
+const ASSIGN_LABEL = { ok: 'Con coordinador', open: 'Sin coordinador', urgent: 'Sin coordinador y empieza en menos de 2 días', none: 'Finalizado' };
+function assignChip(e) {
+  const st = assignState(e), who = e.coordinator_name ? `Coordina: ${e.coordinator_name}` : ASSIGN_LABEL[st];
+  return `<div class="cal-assign-chip cal-assign-chip--${st}" data-assign-event="${e.id}" data-assign-ok="${e.status === 'finalizado' ? '0' : '1'}" tabindex="0" role="button" aria-label="${esc(e.name + '. ' + who + '. Suelta o elige un coordinador aquí para asignarlo')}">
+      <strong class="cal-assign-chip__name">${esc(e.name)}</strong>
+      <span class="cal-assign-chip__who">${esc(who)}</span>
+      ${e.coordinator_staff_id ? `<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-assign-clear="${e.id}" aria-label="Quitar el coordinador de ${esc(e.name)}">Quitar</button>` : ''}
+    </div>`;
+}
+function renderCoordCards() {
+  const box = document.getElementById('assignCards'); if (!box) return;
+  const count = {}; eventsCache.forEach((e) => { if (e.coordinator_staff_id) count[e.coordinator_staff_id] = (count[e.coordinator_staff_id] || 0) + 1; });
+  box.innerHTML = coordList.length ? coordList.map((c) => `<button type="button" role="listitem" class="cal-coord${selectedCoord === c.id ? ' cal-coord--on' : ''}" draggable="true" data-coord-id="${c.id}" aria-pressed="${selectedCoord === c.id}" title="Arrástrame sobre un evento">
+      <span class="cal-coord__dot" aria-hidden="true">${esc((c.full_name || c.username).trim().charAt(0).toUpperCase())}</span>
+      <span class="cal-coord__name">${esc(c.full_name || c.username)}</span><span class="cal-coord__n">${count[c.id] || 0}</span></button>`).join('')
+    : '<p class="gw-hint">No hay coordinadores activos.</p>';
+}
+async function assignCoordinator(eventId, coordId) {
+  try {
+    const res = await fetch(`/api/events/${eventId}/assign-coordinator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinator_staff_id: coordId }) });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); showToast(j.detail || 'No se pudo asignar el coordinador', 'error'); return; }
+    const upd = await res.json(), i = eventsCache.findIndex((x) => x.id === eventId);
+    if (i >= 0) eventsCache[i] = Object.assign({}, eventsCache[i], { coordinator_staff_id: upd.coordinator_staff_id, coordinator_name: upd.coordinator_name });
+    showToast(coordId ? 'Coordinador asignado' : 'Coordinador quitado', 'success');
+    renderCoordCards(); render();
+  } catch (err) { showToast('Sin conexión: no se pudo asignar', 'error'); }
+}
+(function wireAssign() {
+  if (!ASSIGN_CAL) return;
+  fetch('/api/staff/coordinators').then((r) => (r.ok ? r.json() : [])).then((l) => { coordList = l; renderCoordCards(); }).catch(() => {});
+  document.addEventListener('dragstart', (ev) => { const c = ev.target.closest && ev.target.closest('[data-coord-id]'); if (c && ev.dataTransfer) { ev.dataTransfer.setData('text/plain', c.dataset.coordId); ev.dataTransfer.effectAllowed = 'copy'; } });
+  const targetOf = (ev) => (calMode === 'assign' && ev.target.closest ? ev.target.closest('[data-assign-event]') : null);
+  document.addEventListener('dragover', (ev) => { const t = targetOf(ev); if (t && t.dataset.assignOk === '1') { ev.preventDefault(); t.classList.add('cal-assign-chip--over'); } });
+  document.addEventListener('dragleave', (ev) => { const t = targetOf(ev); if (t) t.classList.remove('cal-assign-chip--over'); });
+  document.addEventListener('drop', (ev) => { const t = targetOf(ev); if (!t || t.dataset.assignOk !== '1') return; ev.preventDefault(); t.classList.remove('cal-assign-chip--over'); const id = Number(ev.dataTransfer.getData('text/plain')); if (id) assignCoordinator(Number(t.dataset.assignEvent), id); });
+  document.addEventListener('click', (ev) => {
+    if (calMode !== 'assign' || !ev.target.closest) return;
+    const clr = ev.target.closest('[data-assign-clear]'); if (clr) { assignCoordinator(Number(clr.dataset.assignClear), null); return; }
+    const card = ev.target.closest('[data-coord-id]'); if (card) { const id = Number(card.dataset.coordId); selectedCoord = selectedCoord === id ? null : id; renderCoordCards(); return; }
+    const t = ev.target.closest('[data-assign-event]'); if (t && selectedCoord && t.dataset.assignOk === '1') { assignCoordinator(Number(t.dataset.assignEvent), selectedCoord); }
+  });
+  document.addEventListener('keydown', (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && calMode === 'assign' && ev.target.matches && ev.target.matches('[data-assign-event]')) { ev.preventDefault(); ev.target.click(); } });
+})();
+
 function eventChip(e, mode) {
+  if (calMode === 'assign') return assignChip(e);
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
   const body = eventsFolded ? renderCalendarMini(e) : renderCalendarCard(e, CARD_LAYOUT);
   return `<div class="cal-chip cal-chip--big cal-chip--${mode}${eventsFolded ? ' cal-chip--folded' : ''}">
@@ -704,7 +770,7 @@ function openEventActions(btn) {
   eventActions.open(btn, ev);
 }
 
-if (calMode === 'crm') setCalMode('crm'); else loadAndRender();
+if (calMode === 'crm' || calMode === 'assign') setCalMode(calMode); else loadAndRender();
 </script>
 </body>
 </html>

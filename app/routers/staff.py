@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app import audit_actions, jobs, security, sessions, staff_credentials, localmode, temp_client
+from app import audit_actions, coordination, jobs, security, sessions, staff_credentials, localmode, temp_client
 from app.inputcheck import check_text, check_username, text_validator, username_validator
-from app.auth import EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
+from app.auth import DIRECTOR_ROLE, EXTRA_ROLE_CHOICES, ROLE_HIERARCHY, STANDALONE_ROLES, EXTRA_ROLE_PRIMARIES, all_extra_roles, assert_event_scope, assert_event_tenant, effective_roles, hash_password, require_role
 from app.tenant_scope import staff_tenant_enforced
 from app.timeutil import utcnow
 
@@ -92,12 +92,9 @@ def _assert_can_manage(db: Session, actor: StaffUser, target: StaffUser) -> None
 def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
     poblar el selector de 'coordinador asignado' al crear/editar un evento. Incluye a quien tenga
-    'coordinador' como rol PRIMARIO o SECUNDARIO (Fase 15: doble rol coordinador+comercial)."""
-    coords = db.query(StaffUser).filter(
-        or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
-        StaffUser.is_active == True, StaffUser.archived_at.is_(None), StaffUser.event_only.is_(False),          # el coordinador temporal (16-nov-2026) no se asigna como coordinador de un evento: se administra desde «Usuarios del evento»
-    ).all()
-    return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
+    'coordinador' como rol PRIMARIO, SECUNDARIO o sumado (Fase 15: doble rol coordinador+comercial), al director de coordinadores y a los administradores (17-nov-2026)."""
+    coords = coordination.coordinator_candidates(db)          # el coordinador temporal (16-nov-2026) no se asigna como coordinador de un evento: se administra desde «Usuarios del evento»
+    return [{"id": c.id, "username": c.username, "full_name": c.full_name, "roles": sorted(effective_roles(c))} for c in coords]
 
 
 @router.get("/staff/commercials")
@@ -143,6 +140,9 @@ def list_staff(include_archived: bool = False, db: Session = Depends(get_db), st
 def create_staff(
     data: StaffIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
+    director = data.role == DIRECTOR_ROLE          # 17-nov-2026: «Director de coordinadores» se guarda como coordinador + este rol sumado (app/coordination.py)
+    if director:
+        data.role = "coordinador"
     if data.role not in STAFF_ROLES and data.role not in STANDALONE_ROLES:
         raise HTTPException(status_code=400, detail="Rol inválido")
     if data.role == "super_admin":
@@ -179,6 +179,7 @@ def create_staff(
         created_by_id=staff.id,
         phone=phone,
         email=(data.email or "").strip() or None,
+        extra_roles=DIRECTOR_ROLE if director else None,
         must_change_password=security.must_change_on_set_by_other(data.role),       # Fase 4: la contraseña inicial la puso el admin; la persona elige la suya al ingresar
     )
     db.add(new_staff)
@@ -273,6 +274,8 @@ def set_staff_roles(
             raise HTTPException(status_code=400, detail=f"El rol «{r}» no se puede sumar a una cuenta")
         if r == target.role:
             raise HTTPException(status_code=400, detail="Ese ya es su rol principal")
+    if DIRECTOR_ROLE in wanted and "coordinador" not in ({target.role} | set(wanted)):
+        raise HTTPException(status_code=400, detail="El director de coordinadores también es coordinador: la cuenta debe tener el rol Coordinador")
     had_admin = "admin" in all_extra_roles(target)
     if ("admin" in wanted) != had_admin and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede dar o quitar el rol Admin")
@@ -370,7 +373,10 @@ def change_staff_role(
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede nombrar cuentas Admin")
     target.role = new_role
     sessions.revoke_all(target)             # la sesión abierta recarga sus permisos (las páginas leen el rol guardado al entrar)
-    _set_extra_roles(target, [r for r in all_extra_roles(target) if new_role in EXTRA_ROLE_PRIMARIES])          # lo que ya no encaja (o ya es el principal) se quita
+    keep = [r for r in all_extra_roles(target) if new_role in EXTRA_ROLE_PRIMARIES]          # lo que ya no encaja (o ya es el principal) se quita
+    if new_role != "coordinador" and "coordinador" not in keep:
+        keep = [r for r in keep if r != DIRECTOR_ROLE]          # sin ser coordinador no hay director de coordinadores
+    _set_extra_roles(target, keep)
     db.commit()
     return _serialize(target)
 

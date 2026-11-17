@@ -20,6 +20,12 @@ for _r in EXTRA_ONLY_ROLES:
     ROLE_HIERARCHY[_r] = -1
 
 
+# «Director de coordinadores» (17-nov-2026, decisión de Juan David): NO es un escalón de la escalera. Es un coordinador (rol principal `coordinador`, con todos sus permisos para ejecutar eventos) con este rol SUMADO
+# (extra_roles), que le da dos cosas más: asignar coordinadores a los eventos (calendario «Asignar coordinadores») y revisar las legalizaciones (app/coordination.py). Rango -1 como los roles de inventario: el
+# rango lo pone el rol principal, nunca sube ni baja. Los administradores tienen las mismas dos potestades sin necesitar este rol.
+DIRECTOR_ROLE = "dir_coordinadores"
+ROLE_HIERARCHY[DIRECTOR_ROLE] = -1
+
 FORM_CLIENT_OWN_PREFIXES = ("/api/form-client/", "/mi-formulario")          # sus propias rutas responden con su mensaje de acceso vencido (403, form_client.resolve)
 
 
@@ -84,7 +90,7 @@ def effective_roles(staff: StaffUser) -> set:
 
 # Roles que se pueden SUMAR al rol principal de una cuenta (8-nov-2026, decisión de Juan David). «almacen» y «contabilidad» (Fase 5) son SOLO extra (EXTRA_ONLY_ROLES).
 # Solo cuentas con rol principal en EXTRA_ROLE_PRIMARIES reciben roles extra; «admin» como extra solo lo da el Super Admin.
-EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin", "almacen", "contabilidad")
+EXTRA_ROLE_CHOICES = ("coordinador", "comercial", "admin", "almacen", "contabilidad", DIRECTOR_ROLE)
 EXTRA_ROLE_PRIMARIES = ("coordinador", "comercial", "almacen", "contabilidad")          # rol principal que admite sumar otros
 
 
@@ -264,7 +270,7 @@ def is_event_only(staff) -> bool:
 def _scope_applies(staff: StaffUser) -> bool:
     if is_event_only(staff):
         return True          # el coordinador temporal SIEMPRE queda limitado a sus eventos, con ENFORCE_STAFF_EVENT_SCOPE encendido o no
-    return event_scope_enforced() and staff.role not in ("digitador", "cliente") and not ({"admin", "super_admin"} & effective_roles(staff))
+    return event_scope_enforced() and staff.role not in ("digitador", "cliente") and not ({"admin", "super_admin", DIRECTOR_ROLE} & effective_roles(staff))          # el director de coordinadores ve y asigna todos los eventos
 
 
 def assert_event_scope(event: Event, staff: StaffUser, db: Session) -> None:
