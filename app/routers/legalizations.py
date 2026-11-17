@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app import audit_actions, legalization_svc as svc, uploads
 from app import legalization_xlsx as lx
-from app.auth import get_event_for_staff, require_role
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app.database import get_db
 from app.models import EventExpense, EventLegalization, LEGALIZATION_STATUSES, StaffUser
 from app.routers import event_docs
@@ -151,6 +151,7 @@ def _view(db: Session, event, leg, staff: StaffUser, include_archived: bool = Fa
         "summary": svc.summary(db, event.id, leg),
         "kinds": [{"kind": k, "label": svc.RUBRO[k]} for k in lx.KINDS],
         "file_name": lx.file_name(event.event_code, event.name),
+        "can_review": max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) >= ROLE_HIERARCHY["admin"],      # aprobar o devolver: lo mismo que exige DIRECTOR
     }
 
 

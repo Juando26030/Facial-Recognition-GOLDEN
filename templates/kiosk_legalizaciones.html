@@ -52,81 +52,57 @@
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name|upper }}</p>
-        <h1 class="gw-page-head__title">Legalizaciones del evento</h1>
-        <p class="gw-page-head__sub">Los gastos del evento con su evidencia y el total al día.</p>
+        <h1 class="gw-page-head__title">Legalizaciones del evento <span class="gw-badge" id="legStatus" hidden></span></h1>
+        <p class="gw-page-head__sub">Los gastos del coordinador por rubro, listos para entregar en el Excel oficial de Golden.</p>
       </div>
       <div class="gw-page-head__actions">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="legalizaciones">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
 
-    <form id="expForm" class="gw-card gw-stack" data-gw-tour-step="1" data-gw-tour-title="1. Registra el gasto" data-gw-tour-text="Llena los campos con asterisco, adjunta la evidencia y pulsa «Registrar gasto».">
-      <h2 class="gw-card__title">Registrar un gasto</h2>
-      <div class="gw-fields-row gw-fields-row--3">
-        <div class="gw-field">
-          <label class="gw-label" for="expCategory">Categoría de gasto *</label>
-          <input class="gw-input" type="text" id="expCategory" name="category" list="catList" required placeholder="Ej. Transporte">
-          <datalist id="catList"><option value="Transporte"><option value="Alimentación"><option value="Hospedaje"><option value="Materiales"><option value="Personal"><option value="Otros"></datalist>
-        </div>
-        <div class="gw-field">
-          <label class="gw-label" for="expResponsible">Persona responsable *</label>
-          <input class="gw-input" type="text" id="expResponsible" name="responsible" required>
-        </div>
-        <div class="gw-field">
-          <label class="gw-label" for="expAmount">Valor *</label>
-          <input class="gw-input" type="number" id="expAmount" name="amount" min="0" step="0.01" required placeholder="0" inputmode="decimal">
-        </div>
-      </div>
-      <div class="gw-field" data-gw-tour-step="2" data-gw-tour-title="2. Adjunta el soporte" data-gw-tour-text="Una foto de la factura o del recibo queda guardada con el gasto.">
-        <label class="gw-label" for="expEvidence">Foto de evidencia</label>
-        <input class="gw-input" type="file" id="expEvidence" name="evidence" accept="image/*">
-      </div>
-      <details class="gw-form-group">
-        <summary class="gw-form-group__summary">Más datos (opcional)</summary>
-        <div class="gw-form-group__body gw-stack">
-          <div class="gw-field">
-            <label class="gw-label" for="expAppliesTo">A quién aplica</label>
-            <input class="gw-input" type="text" id="expAppliesTo" name="applies_to" placeholder="Ej. Cliente, Golden, un proveedor...">
-          </div>
-          <div class="gw-field">
-            <label class="gw-label" for="expDescription">Descripción</label>
-            <textarea class="gw-textarea" id="expDescription" name="description" rows="2"></textarea>
-          </div>
-        </div>
-      </details>
-      <div class="gw-actions">
-        <button type="submit" class="gw-btn gw-btn--primary gw-docs-main">{{ ic('plus') }} Registrar gasto</button>
-      </div>
-    </form>
+    <div id="legNotice" hidden></div>
 
-    <section class="gw-card gw-stack" aria-labelledby="expListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Revisa el total" data-gw-tour-text="Aquí ves cada gasto y el total del evento. El reporte en Excel se descarga con el botón de esta sección.">
-      <div class="gw-stats-row gw-stats-row--2 gw-leg-stats">
-        <div class="gw-stat gw-stat--ok">{{ ic('chart', 'gw-stat__icon') }}<span class="gw-stat__value" id="totalAmount">0</span><span class="gw-stat__label">Total del evento</span></div>
-        <div class="gw-stat">{{ ic('form', 'gw-stat__icon') }}<span class="gw-stat__value" id="expCount">0</span><span class="gw-stat__label">Gastos registrados</span></div>
-      </div>
+    <section class="gw-card gw-stack" aria-labelledby="legHeadTitle" data-gw-tour-step="1" data-gw-tour-title="1. Completa el encabezado" data-gw-tour-text="Quién responde por la legalización, su cédula y el anticipo en pesos que le entregaron. El consecutivo y el CE final los escribe administrativa en el Excel.">
+      <h2 class="gw-card__title" id="legHeadTitle">Encabezado de la legalización</h2>
+      <form id="legHeadForm" class="gw-stack" novalidate>
+        <div class="gw-fields-row gw-fields-row--4">
+          <div class="gw-field"><label class="gw-label" for="hName">Responsable *</label><input class="gw-input" type="text" id="hName" name="responsible_name" maxlength="200" autocomplete="off"></div>
+          <div class="gw-field"><label class="gw-label" for="hCc">Cédula *</label><input class="gw-input" type="text" id="hCc" name="responsible_cc" maxlength="40" inputmode="numeric" autocomplete="off"></div>
+          <div class="gw-field"><label class="gw-label" for="hAdvance">Anticipo entregado (en pesos)</label><input class="gw-input" type="number" id="hAdvance" name="advance_amount" min="0" step="0.01" inputmode="decimal" placeholder="0"></div>
+          <div class="gw-field"><label class="gw-label" for="hDate">Fecha de la legalización</label><input class="gw-input" type="date" id="hDate" name="legalization_date"></div>
+        </div>
+        <p class="gw-hint" id="legEventLine"></p>
+        <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary" id="hSave">Guardar encabezado</button></div>
+      </form>
+    </section>
+
+    <section class="gw-card gw-stack" aria-labelledby="legSumTitle" data-gw-tour-step="3" data-gw-tour-title="3. Revisa, envía y descarga" data-gw-tour-text="Aquí ves los totales. «Enviar a revisión» la pasa al director; el Excel se puede descargar en cualquier momento.">
       <div class="gw-row gw-row--between">
-        <h2 class="gw-card__title" id="expListTitle">Gastos registrados</h2>
-        {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
-        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/expenses/report">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a>
+        <h2 class="gw-card__title" id="legSumTitle">Resumen</h2>
+        <div class="gw-actions" id="legActions">
+          <a class="gw-btn gw-btn--secondary gw-btn--sm" id="legDownload" href="/api/events/{{ event.id }}/legalization/report">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a>
+          <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" id="legSubmit" hidden>Enviar a revisión</button>
+          <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" id="legApprove" hidden>Aprobar legalización</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="legReturn" hidden>Devolver al coordinador</button>
+        </div>
       </div>
-      <div id="expList" class="gw-cards" aria-live="polite" aria-busy="true">
-        {{ skeleton('cards', rows=3, label='Cargando gastos…') }}
+      <div class="gw-stats-row gw-leg-stats" id="legStats" aria-live="polite">
+        <div class="gw-stat gw-stat--ok">{{ ic('chart', 'gw-stat__icon') }}<span class="gw-stat__value" id="sTotal">0</span><span class="gw-stat__label">Total de gastos</span></div>
+        <div class="gw-stat">{{ ic('form', 'gw-stat__icon') }}<span class="gw-stat__value" id="sAdvance">0</span><span class="gw-stat__label">Anticipo entregado</span></div>
+        <div class="gw-stat"><span class="gw-stat__value" id="sBalance">0</span><span class="gw-stat__label" id="sBalanceLabel">Saldo</span></div>
+        <div class="gw-stat"><span class="gw-stat__value" id="sCount">0</span><span class="gw-stat__label">Gastos registrados</span></div>
       </div>
     </section>
 
-    <details class="gw-form-group">
-      <summary class="gw-form-group__summary">¿Cómo funciona?</summary>
-      <div class="gw-form-group__body">
-        <ol class="gw-steps gw-leg-steps" aria-label="Cómo se usa esta pantalla">
-          <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Registra el gasto</span>
-            {% call ayuda('ay_leg1', 'Registra el gasto') %}Escribe la categoría, quién respondió por el gasto y el valor. «A quién aplica» y la descripción son opcionales.{% endcall %}</li>
-          <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Adjunta el soporte</span>
-            {% call ayuda('ay_leg2', 'Adjunta el soporte') %}La foto de evidencia es opcional pero recomendada: queda guardada junto al gasto.{% endcall %}</li>
-          <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Revisa el total</span>
-            {% call ayuda('ay_leg3', 'Revisa el total') %}El total se actualiza con cada gasto. Descarga el reporte en Excel cuando lo necesites.{% endcall %}</li>
-        </ol>
-      </div>
-    </details>
+    <div class="gw-tabs" id="legTabs" data-gw-tour-step="2" data-gw-tour-title="2. Registra cada gasto en su rubro" data-gw-tour-text="Hay una pestaña por hoja del Excel: hospedaje, pasajes, taxis, digitadores(as), alimentación y otros gastos.">
+      <div class="gw-tablist" id="legTablist" role="tablist" aria-label="Rubros de la legalización"></div>
+      <div class="gw-tabpanels" id="legPanels">{{ skeleton('cards', rows=3, label='Cargando gastos…') }}</div>
+    </div>
+
+    <div class="gw-row gw-row--between">
+      {% if staff_role in ("coordinador", "comercial", "admin", "super_admin") %}<label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>{% endif %}
+      <span class="gw-hint">Un gasto equivocado se archiva y se registra de nuevo; los archivados no suman ni salen en el Excel.</span>
+    </div>
   </div>
 </main>
 </body>

@@ -48,7 +48,7 @@ def test_la_pantalla_trae_los_rubros_el_encabezado_y_los_totales(client, ev):
     data = client.get(_url(ev)).json()
     assert [k["kind"] for k in data["kinds"]] == ["hospedaje", "pasaje", "taxi_terminal", "taxi_ciudad", "alimentacion", "digitador", "otro"]
     assert data["header"]["status"] == "borrador" and data["header"]["responsible_name"] == "Ana Coord"      # sugerido: quien está logueado
-    assert data["file_name"].startswith("LEG-COD_") and data["summary"]["total"] == 0
+    assert data["file_name"].startswith("LEG-COD_") and data["summary"]["total"] == 0 and data["can_review"] is False
 
 
 def test_registrar_un_gasto_por_rubro_y_sumar(client, ev, db):
@@ -131,6 +131,7 @@ def test_el_coordinador_no_aprueba_ni_devuelve_pero_el_director_si(client, ev, f
     assert client.post(_url(ev, f"/lines/{line['id']}/review"), json={"approved": True}).status_code == 403
     client.post("/logout")
     login(client, "director")
+    assert client.get(_url(ev)).json()["can_review"] is True
     assert client.post(_url(ev, f"/lines/{line['id']}/review"), json={"approved": False}).json()["approved"] is False
     assert client.post(_url(ev, "/return"), json={"note": ""}).status_code == 400      # la devolución lleva nota
     r = client.post(_url(ev, "/return"), json={"note": "Falta el soporte del hotel"})
