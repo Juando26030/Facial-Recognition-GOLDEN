@@ -42,5 +42,5 @@ def test_public_and_biometric_services_get_only_what_they_use(tmp_path):
 def test_staging_never_wires_production_only_secrets():
     src = (ROOT / "deploy" / "gcp" / "deploy.sh").read_text(encoding="utf-8")
     line = next(ln for ln in src.splitlines() if 'if [ "$GOLDEN_ENV" = staging ]; then case "$name" in' in ln)
-    for pat in ("azure-*", "graph-sender", "wompi-public-key", "wompi-integrity-secret", "wompi-events-secret", "wompi-private-key", "onedrive-*", "backup-copy-encryption-key"):
+    for pat in ("azure-*", "graph-sender", "wompi-public-key", "wompi-integrity-secret", "wompi-events-secret", "wompi-private-key", "onedrive-*", "backup-copy-encryption-key", "neon-*"):
         assert pat in line, pat
