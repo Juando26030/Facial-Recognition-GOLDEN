@@ -715,6 +715,7 @@
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
+    try { const fresh = await fetch(`/api/events/${ev.id}`, { cache: 'no-store' }); if (fresh.ok) Object.assign(ev, await fresh.json()); } catch (e) { /* sin red: se usa lo que traía la lista */ }          // la lista puede estar desactualizada (p. ej. base final subida después de cargarla): el estado «Facturado» depende de esto
     current = ev; savedCallback = onSaved || null;
     const [tpl] = await Promise.all([loadTemplate(), loadSuperEvents(ev.super_event_id)]);
     form.event_id.value = ev.id;
