@@ -1,4 +1,4 @@
-/* Parámetros → Turnos y filas (Fase 8). Módulo propio: guarda con su botón, no entra en el «Sin guardar» del resto. */
+/* Parámetros → Turnos y filas (Fase 8). Se guarda con el «Guardar cambios» general (GWParams, clave «queue»). */
 (function () {
   var box = document.getElementById('queueBox');
   if (!box) return;
@@ -31,17 +31,14 @@
   box.addEventListener('change', function (e) {
     if (e.target.id === 'queueEnabled') $('queueConfig').hidden = !e.target.checked;
   });
-  box.addEventListener('click', function (e) {
-    if (!e.target.closest('#queueSave')) return;
+  // Se guarda con el «Guardar cambios» general (clave «queue»); no hay botón propio.
+  GWParams.register({ key: 'queue', label: 'Turnos y filas', order: 68, save: async function () {
     var body = { enabled: $('queueEnabled').checked, config: {
       mode: $('queueMode').value, lanes: textToLanes($('queueLanes').value),
       show_name: $('queueShowName').checked, require_registered: $('queueRequireReg').checked } };
-    fetch(api, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (res) {
-        if (!res.ok) { showToast(res.j.detail || 'No se pudo guardar', 'error'); return; }
-        fill(res.j); showToast('Turnos y filas guardado', 'success');
-      })
-      .catch(function () { showToast('No se pudo guardar. Revisa la conexión.', 'error'); });
-  });
+    var r = await fetch(api, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var j = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'No se pudo guardar');
+    fill(j);
+  } });
 })();
