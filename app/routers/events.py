@@ -602,7 +602,7 @@ def update_event(
         if entering_billing and event.status != "finalizado":
             raise HTTPException(status_code=400, detail="Solo un evento «Finalizado» se puede pasar a «Facturado»")
         if entering_billing and not event.final_db_key:          # decisión de Juan David (9-nov-2026): sin la base final adjunta no se factura
-            raise HTTPException(status_code=400, detail="Para pasar el evento a «Facturado» primero hay que adjuntar la base de datos final (Editar evento → Base de datos final)")
+            raise HTTPException(status_code=400, detail="Para pasar el evento a «Facturado» primero hay que adjuntar la base de datos final (Editar evento → Base de datos final). El informe final es otra cosa y no cuenta para facturar")
         if leaving_billing and entering_billing:
             leaving_billing = False          # de un estado de facturación a otro: se conserva quién y cuándo lo facturó
             entering_billing = False

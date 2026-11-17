@@ -416,7 +416,7 @@
       const needsFinal = ev.status !== 'finalizado' && ev.state_id !== st.id;
       const needsDb = !ev.final_db_uploaded && ev.state_id !== st.id;
       const blocked = st.billing && (!info.canBill || needsFinal || needsDb);
-      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (primero adjunte la base de datos final)');
+      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (falta la BASE de datos final; el informe final no cuenta)');
       return `<option value="id:${st.id}" data-base="${esc(st.base_status)}"${blocked ? ' disabled' : ''}>${esc(st.name)}${st.billing && blocked ? why : ''}</option>`;
     }).join('');
     let sel = ev.state_id && info.list.some((st) => st.id === ev.state_id) ? 'id:' + ev.state_id : null;
