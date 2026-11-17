@@ -1,5 +1,7 @@
 /* Clientes - Cuentas (templates/clientes.html). Lógica de siempre (rutas /api/tenants y /api/events, permisos por rol), con la piel nueva: tarjetas, estados vacío/cargando/error,
-   GW.busy en los botones que hacen peticiones y delegación de eventos (sin onclick en línea). */
+   GW.busy en los botones que hacen peticiones y delegación de eventos (sin onclick en línea).
+   Guardado unificado (docs/ux/GUARDADO_UNIFICADO.md): «Editar datos del cliente» ya no tiene su propio «Guardar»; lo editado queda pendiente (un bloque «tenant:<id>» por cliente,
+   GWParams) y se guarda con la barra única. Archivar, restaurar, borrar, crear (cliente, evento) y el CAMBIO DE ESTADO de un evento (acto con su propia confirmación) siguen siendo inmediatos. */
 (function () {
   'use strict';
   const root = document.getElementById('clientesRoot');
@@ -26,6 +28,27 @@
 
   const listEl = document.getElementById('tenantsList');
   let allTenants = [];
+  const drafts = new Map();          // id del cliente -> { name, contact_name, contact_phone, contact_email } editado y sin guardar (sobrevive a buscar o recargar la lista)
+  const registered = new Set();
+  const draftOf = (t) => Object.assign({ name: t.name || '', contact_name: t.contact_name || '', contact_phone: t.contact_phone || '', contact_email: t.contact_email || '' }, drafts.get(String(t.id)) || {});
+  const tenantById = (id) => allTenants.find((x) => String(x.id) === String(id));
+  function registerTenantBlock(t) {
+    const id = String(t.id);
+    if (registered.has(id) || !window.GWParams) return;
+    registered.add(id);
+    GWParams.register({
+      key: 'tenant:' + id, label: 'Cliente «' + t.name + '»', order: 10,
+      save: async () => {
+        const d = drafts.get(id);
+        if (!d) return;
+        if (!String(d.name || '').trim()) throw new Error('El nombre del cliente no puede quedar vacío');
+        const r = await tenantCall('/api/tenants/' + encodeURIComponent(id), 'PATCH', d);
+        if (!r.ok) throw new Error(r.detail || 'No se pudo guardar');
+        drafts.delete(id);
+        await loadTenants();
+      },
+    });
+  }
   const tenantEventsCache = new WeakMap();
 
   /* ---------------------------------------------------------------- Lista de clientes */
@@ -70,15 +93,17 @@
   // Datos del cliente (comercial+) y archivar / restaurar / borrar definitivo (admin+ / super_admin). Todo por delegación de eventos.
   function tenantAdminHtml(t) {
     const id = esc(t.id);
+    const dv = draftOf(t);
+    if (canEdit && !t.archived) registerTenantBlock(t);
     const editForm = canEdit && !t.archived ? `<details class="gw-group"><summary class="gw-group__sum">${icon('edit', 'gw-icon--sm')} Editar datos del cliente</summary><div class="gw-group__body">
-      <form class="gw-stack" data-edit-tenant="${id}">
-        <div class="gw-field"><label class="gw-label" for="etName${id}">Nombre del cliente/cuenta</label><input class="gw-input" id="etName${id}" name="name" required value="${esc(t.name)}"></div>
+      <form class="gw-stack" data-edit-tenant="${id}" data-psave="tenant:${id}">
+        <div class="gw-field"><label class="gw-label" for="etName${id}">Nombre del cliente/cuenta</label><input class="gw-input" id="etName${id}" name="name" required value="${esc(dv.name)}"></div>
         <div class="gw-fields-row gw-fields-row--3">
-          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCn${id}">Contacto - Nombre</label><input class="gw-input" id="etCn${id}" name="contact_name" value="${esc(t.contact_name)}"></div>
-          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCp${id}">Contacto - Teléfono</label><input class="gw-input" id="etCp${id}" name="contact_phone" inputmode="tel" value="${esc(t.contact_phone)}"></div>
-          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCe${id}">Contacto - Correo</label><input class="gw-input" id="etCe${id}" name="contact_email" type="email" value="${esc(t.contact_email)}"></div>
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCn${id}">Contacto - Nombre</label><input class="gw-input" id="etCn${id}" name="contact_name" value="${esc(dv.contact_name)}"></div>
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCp${id}">Contacto - Teléfono</label><input class="gw-input" id="etCp${id}" name="contact_phone" inputmode="tel" value="${esc(dv.contact_phone)}"></div>
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="etCe${id}">Contacto - Correo</label><input class="gw-input" id="etCe${id}" name="contact_email" type="email" value="${esc(dv.contact_email)}"></div>
         </div>
-        <div class="gw-actions"><button type="submit" class="gw-btn gw-btn--primary gw-btn--sm">Guardar cambios</button></div>
+        <p class="gw-hint">Los cambios se guardan con el botón «Guardar cambios» de abajo.</p>
       </form></div></details>` : '';
     let actions = '';
     if (isAdmin) {
@@ -284,16 +309,23 @@
     }
   });
 
-  listEl.addEventListener('submit', async (e) => {
+  // Enter dentro del formulario de datos del cliente no recarga ni guarda aparte: dispara la barra única.
+  listEl.addEventListener('submit', (e) => {
+    if (!e.target.closest('[data-edit-tenant]')) return;
+    e.preventDefault();
+    const save = document.getElementById('paramsSaveBtn');
+    if (save && !save.disabled) save.click();
+  });
+
+  // Lo escrito en «Editar datos del cliente» se guarda como borrador (la barra ya lo marca pendiente por estar dentro de [data-psave]).
+  listEl.addEventListener('input', (e) => {
     const form = e.target.closest('[data-edit-tenant]');
     if (!form) return;
-    e.preventDefault();
-    const payload = Object.fromEntries(new FormData(form).entries());
-    await busy(form.querySelector('button[type="submit"]'), async () => {
-      const r = await tenantCall('/api/tenants/' + encodeURIComponent(form.dataset.editTenant), 'PATCH', payload);
-      showToast(r.ok ? 'Datos del cliente guardados' : (r.detail || 'No se pudo guardar'), r.ok ? 'success' : 'error');
-      if (r.ok) loadTenants();
-    });
+    const id = form.dataset.editTenant, t = tenantById(id);
+    if (!t) return;
+    const d = draftOf(t);
+    d[e.target.name] = e.target.value;
+    drafts.set(id, d);
   });
 
   listEl.addEventListener('input', (e) => {
