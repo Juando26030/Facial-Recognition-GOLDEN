@@ -1091,12 +1091,35 @@ class InventoryProduct(Base):
     sku = Column(String, nullable=True)
     fields_json = Column(Text, nullable=True)
     qty_total = Column(Integer, nullable=True)      # 0110: existencias de Golden (NULL = no se controla); con ellas se avisa cuando lo asignado a eventos que se cruzan en fechas las supera (app/inventory_alerts.py)
+    tracking = Column(String(10), nullable=False, default='cantidad', server_default='cantidad')          # 0148 (almacén): 'serial' (QR por equipo) | 'modelo' (QR por modelo) | 'cantidad' (QR por tipo); app/almacen.py
+    checklist_row = Column(String(40), nullable=True)          # 0148: clave de la fila del checklist GEYL a la que suma (app/almacen.py CHECKLIST_ROWS); NULL = no sale en el checklist
+    is_consumable = Column(Boolean, nullable=False, default=False, server_default='false')          # 0148: se gasta y no vuelve (almacén lo repone y lo cuenta a mano)
+    qr_code = Column(String(12), nullable=True, unique=True)          # 0148: código del QR del producto (solo 'modelo' y 'cantidad'; los 'serial' llevan el QR en cada unidad)
     position = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     category = relationship('InventoryCategory')
+
+
+class InventoryUnit(Base):
+    """Un equipo con serial del almacén (0148, Pieza 1): su propio número visible (`number`, único por producto, nunca se reutiliza) y su propio QR (`code`: «GW» + 6 caracteres, solo mayúsculas y números).
+    `status`: disponible | en_evento | novedad (la novedad y el bloqueo son de la Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
+    __tablename__ = 'inventory_units'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    number = Column(Integer, nullable=False)
+    code = Column(String(12), nullable=False, unique=True)
+    serial = Column(String(80), nullable=True)
+    status = Column(String(20), nullable=False, default='disponible', server_default='disponible')
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    product = relationship('InventoryProduct')
+    __table_args__ = (UniqueConstraint('product_id', 'number', name='uq_inventory_unit_number'), Index('ix_inventory_units_product', 'product_id'))
 
 
 class LocalNode(Base):

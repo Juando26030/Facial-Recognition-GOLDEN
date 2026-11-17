@@ -30,6 +30,7 @@ source deploy/gcp/config.sh "$ENV_NAME"
 SHA="$(git rev-parse HEAD)"
 # CRM: el valor sale de config.sh (staging 1, producción 0 salvo CRM_ENABLED=1 en este comando) y deploy.sh lo escribe en el servicio `web`. Se muestra aquí para verlo ANTES de desplegar.
 echo "CRM_ENABLED=$CRM_ENABLED (entorno $ENV_NAME)"
+echo "ALMACEN_ENABLED=$ALMACEN_ENABLED (entorno $ENV_NAME)"
 if [ "$ENV_NAME" = production ] && [ "$CRM_ENABLED" = 1 ]; then echo "AVISO: vas a ENCENDER el CRM en PRODUCCIÓN. Solo con autorización explícita de Juan David y con el contador fijado (scripts/crm_set_counter.py)." >&2; fi
 IMAGE="${IMAGE_BASE}:${SHA}"
 say() { echo -e "\n== $*"; }

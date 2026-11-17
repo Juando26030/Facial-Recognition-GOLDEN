@@ -94,7 +94,7 @@
   const stateBox = (msg, err) => `<div class="gw-state${err ? ' gw-state--error' : ''}" role="${err ? 'alert' : 'status'}"><p class="gw-state__title">${esc(msg)}</p></div>`;
 
   /* ---- pestañas */
-  const TABS = { cat: ['invTabCat', 'invPanelCat'], cal: ['invTabCal', 'invPanelCal'], adm: ['tab_inventario', 'inventario'] };
+  const TABS = { cat: ['invTabCat', 'invPanelCat'], cal: ['invTabCal', 'invPanelCal'], adm: ['tab_inventario', 'inventario'], alm: ['invTabAlm', 'invPanelAlm'] };
   function showTab(name) {
     Object.keys(TABS).forEach((t) => {
       const tab = $(TABS[t][0]), panel = $(TABS[t][1]);
@@ -106,6 +106,7 @@
     });
     if (name === 'cal' && !cal.loaded) loadCalendar();
     if (name === 'adm' && $('tab_inventario')) $('tab_inventario').dispatchEvent(new Event('gw:tabshow'));          // el administrador del catálogo carga al abrirse
+    if (name === 'alm' && $('invTabAlm')) $('invTabAlm').dispatchEvent(new Event('gw:tabshow'));          // Almacén (Pieza 1) carga al abrirse
     if (name === 'cat' && catalog) loadCatalog();          // el catálogo pudo cambiar en «Administrar»
   }
   doc.querySelector('.gw-invpg__container, .gw-container').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b && TABS[b.dataset.tab]) showTab(b.dataset.tab); });
