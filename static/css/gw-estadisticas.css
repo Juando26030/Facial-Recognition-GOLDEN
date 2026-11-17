@@ -56,10 +56,6 @@
 .gw-stats-head-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }
 
 /* barra de avance de la exportación */
-/* Exportar: el botón y, debajo, la casilla «Eliminar del reporte campos no usados» (desmarcada por defecto) */
-.gw-stats-exportbox { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gw-sp-1); }
-.gw-stats-exportbox__opt { min-height: 0; gap: var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
-.gw-stats-exportbox__opt input { width: 1.25rem; height: 1.25rem; }
 .gw-stats-export { margin-top: var(--gw-sp-3); }
 .gw-stats-export[hidden] { display: none; }
 

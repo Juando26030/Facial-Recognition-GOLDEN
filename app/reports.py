@@ -110,7 +110,7 @@ def _read_optional(key) -> "bytes | None":
 
 class ReportManager:
     @staticmethod
-    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str, progress=None, prune_unused: bool = False):
+    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str, progress=None):
         progress = progress or (lambda *a, **k: None)
         progress("Leyendo las personas del evento", 5, 100, force=True)
         event = db.query(Event).filter(Event.id == event_id).first()
@@ -214,6 +214,10 @@ class ReportManager:
                 out["Hora de Registro"] = ""
             data.append(out)
 
+        # Orden de las filas (17-nov-2026): primero las registradas, de la última a la primera registrada; al final las no registradas (por apellido y nombre).
+        paired = sorted(zip(data, raw_rows), key=lambda p: ((0, -p[1]["log"].timestamp.timestamp(), "") if p[1]["log"] else (1, 0, f"{p[1]['last_name'] or ''} {p[1]['first_name'] or ''}".lower())))
+        data, raw_rows = [d for d, _ in paired], [r for _, r in paired]
+
         progress("Armando el Excel", 60, 100, force=True)
         df = pd.DataFrame(data, columns=all_headers)          # tabla completa: la usan la portada y los gráficos aunque se quiten columnas vacías en las hojas
         TITLE_ROWS = 4  # cliente/cuenta, evento, código, fila en blanco
@@ -222,7 +226,7 @@ class ReportManager:
 
         def write_report_sheet(writer, frame, rows, sheet_name):
             """Escribe una hoja con el formato del «Reporte» (título, encabezados, autofiltro, firmas). `rows` = filas crudas en el mismo orden que `frame`."""
-            frame = prune_unused_columns(frame) if prune_unused else frame
+            frame = prune_unused_columns(frame)          # siempre: sin columnas donde nadie tiene dato
             headers = list(frame.columns)
             last_col_letter = get_column_letter(len(headers))
             safe_frame(frame).to_excel(writer, index=False, sheet_name=sheet_name, startrow=header_row - 1)
