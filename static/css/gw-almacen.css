@@ -14,3 +14,13 @@
 #invPanelAlm .gw-alm__note { min-width: 14rem; }
 #invPanelAlm .gw-alm__void td { opacity: 0.6; text-decoration: line-through; }
 #invPanelAlm .gw-alm__void td:last-child { text-decoration: none; }
+/* Tarjetas del catálogo (Administrar catálogo): control de bodega, QR del tipo, foto y objetos. Viven fuera del panel «Almacén», dentro de #inventario. */
+#inventario .gw-alm__slot { display: flex; align-items: flex-start; gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); }
+#inventario .gw-alm__slotbody { display: grid; gap: var(--gw-sp-2); min-width: 0; flex: 1; }
+#inventario .gw-alm__thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: var(--gw-radius-sm); border: 1px solid var(--gw-border); flex: none; }
+#inventario .gw-alm__qr { font-family: inherit; font-weight: var(--gw-fw-bold); letter-spacing: 0.08em; max-width: 14rem; }
+#inventario .gw-alm__qrbox { display: grid; gap: var(--gw-sp-1); }
+#inventario .gw-alm__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+#inventario .gw-table .gw-select, #inventario .gw-table .gw-input { min-width: 9rem; }
+#inventario .gw-alm__pick { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
+:root[data-theme="dark"] #inventario .gw-alm__pick { accent-color: var(--gw-gold-2); }

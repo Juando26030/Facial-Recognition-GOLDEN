@@ -12,6 +12,7 @@
   let catalog = { categories: [], products: [], units: [] };
   let showArchived = false;
   let editing = null;          // id del producto que se edita (null = crear)
+  const PROD_TITLE = $('invProdFormTitle').textContent;
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -35,7 +36,7 @@
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cat-restore="${c.id}" aria-label="Restaurar ${esc(c.name)}">${icon('undo')} Restaurar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-cat-del="${c.id}" data-name="${esc(c.name)}" aria-label="Eliminar definitivamente ${esc(c.name)}">${icon('trash')} Eliminar definitivamente</button>`);
     }
-    return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(c.name)}</span>${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
+    return `<article class="gw-card-row" data-prod-id="${p.id}"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(c.name)}</span>${c.archived ? '<span class="gw-badge">Archivada</span>' : ''}</div>
       <p class="gw-card-row__meta">${c.archived ? 'Archivada' : (c.products === 1 ? '1 producto activo' : c.products + ' productos activos')}</p><div class="gw-card-row__actions">${btns.join('')}</div></article>`;
   }
 
@@ -51,7 +52,7 @@
     const meta = [p.category_name ? esc(p.category_name) : '<span class="gw-badge gw-badge--warn">Sin categoría</span>', esc(p.unit), p.sku ? 'SKU ' + esc(p.sku) : '', p.stock != null ? 'Existencias ' + esc(p.stock) : '']
       .concat((p.fields || []).length ? ['Campos: ' + p.fields.map((f) => esc(f.label)).join(', ')] : []).filter(Boolean).join(' · ');
     return `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(p.name)}</span>${p.archived ? '<span class="gw-badge">Archivado</span>' : ''}</div>
-      <p class="gw-card-row__meta">${meta}</p><div class="gw-card-row__actions">${btns.join('')}</div></article>`;
+      <p class="gw-card-row__meta">${meta}</p><div class="gw-card-row__actions">${btns.join('')}</div><div data-alm-slot="${p.id}"></div></article>`;          // el hueco lo llena almacen-catalog.js (solo con Almacén activo)
   }
 
   const empty = (title, text) => `<div class="gw-state" role="status"><p class="gw-state__title">${title}</p><p class="gw-state__text">${text}</p></div>`;
@@ -65,6 +66,7 @@
     sel.innerHTML = '<option value="">Sin categoría</option>' + catalog.categories.filter((c) => !c.archived).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = keep;
     $('invUnitList').innerHTML = (catalog.units || []).map((u) => `<option value="${esc(u)}">`).join('');
+    root.dispatchEvent(new CustomEvent('gw:catalog-painted'));          // Almacén (almacen-catalog.js) agrega a cada tarjeta su control, objetos y QR
   }
 
   async function load() {
@@ -78,7 +80,8 @@
   function resetProductForm() {
     editing = null;
     $('invProdName').value = ''; $('invProdSku').value = ''; $('invProdStock').value = ''; $('invProdFields').value = ''; $('invProdUnit').value = 'unidad'; $('invProdCat').value = '';
-    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = 'Productos';
+    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = PROD_TITLE;
+    root.dispatchEvent(new CustomEvent('gw:product-form-reset'));
   }
 
   $('invCatForm').addEventListener('submit', async (e) => {
@@ -93,8 +96,12 @@
     const body = { name: $('invProdName').value.trim(), unit: $('invProdUnit').value.trim(), sku: $('invProdSku').value.trim(), stock: $('invProdStock').value.trim(), category_id: $('invProdCat').value || null, fields: parseFields($('invProdFields').value) };
     if (!body.name) { showToast('Escribe el nombre del producto', 'error'); return; }
     try {
-      await busy($('invProdBtn'), () => (editing ? send(`/api/inventory/products/${editing}`, 'PATCH', body) : send('/api/inventory/products', 'POST', body)));
-      showToast(editing ? 'Producto actualizado' : `Producto «${body.name}» creado`, 'success');
+      const wasEditing = !!editing;
+      const saved = await busy($('invProdBtn'), () => (editing ? send(`/api/inventory/products/${editing}`, 'PATCH', body) : send('/api/inventory/products', 'POST', body)));
+      showToast(wasEditing ? 'Producto actualizado' : `Producto «${body.name}» creado`, 'success');
+      const detail = { id: saved && saved.id, created: !wasEditing, work: null };
+      root.dispatchEvent(new CustomEvent('gw:product-saved', { detail }));          // Almacén (si está activo) pone en detail.work lo suyo: control, fila, foto
+      if (detail.work) await detail.work;
       resetProductForm(); load();
     } catch (err) { showToast(err.message, 'error'); }
   });
@@ -123,6 +130,7 @@
       editing = p.id;
       $('invProdName').value = p.name; $('invProdSku').value = p.sku || ''; $('invProdStock').value = p.stock == null ? '' : String(p.stock); $('invProdUnit').value = p.unit; $('invProdCat').value = p.category_id == null ? '' : String(p.category_id); $('invProdFields').value = fieldsToText(p.fields);
       $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false; $('invProdFormTitle').textContent = `Editando «${p.name}»`;
+      root.dispatchEvent(new CustomEvent('gw:product-edit', { detail: { id: p.id } }));
       $('invProdName').focus();
     } else if ((b = t('[data-prod-archive]'))) {
       if (!(await showConfirm(`¿Archivar el producto «${esc(b.dataset.name)}»? Deja de ofrecerse en los eventos; el historial de los que ya lo usan se conserva.`, { confirmLabel: 'Archivar' }))) return;

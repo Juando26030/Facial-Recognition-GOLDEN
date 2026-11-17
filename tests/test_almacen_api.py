@@ -370,3 +370,15 @@ def test_product_photo_upload_replace_serve_and_delete(client, factory, on):
     assert bad.status_code == 400
     assert client.delete(f"/api/almacen/products/{p['id']}/photo").json()["has_photo"] is False
     assert client.get(f"/api/almacen/products/{p['id']}/photo").status_code == 404
+
+
+def test_the_catalog_admin_carries_the_warehouse_fields_and_the_alm_tab_has_no_create_form(client, factory, on, monkeypatch):
+    factory.staff("admin", "adm")
+    login(client, "adm")
+    page = client.get("/inventario").text
+    assert 'id="almCatBox"' in page and 'id="almUnitsCard"' in page and "almacen-catalog.js" in page          # crear tipo, objetos y QR viven en «Administrar catálogo»
+    assert 'id="almNewForm"' not in page and 'id="almProducts"' not in page                                   # y ya no hay un segundo formulario en la pestaña Almacén
+    assert 'id="almMvScan"' in page and 'id="almScan"' in page
+    monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
+    off = client.get("/inventario").text
+    assert 'id="almCatBox"' not in off and "almacen-catalog.js" not in off and 'id="invProdForm"' in off          # sin el interruptor el catálogo queda como siempre

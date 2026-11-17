@@ -40,10 +40,12 @@ Plan: `claude/60_PLAN_ALMACEN_PIEZA2_2026-11-17.md`. Migración `0149_almacen_mo
 | Fotos del elemento: validación, re-codificación a JPEG ≤ 1280 px sin metadatos | `app/almacen_photos.py` |
 | Tablas `inventory_movements` (solo se agrega; anular marca `voided_*`), `event_checklist_rows`; columnas `inventory_units.event_id`, `inventory_products.photo_key` | `app/models.py`, migración 0149 |
 | API: `POST /api/almacen/move`, `POST /api/almacen/movements/{id}/void`, `GET /api/almacen/events/{id}/board`, `PUT /api/almacen/events/{id}/checklist/{fila}`, `POST/GET/DELETE /api/almacen/products/{id}/photo` | `app/routers/almacen.py` |
-| Pantalla: tarjeta «Salidas y entradas por evento» + «Checklist del evento» | `templates/_almacen_panel.html`, `static/js/almacen-moves.js`; fotos en `static/js/almacen-page.js` |
+| Pestaña «Almacén»: modo escáner, «Salidas y entradas por evento» y «Checklist del evento» | `templates/_almacen_panel.html`, `static/js/almacen-page.js`, `static/js/almacen-moves.js` |
+| «Administrar catálogo» (único lugar para crear): control de bodega, foto, botón «Objetos y QR», QR visible, etiquetas | `templates/_inventory_catalog_admin.html`, `static/js/almacen-catalog.js` (se engancha a `inventory-catalog-admin.js` por eventos `gw:*`) |
 | Pruebas | `tests/test_almacen_moves.py` (sin base, 16), `tests/test_almacen_api.py` (Postgres) |
 
 Decisiones (Juan David, 17-nov-2026):
+- **Un solo lugar para crear (cambio pedido el 17-nov, tras ver staging):** se quitó «Nuevo elemento» de la pestaña Almacén; el producto del catálogo es el TIPO («Portátil Lenovo») y se crea en «Administrar catálogo», con los campos de bodega en el mismo formulario. Cada tarjeta de tipo con serial tiene «Objetos y QR»: ahí se agregan los objetos reales y cada uno recibe su QR, mostrado en un campo (solo lectura, se selecciona al tocarlo). Los de modelo/cantidad muestran el QR del tipo en la tarjeta. La pestaña Almacén quedó solo para escanear, mover y el checklist.
 - **Una lectura = un movimiento.** Salida: evento + QR (+ cantidad si es por modelo/cantidad). Entrada de un equipo con serial: el sistema deduce el evento donde estaba; por modelo/cantidad hace falta evento y cantidad.
 - **Contadores:** cada movimiento actualiza `qty_out` / `qty_returned` de `event_inventory_items` en la misma transacción y pasa por `check_balance` (nada se guarda si no cuadra). NECESARIO = asignado − extras; CANTIDAD = `qty_out`.
 - **Salir más de lo pedido (o algo que el evento no pidió):** primero se ajusta lo asignado; si no se puede, la API responde 409 `needs_reason` y la pantalla pide la RAZÓN (texto) o la casilla «Plan B». El sobrante sube `qty_assigned` (para no romper el cuadre) pero queda como `extra` del movimiento y no cuenta como NECESARIO.
