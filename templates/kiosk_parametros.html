@@ -738,7 +738,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     (function () {          // 0140: código de la persona (QR)
         const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired');
         en.addEventListener('change', () => { rq.disabled = !en.checked; if (!en.checked) rq.checked = false; });
-        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, save: async () => {
+        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, reload: true, save: async () => {
             await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked }), 'No se pudo guardar el código del evento');
         } });
     })();
