@@ -11,6 +11,7 @@
   var provFilter = '';       // filtro del gráfico «Gasto por mes y proveedor»: '' = todo, o un proveedor / 'total'
   var evFilter = '';         // id del evento elegido en «Costo de un evento» ('' = ninguno)
   var tableViews = {};       // gráfico -> mostrar tabla
+  var settingsDraft = null;  // «Cómo se reparte entre eventos» editado y sin guardar: { basis, trm_default }. Se guarda con la barra única (GWParams, bloque «reparto»); sobrevive a redibujar
   var nf = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -292,14 +293,15 @@
   }
 
   function settingsPanel() {
-    var opts = Object.keys(data.basis_labels).map(function (k) { return '<option value="' + k + '"' + (k === data.basis ? ' selected' : '') + '>' + esc(data.basis_labels[k]) + '</option>'; }).join('');
+    var curBasis = settingsDraft ? settingsDraft.basis : data.basis, curTrm = settingsDraft ? settingsDraft.trm_default : (data.trm_default || '');
+    var opts = Object.keys(data.basis_labels).map(function (k) { return '<option value="' + k + '"' + (k === curBasis ? ' selected' : '') + '>' + esc(data.basis_labels[k]) + '</option>'; }).join('');
     var imp = data.gcp_export_configured
       ? '<button type="button" class="gw-btn gw-btn--secondary" data-act="import-google">Importar Google ahora</button><span class="gw-hint">La importación de Google corre sola cada domingo a las 12 m. en el Job de operaciones.</span>'
       : '<span class="gw-hint">Google no está conectado (mira «Conexiones» arriba). Mientras tanto, registra el gasto de Google a mano o sube un archivo.</span>';
     return '<section class="gw-gx__panel"><h3 class="gw-gx__panel-title">Cómo se reparte entre eventos</h3><p class="gw-gx__formula"><strong>Fórmula:</strong> ' + esc(data.formula) + '</p>' +
-      '<form class="gw-gx__settings" id="gxSettings"><div class="gw-field"><label class="gw-label" for="gxBasis">Criterio de reparto</label><select class="gw-select" id="gxBasis" name="basis">' + opts + '</select></div>' +
-      '<div class="gw-field"><label class="gw-label" for="gxTrm">TRM por defecto (COP por USD)</label><input class="gw-input gw-input--short" id="gxTrm" name="trm_default" inputmode="decimal" value="' + (data.trm_default || '') + '" placeholder="Ej. 4100"></div>' +
-      '<button type="submit" class="gw-btn gw-btn--primary">Guardar</button></form>' +
+      '<form class="gw-gx__settings" id="gxSettings" data-psave="reparto"><div class="gw-field"><label class="gw-label" for="gxBasis">Criterio de reparto</label><select class="gw-select" id="gxBasis" name="basis">' + opts + '</select></div>' +
+      '<div class="gw-field"><label class="gw-label" for="gxTrm">TRM por defecto (COP por USD)</label><input class="gw-input gw-input--short" id="gxTrm" name="trm_default" inputmode="decimal" value="' + esc(curTrm) + '" placeholder="Ej. 4100"></div>' +
+      '<p class="gw-hint">Se guarda con el botón «Guardar cambios» de abajo.</p></form>' +
       '<div class="gw-row">' + imp + '</div><div id="gxNeon" class="gw-hint">' + (data.neon_configured ? 'Uso de Neon: consultando…' : 'Neon solo informa el uso, no el dinero: su costo se registra a mano (mira «Conexiones» para conectar el uso).') + '</div></section>';
   }
 
@@ -414,12 +416,27 @@
   // ---------------------------------------------------------------- eventos de la pantalla
   root.addEventListener('submit', function (e) {
     if (e.target.id === 'gxRange') { e.preventDefault(); load(); }
-    if (e.target.id === 'gxSettings') {
+    if (e.target.id === 'gxSettings') {          // Enter en la TRM no guarda aparte: dispara la barra única
       e.preventDefault();
-      var f = e.target;
-      api('/api/gastos/infra/settings', { method: 'PUT', body: { basis: f.basis.value, trm_default: f.trm_default.value } }).then(function () { toast('Parámetros guardados'); return load(); }).catch(function (er) { toast(er.message, 'error'); });
+      var sb = document.getElementById('paramsSaveBtn'); if (sb && !sb.disabled) sb.click();
     }
   });
+  function readSettings(ev) {
+    var f = ev.target && ev.target.closest && ev.target.closest('#gxSettings');
+    if (f) settingsDraft = { basis: f.basis.value, trm_default: f.trm_default.value };
+  }
+  root.addEventListener('input', readSettings);
+  root.addEventListener('change', readSettings);
+  if (window.GWParams) {
+    window.GWParams.register({
+      key: 'reparto', label: 'Reparto de gastos', order: 10,
+      save: function () {
+        var d = settingsDraft;
+        if (!d) return Promise.resolve();
+        return api('/api/gastos/infra/settings', { method: 'PUT', body: { basis: d.basis, trm_default: d.trm_default } }).then(function () { settingsDraft = null; return load(); });
+      }
+    });
+  }
   document.addEventListener('submit', function (e) { if (dialog && dialog.contains(e.target)) { e.preventDefault(); submitForm(e.target); } });
   document.addEventListener('change', function (e) { if (dialog && e.target.id === 'fCur') dialog.querySelector('#fTrmBox').hidden = e.target.value !== 'USD'; });
   document.addEventListener('click', function (e) {
