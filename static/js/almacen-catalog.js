@@ -10,10 +10,12 @@
   const $ = (id) => document.getElementById(id);
   const esc = (t) => window.escapeHtml(String(t == null ? '' : t));
   const busy = (btn, fn) => (window.GW && window.GW.busy ? window.GW.busy(btn, fn) : fn());
+  const ICONS = root.dataset.icons || '';
   let meta = null;
   let byId = {};          // producto del almacén por id (control, QR, fotos, objetos)
   let currentProduct = null;
   let units = [];
+  const pendingSerial = new Map();          // id de objeto -> serial escrito y aún sin guardar (se guarda con el botón «Guardar cambios», almacen-save.js)
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -115,10 +117,9 @@
         <td><input type="checkbox" class="gw-alm__pick" data-pick="${u.id}" aria-label="Marcar ${esc(u.title)} para imprimir"></td>
         <td>${esc(u.title)}</td>
         <td><input class="gw-input gw-alm__qr" type="text" readonly value="${esc(u.code)}" data-alm-select aria-label="Código QR de ${esc(u.title)}"></td>
-        <td><input class="gw-input" type="text" value="${esc(u.serial || '')}" maxlength="80" data-serial="${u.id}" aria-label="Serial de ${esc(u.title)}" autocomplete="off"></td>
-        <td><span class="gw-badge${u.status === 'novedad' ? ' gw-badge--warn' : u.status === 'en_evento' ? ' gw-badge--info' : ' gw-badge--ok'}">${esc(u.status_label)}</span>${u.event_name ? `<br><span class="gw-hint">${esc(u.event_name)}</span>` : ''}</td>
-        <td class="gw-alm__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-serial-save="${u.id}">Guardar serial</button>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-print-one="${u.id}">Etiqueta</button>
+        <td><input class="gw-input" type="text" value="${esc(pendingSerial.has(u.id) ? pendingSerial.get(u.id) : (u.serial || ''))}" maxlength="80" data-serial="${u.id}" aria-label="Serial de ${esc(u.title)}" autocomplete="off"></td>
+        <td><span class="gw-badge${u.status === 'novedad' ? ' gw-badge--warn' : u.status === 'en_evento' ? ' gw-badge--info' : ' gw-badge--ok'}">${esc(u.status_label)}</span>${u.has_novelty ? `<span class="gw-alm__warn" tabindex="0" role="img" aria-label="Este elemento presenta una novedad" data-tip="Este elemento presenta una novedad"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-alert"/></svg></span>` : ''}${u.event_name ? `<br><span class="gw-hint">${esc(u.event_name)}</span>` : ''}</td>
+        <td class="gw-alm__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-print-one="${u.id}">Etiqueta</button>
           <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-alm-archive="${u.id}" data-title="${esc(u.title)}">Archivar</button></td></tr>`).join('')}</tbody></table></div>`;
   }
   async function openUnits(productId) {
@@ -187,12 +188,6 @@
       } else if (b.dataset.almUnitsClose !== undefined) {
         $('almUnitsCard').hidden = true;
         currentProduct = null;
-      } else if (b.dataset.almSerialSave) {
-        const id = b.dataset.almSerialSave;
-        const input = root.querySelector(`[data-serial="${id}"]`);
-        await busy(b, () => send('/api/almacen/units/' + id, 'PATCH', { serial: input.value }));
-        showToast('Serial guardado', 'success');
-        await reloadUnits();
       } else if (b.dataset.almPrintOne) {
         printLabels([Number(b.dataset.almPrintOne)], []);
       } else if (b.dataset.almPrintSelected !== undefined) {
@@ -208,6 +203,24 @@
       }
     } catch (err) { fail(err); }
   });
+
+  /* seriales: escribir NO guarda; deja el cambio pendiente y el botón grande «Guardar cambios» los guarda todos */
+  root.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.dataset || t.dataset.serial === undefined) return;
+    const id = Number(t.dataset.serial);
+    const u = units.find((x) => x.id === id);
+    if (!u || !window.GWAlmSave) return;
+    if ((t.value || '').trim() === (u.serial || '')) { pendingSerial.delete(id); GWAlmSave.clean('serial:' + id); return; }
+    pendingSerial.set(id, t.value);
+    GWAlmSave.mark('serial:' + id, 'Serial de ' + u.title, async () => {
+      const value = pendingSerial.get(id);
+      const d = await send('/api/almacen/units/' + id, 'PATCH', { serial: value });
+      u.serial = d.serial || '';
+      if (pendingSerial.get(id) === value) pendingSerial.delete(id);
+    });
+  });
+  document.addEventListener('gw:almacen-saved', (e) => { if (currentProduct && !(e.detail.failed || []).some((k) => k.indexOf('serial:') === 0)) reloadUnits(); });
 
   $('almUnitsForm').addEventListener('submit', async (e) => {
     e.preventDefault();

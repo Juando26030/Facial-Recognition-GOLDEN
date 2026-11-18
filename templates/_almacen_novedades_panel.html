@@ -15,17 +15,13 @@
             <div class="gw-row"><button type="button" class="gw-btn gw-btn--primary" id="almNovSave">Registrar novedad</button></div>
           </div>
         </details>
-        <div class="gw-search gw-search--hero">
-          <div class="gw-search__row">
-            <div class="gw-search__field">
-              <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
-              <label class="gw-sr-only" for="almNovSearch">Buscar novedad</label>
-              <input class="gw-input" type="search" id="almNovSearch" placeholder="Buscar por elemento, código, serial o texto" autocomplete="off" spellcheck="false">
-            </div>
-            <select class="gw-select" id="almNovState" aria-label="Estado de las novedades"><option value="abiertas">Abiertas</option><option value="resueltas">Resueltas</option><option value="todas">Todas</option></select>
-          </div>
-          <p class="gw-hint" id="almNovInfo" role="status" aria-live="polite"></p>
+        <div class="gw-invpg__toolbar">          {# fuera de los bloques plegables: «Plegar todo» no la oculta #}
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="almNovSearch">Buscar novedad</label>
+            <input class="gw-input" type="search" id="almNovSearch" placeholder="Elemento, código, serial o texto" autocomplete="off" spellcheck="false"></div>
+          <div class="gw-field"><label class="gw-label" for="almNovState">Estado</label>
+            <select class="gw-select" id="almNovState"><option value="abiertas">Abiertas</option><option value="resueltas">Resueltas</option><option value="todas">Todas</option></select></div>
         </div>
+        <p class="gw-hint" id="almNovInfo" role="status" aria-live="polite"></p>
         <div id="almNovList" aria-live="polite"></div>
       </section>
     </section>

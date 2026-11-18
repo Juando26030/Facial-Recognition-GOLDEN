@@ -25,5 +25,19 @@
 #inventario .gw-alm__pick { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
 :root[data-theme="dark"] #inventario .gw-alm__pick { accent-color: var(--gw-gold-2); }
 
-/* Buscadores del panel (evento y código): dentro de la tarjeta no se quedan pegados arriba como en el quiosco. */
-#invPanelAlm .gw-search { position: static; margin-bottom: 0; box-shadow: none; }
+
+
+/* Buscadores y botones del panel: tamaño normal del sistema (campo y botón de la cámara con la misma altura), sin píldoras gigantes ni cajas dentro de cajas. */
+#invPanelAlm .gw-input, #invPanelNov .gw-input, #invPanelNov .gw-select { box-sizing: border-box; max-width: 100%; }
+#invPanelAlm .gw-alm__scanrow { display: flex; gap: var(--gw-sp-2); align-items: stretch; }
+#invPanelAlm .gw-alm__scanrow .gw-input { flex: 1 1 auto; min-width: 0; }
+#invPanelAlm .gw-alm__scanbtn { flex: 0 0 auto; padding-inline: var(--gw-sp-4); }
+#invPanelAlm .gw-alm__scanbtn .gw-icon { width: 1.5rem; height: 1.5rem; }
+#invPanelAlm .gw-alm__chosen { margin: 0; }
+#invPanelAlm .gw-fields-row .gw-input { width: 100%; }
+#almSaveBar[hidden] { display: none; }
+/* Aviso ⚠ «presenta una novedad» junto al estado del objeto: pestañita con mensaje al pasar el mouse o enfocar con el teclado. */
+#inventario .gw-alm__warn { position: relative; display: inline-flex; align-items: center; margin-inline-start: var(--gw-sp-2); padding: 0 var(--gw-sp-2); border-radius: var(--gw-radius-sm); background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 1px solid var(--gw-warn-line); cursor: help; vertical-align: middle; }
+#inventario .gw-alm__warn .gw-icon { width: 1.1rem; height: 1.1rem; }
+#inventario .gw-alm__warn::after { content: attr(data-tip); position: absolute; z-index: 40; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 16rem; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); background: var(--gw-navy); color: #fff; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal, 400); line-height: 1.3; box-shadow: var(--gw-shadow-lg); opacity: 0; pointer-events: none; transition: opacity 120ms; }
+#inventario .gw-alm__warn:hover::after, #inventario .gw-alm__warn:focus-visible::after { opacity: 1; }

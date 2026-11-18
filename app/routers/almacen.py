@@ -66,9 +66,17 @@ def _product_json(p: InventoryProduct, units: int = 0) -> dict:
             "has_photo": bool(p.photo_key), "photo_url": f"/api/almacen/products/{p.id}/photo?v={(p.photo_key or '')[-12:-4]}" if p.photo_key else None}
 
 
-def _unit_json(u: InventoryUnit, product: Optional[InventoryProduct] = None) -> dict:
+def _novelty_unit_ids(db: Session, unit_ids) -> set:
+    """Ids de las unidades que tienen una novedad abierta (para el aviso ⚠ de la tabla de objetos)."""
+    ids = list(unit_ids)
+    if not ids:
+        return set()
+    return {i for (i,) in db.query(InventoryNovelty.unit_id).filter(InventoryNovelty.unit_id.in_(ids), InventoryNovelty.resolved_at.is_(None)).all()}
+
+
+def _unit_json(u: InventoryUnit, product: Optional[InventoryProduct] = None, novelty: bool = False) -> dict:
     p = product or u.product
-    return {"id": u.id, "product_id": u.product_id, "product_name": p.name, "number": u.number, "title": almacen.unit_title(p.name, u.number), "code": u.code, "serial": u.serial,
+    return {"has_novelty": bool(novelty or u.status == "novedad"), "id": u.id, "product_id": u.product_id, "product_name": p.name, "number": u.number, "title": almacen.unit_title(p.name, u.number), "code": u.code, "serial": u.serial,
             "status": u.status, "status_label": almacen.UNIT_STATUS_LABEL.get(u.status, u.status), "archived": u.archived_at is not None,
             "event_id": u.event_id, "event_name": u.event.name if u.event_id and u.event else None}
 
@@ -148,7 +156,8 @@ def list_units(product_id: Optional[int] = None, q: str = "", include_archived: 
     if term:
         query = query.filter(or_(InventoryUnit.code.ilike(f"%{term}%"), InventoryUnit.serial.ilike(f"%{term}%"), InventoryProduct.name.ilike(f"%{term}%")))
     rows = query.order_by(InventoryProduct.position, InventoryProduct.id, InventoryUnit.number).limit(MAX_LIST).all()
-    return {"units": [_unit_json(u) for u in rows]}
+    flagged = _novelty_unit_ids(db, [u.id for u in rows])
+    return {"units": [_unit_json(u, novelty=u.id in flagged) for u in rows]}
 
 
 @router.post("/almacen/products/{product_id}/units")
@@ -190,7 +199,7 @@ def update_unit(unit_id: int, data: dict, db: Session = Depends(get_db), staff: 
         u.serial = serial
     audit_actions.record(db, staff, "update", "almacen_unit", u.id, almacen.unit_title(u.product.name, u.number))
     db.commit()
-    return _unit_json(u)
+    return _unit_json(u, novelty=u.id in _novelty_unit_ids(db, [u.id]))
 
 
 @router.post("/almacen/units/{unit_id}/archive")
