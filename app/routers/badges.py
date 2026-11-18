@@ -357,7 +357,7 @@ def _require_printable(db: Session, event, user_id: str, preprint: bool = False,
         return
     if event.status == "creado":
         raise HTTPException(status_code=403, detail="El evento está en modo «creado»: la escarapela se imprime cuando el evento esté en proceso.")
-    if certificate:
+    if certificate or (testperson.is_test(user_id) and event.status == "en_proceso"):          # la persona de prueba sigue sirviendo para ensayar la impresión con el evento en proceso
         return
     from app.routers.shared_print import _registered, _not_registered_msg
     if not _registered(db, event.id, user_id):

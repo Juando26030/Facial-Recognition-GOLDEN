@@ -122,3 +122,4 @@ def test_nobody_unregistered_prints_a_badge_except_through_preprint_and_certific
     assert client.patch(f"/api/events/{ev.id}/users/1001/status", json={"status": "registrado"}).status_code == 200
     assert client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").status_code == 200
     assert client.get(f"/api/users/1001/print-count?event_id={ev.id}").json()["blocked"] == ""
+    assert client.get(f"/api/users/PRUEBA/badge-print-data?event_id={ev.id}").status_code == 200          # la persona de prueba imprime aunque no esté «registrada»
