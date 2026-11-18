@@ -147,3 +147,30 @@ def test_js_and_python_build_the_same_full_card():
     args = dict(first_name="Ana", last_name="Mora", phone="3001234567", note="1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
     r = subprocess.run(["node", "-e", f"console.log(JSON.stringify(require('./static/js/vcard.js').build({json.dumps(args)})))"], capture_output=True, text=True, cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent), timeout=30)
     assert json.loads(r.stdout) == qr_vcard.build("Ana", "Mora", "3001234567", "1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+
+
+# ------------------------------------------------------------------ 18-nov-2026: MECARD y enlace (JS y Python iguales; el servidor lee ambos)
+@pytest.mark.parametrize("args", [("María", "Pérez", "300 123 4567", "1016100329|María|Pérez", "a@b.co"), ("A;B,C", "D:E", "", "x;y", "sin-arroba"), ("", "", "", "1016100329", "")])
+def test_js_and_python_build_the_same_mecard(args):
+    first, last, phone, note, mail = args
+    expr = f"console.log(JSON.stringify(require('./static/js/vcard.js').buildMecard({{first_name:{json.dumps(first)},last_name:{json.dumps(last)},phone:{json.dumps(phone)},email:{json.dumps(mail)},note:{json.dumps(note)}}})))"
+    r = _node("-e", expr)
+    built = qr_vcard.build_mecard(first, last, phone, note, mail)
+    assert json.loads(r.stdout) == built
+    assert qr_vcard.unwrap(built) == note
+
+
+@pytest.mark.parametrize("code", ["1016100329", "1016100329|Ña|Pérez", "AB 12/3"])
+def test_js_and_python_build_the_same_link_and_both_unwrap_it(code):
+    url = "https://app.golden-eventos.com/tarjeta/AbCdEfGhIjKlMnOpQrStUvWx"
+    r = _node("-e", f"console.log(JSON.stringify(require('./static/js/vcard.js').buildLink({json.dumps(url)},{json.dumps(code)})))")
+    built = qr_vcard.build_link(url, code)
+    assert json.loads(r.stdout) == built
+    assert qr_vcard.unwrap(built) == code
+
+
+def test_badge_print_data_brings_the_card_link_and_the_designer_offers_the_four_modes():
+    br = (ROOT / "app/routers/badges.py").read_text(encoding="utf-8")
+    assert '"card_url": card_url' in br and "contacts.person_card" in br
+    ed = (ROOT / "templates/badge_editor.html").read_text(encoding="utf-8")
+    assert all(f"['{m}'," in ed for m in ("vcard", "mecard", "link", "code")) and "p_qr_mode" in ed

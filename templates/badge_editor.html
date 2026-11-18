@@ -307,7 +307,8 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
     return {
       id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0',
-      role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', code: 'A-0001',
+      role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', code: 'A-0001', categories: 'Invitado, Prensa',
+      card_url: location.origin + '/tarjeta/AbCdEfGhIjKlMnOpQrStUvWx',
       extra_fields: extras, has_photo: false,
     };
   }
@@ -991,10 +992,14 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
           <select id="p_qr_vars" multiple size="4">${ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${(el.variables || []).includes(k) ? 'selected' : ''}>${label}</option>`).join('')}</select>
         </div>
         <p class="prop-note">Ctrl/Cmd + clic para elegir varias; se combinan separadas por "|".</p>
-        <div class="prop-field"><label><input type="checkbox" id="p_qr_card" ${el.vcard === false ? '' : 'checked'}> Guardar contacto al escanear (vCard)</label></div>
-        <fieldset class="prop-field" id="p_qr_fields" ${el.vcard === false ? 'disabled' : ''}><legend>Datos que lleva la vCard (el nombre va siempre)</legend>
+        <div class="prop-field"><label for="p_qr_mode">Qué lleva el QR al escanearlo</label>
+          <select id="p_qr_mode">${[['vcard', 'Contacto completo (vCard)'], ['mecard', 'Contacto corto (MECARD)'], ['link', 'Enlace a la tarjeta de la persona'], ['code', 'Solo el código']].map(([k, label]) => `<option value="${k}" ${BadgeRender.qrMode(el) === k ? 'selected' : ''}>${label}</option>`).join('')}</select>
+        </div>
+        <p class="prop-note" id="p_qr_mode_note"></p>
+        <fieldset class="prop-field" id="p_qr_fields"><legend>Datos que lleva el contacto (el nombre va siempre)</legend>
           ${[['org', 'Empresa / entidad'], ['title', 'Cargo / rol'], ['phone', 'Teléfono'], ['email', 'Correo'], ['categories', 'Categoría']].map(([k, label]) => `<label class="prop-check"><input type="checkbox" data-qr-field="${k}" ${(Array.isArray(el.vcard_fields) ? el.vcard_fields : BadgeRender.DEFAULT_VCARD_FIELDS).includes(k) ? 'checked' : ''}> ${label}</label>`).join('')}
         </fieldset>
+        <p class="prop-note">¿Dos QR (uno para el lector de la puerta y otro para guardar el contacto)? Agrega otro «Código QR» y elige un modo distinto en cada uno.</p>
         <p class="prop-note" id="p_qr_density" role="status"></p>`);
     } else if (el.type === 'barcode') {
       typeSpecificHtml = propGroup('content', 'Código de barras', `
@@ -1085,9 +1090,9 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
       const paintDensity = () => {          // qué tan apretado queda el QR con los datos de muestra (más datos = más cuadritos = peor lectura en celulares y lectores)
         const box = document.getElementById('p_qr_density'); if (!box) return;
         const sd = sampleData(), payload = (el.variables && el.variables.length ? el.variables : ['id']).map(v => BadgeRender.resolveVariable(v, sd)).join('|') || 'PREVIEW';
-        const t = BadgeRender.qrText(el, payload, sd), d = BadgeRender.qrDensity(t.text, t.card);
+        const t = BadgeRender.qrText(el, payload, sd), d = BadgeRender.qrDensity(t.text, t.level);
         if (!d) { box.textContent = ''; return; }
-        box.textContent = (d.level === 'good' ? 'Lectura buena' : d.level === 'ok' ? 'Lectura aceptable' : 'Demasiado apretado: puede no leerse en celulares ni lectores. Quita datos o desactiva la vCard') + ` (versión ${d.version}, ${d.modules} cuadritos por lado).`;
+        box.textContent = (d.level === 'good' ? 'Lectura buena' : d.level === 'ok' ? 'Lectura aceptable' : 'Demasiado apretado: puede no leerse en celulares ni lectores. Quita datos o usa «Enlace» o «Solo el código»') + ` (versión ${d.version}, ${d.modules} cuadritos por lado).`;
         box.dataset.level = d.level;
       };
       paintDensity();
@@ -1095,10 +1100,20 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
         el.variables = Array.from(e.target.selectedOptions).map(o => o.value);
         renderCanvas(); paintDensity();
       });
-      document.getElementById('p_qr_card').addEventListener('change', (e) => {
-        if (e.target.checked) delete el.vcard; else el.vcard = false;
-        document.getElementById('p_qr_fields').disabled = !e.target.checked;
-        renderCanvas(); paintDensity();
+      const MODE_NOTES = { vcard: 'Al escanear, el celular ofrece guardar el contacto con los datos marcados. Más datos = QR más apretado.',
+        mecard: 'Contacto más corto: nombre, teléfono y correo (sin empresa ni cargo). Android lo lee bien; en iPhone puede variar, pruébalo.',
+        link: 'El QR queda chico: solo lleva el enlace de la tarjeta. Allí se ven los datos SOLO de quien aceptó compartirlos. El lector de la puerta sigue leyendo la cédula.',
+        code: 'Solo el código (cédula): el QR más chico y el que mejor lee el lector. El celular no ofrece guardar contacto.' };
+      const paintMode = () => {
+        const m = BadgeRender.qrMode(el), f = document.getElementById('p_qr_fields');
+        document.getElementById('p_qr_mode_note').textContent = MODE_NOTES[m];
+        f.hidden = !(m === 'vcard' || m === 'mecard');
+        f.querySelectorAll('[data-qr-field]').forEach((c) => { c.disabled = m === 'mecard' && !['phone', 'email'].includes(c.dataset.qrField); });
+      };
+      paintMode();
+      document.getElementById('p_qr_mode').addEventListener('change', (e) => {
+        el.qr_mode = e.target.value; delete el.vcard;
+        paintMode(); renderCanvas(); paintDensity();
       });
       document.getElementById('p_qr_fields').addEventListener('change', (e) => {
         if (!e.target.matches('[data-qr-field]')) return;

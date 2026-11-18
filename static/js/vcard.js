@@ -44,10 +44,34 @@
     return lines.join('\n');
   }
 
+  /* 18-nov-2026: otros dos formatos de QR (cada QR de la escarapela elige el suyo, ver badge-render.js qrText):
+       MECARD  «MECARD:N:Apellido,Nombre;TEL:…;EMAIL:…;NOTE:GW:código;;»  más corto que la vCard (no admite empresa ni rol); iPhone y Android lo leen distinto, probar en los celulares del evento.
+       ENLACE  «https://…/tarjeta/<token>#GW:código»  el QR solo lleva el enlace de la tarjeta de la persona (que muestra datos SOLO si ella aceptó compartirlos); el código va en el fragmento (#), que el
+               celular no envía a ningún servidor, y los lectores de Golden lo sacan sin red. */
+  function mesc(v) { return String(v == null ? '' : v).replace(CTRL, ' ').replace(/\s+/g, ' ').trim().replace(/([\\;,:])/g, '\\$1'); }
+  function buildMecard(o) {
+    const d = o || {};
+    const first = String(d.first_name == null ? '' : d.first_name).trim(), last = String(d.last_name == null ? '' : d.last_name).trim();
+    const phone = String(d.phone == null ? '' : d.phone).replace(/[^\d+()\-.\s]/g, '').trim();
+    const mail = String(d.email == null ? '' : d.email).trim();
+    let t = 'MECARD:N:' + mesc(last) + ',' + mesc(first || (last ? '' : 'Asistente')) + ';';
+    if (phone) t += 'TEL:' + mesc(phone) + ';';
+    if (mail && mail.indexOf('@') > 0) t += 'EMAIL:' + mesc(mail) + ';';
+    return t + 'NOTE:' + PREFIX + mesc(d.note) + ';;';
+  }
+  function buildLink(url, code) {
+    const u = String(url == null ? '' : url).trim().split('#')[0];
+    return u + '#' + PREFIX + encodeURIComponent(String(code == null ? '' : code));
+  }
+  function isMecard(text) { return /^\s*MECARD:/i.test(String(text == null ? '' : text)); }
+  function isLink(text) { return /^https?:\/\/\S+#GW:\S*$/i.test(String(text == null ? '' : text).trim()); }
+
   function isVcard(text) { return /^\s*BEGIN:VCARD/i.test(String(text == null ? '' : text)); }
 
   function unwrap(text) {
     const raw = String(text == null ? '' : text);
+    if (isLink(raw)) { const frag = raw.trim().slice(raw.trim().indexOf('#GW:') + 4); try { return decodeURIComponent(frag).trim(); } catch (e) { return frag.trim(); } }
+    if (isMecard(raw)) { const mm = raw.match(/NOTE:GW:((?:\\.|[^;\\])*);/i); return mm ? mm[1].replace(/\\(.)/g, '$1').trim() : raw; }
     if (!isVcard(raw)) return raw;
     const t = raw.trim().replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, '');            // líneas dobladas (RFC) y saltos de cualquier sistema
     let m = t.match(/^NOTE(?:;[^:\n]*)?:GW:(.*)$/im);
@@ -56,7 +80,7 @@
     return unesc(m[1].replace(/END:VCARD\s*$/i, '')).trim();
   }
 
-  const api = { build, unwrap, isVcard, QR_LEVEL, PREFIX };
+  const api = { build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, QR_LEVEL, PREFIX };
   if (typeof window !== 'undefined') window.GWVcard = api;
   if (typeof module !== 'undefined') module.exports = api;       // para las pruebas en Node
 })();

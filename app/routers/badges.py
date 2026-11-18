@@ -1,13 +1,13 @@
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app import audit_actions, crypto, form_client, person_code, reprint
+from app import audit_actions, contacts, crypto, form_client, person_code, publicurl, reprint
 from app.timeutil import utcnow
 from app.eventpeople import require_person_of_event
 from app.storage import badge_asset_key, get_storage, photo_key
@@ -357,7 +357,7 @@ def _require_printable(event, user_id: str, preprint: bool = False, staff=None) 
 
 @router.get("/users/{user_id}/badge-print-data")
 def get_badge_print_data(
-    user_id: str, event_id: int, preprint: int = 0, db: Session = Depends(get_db),
+    user_id: str, event_id: int, request: Request, preprint: int = 0, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Datos completos de UNA persona para imprimir su escarapela — incluye extra_fields (los
@@ -368,7 +368,13 @@ def get_badge_print_data(
     user = require_person_of_event(db, event, user_id)
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    card_url = ""                                                  # 18-nov-2026: enlace público de la tarjeta de la persona (modo «enlace» del QR); vacío si no hay URL pública configurada
+    base = publicurl.base(str(request.base_url))
+    if base:
+        card_url = f"{base}/tarjeta/{contacts.person_card(db, event, user.id).share_token}"
+        db.commit()
     return {
+        "card_url": card_url,
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email,
         "opt_1": user.opt_1, "extra_fields": user.get_extras(),

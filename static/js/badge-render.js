@@ -197,28 +197,41 @@
      `vcard: false` = QR solo con el código (sin vCard): el más chico y el que mejor lee el lector. Cuantos más datos, más cuadritos (versión más alta): ver qrDensity. */
   const VCARD_FIELDS = ['org', 'title', 'phone', 'email', 'categories'];
   const DEFAULT_VCARD_FIELDS = ['phone'];
+  /* 18-nov-2026: cada QR elige CÓMO se arma (propiedad `qr_mode` del elemento; sin ella: vCard, y `vcard: false` de antes = solo el código):
+       vcard   contacto completo (los datos que se marquen en `vcard_fields`)      mecard  contacto corto (nombre, teléfono, correo)
+       link    solo el enlace a la tarjeta de la persona (QR chico, sin límite de datos; los datos salen solo si ella aceptó compartirlos)
+       code    solo el código (el más chico y el que mejor lee el lector de la puerta)
+     Dos QR en la misma escarapela = dos elementos «Código QR», cada uno con su modo. Si un modo no se puede armar (sin vcard.js, sin enlace público) se cae a «solo el código». */
+  const QR_MODES = ['vcard', 'mecard', 'link', 'code'];
+  function qrMode(el) { return el && QR_MODES.indexOf(el.qr_mode) >= 0 ? el.qr_mode : (el && el.vcard === false ? 'code' : 'vcard'); }
   function qrText(el, payload, person) {
     const V = (window && window.GWVcard) || (typeof globalThis !== 'undefined' ? globalThis.GWVcard : null) || null;
-    if (!V || (el && el.vcard === false)) return { text: payload, card: false };
-    const fields = el && Array.isArray(el.vcard_fields) ? el.vcard_fields : DEFAULT_VCARD_FIELDS, has = (k) => fields.indexOf(k) >= 0, p = person || {};
-    return { card: true, text: V.build({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', org: has('org') ? p.entity : '',
+    const mode = qrMode(el), p = person || {};
+    if (!V || mode === 'code') return { text: payload, card: false, level: 'M' };
+    if (mode === 'link') {
+      if (!p.card_url) return { text: payload, card: false, level: 'M' };
+      return { text: V.buildLink(p.card_url, payload), card: false, level: 'M' };
+    }
+    const fields = el && Array.isArray(el.vcard_fields) ? el.vcard_fields : DEFAULT_VCARD_FIELDS, has = (k) => fields.indexOf(k) >= 0;
+    if (mode === 'mecard') return { card: true, level: V.QR_LEVEL, text: V.buildMecard({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', note: payload }) };
+    return { card: true, level: V.QR_LEVEL, text: V.build({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', org: has('org') ? p.entity : '',
       title: has('title') ? p.role : '', categories: has('categories') ? p.categories : '', note: payload }) };
   }
-  /* Qué tan apretado queda un QR: versión (1-40) y cuadritos por lado. Hasta la 8 se lee bien en la etiqueta; de la 11 en adelante, mal en celulares y lectores. */
-  function qrDensity(text, card) {
+  /* Qué tan apretado queda un QR: versión (1-40) y cuadritos por lado. Hasta la 8 se lee bien en la etiqueta; de la 11 en adelante, mal en celulares y lectores. `level` = nivel de corrección ('L'|'M'); true = 'L'. */
+  function qrDensity(text, level) {
     if (typeof qrcode === 'undefined') return null;
+    const lv = level === true ? 'L' : (level === false || !level ? 'M' : level);
     const prev = qrcode.stringToBytes;
     if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
-    try { const q = qrcode(0, card ? 'L' : 'M'); q.addData(text); q.make(); const n = q.getModuleCount(); return { version: (n - 17) / 4, modules: n, level: n <= 45 ? 'good' : n <= 53 ? 'ok' : 'dense' }; }
+    try { const q = qrcode(0, lv); q.addData(text); q.make(); const n = q.getModuleCount(); return { version: (n - 17) / 4, modules: n, level: n <= 45 ? 'good' : n <= 53 ? 'ok' : 'dense' }; }
     catch (e) { return null; } finally { qrcode.stringToBytes = prev; }
   }
   function drawQr(holder, payload, person, el) {
-    const V = (window && window.GWVcard) || (typeof globalThis !== 'undefined' ? globalThis.GWVcard : null) || null;
     const t = qrText(el, payload, person), text = t.text;
     const prev = qrcode.stringToBytes;
     if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
     try {
-      const qr = qrcode(0, t.card ? V.QR_LEVEL : 'M');
+      const qr = qrcode(0, t.level || 'M');
       qr.addData(text);
       qr.make();
       holder.innerHTML = qr.createSvgTag({ scalable: true });
@@ -317,7 +330,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrDensity, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrMode, QR_MODES, qrDensity, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del
