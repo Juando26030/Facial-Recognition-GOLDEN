@@ -346,6 +346,9 @@ def person_configs(db, event, configs: list, categories: Optional[list], stored:
     out = []
     for c in configs:
         f = var["fields"].get(c["key"])
+        if c["key"] in ALWAYS_REQUIRED + NEVER_REQUIRED + EVENT_DECIDES:          # cédula y nombres ya los exige la base y NO viajan en `values` (si los marcáramos obligatorios, toda edición fallaría con «Faltan Nombres, Cédula»); lo demás lo resuelve el evento
+            out.append(c)
+            continue
         out.append({**c, "required": f["required"], "hidden": bool(f.get("hidden"))} if f else c)
     return out
 

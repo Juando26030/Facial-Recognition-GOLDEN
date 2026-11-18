@@ -101,3 +101,13 @@ def test_flow_for_sin_formulario_activo_no_restringe(monkeypatch):
     assert pf.flow_for(None, None, ["VIP"], stored={"enabled": False, "variants": {"VIP": {"flow": {"facial_off": True}}}}) == {}
     monkeypatch.setattr(pf, "env_enabled", lambda: False)
     assert pf.flow_for(None, None, ["VIP"], stored={"enabled": True, "variants": {"VIP": {"flow": {"facial_off": True}}}}) == {}
+
+
+def test_person_configs_no_marca_obligatorios_cedula_ni_nombres(monkeypatch):
+    """Bug de staging (18-nov): con formulario por categoría, editar fallaba «Faltan campos obligatorios: Nombres, Cédula» porque esas dos no viajan en los valores de una edición."""
+    monkeypatch.setattr(pf, "env_enabled", lambda: True)
+    base = [dict(c, required=False) if c["key"] in ("id", "first_name") else c for c in CFGS]
+    stored = {"enabled": True, "variants": {"Staff": {"sheets": [], "rows": [], "fields": {"email": {"required": True}}}}}
+    out = {c["key"]: c for c in pf.person_configs(None, None, base, ["Staff"], stored=stored)}
+    assert out["id"]["required"] is False and out["first_name"]["required"] is False
+    assert out["email"]["required"] is True
