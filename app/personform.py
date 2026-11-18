@@ -29,6 +29,7 @@ TEXT_FIELD_TYPES = ("text_short", "text_long")
 FIXED_TEXT_KEYS = ("first_name", "last_name", "role", "entity", "opt_1")       # fijos que admiten mayúsculas/minúsculas (si su tipo es texto)
 ALWAYS_REQUIRED = ("id", "first_name")           # cédula y nombres: siempre obligatorios
 NEVER_REQUIRED = ("categories", "birth_date")
+NEVER_HIDDEN = ("id", "first_name", "categories")          # en un formulario por categoría estos campos siempre se ven (la cédula y el nombre identifican; la categoría elige el formulario)
 EVENT_DECIDES = ("last_name", "code")      # el apellido es obligatorio según la base cargada o lo elegido en Parámetros (app/lastname.py) y el código de la persona según su interruptor (Parámetros › Campos); llega ya resuelto en `cfg["required"]`, el diseño no lo cambia
 CASE_MODES = ("", roster_text.UPPER, roster_text.LOWER)
 DEFAULT_OPEN_SHEET, DEFAULT_MORE_SHEET, DEFAULT_OTHER_SHEET = "datos", "mas", "otros"
@@ -92,6 +93,8 @@ def default_design(configs: list) -> dict:
 
 # ------------------------------------------------------------------ sanear lo que manda el diseñador
 def _required_now(key: str, cfg: dict, field_in: dict) -> bool:
+    if field_in.get("hidden"):
+        return False                       # un campo oculto en esta categoría nunca se exige
     if key in ALWAYS_REQUIRED:
         return True
     if key in NEVER_REQUIRED:
@@ -101,8 +104,9 @@ def _required_now(key: str, cfg: dict, field_in: dict) -> bool:
     return bool(field_in["required"]) if "required" in field_in else bool(cfg.get("required"))
 
 
-def sanitize(raw: dict, configs: list) -> dict:
-    """Valida el diseño del editor contra los campos REALES del evento; lanza ValueError con un mensaje legible. Lo desconocido se ignora (un campo borrado del evento no rompe el diseño)."""
+def sanitize(raw: dict, configs: list, allow_hidden: bool = False) -> dict:
+    """Valida el diseño del editor contra los campos REALES del evento; lanza ValueError con un mensaje legible. Lo desconocido se ignora (un campo borrado del evento no rompe el diseño).
+    `allow_hidden` (solo los formularios por categoría): un campo puede quedar OCULTO para esa categoría (no se ve ni se exige); cédula, nombres y categoría nunca."""
     if not isinstance(raw, dict):
         raise ValueError("El diseño del formulario de persona no es válido")
     by_key = {c["key"]: c for c in configs}
@@ -126,6 +130,8 @@ def sanitize(raw: dict, configs: list) -> dict:
             continue
         f = f if isinstance(f, dict) else {}
         out = {}
+        if allow_hidden and f.get("hidden") and key not in NEVER_HIDDEN:
+            out["hidden"] = True
         if "required" in f and key not in ALWAYS_REQUIRED and key not in NEVER_REQUIRED and key not in EVENT_DECIDES:
             out["required"] = bool(f["required"])
         mode = roster_text.parse_mode(f.get("text_case"))
@@ -138,7 +144,7 @@ def sanitize(raw: dict, configs: list) -> dict:
         fields[key] = out
     placeholders = {k: {} for k in by_key}
     for key, f in fields_in.items():
-        if key not in by_key or not isinstance(f, dict) or not f.get("show_if"):
+        if key not in by_key or not isinstance(f, dict) or not f.get("show_if") or fields.get(key, {}).get("hidden"):
             continue
         cond = formlib._sanitize_condition(f["show_if"], placeholders, key)
         if cond:
@@ -164,6 +170,19 @@ def sanitize(raw: dict, configs: list) -> dict:
     return {"enabled": bool(raw.get("enabled")), "sheets": sheets, "rows": rows, "fields": fields}
 
 
+def sanitize_variants(raw: dict, configs: list, categories: list) -> dict:
+    """Formularios por CATEGORÍA (19-nov-2026): `{categoría: {sheets, rows, fields}}`. Solo de categorías que el evento tiene; cada uno se valida igual que el general (más campos ocultos).
+    Lo obligatorio de una categoría vive aquí (no en `event_field_configs`, que es el del formulario general)."""
+    out = {}
+    variants = raw.get("variants") if isinstance(raw.get("variants"), dict) else {}
+    for cat, v in variants.items():
+        if cat not in categories or not isinstance(v, dict):
+            continue
+        clean = sanitize({**v, "enabled": True}, configs, allow_hidden=True)
+        out[cat] = {k: clean[k] for k in ("sheets", "rows", "fields")}
+    return out
+
+
 # ------------------------------------------------------------------ guardado
 def _row(db, event_id: int) -> Optional[AppSetting]:
     return db.query(AppSetting).filter(AppSetting.key == setting_key(event_id)).first()
@@ -181,12 +200,13 @@ def load_raw(db, event) -> Optional[dict]:
 
 
 def _core(d: dict) -> str:
-    return json.dumps({k: d.get(k) for k in ("enabled", "sheets", "rows", "fields")}, ensure_ascii=False, sort_keys=True)
+    return json.dumps({k: d.get(k) for k in ("enabled", "sheets", "rows", "fields", "variants")}, ensure_ascii=False, sort_keys=True)
 
 
 def save(db, event, raw: dict, configs: list) -> dict:
     """Guarda el diseño (versión +1 SOLO si cambió algo) y escribe lo obligatorio en los parámetros del evento. Devuelve el diseño efectivo. El `commit` lo hace quien llama."""
     clean = sanitize(raw, configs)
+    clean["variants"] = sanitize_variants(raw, configs, event.get_categories())
     prev = load_raw(db, event)
     version = int((prev or {}).get("form_version") or 0)
     if prev is None or _core(prev) != _core(clean):
@@ -239,7 +259,80 @@ def effective(stored: Optional[dict], configs: list) -> dict:
     for sheet in clean["sheets"]:
         if any(fields[k]["required"] for r in clean["rows"] if r["sheet"] == sheet["id"] for k in r["items"]):
             sheet["open"] = True
-    return {"enabled": clean["enabled"], "form_version": int((stored or {}).get("form_version") or 1), "form_sig": _signature(configs), "sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+    out = {"enabled": clean["enabled"], "form_version": int((stored or {}).get("form_version") or 1), "form_sig": _signature(configs), "sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+    variants = {}
+    for cat, v in ((stored or {}).get("variants") or {}).items():
+        ev = effective_variant(v, configs)
+        if ev:
+            variants[cat] = ev
+    if variants:
+        out["variants"] = variants
+    return out
+
+
+def effective_variant(v: dict, configs: list) -> Optional[dict]:
+    """El formulario de UNA categoría tal como lo ven el servidor y el quiosco: lo obligatorio es lo que dice ESA categoría (si no dice nada, lo del evento); lo oculto no se ve ni se exige.
+    None si el diseño guardado ya no cuadra con los campos del evento (entonces esa categoría usa el formulario general)."""
+    try:
+        clean = sanitize({**(v or {}), "enabled": True}, configs, allow_hidden=True)
+    except ValueError:
+        return None
+    fields = {}
+    for cfg in configs:
+        key = cfg["key"]
+        f = clean["fields"].get(key, {})
+        hidden = bool(f.get("hidden"))
+        if hidden:
+            required = False
+        elif key in ALWAYS_REQUIRED:
+            required = True
+        elif key in NEVER_REQUIRED:
+            required = False
+        elif key in EVENT_DECIDES:
+            required = bool(cfg.get("required"))
+        else:
+            required = bool(f["required"]) if "required" in f else bool(cfg.get("required"))
+        item = {"required": required, "text_case": f.get("text_case", "") if case_capable(cfg) else ""}
+        if f.get("show_if") and not required and not hidden:
+            item["show_if"] = f["show_if"]
+        if hidden:
+            item["hidden"] = True
+        fields[key] = item
+    for sheet in clean["sheets"]:
+        if any(fields[k]["required"] for r in clean["rows"] if r["sheet"] == sheet["id"] for k in r["items"]):
+            sheet["open"] = True
+    return {"sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+
+
+def for_category(definition: Optional[dict], category: Optional[str]) -> Optional[dict]:
+    """El formulario que le toca a una persona de esta categoría: el propio de la categoría (con la versión y la firma del general) o, si no tiene, el general."""
+    if not definition:
+        return definition
+    var = (definition.get("variants") or {}).get(category or "")
+    if not var:
+        return definition
+    base_fields = definition.get("fields") or {}
+    fields = {k: {**f, "text_case": (base_fields.get(k) or {}).get("text_case", "")} for k, f in (var.get("fields") or {}).items()}          # «Texto al escribir» siempre es el del general
+    return {**definition, **var, "fields": fields, "variants": None, "category": category}
+
+
+def person_configs(db, event, configs: list, categories: Optional[list], stored: Optional[dict] = None) -> list:
+    """`configs` del evento ajustados al formulario de la categoría de la persona (una sola categoría por persona: se usa la primera). Cambia `required` (y marca `hidden`); sin formulario
+    por categoría, sin diseño activo o con el entorno apagado devuelve `configs` tal cual. Todos los sitios que validan obligatorios pasan por aquí."""
+    cat = (categories or [None])[0]
+    if not cat or not env_enabled():
+        return configs
+    stored = stored if stored is not None else load_raw(db, event)
+    if not stored or not stored.get("enabled") or cat not in (stored.get("variants") or {}):
+        return configs
+    var = effective_variant(stored["variants"][cat], configs)
+    if not var:
+        return configs
+    out = []
+    for c in configs:
+        f = var["fields"].get(c["key"])
+        out.append({**c, "required": f["required"], "hidden": bool(f.get("hidden"))} if f else c)
+    return out
 
 
 def active(db, event, configs: Optional[list] = None) -> Optional[dict]:
