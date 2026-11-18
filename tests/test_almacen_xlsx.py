@@ -53,3 +53,20 @@ def test_long_header_values_wrap_too():
     long_place = NS(**{**EVENT.__dict__, "location": "Centro de Convenciones " * 6})
     ws = load_workbook(io.BytesIO(x.build(x.event_info(long_place, "ACME", None, "Camilo"), m.build_board([], {}), "Ana")))["Hoja1"]
     assert ws["B6"].alignment.wrap_text and ws.row_dimensions[6].height > 15
+
+
+def test_the_file_has_what_excel_demands_so_it_opens_without_repairs():
+    import re
+    import zipfile
+    data = x.build(x.event_info(EVENT, "ACME", None, "Camilo"), m.build_board([], {}), "Ana")
+    z = zipfile.ZipFile(io.BytesIO(data))
+    sheet = z.read("xl/worksheets/sheet1.xml").decode()
+    for t in re.findall(r"<t(?: [^>]*)?>([^<]*)</t>", sheet):          # texto con espacios en las puntas: debe llevar xml:space="preserve"
+        if t != t.strip():
+            assert f'<t xml:space="preserve">{t}</t>' in sheet, repr(t)
+    order = x._RPR_ORDER
+    for rpr in re.findall(r"<rPr>(.*?)</rPr>", sheet):          # propiedades de cada tirada en el orden de Excel
+        names = re.findall(r"<(\w+)\b", rpr)
+        assert names == sorted(names, key=order.index), names
+    assert "CARGADOR" in sheet and 'cNvPr id="0"' not in z.read("xl/drawings/drawing1.xml").decode()
+    assert load_workbook(io.BytesIO(data))["Hoja1"]["A15"].value is not None          # sigue abriendo con openpyxl
