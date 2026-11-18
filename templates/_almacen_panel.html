@@ -4,22 +4,23 @@
 
       <section class="gw-card gw-stack" aria-labelledby="almMoveTitle">
         <h2 class="gw-card__title" id="almMoveTitle">Salidas y entradas por evento</h2>
-        <div class="gw-search gw-search--hero" id="almMvEventBox">
-          <label class="gw-label" for="almMvEventSearch">1. ¿Para qué evento?</label>
-          <div class="gw-search__row">
-            <div class="gw-search__field">
-              <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
-              <input class="gw-input" type="search" id="almMvEventSearch" placeholder="Buscar evento por nombre o código" aria-label="Buscar evento" autocomplete="off" spellcheck="false">
+        <details class="gw-form-group" id="almMvEventBox" open>
+          <summary class="gw-form-group__summary"><span>1. Evento:</span> <strong id="almMvEventChosenName">ninguno elegido</strong> <span id="almMvEventChosenMeta" class="gw-hint"></span></summary>
+          <div class="gw-form-group__body gw-stack">
+            <div class="gw-search gw-search--hero">
+              <label class="gw-sr-only" for="almMvEventSearch">Buscar evento</label>
+              <div class="gw-search__row">
+                <div class="gw-search__field">
+                  <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
+                  <input class="gw-input" type="search" id="almMvEventSearch" placeholder="Buscar evento por nombre o código" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+              <p class="gw-hint" id="almMvEventInfo" role="status" aria-live="polite"></p>
             </div>
+            <div id="almMvEventList" aria-live="polite"></div>
           </div>
-          <p class="gw-hint" id="almMvEventInfo" role="status" aria-live="polite"></p>
-        </div>
-        <div id="almMvEventList" aria-live="polite"></div>
+        </details>
         <input type="hidden" id="almMvEvent" value="">
-        <div class="gw-alert gw-alert--ok gw-row gw-row--between" id="almMvEventChosen" role="status" hidden>
-          <span><strong id="almMvEventChosenName"></strong> <span id="almMvEventChosenMeta" class="gw-hint"></span></span>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="almMvEventChange">Cambiar evento</button>
-        </div>
         <div class="gw-fields-row gw-fields-row--2">
           <fieldset class="gw-field gw-fieldset"><legend class="gw-label">2. ¿Qué registras?</legend>
             <label class="gw-check"><input type="radio" name="almMvMode" value="salida" checked> <span>Salida (sale de bodega al evento)</span></label>
@@ -44,11 +45,18 @@
       <section class="gw-card gw-stack" id="almBoardCard" aria-labelledby="almBoardTitle" hidden>
         <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almBoardTitle">Checklist del evento</h2><span id="almBoardSummary" class="gw-hint"></span></div>
         <div id="almBoardUnmapped" role="status"></div>
-        <div id="almBoard" aria-live="polite"></div>
-        <h3 class="gw-section-title">Fuera de bodega (equipos con serial que siguen en el evento)</h3>
-        <div id="almOutside" aria-live="polite"></div>
-        <h3 class="gw-section-title">Últimos movimientos</h3>
-        <div id="almMovements" aria-live="polite"></div>
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary"><span>Filas del checklist</span></summary>
+          <div class="gw-form-group__body"><div id="almBoard" aria-live="polite"></div></div>
+        </details>
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary"><span>Fuera de bodega (equipos con serial que siguen en el evento)</span> <span class="gw-badge" id="almOutsideCount"></span></summary>
+          <div class="gw-form-group__body"><div id="almOutside" aria-live="polite"></div></div>
+        </details>
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary"><span>Últimos movimientos</span> <span class="gw-badge" id="almMovementsCount"></span></summary>
+          <div class="gw-form-group__body"><div id="almMovements" aria-live="polite"></div></div>
+        </details>
       </section>
 
       <p class="gw-hint">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p>

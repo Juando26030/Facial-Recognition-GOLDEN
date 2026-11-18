@@ -51,10 +51,10 @@
   function chooseEvent(id) {
     const e = events.find((x) => x.id === Number(id));
     $('almMvEvent').value = e ? String(e.id) : '';
-    $('almMvEventBox').hidden = !!e;
-    $('almMvEventList').hidden = !!e;
-    $('almMvEventChosen').hidden = !e;
-    if (e) { $('almMvEventChosenName').textContent = e.name; $('almMvEventChosenMeta').textContent = eventMeta(e); } else { $('almMvEventSearch').value = ''; renderEvents(); }
+    $('almMvEventChosenName').textContent = e ? e.name : 'ninguno elegido';
+    $('almMvEventChosenMeta').textContent = e ? eventMeta(e) : '';
+    $('almMvEventBox').open = !e;          // elegido: el bloque se pliega y deja ver solo el nombre; para cambiarlo basta con desplegarlo
+    if (!e) { $('almMvEventSearch').value = ''; renderEvents(); }
     onEventChange();
   }
   function onEventChange() {
@@ -153,7 +153,9 @@
       $('almBoardUnmapped').innerHTML = d.unmapped.length ? `<div class="gw-state" role="status"><p class="gw-state__title"><span class="gw-badge gw-badge--warn">Sin fila</span> Estos elementos están en el evento pero no tienen fila del checklist, así que no saldrán en el Excel: ${d.unmapped.map((u) => esc(u.name)).join(', ')}.</p></div>` : '';
       $('almBoard').innerHTML = boardTable(d.board);
       $('almOutside').innerHTML = outsideList(d.outside);
+      $('almOutsideCount').textContent = String(d.outside.length);
       $('almMovements').innerHTML = movementsList(d.movements);
+      $('almMovementsCount').textContent = String(d.movements.length);
     } catch (e) { $('almBoard').innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(e.message)}</p></div>`; }
   }
   async function saveRow(key, body, input) {
@@ -177,7 +179,6 @@
   });
   $('almMvEventSearch').addEventListener('input', renderEvents);
   $('almMvEventList').addEventListener('click', (e) => { const b = e.target.closest('button[data-alm-pick]'); if (b) chooseEvent(b.dataset.almPick); });
-  $('almMvEventChange').addEventListener('click', () => { chooseEvent(''); $('almMvEventSearch').focus(); });
   $('almMvQrBtn').addEventListener('click', openCamera);
   root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; focusScan(); }));
 

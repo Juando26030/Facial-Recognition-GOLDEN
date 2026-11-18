@@ -381,7 +381,7 @@ def test_the_catalog_admin_carries_the_warehouse_fields_and_the_alm_tab_has_no_c
     page = client.get("/inventario").text
     assert 'id="almCatBox"' in page and 'id="almUnitsCard"' in page and "almacen-catalog.js" in page          # crear tipo, objetos y QR viven en «Administrar catálogo»
     assert 'id="almNewForm"' not in page and 'id="almProducts"' not in page                                   # y ya no hay un segundo formulario en la pestaña Almacén
-    assert 'id="almMvScan"' in page and 'id="almMvQrBtn"' in page and 'id="almMvEventSearch"' in page and 'id="almScan"' not in page and 'invCatForm' not in page
+    assert 'id="almMvScan"' in page and 'id="almMvQrBtn"' in page and 'id="almMvEventSearch"' in page and 'id="almScan"' not in page and 'id="almMvEventBox"' in page and 'id="invProdSearch"' in page and 'id="invProdFormBox"' in page          # bloques plegables y buscador de tipos and 'invCatForm' not in page
     monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
     off = client.get("/inventario").text
     assert 'id="almCatBox"' not in off and "almacen-catalog.js" not in off and 'id="invProdForm"' in off and 'invCatForm' in off          # sin el interruptor el catálogo queda como siempre

@@ -63,5 +63,9 @@ Ajustes del 18-nov-2026 (pedidos por Juan David tras probar en staging):
 - Un solo buscador de evento (como el de Inicio: sin tildes, «N de M eventos», tarjetas con «Elegir este evento», «Cambiar evento»).
 - «Escanear código» tiene el botón de cámara de siempre (`qr.js`, el mismo de Registro/Áreas/Inventario); la ventana sigue abierta y muestra el resultado y el aviso de cada lectura.
 
+Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details class="gw-form-group">`, buscadores `type="search"` con «N de M» y la barra «Plegar todo / Desplegar todo» que pone `gw-ui.js` en cada pestaña con 2 o más bloques):
+- Almacén: «1. Evento» es un bloque plegable (con buscador y lista); al elegir un evento se pliega y deja su nombre en el título, y se despliega para cambiarlo. El checklist se divide en «Filas del checklist», «Fuera de bodega» y «Últimos movimientos» (este cerrado; con contador).
+- Administrar catálogo: el formulario de crear/editar es un bloque plegable (se abre solo al pulsar «Editar») y la lista de tipos tiene buscador por nombre o SKU (sin tildes).
+
 ## Siguiente
 Pieza 3: novedades y bloqueo (con **foto** del daño y texto; un elemento en novedad no se asigna a un evento hasta que Almacén lo deje «disponible»; disponibilidad = existencias − novedades abiertas). Pieza 4: Excel `.xlsx` igual al formato GEYL (hoja «Instrucciones Básicas» incluida). Después: alertas de equipos sin devolver y reportes de uso.

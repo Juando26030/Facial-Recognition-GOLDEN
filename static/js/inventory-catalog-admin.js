@@ -13,6 +13,7 @@
   let showArchived = false;
   let editing = null;          // id del producto que se edita (null = crear)
   const PROD_TITLE = $('invProdFormTitle').textContent;
+  const norm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();          // sin tildes ni mayúsculas, como el buscador de Inicio
   const NOCATS = !$('invCatForm');          // con Almacén activo la pantalla no tiene categorías (ni su selector): los productos no se agrupan
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
@@ -63,8 +64,11 @@
       const cats = catalog.categories.filter((c) => showArchived || !c.archived);
       $('invCatList').innerHTML = cats.map(catRow).join('') || empty('Todavía no hay categorías', 'Crea la primera con el formulario de arriba.');
     }
-    const prods = catalog.products.filter((p) => showArchived || !p.archived);
-    $('invProdList').innerHTML = prods.map(prodRow).join('') || empty('Todavía no hay productos', 'Crea el primero con el formulario de arriba; aparecerá en el inventario de los eventos.');
+    const q = norm($('invProdSearch').value).trim();
+    const active = catalog.products.filter((p) => showArchived || !p.archived);
+    const prods = q ? active.filter((p) => norm(p.name + ' ' + (p.sku || '')).includes(q)) : active;
+    $('invProdList').innerHTML = prods.map(prodRow).join('') || (q ? empty('Ningún tipo coincide', 'Prueba con otra palabra o borra la búsqueda.') : empty('Todavía no hay productos', 'Crea el primero con el formulario de arriba; aparecerá en el inventario de los eventos.'));
+    $('invProdSearchInfo').textContent = q ? `${prods.length} de ${active.length}` : '';
     if (!NOCATS) {
       const sel = $('invProdCat'), keep = sel.value;
       sel.innerHTML = '<option value="">Sin categoría</option>' + catalog.categories.filter((c) => !c.archived).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -87,7 +91,7 @@
   function resetProductForm() {
     editing = null;
     $('invProdName').value = ''; $('invProdSku').value = ''; $('invProdStock').value = ''; $('invProdFields').value = ''; $('invProdUnit').value = 'unidad'; if (!NOCATS) $('invProdCat').value = '';
-    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = PROD_TITLE;
+    $('invProdBtn').innerHTML = `${icon('plus')} Crear producto`; $('invProdCancel').hidden = true; $('invProdFormTitle').textContent = PROD_TITLE; $('invProdFormSum').textContent = 'Crear un tipo de elemento';
     root.dispatchEvent(new CustomEvent('gw:product-form-reset'));
   }
 
@@ -114,6 +118,7 @@
     } catch (err) { showToast(err.message, 'error'); }
   });
   $('invProdCancel').addEventListener('click', resetProductForm);
+  $('invProdSearch').addEventListener('input', () => { if (catalog) paint(); });
   $('invShowArchived').addEventListener('change', (e) => { showArchived = e.target.checked; paint(); });
 
   root.addEventListener('click', async (e) => {
@@ -137,7 +142,7 @@
       if (!p) return;
       editing = p.id;
       $('invProdName').value = p.name; $('invProdSku').value = p.sku || ''; $('invProdStock').value = p.stock == null ? '' : String(p.stock); $('invProdUnit').value = p.unit; if (!NOCATS) $('invProdCat').value = p.category_id == null ? '' : String(p.category_id); $('invProdFields').value = fieldsToText(p.fields);
-      $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false; $('invProdFormTitle').textContent = `Editando «${p.name}»`;
+      $('invProdBtn').textContent = 'Guardar producto'; $('invProdCancel').hidden = false; $('invProdFormTitle').textContent = `Editando «${p.name}»`; $('invProdFormBox').open = true; $('invProdFormSum').textContent = `Editando «${p.name}»`;
       root.dispatchEvent(new CustomEvent('gw:product-edit', { detail: { id: p.id } }));
       $('invProdName').focus();
     } else if ((b = t('[data-prod-archive]'))) {

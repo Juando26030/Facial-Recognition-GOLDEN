@@ -21,28 +21,33 @@
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4 id="invProdFormTitle">{% if almacen_on %}Tipos de elemento (productos){% else %}Productos{% endif %}</h4>{% call ayuda('ay_invprod', 'Productos') %}Cada producto tiene una unidad de medida, un SKU opcional y, si lo necesita, campos propios que se piden en cada evento (por ejemplo «Marca» o «Voltaje»). Escribe un campo por línea; para que sea numérico agrega «:número» al final.{% endcall %}</div>
             {% if almacen_on %}<p class="gw-hint">Aquí creas el <strong>tipo</strong> de elemento (por ejemplo «Portátil Lenovo»). Después, con el botón <strong>«Objetos y QR»</strong> de su tarjeta, agregas cada portátil real: cada objeto recibe su propio código QR. Los elementos por modelo o por cantidad (cables, impresoras) llevan un solo QR por tipo.</p>{% endif %}
-            <form id="invProdForm" class="gw-stack">
-              <div class="gw-fields-row gw-fields-row--2">
-                <div class="gw-field"><label class="gw-label" for="invProdName">Nombre del producto</label><input class="gw-input" type="text" id="invProdName" maxlength="80" required autocomplete="off"></div>
-                {% if not almacen_on %}<div class="gw-field"><label class="gw-label" for="invProdCat">Categoría</label><select class="gw-select" id="invProdCat"></select></div>{% endif %}
-                <div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>
-                <div class="gw-field"><label class="gw-label" for="invProdStock">Existencias de Golden <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="number" min="0" id="invProdStock" inputmode="numeric" autocomplete="off" aria-describedby="invProdStockHint"><p class="gw-hint" id="invProdStockHint">Cuánto tiene Golden de este producto. Si lo asignado a eventos que se cruzan en fechas lo supera, se avisa para alquilar; nunca se bloquea un evento. Vacío = no se controla.</p></div>
-                <div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>
-              </div>
-              {% if almacen_on %}<fieldset class="gw-field gw-fieldset" id="almCatBox"><legend class="gw-label">Control de bodega</legend>
+            <details class="gw-form-group" id="invProdFormBox" open>
+              <summary class="gw-form-group__summary"><span id="invProdFormSum">Crear un tipo de elemento</span></summary>
+              <div class="gw-form-group__body">
+              <form id="invProdForm" class="gw-stack">
                 <div class="gw-fields-row gw-fields-row--2">
-                  <div class="gw-field"><label class="gw-label" for="almCatTracking">¿Cómo se controla?</label><select class="gw-select" id="almCatTracking" aria-describedby="almCatTrackingHint"></select><p class="gw-hint" id="almCatTrackingHint"></p></div>
-                  <div class="gw-field"><label class="gw-label" for="almCatRow">Fila del checklist <span class="gw-hint">(opcional)</span></label><select class="gw-select" id="almCatRow"></select></div>
+                  <div class="gw-field"><label class="gw-label" for="invProdName">Nombre del producto</label><input class="gw-input" type="text" id="invProdName" maxlength="80" required autocomplete="off"></div>
+                  {% if not almacen_on %}<div class="gw-field"><label class="gw-label" for="invProdCat">Categoría</label><select class="gw-select" id="invProdCat"></select></div>{% endif %}
+                  <div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>
+                  <div class="gw-field"><label class="gw-label" for="invProdStock">Existencias de Golden <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="number" min="0" id="invProdStock" inputmode="numeric" autocomplete="off" aria-describedby="invProdStockHint"><p class="gw-hint" id="invProdStockHint">Cuánto tiene Golden de este producto. Si lo asignado a eventos que se cruzan en fechas lo supera, se avisa para alquilar; nunca se bloquea un evento. Vacío = no se controla.</p></div>
+                  <div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>
                 </div>
-                <label class="gw-check"><input type="checkbox" id="almCatConsumable"> <span>Es consumible (se gasta y no vuelve; almacén lo repone y lo cuenta a mano)</span></label>
-                <div class="gw-field"><label class="gw-label" for="almCatPhoto">Foto del elemento <span class="gw-hint">(opcional; sirve para reconocerlo)</span></label><input class="gw-input" type="file" id="almCatPhoto" accept="image/*"></div>
-              </fieldset>{% endif %}
-              <div class="gw-field"><label class="gw-label" for="invProdFields">Campos propios <span class="gw-hint">(opcional, uno por línea)</span></label><textarea class="gw-textarea" id="invProdFields" rows="3" placeholder="Marca&#10;Voltaje:número"></textarea></div>
-              <div class="gw-actions">
-                <button type="submit" class="gw-btn gw-btn--primary" id="invProdBtn">{{ ic('plus', 'gw-icon--sm') }} Crear producto</button>
-                <button type="button" class="gw-btn gw-btn--secondary" id="invProdCancel" hidden>Cancelar edición</button>
+                {% if almacen_on %}<fieldset class="gw-field gw-fieldset" id="almCatBox"><legend class="gw-label">Control de bodega</legend>
+                  <div class="gw-fields-row gw-fields-row--2">
+                    <div class="gw-field"><label class="gw-label" for="almCatTracking">¿Cómo se controla?</label><select class="gw-select" id="almCatTracking" aria-describedby="almCatTrackingHint"></select><p class="gw-hint" id="almCatTrackingHint"></p></div>
+                    <div class="gw-field"><label class="gw-label" for="almCatRow">Fila del checklist <span class="gw-hint">(opcional)</span></label><select class="gw-select" id="almCatRow"></select></div>
+                  </div>
+                  <label class="gw-check"><input type="checkbox" id="almCatConsumable"> <span>Es consumible (se gasta y no vuelve; almacén lo repone y lo cuenta a mano)</span></label>
+                  <div class="gw-field"><label class="gw-label" for="almCatPhoto">Foto del elemento <span class="gw-hint">(opcional; sirve para reconocerlo)</span></label><input class="gw-input" type="file" id="almCatPhoto" accept="image/*"></div>
+                </fieldset>{% endif %}
+                <div class="gw-field"><label class="gw-label" for="invProdFields">Campos propios <span class="gw-hint">(opcional, uno por línea)</span></label><textarea class="gw-textarea" id="invProdFields" rows="3" placeholder="Marca&#10;Voltaje:número"></textarea></div>
+                <div class="gw-actions">
+                  <button type="submit" class="gw-btn gw-btn--primary" id="invProdBtn">{{ ic('plus', 'gw-icon--sm') }} Crear producto</button>
+                  <button type="button" class="gw-btn gw-btn--secondary" id="invProdCancel" hidden>Cancelar edición</button>
+                </div>
+              </form>
               </div>
-            </form>
+            </details>
             {% if almacen_on %}<section class="gw-card gw-stack" id="almUnitsCard" aria-labelledby="almUnitsTitle" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
               <div class="gw-row gw-row--between"><h4 class="gw-card__title" id="almUnitsTitle"></h4>
                 <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-units-close>Cerrar</button></div>
@@ -57,6 +62,14 @@
               </div>
               <div id="almUnits" aria-live="polite"></div>
             </section>{% endif %}
+            <div class="gw-search">
+              <label class="gw-sr-only" for="invProdSearch">Buscar un tipo de elemento</label>
+              <div class="gw-search__row"><div class="gw-search__field">
+                <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
+                <input class="gw-input" type="search" id="invProdSearch" placeholder="Buscar por nombre o SKU" autocomplete="off" spellcheck="false">
+              </div></div>
+              <p class="gw-hint" id="invProdSearchInfo" role="status" aria-live="polite"></p>
+            </div>
             <label class="gw-check"><input type="checkbox" id="invShowArchived"> Ver archivados</label>
             <div class="gw-cards gw-inv__cards" id="invProdList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando productos…') }}</div>
           </div>
