@@ -120,6 +120,7 @@
           {% if staff_role != "comercial" %}
           {{ tile("/kiosk/%s/roster" % event.id, "upload", "Adjuntar base de datos", "Carga masiva desde Excel/CSV") }}
           {{ tile("/kiosk/%s/escarapela" % event.id, "badge", "Escarapelas", "Diseña la escarapela de este evento e imprímela al registrar") }}
+          {{ tile("/kiosk/%s/preimpresiones" % event.id, "printer", "Preimpresiones", "Imprime antes las escarapelas de un grupo (VIPs, expositores…) para no imprimirlas cuando lleguen") }}
           {% endif %}
           {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
           {{ tile("/kiosk/%s/formularios" % event.id, "form", "Formularios web", "Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento") }}

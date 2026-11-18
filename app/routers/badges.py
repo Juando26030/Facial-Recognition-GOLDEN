@@ -16,7 +16,7 @@ from app.database import get_db
 from app import testperson
 from app.inputcheck import text_validator
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
-from app.auth import assert_tenant_id, get_current_staff, get_event_for_staff, require_role, require_role_excluding
+from app.auth import ROLE_HIERARCHY, assert_tenant_id, effective_roles, get_current_staff, get_event_for_staff, require_role, require_role_excluding
 
 router = APIRouter()
 
@@ -340,22 +340,31 @@ def get_badge_asset(
     return get_storage().response(key)
 
 
-def _require_printable(event, user_id: str) -> None:
-    """5-nov-2026: con el evento en «creado» no se imprime la escarapela de nadie (igual que no se registra); la persona de prueba es la única excepción, para ensayar la impresión."""
+def _may_preprint(staff) -> bool:
+    """Preimpresiones (18-nov-2026): solo coordinador o superior (no la comercial pura) puede imprimir escarapelas con el evento en «creado» desde el módulo Preimpresiones."""
+    roles = effective_roles(staff)
+    return not roles.issubset({"comercial"}) and max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]
+
+
+def _require_printable(event, user_id: str, preprint: bool = False, staff=None) -> None:
+    """5-nov-2026: con el evento en «creado» no se imprime la escarapela de nadie (igual que no se registra); la persona de prueba es la única excepción, para ensayar la impresión.
+    Excepción 18-nov-2026: la ventana de PREIMPRESIÓN (`?preprint=1`, módulo Preimpresiones) sí imprime en «creado», pero solo si quien la abre es coordinador o superior."""
     if event.status == "creado" and not testperson.bypasses_gate(event, user_id):
+        if preprint and staff is not None and _may_preprint(staff):
+            return
         raise HTTPException(status_code=403, detail="El evento está en modo «creado»: la escarapela se imprime cuando el evento esté en proceso.")
 
 
 @router.get("/users/{user_id}/badge-print-data")
 def get_badge_print_data(
-    user_id: str, event_id: int, db: Session = Depends(get_db),
+    user_id: str, event_id: int, preprint: int = 0, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Datos completos de UNA persona para imprimir su escarapela — incluye extra_fields (los
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    _require_printable(event, user_id)
+    _require_printable(event, user_id, bool(preprint), staff)
     user = require_person_of_event(db, event, user_id)
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()

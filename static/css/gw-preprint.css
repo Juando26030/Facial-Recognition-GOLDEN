@@ -1,0 +1,8 @@
+/* Preimpresiones: solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). Las filas de condiciones reutilizan .gw-ruleta-cond. */
+.gw-preprint__wrap { display: flex; flex-direction: column; gap: var(--gw-sp-4); }
+.gw-preprint .gw-table-wrap { max-height: 60vh; overflow: auto; }
+.gw-preprint .gw-table td small { color: var(--gw-text-muted); }
+.gw-preprint .gw-table td .gw-badge { margin-right: var(--gw-sp-1); }
+.gw-preprint__print { position: sticky; bottom: var(--gw-sp-3); z-index: 2; }
+.gw-preprint .gw-segment { align-self: flex-start; }
+@media (max-width: 640px) { .gw-preprint__print { bottom: 0; } }

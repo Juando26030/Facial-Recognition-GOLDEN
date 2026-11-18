@@ -52,6 +52,7 @@
 (function () {
     const EVENT_ID = {{ event.id }};
     const USER_ID = {{ print_user_id_json | safe }};
+    const PRE_Q = new URLSearchParams(location.search).get('preprint') === '1' ? '&preprint=1' : '';          // Preimpresiones: la ventana pide los datos con el evento en «creado» (el servidor solo lo permite a coordinador o superior)
     const USER_IDS = {{ print_users_json | safe }};                 // una persona (lo normal) o varias: UNA ventana con una hoja por escarapela («Imprimir pendientes»)
     window.EVENT_ID = EVENT_ID;
 
@@ -139,7 +140,7 @@
     async function load() {
         try {
             // Primero los datos de la persona: dicen qué plantilla le toca (por categoría, ítem 14).
-            const dataRes = await fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}`);
+            const dataRes = await fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}${PRE_Q}`);
             const data = dataRes.ok ? await dataRes.json() : null;
             const tplRes = data ? await BadgeRender.fetchTemplate(EVENT_ID, data.template_category) : null;          // la plantilla vigente (sin copias guardadas)
             if (!dataRes.ok || !tplRes.ok) {
@@ -181,7 +182,7 @@
         for (let i = 0; i < ids.length; i++) {
             statusEl.innerText = `Preparando la escarapela ${i + 1} de ${ids.length}…`;
             try {
-                const dataRes = await fetch(`/api/users/${encodeURIComponent(ids[i])}/badge-print-data?event_id=${EVENT_ID}`);
+                const dataRes = await fetch(`/api/users/${encodeURIComponent(ids[i])}/badge-print-data?event_id=${EVENT_ID}${PRE_Q}`);
                 const data = dataRes.ok ? await dataRes.json() : null;
                 const tplRes = data ? await BadgeRender.fetchTemplate(EVENT_ID, data.template_category) : null;
                 if (!data || !tplRes.ok) throw new Error('sin datos');
