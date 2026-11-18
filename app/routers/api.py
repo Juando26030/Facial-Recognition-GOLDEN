@@ -47,12 +47,13 @@ SKIP_REQUIRED_TYPES = ("signature", "categories")       # se guardan aparte (arc
 def person_missing_required(db: Session, event: Event, user: User) -> list:
     """A3 (26-oct-2026): los campos OBLIGATORIOS del evento que esta persona tiene vacíos ({key, label}), con los mismos valores que comprueba «Editar persona» (update_user). Sirve para
     no acreditar a quien le falta un obligatorio (p. ej. se marcó obligatorio después de cargar la base): el escaneo, la fila y el autoregistro responden MISSING_REQUIRED."""
-    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    all_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), attendee.get_categories() if attendee else [])          # lo obligatorio de la categoría de la persona
+    field_configs = [c for c in all_configs if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
     if not any(c["required"] for c in field_configs):
         return []
     values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
               "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else ""}
-    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     values["certificate"] = "true" if (attendee and attendee.certificate) else ""
     values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
     labels = set(_missing_required_fields(field_configs, values))
@@ -406,7 +407,7 @@ def _upsert_attendee_cached(db: Session, event_id: int, user_id: str, tenant_id:
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
-    """Categorías (ítem 14) de `raw` (lista o texto separado por , ; |) que existen en el evento,
+    """Categoría (ítem 14; desde 19-nov-2026 una sola por persona) de `raw` (lista o texto separado por , ; |) que existe en el evento,
     con la escritura oficial del evento. `auto_add=True` (carga de roster) agrega al evento las
     que no existían todavía, para que importar un Excel con categorías nuevas no las pierda."""
     if isinstance(raw, str):
@@ -426,7 +427,7 @@ def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
             result.append(canonical)
     if auto_add:
         event.set_categories(known)
-    return result
+    return result[:1]          # UNA sola categoría por persona (19-nov-2026): define su escarapela y su formulario; si llegan varias, vale la primera
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
@@ -1136,6 +1137,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
             return {"op_id": op_id, "result": "duplicado", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
         kind = "Existente"
     else:
+        field_configs = personform.person_configs(db, event, field_configs, categories)          # lo obligatorio de la categoría de la persona
         missing = _missing_required_fields(field_configs, values)
         last_error = _last_name_error(field_configs, last)
         if last_error:
@@ -1219,6 +1221,7 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     final = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(), **{k: v for k, v in changes.items() if k in ("role", "entity", "phone", "email", "opt_1")}, **extras}
     final["certificate"] = "true" if (certificate or (attendee and attendee.certificate)) else ""
     final["digital_contact"] = contact or ((attendee.digital_contact if attendee else "") or "")
+    field_configs = personform.person_configs(db, event, field_configs, categories or (attendee.get_categories() if attendee else []))          # lo obligatorio de la categoría de la persona
     touched = set(changes) | set(extras)
     bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
     if bad:
@@ -1497,6 +1500,7 @@ def update_user(
         attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
         final_values["certificate"] = "true" if (attendee and attendee.certificate) else ""
         final_values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
+        field_configs = personform.person_configs(db, event, field_configs, (attendee.get_categories() if attendee else None) or (_clean_categories(event, categories) if categories else []))          # lo obligatorio de la categoría de la persona
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -1874,7 +1878,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
             reply["digital"] = _send_digital(db, event, existing, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return reply
 
-    field_configs = parametros.field_configs_for_event(db, event)
+    field_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), person_categories)          # lo obligatorio de la categoría de la persona
     final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", "digital_contact": contact_clean or "", **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
@@ -2917,9 +2921,11 @@ def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff
     como «falta completar» para abrir «Editar persona» en el campo vacío. Sin columnas nuevas: se calcula con los datos de hoy."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
-    if not any(c["required"] for c in field_configs):
+    base_configs = parametros.field_configs_for_event(db, event)
+    field_configs = [c for c in base_configs if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    if not any(c["required"] for c in field_configs) and not (personform.env_enabled() and (personform.load_raw(db, event) or {}).get("variants")):
         return {"count": 0, "people": []}
+    stored_pf = personform.load_raw(db, event)          # una sola lectura del diseño para todas las personas
     ids = {u for (u,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado").distinct()}
     if not ids:
         return {"count": 0, "people": []}
@@ -2930,9 +2936,10 @@ def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff
         values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
                   "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else "",
                   "certificate": "true" if (att and att.certificate) else "", "digital_contact": (att.digital_contact if att else "") or ""}
-        labels = set(_missing_required_fields(field_configs, values))
+        person_cfgs = [c for c in personform.person_configs(db, event, base_configs, att.get_categories() if att else [], stored=stored_pf) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]          # lo obligatorio de su categoría
+        labels = set(_missing_required_fields(person_cfgs, values))
         if labels:
             people.append({"id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                           "missing": [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]})
+                           "missing": [{"key": c["key"], "label": c["label"]} for c in person_cfgs if c["required"] and c["label"] in labels]})
     people.sort(key=lambda p: (p["last_name"] or "", p["first_name"] or ""))
     return {"count": len(people), "people": people[:200]}

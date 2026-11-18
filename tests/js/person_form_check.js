@@ -110,3 +110,19 @@ assert.strictEqual(PF.pick(null, null), null);
   const solo = { sheets: [{ id: 'a', title: 'A', open: true }], items: [] }; assert.strictEqual(D.removeSheet(solo, 'a'), false, 'siempre queda al menos un grupo');
   console.log('person_form_check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// ---- formulario POR CATEGORÍA (19-nov-2026): el de la categoría de la persona o, si no tiene, el general; «Texto al escribir» siempre es el del general
+(function () {
+  const base = def({ variants: { VIP: { sheets: [{ id: 'datos', title: 'Datos', open: true }], rows: [{ sheet: 'datos', items: ['id', 'first_name', 'role'] }],
+    fields: { id: { required: true, text_case: '' }, first_name: { required: true, text_case: '' }, role: { required: true, text_case: 'lower' }, entity: { required: false, text_case: '', hidden: true }, email: { required: true, text_case: '' } } } } });
+  assert.strictEqual(PF.forCategory(base, ''), base, 'sin categoría: el general');
+  assert.strictEqual(PF.forCategory(base, 'Otra'), base, 'categoría sin formulario propio: el general');
+  const vip = PF.forCategory(base, 'VIP');
+  assert.strictEqual(vip.category, 'VIP'); assert.strictEqual(vip.form_version, 3, 'conserva la versión del general');
+  assert.strictEqual(PF.requiredOf(vip, 'email'), true, 'obligatorio propio de la categoría');
+  assert.strictEqual(PF.requiredOf(base, 'email'), false, 'el general no cambia');
+  assert.strictEqual(vip.fields.entity.hidden, true, 'campo oculto en esta categoría');
+  assert.strictEqual(vip.fields.role.text_case, '', '«Texto al escribir» del general, no el de la categoría');
+  assert.strictEqual(vip.fields.first_name.text_case, 'upper', 'idem: el general manda');
+  assert.strictEqual(PF.forCategory(null, 'VIP'), null);
+})();

@@ -37,6 +37,16 @@
     return !!(def && def.fields && def.fields[key] && def.fields[key].required);
   }
 
+  /* Formulario POR CATEGORÍA (19-nov-2026; app/personform.py::for_category): el de la categoría de la persona (campos ocultos y obligatorios propios) o, si no tiene, el general. «Texto al escribir» siempre es
+     el del general (el servidor aplica ese al guardar). */
+  function forCategory(def, category) {
+    const v = def && def.variants && category ? def.variants[category] : null;
+    if (!v) return def;
+    const fields = {};
+    Object.keys(v.fields || {}).forEach((k) => { fields[k] = Object.assign({}, v.fields[k], { text_case: ((def.fields || {})[k] || {}).text_case || '' }); });
+    return Object.assign({}, def, v, { fields, variants: null, category });
+  }
+
   function el(doc, tag, cls, text) { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 
   function markRequired(node, key, required) {
@@ -58,8 +68,9 @@
   function mount(container, def, opts) {
     opts = opts || {};
     const doc = container.ownerDocument || root.document;
-    const ctl = { def: null };
+    const ctl = { def: null, base: null, category: '' };
     let rules = {};
+    const catOf = () => { const c = container.querySelector('input[name="categories"]:checked'); return c ? c.value : ''; };
 
     function collect() {
       const map = {};
@@ -67,7 +78,9 @@
       return map;
     }
 
-    function layout(newDef) {
+    function layout(baseDef) {
+      ctl.base = baseDef; ctl.category = catOf();
+      const newDef = forCategory(baseDef, ctl.category);          // el formulario de la categoría elegida (o el general)
       ctl.def = newDef; rules = rulesOf(newDef);
       const nodes = collect();
       const sheets = (newDef.sheets && newDef.sheets.length) ? newDef.sheets : [{ id: 'datos', title: '', open: true }];
@@ -98,6 +111,16 @@
       });
       while (container.firstChild) container.removeChild(container.firstChild);          // los nodos de campo ya están en el fragmento (se movieron)
       container.appendChild(frag);
+      Object.keys(nodes).forEach((k) => {          // campos que esta categoría no lleva: no se ven, no se envían ni se exigen (y vuelven al cambiar de categoría)
+        const n = nodes[k], off = !!(newDef.fields && newDef.fields[k] && newDef.fields[k].hidden);
+        if (off) {
+          n.hidden = true;
+          n.querySelectorAll('input, select, textarea').forEach((c) => { if (!c.disabled) { c.disabled = true; c.setAttribute('data-pf-hidden', '1'); c.setAttribute('data-pf-cat', '1'); } });
+        } else if (n.querySelector('[data-pf-cat]')) {
+          n.hidden = false;
+          n.querySelectorAll('[data-pf-cat]').forEach((c) => { c.disabled = false; c.removeAttribute('data-pf-hidden'); c.removeAttribute('data-pf-cat'); });
+        }
+      });
       Object.keys(nodes).forEach((k) => markRequired(nodes[k], k, requiredOf(newDef, k)));
       (opts.disableKeys || []).forEach((k) => {
         const n = nodes[k]; if (!n) return;
@@ -153,7 +176,10 @@
     const onBlur = (e) => { if (e.target && e.target.name) convertInput(e.target); };
     const onInvalid = (e) => { const g = e.target && e.target.closest && e.target.closest('details'); if (g && !g.open) g.open = true; };          // un campo inválido dentro de un grupo cerrado: se abre
     container.addEventListener('input', onInput);
-    container.addEventListener('change', () => ctl.refresh());
+    container.addEventListener('change', (e) => {
+      if (e.target && e.target.name === 'categories' && ctl.base && ctl.base.variants) { setTimeout(() => { if (catOf() !== ctl.category) layout(ctl.base); }, 0); return; }          // otra categoría = otro formulario (después de que el evento termine de burbujear)
+      ctl.refresh();
+    });
     container.addEventListener('focusout', onBlur);
     container.addEventListener('invalid', onInvalid, true);
 
@@ -175,7 +201,7 @@
     return chosen;
   }
 
-  const api = { mount, sync, pick, convert, applyCase, rulesOf, requiredOf, version, current: null };
+  const api = { mount, sync, pick, convert, applyCase, rulesOf, requiredOf, version, forCategory, current: null };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PersonForm = api;
 })(typeof window !== 'undefined' ? window : globalThis);
