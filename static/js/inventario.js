@@ -48,13 +48,15 @@
     $('statOutBox').classList.toggle('gw-stat--err', real.some(i => i.available <= 0));
     // Subcategorías: se entrega una subcategoría (nunca el grupo); se muestra «Comida › Perro» y el disponible es el de cada una.
     const byId = {}; items.forEach(i => { byId[i.id] = i; });
+    // ¿Varias unidades de este ítem en una entrega? Igual que el servidor (multi_units_allowed): «varias a la vez», o límite propio > 1, o (sin límite propio) el grupo permite más de 1.
+    const multiOk = (i, g) => !!i.allow_multiple || (i.max_per_person != null ? i.max_per_person > 1 : !!(g && g.max_per_person > 1));
     const row = (i, label, radioName) => `
       <div class="gw-card-row gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
         <div><strong class="gw-card-row__title">${esc(label)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
         <div>${radioName
           ? `<label class="gw-check"><input type="radio" name="${radioName}" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Elegir</label>`
-          : (i.allow_multiple
-            ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(i.available, 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
+          : (i.multi
+            ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(Math.min(i.available, i.max_per_person || i.available, (i.group_max || i.available)), 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
             : `<label class="gw-check"><input type="checkbox" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`)}</div>
       </div>`;
     // Un grupo con «Máx. por persona» = 1 es de ELEGIR UNA (botones de opción: ni dos ni ninguna); con un máximo mayor se frena al pasarse (ver limitGroup). Las subcategorías sin grupo y los ítems sueltos, como siempre.
@@ -65,11 +67,11 @@
       if (!kids.length) return '';
       kids.forEach(k => grouped.add(k.id));
       const one = g.max_per_person === 1;
-      const rule = one ? 'Elige una opción (obligatorio)' : (g.max_per_person ? `Máximo ${g.max_per_person} por persona` : '');
-      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(k, k.name, one && !k.allow_multiple ? 'grp' + g.id : '')).join('')}</fieldset>`;
+      const rule = one ? 'Elige una opción (obligatorio)' : (g.max_per_person ? `Máximo ${g.max_per_person} en total por persona (entre todas las opciones)` : '');
+      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(Object.assign({}, k, { multi: multiOk(k, g), group_max: g.max_per_person || 0 }), k.name, one ? 'grp' + g.id : '')).join('')}</fieldset>`;
     }).join('');
     const loose = items.filter(i => !i.is_group && !grouped.has(i.id)).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
-    html += loose.map(i => row(i, i.name, '')).join('');
+    html += loose.map(i => row(Object.assign({}, i, { multi: multiOk(i, i.parent_id ? byId[i.parent_id] : null) }), i.name, '')).join('');
     box.innerHTML = html || `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
     if (AUTOSCAN) restore(keep);
   }

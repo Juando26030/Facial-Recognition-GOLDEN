@@ -49,3 +49,20 @@ def test_screen_uses_radio_buttons_for_choose_one_and_checks_the_delivery_was_re
     assert "batch_id" in js and "lastBatches" in js
     srv = (ROOT / "app/routers/areas_inventory.py").read_text(encoding="utf-8")
     assert "missing_required_choice(db, event.id, user.id, wanted, delivered)" in srv and '"batch_id": batch' in srv
+
+
+def test_varias_unidades_segun_limite_propio_y_del_grupo():
+    """19-nov-2026: «Pizza» con máx. 2 puede entregarse de a 2 aunque no tenga «varias unidades a la vez»; «Coca» sin límite propio dentro de «Comida» (máx. 2) también; con máx. 1 no; la suma del grupo la frena el servidor."""
+    pytest.importorskip("fastapi")
+    from app.routers.areas_inventory import multi_units_allowed as ok
+    item = lambda mx=None, multi=False: types.SimpleNamespace(allow_multiple=multi, max_per_person=mx)          # noqa: E731
+    group = lambda mx: types.SimpleNamespace(max_per_person=mx)                                               # noqa: E731
+    assert ok(item(2), group(2)) and ok(item(None), group(2)) and ok(item(multi=True), None)
+    assert not ok(item(1), group(5)) and not ok(item(None), group(1)) and not ok(item(None), None) and not ok(item(None), group(None))
+
+
+def test_pantalla_deja_pedir_varias_unidades_con_el_mismo_criterio_del_servidor():
+    js = (ROOT / "static/js/inventario.js").read_text(encoding="utf-8")
+    assert "const multiOk = (i, g)" in js and "i.max_per_person != null ? i.max_per_person > 1" in js and "group_max" in js
+    srv = (ROOT / "app/routers/areas_inventory.py").read_text(encoding="utf-8")
+    assert "multi_units_allowed(item, group_rows.get(item.parent_id)" in srv
