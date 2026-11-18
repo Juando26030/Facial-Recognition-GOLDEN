@@ -153,6 +153,7 @@ class PrintLog(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     printed_at = Column(DateTime, default=utcnow)
     printed_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    kind = Column(String(10), nullable=False, default='normal', server_default='normal')          # 0150: 'normal' | 'pre' (escarapela PREIMPRESA antes de que la persona llegue; módulo Preimpresiones)
 
     __table_args__ = (
         ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),
