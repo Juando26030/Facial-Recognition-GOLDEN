@@ -408,6 +408,7 @@
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
       if (countRes.ok) {
         const countData = await countRes.json();
+        if (countData.blocked) { if (typeof showToast === 'function') showToast(countData.blocked, 'error'); return; }          // p. ej. «aún no está registrado»: no se abre la ventana
         let approved = false;
         if (countData.times_printed > 0 && window.GWReprint) {          // Fase 1B: reimpresión deshabilitada → «No se puede reimprimir» + «Solicitar permiso» (static/js/reprint.js)
           const g = await window.GWReprint.check(userId, countData);

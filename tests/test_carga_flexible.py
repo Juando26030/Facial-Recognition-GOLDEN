@@ -404,6 +404,8 @@ def test_a_person_without_surnames_shows_no_none_in_the_directory_the_badge_data
     person = next(p for p in (people if isinstance(people, list) else people.get("users", people.get("people", []))) if p["id"] == "1001")
     assert person["first_name"] == "Ana Mora" and (person["last_name"] or "") == ""
     ev.status = "en_proceso"                       # 5-nov-2026: con el evento en «creado» la escarapela no se imprime
+    from app.models import AccessLog               # 19-nov-2026: ni a quien aún no está registrado
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, record_type="Existente", registration_method="tradicional"))
     db.commit()
     badge = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").json()
     assert badge["first_name"] == "Ana Mora" and (badge["last_name"] or "") == "" and "None" not in json.dumps(badge)

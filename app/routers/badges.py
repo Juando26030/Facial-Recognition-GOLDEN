@@ -346,25 +346,34 @@ def _may_preprint(staff) -> bool:
     return not roles.issubset({"comercial"}) and max(ROLE_HIERARCHY[r] for r in roles) >= ROLE_HIERARCHY["coordinador"]
 
 
-def _require_printable(event, user_id: str, preprint: bool = False, staff=None) -> None:
+def _require_printable(db: Session, event, user_id: str, preprint: bool = False, staff=None, certificate: bool = False) -> None:
     """5-nov-2026: con el evento en «creado» no se imprime la escarapela de nadie (igual que no se registra); la persona de prueba es la única excepción, para ensayar la impresión.
-    Excepción 18-nov-2026: la ventana de PREIMPRESIÓN (`?preprint=1`, módulo Preimpresiones) sí imprime en «creado», pero solo si quien la abre es coordinador o superior."""
-    if event.status == "creado" and not testperson.bypasses_gate(event, user_id):
-        if preprint and staff is not None and _may_preprint(staff):
-            return
+    Excepción 18-nov-2026: la ventana de PREIMPRESIÓN (`?preprint=1`, módulo Preimpresiones) sí imprime en «creado», pero solo si quien la abre es coordinador o superior.
+    19-nov-2026: fuera de la preimpresión, SOLO se imprime a quien ya está REGISTRADO (acreditado) en este evento; la regla es la misma del Directorio y de la impresión compartida.
+    Los certificados (`certificate=True`) no son la escarapela: conservan solo la regla del estado del evento."""
+    if testperson.bypasses_gate(event, user_id):
+        return
+    if preprint and staff is not None and _may_preprint(staff):
+        return
+    if event.status == "creado":
         raise HTTPException(status_code=403, detail="El evento está en modo «creado»: la escarapela se imprime cuando el evento esté en proceso.")
+    if certificate:
+        return
+    from app.routers.shared_print import _registered, _not_registered_msg
+    if not _registered(db, event.id, user_id):
+        raise HTTPException(status_code=403, detail=_not_registered_msg(db, event.tenant_id, user_id))
 
 
 @router.get("/users/{user_id}/badge-print-data")
 def get_badge_print_data(
-    user_id: str, event_id: int, request: Request, preprint: int = 0, db: Session = Depends(get_db),
+    user_id: str, event_id: int, request: Request, preprint: int = 0, certificate: int = 0, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Datos completos de UNA persona para imprimir su escarapela — incluye extra_fields (los
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    _require_printable(event, user_id, bool(preprint), staff)
+    _require_printable(db, event, user_id, bool(preprint), staff, bool(certificate))
     user = require_person_of_event(db, event, user_id)
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
@@ -422,7 +431,12 @@ def get_print_count(
     ).count()
     state = reprint.state_for(db, event, staff, user_id)
     db.commit()                                         # deja anotado un vencimiento, si lo hubo
-    return {"times_printed": count, **state}
+    blocked = ""                                        # 19-nov-2026: la pantalla avisa ANTES de abrir la ventana (el servidor igual lo exige al pedir los datos y al registrar la impresión)
+    try:
+        _require_printable(db, event, user_id)
+    except HTTPException as exc:
+        blocked = str(exc.detail)
+    return {"times_printed": count, "blocked": blocked, **state}
 
 
 @router.post("/users/{user_id}/print-log")
@@ -434,7 +448,7 @@ def log_print(
     impresión, tras cualquier confirmación necesaria."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    _require_printable(event, user_id)
+    _require_printable(db, event, user_id)
     require_person_of_event(db, event, user_id)
     # Fase 1B: con la reimpresión deshabilitada, registrar la impresión de alguien ya impreso exige haber gastado un permiso hace un momento (la impresión local la hace el navegador:
     # esto es lo que el servidor puede hacer cumplir; ver docs/1B_reimpresion_permisos.md «control de pantalla»).

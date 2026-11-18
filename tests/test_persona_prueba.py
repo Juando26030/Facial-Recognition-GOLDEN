@@ -105,3 +105,20 @@ def test_the_test_person_is_not_a_back_door_in_a_finished_event(client, factory,
     db.commit()
     assert client.post("/api/checkin-cedula", data={"event_id": ev.id, "cedula": "PRUEBA", "confirm": "true"}).status_code == 403
     assert client.patch(f"/api/events/{ev.id}/users/PRUEBA/status", json={"status": "registrado"}).status_code == 403
+
+
+def test_nobody_unregistered_prints_a_badge_except_through_preprint_and_certificates(client, factory, db):
+    """19-nov-2026: con el evento en proceso, solo se imprime a quien ya está registrado; la preimpresión (coordinador+) y los certificados quedan aparte."""
+    _admin(client, factory)
+    ev = factory.event("en_proceso")
+    factory.person(ev, "1001", first_name="Ana")
+    db.commit()
+    r = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}")
+    assert r.status_code == 403 and "aún no está registrado" in r.json()["detail"]
+    assert client.post(f"/api/users/1001/print-log?event_id={ev.id}").status_code == 403
+    assert client.get(f"/api/users/1001/print-count?event_id={ev.id}").json()["blocked"]
+    assert client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}&preprint=1").status_code == 200       # preimpresión: el admin sí
+    assert client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}&certificate=1").status_code == 200
+    assert client.patch(f"/api/events/{ev.id}/users/1001/status", json={"status": "registrado"}).status_code == 200
+    assert client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").status_code == 200
+    assert client.get(f"/api/users/1001/print-count?event_id={ev.id}").json()["blocked"] == ""
