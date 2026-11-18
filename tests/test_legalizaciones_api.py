@@ -199,9 +199,12 @@ def test_duplicar_deja_la_copia_debajo_y_sin_soporte_ni_revision(client, ev, db)
     a = _line(client, ev, vendor_name="A")
     b = _line(client, ev, vendor_name="B")
     r = client.post(_url(ev, f"/lines/{a['id']}/duplicate"))
-    assert r.status_code == 200 and r.json()["vendor_name"] == "A" and r.json()["id"] not in (a["id"], b["id"]) and not r.json()["has_evidence"] and r.json()["approved"] is None
+    assert r.status_code == 200 and r.json()["vendor_name"] == "A (copia)" and r.json()["id"] not in (a["id"], b["id"]) and not r.json()["has_evidence"] and r.json()["approved"] is None
     names = [x["vendor_name"] for x in client.get(_url(ev)).json()["lines"] if x["kind"] == "hospedaje"]
-    assert names == ["A", "A", "B"]
+    assert names == ["A", "A (copia)", "B"]
+    second = client.post(_url(ev, f"/lines/{a['id']}/duplicate")).json()          # otra copia del mismo original
+    third = client.post(_url(ev, f"/lines/{r.json()['id']}/duplicate")).json()          # copia de una copia: sigue contando sobre «A»
+    assert second["vendor_name"] == "A (copia 1)" and third["vendor_name"] == "A (copia 2)"
 
 
 def test_reordenar_los_gastos_de_un_rubro(client, ev):

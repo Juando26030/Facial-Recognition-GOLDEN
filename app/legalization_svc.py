@@ -49,6 +49,26 @@ def line_date(e: EventExpense):
     return e.expense_date or (to_local(e.created_at).date() if e.created_at else None)
 
 
+import re
+
+_COPY_RE = re.compile(r"^(?P<base>.*?)\s*\(copia(?: (?P<n>\d+))?\)\s*$", re.I | re.S)
+
+
+def copy_name(name, existing_names, max_len: int = 200) -> str:
+    """Nombre de la copia de un gasto: «Hotel X (copia)»; las siguientes, «Hotel X (copia 1)», «(copia 2)», «(copia 3)»… para distinguir las copias del original.
+    Copiar una copia sigue contando sobre el mismo original (no se anidan «(copia) (copia)»). `existing_names`: los nombres que ya hay en el mismo rubro."""
+    m = _COPY_RE.match(str(name or "").strip())
+    base = (m.group("base") if m else str(name or "")).strip()
+    used = []
+    for other in existing_names or []:
+        mo = _COPY_RE.match(str(other or "").strip())
+        if mo and mo.group("base").strip().lower() == base.lower():
+            used.append(int(mo.group("n") or 0))          # «(copia)» cuenta como 0
+    suffix = "(copia)" if not used else f"(copia {max(used) + 1})"
+    room = max_len - len(suffix) - 1
+    return (f"{base[:room]} {suffix}" if base else suffix).strip()
+
+
 def _f(v):
     return None if v is None else float(v)
 

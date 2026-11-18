@@ -357,7 +357,7 @@
     const dup = e.target.closest('[data-dup]');
     if (dup) {
       busy(dup, () => api('/legalization/lines/' + dup.dataset.dup + '/duplicate', jsonOpts('POST')))
-        .then(() => { showToast('Gasto duplicado: está justo debajo; corrígelo con «Editar»', 'success'); return load(); })
+        .then(() => { showToast('Gasto duplicado como «copia»: está justo debajo; corrígelo con «Editar»', 'success'); return load(); })
         .catch((err) => showToast(err.message || 'No se pudo duplicar el gasto', 'error'));
       return;
     }

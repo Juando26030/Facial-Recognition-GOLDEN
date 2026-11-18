@@ -256,6 +256,8 @@ def duplicate_line(event_id: int, line_id: int, db: Session = Depends(get_db), s
     copy = EventExpense(event_id=event.id, kind=kind, category=src.category, responsible=src.responsible, created_by_id=staff.id, created_at=utcnow(), amount=src.amount)
     for f in ("description", "applies_to", "expense_date", "vehicle", "observation", "has_support", "iva", *TEXT, *MEALS, "unit_value"):
         setattr(copy, f, getattr(src, f))
+    field = "vendor_name" if src.vendor_name or not src.concept else "concept"          # el nombre que se ve en la lista (si no tiene, el concepto)
+    setattr(copy, field, svc.copy_name(getattr(src, field), [getattr(r, field) for r in rows], 200 if field == "vendor_name" else 300))
     db.add(copy)
     at = next((i for i, r in enumerate(rows) if r.id == src.id), len(rows) - 1) + 1
     rows.insert(at, copy)

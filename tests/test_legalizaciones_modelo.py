@@ -67,3 +67,18 @@ def test_traslado_y_borrado_de_eventos_conocen_la_tabla_nueva():
     assert '"approved_by_id"' in transfer
     docs = (ROOT / "app" / "routers" / "event_docs.py").read_text(encoding="utf-8")
     assert "EventLegalization.event_id == event_id).delete()" in docs
+
+
+def test_nombre_de_las_copias_de_un_gasto():
+    """«Hotel X» → «Hotel X (copia)», después «(copia 1)», «(copia 2)»…; copiar una copia no anida el sufijo."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent / "app" / "legalization_svc.py").read_text(encoding="utf8")
+    ns = {"re": __import__("re")}
+    exec(compile(src[src.index("_COPY_RE ="):src.index("def _f(v):")], "copy_name", "exec"), ns)
+    copy_name = ns["copy_name"]
+    assert copy_name("Hotel X", ["Hotel X"]) == "Hotel X (copia)"
+    assert copy_name("Hotel X", ["Hotel X", "Hotel X (copia)"]) == "Hotel X (copia 1)"
+    assert copy_name("Hotel X (copia)", ["Hotel X", "Hotel X (copia)", "Hotel X (copia 1)"]) == "Hotel X (copia 2)"
+    assert copy_name("Hotel X (copia 2)", ["Hotel X", "Hotel X (copia)", "Hotel X (copia 1)", "Hotel X (copia 2)"]) == "Hotel X (copia 3)"
+    assert copy_name("Hotel Y", ["Hotel X", "Hotel X (copia)"]) == "Hotel Y (copia)" and copy_name("", []) == "(copia)" and copy_name(None, []) == "(copia)"
+    assert copy_name("A" * 200, [], 200).endswith(" (copia)") and len(copy_name("A" * 200, [], 200)) <= 200
