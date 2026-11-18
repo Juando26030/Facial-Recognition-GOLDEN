@@ -67,5 +67,15 @@ Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details
 - Almacén: «1. Evento» es un bloque plegable (con buscador y lista); al elegir un evento se pliega y deja su nombre en el título, y se despliega para cambiarlo. El checklist se divide en «Filas del checklist», «Fuera de bodega» y «Últimos movimientos» (este cerrado; con contador).
 - Administrar catálogo: el formulario de crear/editar es un bloque plegable (se abre solo al pulsar «Editar») y la lista de tipos tiene buscador por nombre o SKU (sin tildes).
 
+## Pieza 3 — novedades y bloqueo (18-nov-2026, migración `0152_almacen_novedades`)
+- **Tabla nueva `inventory_novelties`** (solo se agrega; nada se borra): elemento, unidad (si tiene serial), piezas, texto obligatorio (3–500 letras), foto del daño (`novedades/<uuid>.jpg`, por `app/storage.py`), evento y movimiento donde se detectó, quién/cuándo la abrió y quién/cuándo/cómo la resolvió.
+- **Dos formas de reportar:** (1) al devolver, la entrada acepta `novelty: {description, qty?}` («¿Vuelve con novedad?» en la pantalla, vale para UNA lectura y se apaga sola); el equipo vuelve a bodega pero queda **«novedad»**. (2) Suelta, en la sección «Novedades» (código + texto): un equipo con serial pasa a «novedad» si estaba en bodega (si está en un evento conserva «en_evento» y queda marcado).
+- **Bloqueo:** `plan_exit` rechaza sacar un equipo en novedad, mostrando el texto. Solo se libera **resolviendo** la novedad (con nota de qué se hizo), y deja el equipo «disponible». Pueden resolver: almacén, admin, super_admin.
+- **Por modelo o cantidad:** no hay equipo que bloquear; las piezas en novedad abierta **se restan de las existencias asignables** (`almacen_novelties.available`) en el cuadre de asignación (`app/routers/inventory.py`) y en las alertas de faltantes (`app/inventory_alerts.py`). En la salida solo se **avisa** («hay N en novedad»), no se bloquea.
+- **Consumibles:** no llevan novedades. **Anular la entrada** que reportó una novedad la cierra con la razón «Anulada junto con la entrada…».
+- **Fotos:** «Agregar foto» abre la cámara en el celular (`capture`); mismo reductor de imagen que las fotos de elementos (máx. 8 MB → JPEG ≤1280 px).
+- API: `GET/POST /api/almacen/novelties`, `POST|GET /{id}/photo`, `POST /{id}/resolve`. Código: `app/almacen_novelties.py` (reglas puras), `app/routers/almacen_novedades.py`, `static/js/almacen-novedades.js`.
+- Pruebas: `tests/test_almacen_novelties.py` (10 puras, pasan) y 4 de API al final de `tests/test_almacen_api.py` (necesitan Postgres; no se pudieron correr en el sandbox, sin fastapi/Postgres).
+
 ## Siguiente
-Pieza 3: novedades y bloqueo (con **foto** del daño y texto; un elemento en novedad no se asigna a un evento hasta que Almacén lo deje «disponible»; disponibilidad = existencias − novedades abiertas). Pieza 4: Excel `.xlsx` igual al formato GEYL (hoja «Instrucciones Básicas» incluida). Después: alertas de equipos sin devolver y reportes de uso.
+**Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Pieza 4: Excel `.xlsx` igual al formato GEYL (hoja «Instrucciones Básicas» incluida). Después: alertas de equipos sin devolver y reportes de uso.

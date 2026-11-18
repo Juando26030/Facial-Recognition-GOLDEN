@@ -85,7 +85,7 @@ def check_event(status: str, archived: bool, mode: str) -> None:
 
 
 def plan_exit(*, tracking: str, consumable: bool, assigned: int, out: int, qty: int, unit_status: Optional[str] = None, unit_event_name: Optional[str] = None,
-              reason=None, plan_b: bool = False, product_name: str = "") -> ExitPlan:
+              reason=None, plan_b: bool = False, product_name: str = "", novelty_text: str = "") -> ExitPlan:
     """Salida de `qty` hacia el evento. Lanza MoveError si no procede; y, si lo despachado excede lo asignado, NO bloquea: devuelve `warning` y el sobrante como `extra`."""
     if tracking == "serial":
         if qty != 1:
@@ -93,7 +93,7 @@ def plan_exit(*, tracking: str, consumable: bool, assigned: int, out: int, qty: 
         if unit_status == "en_evento":
             raise MoveError("Ese equipo ya está en el evento " + (f"«{unit_event_name}»" if unit_event_name else "de otra salida") + ": primero registra su entrada.")
         if unit_status == "novedad":
-            raise MoveError("Ese equipo está en novedad: no se puede asignar a un evento hasta que Almacén lo deje disponible.")
+            raise MoveError("Ese equipo está en novedad" + (f" («{novelty_text}»)" if novelty_text else "") + ": no se puede asignar a un evento hasta que Almacén lo deje disponible.")
         if unit_status not in (None, "disponible"):
             raise MoveError("Ese equipo no está disponible.")
     free = max(assigned - out, 0)

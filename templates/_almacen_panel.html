@@ -1,4 +1,4 @@
-{# Almacén (Piezas 1 y 2): salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo maneja static/js/almacen-moves.js (buscador de evento, salidas, entradas, cámara QR, alistado). #}
+{# Almacén (Piezas 1 a 3): salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo maneja static/js/almacen-moves.js (buscador de evento, salidas, entradas, cámara QR, alistado). #}
     <section class="gw-invpg__panel gw-stack" id="invPanelAlm" role="tabpanel" aria-labelledby="invTabAlm" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
       <p class="gw-hint">Aquí se registran las salidas y entradas de material por evento escaneando el QR y se lleva el checklist de cada evento.</p>
 
@@ -28,6 +28,17 @@
           <div class="gw-field"><label class="gw-label" for="almMvQty">Cantidad <span class="gw-hint">(solo para elementos por modelo o por cantidad)</span></label>
             <input class="gw-input" type="number" id="almMvQty" min="1" value="1" inputmode="numeric"></div>
         </div>
+        <details class="gw-form-group" id="almMvNovBox" hidden>
+          <summary class="gw-form-group__summary"><span>¿Vuelve con novedad?</span> <span class="gw-hint" id="almMvNovSum">no</span></summary>
+          <div class="gw-form-group__body gw-stack">
+            <label class="gw-check"><input type="checkbox" id="almMvNovOn"> <span>Sí: la próxima lectura se registra con novedad (se marca una sola vez)</span></label>
+            <div class="gw-field"><label class="gw-label" for="almMvNovText">Qué pasó</label>
+              <textarea class="gw-input" id="almMvNovText" rows="2" maxlength="500" placeholder="Ej.: pantalla rota, falta el cable"></textarea></div>
+            <div class="gw-field"><label class="gw-label" for="almMvNovQty">Cuántas piezas traen daño <span class="gw-hint">(solo elementos por modelo o por cantidad)</span></label>
+              <input class="gw-input" type="number" id="almMvNovQty" min="1" value="1" inputmode="numeric"></div>
+            <p class="gw-hint">El equipo vuelve a bodega pero queda <strong>en novedad</strong>: no se puede sacar a otro evento hasta que Almacén lo deje disponible. La foto del daño se agrega en la sección «Novedades».</p>
+          </div>
+        </details>
         <div class="gw-search gw-search--hero">
           <label class="gw-label" for="almMvScan">3. Escanea el código</label>
           <div class="gw-search__row">
@@ -57,6 +68,34 @@
           <summary class="gw-form-group__summary"><span>Últimos movimientos</span> <span class="gw-badge" id="almMovementsCount"></span></summary>
           <div class="gw-form-group__body"><div id="almMovements" aria-live="polite"></div></div>
         </details>
+      </section>
+
+      <section class="gw-card gw-stack" id="almNovCard" aria-labelledby="almNovTitle">
+        <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almNovTitle">Novedades</h2><span id="almNovSummary" class="gw-hint"></span></div>
+        <details class="gw-form-group" id="almNovFormBox">
+          <summary class="gw-form-group__summary"><span>Reportar una novedad</span></summary>
+          <div class="gw-form-group__body gw-stack">
+            <div class="gw-field"><label class="gw-label" for="almNovCode">Código del elemento</label>
+              <input type="text" id="almNovCode" data-gw-clearable class="gw-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="Escanea o escribe el código"></div>
+            <div class="gw-field"><label class="gw-label" for="almNovText">Qué pasó</label>
+              <textarea class="gw-input" id="almNovText" rows="2" maxlength="500" placeholder="Ej.: golpe en la carcasa, no enciende"></textarea></div>
+            <div class="gw-field"><label class="gw-label" for="almNovQty">Piezas afectadas <span class="gw-hint">(solo elementos por modelo o por cantidad)</span></label>
+              <input class="gw-input" type="number" id="almNovQty" min="1" value="1" inputmode="numeric"></div>
+            <div class="gw-row"><button type="button" class="gw-btn gw-btn--primary" id="almNovSave">Registrar novedad</button></div>
+          </div>
+        </details>
+        <div class="gw-search gw-search--hero">
+          <div class="gw-search__row">
+            <div class="gw-search__field">
+              <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
+              <label class="gw-sr-only" for="almNovSearch">Buscar novedad</label>
+              <input class="gw-input" type="search" id="almNovSearch" placeholder="Buscar por elemento, código, serial o texto" autocomplete="off" spellcheck="false">
+            </div>
+            <select class="gw-select" id="almNovState" aria-label="Estado de las novedades"><option value="abiertas">Abiertas</option><option value="resueltas">Resueltas</option><option value="todas">Todas</option></select>
+          </div>
+          <p class="gw-hint" id="almNovInfo" role="status" aria-live="polite"></p>
+        </div>
+        <div id="almNovList" aria-live="polite"></div>
       </section>
 
       <p class="gw-hint">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p>

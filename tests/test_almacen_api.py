@@ -385,3 +385,86 @@ def test_the_catalog_admin_carries_the_warehouse_fields_and_the_alm_tab_has_no_c
     monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
     off = client.get("/inventario").text
     assert 'id="almCatBox"' not in off and "almacen-catalog.js" not in off and 'id="invProdForm"' in off and 'invCatForm' in off          # sin el interruptor el catálogo queda como siempre
+
+
+# ------------------------------------------------------------------ Pieza 3: novedades y bloqueo
+def _png():
+    import io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (400, 300), (180, 20, 20)).save(b, format="PNG")
+    return b.getvalue()
+
+
+def test_reporting_a_novelty_blocks_the_unit_until_almacen_resolves_it(client, factory, on):
+    factory.staff("admin", "adm")
+    ev = factory.event(status="creado")
+    login(client, "adm")
+    p = _product(client)
+    u = _units(client, p["id"], 1)[0]
+    _assign(client, ev.id, p["id"], 1)
+    assert client.post("/api/almacen/novelties", json={"code": u["code"], "description": "ab"}).status_code == 400          # el texto es obligatorio
+    r = client.post("/api/almacen/novelties", json={"code": u["code"], "description": "Pantalla rota"})
+    assert r.status_code == 200, r.text
+    nid = r.json()["novelty"]["id"]
+    assert client.post("/api/almacen/novelties", json={"code": u["code"], "description": "Otra cosa"}).status_code == 400          # ya tiene una abierta
+    blocked = _move(client, "salida", u["code"], ev.id)
+    assert blocked.status_code == 400 and "novedad" in blocked.text and "Pantalla rota" in blocked.text
+    ph = client.post(f"/api/almacen/novelties/{nid}/photo", files={"file": ("dano.png", _png(), "image/png")})
+    assert ph.status_code == 200 and ph.json()["has_photo"]
+    assert client.get(f"/api/almacen/novelties/{nid}/photo").headers["content-type"].startswith("image/jpeg")
+    assert client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": ""}).status_code == 400
+    ok = client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": "Cambiaron la pantalla"})
+    assert ok.status_code == 200 and ok.json()["novelty"]["resolved"]
+    assert client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": "otra vez"}).status_code == 400
+    assert _move(client, "salida", u["code"], ev.id).status_code == 200          # ya se puede asignar a un evento
+    assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 0
+    assert [n["id"] for n in client.get("/api/almacen/novelties?state=resueltas").json()["novelties"]] == [nid]
+
+
+def test_a_return_with_novelty_leaves_the_unit_blocked_and_void_undoes_both(client, factory, on):
+    factory.staff("admin", "adm")
+    ev = factory.event(status="en_proceso")
+    login(client, "adm")
+    p = _product(client)
+    u = _units(client, p["id"], 1)[0]
+    _assign(client, ev.id, p["id"], 1)
+    assert _move(client, "salida", u["code"], ev.id).status_code == 200
+    bad = client.post("/api/almacen/move", json={"mode": "entrada", "code": u["code"], "event_id": ev.id, "novelty": {"description": "x"}})
+    assert bad.status_code == 400          # sin texto no se registra nada
+    assert client.get(f"/api/almacen/events/{ev.id}/board").json()["outside"]          # sigue afuera
+    r = client.post("/api/almacen/move", json={"mode": "entrada", "code": u["code"], "event_id": ev.id, "novelty": {"description": "Golpe en la carcasa"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["novelty"]["description"] == "Golpe en la carcasa" and r.json()["unit"]["status"] == "novedad"
+    assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 1
+    v = client.post(f"/api/almacen/movements/{r.json()['movement']['id']}/void")
+    assert v.status_code == 200, v.text
+    assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 0
+    assert client.get(f"/api/almacen/events/{ev.id}/board").json()["outside"]          # el equipo volvió a estar afuera
+
+
+def test_novelty_only_comes_with_an_entry_and_consumables_carry_none(client, factory, on):
+    factory.staff("admin", "adm")
+    ev = factory.event(status="en_proceso")
+    login(client, "adm")
+    p = _product(client)
+    u = _units(client, p["id"], 1)[0]
+    _assign(client, ev.id, p["id"], 1)
+    r = client.post("/api/almacen/move", json={"mode": "salida", "code": u["code"], "event_id": ev.id, "novelty": {"description": "Rayado"}})
+    assert r.status_code == 400
+    cons = _product(client, "Cinta", "cantidad", "cinta")
+    client.patch(f"/api/almacen/products/{cons['id']}", json={"is_consumable": True, "checklist_row": ""})
+    assert client.post("/api/almacen/novelties", json={"code": cons["qr_code"], "description": "Se mojó"}).status_code == 400
+
+
+def test_novelties_follow_the_permissions_and_the_flag(client, factory, on, monkeypatch):
+    factory.staff("coordinador", "coord")
+    login(client, "coord")
+    assert client.get("/api/almacen/novelties").status_code == 403
+    assert client.post("/api/almacen/novelties", json={"code": "GWAAAAAA", "description": "algo"}).status_code == 403
+    client.post("/logout")
+    factory.staff("admin", "adm")
+    login(client, "adm")
+    assert client.get("/api/almacen/novelties?state=rara").status_code == 400
+    monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
+    assert client.get("/api/almacen/novelties").status_code == 404

@@ -1107,7 +1107,7 @@ class InventoryProduct(Base):
 
 class InventoryUnit(Base):
     """Un equipo con serial del almacén (0148, Pieza 1): su propio número visible (`number`, único por producto, nunca se reutiliza) y su propio QR (`code`: «GW» + 6 caracteres, solo mayúsculas y números).
-    `status`: disponible | en_evento | novedad (la novedad y el bloqueo son de la Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
+    `status`: disponible | en_evento | novedad (la novedad y el bloqueo: tabla `inventory_novelties`, Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
     __tablename__ = 'inventory_units'
     id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
@@ -1147,6 +1147,31 @@ class InventoryMovement(Base):
     product = relationship('InventoryProduct')
     unit = relationship('InventoryUnit')
     __table_args__ = (Index('ix_inventory_movements_event', 'event_id', 'product_id'), Index('ix_inventory_movements_unit', 'unit_id'))
+
+
+class InventoryNovelty(Base):
+    """Novedad de almacén (0152, Pieza 3): un daño o problema de un elemento. `unit_id` = el equipo con serial (null en los controlados por modelo o cantidad, que llevan `qty` piezas).
+    Abierta mientras `resolved_at` sea nulo: el equipo queda «En novedad» y no se puede sacar a un evento hasta que almacén la resuelve (`resolution` = qué se hizo). Nada se borra.
+    `event_id` = el evento donde se detectó (si fue al devolver), `movement_id` = la entrada con la que se reportó, `photo_key` = foto del daño (almacén/novedades/<uuid>.jpg)."""
+    __tablename__ = 'inventory_novelties'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    description = Column(Text, nullable=False)
+    photo_key = Column(String(200), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    movement_id = Column(Integer, ForeignKey('inventory_movements.id'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    resolution = Column(Text, nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    event = relationship('Event')
+    __table_args__ = (Index('ix_inventory_novelties_product', 'product_id', 'resolved_at'), Index('ix_inventory_novelties_unit', 'unit_id'))
 
 
 class EventChecklistRow(Base):

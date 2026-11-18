@@ -1,4 +1,4 @@
-/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR (lector USB o cámara) a un evento, aviso (sin bloqueo) cuando falta asignar lo que sale, checklist del evento
+/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR (lector USB o cámara) a un evento, aviso (sin bloqueo) cuando falta asignar lo que sale, entradas «con novedad» (Pieza 3, una sola lectura), checklist del evento
    con la casilla «OK S/N» por fila, equipos fuera de bodega y anulación del último movimiento. API: /api/almacen/move, /movements/{id}/void, /events/{id}/board, /events/{id}/checklist/{fila}
    y /api/inventory/events (lista de eventos de siempre). Todo se escapa; sin manejadores en línea (delegación); mensajes con showToast / showConfirm. */
 (function () {
@@ -73,6 +73,9 @@
     const st = document.querySelector('.gw-cam .qr-status');          // con la cámara abierta el resultado se ve en su ventana
     if (st) st.textContent = (ok ? '✓ ' : '✕ ') + text + (warning ? ' ⚠ ' + warning : '');
   }
+  function novSummary() { $('almMvNovSum').textContent = $('almMvNovOn').checked ? 'sí, en la próxima lectura' : 'no'; }
+  function clearNovelty() { $('almMvNovOn').checked = false; $('almMvNovText').value = ''; $('almMvNovQty').value = '1'; novSummary(); }
+  function syncMode() { $('almMvNovBox').hidden = mode() !== 'entrada'; if (mode() !== 'entrada') clearNovelty(); }
   async function doMove(body) {
     if (busyMove) return false;
     busyMove = true;
@@ -82,6 +85,7 @@
       const d = await send('/api/almacen/move', 'POST', body);
       ok = true;
       result(true, d.message, d.warning);          // si falta asignar el elemento al evento: solo se avisa, el movimiento ya quedó registrado
+      if (d.novelty) { clearNovelty(); document.dispatchEvent(new CustomEvent('gw:almacen-novelty')); showToast('Novedad registrada. Agrégale la foto del daño en la sección «Novedades».', 'success'); }
       if (d.product && d.product.tracking !== 'serial') $('almMvQty').value = '1';
       await loadBoard();
     } catch (e) {
@@ -97,6 +101,11 @@
     if (!code) return false;
     const body = { mode: mode(), code, event_id: eventId(), qty: Number($('almMvQty').value) || 1 };
     if (!body.event_id) { result(false, 'Primero elige el evento.'); return false; }
+    if (body.mode === 'entrada' && $('almMvNovOn').checked) {          // «vuelve con novedad»: vale para UNA lectura
+      const text = $('almMvNovText').value.trim();
+      if (text.length < 3) { result(false, 'Escribe qué pasó (al menos 3 letras) para registrar la novedad, o desmarca «Vuelve con novedad».'); return false; }
+      body.novelty = { description: text, qty: Number($('almMvNovQty').value) || 1 };
+    }
     return doMove(body);
   }
   /* Cámara del dispositivo (la misma ventana de qr.js que usan Registro, Áreas e Inventario): cada QR leído registra un movimiento y la ventana sigue abierta para el siguiente. */
@@ -180,7 +189,8 @@
   $('almMvEventSearch').addEventListener('input', renderEvents);
   $('almMvEventList').addEventListener('click', (e) => { const b = e.target.closest('button[data-alm-pick]'); if (b) chooseEvent(b.dataset.almPick); });
   $('almMvQrBtn').addEventListener('click', openCamera);
-  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; focusScan(); }));
+  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; syncMode(); focusScan(); }));
+  $('almMvNovOn').addEventListener('change', () => { novSummary(); if ($('almMvNovOn').checked) $('almMvNovText').focus(); else focusScan(); });
 
   $('almBoardCard').addEventListener('change', (e) => {
     const t = e.target;
@@ -199,6 +209,7 @@
   });
 
   async function init() {
+    syncMode();
     if (loaded) return;
     try { await loadEvents(); loaded = true; } catch (e) { fail(e); }
   }

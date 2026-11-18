@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import almacen, almacen_moves as moves, almacen_photos, audit_actions, inventory, inventory_svc
+from app import almacen, almacen_moves as moves, almacen_novelties as nov, almacen_photos, audit_actions, inventory, inventory_svc
 from app.auth import require_role_or_any
 from app.database import get_db
-from app.models import Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryProduct, InventoryUnit, StaffUser
+from app.models import Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryNovelty, InventoryProduct, InventoryUnit, StaffUser
 from app.routers.inventory import _event as _inventory_event          # mismo acceso al evento que el inventario (cliente/empresa y alcance)
 from app.storage import get_storage
 from app.timeutil import to_local, utcnow
@@ -343,7 +343,8 @@ def _movement_json(m: InventoryMovement, can_void: bool = False) -> dict:
 def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     """Una lectura del QR = un movimiento. Cuerpo: {mode: salida|entrada, code, event_id?, qty?, reason?, plan_b?}.
     Equipo con serial: la entrada deduce sola el evento donde estaba. Por modelo/cantidad: siempre hace falta el evento y la cantidad (1 por defecto).
-    Salir más de lo asignado NO se bloquea: se registra como extra y la respuesta trae `warning` («falta asignar…»). `reason` y `plan_b` son opcionales."""
+    Salir más de lo asignado NO se bloquea: se registra como extra y la respuesta trae `warning` («falta asignar…»). `reason` y `plan_b` son opcionales.
+    Entrada «con novedad» (Pieza 3): `novelty: {description, qty?}` registra la novedad en la misma transacción; el equipo vuelve a bodega pero queda «En novedad» (bloqueado para salir)."""
     mode = _guard(lambda: moves.clean_mode(data.get("mode")))
     code = almacen.normalize_scan(data.get("code"))
     if not code:
@@ -379,15 +380,26 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         db.add(line)
         db.flush()
     consumable = bool(product.is_consumable)
+    from app.routers.almacen_novedades import novelty_json, open_for_unit, open_novelty_row          # aquí y no arriba: ese módulo importa este (evita el ciclo)
+    nov_in = data.get("novelty") if isinstance(data.get("novelty"), dict) else None
+    nov_text = _guard(lambda: nov.clean_text(nov_in.get("description"), "Qué pasó")) if nov_in else None
+    if nov_in and mode != "entrada":
+        _err("La novedad se reporta al devolver (entrada). Para otro momento usa «Novedades».")
+    open_unit_nov = open_for_unit(db, unit.id) if unit is not None else None
     extra_applied, warning = 0, ""
     if mode == "salida":
         plan = _guard(lambda: moves.plan_exit(tracking=tracking, consumable=consumable, assigned=line.qty_assigned or 0, out=line.qty_out or 0, qty=qty,
                                               unit_status=unit.status if unit is not None else None, unit_event_name=unit.event.name if unit is not None and unit.event_id else None,
-                                              reason=data.get("reason"), plan_b=bool(data.get("plan_b")), product_name=product.name))
+                                              reason=data.get("reason"), plan_b=bool(data.get("plan_b")), product_name=product.name,
+                                              novelty_text=open_unit_nov.description[:80] if open_unit_nov is not None else ""))
         line.qty_out = (line.qty_out or 0) + plan.out_add
         line.qty_consumed = (line.qty_consumed or 0) + plan.consumed_add
         line.qty_assigned = (line.qty_assigned or 0) + plan.extra
         extra_applied, reason, plan_b, warning = plan.extra, plan.reason, plan.plan_b, plan.warning
+        if unit is None:          # por modelo o cantidad: las piezas en novedad no cuentan como disponibles; se avisa, no se bloquea
+            q_open = nov.open_qty_by_product(db, [product.id]).get(product.id, 0)
+            if q_open:
+                warning = (warning + " " if warning else "") + f"Ojo: hay {q_open} de «{product.name}» en novedad (no cuentan como disponibles); confirma que no son las que sacas."
         if unit is not None:
             unit.status, unit.event_id = "en_evento", event.id
     else:
@@ -395,14 +407,22 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
                                               qty=qty, unit_status=unit.status if unit is not None else None, product_name=product.name))
         line.qty_returned = (line.qty_returned or 0) + add
         reason, plan_b = None, False
+        nov_plan = None
+        if nov_in:
+            nov_qty = _guard(lambda: nov.entry_novelty_qty(tracking=tracking, entry_qty=qty, qty=nov_in.get("qty")))
+            nov_plan = _guard(lambda: nov.plan_open(tracking=tracking, consumable=consumable, unit_status="disponible" if unit is not None else None, qty=nov_qty,
+                                                    open_qty=nov.open_qty_by_product(db, [product.id]).get(product.id, 0), stock=product.qty_total, product_name=product.name))
         if unit is not None:
-            unit.status, unit.event_id = "disponible", None
+            unit.status, unit.event_id = ("novedad" if (nov_plan is not None or open_unit_nov is not None) else "disponible"), None          # con novedad abierta no queda disponible
     _check_row(db, product, line)
     line.updated_by_id, line.updated_at = staff.id, utcnow()
     mv = InventoryMovement(event_id=event.id, product_id=product.id, unit_id=unit.id if unit is not None else None, kind=mode, qty=qty, extra=extra_applied,
                            reason=reason, is_plan_b=plan_b, created_by_id=staff.id)
     db.add(mv)
     db.flush()
+    new_nov = None
+    if mode == "entrada" and nov_plan is not None:
+        new_nov = open_novelty_row(db, staff, product, unit, nov_plan, nov_text, event_id=event.id, movement_id=mv.id)
     title = almacen.unit_title(product.name, unit.number) if unit is not None else product.name
     audit_actions.record(db, staff, "create", "almacen_movement", event.id, event.name, f"{mode}: {title}" + (f" x{qty}" if unit is None else "") + (" (Plan B)" if plan_b else "") + (" (con razón)" if reason else ""))
     db.commit()
@@ -415,7 +435,9 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         msg += f" · {ln['out']} de {ln['assigned']}"
     else:
         msg += f" · faltan {ln['pending']} por volver"
-    return {"ok": True, "message": msg, "warning": warning, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
+        if new_nov is not None:
+            msg += " · con novedad" + (" (queda bloqueado hasta que Almacén lo deje disponible)" if unit is not None else f" ({new_nov.qty} en novedad)")
+    return {"ok": True, "message": msg, "warning": warning, "novelty": novelty_json(new_nov, {staff.id: staff.full_name or staff.username}) if new_nov is not None else None, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
             "event": {"id": event.id, "name": event.name, "status": event.status}}
 
 
@@ -447,10 +469,14 @@ def void_movement(movement_id: int, db: Session = Depends(get_db), staff: StaffU
         if mv.kind == "salida":
             unit.status, unit.event_id = "disponible", None
         else:
-            if unit.status != "disponible":
+            linked = db.query(InventoryNovelty).filter(InventoryNovelty.movement_id == mv.id, InventoryNovelty.resolved_at.is_(None)).first()
+            if unit.status != "disponible" and not (unit.status == "novedad" and linked is not None):
                 db.rollback()
                 _err("Ese equipo ya no está disponible: no se puede deshacer su entrada")
             unit.status, unit.event_id = "en_evento", mv.event_id
+    if mv.kind == "entrada":          # la novedad reportada con esta entrada se anula con ella (queda resuelta, con la razón)
+        for n in db.query(InventoryNovelty).filter(InventoryNovelty.movement_id == mv.id, InventoryNovelty.resolved_at.is_(None)).all():
+            n.resolved_at, n.resolved_by_id, n.resolution = utcnow(), staff.id, "Anulada junto con la entrada que la reportó."
     mv.voided_at, mv.voided_by_id = utcnow(), staff.id
     line.updated_by_id, line.updated_at = staff.id, utcnow()
     title = almacen.unit_title(product.name, mv.unit.number) if mv.unit_id and mv.unit else product.name
