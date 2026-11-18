@@ -76,7 +76,7 @@ def _novelty_unit_ids(db: Session, unit_ids) -> set:
 
 def _unit_json(u: InventoryUnit, product: Optional[InventoryProduct] = None, novelty: bool = False) -> dict:
     p = product or u.product
-    return {"has_novelty": bool(novelty or u.status == "novedad"), "id": u.id, "product_id": u.product_id, "product_name": p.name, "number": u.number, "title": almacen.unit_title(p.name, u.number), "code": u.code, "serial": u.serial,
+    return {"has_novelty": bool(novelty or u.status == "novedad"), "id": u.id, "product_id": u.product_id, "product_name": p.name, "number": u.number, "title": almacen.unit_title(p.name, u.number), "code": u.code, "serial": u.code,
             "status": u.status, "status_label": almacen.UNIT_STATUS_LABEL.get(u.status, u.status), "archived": u.archived_at is not None,
             "event_id": u.event_id, "event_name": u.event.name if u.event_id and u.event else None}
 
@@ -171,15 +171,17 @@ def create_units(product_id: int, data: dict, db: Session = Depends(get_db), sta
     serial = _wrap(lambda: almacen.clean_serial(data.get("serial")))
     if serial and count != 1:
         _err("El serial solo se puede escribir al crear una unidad; las demás se editan después")
-    if serial and db.query(InventoryUnit.id).filter(InventoryUnit.product_id == p.id, InventoryUnit.archived_at.is_(None), func.lower(InventoryUnit.serial) == serial.lower()).first():
-        _err(f"Ya existe una unidad de «{p.name}» con el serial {serial}", 409)
+    if serial and _code_taken(db, serial):
+        _err(f"El serial {serial} ya existe en el almacén: cada serial es único (es también el valor del QR)", 409)
     last = db.query(func.max(InventoryUnit.number)).filter(InventoryUnit.product_id == p.id).scalar() or 0          # incluye archivadas: un número nunca se reutiliza
     taken: set = set()
     created = []
     for i in range(count):
-        u = InventoryUnit(product_id=p.id, number=last + i + 1, code=_free_code(db, taken), serial=serial if i == 0 else None, status="disponible", created_by_id=staff.id)
+        u = InventoryUnit(product_id=p.id, number=last + i + 1, code=(serial if (i == 0 and serial) else _free_code(db, taken)), serial=None, status="disponible", created_by_id=staff.id)
         db.add(u)
         created.append(u)
+    for u in created:
+        u.serial = u.code          # un solo dato: el serial es el valor del QR
     db.flush()
     audit_actions.record(db, staff, "create", "almacen_unit", p.id, p.name, f"{count} unidad(es): #{created[0].number}–#{created[-1].number}")
     db.commit()
@@ -193,10 +195,12 @@ def update_unit(unit_id: int, data: dict, db: Session = Depends(get_db), staff: 
         _err("La unidad está archivada: restáurala para editarla")
     if "serial" in data:
         serial = _wrap(lambda: almacen.clean_serial(data.get("serial")))
-        if serial and db.query(InventoryUnit.id).filter(InventoryUnit.product_id == u.product_id, InventoryUnit.id != u.id, InventoryUnit.archived_at.is_(None),
-                                                         func.lower(InventoryUnit.serial) == serial.lower()).first():
-            _err(f"Ya existe una unidad de «{u.product.name}» con el serial {serial}", 409)
-        u.serial = serial
+        if not serial:
+            _err("El serial no puede quedar vacío (es el valor del QR de la etiqueta)")
+        if serial != u.code:
+            if _code_taken(db, serial):
+                _err(f"El serial {serial} ya existe en el almacén: cada serial es único (es también el valor del QR)", 409)
+            u.code = u.serial = serial          # cambia el valor del QR: la etiqueta ya impresa deja de servir y hay que reimprimirla
     audit_actions.record(db, staff, "update", "almacen_unit", u.id, almacen.unit_title(u.product.name, u.number))
     db.commit()
     return _unit_json(u, novelty=u.id in _novelty_unit_ids(db, [u.id]))
@@ -256,7 +260,7 @@ def labels(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends
             u = found.get(uid)
             if u is None:
                 _err("Una de las unidades no existe", 404)
-            out.append({"code": u.code, "title": almacen.unit_title(u.product.name, u.number), "subtitle": (f"Serial {u.serial}" if u.serial else "")})
+            out.append({"code": u.code, "title": almacen.unit_title(u.product.name, u.number), "subtitle": ""})
     if product_ids:
         found_p = {p.id: p for p in db.query(InventoryProduct).filter(InventoryProduct.id.in_(product_ids)).all()}
         for pid in product_ids:
@@ -353,7 +357,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
     """Una lectura del QR = un movimiento. Cuerpo: {mode: salida|entrada, code, event_id?, qty?, reason?, plan_b?}.
     Equipo con serial: la entrada deduce sola el evento donde estaba. Por modelo/cantidad: siempre hace falta el evento y la cantidad (1 por defecto).
     Salir más de lo asignado NO se bloquea: se registra como extra y la respuesta trae `warning` («falta asignar…»). `reason` y `plan_b` son opcionales.
-    Entrada «con novedad» (Pieza 3): `novelty: {description, qty?}` registra la novedad en la misma transacción; el equipo vuelve a bodega pero queda «En novedad» (bloqueado para salir)."""
+    Un equipo que vuelve con una novedad abierta queda «En novedad» (bloqueado para salir). Las novedades se reportan en la pestaña «Novedades» (con archivos obligatorios)."""
     mode = _guard(lambda: moves.clean_mode(data.get("mode")))
     code = almacen.normalize_scan(data.get("code"))
     if not code:
@@ -389,11 +393,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         db.add(line)
         db.flush()
     consumable = bool(product.is_consumable)
-    from app.routers.almacen_novedades import novelty_json, open_for_unit, open_novelty_row          # aquí y no arriba: ese módulo importa este (evita el ciclo)
-    nov_in = data.get("novelty") if isinstance(data.get("novelty"), dict) else None
-    nov_text = _guard(lambda: nov.clean_text(nov_in.get("description"), "Qué pasó")) if nov_in else None
-    if nov_in and mode != "entrada":
-        _err("La novedad se reporta al devolver (entrada). Para otro momento usa «Novedades».")
+    from app.routers.almacen_novedades import open_for_unit          # aquí y no arriba: ese módulo importa este (evita el ciclo)
     open_unit_nov = open_for_unit(db, unit.id) if unit is not None else None
     extra_applied, warning = 0, ""
     if mode == "salida":
@@ -416,22 +416,14 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
                                               qty=qty, unit_status=unit.status if unit is not None else None, product_name=product.name))
         line.qty_returned = (line.qty_returned or 0) + add
         reason, plan_b = None, False
-        nov_plan = None
-        if nov_in:
-            nov_qty = _guard(lambda: nov.entry_novelty_qty(tracking=tracking, entry_qty=qty, qty=nov_in.get("qty")))
-            nov_plan = _guard(lambda: nov.plan_open(tracking=tracking, consumable=consumable, unit_status="disponible" if unit is not None else None, qty=nov_qty,
-                                                    open_qty=nov.open_qty_by_product(db, [product.id]).get(product.id, 0), stock=product.qty_total, product_name=product.name))
         if unit is not None:
-            unit.status, unit.event_id = ("novedad" if (nov_plan is not None or open_unit_nov is not None) else "disponible"), None          # con novedad abierta no queda disponible
+            unit.status, unit.event_id = ("novedad" if open_unit_nov is not None else "disponible"), None          # con novedad abierta no queda disponible
     _check_row(db, product, line)
     line.updated_by_id, line.updated_at = staff.id, utcnow()
     mv = InventoryMovement(event_id=event.id, product_id=product.id, unit_id=unit.id if unit is not None else None, kind=mode, qty=qty, extra=extra_applied,
                            reason=reason, is_plan_b=plan_b, created_by_id=staff.id)
     db.add(mv)
     db.flush()
-    new_nov = None
-    if mode == "entrada" and nov_plan is not None:
-        new_nov = open_novelty_row(db, staff, product, unit, nov_plan, nov_text, event_id=event.id, movement_id=mv.id)
     title = almacen.unit_title(product.name, unit.number) if unit is not None else product.name
     audit_actions.record(db, staff, "create", "almacen_movement", event.id, event.name, f"{mode}: {title}" + (f" x{qty}" if unit is None else "") + (" (Plan B)" if plan_b else "") + (" (con razón)" if reason else ""))
     db.commit()
@@ -444,9 +436,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         msg += f" · {ln['out']} de {ln['assigned']}"
     else:
         msg += f" · faltan {ln['pending']} por volver"
-        if new_nov is not None:
-            msg += " · con novedad" + (" (queda bloqueado hasta que Almacén lo deje disponible)" if unit is not None else f" ({new_nov.qty} en novedad)")
-    return {"ok": True, "message": msg, "warning": warning, "novelty": novelty_json(new_nov, {staff.id: staff.full_name or staff.username}) if new_nov is not None else None, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
+    return {"ok": True, "message": msg, "warning": warning, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
             "event": {"id": event.id, "name": event.name, "status": event.status}}
 
 
@@ -517,7 +507,7 @@ def _board_data(db: Session, event: Event) -> dict:
     for m in db.query(InventoryMovement).filter(InventoryMovement.event_id == event.id, InventoryMovement.voided_at.is_(None)).order_by(InventoryMovement.id).all():
         last_by_key[("u", m.unit_id) if m.unit_id else ("p", m.product_id)] = m.id
     return {"event": {"id": event.id, "name": event.name, "status": event.status, "code": event.event_code}, "board": board, "summary": moves.board_summary(board), "unmapped": unmapped,
-            "outside": [{"id": u.id, "title": almacen.unit_title(u.product.name, u.number), "serial": u.serial, "code": u.code} for u in outside],
+            "outside": [{"id": u.id, "title": almacen.unit_title(u.product.name, u.number), "serial": u.code, "code": u.code} for u in outside],
             "movements": [_movement_json(m, last_by_key.get(("u", m.unit_id) if m.unit_id else ("p", m.product_id)) == m.id) for m in mvs]}
 
 

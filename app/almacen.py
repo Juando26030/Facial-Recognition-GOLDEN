@@ -36,7 +36,7 @@ MAX_SERIAL = 80
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_PREFIX = "GW"
 CODE_RANDOM_LEN = 6
-_SCAN_RE = re.compile(r"^[A-Z0-9]{4,32}$")
+_SCAN_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]{3,31}$")          # un serial puede llevar guion, punto o guion bajo; es también el valor del QR
 _BAD = re.compile(r"[<>\x00-\x1f\x7f]")
 
 
@@ -126,15 +126,17 @@ def clean_checklist_row(value) -> Optional[str]:
 
 
 def clean_serial(value) -> Optional[str]:
+    """El serial de una unidad ES el valor de su QR (un solo dato): de 4 a 32 caracteres (letras, números, guion, punto o guion bajo), sin espacios, en mayúscula. None si viene vacío."""
     if value is None:
         return None
     v = str(value).strip()
     if not v:
         return None
-    if len(v) > MAX_SERIAL:
-        raise AlmacenError(f"El serial no puede pasar de {MAX_SERIAL} caracteres.")
-    if _BAD.search(v):
-        raise AlmacenError("El serial trae caracteres no permitidos.")
+    if re.search(r"\s", v):
+        raise AlmacenError("El serial no puede llevar espacios.")
+    v = v.upper()
+    if not _SCAN_RE.match(v):
+        raise AlmacenError("El serial debe tener de 4 a 32 caracteres: letras, números, guion, punto o guion bajo.")
     return v
 
 

@@ -131,7 +131,7 @@
   }
   function outsideList(list) {
     if (!list.length) return '<div class="gw-state" role="status"><p class="gw-state__title">No hay equipos con serial fuera de bodega para este evento.</p></div>';
-    return `<ul class="gw-list">${list.map((u) => `<li><strong>${esc(u.title)}</strong> <code>${esc(u.code)}</code>${u.serial ? ' · Serial ' + esc(u.serial) : ''}</li>`).join('')}</ul>`;
+    return `<ul class="gw-list">${list.map((u) => `<li><strong>${esc(u.title)}</strong> <code>${esc(u.code)}</code></li>`).join('')}</ul>`;
   }
   function movementsList(list) {
     if (!list.length) return '<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay movimientos en este evento.</p></div>';
@@ -192,7 +192,7 @@
     e.target.value = '';
     onScan(v);
   });
-  $('almMvEventSearch').addEventListener('input', renderEvents);
+  $('almMvEventSearch').addEventListener('input', () => { $('almMvEventBox').open = true; renderEvents(); });          // si el bloque estaba plegado, al buscar se despliegan los resultados solos
   $('almMvEventList').addEventListener('click', (e) => { const b = e.target.closest('button[data-alm-pick]'); if (b) chooseEvent(b.dataset.almPick); });
   $('almMvQrBtn').addEventListener('click', openCamera);
   root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; focusScan(); }));
