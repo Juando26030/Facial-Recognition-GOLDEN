@@ -15,6 +15,7 @@
 <script src="{{ url_for('static', path='js/version-banner.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/kiosk-back.js') }}" defer></script>
 <aside class="golden-sidebar" id="gwSidebar">
+  <button type="button" class="golden-sidebar-hide" id="sidebarHideBtn" aria-label="Ocultar el menú lateral" title="Ocultar el menú"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chevron"/></svg> Ocultar menú</button>
   <nav>
     {% set eo = event_only_session is defined and event_only_session(request) %}{# coordinador temporal: solo Eventos y Calendario (app/event_only.py) #}
     {% if not eo %}<a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>{% endif %}
@@ -47,7 +48,19 @@
     if (open && side) { const first = side.querySelector('a'); if (first) first.focus(); }
     if (!open && back && toggle) toggle.focus();
   }
-  if (toggle) toggle.addEventListener('click', () => setOpen(!document.body.classList.contains('sidebar-open')));
+  // Ocultar el menú en escritorio (18-nov-2026): se recuerda en este navegador; con el menú oculto, el botón ☰ lo abre encima del contenido y «Ocultar menú» lo cierra de nuevo.
+  const KEY = 'gw_sidebar_collapsed', hideBtn = document.getElementById('sidebarHideBtn');
+  const collapsed = (on) => { document.body.classList.toggle('sidebar-collapsed', on); if (!on) document.body.classList.remove('sidebar-open'); if (toggle) toggle.setAttribute('aria-label', on ? 'Mostrar el menú lateral' : 'Abrir menú'); };
+  try { if (localStorage.getItem(KEY) === '1') collapsed(true); } catch (e) { /* sin almacenamiento: el menú queda visible */ }
+  if (hideBtn) hideBtn.addEventListener('click', () => {
+    const wide = window.matchMedia && window.matchMedia('(min-width: 901px)').matches;
+    if (wide) { collapsed(true); try { localStorage.setItem(KEY, '1'); } catch (e) { /* sin almacenamiento */ } if (toggle) toggle.focus(); }
+    else setOpen(false, true);          // en celular el menú ya está oculto: solo se cierra
+  });
+  if (toggle) toggle.addEventListener('click', () => {
+    if (document.body.classList.contains('sidebar-collapsed') && !document.body.classList.contains('sidebar-open')) { collapsed(false); try { localStorage.setItem(KEY, '0'); } catch (e) { /* sin almacenamiento */ } return; }          // oculto en escritorio: el botón lo vuelve a mostrar
+    setOpen(!document.body.classList.contains('sidebar-open'));
+  });
   if (backdrop) backdrop.addEventListener('click', () => setOpen(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) setOpen(false, true); });
 })();
