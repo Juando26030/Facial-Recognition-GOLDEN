@@ -28,3 +28,17 @@ def test_movil_una_sola_vista_con_lienzo_fijo():
 def test_movil_el_rotulo_del_zoom_no_se_encoge():
     movil = CSS.split("@media (max-width: 820px)")[1]
     assert "#zoomLabel { flex: 0 0 auto; min-width: 6.5rem" in movil
+
+
+def test_pantalla_completa_del_disenador():
+    assert "body.editor-full .gw-ed-body { position: fixed" in CSS
+    assert "body.editor-full .gw-savebar { position: fixed" in CSS and "z-index: 1200" in CSS          # la barra única de guardado queda por encima de la ventana
+    tpl = (pathlib.Path(__file__).resolve().parent.parent / "templates" / "badge_editor.html").read_text(encoding="utf-8")
+    assert 'id="edFullOpen"' in tpl and 'id="edFullClose"' in tpl
+    assert "Hacer clic afuera no cierra" in tpl
+
+
+def test_pantalla_completa_no_se_cierra_con_clic_afuera_ni_esc():
+    tpl = (pathlib.Path(__file__).resolve().parent.parent / "templates" / "badge_editor.html").read_text(encoding="utf-8")
+    bloque = tpl.split("function setFull(on)")[1].split("let resizeTimer")[0]
+    assert "keydown" not in bloque and "backdrop" not in bloque.lower()
