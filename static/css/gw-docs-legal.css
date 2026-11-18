@@ -90,3 +90,8 @@
 #legTabs > .gw-tabpanels { flex: 1 1 0; min-width: 0; width: 100%; }
 #legTabs > .gw-tabpanels > .gw-tabpanel { width: 100%; box-sizing: border-box; }
 @media (min-width: 900px) and (max-width: 1100px) { #legTabs > .gw-tablist { flex-basis: 220px; } }
+/* Orden de los gastos (18-nov-2026): arrastrar la fila o usar ↑ ↓ */
+.gw-leg-order { white-space: nowrap; }
+.gw-leg-grip { cursor: grab; padding: 0 var(--gw-sp-2); color: var(--gw-text-muted, inherit); }
+.gw-leg-row--drag { opacity: .5; }
+.gw-leg-row--over { outline: 2px dashed var(--gw-ok-line); outline-offset: -2px; }
