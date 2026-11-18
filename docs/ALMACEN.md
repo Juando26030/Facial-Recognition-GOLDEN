@@ -77,5 +77,12 @@ Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details
 - API: `GET/POST /api/almacen/novelties`, `POST|GET /{id}/photo`, `POST /{id}/resolve`. Código: `app/almacen_novelties.py` (reglas puras), `app/routers/almacen_novedades.py`, `static/js/almacen-novedades.js`.
 - Pruebas: `tests/test_almacen_novelties.py` (10 puras, pasan) y 4 de API al final de `tests/test_almacen_api.py` (necesitan Postgres; no se pudieron correr en el sandbox, sin fastapi/Postgres).
 
+## Pieza 4 — Excel del checklist (18-nov-2026, sin migración)
+- `GET /api/almacen/events/{id}/checklist.xlsx` (almacén, admin, super_admin; 404 con el interruptor apagado). Botón «Descargar checklist en Excel (.xlsx)» en la tarjeta del checklist.
+- **Idéntico al formato GEYL:** se parte de `app/xlsx_templates/Checklist_GEYL.xlsx` (el .xls original convertido, con logo, combinaciones, colores, las 43 filas y las hojas «Instrucciones Básicas» y «Hoja3») y SOLO se llenan celdas (`app/almacen_xlsx.py`, sin base de datos).
+- Encabezado: código, evento, fechas y horas, cliente — contacto principal, lugar, coordinador. Por fila: NECESARIO (lo que pidió el evento), CANTIDAD (lo despachado), OK S/N (SÍ si está alistado; NO si hay movimiento sin alistar; en blanco si no hay nada), OBSERVACIONES (nota + extra + Plan B + «Volvieron N · faltan M»; si es larga, la fila crece). Las filas manuales solo llevan SÍ.
+- **Responsable checklist** = quien descarga (usuario de almacén). Nombre del archivo: «<evento> - <código> - Checklist GEYL.xlsx».
+- Pruebas: `tests/test_almacen_xlsx.py` (4, pasan) y 2 de API al final de `tests/test_almacen_api.py` (necesitan Postgres).
+
 ## Siguiente
-**Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Pieza 4: Excel `.xlsx` igual al formato GEYL (hoja «Instrucciones Básicas» incluida). Después: alertas de equipos sin devolver y reportes de uso.
+**Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Después: alertas de equipos sin devolver y reportes de uso.

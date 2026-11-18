@@ -468,3 +468,36 @@ def test_novelties_follow_the_permissions_and_the_flag(client, factory, on, monk
     assert client.get("/api/almacen/novelties?state=rara").status_code == 400
     monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
     assert client.get("/api/almacen/novelties").status_code == 404
+
+
+# ------------------------------------------------------------------ Pieza 4: Excel del checklist
+def test_the_checklist_downloads_as_the_geyl_xlsx_with_the_event_data(client, factory, on):
+    import io
+    from openpyxl import load_workbook
+    factory.staff("admin", "adm")
+    ev = factory.event(status="en_proceso")
+    login(client, "adm")
+    p = _product(client)
+    us = _units(client, p["id"], 2)
+    _assign(client, ev.id, p["id"], 2)
+    assert _move(client, "salida", us[0]["code"], ev.id).status_code == 200
+    assert client.put(f"/api/almacen/events/{ev.id}/checklist/portatiles", json={"done": True, "notes": "Revisados"}).status_code == 200
+    r = client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx")
+    assert r.status_code == 200 and "spreadsheetml" in r.headers["content-type"] and ".xlsx" in r.headers["content-disposition"]
+    wb = load_workbook(io.BytesIO(r.content))
+    ws = wb["Hoja1"]
+    assert wb.sheetnames[:2] == ["Hoja1", "Instrucciones Básicas"] and ws["B2"].value == ev.event_code and ws["B54"].value
+    assert (ws["B14"].value, ws["C14"].value, ws["D14"].value) == (2, 1, "SÍ") and "Revisados" in ws["E14"].value
+
+
+def test_the_xlsx_follows_the_permissions_and_the_flag(client, factory, on, monkeypatch):
+    factory.staff("coordinador", "coord")
+    ev = factory.event(status="creado")
+    login(client, "coord")
+    assert client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx").status_code == 403
+    client.post("/logout")
+    factory.staff("admin", "adm")
+    login(client, "adm")
+    assert client.get("/api/almacen/events/999999/checklist.xlsx").status_code == 404
+    monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
+    assert client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx").status_code == 404

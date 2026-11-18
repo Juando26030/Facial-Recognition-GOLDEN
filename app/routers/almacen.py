@@ -517,6 +517,24 @@ def event_board(event_id: int, db: Session = Depends(get_db), staff: StaffUser =
     return _board_data(db, _inventory_event(db, event_id, staff))
 
 
+@router.get("/almacen/events/{event_id}/checklist.xlsx")
+def download_checklist(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Pieza 4: el checklist del evento en Excel, idéntico al formato GEYL. «Responsable checklist» = quien lo descarga (almacén). Mismos permisos y misma tabla que la pantalla."""
+    from fastapi.responses import Response
+
+    from app import almacen_xlsx, event_contacts, heavy
+    event = _inventory_event(db, event_id, staff)
+    contacts = event_contacts.list_for(db, event.id)
+    main = next((c for c in contacts if c["is_primary"]), contacts[0] if contacts else None)
+    contact = main["name"] if main else (event.tenant.contact_name if event.tenant is not None else None)
+    info = almacen_xlsx.event_info(event, event.tenant.name if event.tenant is not None else "", contact, (event.coordinator.full_name or event.coordinator.username) if event.coordinator is not None else "")
+    data = almacen_xlsx.build(info, _board_data(db, event)["board"], staff.full_name or staff.username)
+    audit_actions.record(db, staff, "export", "almacen_checklist", event.id, event.name)
+    db.commit()
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": heavy.content_disposition(heavy.event_report_filename(event, "Checklist GEYL")), "Cache-Control": "no-store"})
+
+
 @router.put("/almacen/events/{event_id}/checklist/{row_key}")
 def update_checklist_row(event_id: int, row_key: str, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     """Casilla «OK S/N» (alistado) y observación de UNA fila del checklist (incluye las 5 de verificación manual)."""

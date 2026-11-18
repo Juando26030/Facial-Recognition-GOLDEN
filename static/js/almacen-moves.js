@@ -63,7 +63,7 @@
     $('almMvQrBtn').disabled = !id;
     $('almMvHint').textContent = id ? 'El lector escribe el código y pulsa Enter, o usa la cámara; cada lectura registra un movimiento.' : 'Primero elige el evento. El lector escribe el código y pulsa Enter, o usa la cámara; cada lectura registra un movimiento.';
     $('almMvResult').innerHTML = '';
-    if (id) { loadBoard(); focusScan(); } else { $('almBoardCard').hidden = true; if (scanner) scanner.close(); }
+    if (id) { $('almXlsx').href = '/api/almacen/events/' + id + '/checklist.xlsx'; loadBoard(); focusScan(); } else { $('almBoardCard').hidden = true; if (scanner) scanner.close(); }
   }
 
   /* ---- movimiento por lectura */
