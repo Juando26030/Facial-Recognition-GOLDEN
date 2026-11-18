@@ -16,11 +16,18 @@ def test_implica_categorias_por_cantidad():
     assert out == {"portatiles": 5, "lectores": 2}
 
 
-def test_categorias_son_las_filas_del_checklist():
+def test_categorias_separadas_en_el_crm():
     keys = [o["key"] for o in ci.category_options()]
-    assert len(keys) == 9 and "portatiles" in keys and "radios" in keys and "lectores" in keys
+    assert len(keys) == 11 and {"monitores", "semaforos", "tablets", "ipads"} <= set(keys) and "monitores_semaforos" not in keys and "tablets_ipads" not in keys
     labels = {o["key"]: o["label"] for o in ci.category_options()}
-    assert labels["monitores_semaforos"] == "Monitores - Semaforos" and labels["radios"].startswith("RADIOS")
+    assert labels["radios"] == "Radios walkie-talkie" and labels["monitores"] == "Monitores" and labels["semaforos"] == "Semáforos" and labels["ipads"] == "iPads"
+    assert all(ci.ROW_OF[k] in __import__("app.almacen", fromlist=["x"])._ROW_BY_KEY for k in keys)          # cada una se cuenta en una fila real del checklist de Almacén
+    assert ci.category_label("monitores_semaforos") == "Monitores" and ci.category_label("tablets_ipads") == "Tablets"          # lo guardado antes de separarlas
+
+
+def test_monitores_y_semaforos_comparten_la_fila_de_almacen_sin_contarse_dos_veces():
+    r = {x["key"]: x for x in ci.requirements({"monitores": 3, "semaforos": 2}, {"monitores_semaforos": 4})}
+    assert r["monitores"]["assigned"] == 3 and r["monitores"]["missing"] == 0 and r["semaforos"]["assigned"] == 1 and r["semaforos"]["missing"] == 1 and r["monitores"]["shared"]
 
 
 def test_requerido_contra_asignado_por_categoria():

@@ -61,17 +61,33 @@ def snap_hash(products: Dict[int, dict]) -> str:
     return hashlib.sha1(canon.encode()).hexdigest()
 
 
-# Las categorías que un producto del CRM puede implicar: filas del checklist de Almacén (decisión de Juan David, 19-nov-2026). Para ofrecer otra, se agrega aquí su clave de app/almacen.py.
-CATEGORY_KEYS = ("monitores_semaforos", "modulos_touch", "tablets_ipads", "portatiles", "lectores", "impresora_hp_p1102w", "impresora_termica", "impresoras_inyeccion", "radios")
+# Las categorías que un producto del CRM puede implicar (decisión de Juan David, 19-nov-2026). Nacieron de las filas del checklist de Almacén, pero el CRM las separa más: monitores y semáforos, tablets y iPads
+# son categorías distintas. (clave, texto, fila del checklist de Almacén donde se cuenta lo asignado). Almacén las cuenta juntas (una sola fila), así que al comparar con lo asignado se reparte en este orden.
+CATEGORIES = [
+    ("monitores", "Monitores", "monitores_semaforos"),
+    ("semaforos", "Semáforos", "monitores_semaforos"),
+    ("modulos_touch", "Módulos Touch", "modulos_touch"),
+    ("tablets", "Tablets", "tablets_ipads"),
+    ("ipads", "iPads", "tablets_ipads"),
+    ("portatiles", "Portátiles", "portatiles"),
+    ("lectores", "Lectores", "lectores"),
+    ("impresora_hp_p1102w", "Impresora HP LaserJet P1102W", "impresora_hp_p1102w"),
+    ("impresora_termica", "Impresora térmica", "impresora_termica"),
+    ("impresoras_inyeccion", "Impresoras de inyección de tinta con cable USB y poder", "impresoras_inyeccion"),
+    ("radios", "Radios walkie-talkie", "radios"),
+]
+CATEGORY_KEYS = tuple(k for k, _, _ in CATEGORIES)
+_LABEL = {k: lb for k, lb, _ in CATEGORIES}
+ROW_OF = {k: row for k, _, row in CATEGORIES}
+LEGACY_KEYS = {"monitores_semaforos": "monitores", "tablets_ipads": "tablets"}          # las que se guardaron antes de separarlas pasan a la primera de las dos (el coordinador puede repartirlas)
 
 
 def category_options() -> List[dict]:
-    return [{"key": k, "label": almacen._ROW_BY_KEY[k]["label"]} for k in CATEGORY_KEYS]
+    return [{"key": k, "label": lb} for k, lb, _ in CATEGORIES]
 
 
 def category_label(key: str) -> str:
-    row = almacen._ROW_BY_KEY.get(key)
-    return row["label"] if row else key
+    return _LABEL.get(LEGACY_KEYS.get(key, key), key)
 
 
 def implied_totals(products: Dict[int, int], per_unit: Dict[int, List[tuple]]) -> Dict[str, int]:
@@ -84,9 +100,23 @@ def implied_totals(products: Dict[int, int], per_unit: Dict[int, List[tuple]]) -
 
 
 def requirements(needed: Dict[str, int], assigned: Dict[str, int]) -> List[dict]:
-    """Lo requerido contra lo asignado por categoría: [{key, label, needed, assigned, missing}] en el orden del checklist; `missing` nunca es negativo."""
-    keys = [k for k in CATEGORY_KEYS if k in needed or assigned.get(k)]
-    return [{"key": k, "label": category_label(k), "needed": needed.get(k, 0), "assigned": assigned.get(k, 0), "missing": max(needed.get(k, 0) - assigned.get(k, 0), 0)} for k in keys]
+    """Lo requerido por categoría contra lo asignado: [{key, label, needed, assigned, missing, shared}]. `assigned` viene por FILA del checklist de Almacén (ahí monitores y semáforos, tablets y iPads van juntos):
+    cuando dos categorías comparten fila, lo asignado se reparte en el orden de la lista y `shared` avisa que Almacén las cuenta juntas. `missing` nunca es negativo."""
+    left = dict(assigned)
+    sharers: Dict[str, int] = {}
+    for k in CATEGORY_KEYS:
+        sharers[ROW_OF[k]] = sharers.get(ROW_OF[k], 0) + 1
+    out = []
+    for k in CATEGORY_KEYS:
+        row, need = ROW_OF[k], needed.get(k, 0)
+        shared = sharers[row] > 1
+        if not need and (shared or not left.get(row)):
+            continue                                         # sin requerido: solo sale si Almacén asignó algo de una categoría que no comparte fila
+        have = min(left.get(row, 0), need) if shared else left.get(row, 0)
+        if shared:
+            left[row] = left.get(row, 0) - have
+        out.append({"key": k, "label": category_label(k), "needed": need, "assigned": have, "missing": max(need - have, 0), "shared": shared})
+    return out
 
 
 # ---------------------------------------------------------------- con base de datos
@@ -97,7 +127,14 @@ def per_unit_map(db: Session, crm_product_ids: List[int]) -> Dict[int, List[tupl
     if not crm_product_ids:
         return out
     for r in db.query(CrmProductCategory).filter(CrmProductCategory.crm_product_id.in_(list(crm_product_ids))).order_by(CrmProductCategory.id).all():
-        out.setdefault(r.crm_product_id, []).append((r.checklist_key, r.qty_per_unit))
+        key = LEGACY_KEYS.get(r.checklist_key, r.checklist_key)
+        lst = out.setdefault(r.crm_product_id, [])
+        for i, (k0, q0) in enumerate(lst):
+            if k0 == key:                      # una clave antigua y su nueva en el mismo producto: se suman
+                lst[i] = (key, q0 + r.qty_per_unit)
+                break
+        else:
+            lst.append((key, r.qty_per_unit))
     return out
 
 
