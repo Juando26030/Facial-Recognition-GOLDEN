@@ -178,14 +178,14 @@ def test_the_parameters_screen_hides_the_face_delete_buttons_from_non_admins():
 
 
 # ------------------------------- páginas legales públicas -------------------------------
-def test_legal_pages_are_public_privacy_has_its_reviewed_version_and_the_rest_stay_drafts(client):
+def test_legal_pages_are_public_and_none_is_a_draft_anymore(client):
     for path, title in (("/privacidad", "Política de Privacidad"), ("/terminos", "Términos y Condiciones"), ("/reembolsos", "Política de Reembolsos")):
         r = client.get(path)                                                                          # sin sesión
         assert r.status_code == 200 and title in r.text
         if path == "/privacidad":                                                                     # con constancia escrita de la auditora (2026-10-05): versión 1.0
             assert "Versión 1.0" in r.text and "5 de octubre de 2026" in r.text and "BORRADOR" not in r.text and "[PENDIENTE DE REVISIÓN LEGAL" not in r.text
-        else:
-            assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                            # borrador hasta que un abogado lo revise (términos y reembolsos no están cubiertos)
+        else:                                                                                         # términos y reembolsos: aprobados por la auditora el 6-oct-2026 junto con la privacidad (ya no son borrador)
+            assert "aprobado por la auditora el 6 de octubre de 2026" in r.text and "PENDIENTE DE REVISIÓN LEGAL" not in r.text and "BORRADOR" not in r.text and 'class="pending"' not in r.text
         assert "901.542.833-2" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
     p = client.get("/privacidad").text
     for needle in ("Wompi", "Microsoft", "Google Cloud", "biométric", "cédula", "10 días hábiles"):
