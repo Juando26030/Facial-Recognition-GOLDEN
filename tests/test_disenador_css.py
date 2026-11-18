@@ -23,3 +23,8 @@ def test_movil_una_sola_vista_con_lienzo_fijo():
     assert ".badge-canvas-zone { position: sticky; top: 0" in movil
     assert ".editor-mobile-tabs { display: none; }" in movil
     assert 'data-tab="props"' not in movil          # ya no se esconde el lienzo al editar propiedades
+
+
+def test_movil_el_rotulo_del_zoom_no_se_encoge():
+    movil = CSS.split("@media (max-width: 820px)")[1]
+    assert "#zoomLabel { flex: 0 0 auto; min-width: 6.5rem" in movil
