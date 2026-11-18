@@ -31,7 +31,7 @@
     opts = opts || {};
     if (!box) return null;
     let eventId = opts.eventId || null;
-    let data = null, dirtyFlag = false;
+    let data = null, crm = null, crmOpts = [], dirtyFlag = false;
     const ICONS = opts.icons || '/static/img/icons.svg';
     const icon = (n) => `<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
     const ctrl = { visible: true, dirty: () => dirtyFlag, reload, save };
@@ -80,6 +80,21 @@
       const warnBox = warn ? `<div class="gw-inv-plan__warnings" role="alert"><span class="gw-badge gw-badge--warn">${icon('alert')}Aviso (no bloquea)</span><ul class="gw-inv-plan__issues">${warn}</ul></div>` : '';
       return `<div class="gw-inv-plan__balance" role="status">${head} ${tot}${items ? `<ul class="gw-inv-plan__issues">${items}</ul>` : ''}</div>${warnBox}`;
     }
+    function crmHtml() {
+      if (!crm || data.draft) return '';
+      const src = crm.source ? `Tomado de la cotización ${esc(crm.source.number)} · versión ${esc(crm.source.version)}` + (crm.source.free_lines ? ` (${crm.source.free_lines} línea(s) de texto libre no implican inventario)` : '') : (crm.has_opportunity ? ((crm.alerts || []).length ? 'La última cotización del CRM tiene productos que aún no se han traído a este evento.' : 'Esta oportunidad aún no tiene cotización con productos del catálogo.') : 'Este evento no viene del CRM: agrega a mano los productos que lleva.');
+      const alerts = (crm.alerts || []).map((a) => `<div class="gw-alert gw-alert--warn" role="alert" data-ip-alert="${a.id}"><div class="gw-alert__body"><strong>El CRM cambió${a.quote ? ' (cotización ' + esc(a.quote.number) + ' versión ' + esc(a.quote.version) + ')' : ''}.</strong> El inventario no cambia solo.
+        <ul class="gw-inv-plan__issues">${a.diff.map((d) => `<li>${esc(d.name)}: ${d.before} → ${d.after}${d.kind === 'added' ? ' (nuevo)' : d.kind === 'removed' ? ' (se quitó)' : ''}</li>`).join('')}</ul>
+        ${crm.can_edit ? `<div class="gw-actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-ip-alert-apply="${a.id}">Actualizar evento a lo del CRM</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-ip-alert-dismiss="${a.id}">Dejarlo como está</button></div>` : ''}</div></div>`).join('');
+      const rows = (crm.products || []).map((p) => `<li class="gw-inv-plan__crmrow" data-ip-crm-row="${p.crm_product_id || ''}"><div><strong>${esc(p.name)}</strong> × ${p.origin === 'manual' && crm.can_edit ? `<input class="gw-input gw-inv-plan__qty" type="number" min="0" step="1" value="${p.qty}" data-ip-crm-qty aria-label="Cantidad de ${esc(p.name)}">` : p.qty}
+        <span class="gw-badge ${p.origin === 'manual' ? '' : 'gw-badge--info'}">${p.origin === 'manual' ? 'Agregado a mano' : 'Del CRM'}</span></div>
+        <span class="gw-hint">${p.implies.length ? 'Implica: ' + p.implies.map((i) => `${i.total} ${esc(i.label)}`).join(' + ') : 'Sin categorías declaradas en el producto del CRM: el administrador las define en CRM → Productos.'}</span></li>`).join('');
+      const reqs = (crm.requirements || []).map((r) => `<li class="gw-inv-plan__crmrow"><div><strong>${esc(r.label)}</strong>: se necesitan ${r.needed}, asignados ${r.assigned}
+        <span class="gw-badge ${r.missing ? 'gw-badge--warn' : 'gw-badge--ok'}">${r.missing ? 'Faltan ' + r.missing : 'Cubierto'}</span></div></li>`).join('');
+      const reqBox = reqs ? `<div><h5 class="gw-inv-plan__crmtitle">Lo que piden los productos, por categoría</h5><ul class="gw-inv-plan__crmlist">${reqs}</ul><p class="gw-hint">Asigna abajo los equipos concretos de cada categoría; aquí se ve cuánto falta.</p></div>` : '';
+      const add = crm.can_edit ? `<div class="gw-inv-plan__crmadd"><label class="gw-field"><span class="gw-label">Agregar un producto del CRM</span><div class="gw-actions"><select class="gw-select" data-ip-crm-sel aria-label="Producto del CRM"><option value="">Elige un producto…</option>${crmOpts.map((o) => `<option value="${o.id}">${esc(o.name)}${o.implies ? '' : ' (sin categorías declaradas)'}</option>`).join('')}</select><input class="gw-input gw-inv-plan__qty" type="number" min="1" step="1" value="1" data-ip-crm-addqty aria-label="Cantidad"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-ip-crm-add>Agregar</button></div></label></div>` : '';
+      return `<section class="gw-inv-plan__crm" aria-label="Productos del CRM"><h4 class="gw-inv-plan__crmtitle">Productos del CRM</h4><p class="gw-hint">${src}. Cada producto pide categorías de Almacén (cantidad × lo que implica cada uno).</p>${alerts}${reqBox}${rows ? `<ul class="gw-inv-plan__crmlist">${rows}</ul>` : '<p class="gw-hint">Todavía no hay productos del CRM en este evento.</p>'}${add}</section>`;
+    }
     function paint() {
       if (!data) { box.innerHTML = ''; ctrl.visible = false; ctrl.empty = true; return; }
       ctrl.visible = true;
@@ -89,7 +104,7 @@
       const groups = [], index = {};
       lines.forEach((l) => { const k = l.category_name || ''; if (!(k in index)) { index[k] = groups.length; groups.push({ name: k, items: [] }); } groups[index[k]].items.push(l); });
       const readonly = !data.can_edit_plan;
-      box.innerHTML = (readonly ? '<p class="gw-hint">Solo lectura: tu rol puede ver el inventario pero no cambiarlo.</p>' : '') + balanceHtml() +
+      box.innerHTML = (readonly ? '<p class="gw-hint">Solo lectura: tu rol puede ver el inventario pero no cambiarlo.</p>' : '') + balanceHtml() + crmHtml() +
         groups.map((g) => `<fieldset class="gw-inv-plan__group"><legend>${g.name ? esc(g.name) : 'Sin categoría'}</legend>${g.items.map(rowHtml).join('')}</fieldset>`).join('') +
         (opts.saveButton === false || readonly ? '' : `<div class="gw-actions"><button type="button" class="gw-btn gw-btn--secondary" data-ip-save>Guardar inventario</button></div>`);
     }
@@ -103,6 +118,13 @@
     }
     async function reload() {
       try { data = await fetchData(); } catch (e) { box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(e.message)}</p></div>`; return; }
+      crm = null;
+      if (eventId && data && !data.draft) {
+        try {
+          const r = await fetch(`/api/events/${eventId}/crm-inventory`, { cache: 'no-store' });
+          if (r.ok) { crm = await r.json(); if (crm.can_edit) { const o = await fetch(`/api/events/${eventId}/crm-inventory/options`, { cache: 'no-store' }); crmOpts = o.ok ? (await o.json()).items : []; } }
+        } catch (e) { crm = null; }
+      }
       dirtyFlag = false; paint();
     }
     async function save(idOverride) {
@@ -126,7 +148,36 @@
       if (p) { const v = (k) => num((row.querySelector(`[data-ip-qty="${k}"]`) || {}).value); p.textContent = Math.max(v('out') - v('returned') - v('consumed'), 0); }
       if (opts.onChange) opts.onChange();
     });
+    async function crmCall(method, url, body) {
+      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo completar la acción');
+      return d;
+    }
+    box.addEventListener('change', async (e) => {
+      const q = e.target.closest('[data-ip-crm-qty]');
+      if (!q) return;
+      const id = q.closest('[data-ip-crm-row]').dataset.ipCrmRow;
+      try { await crmCall('PUT', `/api/events/${eventId}/crm-inventory/products/${id}`, { qty: num(q.value) }); showToast('Cantidad actualizada', 'success'); await reload(); if (opts.onChange) opts.onChange(); }
+      catch (x) { showToast(x.message, 'error'); await reload(); }
+    });
     box.addEventListener('click', async (e) => {
+      const ap = e.target.closest('[data-ip-alert-apply]'), ds = e.target.closest('[data-ip-alert-dismiss]'), ad = e.target.closest('[data-ip-crm-add]');
+      if (ap || ds || ad) {
+        const btn = ap || ds || ad; btn.disabled = true;
+        try {
+          if (ap) { await crmCall('POST', `/api/events/${eventId}/crm-inventory/alerts/${ap.dataset.ipAlertApply}/apply`); showToast('Inventario actualizado a lo del CRM', 'success'); }
+          else if (ds) { await crmCall('POST', `/api/events/${eventId}/crm-inventory/alerts/${ds.dataset.ipAlertDismiss}/dismiss`); showToast('Se dejó el inventario como está', 'success'); }
+          else {
+            const sel = box.querySelector('[data-ip-crm-sel]'), qty = num((box.querySelector('[data-ip-crm-addqty]') || {}).value);
+            if (!sel || !sel.value) { showToast('Elige un producto del CRM', 'error'); btn.disabled = false; return; }
+            if (qty < 1) { showToast('La cantidad debe ser 1 o más', 'error'); btn.disabled = false; return; }
+            await crmCall('PUT', `/api/events/${eventId}/crm-inventory/products/${sel.value}`, { qty }); showToast('Producto agregado', 'success');
+          }
+          await reload(); if (opts.onChange) opts.onChange();
+        } catch (x) { showToast(x.message, 'error'); btn.disabled = false; }
+        return;
+      }
       const b = e.target.closest('[data-ip-save]');
       if (!b) return;
       b.disabled = true;

@@ -90,7 +90,8 @@ def _wallet_args(db: Session, token: str) -> dict:
     att, event, user = _resolve(db, token)
     # El código del pase es una vCard (guardar contacto al escanear) con el código firmado en NOTE; el teléfono va solo si el evento lo muestra en la escarapela digital (mismo criterio que /data).
     keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), set(), event.get_optional_labels())
-    code = qr_vcard.build(user.first_name, user.last_name, user.phone if "phone" in keys else "", note=dynamic_qr.make_static(att.id, att.digital_token))
+    code = qr_vcard.build(user.first_name, user.last_name, user.phone if "phone" in keys else "", note=dynamic_qr.make_static(att.id, att.digital_token),
+                          email=user.email if "email" in keys else "", org=user.entity if "entity" in keys else "", title=user.role if "role" in keys else "", categories=", ".join(att.get_categories()) if "categories" in keys else "")
     return {"att_id": att.id, "person_name": f"{user.first_name or ''} {user.last_name or ''}".strip(), "event_name": event.name, "code": code}
 
 

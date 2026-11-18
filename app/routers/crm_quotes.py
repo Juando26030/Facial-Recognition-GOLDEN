@@ -33,7 +33,12 @@ def quotes_meta(db: Session = Depends(get_db), staff: StaffUser = Depends(view_s
 # ------------------------------------------------------------------ productos
 @router.get("/products")
 def list_products(q: str = "", category: str = "", active: Optional[bool] = None, page: int = 1, size: int = svc.PAGE_SIZE, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
-    return svc.list_products(db, q=q, category=category, active=active, page=page, size=size)
+    out = svc.list_products(db, q=q, category=category, active=active, page=page, size=size)
+    from app import crm_inventory
+    per = crm_inventory.per_unit_map(db, [p["id"] for p in out["items"]])
+    for p in out["items"]:
+        p["inventory_n"] = len(per.get(p["id"], []))          # cuántas categorías de Almacén implica (0 = sin declarar)
+    return out
 
 
 @router.post("/products")
@@ -48,6 +53,35 @@ def create_product(data: dict = Body(...), db: Session = Depends(get_db), staff:
 @router.put("/products/{product_id}")
 def update_product(product_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
     return _run(db, lambda: svc.serialize_product(svc.update_product(db, product_id, data, _expected(data))))
+
+
+@router.get("/opportunities/{opportunity_id}/quotes")
+def opportunity_quotes(opportunity_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    """Historial de cotizaciones de una oportunidad (todas las versiones, la más nueva primero) con su anotación; `is_last` marca la que toma el inventario del evento al ganar."""
+    from app import crm_inventory
+    from app.models import CrmQuote
+    rows = db.query(CrmQuote).filter(CrmQuote.opportunity_id == opportunity_id).order_by(CrmQuote.id.desc()).all()
+    last = crm_inventory.last_quote(db, opportunity_id)
+    return {"items": [{"id": r.id, "number": r.number, "version": r.version, "title": r.title, "stage": r.stage, "total": str(r.total), "currency": r.currency, "created_at": r.created_at.isoformat() if r.created_at else None,
+                       "meeting_notes": r.meeting_notes, "archived": r.archived_at is not None, "is_last": last is not None and last.id == r.id} for r in rows]}
+
+
+@router.get("/products/{product_id}/inventory")
+def get_product_inventory(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    """Categorías de Almacén que implica el producto (por unidad vendida) y la lista fija de categorías que se pueden elegir."""
+    from app import crm_inventory
+    return {"items": crm_inventory.get_product_categories(db, product_id), "options": crm_inventory.category_options()}
+
+
+@router.put("/products/{product_id}/inventory")
+def put_product_inventory(product_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    from app import crm_inventory
+
+    def work():
+        items = crm_inventory.set_product_categories(db, product_id, data.get("items"))
+        audit_actions.record(db, staff, "update", "crm_product", product_id, "", f"implica {len(items)} categoría(s) de Almacén")
+        return {"items": items}
+    return _run(db, work)
 
 
 # ------------------------------------------------------------------ condiciones y plantillas

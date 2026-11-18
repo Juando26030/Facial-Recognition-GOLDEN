@@ -15,6 +15,7 @@ Regla de cuadre (docs/29, Fase 5: «suma exacta; sin categorizar en creado; todo
 `BalanceReport.ok` es True si no hay errores; los avisos no bloquean. `can_enter_in_progress(rows)` es la puerta para pasar el evento a «en proceso».
 """
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
@@ -237,11 +238,17 @@ def as_row(obj) -> Row:
     raise InventoryError("Línea de inventario inválida")
 
 
+def _categories_in_use() -> bool:
+    """Con Almacén activo (ALMACEN_ENABLED) el catálogo ya no tiene categorías: «sin categoría» deja de ser aviso o error."""
+    return os.getenv("ALMACEN_ENABLED", "0").strip().lower() not in ("1", "true", "yes", "on", "si", "sí")
+
+
 def check_balance(rows: Iterable, stage: str = "creado") -> BalanceReport:
     """Regla de cuadre (ver el docstring del módulo). `rows`: Row o dicts {name, assigned, out, returned, consumed, category_id}. Devuelve un BalanceReport; nunca lanza por datos de línea."""
     if stage not in STAGES:
         raise InventoryError(f"Etapa de cuadre desconocida: {stage}")
     rep = BalanceReport(stage=stage)
+    use_categories = _categories_in_use()
 
     def add(level, code, r, msg):
         rep.issues.append(Issue(level, code, r.name, msg, r.product_id))
@@ -254,7 +261,7 @@ def check_balance(rows: Iterable, stage: str = "creado") -> BalanceReport:
             add("error", "over_returned", r, f"«{r.name}»: devuelto ({r.returned}) + consumido ({r.consumed}) supera lo que salió ({r.out}).")
         if r.out > r.assigned:
             add("error", "over_assigned", r, f"«{r.name}»: salieron {r.out} y el evento tiene asignados {r.assigned}.")
-        if r.category_id is None:
+        if r.category_id is None and use_categories:
             if stage == "en_proceso":
                 add("error", "uncategorized", r, f"«{r.name}» no tiene categoría: categorízalo para pasar el evento a «En proceso».")
             elif stage == "creado":

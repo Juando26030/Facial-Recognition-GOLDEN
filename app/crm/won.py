@@ -89,6 +89,8 @@ def create_event_for(db: Session, staff: StaffUser, o: CrmOpportunity) -> Event:
     o.event_id = event.id
     audit_actions.record(db, staff, "win", "crm_opportunity", o.id, str(o.code), f"evento {event.event_code}")
     db.flush()
+    from app import crm_inventory
+    crm_inventory.capture_at_win(db, staff, o, event)          # inventario del evento = lo que implican los productos de la ÚLTIMA cotización en este momento
     return event
 
 

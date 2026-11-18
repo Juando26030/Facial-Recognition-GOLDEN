@@ -1096,6 +1096,7 @@ class InventoryProduct(Base):
     checklist_row = Column(String(40), nullable=True)          # 0148: clave de la fila del checklist GEYL a la que suma (app/almacen.py CHECKLIST_ROWS); NULL = no sale en el checklist
     is_consumable = Column(Boolean, nullable=False, default=False, server_default='false')          # 0148: se gasta y no vuelve (almacén lo repone y lo cuenta a mano)
     qr_code = Column(String(12), nullable=True, unique=True)          # 0148: código del QR del producto (solo 'modelo' y 'cantidad'; los 'serial' llevan el QR en cada unidad)
+    photo_key = Column(String(200), nullable=True)          # 0149: foto del elemento (almacenamiento: app/storage.py, clave almacen/elementos/…)
     position = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
@@ -1106,7 +1107,7 @@ class InventoryProduct(Base):
 
 class InventoryUnit(Base):
     """Un equipo con serial del almacén (0148, Pieza 1): su propio número visible (`number`, único por producto, nunca se reutiliza) y su propio QR (`code`: «GW» + 6 caracteres, solo mayúsculas y números).
-    `status`: disponible | en_evento | novedad (la novedad y el bloqueo son de la Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
+    `status`: disponible | en_evento | novedad (la novedad y el bloqueo: tabla `inventory_novelties`, Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
     __tablename__ = 'inventory_units'
     id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
@@ -1118,9 +1119,72 @@ class InventoryUnit(Base):
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)          # 0149: en qué evento está hoy (vacío = en bodega)
 
     product = relationship('InventoryProduct')
+    event = relationship('Event')
     __table_args__ = (UniqueConstraint('product_id', 'number', name='uq_inventory_unit_number'), Index('ix_inventory_units_product', 'product_id'))
+
+
+class InventoryMovement(Base):
+    """Salida o entrada de almacén por lectura de QR (0149, Pieza 2). Solo se agrega: anular marca `voided_*`, nunca se borra. `unit_id` = equipo con serial (null en los controlados por modelo o cantidad).
+    `extra` = cuánto de la salida excede lo asignado al evento (se justifica con `reason` o `is_plan_b`; sube `qty_assigned` pero no cuenta como NECESARIO)."""
+    __tablename__ = 'inventory_movements'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    kind = Column(String(10), nullable=False)          # salida | entrada
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    extra = Column(Integer, nullable=False, default=0, server_default='0')
+    reason = Column(String(300), nullable=True)
+    is_plan_b = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    __table_args__ = (Index('ix_inventory_movements_event', 'event_id', 'product_id'), Index('ix_inventory_movements_unit', 'unit_id'))
+
+
+class InventoryNovelty(Base):
+    """Novedad de almacén (0152, Pieza 3): un daño o problema de un elemento. `unit_id` = el equipo con serial (null en los controlados por modelo o cantidad, que llevan `qty` piezas).
+    Abierta mientras `resolved_at` sea nulo: el equipo queda «En novedad» y no se puede sacar a un evento hasta que almacén la resuelve (`resolution` = qué se hizo). Nada se borra.
+    `event_id` = el evento donde se detectó (si fue al devolver), `movement_id` = la entrada con la que se reportó, `photo_key` = foto del daño (almacén/novedades/<uuid>.jpg)."""
+    __tablename__ = 'inventory_novelties'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    description = Column(Text, nullable=False)
+    photo_key = Column(String(200), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    movement_id = Column(Integer, ForeignKey('inventory_movements.id'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    resolution = Column(Text, nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    event = relationship('Event')
+    __table_args__ = (Index('ix_inventory_novelties_product', 'product_id', 'resolved_at'), Index('ix_inventory_novelties_unit', 'unit_id'))
+
+
+class EventChecklistRow(Base):
+    """Casilla «OK S/N» (alistado) y observación de UNA fila del checklist GEYL en un evento (0149, Pieza 2). `row_key` = clave de app/almacen.py CHECKLIST_ROWS (incluye las 5 de verificación manual)."""
+    __tablename__ = 'event_checklist_rows'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    row_key = Column(String(40), nullable=False)
+    done = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    notes = Column(String(300), nullable=True)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint('event_id', 'row_key', name='uq_event_checklist_row'),)
 
 
 class LocalNode(Base):
@@ -1174,6 +1238,56 @@ class EventInventoryItem(Base):
 
     product = relationship('InventoryProduct')
     __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
+
+
+class CrmProductCategory(Base):
+    """Lo que IMPLICA un producto del CRM en CATEGORÍAS de Almacén (0154; antes, 0153, eran elementos sueltos): «Registro bidimensional» = 1 Portátiles + 1 Lectores. `checklist_key` es la fila del checklist GEYL (app/almacen.py); no descuenta existencias: Almacén elige después los equipos concretos de cada categoría."""
+    __tablename__ = 'crm_product_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='CASCADE'), nullable=False)
+    checklist_key = Column(String(40), nullable=False)
+    qty_per_unit = Column(Integer, nullable=False, default=1, server_default='1')
+    __table_args__ = (UniqueConstraint('crm_product_id', 'checklist_key', name='uq_crm_product_category'),)
+
+
+class EventCrmProduct(Base):
+    """Productos del CRM que lleva un evento (0153). `origin` 'crm' = vienen de la última cotización al ganar la oportunidad (o de aplicar una alerta); 'manual' = los agregó una persona en el inventario del evento. `name` es copia del nombre al guardar."""
+    __tablename__ = 'event_crm_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    origin = Column(String(10), nullable=False, default='crm', server_default='crm')
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    __table_args__ = (Index('ix_event_crm_products_event', 'event_id'),)
+
+
+class EventCrmSync(Base):
+    """Estado de la sincronización CRM → inventario de un evento (0153): cotización de origen y lo que se sumó al «asignado» la última vez (`implied_json` {id de elemento: cantidad}), para poder restar lo anterior y sumar lo nuevo sin pisar lo manual antiguo."""
+    __tablename__ = 'event_crm_sync'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, unique=True)
+    source_quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    implied_json = Column(Text, nullable=True)
+    synced_at = Column(DateTime, default=utcnow)
+
+
+class EventInventoryAlert(Base):
+    """Alerta en el inventario de un evento cuando el CRM ya no coincide con lo que el evento tiene (0153). `status`: open | applied | dismissed | obsolete. `snapshot_json` = lista [{crm_product_id, name, qty}] propuesta; `diff_json` = lo que difiere; `snap_hash` evita repetir una alerta descartada."""
+    __tablename__ = 'event_inventory_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    status = Column(String(10), nullable=False, default='open', server_default='open')
+    snapshot_json = Column(Text, nullable=False)
+    diff_json = Column(Text, nullable=False)
+    snap_hash = Column(String(40), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (Index('ix_event_inventory_alerts_event', 'event_id', 'status'),)
 
 
 class Job(Base):

@@ -127,7 +127,12 @@
     const sb = el("span", "gw-badge", STAGE[q.stage] || q.stage); acts.insertBefore(sb, acts.firstChild);
     lockUI();
     const ul = $("qVersions"); ul.replaceChildren();
-    q.versions.forEach((v) => { const li = document.createElement("li"), t = "Versión " + v.version + " · " + (STAGE[v.stage] || v.stage); if (v.id === q.id) li.appendChild(el("span", "gw-badge gw-badge--info", t + " (actual)")); else { const a = el("a", "gw-btn gw-btn--secondary gw-btn--sm", t); a.href = "/crm/cotizaciones/" + v.id; li.appendChild(a); } ul.appendChild(li); });
+    q.versions.forEach((v) => {
+      const li = document.createElement("li"), t = "Versión " + v.version + " · " + (STAGE[v.stage] || v.stage) + (v.created_at ? " · " + X.fmtDateTime(v.created_at) : "");
+      if (v.id === q.id) li.appendChild(el("span", "gw-badge gw-badge--info", t + " (actual)")); else { const a = el("a", "gw-btn gw-btn--secondary gw-btn--sm", t); a.href = "/crm/cotizaciones/" + v.id; li.appendChild(a); }
+      const pdf = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Descargar PDF"); pdf.href = "/api/crm/quotes/" + v.id + "/pdf"; pdf.target = "_blank"; pdf.rel = "noopener"; pdf.setAttribute("aria-label", "Descargar el PDF de la versión " + v.version); li.appendChild(pdf);
+      li.appendChild(el("span", "crm-sub", v.meeting_notes ? "Anotación: " + v.meeting_notes : "Sin anotación")); ul.appendChild(li);
+    });
     showTotals();
   }
   $("qActions").addEventListener("click", (e) => {

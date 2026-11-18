@@ -224,7 +224,8 @@ def quote_detail(db: Session, q: CrmQuote) -> dict:
     out = serialize_quote(q, account_name=account.name if account else None, contact_name=" ".join(p for p in ((contact.first_name or ""), (contact.last_name or "")) if p).strip() if contact else None,
                           owner_name=owner.full_name if owner else None)
     out.update({"terms_text": q.terms_text, "meeting_notes": q.meeting_notes, "lines": [serialize_line(ln) for ln in lines_of(db, q.id)],
-                "versions": [{"id": r.id, "version": r.version, "stage": r.stage} for r in db.query(CrmQuote.id, CrmQuote.version, CrmQuote.stage).filter(CrmQuote.number == q.number).order_by(CrmQuote.version).all()]})
+                "versions": [{"id": r.id, "version": r.version, "stage": r.stage, "created_at": r.created_at.isoformat() if r.created_at else None, "total": str(r.total), "currency": r.currency, "meeting_notes": r.meeting_notes}
+                             for r in db.query(CrmQuote).filter(CrmQuote.number == q.number).order_by(CrmQuote.version).all()]})
     return out
 
 

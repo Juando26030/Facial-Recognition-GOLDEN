@@ -30,20 +30,40 @@
     rm.addEventListener("click", async () => { try { await api("DELETE", "/api/crm/products/" + p.id + "/image"); p.has_image = false; show(false); file.value = ""; showToast("Foto quitada.", "success"); } catch (x) { showToast(x.message, "error"); } });
     box.appendChild(img); box.appendChild(file); box.appendChild(rm); return box;
   }
+  /* Qué CATEGORÍAS de Almacén IMPLICA el producto por cada unidad vendida (no descuenta existencias): «Registro bidimensional» = 1 Portátiles + 1 Lectores. */
+  function implicaControl(p) {
+    const box = el("div", "gw-stack"), list = el("div", "gw-stack"), add = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Agregar categoría"); add.type = "button";
+    const hint = el("p", "gw-hint", "Lo que hay que llevar por cada unidad de este producto. El evento lo muestra en su Inventario y Almacén elige los equipos concretos; no descuenta existencias."); let options = [];
+    function row(it) {
+      const r = el("div", "gw-actions"), sel = select(options.map((o) => ({ value: o.key, label: o.label })), "Elige una categoría…"), qty = input("number"), rm = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Quitar"); rm.type = "button";
+      sel.dataset.imEl = "1"; sel.setAttribute("aria-label", "Categoría de Almacén"); qty.min = "1"; qty.max = "999"; qty.step = "1"; qty.value = it ? it.qty_per_unit : 1; qty.dataset.imQty = "1"; qty.setAttribute("aria-label", "Cantidad por unidad"); rm.dataset.imRm = "1";
+      if (it) sel.value = it.key;
+      r.appendChild(sel); r.appendChild(el("span", "gw-hint", "×")); r.appendChild(qty); r.appendChild(el("span", "gw-hint", "por unidad")); r.appendChild(rm); return r;
+    }
+    box.appendChild(hint); box.appendChild(list); box.appendChild(add);
+    list.addEventListener("click", (e) => { const b = e.target.closest("[data-im-rm]"); if (b) b.parentNode.remove(); });
+    add.addEventListener("click", () => list.appendChild(row(null)));
+    box.ready = api("GET", "/api/crm/products/" + (p ? p.id : 0) + "/inventory").then((d) => { options = d.options; d.items.forEach((it) => list.appendChild(row(it))); }).catch((x) => { list.appendChild(el("p", "gw-hint", "No se pudo leer lo que implica: " + x.message)); box.failed = true; });
+    box.items = () => Array.prototype.map.call(list.children, (r) => ({ key: r.querySelector("[data-im-el]").value, qty_per_unit: parseInt(r.querySelector("[data-im-qty]").value, 10) }));
+    box.valid = () => { const it = box.items(), keys = it.map((i) => i.key); return it.every((i) => i.key && Number.isFinite(i.qty_per_unit) && i.qty_per_unit >= 1) && new Set(keys).size === keys.length; };
+    return box;
+  }
   function productDialog(p) {
     const sku = input("text", 60), name = input("text", 200), cat = input("text", 80), price = input("text"), cost = input("text"), tax = input("text"), cur = select(["COP", "USD", "EUR"].map((c) => ({ value: c, label: c }))), desc = area(20000, 3);
     if (p) { sku.value = p.sku || ""; name.value = p.name; cat.value = p.category || ""; price.value = p.price; cost.value = p.cost; tax.value = p.tax_percent; cur.value = p.currency; desc.value = p.description || ""; } else { price.value = "0"; cost.value = "0"; tax.value = "19"; }
     [price, cost, tax].forEach((c) => { c.inputMode = "decimal"; });
-    const photo = p ? photoControl(p) : null;
-    editor(p ? "Editar producto" : "Nuevo producto", [["pdName", "Nombre", name], ["pdSku", "Código (SKU, opcional)", sku], ["pdCat", "Categoría (opcional)", cat], ["pdPrice", "Precio", price], ["pdCost", "Costo (opcional)", cost], ["pdCur", "Moneda", cur], ["pdTax", "Impuesto (%)", tax], ["pdDesc", "Descripción (opcional)", desc]].concat(photo ? [["pdPhoto", "Foto para la cotización (opcional)", photo]] : []), async () => {
+    const photo = p ? photoControl(p) : null, implica = implicaControl(p);
+    editor(p ? "Editar producto" : "Nuevo producto", [["pdName", "Nombre", name], ["pdSku", "Código (SKU, opcional)", sku], ["pdCat", "Categoría (opcional)", cat], ["pdPrice", "Precio", price], ["pdCost", "Costo (opcional)", cost], ["pdCur", "Moneda", cur], ["pdTax", "Impuesto (%)", tax], ["pdDesc", "Descripción (opcional)", desc]].concat(photo ? [["pdPhoto", "Foto para la cotización (opcional)", photo]] : []).concat([["pdImplica", "Qué categorías de Almacén implica (opcional)", implica]]), async () => {
+      await implica.ready; if (!implica.failed && !implica.valid()) throw new Error("Cada categoría necesita elegirse una sola vez y llevar una cantidad de 1 o más.");
       const data = { name: name.value.trim(), sku: sku.value.trim() || null, category: cat.value.trim() || null, price: price.value.replace(",", "."), cost: cost.value.replace(",", "."), currency: cur.value, tax_percent: tax.value.replace(",", "."), description: desc.value };
-      if (p) await api("PUT", "/api/crm/products/" + p.id, Object.assign(data, { updated_at: p.updated_at })); else await api("POST", "/api/crm/products", data);
+      const saved = p ? await api("PUT", "/api/crm/products/" + p.id, Object.assign(data, { updated_at: p.updated_at })) : await api("POST", "/api/crm/products", data);
+      if (!implica.failed) await api("PUT", "/api/crm/products/" + (saved && saved.id ? saved.id : p.id) + "/inventory", { items: implica.items() });
       showToast("Producto guardado.", "success"); loadProducts();
     });
   }
   function productRow(p) {
     const tr = document.createElement("tr"), cell = (label, v) => { const td = document.createElement("td"); td.dataset.label = label; if (v instanceof Node) td.appendChild(v); else td.textContent = v == null || v === "" ? "—" : v; tr.appendChild(td); return td; };
-    cell("Producto", p.name); cell("Código", p.sku); cell("Precio", p.currency + " " + Number(p.price).toLocaleString("es-CO", { minimumFractionDigits: 2 })); cell("Impuesto", Number(p.tax_percent) + " %");
+    cell("Producto", p.name); cell("Código", p.sku); cell("Precio", p.currency + " " + Number(p.price).toLocaleString("es-CO", { minimumFractionDigits: 2 })); cell("Impuesto", Number(p.tax_percent) + " %"); cell("Almacén", p.inventory_n ? p.inventory_n + " categoría(s)" : "Sin declarar");
     cell("Estado", el("span", "gw-badge " + (p.active ? "gw-badge--ok" : ""), p.active ? "Activo" : "Inactivo"));
     const td = cell("Acciones", document.createDocumentFragment()); td.classList.add("crm-actions-cell");
     const ed = el("button", "gw-btn gw-btn--secondary gw-btn--sm", "Editar"); ed.type = "button"; ed.dataset.edit = String(p.id); ed.setAttribute("aria-label", "Editar " + p.name); td.appendChild(ed);

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
+from app import almacen_novelties, audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
 from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any
 from app.database import get_db
 from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, InventoryUnit, StaffUser
@@ -544,11 +544,14 @@ def assign_inventory(data: dict, db: Session = Depends(get_db), staff: StaffUser
         _err("No se guardó: " + " ".join(i.message for i in rep.errors[:3]))
     left = None
     if prod.qty_total is not None:
+        in_nov = almacen_novelties.open_qty_by_product(db, [prod.id]).get(prod.id, 0)          # Almacén (Pieza 3): lo que está en novedad no se puede asignar
+        stock = almacen_novelties.available(prod.qty_total, in_nov)
         others = [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in _events_in_range(db, span[0], span[1]) if o["event"].id != event.id]
         peak = inventory_calendar.peak_usage(span, others, prod.id)
-        left = inventory_calendar.max_assignable(prod.qty_total, peak)
+        left = inventory_calendar.max_assignable(stock, peak)
         if qty > left:
-            _err(f"No alcanza «{prod.name}»: en las fechas de este evento (del {span[0].isoformat()} al {span[1].isoformat()}, con montaje) ya hay {peak} asignados a otros eventos de {prod.qty_total} que tiene Golden. Se pueden asignar hasta {left}.")
+            _err(f"No alcanza «{prod.name}»: en las fechas de este evento (del {span[0].isoformat()} al {span[1].isoformat()}, con montaje) ya hay {peak} asignados a otros eventos de {prod.qty_total} que tiene Golden"
+                 + (f" ({in_nov} en novedad, que no se pueden asignar)" if in_nov else "") + f". Se pueden asignar hasta {left}.")
     if line is None:
         if qty == 0:
             return {"event_id": event.id, "product_id": prod.id, "assigned": 0, "max_assignable": left}

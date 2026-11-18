@@ -14,7 +14,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app import notifications
+from app import almacen_novelties, notifications
 from app.auth import sees_event_tenant, staff_with_role
 from app.models import Event, EventInventoryItem, InventoryProduct, StaffUser
 from app.timeutil import utcnow
@@ -83,14 +83,16 @@ def warnings_for_event(db: Session, event: Event, today: Optional[date] = None) 
     if controlled:
         others = db.query(Event).filter(Event.id != event.id, Event.archived_at.is_(None), Event.status != "finalizado", Event.start_date.isnot(None)).all()
         clash_ids = [o.id for o in others if _overlaps(event.start_date, event.end_date, o.start_date, o.end_date)]
+        in_nov = almacen_novelties.open_qty_by_product(db, [p.id for _, p in controlled])          # Almacén (Pieza 3): lo que está en novedad no cuenta como disponible
         for line, prod in controlled:
             used = 0
             if clash_ids:
                 used = sum(r.qty_assigned for r in db.query(EventInventoryItem).filter(EventInventoryItem.product_id == prod.id, EventInventoryItem.event_id.in_(clash_ids)).all())
-            missing = shortage(prod.qty_total, line.qty_assigned, used)
+            bad = in_nov.get(prod.id, 0)
+            missing = shortage(almacen_novelties.available(prod.qty_total, bad), line.qty_assigned, used)
             if missing:
                 out.append({"kind": "stock", "product_id": prod.id, "missing": missing,
-                            "message": f"No hay material de Golden disponible de «{prod.name}»: faltan {missing} {prod.unit} (existencias {prod.qty_total}, ya asignadas a otros eventos en esas fechas {used}). Hay que alquilar o buscar otras opciones."})
+                            "message": f"No hay material de Golden disponible de «{prod.name}»: faltan {missing} {prod.unit} (existencias {prod.qty_total}" + (f", {bad} en novedad" if bad else "") + f", ya asignadas a otros eventos en esas fechas {used}). Hay que alquilar o buscar otras opciones."})
     return out
 
 
