@@ -4,7 +4,7 @@
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
-  let users = [], person = null, items = [], delivering = false;
+  let users = [], person = null, items = [], delivering = false, lastBatches = new Set();
   const AUTOSCAN = !!window.AUTOSCAN;          // Fase 10: «escanear / Enter = entrega automática» (Parámetros): al leer a la persona se entrega lo que esté marcado, sin pulsar «Entregar»
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
   const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
@@ -48,16 +48,40 @@
     $('statOutBox').classList.toggle('gw-stat--err', real.some(i => i.available <= 0));
     // Subcategorías: se entrega una subcategoría (nunca el grupo); se muestra «Comida › Perro» y el disponible es el de cada una.
     const byId = {}; items.forEach(i => { byId[i.id] = i; });
-    const leaves = items.filter(i => !i.is_group).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
-    box.innerHTML = leaves.length ? leaves.map(i => `
+    const row = (i, label, radioName) => `
       <div class="gw-card-row gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
-        <div><strong class="gw-card-row__title">${esc(i.name)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
-        <div>${i.allow_multiple
-          ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(i.available, 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
-          : `<label class="gw-check"><input type="checkbox" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`}</div>
-      </div>`).join('') : `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
+        <div><strong class="gw-card-row__title">${esc(label)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
+        <div>${radioName
+          ? `<label class="gw-check"><input type="radio" name="${radioName}" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Elegir</label>`
+          : (i.allow_multiple
+            ? `<label class="gw-sr-only" for="qty${i.id}">Cantidad de ${esc(i.name)}</label><input type="number" id="qty${i.id}" class="gw-input qty" min="0" max="${Math.max(i.available, 0)}" value="0" ${i.available <= 0 ? 'disabled' : ''}>`
+            : `<label class="gw-check"><input type="checkbox" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`)}</div>
+      </div>`;
+    // Un grupo con «Máx. por persona» = 1 es de ELEGIR UNA (botones de opción: ni dos ni ninguna); con un máximo mayor se frena al pasarse (ver limitGroup). Las subcategorías sin grupo y los ítems sueltos, como siempre.
+    const groups = items.filter(i => i.is_group);
+    const grouped = new Set();
+    let html = groups.map(g => {
+      const kids = items.filter(i => i.parent_id === g.id && !i.is_group);
+      if (!kids.length) return '';
+      kids.forEach(k => grouped.add(k.id));
+      const one = g.max_per_person === 1;
+      const rule = one ? 'Elige una opción (obligatorio)' : (g.max_per_person ? `Máximo ${g.max_per_person} por persona` : '');
+      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(k, k.name, one && !k.allow_multiple ? 'grp' + g.id : '')).join('')}</fieldset>`;
+    }).join('');
+    const loose = items.filter(i => !i.is_group && !grouped.has(i.id)).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
+    html += loose.map(i => row(i, i.name, '')).join('');
+    box.innerHTML = html || `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
     if (AUTOSCAN) restore(keep);
   }
+  /* Tope por persona de un grupo (Máx. > 1): al pasarse, se deshace lo último marcado y se avisa. Con el máximo en 1 son botones de opción y no hace falta. */
+  document.addEventListener('change', (e) => {
+    const fs = e.target.closest && e.target.closest('fieldset[data-group]'); if (!fs) return;
+    const max = parseInt(fs.dataset.max, 10); if (!max) return;
+    const total = Array.from(fs.querySelectorAll('.item-row')).reduce((n, r) => n + (r.querySelector('.qty') ? (parseInt(r.querySelector('.qty').value, 10) || 0) : (r.querySelector('.qty-check').checked ? 1 : 0)), 0);
+    if (total <= max) return;
+    if (e.target.classList.contains('qty')) e.target.value = Math.max(0, (parseInt(e.target.value, 10) || 0) - (total - max)); else e.target.checked = false;
+    showToast(`Solo se permiten ${max} por persona en «${fs.querySelector('legend strong').textContent}».`, 'error');
+  });
   /* Lo marcado en pantalla: {id_del_ítem: cantidad}. Pura sobre el DOM; se usa para conservarlo al recargar y para armar la entrega. */
   function selection() {
     const out = {};
@@ -81,6 +105,7 @@
     let rows;
     try { rows = await getJson(`/api/events/${window.EVENT_ID}/inventory/deliveries`); }
     catch (e) { setDelState('No se pudieron cargar las entregas. Recarga la página.', true); return; }
+    lastBatches = new Set(rows.map(r => r.batch_id));
     $('statDeliveries').textContent = rows.length;
     if (!rows.length) { setDelState('Sin entregas todavía. Elige a una persona y entrega el primer ítem.', false); $('delBody').innerHTML = ''; return; }
     $('delState').hidden = true; $('delWrap').hidden = false;
@@ -156,7 +181,9 @@
     } catch (e) { res = null; data = { detail: 'No se pudo entregar: sin conexión con el servidor. Inténtalo de nuevo.' }; }
     if (!res || !res.ok) { verdict(res ? 'warn' : 'err', res ? 'No se pudo entregar' : 'Sin conexión', esc(data.detail || 'No se pudo entregar')); return; }
     verdict('ok', 'Entregado', `<strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>: ${data.delivered.map(d => `${d.qty} × ${esc(d.name)}`).join(', ')}. Quedan: ${data.stock.map(s => `${esc(s.name)} ${s.available}`).join(' · ')}`);
-    await loadItems(); loadDeliveries();
+    await loadItems(); await loadDeliveries();
+    // Comprobación: lo «entregado» tiene que aparecer en el registro. Si no aparece, NO se da por entregado (así no queda una entrega fantasma en pantalla).
+    if (data.batch_id && !lastBatches.has(data.batch_id)) verdict('err', 'Revisa esta entrega', `No aparece en el registro del evento. Recarga la página y comprueba antes de volver a entregar: <strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>.`);
   }
   $('deliverBtn').addEventListener('click', (e) => busy(e.currentTarget, deliver));
 
