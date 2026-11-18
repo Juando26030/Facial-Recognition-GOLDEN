@@ -20,6 +20,12 @@
   function nameFromForeignCard(raw) {
     const t = unfold(raw);
     if (/^\s*BEGIN:VCARD/i.test(t)) {
+      if (!/\n/.test(t.trim())) {                                  // pegada en una sola línea (la caja quita los saltos): se busca FN hasta el siguiente campo
+        const one = t.match(/FN(?:;[^:]*)?:(.*?)(?=(?:TEL|EMAIL|ORG|TITLE|URL|NOTE|ADR|BDAY|PHOTO|END)[;:]|$)/i);
+        if (one && one[1].trim()) return unesc(one[1]).trim();
+        const n1 = t.match(/(?:^|[^A-Z])N:([^;]*);([^;]*)/i);
+        if (n1) return (unesc(n1[2]) + ' ' + unesc(n1[1])).trim();
+      }
       const fn = t.match(/^FN(?:;[^:\n]*)?:(.*)$/im);
       if (fn && fn[1].trim()) return unesc(fn[1]).trim();
       const n = t.match(/^N(?:;[^:\n]*)?:([^;\n]*);([^;\n]*)/im);

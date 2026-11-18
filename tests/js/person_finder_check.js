@@ -61,6 +61,8 @@ function make(extra) {
   c = make(); await c.enter('BEGIN:VCARD\nVERSION:3.0\nN:Pérez;Juan David;;;\nFN:Juan David Pérez\nTEL:3001234567\nEND:VCARD');
   assert.strictEqual(c.picked.length, 0); assert.ok(c.box.innerHTML.includes('Juan David') && c.box.innerHTML.includes('52123456'), 'vCard ajena por nombre');
   assert.strictEqual(PF.nameFromForeignCard('MECARD:N:Pérez,Juan David;TEL:300;;'), 'Juan David Pérez');
+  assert.strictEqual(PF.nameFromForeignCard('BEGIN:VCARDVERSION:3.0N:Guzman Amaya;Maria Fernanda;;;FN:Maria Fernanda Guzman AmayaTEL:3001END:VCARD'), 'Maria Fernanda Guzman Amaya'); // pegada sin saltos de línea
+  assert.strictEqual(PF.nameFromForeignCard('BEGIN:VCARDVERSION:3.0N:Ruiz;Ana;;;END:VCARD'), 'Ana Ruiz');
 
   // 8) el QR dinámico de la credencial digital lo valida el servidor y devuelve «cédula|nombres|apellidos»
   global.QrCode = Object.assign({}, global.QrCode, { resolveDynamic: async () => '52123456|Juan David|Pérez' });
