@@ -77,3 +77,11 @@ def test_hojas_multiples_no_se_parten_con_un_papel_mas_corto():
     html = (ROOT / "templates" / "badge_print.html").read_text(encoding="utf-8")
     assert "height:min(calc(${pageH}mm - 0.2mm), 100vh)" in html          # con un papel de 89 mm salían 4 hojas (2 en blanco) para 2 escarapelas
     assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;" in html
+
+
+def test_estado_de_registro_va_primero():
+    ppl = [{"id": "1", "status": "registrado"}, {"id": "2", "status": "no_registrado"}, {"id": "3"}]
+    assert [p["id"] for p in preprint.by_registration(ppl, "si")] == ["1"]
+    assert [p["id"] for p in preprint.by_registration(ppl, "no")] == ["2", "3"]
+    assert len(preprint.by_registration(ppl, "todos")) == 3
+    assert len(preprint.by_registration(ppl, "cualquiera")) == 3
