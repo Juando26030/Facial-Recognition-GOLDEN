@@ -41,6 +41,9 @@
     return list.map((f, i) => `<li class="gw-alm__file"><span>${esc(f.name)} <span class="gw-hint">${mb(f.size)}</span></span>
       <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" ${attr}="${i}" aria-label="Quitar ${esc(f.name)}">Quitar</button></li>`).join('');
   }
+  /* La foto de la cámara del celular llega siempre con el mismo nombre («image.jpg»): se le pone uno propio para distinguirlas en la lista. */
+  const CAM_ICON = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="/static/img/icons.svg#i-camera"/></svg>';
+  function shots(files) { return Array.from(files || []).map((f, i) => new File([f], `foto-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}-${i + 1}.${(f.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`, { type: f.type, lastModified: Date.now() })); }
   const paintReport = () => { $('almNovFilesList').innerHTML = fileList(reportFiles, 'data-nov-rm'); };
 
   /* ---- lista */
@@ -58,6 +61,8 @@
         <textarea class="gw-input" id="almNovNote${n.id}" rows="2" maxlength="500" data-nov-note="${n.id}"></textarea></div>
       <div class="gw-field"><label class="gw-label" for="almNovRf${n.id}">Foto o archivo de cómo quedó <span class="gw-hint">(obligatorio; puedes adjuntar varios)</span></label>
         <input class="gw-input" type="file" id="almNovRf${n.id}" multiple accept="image/*,application/pdf,video/mp4,video/quicktime" data-nov-rf="${n.id}">
+        <div class="gw-row"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nov-cam="${n.id}">${CAM_ICON} Tomar foto con la cámara</button></div>
+        <input type="file" accept="image/*" capture="environment" hidden data-nov-camin="${n.id}">
         <ul class="gw-alm__files" data-nov-rflist="${n.id}">${fileList(sel, 'data-nov-rrm')}</ul></div>
       <div class="gw-row"><button type="button" class="gw-btn gw-btn--primary" data-nov-resolve-go="${n.id}">Resolver y dejar disponible</button>
         <button type="button" class="gw-btn gw-btn--secondary" data-nov-resolve-cancel="${n.id}">Cancelar</button></div></div>`;
@@ -92,6 +97,8 @@
 
   /* ---- reportar */
   $('almNovFiles').addEventListener('change', () => { addFiles(reportFiles, Array.from($('almNovFiles').files)); $('almNovFiles').value = ''; paintReport(); });
+  $('almNovCam').addEventListener('click', () => $('almNovCamIn').click());          // abre la cámara (celular); en computador abre el selector de imágenes
+  $('almNovCamIn').addEventListener('change', () => { addFiles(reportFiles, shots($('almNovCamIn').files)); $('almNovCamIn').value = ''; paintReport(); });
   $('almNovFilesList').addEventListener('click', (e) => { const b = e.target.closest('[data-nov-rm]'); if (b) { reportFiles.splice(Number(b.dataset.novRm), 1); paintReport(); } });
   $('almNovSave').addEventListener('click', async () => {
     const btn = $('almNovSave');
@@ -124,7 +131,17 @@
     addFiles(list, Array.from(inp.files));
     resolveFiles.set(id, list);
     inp.value = '';
-    card.querySelector(`[data-nov-rflist="${id}"]`).innerHTML = fileList(list, 'data-nov-rrm');
+    inp.closest('[data-nov]').querySelector(`[data-nov-rflist="${id}"]`).innerHTML = fileList(list, 'data-nov-rrm');
+  });
+  $('almNovList').addEventListener('change', (e) => {          // foto tomada con la cámara al resolver
+    const cam = e.target.closest('[data-nov-camin]');
+    if (!cam) return;
+    const id = Number(cam.dataset.novCamin);
+    const list = resolveFiles.get(id) || [];
+    addFiles(list, shots(cam.files));
+    resolveFiles.set(id, list);
+    cam.value = '';
+    cam.closest('[data-nov]').querySelector(`[data-nov-rflist="${id}"]`).innerHTML = fileList(list, 'data-nov-rrm');
   });
   $('almNovList').addEventListener('click', async (e) => {
     const t = e.target.closest('button');
@@ -132,6 +149,7 @@
     const art = t.closest('[data-nov]');
     const id = art ? Number(art.dataset.nov) : 0;
     if (t.dataset.novResolve) { const f = art.querySelector('[data-nov-form]'); f.hidden = !f.hidden; if (!f.hidden) f.querySelector('textarea').focus(); return; }
+    if (t.dataset.novCam) { art.querySelector(`[data-nov-camin="${t.dataset.novCam}"]`).click(); return; }
     if (t.dataset.novResolveCancel) { art.querySelector('[data-nov-form]').hidden = true; return; }
     if (t.dataset.novRrm !== undefined) {
       const list = resolveFiles.get(id) || [];

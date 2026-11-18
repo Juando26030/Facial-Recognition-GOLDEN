@@ -12,6 +12,8 @@
               <textarea class="gw-input" id="almNovText" rows="2" maxlength="500" placeholder="Ej.: golpe en la carcasa, no enciende"></textarea></div>
             <div class="gw-field"><label class="gw-label" for="almNovFiles">Foto o archivo del daño <span class="gw-hint">(obligatorio; puedes adjuntar varios: fotos, PDF o video MP4/MOV)</span></label>
               <input class="gw-input" type="file" id="almNovFiles" multiple accept="image/*,application/pdf,video/mp4,video/quicktime" required>
+              <div class="gw-row"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="almNovCam"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg> Tomar foto con la cámara</button><span class="gw-hint">En el celular abre la cámara y la foto queda adjunta.</span></div>
+              <input type="file" id="almNovCamIn" accept="image/*" capture="environment" hidden>
               <ul class="gw-alm__files" id="almNovFilesList" aria-live="polite"></ul></div>
             <div class="gw-field"><label class="gw-label" for="almNovQty">Piezas afectadas <span class="gw-hint">(solo elementos por modelo o por cantidad)</span></label>
               <input class="gw-input" type="number" id="almNovQty" min="1" value="1" inputmode="numeric"></div>

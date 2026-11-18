@@ -46,3 +46,14 @@ def test_a_submission_needs_at_least_one_file_and_respects_the_limits():
 
 def test_names_are_cleaned():
     assert f.safe_name("../../etc/pas<s>wd.pdf") == "passwd.pdf" and f.safe_name("") == "archivo"
+
+
+def test_novedades_permiten_tomar_foto_con_la_camara():
+    """18-nov-2026: además de elegir archivos, reportar y resolver una novedad ofrecen «Tomar foto con la cámara» (input capture=environment) y la foto queda adjunta a la lista."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    panel = (root / "templates" / "_almacen_novedades_panel.html").read_text(encoding="utf8")
+    js = (root / "static" / "js" / "almacen-novedades.js").read_text(encoding="utf8")
+    assert 'id="almNovCam"' in panel and 'id="almNovCamIn"' in panel and 'capture="environment"' in panel
+    assert "data-nov-cam=" in js and "data-nov-camin=" in js and 'capture="environment"' in js and "shots(" in js
+    assert "card.querySelector" not in js          # el manejador de «resolver» ya no usa una variable que no existía
