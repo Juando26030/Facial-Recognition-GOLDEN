@@ -82,11 +82,11 @@ def test_badge_print_data_carries_the_code_only_when_enabled(client, factory, db
     from app.models import EventAttendee
     _admin(client, factory)
     ev = factory.event("en_proceso", code_enabled=True)
-    factory.person(ev, "1001")
+    factory.person(ev, "1001", registered=True)
     db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").update({"code": "QR-77"})
     db.commit()
     data = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").json()
     assert data["code"] == "QR-77"
     off = factory.event("en_proceso")
-    factory.person(off, "1002")
+    factory.person(off, "1002", registered=True)
     assert "code" not in client.get(f"/api/users/1002/badge-print-data?event_id={off.id}").json()

@@ -14,7 +14,7 @@ from app import audit_actions, event_archive, preprint, testperson
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import EventAttendee, PrintLog, StaffUser
-from app.routers import roulette
+from app.routers import parametros, roulette
 
 router = APIRouter(tags=["preprint"])
 
@@ -48,21 +48,56 @@ def _iso(value):
     return (value.isoformat() + "Z") if value else None
 
 
+MAX_CHOICES = 300                     # hasta aquí un campo de texto se ofrece como lista de lo que HAY en la base; con más valores distintos se deja escribir
+NOT_FILTERABLE = ("signature", "file", "image", "photo", "consent", "certificate", "digital_contact")          # no tiene sentido filtrar por estos
+
+
+def _field_value(person: dict, key: str) -> str:
+    if key in ("entity", "role", "opt_1"):
+        return person.get(key) or ""
+    if key.startswith("extra:"):
+        return str((person.get("extras") or {}).get(key[6:], "") or "")
+    return ""
+
+
 @router.get("/events/{event_id}/preprint/fields")
 def preprint_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_ROLE)):
-    """Campos por los que se puede filtrar: los de la ruleta + «Preimpresa»."""
-    _event(event_id, db, staff)
+    """Campos por los que se puede filtrar: los de la ruleta + «Preimpresa». Los de texto se ofrecen como LISTA de los valores que hay en la base (más las opciones definidas en Parámetros, igual
+    que el formulario web), para no escribir al aire; solo si hay demasiados valores distintos se deja escribir."""
+    event = _event(event_id, db, staff)
     fields = roulette.filter_fields(event_id, db, staff)
-    fields.append({"key": preprint.PREPRINTED_FIELD, "label": "Escarapela preimpresa", "type": "choice", "choices": [["no", "Aún no"], ["si", "Ya está preimpresa"]]})
-    return fields
+    cfgs = {c["key"]: c for c in parametros.field_configs_for_event(db, event)}
+    people = roulette.candidates(db, event)
+    out = []
+    for f in fields:
+        key = f["key"]
+        cfg = cfgs.get(key[6:] if key.startswith("extra:") else key, {})
+        if cfg.get("field_type") in NOT_FILTERABLE:
+            continue
+        if f["type"] == "text":
+            seen = {}
+            for opt in cfg.get("options") or []:
+                if str(opt).strip():
+                    seen.setdefault(preprint.norm(opt), str(opt).strip())
+            for person in people:
+                v = _field_value(person, key).strip()
+                if v:
+                    seen.setdefault(preprint.norm(v), v)
+            if 0 < len(seen) <= MAX_CHOICES:
+                f = {**f, "type": "choice", "choices": [[v, v] for v in sorted(seen.values(), key=preprint.norm)]}
+            elif not seen:
+                f = {**f, "type": "choice", "choices": [], "empty": True}          # nadie tiene un valor aún: no hay nada que elegir
+        out.append(f)
+    out.append({"key": preprint.PREPRINTED_FIELD, "label": "Escarapela preimpresa", "type": "choice", "choices": [["no", "Aún no"], ["si", "Ya está preimpresa"]]})
+    return out
 
 
 @router.get("/events/{event_id}/preprint/people")
-def preprint_people(event_id: int, filter: str = "", q: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(_ROLE)):
+def preprint_people(event_id: int, filter: str = "", q: str = "", reg: str = "todos", db: Session = Depends(get_db), staff: StaffUser = Depends(_ROLE)):
     """La base del evento (sin la persona de prueba), recortada por el filtro (JSON `{"conditions":[...]}`) y por el texto del buscador."""
     import json
     event = _event(event_id, db, staff)
-    people = _people(db, event)
+    people = preprint.by_registration(_people(db, event), reg if reg in preprint.REG_MODES else "todos")          # primero el estado de registro; el filtro siguiente trabaja sobre lo que queda
     if filter:
         try:
             filt = json.loads(filter)

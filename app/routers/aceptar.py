@@ -18,7 +18,7 @@ from PIL import Image
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app import brandcolor, company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, privacy, security
+from app import brandcolor, company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, personform, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, RateLimitEvent, User, WebAcceptance
 from app.storage import get_storage, photo_key
@@ -160,6 +160,8 @@ def _limit(request: Request, kind: str, max_hits: int) -> None:
 def _by_token(db: Session, event: Event, token: str):
     att = db.query(EventAttendee).filter(EventAttendee.accept_token == token, EventAttendee.event_id == event.id).first() if token else None
     user = db.query(User).filter(User.id == att.user_id, User.tenant_id == att.tenant_id).first() if att else None
+    if user is not None and personform.user_flow(db, event, user.id).get("facial_off"):
+        return None, None          # su categoría no usa reconocimiento facial: no se le ofrece la aceptación (la página dice lo mismo que para quien no está inscrito)
     return (user, att) if user is not None else (None, None)
 
 
@@ -169,6 +171,8 @@ def _by_cedula(db: Session, event: Event, cedula: str):
         return None, None
     att = db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id == uid, EventAttendee.tenant_id == event.tenant_id).first()
     user = db.query(User).filter(User.id == uid, User.tenant_id == event.tenant_id).first() if att else None
+    if user is not None and personform.user_flow(db, event, user.id).get("facial_off"):
+        return None, None          # su categoría no usa reconocimiento facial: no se le ofrece la aceptación
     return (user, att) if user is not None else (None, None)
 
 

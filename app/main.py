@@ -375,6 +375,8 @@ _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(crm_import_router.router, prefix="/api")      # CRM C1c: importador de SuiteCRM (/api/crm/import/*; solo admin)
 _include(crm_tools_router.router, prefix="/api")      # CRM C3: búsqueda global, filtros guardados, exportar CSV
+from app.routers import crm_inventory as crm_inventory_router
+_include(crm_inventory_router.router, prefix="/api")      # CRM → inventario del evento (/api/events/{id}/crm-inventory)
 _include(crm_quotes_router.router, prefix="/api")      # CRM C3: productos, cotizaciones, proformas (/api/crm/*)
 _include(crm_today_router.router, prefix="/api")      # CRM C4: «Mi día», tableros y ganar una oportunidad (/api/crm/*)
 _include(crm_pipeline_router.router, prefix="/api")      # CRM C2: embudos, oportunidades, leads y actividades (/api/crm/*; mismo apagado por CRM_ENABLED)
@@ -1006,6 +1008,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     context = {
         "person_form_json": json.dumps(person_form).replace("</", "<\\/") if person_form else "null",
         "person_form_env": personform.env_enabled(),
+        "autoprint_rules": bool(person_form and any((v.get("flow") or {}).get("autoprint_off") for v in (person_form.get("variants") or {}).values())),          # alguna categoría tiene apagada la impresión automática: el quiosco consulta antes de imprimir sola
         "person_form_can_design": personform.env_enabled() and max(ROLE_HIERARCHY[r] for r in staff_roles) >= ROLE_HIERARCHY["admin"],
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": _display_role(staff_user.role, staff_user.secondary_role),

@@ -23,7 +23,7 @@ def get_person_form(event_id: int, db: Session = Depends(get_db), staff: StaffUs
     if not personform.env_enabled():
         return _json({"env_enabled": False, "enabled": False, "definition": None})
     configs = parametros.field_configs_for_event(db, event)
-    return _json({**personform.view(db, event, configs), "fields": configs})
+    return _json({**personform.view(db, event, configs), "fields": configs, "categories": event.get_categories()})
 
 
 @router.put("/events/{event_id}/person-form")
@@ -39,4 +39,4 @@ def put_person_form(event_id: int, data: dict, db: Session = Depends(get_db), st
         raise HTTPException(status_code=400, detail=str(e))
     db.commit()
     configs = parametros.field_configs_for_event(db, event)          # lo obligatorio recién escrito
-    return _json({**personform.view(db, event, configs), "fields": configs})
+    return _json({**personform.view(db, event, configs), "fields": configs, "categories": event.get_categories()})

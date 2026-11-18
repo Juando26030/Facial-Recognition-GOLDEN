@@ -8,7 +8,7 @@ from tests.conftest import login
 @pytest.fixture()
 def two_events(factory, db):
     a, b = factory.event("en_proceso"), factory.event("en_proceso")          # mismo cliente «acme»
-    factory.person(a, "1001")
+    factory.person(a, "1001", registered=True)
     factory.person(b, "2002", "Beto", "Ajeno")
     coord = factory.staff("coordinador", "coord_a")
     factory.authorize(a, coord)

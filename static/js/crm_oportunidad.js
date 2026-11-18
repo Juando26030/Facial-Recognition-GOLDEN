@@ -114,6 +114,27 @@
   });
 
   /* ---------------------------------------------------------------- arranque */
+  /* Historial de cotizaciones de la oportunidad: versión, estado, total, fecha, anotación, «Ver» y «Descargar PDF» de cada una. */
+  async function loadQuotes() {
+    const box = $("opQuotes");
+    try {
+      const d = await api("GET", "/api/crm/opportunities/" + id + "/quotes"); box.replaceChildren();
+      if (!d.items.length) { box.appendChild(el("p", "gw-hint", "Todavía no hay cotizaciones de esta oportunidad.")); return; }
+      const ul = el("ul", "crm-history-list");
+      d.items.forEach((q) => {
+        const li = document.createElement("li"), head = el("div", "crm-name-wrap");
+        head.appendChild(el("span", "crm-name", "Cotización " + q.number + " · versión " + q.version + (q.is_last ? " · la última" : "") + (q.archived ? " · archivada" : "")));
+        head.appendChild(el("span", "crm-sub", q.stage + " · " + fmtMoney(q.total, q.currency) + " · " + fmtDateTime(q.created_at)));
+        head.appendChild(el("span", "crm-sub", q.meeting_notes ? "Anotación: " + q.meeting_notes : "Sin anotación"));
+        const acts2 = el("div", "crm-card-actions"), v = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Ver"), p = el("a", "gw-btn gw-btn--secondary gw-btn--sm", "Descargar PDF");
+        v.href = "/crm/cotizaciones/" + q.id; v.setAttribute("aria-label", "Ver la cotización " + q.number + " versión " + q.version);
+        p.href = "/api/crm/quotes/" + q.id + "/pdf"; p.target = "_blank"; p.rel = "noopener"; p.setAttribute("aria-label", "Descargar el PDF de la cotización " + q.number + " versión " + q.version);
+        acts2.appendChild(v); acts2.appendChild(p); li.appendChild(head); li.appendChild(acts2); ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    } catch (e) { box.replaceChildren(stateBlock("error", "No se pudo cargar las cotizaciones", e.message, loadQuotes)); }
+  }
+
   async function init() {
     try {
       meta = await X.meta(); const [o, own] = await Promise.all([api("GET", "/api/crm/opportunities/" + id), X.owners()]); opp = o;
@@ -123,6 +144,7 @@
         contacts.forEach((c) => sel.appendChild(new Option(c.full_name + (c.is_primary ? " (principal de la cuenta)" : ""), c.id)));
       } catch (e) { /* sin contactos: el campo queda en «Sin contacto» */ }
       fill(); $("opLoading").hidden = true; $("opMain").hidden = false; $("opActions").hidden = false;
+      loadQuotes();
       acts = X.activityList($("opActs"), { opportunity_id: id }, () => { /* la fecha de la próxima actividad se ve al recargar la ficha */ });
     } catch (e) { showError(e.status === 404 ? "No encontramos esta oportunidad" : "No se pudo cargar la oportunidad", e.status === 404 ? "Puede que se haya borrado. Vuelve a la lista." : e.message, e.status === 404 ? null : init); }
   }

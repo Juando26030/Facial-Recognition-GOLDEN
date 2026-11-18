@@ -26,10 +26,10 @@
       </select>`;
     }
     if (config.field_type === 'categories') {
-      // Categoría(s) de la persona en este evento (ítem 14): casillas, se puede marcar más de una.
-      const selected = Array.isArray(value) ? value : [];
-      return `<div style="display:flex; gap:6px 14px; flex-wrap:wrap;">${(config.options || []).map(o =>
-        `<label style="display:flex; gap:5px; align-items:center; font-weight:400; text-transform:none; margin:0;"><input type="checkbox" name="categories" value="${esc(o)}" ${selected.includes(o) ? 'checked' : ''} style="width:16px; height:16px;"> ${esc(o)}</label>`).join('')}</div>`;
+      // Categoría de la persona en este evento: UNA sola (19-nov-2026). Define su escarapela y su formulario; «Sin categoría» la deja en blanco. Si traía varias (datos viejos), se muestra la primera.
+      const selected = Array.isArray(value) && value.length ? value[0] : '';
+      const radio = (v, label, on) => `<label style="display:flex; gap:5px; align-items:center; font-weight:400; text-transform:none; margin:0;"><input type="radio" name="categories" value="${esc(v)}" ${on ? 'checked' : ''} style="width:16px; height:16px;"> ${esc(label)}</label>`;
+      return `<div role="radiogroup" style="display:flex; gap:6px 14px; flex-wrap:wrap;">${radio('', 'Sin categoría', !selected)}${(config.options || []).map(o => radio(o, o, o === selected)).join('')}</div>`;
     }
     if (config.field_type === 'digital_contact') {
       // Escarapela digital (ítem 17): solo correo (2026-09-21, se descartó WhatsApp por costo) — el

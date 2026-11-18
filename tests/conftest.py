@@ -250,7 +250,7 @@ def factory(db):
             db.add(EventStaffAuthorization(event_id=event.id, staff_user_id=staff.id))
             db.commit()
 
-        def person(self, event, user_id="1001", first_name="Ana", last_name="Prueba", attend=True):
+        def person(self, event, user_id="1001", first_name="Ana", last_name="Prueba", attend=True, registered=False):
             from app.models import EventAttendee
 
             u = db.query(User).filter_by(id=user_id, tenant_id=event.tenant_id).first()
@@ -260,6 +260,10 @@ def factory(db):
                 db.commit()
             if attend:
                 db.add(EventAttendee(event_id=event.id, user_id=u.id, tenant_id=event.tenant_id))
+                db.commit()
+            if registered:          # 19-nov-2026: la escarapela solo se imprime a quien ya está registrado (acreditado) en el evento
+                from app.models import AccessLog
+                db.add(AccessLog(tenant_id=event.tenant_id, user_id=u.id, event_id=event.id, record_type="Existente", registration_method="tradicional"))
                 db.commit()
             return u
 

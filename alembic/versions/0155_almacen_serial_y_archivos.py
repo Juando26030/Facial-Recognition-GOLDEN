@@ -3,14 +3,14 @@
 - inventory_units.code: String(12) → String(32) (cabe un serial real); `serial` se iguala a `code` (en staging solo hay datos de prueba; Almacén sigue apagado en producción).
 - Tabla nueva inventory_novelty_files (foto, PDF o video por novedad). Código viejo: ignora la tabla y lee `code` como siempre.
 
-Revision ID: 0153_almacen_serial_y_archivos
-Revises: 0152_almacen_novedades
+Revision ID: 0155_almacen_serial_y_archivos
+Revises: 0154_crm_implica_categorias
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0153_almacen_serial_y_archivos"
-down_revision = "0152_almacen_novedades"
+revision = "0155_almacen_serial_y_archivos"
+down_revision = "0154_crm_implica_categorias"
 branch_labels = None
 depends_on = None
 

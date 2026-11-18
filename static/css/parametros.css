@@ -136,6 +136,7 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-pf-card:hover { border-color: var(--gw-border-strong); }
 .gw-pf-card:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-pf-card--sel { border-color: var(--gw-gold-1); box-shadow: var(--gw-ring); }
+.gw-pf-card--hidden { opacity: .55; border-style: dashed; }          /* campo que esa categoría no lleva */
 .gw-pf-card--drag { opacity: 0.5; }
 .gw-pf-card--dl { box-shadow: inset 5px 0 0 var(--gw-gold-2); }
 .gw-pf-card--dr { box-shadow: inset -5px 0 0 var(--gw-gold-2); }
@@ -149,3 +150,6 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-pf-gap--over { min-height: var(--gw-sp-6); background: var(--gw-warn-bg); outline: 2px dashed var(--gw-warn-line); }
 .gw-pf-preview .gw-modal { max-width: 56rem; }
 .gw-pf-preview .gw-fields-row { margin-bottom: var(--gw-sp-3); }
+
+/* 18-nov-2026 · Zonas e inventarios: el campo del nombre se encogía a cero (la celda tiene min-width:0 y la tabla ajusta sola). Ancho mínimo para que el nombre siempre se lea y se edite. */
+.gw-parametros .gw-table input.area-name, .gw-parametros .gw-table input.item-name { min-width: 12rem; width: 100%; box-sizing: border-box; }

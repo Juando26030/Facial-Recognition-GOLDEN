@@ -11,7 +11,7 @@
   const RENDER_CAP = 500;                                   // filas dibujadas (el resto se alcanza buscando o filtrando); «elegir todas» sí toma todas las que cumplen
   const PRINT_WINDOW = 'goldenweb_print';
 
-  const state = { mode: 'hand', conds: [], selected: new Set(), people: [], total: 0, preprinted: 0, pending: 0, canPreprint: true, maxBatch: 300, eventStatus: '', busy: false };
+  const state = { mode: 'hand', reg: 'todos', conds: [], selected: new Set(), people: [], total: 0, preprinted: 0, pending: 0, canPreprint: true, maxBatch: 300, eventStatus: '', busy: false };
   let fields = [];
   let loadTimer = null, loadSeq = 0;
 
@@ -23,7 +23,7 @@
   }
   const toast = (m, t) => (window.showToast ? window.showToast(m, t) : null);
   const fmt = (iso) => { try { return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }); } catch (e) { return ''; } };
-  const defaultValue = (f) => (f.type === 'choice' ? f.choices[0][0] : '');
+  const defaultValue = (f) => (f.type === 'choice' && f.choices && f.choices.length ? f.choices[0][0] : '');
   const activeConds = () => state.conds.filter((c) => c.value !== '' && c.value != null);
 
   /* ---------- Carga ---------- */
@@ -34,6 +34,7 @@
     const conds = state.mode === 'filter' ? activeConds() : [];
     const qs = new URLSearchParams();
     if (q) qs.set('q', q);
+    if (state.reg !== 'todos') qs.set('reg', state.reg);
     if (conds.length) qs.set('filter', JSON.stringify({ conditions: conds }));
     try {
       const d = await j(`${API}/people?${qs}`);
@@ -90,7 +91,7 @@
       const f = fields.find((x) => x.key === c.field) || fields[0];
       const opts = fields.map((x) => `<option value="${esc(x.key)}" ${x.key === c.field ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
       let v;
-      if (f.type === 'choice') v = `<select class="gw-select" id="ppv${i}" data-v="${i}">${f.choices.map(([val, l]) => `<option value="${esc(val)}" ${c.value === val ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+      if (f.type === 'choice') v = f.choices && f.choices.length ? `<select class="gw-select" id="ppv${i}" data-v="${i}" aria-label="Valor de la condición ${i + 1}">${f.choices.map(([val, l]) => `<option value="${esc(val)}" ${c.value === val ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<select class="gw-select" id="ppv${i}" disabled aria-label="Valor de la condición ${i + 1}"><option>Nadie tiene un valor todavía</option></select>`;
       else if (f.type === 'datetime') v = `<input type="datetime-local" class="gw-input" id="ppv${i}" data-v="${i}" value="${esc(c.value || '')}">`;
       else v = `<select class="gw-select" data-op="${i}" aria-label="Condición ${i + 1}: comparación"><option value="equals" ${c.op !== 'contains' ? 'selected' : ''}>es igual a</option><option value="contains" ${c.op === 'contains' ? 'selected' : ''}>contiene</option></select><input type="text" class="gw-input" id="ppv${i}" data-v="${i}" value="${esc(c.value || '')}">`;
       return `<div class="gw-ruleta-cond"><div class="gw-field"><label class="gw-label" for="ppf${i}">Campo</label><select class="gw-select" id="ppf${i}" data-f="${i}">${opts}</select></div><div class="gw-field"><label class="gw-label" for="ppv${i}">Valor</label><div class="gw-ruleta-cond__value">${v}</div></div><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${i}">Quitar</button></div>`;
@@ -121,6 +122,7 @@
   $('ppModeHand').addEventListener('click', () => setMode('hand'));
   $('ppModeFilter').addEventListener('click', () => setMode('filter'));
   $('ppSearch').addEventListener('input', () => scheduleLoad(250));
+  $('ppReg').addEventListener('change', (e) => { state.reg = e.target.value; state.selected.clear(); scheduleLoad(0); });
 
   /* ---------- Selección ---------- */
   $('ppList').addEventListener('change', (e) => {

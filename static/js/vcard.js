@@ -1,4 +1,4 @@
-/* QR en formato vCard (10-nov-2026, Fase 10 bloque C): al escanear la escarapela con el celular se puede GUARDAR EL CONTACTO (nombre y, si se comparte, teléfono).
+/* QR en formato vCard (10-nov-2026, Fase 10 bloque C): al escanear la escarapela con el celular se puede GUARDAR EL CONTACTO (nombre y, si vienen con valor: empresa, cargo/rol, teléfono, correo y categorías).
    El código que lee Golden (la cédula del QR impreso o el código firmado «gwq1…» de la credencial digital / Wallet) va en el campo NOTE con la marca «GW:». Ejemplo:
 
      BEGIN:VCARD
@@ -9,7 +9,7 @@
      NOTE:GW:1016100329|Ana|Perez
      END:VCARD
 
-   GWVcard.build({ first_name, last_name, phone, note })  -> texto de la vCard (para dibujar el QR). Solo trae los campos con valor; sin nombre, FN = «Asistente».
+   GWVcard.build({ first_name, last_name, phone, email, org, title, categories, note })  -> texto de la vCard (para dibujar el QR). Solo trae los campos con valor; sin nombre, FN = «Asistente».
    GWVcard.unwrap(texto)                                  -> el código de adentro si es una vCard de Golden; si no, el MISMO texto (el formato anterior sigue valiendo tal cual).
    GWVcard.isVcard(texto)                                 -> true si empieza con BEGIN:VCARD.
    GWVcard.QR_LEVEL                                       -> 'L': la vCard es más larga que el formato anterior; con nivel L el QR queda en una versión más chica (menos cuadritos, más grandes
@@ -33,15 +33,45 @@
     const full = [first, last].filter(Boolean).join(' ') || 'Asistente';
     const phone = String(d.phone == null ? '' : d.phone).replace(/[^\d+()\-.\s]/g, '').trim();
     const lines = ['BEGIN:VCARD', 'VERSION:3.0', `N:${esc(last)};${esc(first)};;;`, `FN:${esc(full)}`];
+    if (String(d.org == null ? '' : d.org).trim()) lines.push(`ORG:${esc(d.org)}`);
+    if (String(d.title == null ? '' : d.title).trim()) lines.push(`TITLE:${esc(d.title)}`);
     if (phone) lines.push(`TEL:${esc(phone)}`);
+    const mail = String(d.email == null ? '' : d.email).trim();
+    if (mail && mail.indexOf('@') > 0) lines.push(`EMAIL:${esc(mail)}`);
+    const cats = String(d.categories == null ? '' : d.categories).split(',').map((c) => c.trim()).filter(Boolean);
+    if (cats.length) lines.push('CATEGORIES:' + cats.map(esc).join(','));
     lines.push(`NOTE:${PREFIX}${esc(d.note)}`, 'END:VCARD');
     return lines.join('\n');
   }
+
+  /* 18-nov-2026: otros dos formatos de QR (cada QR de la escarapela elige el suyo, ver badge-render.js qrText):
+       MECARD  «MECARD:N:Apellido,Nombre;TEL:…;EMAIL:…;NOTE:GW:código;;»  más corto que la vCard (no admite empresa ni rol); iPhone y Android lo leen distinto, probar en los celulares del evento.
+       ENLACE  «https://…/tarjeta/<token>#GW:código»  el QR solo lleva el enlace de la tarjeta de la persona (que muestra datos SOLO si ella aceptó compartirlos); el código va en el fragmento (#), que el
+               celular no envía a ningún servidor, y los lectores de Golden lo sacan sin red. */
+  function mesc(v) { return String(v == null ? '' : v).replace(CTRL, ' ').replace(/\s+/g, ' ').trim().replace(/([\\;,:])/g, '\\$1'); }
+  function buildMecard(o) {
+    const d = o || {};
+    const first = String(d.first_name == null ? '' : d.first_name).trim(), last = String(d.last_name == null ? '' : d.last_name).trim();
+    const phone = String(d.phone == null ? '' : d.phone).replace(/[^\d+()\-.\s]/g, '').trim();
+    const mail = String(d.email == null ? '' : d.email).trim();
+    let t = 'MECARD:N:' + mesc(last) + ',' + mesc(first || (last ? '' : 'Asistente')) + ';';
+    if (phone) t += 'TEL:' + mesc(phone) + ';';
+    if (mail && mail.indexOf('@') > 0) t += 'EMAIL:' + mesc(mail) + ';';
+    return t + 'NOTE:' + PREFIX + mesc(d.note) + ';;';
+  }
+  function buildLink(url, code) {
+    const u = String(url == null ? '' : url).trim().split('#')[0];
+    return u + '#' + PREFIX + encodeURIComponent(String(code == null ? '' : code));
+  }
+  function isMecard(text) { return /^\s*MECARD:/i.test(String(text == null ? '' : text)); }
+  function isLink(text) { return /^https?:\/\/\S+#GW:\S*$/i.test(String(text == null ? '' : text).trim()); }
 
   function isVcard(text) { return /^\s*BEGIN:VCARD/i.test(String(text == null ? '' : text)); }
 
   function unwrap(text) {
     const raw = String(text == null ? '' : text);
+    if (isLink(raw)) { const frag = raw.trim().slice(raw.trim().indexOf('#GW:') + 4); try { return decodeURIComponent(frag).trim(); } catch (e) { return frag.trim(); } }
+    if (isMecard(raw)) { const mm = raw.match(/NOTE:GW:((?:\\.|[^;\\])*);/i); return mm ? mm[1].replace(/\\(.)/g, '$1').trim() : raw; }
     if (!isVcard(raw)) return raw;
     const t = raw.trim().replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, '');            // líneas dobladas (RFC) y saltos de cualquier sistema
     let m = t.match(/^NOTE(?:;[^:\n]*)?:GW:(.*)$/im);
@@ -50,7 +80,7 @@
     return unesc(m[1].replace(/END:VCARD\s*$/i, '')).trim();
   }
 
-  const api = { build, unwrap, isVcard, QR_LEVEL, PREFIX };
+  const api = { build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, QR_LEVEL, PREFIX };
   if (typeof window !== 'undefined') window.GWVcard = api;
   if (typeof module !== 'undefined') module.exports = api;       // para las pruebas en Node
 })();

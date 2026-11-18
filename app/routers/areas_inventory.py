@@ -408,6 +408,32 @@ def _get_item(db: Session, event, item_id: int, *, active_only: bool = False) ->
     return item
 
 
+def multi_units_allowed(item, parent) -> bool:
+    """¿Se pueden entregar varias unidades de este ítem en una misma entrega? 19-nov-2026: sí si lo marcaron «varias unidades a la vez»; si no, lo decide el límite: con «Máx. por persona» propio mayor que 1 sí
+    (con 1, no), y sin límite propio, sí cuando el grupo permite más de 1 en total (el grupo igual manda: la suma de todas sus opciones no pasa de su máximo)."""
+    if item.allow_multiple:
+        return True
+    if item.max_per_person is not None:
+        return item.max_per_person > 1
+    return parent is not None and parent.max_per_person is not None and parent.max_per_person > 1
+
+
+def missing_required_choice(db: Session, event_id: int, user_id: str, wanted: dict, delivered: dict) -> str:
+    """19-nov-2026: un grupo con «Máx. por persona = 1» es de ELEGIR UNA (ni dos ni ninguna): si la persona todavía no recibió nada del grupo y quedan opciones con disponible, la entrega debe traer una.
+    Devuelve el mensaje del primer grupo sin elegir, o «» si todo está bien. (Más de 1 unidad ya lo frena subcat.inventory_limit_problem.)"""
+    groups = db.query(InventoryItem).filter(InventoryItem.event_id == event_id, InventoryItem.archived_at.is_(None), InventoryItem.max_per_person == 1, InventoryItem.parent_id.is_(None)).order_by(InventoryItem.id).all()
+    for g in groups:
+        kids = [c for c in db.query(InventoryItem).filter(InventoryItem.parent_id == g.id, InventoryItem.archived_at.is_(None)).order_by(InventoryItem.id)]
+        if not kids or not any(c.initial_qty - delivered.get(c.id, 0) > 0 for c in kids):
+            continue
+        if any(c.id in wanted for c in kids):
+            continue
+        if subcat.units_of(db, event_id, [g.id] + [c.id for c in kids], user_id) >= 1:
+            continue
+        return f"Elige una opción de «{g.name}» (es obligatorio elegir una): " + ", ".join(c.name for c in kids if c.initial_qty - delivered.get(c.id, 0) > 0)
+    return ""
+
+
 def _qty(value, minimum: int = 0) -> int:
     try:
         n = int(value)
@@ -584,7 +610,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
             raise HTTPException(status_code=409, detail=f"«{item.name}» ya se le entregó a esta persona y este ítem no se puede repetir. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
         if item.requires_dwell and area_dwell_svc.prize_active(event) and not area_dwell_svc.qualifies(db, event, user.id):
             raise HTTPException(status_code=409, detail=f"«{item.name}» solo se entrega a quien cumplió el {area_dwell_svc.threshold(event)} % de permanencia del evento y esta persona todavía no lo alcanza")
-        if qty > 1 and not item.allow_multiple:
+        if qty > 1 and not multi_units_allowed(item, group_rows.get(item.parent_id) if item.parent_id else None):
             raise HTTPException(status_code=400, detail=f"«{item.name}» solo se entrega de a 1 unidad por vez")
         available = item.initial_qty - delivered.get(item_id, 0)
         if qty > available:
@@ -592,6 +618,10 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         problem = subcat.inventory_limit_problem(db, event.id, item, qty, group_rows, user.id, {k: v for k, v in wanted.items() if k != item_id})
         if problem:
             raise HTTPException(status_code=409, detail=problem)
+
+    missing = missing_required_choice(db, event.id, user.id, wanted, delivered)
+    if missing:
+        raise HTTPException(status_code=400, detail=missing)
 
     batch, now = uuid.uuid4().hex, utcnow()
     for item_id, qty in wanted.items():
@@ -602,7 +632,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     db.commit()
     delivered = _delivered_by_item(db, event.id)
     return {
-        "result": "OK", "data": _person_data(user),
+        "result": "OK", "data": _person_data(user), "batch_id": batch,
         "delivered": [{"name": items[i].name, "qty": q} for i, q in wanted.items()],
         "stock": [_item_json(items[i], delivered.get(i, 0)) for i in wanted],
     }
@@ -617,7 +647,7 @@ def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: Staff
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
     rows = db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id).order_by(InventoryDelivery.delivered_at.desc(), InventoryDelivery.id.desc()).limit(60).all()
     return [{
-        "time": r.delivered_at.isoformat(), "user_id": r.user_id,
+        "time": r.delivered_at.isoformat(), "user_id": r.user_id, "batch_id": r.batch_id,
         "name": f"{users[r.user_id].first_name or ''} {users[r.user_id].last_name or ''}".strip() if r.user_id in users else "",
         "item": items.get(r.item_id, ""), "qty": r.qty,
     } for r in rows]

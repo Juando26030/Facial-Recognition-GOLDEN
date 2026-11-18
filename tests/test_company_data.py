@@ -26,11 +26,11 @@ def test_no_published_text_carries_the_nit_without_its_check_digit():
 
 
 def test_privacy_email_is_a_single_one_and_the_old_variable_is_only_an_obsolete_alias(monkeypatch):
-    monkeypatch.setenv("LEGAL_PRIVACY_EMAIL", "info@goldenlogisticas.com")
+    monkeypatch.setenv("LEGAL_PRIVACY_EMAIL", "soporteit@goldenlogisticas.com")
     monkeypatch.setenv("PRIVACY_EMAIL", "soporteit@goldenlogisticas.com")
     assert legal.info()["privacy_email"] == "soporteit@goldenlogisticas.com"                    # manda PRIVACY_EMAIL
     monkeypatch.delenv("PRIVACY_EMAIL")
-    assert legal.info()["privacy_email"] == "info@goldenlogisticas.com"                         # alias obsoleto: solo si falta la nueva
+    assert legal.info()["privacy_email"] == "soporteit@goldenlogisticas.com"                         # alias obsoleto: solo si falta la nueva
 
 
 def test_policy_url_uses_the_apps_host(monkeypatch):

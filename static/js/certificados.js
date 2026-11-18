@@ -102,7 +102,7 @@
       for (var i = 0; i < recipients.length; i++) {
         var u = recipients[i];
         pb.update(i / recipients.length, 'Generando ' + (i + 1) + ' de ' + recipients.length + ': ' + (u.first_name || '') + ' ' + (u.last_name || ''));
-        var data = await (await fetch('/api/users/' + encodeURIComponent(u.id) + '/badge-print-data?event_id=' + EVENT_ID)).json();
+        var data = await (await fetch('/api/users/' + encodeURIComponent(u.id) + '/badge-print-data?certificate=1&event_id=' + EVENT_ID)).json();
         BadgeRender.renderBadge(stage, template, data, { eventId: EVENT_ID });
         await document.fonts.ready;
         await Promise.all(Array.from(stage.querySelectorAll('img')).map(function (img) { return img.decode ? img.decode().catch(function () {}) : null; }));
