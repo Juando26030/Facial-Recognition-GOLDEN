@@ -664,6 +664,9 @@
 .gw-card-row__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
 .gw-card-row__meta { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-cards > .gw-card-row { height: 100%; }                                   /* tarjetas de la misma fila: igual altura */
+.gw-cards > .gw-card-row > .gw-card-row__head { align-items: flex-start; }    /* título y estado arriba, siempre en la misma posición */
+.gw-cards > .gw-card-row > .gw-card-row__actions { margin-top: auto; }       /* el botón queda al pie de todas */
 .gw-card-row__actions .gw-btn { flex: 1 1 auto; }
 @media (max-width: 768px) {
   .gw-table-cards thead { display: none; }

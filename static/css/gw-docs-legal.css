@@ -76,7 +76,9 @@
 /* Legalizaciones por rubro (14-nov-2026): tabla de gastos y resumen de cuatro cifras. Solo tokens --gw-*. */
 .gw-leg-table td { vertical-align: top; }
 .gw-leg-table .gw-leg-num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--gw-fw-bold); }
-.gw-leg-table td .gw-btn { margin-top: var(--gw-sp-1); }
+.gw-leg-table td .gw-btn { margin-top: 0; }
+.gw-leg-cell { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }       /* soporte y acciones: una línea base común, botones del mismo alto */
+.gw-leg-cell .gw-btn { flex: 0 0 auto; min-width: 6.5rem; min-height: var(--gw-tap); white-space: nowrap; }
 .gw-leg-table td:last-child { white-space: nowrap; }
 .gw-leg-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gw-sp-3); }
 @media (max-width: 900px) { .gw-leg-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

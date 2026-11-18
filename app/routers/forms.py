@@ -502,7 +502,8 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
 def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     src = _get_form(db, event, form_id)
-    name = f"{src.name} (copia)"
+    from app.legalization_svc import copy_name
+    name = copy_name(src.name, [n for (n,) in db.query(WebForm.name).filter(WebForm.event_id == event.id).all()], 200)      # «X (copia)», «X (copia 1)», «X (copia 2)»…
     copy = WebForm(event_id=event.id, name=name, slug=_unique_slug(db, event.id, name), manual_status="pruebas", design_json=src.design_json,
                    settings_json=src.settings_json, capacity=src.capacity, test_key=secrets.token_urlsafe(12), created_by_id=staff.id)
     db.add(copy)

@@ -185,7 +185,7 @@
     const photo = x.has_evidence
       ? `<a href="${API}/expenses/${x.id}/evidence" target="_blank" rel="noopener" aria-label="Abrir la foto del soporte en una pestaña nueva"><img class="gw-card-row__thumb" src="${API}/expenses/${x.id}/evidence" alt="Foto del soporte" loading="lazy"></a>` : '';
     const attach = isEditable() && !x.archived ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-attach="${x.id}">${icon('camera')} ${x.has_evidence ? 'Cambiar foto' : 'Adjuntar foto'}</button>` : '';
-    return flag + photo + attach;
+    return `<div class="gw-leg-cell">${flag}${photo}${attach}</div>`;
   }
 
   function actionsCell(x) {
@@ -199,7 +199,7 @@
       out.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${x.id}">${icon('undo')} Restaurar</button>`);
       if (isSuper) out.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${x.id}">${icon('trash')} Eliminar definitivamente</button>`);
     }
-    return out.join(' ');
+    return `<div class="gw-leg-cell gw-leg-cell--actions">${out.join('')}</div>`;
   }
 
   function paintPanel(kind) {

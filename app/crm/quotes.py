@@ -153,7 +153,9 @@ def create_template(db: Session, data: dict) -> CrmDocTemplate:
 def duplicate_template(db: Session, template_id: int) -> CrmDocTemplate:
     """Copia una plantilla (textos y diseño con sus archivos) como una nueva, no predeterminada: «Nombre (copia)»."""
     src = _get(db, CrmDocTemplate, template_id, "Plantilla")
-    t = CrmDocTemplate(kind=src.kind, name=f"{src.name} (copia)"[:80], header_text=src.header_text, greeting_text=src.greeting_text, footer_text=src.footer_text, logo_key=src.logo_key, is_default=False)
+    from app.legalization_svc import copy_name
+    names = [n for (n,) in db.query(CrmDocTemplate.name).filter(CrmDocTemplate.kind == src.kind).all()]
+    t = CrmDocTemplate(kind=src.kind, name=copy_name(src.name, names, 80), header_text=src.header_text, greeting_text=src.greeting_text, footer_text=src.footer_text, logo_key=src.logo_key, is_default=False)
     db.add(t)
     db.flush()
     lay = doc_assets.copy_layout(src, t)
