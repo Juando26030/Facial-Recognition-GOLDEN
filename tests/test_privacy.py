@@ -204,6 +204,7 @@ def test_business_data_and_retention_come_from_the_environment(client, monkeypat
     assert "Calle 1 # 2-3" in client.get("/terminos").text
     assert "10 días después de que finalice el evento" in client.get("/privacidad").text
     assert "15 días calendario" in client.get("/reembolsos").text
+    assert "en nombre y por cuenta del Organizador" in client.get("/reembolsos").text          # quién cobra: el Organizador o Golden en nombre de él; el dinero es del Organizador
 
 
 def test_jurisdiction_is_bogota_and_international_events_are_covered(client):

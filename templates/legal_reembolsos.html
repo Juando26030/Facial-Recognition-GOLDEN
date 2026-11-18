@@ -12,7 +12,12 @@
 </div>
 {% endif %}
 <h2>1. Quién cobra</h2>
-<p>El cobro de la inscripción lo procesa <b>{{ L.name }}</b> (NIT {{ L.nit }}) a través de Wompi, en pesos colombianos (COP). Los pagos con tarjeta no muestran a Golden tus datos de tarjeta.</p>
+<p>El cobro de la inscripción se procesa a través de Wompi, en pesos colombianos (COP). Según el evento, lo hace una de estas dos partes:</p>
+<ul>
+<li><b>El Organizador del evento</b> (la empresa tercera a cuyo nombre es el evento) cobra directamente, con su propia cuenta de Wompi.</li>
+<li><b>{{ L.name }}</b> (NIT {{ L.nit }}) cobra <b>en nombre y por cuenta del Organizador</b>, como operador de la plataforma de inscripción.</li>
+</ul>
+<p>En los dos casos <b>el dinero corresponde al Organizador</b> del evento: {{ L.name }} no cobra para sí ni es la parte que decide las devoluciones. La política de devolución de cada evento la define y la aplica la empresa tercera encargada de ese evento (el Organizador); esta página recoge las reglas generales y las condiciones que fije cada formulario. Los pagos con tarjeta no muestran a Golden tus datos de tarjeta.</p>
 
 <h2>2. Cuándo procede un reembolso</h2>
 <ul>
@@ -23,9 +28,10 @@
 <p><span class="pending">[pendiente de revisión legal: derecho de retracto en compras a distancia (Ley 1480 de 2011, art. 47) y sus excepciones para servicios con fecha determinada]</span></p>
 
 <h2>3. Cómo solicitarlo</h2>
-<p>Escribe a <a href="mailto:{{ L.email }}">{{ L.email }}</a> con: nombre y documento, el evento, la <b>referencia del pago</b> (empieza por «GW-») y el motivo. Puedes hacerlo hasta {{ form_refund.days ~ ' días calendario' if form_refund and form_refund.days else L.refund_days }} después del pago.</p>
+<p>Escribe a <a href="mailto:{{ L.email }}">{{ L.email }}</a> con: nombre y documento, el evento, la <b>referencia del pago</b> (empieza por «GW-») y el motivo. Puedes hacerlo hasta {{ form_refund.days ~ ' días calendario' if form_refund and form_refund.days else L.refund_days }} después del pago. {{ L.name }} recibe tu solicitud y la tramita con el Organizador del evento, que es quien decide si procede y devuelve el dinero (directamente o por medio de {{ L.name }}, según quién haya hecho el cobro).</p>
 
 <h2>4. Cómo se devuelve el dinero</h2>
+<p>El dinero vuelve por el mismo camino por el que se cobró: si cobró el Organizador, te lo devuelve él desde su cuenta de Wompi; si cobró {{ L.name }} en nombre del Organizador, la devolución se hace desde esa cuenta por instrucción del Organizador.</p>
 <ul>
 <li><b>Pago con tarjeta, reembolso total:</b> se anula la transacción y el banco emisor devuelve el valor a tu tarjeta (suele tardar entre unos días y un ciclo de facturación, según el banco).</li>
 <li><b>PSE, Nequi, Bancolombia, Daviplata y otros medios, o reembolsos parciales:</b> se devuelve por transferencia a una cuenta que tú indiques, a nombre del pagador.</li>
