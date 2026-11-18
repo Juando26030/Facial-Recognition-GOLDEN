@@ -406,7 +406,7 @@ def _upsert_attendee_cached(db: Session, event_id: int, user_id: str, tenant_id:
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
-    """Categorías (ítem 14) de `raw` (lista o texto separado por , ; |) que existen en el evento,
+    """Categoría (ítem 14; desde 19-nov-2026 una sola por persona) de `raw` (lista o texto separado por , ; |) que existe en el evento,
     con la escritura oficial del evento. `auto_add=True` (carga de roster) agrega al evento las
     que no existían todavía, para que importar un Excel con categorías nuevas no las pierda."""
     if isinstance(raw, str):
@@ -426,7 +426,7 @@ def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
             result.append(canonical)
     if auto_add:
         event.set_categories(known)
-    return result
+    return result[:1]          # UNA sola categoría por persona (19-nov-2026): define su escarapela y su formulario; si llegan varias, vale la primera
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
