@@ -188,7 +188,7 @@ def test_quote_editor_never_trusts_screen_totals_and_warns_about_unsaved_changes
     js = _read("static/js/crm_cotizacion.js")
     body = js.split("function body()", 1)[1].split("async function save", 1)[0]
     assert "subtotal" not in body and "total" not in body.replace("lines", ""), "los totales no se envían: el servidor los calcula"
-    assert "beforeunload" in js and "updated_at" in body
+    assert "GWParams" in js and "beforeunload" in _read("static/js/params-save.js") and "updated_at" in body          # el aviso de cambios sin guardar lo da la barra única (params-save.js)
 
 
 def test_free_text_searches_fold_accents_in_sql_for_columns_without_norm():
