@@ -174,3 +174,27 @@ def test_badge_print_data_brings_the_card_link_and_the_designer_offers_the_four_
     assert '"card_url": card_url' in br and "contacts.person_card" in br
     ed = (ROOT / "templates/badge_editor.html").read_text(encoding="utf-8")
     assert all(f"['{m}'," in ed for m in ("vcard", "mecard", "link", "code")) and "p_qr_mode" in ed
+
+
+# ------------------------------------------------------------------ 19-nov-2026: escarapela digital con la plantilla de la física
+@pytest.mark.parametrize("mode", ["vcard", "mecard", "link", "code"])
+def test_digital_qr_modes_keep_the_dynamic_code_readable(mode):
+    code = "gwq1.123.4567.0123456789abcdef0123"
+    wrapped = {"vcard": qr_vcard.build("Ana", "Pérez", "300", code, "a@b.co"), "mecard": qr_vcard.build_mecard("Ana", "Pérez", "300", code, "a@b.co"),
+               "link": qr_vcard.build_link("https://app.golden-eventos.com/tarjeta/AbCdEfGhIjKlMnOpQrSt", code), "code": code}[mode]
+    assert qr_vcard.unwrap(wrapped) == code
+
+
+def test_digital_page_draws_the_template_qr_with_the_dynamic_code_and_data_carries_the_qr_fields():
+    page = (ROOT / "templates/digital_badge.html").read_text(encoding="utf-8")
+    assert "redrawQrs(host, code)" in page and "qrPayload:" in page and "data-gw-qr" in page
+    src = (ROOT / "app/routers/digital_public.py").read_text(encoding="utf-8")
+    assert "qr_needed_keys(template)" in src and "qr_wants_link(template)" in src and '"card_url"' in src
+
+
+def test_qr_needed_keys_follow_the_designs_fields():
+    pytest.importorskip("fastapi")
+    from app.routers.digital_public import qr_needed_keys, qr_wants_link
+    tpl = {"elements": [{"type": "qr", "vcard_fields": ["org", "title", "phone"]}, {"type": "qr", "qr_mode": "link"}, {"type": "qr", "qr_mode": "code"}, {"type": "text_static"}]}
+    assert qr_needed_keys(tpl) == {"entity", "role", "phone"} and qr_wants_link(tpl)
+    assert qr_needed_keys({"elements": [{"type": "qr"}]}) == {"phone"} and qr_needed_keys({"elements": [{"type": "qr", "vcard": False}]}) == set()

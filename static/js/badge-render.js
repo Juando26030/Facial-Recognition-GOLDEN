@@ -240,18 +240,26 @@
     if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
   }
 
-  function renderQr(div, el, data) {
+  function renderQr(div, el, data, opts) {
     const holder = document.createElement('div');
+    holder.setAttribute('data-gw-qr', '1'); holder._gwEl = el; holder._gwData = data;          // la escarapela digital vuelve a dibujar este QR con cada código nuevo (redrawQrs)
     holder.style.cssText = 'width:100%; height:100%; display:flex; align-items:center; justify-content:center;';
     div.appendChild(holder);
     const variables = (el.variables && el.variables.length ? el.variables : ['id']);
-    const value = variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
+    const value = (opts && typeof opts.qrPayload === 'function' ? opts.qrPayload(el) : '') || variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
     if (typeof qrcode === 'undefined') { holder.innerText = 'QR'; return; }
     try {
       drawQr(holder, value, data, el);
     } catch (e) {
       holder.innerText = 'QR';
     }
+  }
+
+  /* Escarapela digital: los QR de la plantilla llevan el código DINÁMICO (cambia cada 30 s) con el mismo modo del diseño (vCard, MECARD, enlace, solo código). Devuelve cuántos QR volvió a dibujar. */
+  function redrawQrs(root, payload) {
+    let n = 0;
+    root.querySelectorAll('[data-gw-qr]').forEach((h) => { try { drawQr(h, payload, h._gwData, h._gwEl); n++; } catch (e) { /* queda el anterior */ } });
+    return n;
   }
 
   function renderBarcode(div, el, data) {
@@ -278,7 +286,7 @@
     if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data, opts.room || 0);
     else if (el.type === 'image_static') renderImageStatic(div, el, opts);
     else if (el.type === 'image_variable') renderImageVariable(div, el, data, opts);
-    else if (el.type === 'qr') renderQr(div, el, data);
+    else if (el.type === 'qr') renderQr(div, el, data, opts);
     else if (el.type === 'barcode') renderBarcode(div, el, data);
 
     /* Un elemento GIRADO no recorta lo que sobresale (25-oct-2026, QL-800: «DRÍGL», «LAMIZ»): html2canvas 1.4.1 aplica el `overflow: hidden` de un elemento con `transform`
@@ -330,7 +338,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrMode, QR_MODES, qrDensity, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrMode, QR_MODES, qrDensity, redrawQrs, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del

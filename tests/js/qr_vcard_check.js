@@ -100,5 +100,14 @@ console.log('qr_vcard_check OK');
     console.log("versión por modo: código", v({ qr_mode: "code" }), "| enlace", v({ qr_mode: "link" }), "| MECARD", v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }), "| vCard completa", v({ vcard_fields: VF }));
     assert.ok(v({ qr_mode: "link" }) <= 6, "el enlace queda chico"); assert.ok(v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }) < v({ vcard_fields: VF }), "MECARD más chico que la vCard completa");
   }
+  // escarapela digital (19-nov-2026): el QR de la plantilla lleva el código DINÁMICO con el modo del diseño y el lector lo reconoce igual
+  const dyn = "gwq1.123.4567.0123456789abcdef0123";
+  ["vcard", "mecard", "link", "code"].forEach((mode) => {
+    const txt = BR.qrText({ qr_mode: mode, vcard_fields: ["phone", "email"] }, dyn, withCard).text;
+    assert.strictEqual(V.unwrap(txt), dyn, "el código dinámico sale intacto en el modo " + mode);
+    assert.ok(isDynamic(txt), "el lector lo reconoce como dinámico en el modo " + mode);
+    assert.ok(!txt.includes("1016100329"), "el QR digital nunca lleva la cédula");
+  });
+  assert.strictEqual(typeof BR.redrawQrs, "function");
   delete global.window; delete global.GWVcard; delete global.qrcode;
 }
