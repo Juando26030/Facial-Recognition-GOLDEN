@@ -22,6 +22,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-captura.css') }}">
     <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
+    <script src="{{ url_for('static', path='js/search-core.js') }}"></script>
+    <script src="{{ url_for('static', path='js/person-finder.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -91,7 +93,7 @@
         <div class="gw-stat">{{ ic('clock', 'gw-stat__icon') }}<span class="gw-stat__value" id="statDeliveries">0</span><span class="gw-stat__label">Entregas recientes</span></div>
       </div>
 
-      <section class="gw-card gw-stack" aria-labelledby="invWhoTitle" data-gw-tour-step="1" data-gw-tour-title="1. Elige a quién" data-gw-tour-text="Escanea la cédula o el QR, o busca a la persona por nombre.">
+      <section class="gw-card gw-stack" aria-labelledby="invWhoTitle" data-gw-tour-step="1" data-gw-tour-title="1. Elige a quién" data-gw-tour-text="Escanea la cédula o el QR, o escribe la cédula o el nombre: las coincidencias aparecen mientras escribes.">
         <h2 class="gw-card__title" id="invWhoTitle">1. ¿A quién se le entrega?</h2>
         {% if event.inventory_autoscan %}<p class="gw-alert gw-alert--ok" id="autoscanNote" role="status">Entrega automática activa: marca abajo lo que se entrega y, al escanear o dar Enter a cada persona, se le entrega sin pulsar «Entregar».</p>{% endif %}
         <div class="gw-search gw-search--hero">
@@ -99,21 +101,12 @@
           <div class="gw-search__row">
             <div class="gw-search__field">
               {{ ic('search', 'gw-search__icon') }}
-              <input type="text" id="scanInput" data-gw-clearable class="gw-input" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter">
+              <input type="text" id="scanInput" data-gw-clearable class="gw-input" autocomplete="off" placeholder="Cédula, nombre o escanea el QR y presiona Enter">
             </div>
             <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear QR con cámara" title="Escanear QR con cámara">{{ ic('scan') }}</button>
           </div>
         </div>
-        <details class="gw-form-group">
-          <summary class="gw-form-group__summary">Buscar por nombre</summary>
-          <div class="gw-form-group__body gw-stack">
-            <div class="gw-field">
-              <label class="gw-label" for="nameSearch">Nombre o apellido</label>
-              <input type="text" id="nameSearch" data-gw-clearable class="gw-input" autocomplete="off" placeholder="Nombre o apellido">
-              <div class="gw-ai__suggest" id="suggest"></div>
-            </div>
-          </div>
-        </details>
+        <div class="gw-ai__suggest" id="suggest" role="listbox" aria-label="Coincidencias" hidden></div>
         <article class="gw-person gw-person--ok gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
       </section>
 

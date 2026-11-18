@@ -121,7 +121,7 @@
     const b = $('personBanner');
     b.innerHTML = `<div class="gw-person__photo" aria-hidden="true">${esc((String(u.first_name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--ok">${icon('check')} Entregando a esta persona</span></div>`;
     b.hidden = false;
-    $('suggest').innerHTML = ''; $('nameSearch').value = '';
+    $('suggest').innerHTML = ''; $('suggest').hidden = true;
   }
   function byId(id, auto) {
     // Primero identificación y, si el evento usa código, el código (0140)
@@ -133,18 +133,11 @@
     return true;
   }
 
-  $('scanInput').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    let typed = e.target.value.trim(); e.target.value = '';
-    if (!typed) return;
-    typed = QrCode.collect(typed);                                             // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
-    if (typed === null) return;
-    QrCode.resolveDynamic(typed, window.EVENT_ID, 'inventory').then((raw) => {          // QR dinámico de la credencial digital: lo valida el servidor
-      const qr = QrCode.parse(raw);
-      const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
-      byId(qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw), true);   // QR propio: en vez de entregar la cédula
-    }).catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); });
+  // Buscador único (static/js/person-finder.js): cédula, nombre, empresa o código con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano.
+  PersonFinder.attach({
+    input: $('scanInput'), box: $('suggest'), users: () => users, purpose: 'inventory',
+    onPick: (u) => { setPerson(u); if (AUTOSCAN) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
+    onRaw: () => showToast('Esa persona no está en la base de este evento', 'error'),
   });
   // Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
   let scanner = null;
@@ -155,15 +148,6 @@
       .then((found) => { if (found && scanner) scanner.close(); })
       .catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
   }); });
-  $('nameSearch').addEventListener('input', (e) => {
-    const q = e.target.value.trim();
-    const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
-    $('suggest').innerHTML = found.map(u => `<button type="button" data-id="${esc(u.id)}">${esc(u.first_name)} ${esc(u.last_name)} · ${esc(u.id)}</button>`).join('');
-  });
-  $('suggest').addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-id]'); if (btn) setPerson(users.find(u => u.id === btn.dataset.id));
-  });
-
   async function deliver() {
     if (!person) { showToast('Primero elige a quién se le entrega', 'error'); return; }
     if (delivering) return;          // un segundo Enter mientras se entrega no duplica la entrega

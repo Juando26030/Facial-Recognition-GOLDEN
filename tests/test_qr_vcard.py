@@ -96,8 +96,10 @@ def test_badge_render_draws_the_vcard_with_level_l_and_utf8_and_keeps_the_old_fo
 def test_every_scanner_entry_point_unwraps_the_vcard():
     qr = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
     assert qr.count("unwrap(raw)") >= 4 and "onCode(unwrap(text), format)" in qr                          # parse, classify, isDynamic, resolveDynamic y la cámara
-    for js in ("static/js/areas.js", "static/js/inventario.js", "static/js/directory.js"):
+    for js in ("static/js/person-finder.js", "static/js/directory.js"):                                   # Áreas e Inventario usan el buscador único (person-finder.js)
         assert "QrCode.collect" in (ROOT / js).read_text(encoding="utf-8"), js                           # lector de mano: la vCard llega en varias líneas
+    for js in ("static/js/areas.js", "static/js/inventario.js"):
+        assert "PersonFinder.attach" in (ROOT / js).read_text(encoding="utf-8"), js
     assert "QrCode.collect" in (ROOT / "templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert "unwrapVcard" in (ROOT / "static/js/search-core.js").read_text(encoding="utf-8")
 
@@ -198,3 +200,14 @@ def test_qr_needed_keys_follow_the_designs_fields():
     tpl = {"elements": [{"type": "qr", "vcard_fields": ["org", "title", "phone"]}, {"type": "qr", "qr_mode": "link"}, {"type": "qr", "qr_mode": "code"}, {"type": "text_static"}]}
     assert qr_needed_keys(tpl) == {"entity", "role", "phone"} and qr_wants_link(tpl)
     assert qr_needed_keys({"elements": [{"type": "qr"}]}) == {"phone"} and qr_needed_keys({"elements": [{"type": "qr", "vcard": False}]}) == set()
+
+
+def test_areas_and_inventory_share_one_finder_and_the_old_name_box_is_gone():
+    for page in ("templates/kiosk_areas.html", "templates/kiosk_inventario.html"):
+        html = (ROOT / page).read_text(encoding="utf-8")
+        assert "person-finder.js" in html and "search-core.js" in html and 'id="suggest"' in html and "nameSearch" not in html and "Buscar por nombre" not in html, page
+
+
+def test_person_finder_js_check_passes():
+    r = _node("tests/js/person_finder_check.js")
+    assert r.returncode == 0 and "person_finder_check OK" in r.stdout, r.stdout[-1500:] + r.stderr[-1500:]
