@@ -303,9 +303,15 @@ def _plan_json(db: Session, event: Event, staff: StaffUser) -> dict:
             "notes": l.notes if l else None, "attrs": _attrs(l),
         })
     rep = inventory.check_balance(inventory_svc.to_rows(list(lines.values())), inventory.stage_for_status(event.status))
+    from app import crm_inventory
+    implied = crm_inventory.implied_now(db, event.id)          # lo que vino de productos del CRM: ese «asignado» no se escribe a mano
+    crm_mode = crm_inventory.opportunity_of(db, event.id) is not None or bool(crm_inventory.event_products(db, event.id))
+    for row in out:
+        row["from_crm"] = implied.get(row["product_id"], 0)
+        row["manual_ok"] = (not crm_mode) or (row["from_crm"] == 0 and row["assigned"] > 0)          # misma regla que crm_inventory.manual_assign_allowed
     return {"event_id": event.id, "status": event.status, "lines": out, "balance": rep.as_dict(), "totals": inventory.summary(inventory_svc.to_rows(list(lines.values()))),
             "can_edit_plan": can_edit_plan(staff) and event.archived_at is None, "can_edit_movement": can_edit_movement(staff) and event.archived_at is None,
-            "gate_enabled": inventory_svc.gate_enabled(), "warnings": [w["message"] for w in inventory_alerts.warnings_for_event(db, event)]}          # avisos: nunca bloquean
+            "crm_mode": crm_mode, "gate_enabled": inventory_svc.gate_enabled(), "warnings": [w["message"] for w in inventory_alerts.warnings_for_event(db, event)]}          # avisos: nunca bloquean
 
 
 def _attrs(line: Optional[EventInventoryItem]) -> dict:
@@ -382,6 +388,10 @@ def put_plan(event_id: int, data: dict, db: Session = Depends(get_db), staff: St
         for key, col in (("assigned", "qty_assigned"), ("out", "qty_out"), ("returned", "qty_returned"), ("consumed", "qty_consumed")):
             before = getattr(line, col) if line else 0
             qty[key] = _wrap(lambda: inventory.clean_qty(item[key], f"«{prod.name}» ({key})")) if key in item else (before or 0)
+            if key == "assigned" and qty[key] != (before or 0):
+                from app import crm_inventory
+                if not crm_inventory.manual_assign_allowed(db, event.id, prod.id, before or 0):
+                    _err(f"«{prod.name}» ya no se asigna a mano: agrega el producto del CRM que lo implica en la sección «Productos del CRM» del inventario del evento")
             if key != "assigned" and qty[key] != (before or 0) and not movement_ok:
                 _err("Solo Almacén (o un Admin) registra lo que sale, vuelve o se consume", 403)
         notes = _wrap(lambda: inventory.clean_notes(item["notes"])) if "notes" in item else (line.notes if line else None)
@@ -537,6 +547,9 @@ def assign_inventory(data: dict, db: Session = Depends(get_db), staff: StaffUser
         _err(f"«{prod.name}» está archivado en el catálogo")
     qty = _wrap(lambda: inventory.clean_qty(data.get("qty"), f"La cantidad de «{prod.name}»"))
     line = db.query(EventInventoryItem).filter_by(event_id=event.id, product_id=prod.id).with_for_update().first()
+    from app import crm_inventory
+    if qty != ((line.qty_assigned if line else 0) or 0) and not crm_inventory.manual_assign_allowed(db, event.id, prod.id, (line.qty_assigned if line else 0) or 0):
+        _err(f"«{prod.name}» ya no se asigna a mano: agrega el producto del CRM que lo implica en el inventario del evento")
     row = inventory.Row(name=prod.name, assigned=qty, out=(line.qty_out if line else 0) or 0, returned=(line.qty_returned if line else 0) or 0, consumed=(line.qty_consumed if line else 0) or 0,
                         category_id=prod.category_id, product_id=prod.id)
     rep = inventory.check_balance([row], "creado")

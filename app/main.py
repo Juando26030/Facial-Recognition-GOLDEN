@@ -375,6 +375,8 @@ _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(crm_import_router.router, prefix="/api")      # CRM C1c: importador de SuiteCRM (/api/crm/import/*; solo admin)
 _include(crm_tools_router.router, prefix="/api")      # CRM C3: búsqueda global, filtros guardados, exportar CSV
+from app.routers import crm_inventory as crm_inventory_router
+_include(crm_inventory_router.router, prefix="/api")      # CRM → inventario del evento (/api/events/{id}/crm-inventory)
 _include(crm_quotes_router.router, prefix="/api")      # CRM C3: productos, cotizaciones, proformas (/api/crm/*)
 _include(crm_today_router.router, prefix="/api")      # CRM C4: «Mi día», tableros y ganar una oportunidad (/api/crm/*)
 _include(crm_pipeline_router.router, prefix="/api")      # CRM C2: embudos, oportunidades, leads y actividades (/api/crm/*; mismo apagado por CRM_ENABLED)

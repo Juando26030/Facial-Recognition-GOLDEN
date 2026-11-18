@@ -1240,6 +1240,56 @@ class EventInventoryItem(Base):
     __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
 
 
+class CrmProductInventory(Base):
+    """Lo que IMPLICA un producto del CRM en elementos del catálogo de Almacén (0153): «Registro bidimensional» = 1 computador + 1 lector. No descuenta existencias: solo declara qué hay que llevar por cada unidad vendida."""
+    __tablename__ = 'crm_product_inventory'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='CASCADE'), nullable=False)
+    inventory_product_id = Column(Integer, ForeignKey('inventory_products.id', ondelete='CASCADE'), nullable=False)
+    qty_per_unit = Column(Integer, nullable=False, default=1, server_default='1')
+    __table_args__ = (UniqueConstraint('crm_product_id', 'inventory_product_id', name='uq_crm_product_inventory'),)
+
+
+class EventCrmProduct(Base):
+    """Productos del CRM que lleva un evento (0153). `origin` 'crm' = vienen de la última cotización al ganar la oportunidad (o de aplicar una alerta); 'manual' = los agregó una persona en el inventario del evento. `name` es copia del nombre al guardar."""
+    __tablename__ = 'event_crm_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    origin = Column(String(10), nullable=False, default='crm', server_default='crm')
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    __table_args__ = (Index('ix_event_crm_products_event', 'event_id'),)
+
+
+class EventCrmSync(Base):
+    """Estado de la sincronización CRM → inventario de un evento (0153): cotización de origen y lo que se sumó al «asignado» la última vez (`implied_json` {id de elemento: cantidad}), para poder restar lo anterior y sumar lo nuevo sin pisar lo manual antiguo."""
+    __tablename__ = 'event_crm_sync'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, unique=True)
+    source_quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    implied_json = Column(Text, nullable=True)
+    synced_at = Column(DateTime, default=utcnow)
+
+
+class EventInventoryAlert(Base):
+    """Alerta en el inventario de un evento cuando el CRM ya no coincide con lo que el evento tiene (0153). `status`: open | applied | dismissed | obsolete. `snapshot_json` = lista [{crm_product_id, name, qty}] propuesta; `diff_json` = lo que difiere; `snap_hash` evita repetir una alerta descartada."""
+    __tablename__ = 'event_inventory_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    status = Column(String(10), nullable=False, default='open', server_default='open')
+    snapshot_json = Column(Text, nullable=False)
+    diff_json = Column(Text, nullable=False)
+    snap_hash = Column(String(40), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (Index('ix_event_inventory_alerts_event', 'event_id', 'status'),)
+
+
 class Job(Base):
     """Trabajo en segundo plano (app/jobs.py): tabla en Postgres hoy, Cloud Tasks / Cloud Run Jobs después."""
     __tablename__ = 'jobs'
