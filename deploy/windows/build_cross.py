@@ -83,6 +83,9 @@ def main(version: str, commit: str) -> None:
     tools.mkdir()
     ws = fetch("https://github.com/winsw/winsw/releases/download/%s/WinSW-x64.exe" % WINSW_VER, CACHE / ("WinSW-%s.exe" % WINSW_VER))
     shutil.copy2(ws, tools / "WinSW.exe")
+    # 6. Componente Visual C++ 2015-2022 x64 (lo necesita PostgreSQL; prereq.ps1 lo instala sin internet si el equipo no lo tiene)
+    vc = fetch("https://aka.ms/vs/17/release/vc_redist.x64.exe", CACHE / "vc_redist.x64.exe")
+    shutil.copy2(vc, tools / "vc_redist.x64.exe")
     print("\nContenido listo en", PAYLOAD, "| huella del paquete de actualización:", sha)
 
 

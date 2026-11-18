@@ -295,6 +295,14 @@ def _loop() -> None:
                 upload_all(db)
         except Exception:                                 # el reloj nunca se cae por un error de un ciclo
             log.exception("ciclo de subida falló")
+        try:
+            from app import local_update
+            with SessionLocal() as db:
+                res = local_update.auto_update(db)
+            if res == "pending":
+                log.info("actualización automática solicitada")
+        except Exception:
+            log.exception("actualización automática falló")
         stop.wait(interval_minutes() * 60)
 
 

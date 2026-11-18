@@ -46,6 +46,7 @@ Source: "defaults.env"; DestDir: "{app}\scripts"; Flags: ignoreversion
 [Icons]
 Name: "{commondesktop}\Golden Local"; Filename: "https://localhost:8443"; Comment: "Abrir el servidor local"
 Name: "{commondesktop}\Golden Local - certificado para celulares"; Filename: "{app}\certs"
+Name: "{commondesktop}\Golden Local - verificar y reparar"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\prereq.ps1"""; Comment: "Comprueba Windows, la red y el cortafuegos (pide permisos de administrador)"
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install.ps1"""; StatusMsg: "Instalando la base de datos, los servicios y los certificados (puede tardar unos minutos)..."; Flags: runhidden waituntilterminated

@@ -216,6 +216,15 @@ _CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https
 
 
 @app.middleware("http")
+async def local_catalog_readonly(request, call_next):
+    """Servidor local (LOCAL_SERVER=1): el catálogo de inventario no se edita aquí (se cambia en internet y llega solo)."""
+    from app import localmode
+    if localmode.is_local_server() and localmode.is_catalog_write(request.method, request.url.path):
+        return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def security_headers(request, call_next):
     """Cabeceras de seguridad globales (Fase 0C, pasada 2: B1/D8). No pisan lo que la ruta ya haya fijado.
     - nosniff: el navegador no «adivina» el tipo de un archivo subido.

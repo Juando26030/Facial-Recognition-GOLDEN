@@ -141,3 +141,26 @@ def request_update(*, staff_id: int, events_in_progress: int, recent_checkins: i
     _atomic_write(folder / STATUS_FILE, {"state": "pending", "message": "Petición enviada; el servicio de actualización la recogerá en unos segundos.", "at": req["requested_at"]})
     _atomic_write(folder / REQUEST_FILE, req)
     return {"state": "pending"}
+
+
+def auto_enabled() -> bool:
+    """Actualización silenciosa (por defecto encendida en un servidor local; AUTO_UPDATE=0 la apaga)."""
+    return is_local_server() and (os.getenv("AUTO_UPDATE", "1").strip().lower() not in ("0", "false", "no"))
+
+
+def auto_update(db) -> str:
+    """Como las tiendas de aplicaciones: si producción publicó otra versión y NO hay un turno en marcha, deja la petición sola (con copia previa de la base y vuelta atrás si falla).
+    Con un turno en marcha espera al siguiente ciclo. Devuelve un código corto (para el registro): disabled | pending | <código de UpdateRefused>."""
+    if not auto_enabled():
+        return "disabled"
+    from datetime import timedelta
+
+    from app.models import AccessLog, Event
+    in_progress = db.query(Event).filter(Event.status == "en_proceso").count()
+    since = utcnow() - timedelta(minutes=RECENT_ACTIVITY_MINUTES)
+    recent = db.query(AccessLog).filter(AccessLog.timestamp >= since).count()
+    try:
+        request_update(staff_id=0, events_in_progress=in_progress, recent_checkins=recent, confirm_shift=False)
+        return "pending"
+    except UpdateRefused as e:
+        return e.code

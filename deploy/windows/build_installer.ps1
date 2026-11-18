@@ -85,6 +85,9 @@ $tools = Join-Path $Payload 'tools'
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 Get-Verified "https://github.com/winsw/winsw/releases/download/$WinSWVersion/WinSW-x64.exe" (Join-Path $Cache "WinSW-$WinSWVersion.exe") $WinSWSha256
 Copy-Item (Join-Path $Cache "WinSW-$WinSWVersion.exe") (Join-Path $tools 'WinSW.exe')
+# Componente Visual C++ 2015-2022 x64 (lo necesita PostgreSQL; prereq.ps1 lo instala sin internet si el equipo no lo tiene)
+Get-Verified 'https://aka.ms/vs/17/release/vc_redist.x64.exe' (Join-Path $Cache 'vc_redist.x64.exe') ''
+Copy-Item (Join-Path $Cache 'vc_redist.x64.exe') (Join-Path $tools 'vc_redist.x64.exe')
 
 # ---- 6. Instalador (Inno Setup)
 $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source

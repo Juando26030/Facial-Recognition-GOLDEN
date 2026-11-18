@@ -8,6 +8,10 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 Write-Log '== Instalación del servidor local =='
 foreach ($d in @($ConfigDir, $DataDir, $FilesDir, $UpdateDir, $BackupDir, $LogDir, $CertDir)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
+# ---- Requisitos de Windows (Visual C++, red, puerto); falla con un mensaje claro si el equipo no sirve
+$env:GOLDEN_SILENT = '1'
+& (Join-Path $ScriptsDir 'prereq.ps1'); if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw 'Los requisitos de Windows no se cumplieron (ver logs\instalador.log)' }
+
 # ---- 0. Permisos de la carpeta (F5-9 A-03). Una carpeta nueva en C:\ hereda «Modificar» para Usuarios autenticados: cualquier cuenta de Windows del equipo podría cambiar
 # los scripts o la app que corren como SYSTEM, o dejar una petición de actualización. Se corta la herencia: SYSTEM y Administradores, control total; Usuarios solo leen y
 # ejecutan los programas (app, python, pgsql, tools, scripts) y la carpeta de certificados (el .cer para los celulares; las llaves tienen sus propios permisos).

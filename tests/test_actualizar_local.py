@@ -109,3 +109,26 @@ def test_status_endpoint_is_disabled_in_the_cloud(client, factory, db, monkeypat
     factory.staff("coordinador", "coord")
     login(client, "coord")
     assert client.get("/api/ops/update-status").json() == {"enabled": False}
+
+
+def test_auto_update_respects_flag_and_shift(local, monkeypatch):
+    class Q:
+        def __init__(self, n): self.n = n
+        def filter(self, *a): return self
+        def count(self): return self.n
+    class DB:
+        def __init__(self, ev, rc): self.ev, self.rc = ev, rc
+        def query(self, m): return Q(self.ev if m.__name__ == "Event" else self.rc)
+    monkeypatch.setenv("AUTO_UPDATE", "0")
+    assert lu.auto_update(DB(0, 0)) == "disabled"
+    monkeypatch.setenv("AUTO_UPDATE", "1")
+    assert lu.auto_update(DB(1, 5)) == "shift_active"
+    assert lu.auto_update(DB(0, 0)) == "pending"
+
+
+def test_catalog_write_blocked_only_in_local():
+    from app import localmode as lm
+    assert lm.is_catalog_write("POST", "/api/inventory/products")
+    assert lm.is_catalog_write("PATCH", "/api/inventory/products/3/manage")
+    assert not lm.is_catalog_write("GET", "/api/inventory/products")
+    assert not lm.is_catalog_write("POST", "/api/events/1/inventory-deliver")
