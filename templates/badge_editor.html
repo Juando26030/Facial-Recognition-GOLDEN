@@ -724,6 +724,14 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
   }
   fullOpenBtn.addEventListener('click', () => setFull(true));
   fullCloseBtn.addEventListener('click', () => setFull(false));
+  /* «Guía de 3 pasos»: es un panel flotante; arranca CERRADO (el plegado automático de la página lo dejaba abierto encima de la barra de la plantilla) y se cierra al hacer clic afuera o con Esc. */
+  const guideEl = document.querySelector('.gw-disenador__guide');
+  if (guideEl) {
+    const closeGuide = () => { guideEl.open = false; };
+    window.addEventListener('load', () => setTimeout(closeGuide, 0));
+    document.addEventListener('click', (e) => { if (guideEl.open && !guideEl.contains(e.target)) closeGuide(); });
+    guideEl.addEventListener('keydown', (e) => { if (e.key === 'Escape' && guideEl.open) { closeGuide(); guideEl.querySelector('summary').focus(); } });
+  }
   let resizeTimer = null;
   const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (template) renderCanvas(); }, 80); };
   window.addEventListener('resize', onResize);

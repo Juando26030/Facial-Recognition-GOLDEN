@@ -42,3 +42,9 @@ def test_pantalla_completa_no_se_cierra_con_clic_afuera_ni_esc():
     tpl = (pathlib.Path(__file__).resolve().parent.parent / "templates" / "badge_editor.html").read_text(encoding="utf-8")
     bloque = tpl.split("function setFull(on)")[1].split("let resizeTimer")[0]
     assert "keydown" not in bloque and "backdrop" not in bloque.lower()
+
+
+def test_guia_de_3_pasos_arranca_cerrada_y_se_cierra_afuera():
+    tpl = (pathlib.Path(__file__).resolve().parent.parent / "templates" / "badge_editor.html").read_text(encoding="utf-8")
+    bloque = tpl.split("const guideEl")[1].split("let resizeTimer")[0]
+    assert "guideEl.open = false" in bloque and "'Escape'" in bloque and "guideEl.contains(e.target)" in bloque
