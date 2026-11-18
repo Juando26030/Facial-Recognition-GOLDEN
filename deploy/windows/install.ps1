@@ -1,4 +1,4 @@
-# Instalación del servidor local (Fase 6). La corre el instalador (GoldenLocal.iss) con permisos de administrador; también se puede volver a correr (es repetible: no pisa la base ni los secretos).
+﻿# Instalación del servidor local (Fase 6). La corre el instalador (GoldenLocal.iss) con permisos de administrador; también se puede volver a correr (es repetible: no pisa la base ni los secretos).
 # Hace: carpetas, secretos, base PostgreSQL (servicio), migraciones, certificados HTTPS, servicios de Windows (app y actualizador), cortafuegos, energía y la primera copia de la base.
 param([string]$ProductionUrl = '')
 . "$PSScriptRoot\config.ps1"

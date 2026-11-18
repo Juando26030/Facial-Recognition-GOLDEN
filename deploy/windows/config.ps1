@@ -1,4 +1,4 @@
-# Rutas y utilidades comunes del servidor local de Windows (Fase 6). Lo cargan los demás scripts con:  . "$PSScriptRoot\config.ps1"
+﻿# Rutas y utilidades comunes del servidor local de Windows (Fase 6). Lo cargan los demás scripts con:  . "$PSScriptRoot\config.ps1"
 # Diseño: TODO vive en C:\GoldenLocal (sin Docker). Subcarpetas:
 #   app\        la aplicación (se reemplaza entera al actualizar)         python\   Python embebido
 #   pgsql\      PostgreSQL (binarios)                                      tools\    WinSW (servicios)

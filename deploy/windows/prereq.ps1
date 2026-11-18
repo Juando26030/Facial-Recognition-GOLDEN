@@ -1,4 +1,4 @@
-# Requisitos de Windows para el servidor local. Lo corre install.ps1 (siempre, con permisos de administrador) y también el acceso directo «Golden Local - verificar y reparar».
+﻿# Requisitos de Windows para el servidor local. Lo corre install.ps1 (siempre, con permisos de administrador) y también el acceso directo «Golden Local - verificar y reparar».
 # No hace falta ninguna «función de Windows Server»: la app lleva su propio Python y su propia base PostgreSQL. Aquí se comprueba y se deja listo lo único que Windows debe tener:
 #   1) Windows 10/11 (o Server 2016+) de 64 bits   2) componente «Visual C++ 2015-2022 x64» (lo necesita PostgreSQL; si falta se instala el que viene incluido, sin internet)
 #   3) servicio de cortafuegos activo y red del equipo en modo que permita entrar desde la red local   4) puerto de la app libre   5) reloj en hora (los certificados dependen de él)

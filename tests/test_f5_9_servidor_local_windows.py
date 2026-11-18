@@ -11,9 +11,10 @@ WIN = SRC / "deploy" / "windows"
 
 def test_install_cuts_inherited_write_access_to_the_folder_run_as_system():
     """A-03: C:\\GoldenLocal no hereda «Modificar» de Usuarios autenticados (scripts y app corren como SYSTEM)."""
-    src = (WIN / "install.ps1").read_text(encoding="utf-8")
-    assert "icacls $Root /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'BUILTIN\\Administrators:(OI)(CI)F'" in src
-    assert "BUILTIN\\Users:(OI)(CI)RX" in src and "BUILTIN\\Users:(OI)(CI)M" not in src
+    src = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    # SID universales (SYSTEM, Administradores, Usuarios): los nombres cambian con el idioma de Windows
+    assert "icacls $Root /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'" in src
+    assert "*S-1-5-32-545:(OI)(CI)RX" in src and "*S-1-5-32-545:(OI)(CI)M" not in src
     assert src.index("/inheritance:r") < src.index("# ---- 1.")
 
 

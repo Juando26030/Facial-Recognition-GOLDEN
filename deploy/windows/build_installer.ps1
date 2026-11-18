@@ -1,4 +1,4 @@
-# Construye el instalador de Windows del servidor local y el paquete de actualización (Fase 6). SE CORRE EN UNA MÁQUINA WINDOWS con internet (la de Juan David o el runner de GitHub Actions: .github/workflows/instalador-windows.yml).
+﻿# Construye el instalador de Windows del servidor local y el paquete de actualización (Fase 6). SE CORRE EN UNA MÁQUINA WINDOWS con internet (la de Juan David o el runner de GitHub Actions: .github/workflows/instalador-windows.yml).
 # Requisitos en esa máquina: PowerShell 5.1+, Python 3.13 (para pip), Inno Setup 6 (iscc.exe en el PATH o en "C:\Program Files (x86)\Inno Setup 6"). Todo lo demás lo descarga el script.
 #
 # Salida (carpeta build\windows\out\):

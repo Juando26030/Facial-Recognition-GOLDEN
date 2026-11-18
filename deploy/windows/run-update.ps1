@@ -1,4 +1,4 @@
-# Actualización del servidor local a la versión de producción (Fase 6). La dispara la petición que escribe la app (app/local_update.py); corre como SYSTEM dentro del servicio GoldenLocalUpdater.
+﻿# Actualización del servidor local a la versión de producción (Fase 6). La dispara la petición que escribe la app (app/local_update.py); corre como SYSTEM dentro del servicio GoldenLocalUpdater.
 # Pasos, cada uno anunciado en data\update\update-status.json (la pantalla lo muestra): 1 copia de la base -> 2 descarga y verificación SHA-256 -> 3 cambio de archivos -> 4 migraciones -> 5 reinicio y comprobación.
 # Si CUALQUIER paso falla después de tocar algo: se vuelve a la versión anterior de los archivos Y a la copia de la base, y el estado queda «rolledback». Si falla antes de tocar algo (copia, descarga, huella): «error» y nada cambia.
 . "$PSScriptRoot\config.ps1"

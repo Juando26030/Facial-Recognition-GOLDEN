@@ -1,4 +1,4 @@
-# Servicio GoldenLocalUpdater (corre como SYSTEM). Cada 5 segundos mira si la app dejó una petición de «Actualizar ahora» (data\update\update-request.json) y, si la hay, corre run-update.ps1.
+﻿# Servicio GoldenLocalUpdater (corre como SYSTEM). Cada 5 segundos mira si la app dejó una petición de «Actualizar ahora» (data\update\update-request.json) y, si la hay, corre run-update.ps1.
 # Además hace la copia diaria de la base a las 3:00 a. m. (se conservan las últimas 14) y renueva el certificado HTTPS si le quedan menos de 60 días (al reiniciar el servicio de la app).
 . "$PSScriptRoot\config.ps1"
 $ErrorActionPreference = 'Continue'

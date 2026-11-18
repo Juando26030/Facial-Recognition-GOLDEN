@@ -1,4 +1,4 @@
-# Arranque de la aplicación (lo lanza el servicio GoldenLocalApp). Carga la configuración y corre la app en HTTPS. Sin reconocimiento facial (servicio «web»).
+﻿# Arranque de la aplicación (lo lanza el servicio GoldenLocalApp). Carga la configuración y corre la app en HTTPS. Sin reconocimiento facial (servicio «web»).
 . "$PSScriptRoot\config.ps1"
 Import-GoldenEnv
 Set-Location $AppDir

@@ -27,6 +27,7 @@ CloseApplications=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Dirs]
 Name: "{app}\data"; Flags: uninsneveruninstall
