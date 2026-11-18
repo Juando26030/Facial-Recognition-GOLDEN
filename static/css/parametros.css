@@ -136,6 +136,7 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-pf-card:hover { border-color: var(--gw-border-strong); }
 .gw-pf-card:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-pf-card--sel { border-color: var(--gw-gold-1); box-shadow: var(--gw-ring); }
+.gw-pf-card--hidden { opacity: .55; border-style: dashed; }          /* campo que esa categoría no lleva */
 .gw-pf-card--drag { opacity: 0.5; }
 .gw-pf-card--dl { box-shadow: inset 5px 0 0 var(--gw-gold-2); }
 .gw-pf-card--dr { box-shadow: inset -5px 0 0 var(--gw-gold-2); }
