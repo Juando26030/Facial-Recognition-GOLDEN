@@ -16,3 +16,10 @@ def test_wrapper_no_centra_con_flex():
 
 def test_host_se_centra_con_margin_auto():
     assert "margin: auto" in _rule(".badge-canvas-host")
+
+
+def test_movil_una_sola_vista_con_lienzo_fijo():
+    movil = CSS.split("@media (max-width: 820px)")[1]
+    assert ".badge-canvas-zone { position: sticky; top: 0" in movil
+    assert ".editor-mobile-tabs { display: none; }" in movil
+    assert 'data-tab="props"' not in movil          # ya no se esconde el lienzo al editar propiedades
