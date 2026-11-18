@@ -16,10 +16,12 @@ $env:GOLDEN_SILENT = '1'
 # los scripts o la app que corren como SYSTEM, o dejar una petición de actualización. Se corta la herencia: SYSTEM y Administradores, control total; Usuarios solo leen y
 # ejecutan los programas (app, python, pgsql, tools, scripts) y la carpeta de certificados (el .cer para los celulares; las llaves tienen sus propios permisos).
 # NetworkService (PostgreSQL) escribe en data\ (la base) y en logs\. Nadie más lee data\, backups\ ni config\ (datos personales y secretos).
-& icacls $Root /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
-foreach ($d in @($AppDir, $PyDir, $PgDir, $ToolsDir, $ScriptsDir, $CertDir)) { if (Test-Path $d) { & icacls $d /grant 'BUILTIN\Users:(OI)(CI)RX' | Out-Null } }
-& icacls $DataDir /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)F' | Out-Null
-& icacls $LogDir /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' | Out-Null
+# Se usan los identificadores universales (SID) y no los nombres: en Windows en español «Administrators»/«Users» se llaman «Administradores»/«Usuarios» y icacls no los encuentra.
+& icacls $Root /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'No se pudieron fijar los permisos de la carpeta de instalación' }
+foreach ($d in @($AppDir, $PyDir, $PgDir, $ToolsDir, $ScriptsDir, $CertDir)) { if (Test-Path $d) { & icacls $d /grant '*S-1-5-32-545:(OI)(CI)RX' | Out-Null } }
+& icacls $DataDir /grant '*S-1-5-20:(OI)(CI)F' | Out-Null
+& icacls $LogDir /grant '*S-1-5-20:(OI)(CI)M' | Out-Null
 
 # ---- 1. Configuración y secretos (solo la primera vez; una reinstalación conserva la clave y la base)
 if (-not (Test-Path $EnvFile)) {
@@ -76,7 +78,7 @@ if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
     Remove-Item $pwfile -Force -ErrorAction SilentlyContinue
     Set-Content -Path (Join-Path $LogDir 'initdb.log') -Value ($initOut | Out-String) -Encoding UTF8
     if ($initCode -ne 0 -or -not (Test-Path (Join-Path $PgData 'PG_VERSION'))) { throw "No se pudo crear la base de datos (initdb código $initCode); ver logs\initdb.log" }
-    & icacls $PgData /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)F' /T /C /Q | Out-Null
+    & icacls $PgData /grant '*S-1-5-20:(OI)(CI)F' /T /C /Q | Out-Null
     $conf = Join-Path $PgData 'postgresql.conf'
     Add-Content $conf "`nport = $PgPort`nlisten_addresses = 'localhost'`nshared_buffers = 256MB`nmax_connections = 60`nwork_mem = 8MB`nlog_destination = 'stderr'`nlogging_collector = on`nlog_directory = '$($LogDir -replace '\\','/')'`nlog_filename = 'postgres-%a.log'`nlog_truncate_on_rotation = on"
     Write-Log 'Base de datos inicializada'

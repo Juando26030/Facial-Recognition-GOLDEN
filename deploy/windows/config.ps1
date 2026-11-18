@@ -56,7 +56,7 @@ function Set-EnvKey([string]$Key, [string]$Value) {
 
 function Protect-File([string]$Path) {
     # Solo SYSTEM y Administradores pueden leer los secretos.
-    & icacls $Path /inheritance:r /grant:r 'SYSTEM:(F)' 'BUILTIN\Administrators:(F)' | Out-Null
+    & icacls $Path /inheritance:r /grant:r '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' | Out-Null
 }
 
 function New-RandomSecret([int]$Bytes = 32) {
