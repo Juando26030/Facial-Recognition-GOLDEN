@@ -31,9 +31,9 @@
     taxi_ciudad: { lead: 'Taxis y transporte público dentro de la ciudad. Si no hay recibo, el Excel arma el comprobante en la hoja «Soportes».',
       fields: [F.date, F.tax, named('Nombre del conductor'), ['plate', 'Placa', 'text'], F.phone, F.email, F.origin, F.dest, ['concept', 'Concepto', 'text'], ['vehicle', 'Vehículo', 'vehicle'], amount(), F.support] },
     digitador: { lead: 'Pago a digitadores(as): el valor se escribe a mano porque puede variar.', fields: [F.date, F.tax, named('Nombre', true), F.addr, F.phone, F.email, amount('Valor pagado')] },
-    alimentacion: { lead: 'Escribe el valor de cada comida; el total del gasto es la suma.',
-      fields: [F.date, F.tax, named('Establecimiento'), F.addr, F.email, F.phone, ['unit_value', 'Valor unitario', 'money'], ['breakfast', 'Desayuno', 'money'], ['lunch', 'Almuerzo', 'money'],
-        ['dinner', 'Cena', 'money'], ['snack', 'Refrigerio', 'money'], F.obs, F.iva, F.support] },
+    alimentacion: { lead: 'Escribe el valor unitario y cuántos desayunos, almuerzos, comidas y refrigerios fueron; el valor del gasto es el valor unitario × esa suma.',
+      fields: [F.date, F.tax, named('Establecimiento'), F.addr, F.email, F.phone, ['unit_value', 'Valor unitario', 'money'], ['breakfast', 'Desayunos (cantidad)', 'count'], ['lunch', 'Almuerzos (cantidad)', 'count'],
+        ['dinner', 'Comidas (cantidad)', 'count'], ['snack', 'Refrigerios (cantidad)', 'count'], F.obs, F.iva, F.support] },
     otro: { lead: 'Cualquier gasto que no sea de los otros rubros. El detalle es obligatorio.', fields: [F.date, F.tax, named('Proveedor o a quién se pagó'), F.addr, F.phone, F.email, ['concept', 'Detalle', 'text', true], F.obs, amount(), F.iva, F.support] },
   };
 
@@ -147,6 +147,9 @@
       return `<div class="gw-field"><label class="gw-label" for="${id}">${label}</label><select class="gw-input" id="${id}" name="${name}">
         <option value="" ${!val ? 'selected' : ''}>Sin indicar</option><option value="taxi" ${val === 'taxi' ? 'selected' : ''}>Taxi</option><option value="otro" ${val === 'otro' ? 'selected' : ''}>Otro / transporte público</option></select></div>`;
     }
+    if (type === 'count') {
+      return `<div class="gw-field"><label class="gw-label" for="${id}">${label}</label><input class="gw-input" type="number" id="${id}" name="${name}" min="0" step="1" inputmode="numeric" placeholder="0" value="${val == null || val === 0 ? '' : esc(val)}"></div>`;
+    }
     if (type === 'money') {
       return `<div class="gw-field"><label class="gw-label" for="${id}">${label}${reqMark}</label><input class="gw-input" type="number" id="${id}" name="${name}" min="0" step="0.01" inputmode="decimal" placeholder="0" value="${val == null ? '' : esc(val)}"></div>`;
     }
@@ -159,8 +162,10 @@
     if (x.origin || x.destination) parts.push(esc(x.origin || '—') + ' → ' + esc(x.destination || '—'));
     if (x.concept) parts.push(esc(x.concept));
     if (x.kind === 'alimentacion') {
-      const m = [['Desayuno', x.breakfast], ['Almuerzo', x.lunch], ['Cena', x.dinner], ['Refrigerio', x.snack]].filter((p) => p[1]).map((p) => p[0] + ' ' + money(p[1]));
+      const legacy = !x.unit_value;          // gastos anteriores: cada comida traía su valor en pesos
+      const m = [['Desayuno', x.breakfast], ['Almuerzo', x.lunch], ['Cena', x.dinner], ['Refrigerio', x.snack]].filter((p) => p[1]).map((p) => p[0] + ' ' + (legacy ? '$ ' + money(p[1]) : '× ' + p[1]));
       if (m.length) parts.push(m.join(' · '));
+      if (!legacy) parts.push('Valor unitario $ ' + money(x.unit_value));
     }
     if (x.plate) parts.push('Placa ' + esc(x.plate));
     if (x.observation) parts.push(esc(x.observation));
@@ -188,6 +193,7 @@
     const out = [];
     if (isEditable() && !x.archived) {
       out.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-edit="${x.id}">${icon('edit')} Editar</button>`);
+      out.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-dup="${x.id}" title="Crea una copia debajo para cambiarle lo que haga falta">Duplicar</button>`);
       out.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-archive="${x.id}">Archivar</button>`);
     }
     if (x.archived) {
@@ -220,8 +226,9 @@
     if (!lines.length) {
       html += `<div class="gw-state">${icon('form')}<p class="gw-state__title">Todavía no hay gastos en este rubro</p><p class="gw-state__text">${isEditable() ? 'Registra el primero con el formulario de arriba.' : 'No se registró ninguno.'}</p></div>`;
     } else {
-      html += `<div class="gw-table-wrap"><table class="gw-table gw-leg-table"><thead><tr><th>Fecha</th><th>Nombre</th><th>Detalle</th><th>Valor</th><th>Soporte</th><th>Revisión</th><th>Acciones</th></tr></thead><tbody>` +
-        lines.map((x) => `<tr class="${[x.archived ? 'gw-muted' : '', x.approved === true ? 'gw-leg-row--ok' : x.approved === false ? 'gw-leg-row--no' : ''].filter(Boolean).join(' ')}">
+      html += `<div class="gw-table-wrap"><table class="gw-table gw-leg-table"><thead><tr>${isEditable() ? '<th><span class="gw-sr-only">Orden</span></th>' : ''}<th>Fecha</th><th>Nombre</th><th>Detalle</th><th>Valor</th><th>Soporte</th><th>Revisión</th><th>Acciones</th></tr></thead><tbody>` +
+        lines.map((x, i) => `<tr data-row="${x.id}" ${isEditable() && !x.archived ? 'draggable="true"' : ''} class="${[x.archived ? 'gw-muted' : '', x.approved === true ? 'gw-leg-row--ok' : x.approved === false ? 'gw-leg-row--no' : ''].filter(Boolean).join(' ')}">
+          ${isEditable() ? `<td class="gw-leg-order">${x.archived ? '' : `<span class="gw-leg-grip" aria-hidden="true" title="Arrastra para cambiar el orden">⠿</span><button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-move="up" data-id="${x.id}" aria-label="Subir el gasto" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-move="down" data-id="${x.id}" aria-label="Bajar el gasto" ${i === lines.length - 1 ? 'disabled' : ''}>↓</button>`}</td>` : ''}
           <td>${esc(x.date || '')}</td><td>${esc(x.vendor_name) || '<span class="gw-muted">—</span>'}${x.tax_id ? '<br><span class="gw-text-sm gw-muted">' + esc(x.tax_id) + '</span>' : ''}${x.archived ? '<br><span class="gw-badge">Archivado</span>' : ''}</td>
           <td>${detailOf(x)}</td><td class="gw-leg-num">$ ${money(x.amount)}${x.iva ? '<br><span class="gw-text-sm gw-muted">IVA ' + money(x.iva) + '</span>' : ''}</td>
           <td>${supportCell(x)}</td><td>${reviewCell(x)}</td><td>${actionsCell(x)}</td></tr>`).join('') + '</tbody></table></div>';
@@ -307,6 +314,30 @@
     selectTab(kinds[i], true);
   });
 
+  /* Orden de los gastos: arrastrar la fila (o los botones ↑ ↓, para teclado y celular). Se guarda en el servidor y vale también para el Excel. */
+  async function saveOrder(kind, ids) {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    state.lines = state.lines.filter((x) => x.kind !== kind).concat(state.lines.filter((x) => x.kind === kind).sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : 1e6) - (rank.has(b.id) ? rank.get(b.id) : 1e6)));
+    paintPanel(kind);
+    try { await api('/legalization/lines/order', jsonOpts('PUT', { kind, ids })); } catch (err) { showToast(err.message || 'No se pudo guardar el orden', 'error'); load(); }
+  }
+  const visibleIds = (kind) => state.lines.filter((x) => x.kind === kind && !x.archived).map((x) => x.id);
+  let dragId = null;
+  $('legPanels').addEventListener('dragstart', (e) => { const tr = e.target.closest && e.target.closest('tr[data-row]'); if (!tr || tr.getAttribute('draggable') !== 'true') return; dragId = Number(tr.dataset.row); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(dragId)); } catch (err) { /* sin datos */ } tr.classList.add('gw-leg-row--drag'); });
+  $('legPanels').addEventListener('dragover', (e) => { const tr = e.target.closest && e.target.closest('tr[data-row]'); if (dragId == null || !tr || tr.getAttribute('draggable') !== 'true') return; e.preventDefault(); $('legPanels').querySelectorAll('.gw-leg-row--over').forEach((r) => r.classList.remove('gw-leg-row--over')); if (Number(tr.dataset.row) !== dragId) tr.classList.add('gw-leg-row--over'); });
+  $('legPanels').addEventListener('dragend', () => { dragId = null; $('legPanels').querySelectorAll('.gw-leg-row--drag, .gw-leg-row--over').forEach((r) => r.classList.remove('gw-leg-row--drag', 'gw-leg-row--over')); });
+  $('legPanels').addEventListener('drop', (e) => {
+    const tr = e.target.closest && e.target.closest('tr[data-row]');
+    if (dragId == null || !tr) return;
+    e.preventDefault();
+    const target = Number(tr.dataset.row), from = dragId; dragId = null;
+    if (target === from) { paintPanel(activeKind); return; }
+    const ids = visibleIds(activeKind), a = ids.indexOf(from), b = ids.indexOf(target);
+    if (a < 0 || b < 0) { paintPanel(activeKind); return; }
+    ids.splice(a, 1); ids.splice(b, 0, from);          // cae en el lugar de la fila sobre la que se soltó
+    saveOrder(activeKind, ids);
+  });
+
   const ACTIONS = {
     archive: ['¿Archivar este gasto? Sale de la lista, del total y del Excel, pero se conserva (con su soporte) y se puede restaurar.', 'Archivar', 'Gasto archivado', 'POST', '/archive'],
     restore: ['¿Restaurar este gasto? Vuelve a la lista y a sumar en el total.', 'Restaurar', 'Gasto restaurado', 'POST', '/restore'],
@@ -316,6 +347,19 @@
   $('legPanels').addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry]')) { load(); return; }
     if (e.target.closest('[data-cancel-edit]')) { editing = null; paintPanel(activeKind); return; }
+    const mv = e.target.closest('[data-move]');
+    if (mv) {
+      const ids = visibleIds(activeKind), id = Number(mv.dataset.id), i = ids.indexOf(id), j = mv.dataset.move === 'up' ? i - 1 : i + 1;
+      if (i >= 0 && j >= 0 && j < ids.length) { ids.splice(i, 1); ids.splice(j, 0, id); saveOrder(activeKind, ids); }
+      return;
+    }
+    const dup = e.target.closest('[data-dup]');
+    if (dup) {
+      busy(dup, () => api('/legalization/lines/' + dup.dataset.dup + '/duplicate', jsonOpts('POST')))
+        .then(() => { showToast('Gasto duplicado: está justo debajo; corrígelo con «Editar»', 'success'); return load(); })
+        .catch((err) => showToast(err.message || 'No se pudo duplicar el gasto', 'error'));
+      return;
+    }
     const edit = e.target.closest('[data-edit]');
     if (edit) { editing = Number(edit.dataset.edit); paintPanel(activeKind); const f = $('panel_' + activeKind).querySelector('form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const attach = e.target.closest('[data-attach]');

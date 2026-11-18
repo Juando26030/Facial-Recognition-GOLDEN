@@ -957,6 +957,7 @@ class EventExpense(Base):
     unit_value = Column(Numeric(14, 2), nullable=True)
     observation = Column(Text, nullable=True)
     approved = Column(Boolean, nullable=True)     # APROBADO: NULL = pendiente de revisar
+    position = Column(Integer, nullable=True)     # 0148: orden dentro del rubro (arrastrar y soltar); NULL = anterior al orden manual
     approved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     approved_at = Column(DateTime, nullable=True)
     __table_args__ = (Index('ix_event_expenses_event_kind', 'event_id', 'kind'),)
