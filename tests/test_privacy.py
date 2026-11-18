@@ -196,7 +196,7 @@ def test_business_data_and_retention_come_from_the_environment(client, monkeypat
     for k in ("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "BIOMETRIC_MAX_DAYS"):
         monkeypatch.delenv(k, raising=False)
     home = client.get("/terminos").text
-    assert "Carrera 14a # 71a - 59, Bogotá" in home and "+57 318 098 1752" in home and "info@goldenlogisticas.com" in home      # los datos reales de Golden
+    assert "Carrera 14a # 71a - 59, Bogotá" in home and "+57 318 098 1752" in home and "soporteit@goldenlogisticas.com" in home      # los datos reales de Golden
     assert "7 días después de que finalice el evento" in client.get("/privacidad").text and "180 días desde que se captura" in client.get("/privacidad").text
     monkeypatch.setenv("LEGAL_ADDRESS", "Calle 1 # 2-3")
     monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "10")
