@@ -38,7 +38,10 @@ def test_only_almacen_admin_and_super_admin_can_use_it(client, factory, on):
     factory.staff("digitador", "7001234")
     login(client, "alm")
     assert client.get("/api/almacen/meta").status_code == 200
-    assert 'id="invTabAlm"' in client.get("/inventario").text and client.get("/inventario/etiquetas").status_code == 200
+    page = client.get("/inventario").text
+    assert 'id="invTabAlm"' in page and 'id="invTabNov"' in page and 'id="invPanelNov"' in page and client.get("/inventario/etiquetas").status_code == 200
+    assert 'id="almNovCard"' in page and page.index('id="invPanelNov"') < page.index('id="almNovCard"')          # la búsqueda de novedades vive en su pestaña, no en Almacén
+    assert page.index('id="almMvEventSearch"') < page.index('id="almMvEventBox"')          # la búsqueda de evento va FUERA del bloque plegable
     client.post("/logout")
     for user in ("coord", "com", "7001234"):
         login(client, user)
