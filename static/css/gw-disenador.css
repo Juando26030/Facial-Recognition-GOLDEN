@@ -174,15 +174,17 @@ body.gw-disenador { background: var(--gw-bg); color: var(--gw-text); --gw-ed-sav
   body.editor-page.toolbar-open .gw-ed-toolbar--main { display: flex; }
   #mobileTopBar { display: flex; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-2); }
   #mobileTopBar .gw-btn { flex: 1; }
-  .editor-mobile-tabs { display: flex; gap: var(--gw-sp-2); margin: 0 0 var(--gw-sp-2); }
-  .editor-mobile-tabs .gw-btn { flex: 1; }
-  .editor-mobile-tabs .gw-btn.active { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
     #propsDot { color: var(--gw-gold-2); }
   .gw-ed-body { display: block; }
-  .gw-ed-body[data-tab="canvas"] .badge-props-panel { display: none; }
-  .gw-ed-body[data-tab="props"] .badge-canvas-zone, .gw-ed-body[data-tab="props"] .gw-ed-tools { display: none; }
-  .badge-props-panel { width: auto; max-height: none; }
-  .badge-canvas-wrapper { max-height: none; padding: var(--gw-sp-2); border-radius: var(--gw-radius-md); }
+  /* 18-nov-2026 · Una sola vista: el lienzo queda FIJO arriba y las propiedades van debajo en la misma pantalla; al editarlas se ve el cambio en vivo (ya no hay pestañas Lienzo / Propiedades). */
+  .editor-mobile-tabs { display: none; }
+  .badge-canvas-zone { position: sticky; top: 0; z-index: 40; padding-bottom: var(--gw-sp-2); background: var(--gw-bg); }
+  .badge-props-panel { width: auto; max-height: none; overflow-y: visible; }
+  .badge-canvas-wrapper { height: 32vh; min-height: 0; max-height: none; padding: var(--gw-sp-2); border-radius: var(--gw-radius-md); }          /* alto fijo: «Ajustar a pantalla» cabe la escarapela entera en esa franja */
+  .badge-canvas-zone .zoom-bar { flex-wrap: nowrap; overflow-x: auto; margin-bottom: var(--gw-sp-1); }
+  .zoom-bar .gw-btn { flex: 0 0 auto; white-space: nowrap; min-height: 2rem; }
+  #zoomLabel { min-width: 0; white-space: nowrap; }
+  #sizeInfo { white-space: nowrap; }
   /* barra de elementos fija ENCIMA de la barra de guardado (que queda pegada abajo) */
   .gw-ed-tools { position: fixed; left: 0; right: 0; bottom: var(--gw-ed-savebar-h); z-index: 900; flex-wrap: nowrap; margin: 0; padding: var(--gw-sp-2); overflow-x: auto; background: var(--gw-surface); box-shadow: var(--gw-shadow-lg); border-top: 1px solid var(--gw-border); }
   .gw-ed-tool { flex: 0 0 auto; white-space: nowrap; }

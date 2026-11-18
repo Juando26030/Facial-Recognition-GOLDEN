@@ -694,8 +694,8 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     const ah = wrapperEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
     if (aw <= 0 || ah <= 0 || !template) return editorScale;
     const byW = aw / (template.width_mm * PX_PER_MM);
-    // en móvil el alto no limita (el lienzo se escala al ANCHO y se puede bajar); en escritorio cabe entero
-    const s = isMobile() ? byW : Math.min(byW, ah / (template.height_mm * PX_PER_MM));
+    // el lienzo cabe entero (ancho y alto) tanto en escritorio como en móvil: en móvil la franja del lienzo tiene alto fijo y queda fija arriba mientras se editan las propiedades
+    const s = Math.min(byW, ah / (template.height_mm * PX_PER_MM));
     return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s));
   }
   function applyScale() {
