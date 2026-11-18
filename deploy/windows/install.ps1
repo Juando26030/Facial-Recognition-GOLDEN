@@ -3,6 +3,8 @@
 param([string]$ProductionUrl = '')
 . "$PSScriptRoot\config.ps1"
 $ErrorActionPreference = 'Stop'
+# Todo error queda escrito en logs\instalador.log (la ventana del instalador se cierra y el error se perdía)
+trap { Write-Log "ERROR: $($PSItem.Exception.Message) (línea $($PSItem.InvocationInfo.ScriptLineNumber))"; throw }
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Hay que ejecutarlo como administrador.' }
 
 Write-Log '== Instalación del servidor local =='
