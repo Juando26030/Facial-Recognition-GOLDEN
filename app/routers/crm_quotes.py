@@ -37,7 +37,7 @@ def list_products(q: str = "", category: str = "", active: Optional[bool] = None
     from app import crm_inventory
     per = crm_inventory.per_unit_map(db, [p["id"] for p in out["items"]])
     for p in out["items"]:
-        p["inventory_n"] = len(per.get(p["id"], []))          # cuántos elementos de Almacén implica (0 = sin declarar)
+        p["inventory_n"] = len(per.get(p["id"], []))          # cuántas categorías de Almacén implica (0 = sin declarar)
     return out
 
 
@@ -68,11 +68,9 @@ def opportunity_quotes(opportunity_id: int, db: Session = Depends(get_db), staff
 
 @router.get("/products/{product_id}/inventory")
 def get_product_inventory(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
-    """Elementos de Almacén que implica el producto (por unidad vendida) y las opciones del catálogo de Almacén para elegirlos."""
+    """Categorías de Almacén que implica el producto (por unidad vendida) y la lista fija de categorías que se pueden elegir."""
     from app import crm_inventory
-    from app.models import InventoryProduct
-    opts = db.query(InventoryProduct).filter(InventoryProduct.archived_at.is_(None)).order_by(InventoryProduct.position, InventoryProduct.id).all()
-    return {"items": crm_inventory.get_product_inventory(db, product_id), "options": [{"id": i.id, "name": i.name, "unit": i.unit} for i in opts]}
+    return {"items": crm_inventory.get_product_categories(db, product_id), "options": crm_inventory.category_options()}
 
 
 @router.put("/products/{product_id}/inventory")
@@ -80,8 +78,8 @@ def put_product_inventory(product_id: int, data: dict = Body(...), db: Session =
     from app import crm_inventory
 
     def work():
-        items = crm_inventory.set_product_inventory(db, product_id, data.get("items"))
-        audit_actions.record(db, staff, "update", "crm_product", product_id, "", f"implica {len(items)} elemento(s) de Almacén")
+        items = crm_inventory.set_product_categories(db, product_id, data.get("items"))
+        audit_actions.record(db, staff, "update", "crm_product", product_id, "", f"implica {len(items)} categoría(s) de Almacén")
         return {"items": items}
     return _run(db, work)
 

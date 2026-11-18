@@ -1240,14 +1240,14 @@ class EventInventoryItem(Base):
     __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
 
 
-class CrmProductInventory(Base):
-    """Lo que IMPLICA un producto del CRM en elementos del catálogo de Almacén (0153): «Registro bidimensional» = 1 computador + 1 lector. No descuenta existencias: solo declara qué hay que llevar por cada unidad vendida."""
-    __tablename__ = 'crm_product_inventory'
+class CrmProductCategory(Base):
+    """Lo que IMPLICA un producto del CRM en CATEGORÍAS de Almacén (0154; antes, 0153, eran elementos sueltos): «Registro bidimensional» = 1 Portátiles + 1 Lectores. `checklist_key` es la fila del checklist GEYL (app/almacen.py); no descuenta existencias: Almacén elige después los equipos concretos de cada categoría."""
+    __tablename__ = 'crm_product_categories'
     id = Column(Integer, primary_key=True, autoincrement=True)
     crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='CASCADE'), nullable=False)
-    inventory_product_id = Column(Integer, ForeignKey('inventory_products.id', ondelete='CASCADE'), nullable=False)
+    checklist_key = Column(String(40), nullable=False)
     qty_per_unit = Column(Integer, nullable=False, default=1, server_default='1')
-    __table_args__ = (UniqueConstraint('crm_product_id', 'inventory_product_id', name='uq_crm_product_inventory'),)
+    __table_args__ = (UniqueConstraint('crm_product_id', 'checklist_key', name='uq_crm_product_category'),)
 
 
 class EventCrmProduct(Base):

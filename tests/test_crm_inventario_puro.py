@@ -11,9 +11,22 @@ def test_agrupa_y_suma_repetidos_e_ignora_texto_libre():
     assert g == {1: {"name": "Registro", "qty": 3}}
 
 
-def test_implica_cantidad_por_unidades():
-    out = ci.implied_totals({10: 2, 11: 1}, {10: [(100, 1), (101, 1)], 11: [(100, 3)]})
-    assert out == {100: 5, 101: 2}
+def test_implica_categorias_por_cantidad():
+    out = ci.implied_totals({10: 2, 11: 1}, {10: [("portatiles", 1), ("lectores", 1)], 11: [("portatiles", 3)]})
+    assert out == {"portatiles": 5, "lectores": 2}
+
+
+def test_categorias_son_las_filas_del_checklist():
+    keys = [o["key"] for o in ci.category_options()]
+    assert len(keys) == 9 and "portatiles" in keys and "radios" in keys and "lectores" in keys
+    labels = {o["key"]: o["label"] for o in ci.category_options()}
+    assert labels["monitores_semaforos"] == "Monitores - Semaforos" and labels["radios"].startswith("RADIOS")
+
+
+def test_requerido_contra_asignado_por_categoria():
+    r = {x["key"]: x for x in ci.requirements({"portatiles": 4, "lectores": 2}, {"portatiles": 1, "radios": 3})}
+    assert r["portatiles"]["missing"] == 3 and r["lectores"]["missing"] == 2 and r["radios"]["needed"] == 0 and r["radios"]["missing"] == 0
+    assert ci.requirements({"lectores": 1}, {"lectores": 5})[0]["missing"] == 0
 
 
 def test_producto_sin_elementos_declarados_no_implica_nada():
@@ -39,12 +52,6 @@ def test_hash_estable_y_distinto_si_cambia_la_cantidad():
     assert ci.snap_hash(a) != ci.snap_hash({1: {"name": "A", "qty": 3}})
 
 
-def test_delta_conserva_lo_manual_y_no_baja_de_lo_que_salio():
-    assert ci.apply_delta(assigned=7, old_implied=2, new_implied=4) == 9          # 5 manuales + 4 del CRM
-    assert ci.apply_delta(assigned=2, old_implied=2, new_implied=0) == 0
-    assert ci.apply_delta(assigned=4, old_implied=4, new_implied=1, out=3) == 3          # ya salieron 3: no baja de ahí
-
-
 # ------------------------------------------------------------------ reglas de código (sin base)
 import pathlib
 import re
@@ -60,8 +67,11 @@ def test_migracion_0153_encadenada_y_con_id_corto():
     m = _src("alembic/versions/0153_crm_implica_inventario.py")
     assert 'revision = "0153_crm_implica_inventario"' in m and len("0153_crm_implica_inventario") <= 32
     assert 'down_revision = "0152_almacen_novedades"' in m
-    for table in ("crm_product_inventory", "event_crm_products", "event_crm_sync", "event_inventory_alerts"):
+    for table in ("event_crm_products", "event_crm_sync", "event_inventory_alerts"):
         assert f'"{table}"' in m and f"__tablename__ = '{table}'" in _src("app/models.py")
+    n = _src("alembic/versions/0154_crm_implica_categorias.py")
+    assert 'revision = "0154_crm_implica_categorias"' in n and 'down_revision = "0153_crm_implica_inventario"' in n and len("0154_crm_implica_categorias") <= 32
+    assert "__tablename__ = 'crm_product_categories'" in _src("app/models.py") and "CrmProductInventory" not in _src("app/models.py")
 
 
 def test_endpoints_sincronos_y_router_registrado():
@@ -75,10 +85,10 @@ def test_ganar_la_oportunidad_captura_la_ultima_cotizacion():
     assert "crm_inventory.capture_at_win(db, staff, o, event)" in w
 
 
-def test_el_plan_marca_lo_que_viene_del_crm_y_las_asignaciones_a_mano_se_bloquean():
+def test_la_asignacion_de_equipos_sigue_siendo_de_almacen_y_el_crm_solo_pide_por_categoria():
     inv = _src("app/routers/inventory.py")
-    assert "manual_assign_allowed" in inv and inv.count("manual_assign_allowed") >= 2          # put_plan y /inventory/assign
-    assert '"from_crm"' in inv and '"manual_ok"' in inv
+    assert "manual_assign_allowed" not in inv and "crm_inventory" not in inv          # Almacén asigna equipos concretos como siempre
+    assert "sync_inventory" not in _src("app/crm_inventory.py")
 
 
 def test_sin_colores_sueltos_ni_onclick_en_el_bloque_nuevo():
