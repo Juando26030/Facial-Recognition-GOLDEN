@@ -40,7 +40,7 @@ def test_pantalla_completa_del_disenador():
 
 def test_pantalla_completa_no_se_cierra_con_clic_afuera_ni_esc():
     tpl = (pathlib.Path(__file__).resolve().parent.parent / "templates" / "badge_editor.html").read_text(encoding="utf-8")
-    bloque = tpl.split("function setFull(on)")[1].split("let resizeTimer")[0]
+    bloque = tpl.split("function setFull(on)")[1].split("fullOpenBtn.addEventListener")[0]
     assert "keydown" not in bloque and "backdrop" not in bloque.lower()
 
 
