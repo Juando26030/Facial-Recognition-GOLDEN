@@ -91,5 +91,11 @@ Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details
 
 - **Excel sin «Registros reparados» (18-nov):** Excel se quejaba de las cadenas de la hoja y del dibujo. Causas: texto con formato de una sola letra-espacio sin `xml:space="preserve"`, propiedades de cada tirada en distinto orden al de Excel y el logo con `id="0"` en el dibujo. `almacen_xlsx.repair_for_excel` lo corrige al generar el archivo (cubierto por prueba); el alto de las filas con observación larga se calcula con la letra real del formato (13 pt).
 
+### Ajustes del 18-nov (noche)
+- **Botón grande «Guardar cambios»** (`static/js/almacen-save.js`, barra `#almSaveBar`, la misma `.gw-savebar` de Parámetros) en las pestañas Almacén y Administrar catálogo: es el ÚNICO medio para guardar lo que se edita en línea (seriales de los objetos y casillas/observaciones del checklist). Escribir no guarda; la barra dice «Cambios sin guardar · En: …», guarda todo junto (los fallos se listan y lo demás sí queda), Ctrl/Cmd+S guarda y avisa al salir con pendientes. Al cambiar de evento se guarda antes lo pendiente. Las ACCIONES (agregar objetos, archivar, anular un movimiento, foto, resolver una novedad) siguen inmediatas con su confirmación. El formulario de crear/editar producto conserva su propio botón (es el formulario de siempre del catálogo).
+- **Aviso ⚠** junto al estado de un objeto con novedad abierta: «Este elemento presenta una novedad» al pasar el mouse o enfocar (`has_novelty` en `/api/almacen/units`).
+- Se quitó «¿Vuelve con novedad?» de las entradas (redundante con la pestaña Novedades; el API de `/almacen/move` aún la acepta, la pantalla ya no la usa).
+- Buscadores del panel: campos y botón de cámara del tamaño normal del sistema (se quitaron las píldoras grandes y las cajas dentro de cajas).
+
 ## Siguiente
 **Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Después: alertas de equipos sin devolver y reportes de uso.

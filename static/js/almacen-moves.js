@@ -1,4 +1,4 @@
-/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR (lector USB o cámara) a un evento, aviso (sin bloqueo) cuando falta asignar lo que sale, entradas «con novedad» (Pieza 3, una sola lectura), checklist del evento
+/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR (lector USB o cámara) a un evento, aviso (sin bloqueo) cuando falta asignar lo que sale,  checklist del evento
    con la casilla «OK S/N» por fila, equipos fuera de bodega y anulación del último movimiento. API: /api/almacen/move, /movements/{id}/void, /events/{id}/board, /events/{id}/checklist/{fila}
    y /api/inventory/events (lista de eventos de siempre). Todo se escapa; sin manejadores en línea (delegación); mensajes con showToast / showConfirm. */
 (function () {
@@ -13,6 +13,7 @@
   let scanner = null;          // ventana de la cámara (qr.js), si está abierta
   let loaded = false;
   let busyMove = false;
+  const pendingRows = new Map();          // 'evento:fila' -> {event, key, done?, notes?} sin guardar (se guardan con el botón «Guardar cambios», almacen-save.js)
 
   async function j(url, opts) {
     const r = await fetch(url, opts);
@@ -48,10 +49,11 @@
     events = (d.events || []).filter((e) => e.status !== 'archivado');
     renderEvents();
   }
-  function chooseEvent(id) {
+  async function chooseEvent(id) {
+    if (window.GWAlmSave && GWAlmSave.hasDirty() && eventId() && Number(id) !== eventId()) { const r = await GWAlmSave.saveAll(); if (r.failed.length) return; }          // lo pendiente del evento anterior se guarda antes de cambiar
     const e = events.find((x) => x.id === Number(id));
     $('almMvEvent').value = e ? String(e.id) : '';
-    $('almMvEventChosenName').textContent = e ? e.name : 'ninguno elegido';
+    $('almMvEventChosenName').textContent = e ? e.name : 'ninguno';
     $('almMvEventChosenMeta').textContent = e ? eventMeta(e) : '';
     $('almMvEventBox').open = !e;          // elegido: el bloque se pliega y deja ver solo el nombre; para cambiarlo basta con desplegarlo
     if (!e) { $('almMvEventSearch').value = ''; renderEvents(); }
@@ -73,9 +75,6 @@
     const st = document.querySelector('.gw-cam .qr-status');          // con la cámara abierta el resultado se ve en su ventana
     if (st) st.textContent = (ok ? '✓ ' : '✕ ') + text + (warning ? ' ⚠ ' + warning : '');
   }
-  function novSummary() { $('almMvNovSum').textContent = $('almMvNovOn').checked ? 'sí, en la próxima lectura' : 'no'; }
-  function clearNovelty() { $('almMvNovOn').checked = false; $('almMvNovText').value = ''; $('almMvNovQty').value = '1'; novSummary(); }
-  function syncMode() { $('almMvNovBox').hidden = mode() !== 'entrada'; if (mode() !== 'entrada') clearNovelty(); }
   async function doMove(body) {
     if (busyMove) return false;
     busyMove = true;
@@ -85,7 +84,6 @@
       const d = await send('/api/almacen/move', 'POST', body);
       ok = true;
       result(true, d.message, d.warning);          // si falta asignar el elemento al evento: solo se avisa, el movimiento ya quedó registrado
-      if (d.novelty) { clearNovelty(); document.dispatchEvent(new CustomEvent('gw:almacen-novelty')); showToast('Novedad registrada. Agrégale la foto del daño en la sección «Novedades».', 'success'); }
       if (d.product && d.product.tracking !== 'serial') $('almMvQty').value = '1';
       await loadBoard();
     } catch (e) {
@@ -101,11 +99,6 @@
     if (!code) return false;
     const body = { mode: mode(), code, event_id: eventId(), qty: Number($('almMvQty').value) || 1 };
     if (!body.event_id) { result(false, 'Primero elige el evento.'); return false; }
-    if (body.mode === 'entrada' && $('almMvNovOn').checked) {          // «vuelve con novedad»: vale para UNA lectura
-      const text = $('almMvNovText').value.trim();
-      if (text.length < 3) { result(false, 'Escribe qué pasó (al menos 3 letras) para registrar la novedad, o desmarca «Vuelve con novedad».'); return false; }
-      body.novelty = { description: text, qty: Number($('almMvNovQty').value) || 1 };
-    }
     return doMove(body);
   }
   /* Cámara del dispositivo (la misma ventana de qr.js que usan Registro, Áreas e Inventario): cada QR leído registra un movimiento y la ventana sigue abierta para el siguiente. */
@@ -161,23 +154,36 @@
       $('almBoardSummary').textContent = `${s.done} de ${s.rows} filas alistadas · ${s.pending_return} por volver`;
       $('almBoardUnmapped').innerHTML = d.unmapped.length ? `<div class="gw-state" role="status"><p class="gw-state__title"><span class="gw-badge gw-badge--warn">Sin fila</span> Estos elementos están en el evento pero no tienen fila del checklist, así que no saldrán en el Excel: ${d.unmapped.map((u) => esc(u.name)).join(', ')}.</p></div>` : '';
       $('almBoard').innerHTML = boardTable(d.board);
+      applyPending(id);
       $('almOutside').innerHTML = outsideList(d.outside);
       $('almOutsideCount').textContent = String(d.outside.length);
       $('almMovements').innerHTML = movementsList(d.movements);
       $('almMovementsCount').textContent = String(d.movements.length);
     } catch (e) { $('almBoard').innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(e.message)}</p></div>`; }
   }
-  async function saveRow(key, body, input) {
-    const id = eventId();
-    if (!id) return;
-    try {
-      await send('/api/almacen/events/' + id + '/checklist/' + encodeURIComponent(key), 'PUT', body);
-    } catch (e) {
-      fail(e);
-      if (input && input.type === 'checkbox') input.checked = !input.checked;
-    }
+  function applyPending(evId) {          // un movimiento repinta el tablero: lo escrito y sin guardar se conserva
+    pendingRows.forEach((p) => {
+      if (p.event !== evId) return;
+      const done = root.querySelector(`[data-alm-done="${p.key}"]`), note = root.querySelector(`[data-alm-notes="${p.key}"]`);
+      if (done && p.done !== undefined) done.checked = p.done;
+      if (note && p.notes !== undefined) note.value = p.notes;
+    });
   }
-
+  function markRow(key, patch, label) {
+    const ev = eventId();
+    if (!ev || !window.GWAlmSave) return;
+    const id = ev + ':' + key;
+    const p = Object.assign(pendingRows.get(id) || { event: ev, key }, patch);
+    pendingRows.set(id, p);
+    GWAlmSave.mark('chk:' + id, 'Checklist · ' + label, async () => {
+      const snap = Object.assign({}, p);
+      const body = {};
+      if (snap.done !== undefined) body.done = snap.done;
+      if (snap.notes !== undefined) body.notes = snap.notes;
+      await send('/api/almacen/events/' + ev + '/checklist/' + encodeURIComponent(key), 'PUT', body);
+      if (pendingRows.get(id) === p && p.done === snap.done && p.notes === snap.notes) pendingRows.delete(id);
+    });
+  }
   /* ---- eventos del DOM (delegación) */
   $('almMvScan').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -189,14 +195,11 @@
   $('almMvEventSearch').addEventListener('input', renderEvents);
   $('almMvEventList').addEventListener('click', (e) => { const b = e.target.closest('button[data-alm-pick]'); if (b) chooseEvent(b.dataset.almPick); });
   $('almMvQrBtn').addEventListener('click', openCamera);
-  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; syncMode(); focusScan(); }));
-  $('almMvNovOn').addEventListener('change', () => { novSummary(); if ($('almMvNovOn').checked) $('almMvNovText').focus(); else focusScan(); });
+  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; focusScan(); }));
 
-  $('almBoardCard').addEventListener('change', (e) => {
-    const t = e.target;
-    if (t.dataset.almDone) saveRow(t.dataset.almDone, { done: t.checked }, t);
-    else if (t.dataset.almNotes) saveRow(t.dataset.almNotes, { notes: t.value }, t);
-  });
+  const rowLabel = (t) => ((t.closest('tr') || {}).querySelector ? ((t.closest('tr').querySelector('th') || {}).textContent || '').trim().split(' +')[0].slice(0, 40) : '') || 'fila';
+  $('almBoardCard').addEventListener('input', (e) => { const t = e.target; if (t.dataset.almNotes) markRow(t.dataset.almNotes, { notes: t.value }, rowLabel(t)); });
+  $('almBoardCard').addEventListener('change', (e) => { const t = e.target; if (t.dataset.almDone) markRow(t.dataset.almDone, { done: t.checked }, rowLabel(t)); });
   $('almBoardCard').addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b || !b.dataset.almVoid) return;
@@ -209,7 +212,6 @@
   });
 
   async function init() {
-    syncMode();
     if (loaded) return;
     try { await loadEvents(); loaded = true; } catch (e) { fail(e); }
   }

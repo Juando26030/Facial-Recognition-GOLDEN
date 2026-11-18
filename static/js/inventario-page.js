@@ -108,6 +108,7 @@
     if (name === 'adm' && $('tab_inventario')) $('tab_inventario').dispatchEvent(new Event('gw:tabshow'));          // el administrador del catálogo carga al abrirse
     if (name === 'alm' && $('invTabAlm')) $('invTabAlm').dispatchEvent(new Event('gw:tabshow'));          // Almacén (Pieza 1) carga al abrirse
     if (name === 'nov' && $('invTabNov')) $('invTabNov').dispatchEvent(new Event('gw:tabshow'));          // Novedades (Pieza 3) carga al abrirse
+    if ($('almSaveBar')) $('almSaveBar').hidden = !(name === 'alm' || name === 'adm');          // el botón «Guardar cambios» de Almacén solo en sus pestañas (Almacén y Administrar catálogo)
     if (name === 'cat' && catalog) loadCatalog();          // el catálogo pudo cambiar en «Administrar»
   }
   doc.querySelector('.gw-invpg__container, .gw-container').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b && TABS[b.dataset.tab]) showTab(b.dataset.tab); });

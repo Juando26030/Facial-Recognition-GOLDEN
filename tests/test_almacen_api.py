@@ -41,7 +41,7 @@ def test_only_almacen_admin_and_super_admin_can_use_it(client, factory, on):
     page = client.get("/inventario").text
     assert 'id="invTabAlm"' in page and 'id="invTabNov"' in page and 'id="invPanelNov"' in page and client.get("/inventario/etiquetas").status_code == 200
     assert 'id="almNovCard"' in page and page.index('id="invPanelNov"') < page.index('id="almNovCard"')          # la búsqueda de novedades vive en su pestaña, no en Almacén
-    assert page.index('id="almMvEventSearch"') < page.index('id="almMvEventBox"')          # la búsqueda de evento va FUERA del bloque plegable
+    assert page.index('id="almMvEventSearch"') < page.index('id="almMvEventBox"') and 'id="almSaveBar"' in page and 'id="almMvNovBox"' not in page          # la búsqueda de evento va FUERA del bloque plegable
     client.post("/logout")
     for user in ("coord", "com", "7001234"):
         login(client, user)
@@ -411,6 +411,8 @@ def test_reporting_a_novelty_blocks_the_unit_until_almacen_resolves_it(client, f
     assert r.status_code == 200, r.text
     nid = r.json()["novelty"]["id"]
     assert client.post("/api/almacen/novelties", json={"code": u["code"], "description": "Otra cosa"}).status_code == 400          # ya tiene una abierta
+    flagged = next(x for x in client.get(f"/api/almacen/units?product_id={p['id']}").json()["units"] if x["id"] == u["id"])
+    assert flagged["has_novelty"] is True          # la tabla de objetos muestra el aviso ⚠ «presenta una novedad»
     blocked = _move(client, "salida", u["code"], ev.id)
     assert blocked.status_code == 400 and "novedad" in blocked.text and "Pantalla rota" in blocked.text
     ph = client.post(f"/api/almacen/novelties/{nid}/photo", files={"file": ("dano.png", _png(), "image/png")})
@@ -421,6 +423,7 @@ def test_reporting_a_novelty_blocks_the_unit_until_almacen_resolves_it(client, f
     assert ok.status_code == 200 and ok.json()["novelty"]["resolved"]
     assert client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": "otra vez"}).status_code == 400
     assert _move(client, "salida", u["code"], ev.id).status_code == 200          # ya se puede asignar a un evento
+    assert next(x for x in client.get(f"/api/almacen/units?product_id={p['id']}").json()["units"] if x["id"] == u["id"])["has_novelty"] is False
     assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 0
     assert [n["id"] for n in client.get("/api/almacen/novelties?state=resueltas").json()["novelties"]] == [nid]
 

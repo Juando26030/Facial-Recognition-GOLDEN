@@ -21,6 +21,7 @@
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
+    <script src="{{ url_for('static', path='js/almacen-save.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/almacen-moves.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/almacen-novedades.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/almacen-catalog.js') }}" defer></script>{% endif %}{% endif %}
@@ -123,6 +124,12 @@
     {% if almacen_on %}{% include "_almacen_panel.html" %}{% include "_almacen_novedades_panel.html" %}{% endif %}
 
     {% if inv_manager %}{% include "_inventory_catalog_admin.html" %}{% endif %}
+
+    {% if almacen_on %}<div class="gw-savebar" id="almSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+      <div class="gw-savebar__status" id="almSaveStatus" role="status" aria-live="polite"></div>
+      <button type="button" class="gw-btn gw-btn--primary" id="almSaveBtn" disabled>Guardar cambios</button>
+      <ul class="gw-savebar__fail" id="almSaveFail" role="alert" hidden></ul>
+    </div>{% endif %}
 
     <section id="invPanel" hidden aria-live="polite">
       <div class="gw-row gw-row--between"><h2 class="gw-section-title" id="invPanelTitle"></h2>
