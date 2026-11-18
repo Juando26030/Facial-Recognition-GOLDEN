@@ -1,4 +1,4 @@
-/* QR en formato vCard (10-nov-2026, Fase 10 bloque C): al escanear la escarapela con el celular se puede GUARDAR EL CONTACTO (nombre y, si se comparte, teléfono).
+/* QR en formato vCard (10-nov-2026, Fase 10 bloque C): al escanear la escarapela con el celular se puede GUARDAR EL CONTACTO (nombre y, si vienen con valor: empresa, cargo/rol, teléfono, correo y categorías).
    El código que lee Golden (la cédula del QR impreso o el código firmado «gwq1…» de la credencial digital / Wallet) va en el campo NOTE con la marca «GW:». Ejemplo:
 
      BEGIN:VCARD
@@ -9,7 +9,7 @@
      NOTE:GW:1016100329|Ana|Perez
      END:VCARD
 
-   GWVcard.build({ first_name, last_name, phone, note })  -> texto de la vCard (para dibujar el QR). Solo trae los campos con valor; sin nombre, FN = «Asistente».
+   GWVcard.build({ first_name, last_name, phone, email, org, title, categories, note })  -> texto de la vCard (para dibujar el QR). Solo trae los campos con valor; sin nombre, FN = «Asistente».
    GWVcard.unwrap(texto)                                  -> el código de adentro si es una vCard de Golden; si no, el MISMO texto (el formato anterior sigue valiendo tal cual).
    GWVcard.isVcard(texto)                                 -> true si empieza con BEGIN:VCARD.
    GWVcard.QR_LEVEL                                       -> 'L': la vCard es más larga que el formato anterior; con nivel L el QR queda en una versión más chica (menos cuadritos, más grandes
@@ -33,7 +33,13 @@
     const full = [first, last].filter(Boolean).join(' ') || 'Asistente';
     const phone = String(d.phone == null ? '' : d.phone).replace(/[^\d+()\-.\s]/g, '').trim();
     const lines = ['BEGIN:VCARD', 'VERSION:3.0', `N:${esc(last)};${esc(first)};;;`, `FN:${esc(full)}`];
+    if (String(d.org == null ? '' : d.org).trim()) lines.push(`ORG:${esc(d.org)}`);
+    if (String(d.title == null ? '' : d.title).trim()) lines.push(`TITLE:${esc(d.title)}`);
     if (phone) lines.push(`TEL:${esc(phone)}`);
+    const mail = String(d.email == null ? '' : d.email).trim();
+    if (mail && mail.indexOf('@') > 0) lines.push(`EMAIL:${esc(mail)}`);
+    const cats = String(d.categories == null ? '' : d.categories).split(',').map((c) => c.trim()).filter(Boolean);
+    if (cats.length) lines.push('CATEGORIES:' + cats.map(esc).join(','));
     lines.push(`NOTE:${PREFIX}${esc(d.note)}`, 'END:VCARD');
     return lines.join('\n');
   }

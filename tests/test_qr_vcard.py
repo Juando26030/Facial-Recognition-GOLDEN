@@ -125,3 +125,25 @@ def test_resolve_accepts_a_vcard_with_the_signed_code(client, factory, db):
     assert r.status_code == 200 and r.json() == {"kind": "d", "cedula": "1001", "first_name": "Ana", "last_name": "Mora"}
     stat = qr_vcard.build("Ana", "Mora", "", note=dynamic_qr.make_static(att.id, token))
     assert client.post("/api/qr/resolve", json={"text": stat, "event_id": ev.id}).json()["kind"] == "s"
+
+
+# ---- 19-nov-2026: la vCard trae todos los datos de contacto que vengan con valor (empresa, rol, teléfono, correo, categorías) además del nombre y el código
+def test_full_card_has_every_contact_field_and_the_code_stays_last():
+    card = qr_vcard.build("Ana", "Mora", "300 123 4567", note="1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+    lines = card.split("\n")
+    assert "ORG:Acme\\, S.A." in lines and "TITLE:Gerente\; ventas" in lines and "EMAIL:ana@x.co" in lines and "CATEGORIES:VIP,Staff" in lines and "TEL:300 123 4567" in lines
+    assert lines[-2] == "NOTE:GW:1016100329" and lines[-1] == "END:VCARD"
+    assert qr_vcard.unwrap(card) == "1016100329"
+
+
+def test_empty_contact_fields_are_left_out_and_a_bad_email_is_ignored():
+    card = qr_vcard.build("Ana", note="x", email="no-es-correo", org=" ", title="", categories=" , ")
+    assert not any(k in card for k in ("ORG:", "TITLE:", "EMAIL:", "CATEGORIES:"))
+
+
+def test_js_and_python_build_the_same_full_card():
+    import json
+    import subprocess
+    args = dict(first_name="Ana", last_name="Mora", phone="3001234567", note="1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+    r = subprocess.run(["node", "-e", f"console.log(JSON.stringify(require('./static/js/vcard.js').build({json.dumps(args)})))"], capture_output=True, text=True, cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent), timeout=30)
+    assert json.loads(r.stdout) == qr_vcard.build("Ana", "Mora", "3001234567", "1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")

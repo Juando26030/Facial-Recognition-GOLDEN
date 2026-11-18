@@ -172,7 +172,7 @@
      el tamaño del elemento y de la etiqueta NO cambia. Sin vcard.js cargado se dibuja el formato anterior. UTF-8 para las tildes y la ñ. */
   function drawQr(holder, payload, person) {
     const V = (typeof window !== 'undefined') ? window.GWVcard : null;
-    const text = V ? V.build({ first_name: person && person.first_name, last_name: person && person.last_name, phone: person && person.phone, note: payload }) : payload;
+    const text = V ? V.build({ first_name: person && person.first_name, last_name: person && person.last_name, phone: person && person.phone, email: person && person.email, org: person && person.entity, title: person && person.role, categories: person && person.categories, note: payload }) : payload;
     const prev = qrcode.stringToBytes;
     if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
     try {
