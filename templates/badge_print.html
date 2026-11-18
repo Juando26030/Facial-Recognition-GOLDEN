@@ -122,9 +122,9 @@
         const endMark = document.createElement('div');
         endMark.id = 'endMark'; endMark.style.cssText = `position:relative; z-index:1; width:0.3mm; height:0.3mm; margin:-0.3mm 0 0 ${imgLeft}mm; background:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact;`;
         into.appendChild(endMark);
-        if (host) {                                                    // varias hojas: el @page y cada hoja con las MISMAS medidas (62 × 99,8 mm, imagen ≤ 96 mm, 0,5 mm, marca de fin), una página por escarapela
+        if (host) {                                                    // varias hojas (alto de hoja con tope de la página real, 100vh: si el cuadro de impresión usa un papel más corto, una hoja NO se parte en dos y no salen hojas en blanco de por medio, 18-nov-2026): el @page y cada hoja con las MISMAS medidas (62 × 99,8 mm, imagen ≤ 96 mm, 0,5 mm, marca de fin), una página por escarapela
             pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; } ` +
-                `.labelPage { display:block; position:relative; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; break-after:page; page-break-after:always; } .labelPage:last-child { break-after:auto; page-break-after:auto; } ` +
+                `.labelPage { display:block; position:relative; width:${PAGE_W}mm; height:min(calc(${pageH}mm - 0.2mm), 100vh); overflow:hidden; break-after:page; page-break-after:always; } .labelPage:last-child { break-after:auto; page-break-after:auto; } ` +
                 `#badgePrint { display:none !important; } .labelPage img { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
             statusEl.style.display = 'none';
             if (img.decode) await img.decode().catch(() => {});
