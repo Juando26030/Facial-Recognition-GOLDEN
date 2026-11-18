@@ -399,9 +399,14 @@
       const m = state.model, g = state.general; container.textContent = ''; state.container = container;
       const status = el('p', 'gw-hint', `Versión del diseño: ${g.version}. Cada cambio sube la versión; los quioscos sin red usan la última que conocieron.`, { role: 'status' });
       const enabled = el('input', null, null, { type: 'checkbox', id: 'pfEnabled' }); enabled.checked = g.enabled;
-      enabled.addEventListener('change', () => { g.enabled = enabled.checked; dirty(); });
-      const enabledLabel = el('label', 'gw-check'); enabledLabel.append(enabled, doc.createTextNode(' Usar este formulario en el quiosco (Registrar nuevo y Editar) de este evento'));
-      container.append(enabledLabel, status);
+      enabled.addEventListener('change', () => { g.enabled = enabled.checked; dirty(); render(); });          // al prender/apagar se muestra/oculta el diseñador
+      const enabledLabel = el('label', 'gw-check'); enabledLabel.append(enabled, doc.createTextNode(' Usar un formulario de persona a la medida en el quiosco (Registrar nuevo y Editar) de este evento'));
+      container.append(enabledLabel);
+      if (!g.enabled) {          // apagado: no hay nada que configurar; el quiosco usa el formulario de siempre
+        container.appendChild(el('p', 'gw-hint', 'Apagado: el quiosco usa el formulario de siempre (campos en su orden normal y los obligatorios de «Campos»). Enciéndelo para armar un formulario a la medida: orden, grupos, textos, y formularios distintos por categoría.', { role: 'status' }));
+        return;
+      }
+      container.appendChild(status);
       if (state.cats.length) {          // formularios por categoría: el general y uno propio por cada categoría que lo necesite
         const pick = el('div', 'gw-field'); pick.appendChild(el('label', 'gw-label', 'Formulario de', { for: 'pfCat' }));
         const cs = el('select', 'gw-select', null, { id: 'pfCat', 'aria-label': 'Formulario que estás diseñando' });

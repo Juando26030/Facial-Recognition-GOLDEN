@@ -107,6 +107,10 @@ const keysIn = (node) => Array.from(node.querySelectorAll('[data-field-key]')).m
   const ed = w.document.getElementById('ed');
   D.mount(ed, { eventId: 7, fetch: fetchFake, toast: (m, k) => toasts.push([m, k]) });
   await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(ed.querySelectorAll('.gw-pf-card').length, 0, 'apagado: no se muestra el diseñador, solo el interruptor');
+  assert.ok(ed.querySelector('#pfEnabled') && !ed.querySelector('#pfSave'), 'apagado: solo el interruptor');
+  ed.querySelector('#pfEnabled').checked = true; fire(w, ed.querySelector('#pfEnabled'), 'change');
+  assert.ok(ed.querySelector('#pfSave'), 'encendido: aparece el diseñador');
   assert.strictEqual(ed.querySelectorAll('.gw-pf-card').length, 6, 'una tarjeta por cada campo del evento');
   assert.strictEqual(ed.querySelectorAll('.gw-pf-row--2').length, 1, 'nombres y apellidos comparten fila');
   const pick = (key) => { ed.querySelector(`.gw-pf-card[data-key="${key}"]`).click(); };
