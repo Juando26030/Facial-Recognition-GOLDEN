@@ -71,3 +71,9 @@ def test_pantalla_imprime_en_una_sola_ventana():
 def test_mosaico_en_el_kiosco():
     t = (ROOT / "templates" / "kiosk_select.html").read_text(encoding="utf-8")
     assert "/preimpresiones" in t
+
+
+def test_hojas_multiples_no_se_parten_con_un_papel_mas_corto():
+    html = (ROOT / "templates" / "badge_print.html").read_text(encoding="utf-8")
+    assert "height:min(calc(${pageH}mm - 0.2mm), 100vh)" in html          # con un papel de 89 mm salían 4 hojas (2 en blanco) para 2 escarapelas
+    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;" in html
