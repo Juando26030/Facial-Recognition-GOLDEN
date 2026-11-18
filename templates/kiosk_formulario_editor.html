@@ -1066,7 +1066,7 @@ async function loadCodes() { try { CODES = await j(`${api}/discount-codes`); } c
 function linkBox(item, what) {
   if (!item.link_key) return `<div class="hint gwe-bg-warn-bg gwe-p-sp-2-sp-2 gwe-r-radius-sm gwe-mt-sp-1">${gwIcon('link')} Guarda el diseño para generar el enlace de este ${what}.</div>`;
   const url = `${window.PUBLIC_BASE || location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
-  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><input type="text" readonly value="${esc(url)}" class="gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(url)}">Copiar</button></div>
+  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><input type="text" readonly value="${esc(url)}" class="gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(url)}">Copiar</button>${GWLinkQr.button(url, { title: form.name || 'Formulario', label: 'Generar QR' })}</div>
     <div class="hint">Solo quien entre por este enlace tendrá este ${what}. Compártelo únicamente con quien deba recibirlo. (Si el formulario está en «Pruebas», el enlace real necesita además <code>&amp;k=…</code>).</div>`;
 }
 function codeBox(d, i) {
@@ -1408,9 +1408,9 @@ function paintStatusControls() {   // estado, cupo y calendario tal como están 
 function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin pendientes); con keepStatus respeta el estado/cupo/calendario que la persona aún no ha guardado
   const s = settings;
   if (!opts.keepStatus) paintStatusControls();
-  $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button></div>
+  $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button>${GWLinkQr.button(form.public_url, { title: form.name || 'Formulario' })}</div>
     ${form.public_state === 'pruebas'
-      ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button></div>`
+      ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button>${GWLinkQr.button(form.test_url, { title: (form.name || 'Formulario') + ' (pruebas)' })}</div>`
       : `<div class="hint gwe-m-sp-2-0-sp-1 gwe-c-warn-text gwe-bg-warn-bg gwe-p-sp-2-sp-3 gwe-r-radius-sm">${gwIcon('alert')} Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
   $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
   $('secOn').checked = s.security.enabled; $('secBox').hidden = !(s.security.enabled); $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').hidden = !(s.security.type === 'code');
@@ -1781,7 +1781,7 @@ let dash = null;
 function mountAnalytics() {
   $('anHost').innerHTML = '';
   AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30, large: true });
-  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="gw-btn gw-btn--secondary gw-btn--sm" data-utm="${s}">${gwIcon('link')} Copiar enlace para ${s}</button>`).join('');
+  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<span class="gwe-d-flex gwe-gap-sp-1"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-utm="${s}">${gwIcon('link')} Copiar enlace para ${s}</button>${GWLinkQr.button(`${form.public_url}?utm_source=${s}`, { title: `${form.name || 'Formulario'} · ${s}`, label: 'QR' })}</span>`).join('');
   $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
 }
 $('anTests').addEventListener('change', mountAnalytics);

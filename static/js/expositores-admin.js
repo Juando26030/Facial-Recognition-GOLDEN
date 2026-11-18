@@ -18,6 +18,7 @@
     $('exBody').innerHTML = rows.map((x) => '<tr><td><strong>' + esc(x.name) + '</strong><br><small>' + esc(x.contact_name) + '</small></td><td>' + x.leads + '</td>' +
       '<td>' + (x.active ? 'Activo' : 'Pausado') + '</td><td><div class="gw-row-actions">' +
       '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="copy" data-id="' + x.id + '">Copiar enlace privado</button> ' +
+      '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="qr" data-id="' + x.id + '" title="Generar QR del enlace privado">Generar QR</button> ' +
       '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="toggle" data-id="' + x.id + '">' + (x.active ? 'Pausar' : 'Activar') + '</button> ' +
       '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="rotate" data-id="' + x.id + '">Cambiar enlaces</button> ' +
       '<button type="button" class="gw-btn gw-btn--danger gw-btn--sm" data-act="delete" data-id="' + x.id + '">Borrar</button></div></td></tr>').join('') ||
@@ -45,6 +46,8 @@
       if (b.dataset.act === 'copy') {
         const url = location.origin + x.private_path;
         try { await navigator.clipboard.writeText(url); toast('Enlace copiado. Entrégaselo SOLO a ese expositor.', 'success'); } catch (err) { if (window.showPrompt) showPrompt('Enlace privado (cópialo)', { defaultValue: url }); else toast(url, 'info'); }
+      } else if (b.dataset.act === 'qr') {
+        if (window.GWLinkQr) GWLinkQr.open(location.origin + x.private_path, { title: x.name });
       } else if (b.dataset.act === 'toggle') {
         await call(api + '/' + x.id, 'PATCH', { active: !x.active }); load();
       } else if (b.dataset.act === 'rotate') {

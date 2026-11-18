@@ -25,6 +25,7 @@
         const url = $('[data-pl-url]');
         url.value = info.link || '';
         $('[data-pl-copy]').disabled = !info.link;
+        $('[data-pl-qr]').disabled = !info.link;
         $('[data-pl-revoke]').hidden = !info.link;
         $('[data-pl-make]').textContent = info.link ? 'Cambiar el enlace' : 'Generar el enlace';
         $('[data-pl-make]').dataset.plRegen = info.link ? '1' : '';

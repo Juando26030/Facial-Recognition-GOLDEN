@@ -1215,3 +1215,9 @@
   body.sidebar-collapsed.has-sidebar .golden-header-container { padding-left: 4.2rem; }
   body.sidebar-collapsed.has-sidebar .gw-savebar { margin-left: var(--gw-sp-4); }
 }
+
+/* QR de un enlace (toast.js › GWLinkQr, 18-nov-2026): el QR siempre es negro sobre blanco (se lee igual en tema oscuro) */
+.gw-linkqr { max-width: 400px; }
+.gw-linkqr__box { display: flex; justify-content: center; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); margin-bottom: var(--gw-sp-3); }
+.gw-linkqr__canvas { display: block; width: min(100%, 280px); height: auto; image-rendering: pixelated; }
+.gw-linkqr__url .gw-input { width: 100%; }
