@@ -38,7 +38,7 @@ def review_status(name: str):
 
 
 def info() -> dict:
-    email = os.getenv("LEGAL_EMAIL", "info@goldenlogisticas.com")
+    email = os.getenv("LEGAL_EMAIL", "soporteit@goldenlogisticas.com")
     days, cap = privacy.days_after_event(), privacy.max_days()
     backup_days = 30            # deploy/gcs-lifecycle.json (respaldos diarios)
     refund = os.getenv("REFUND_REQUEST_DAYS", "").strip()
