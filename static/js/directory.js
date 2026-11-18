@@ -567,7 +567,7 @@
             // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
             // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
             if (newStatus === 'registrado' && window.RegTimer) RegTimer.done();
-            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
+            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false;
@@ -618,7 +618,7 @@
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
-              if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
+              if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
               else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
@@ -1439,7 +1439,7 @@
             showToast(`Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
           applyFlags(data);
-          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
+          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print, skip: data.auto_print_skip });
           await reload();
           clearSearchBox();                                         // 5-nov-2026: acreditar deja la caja vacía (antes dejaba la cédula escrita)
           return;

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
-from app import audit_actions, crypto, faces, security
+from app import audit_actions, crypto, faces, personform, security
 from app.auth import get_event_for_staff, require_event_in_progress, require_role
 from app import event_archive
 from app.database import get_db
@@ -111,7 +111,7 @@ def door_face(event_id: int = Form(...), file: UploadFile = File(...), db: Sessi
     reverted_before = db.query(PersonChange.id).filter(PersonChange.event_id == event.id, PersonChange.user_id == uid, PersonChange.detail == REVERT_DETAIL).first()
     if reverted_before:                                   # ya le habían revertido una entrada por rostro: la franja marca esta para que el personal la mire
         record_system_event("door_face_after_revert", ref=f"{event.id}:{log.id}")
-    if event.auto_print_badge:                            # autoimpresión del evento: la pantalla de la puerta abre la escarapela (la cédula viaja solo al equipo del personal, no se muestra)
+    if event.auto_print_badge and not personform.user_flow(db, event, uid).get("autoprint_off"):          # autoimpresión del evento (salvo categorías que la tienen apagada): la pantalla de la puerta abre la escarapela (la cédula viaja solo al equipo del personal, no se muestra)
         _count(event, "match", best[1], margin)
         return {"result": "OK", "message": OK_MSG, "print_user_id": uid}
     _count(event, "match", best[1], margin)

@@ -1006,6 +1006,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     context = {
         "person_form_json": json.dumps(person_form).replace("</", "<\\/") if person_form else "null",
         "person_form_env": personform.env_enabled(),
+        "autoprint_rules": bool(person_form and any((v.get("flow") or {}).get("autoprint_off") for v in (person_form.get("variants") or {}).values())),          # alguna categoría tiene apagada la impresión automática: el quiosco consulta antes de imprimir sola
         "person_form_can_design": personform.env_enabled() and max(ROLE_HIERARCHY[r] for r in staff_roles) >= ROLE_HIERARCHY["admin"],
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": _display_role(staff_user.role, staff_user.secondary_role),

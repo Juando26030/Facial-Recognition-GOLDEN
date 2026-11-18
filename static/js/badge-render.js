@@ -449,13 +449,20 @@
   }
   /* ¿Se imprime solo? Manda la respuesta del servidor (`opts.auto`); sin ella (escáner facial, que no la trae) vale la bandera de la página, que se mantiene al día con cada sondeo. */
   function resolveAuto(opts) {
-    if (opts && typeof opts.auto === 'boolean') { setFlags({ auto_print: opts.auto }); return opts.auto; }
+    if (opts && typeof opts.auto === 'boolean') { setFlags({ auto_print: opts.auto }); return opts.auto && !opts.skip; }          // `skip`: la categoría de esta persona tiene apagada la impresión automática (la bandera del evento no cambia)
     return !!window.EVENT_AUTO_PRINT;
+  }
+  /* Impresión automática por CATEGORÍA (formulario por categoría): si la respuesta del servidor ya trae la decisión (`opts.auto` booleano) se usa; si no (escáner facial) y alguna categoría tiene la
+     impresión automática apagada (`window.EVENT_AUTOPRINT_RULES`), se pregunta al servidor por esta persona. Sin reglas no hay consulta alguna. */
+  function categorySkips(userId, opts) {
+    if (opts && typeof opts.auto === 'boolean') return Promise.resolve(!!opts.skip);
+    if (!window.EVENT_AUTOPRINT_RULES || typeof fetch !== 'function') return Promise.resolve(false);
+    return fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(userId)}/print-flow`, { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : {})).then((d) => !!d.auto_print_skip).catch(() => false);
   }
   function maybeAutoPrint(userId, opts) {
     if (!resolveAuto(opts)) { cancelPrimed(); return Promise.resolve(false); }
     primedKeep = true;                                           // esta llamada se queda con la ventana preparada
-    return claimTicket(userId).then(async (ticket) => {
+    return categorySkips(userId, opts).then((skip) => (skip ? null : claimTicket(userId))).then(async (ticket) => {
       if (!ticket) { dropPrimed(); return false; }
       let w;
       try { w = await printNow(userId); } catch (e) { w = null; }
