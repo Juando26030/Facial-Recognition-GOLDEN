@@ -230,3 +230,9 @@ body.gw-disenador { background: var(--gw-bg); color: var(--gw-text); --gw-ed-sav
   .gw-disenador .gw-savebar__status .gw-text-sm { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .gw-ed-tool, .prop-btn { transition: none; } }
+
+/* QR: datos de la vCard y medidor de densidad (19-nov-2026) */
+.prop-check { display: flex; align-items: center; gap: var(--gw-sp-2); margin-block: var(--gw-sp-1); }
+#p_qr_fields { border: 0; padding: 0; margin: 0 0 var(--gw-sp-3); }
+#p_qr_fields legend { padding: 0; margin-bottom: var(--gw-sp-1); font-size: var(--gw-fs-sm); }
+#p_qr_density[data-level="dense"] { color: var(--gw-err-text); font-weight: 600; }

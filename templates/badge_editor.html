@@ -990,7 +990,12 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
         <div class="prop-field"><label for="p_qr_vars">Variable(s) codificadas</label>
           <select id="p_qr_vars" multiple size="4">${ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${(el.variables || []).includes(k) ? 'selected' : ''}>${label}</option>`).join('')}</select>
         </div>
-        <p class="prop-note">Ctrl/Cmd + clic para elegir varias; se combinan separadas por "|".</p>`);
+        <p class="prop-note">Ctrl/Cmd + clic para elegir varias; se combinan separadas por "|".</p>
+        <div class="prop-field"><label><input type="checkbox" id="p_qr_card" ${el.vcard === false ? '' : 'checked'}> Guardar contacto al escanear (vCard)</label></div>
+        <fieldset class="prop-field" id="p_qr_fields" ${el.vcard === false ? 'disabled' : ''}><legend>Datos que lleva la vCard (el nombre va siempre)</legend>
+          ${[['org', 'Empresa / entidad'], ['title', 'Cargo / rol'], ['phone', 'Teléfono'], ['email', 'Correo'], ['categories', 'Categoría']].map(([k, label]) => `<label class="prop-check"><input type="checkbox" data-qr-field="${k}" ${(Array.isArray(el.vcard_fields) ? el.vcard_fields : BadgeRender.DEFAULT_VCARD_FIELDS).includes(k) ? 'checked' : ''}> ${label}</label>`).join('')}
+        </fieldset>
+        <p class="prop-note" id="p_qr_density" role="status"></p>`);
     } else if (el.type === 'barcode') {
       typeSpecificHtml = propGroup('content', 'Código de barras', `
         <div class="prop-field"><label for="p_bvariable">Variable</label><select id="p_bvariable">${variableOptionsHtml(el.variable)}</select></div>
@@ -1077,9 +1082,28 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
         else { input.disabled = false; }
       });
     } else if (el.type === 'qr') {
+      const paintDensity = () => {          // qué tan apretado queda el QR con los datos de muestra (más datos = más cuadritos = peor lectura en celulares y lectores)
+        const box = document.getElementById('p_qr_density'); if (!box) return;
+        const sd = sampleData(), payload = (el.variables && el.variables.length ? el.variables : ['id']).map(v => BadgeRender.resolveVariable(v, sd)).join('|') || 'PREVIEW';
+        const t = BadgeRender.qrText(el, payload, sd), d = BadgeRender.qrDensity(t.text, t.card);
+        if (!d) { box.textContent = ''; return; }
+        box.textContent = (d.level === 'good' ? 'Lectura buena' : d.level === 'ok' ? 'Lectura aceptable' : 'Demasiado apretado: puede no leerse en celulares ni lectores. Quita datos o desactiva la vCard') + ` (versión ${d.version}, ${d.modules} cuadritos por lado).`;
+        box.dataset.level = d.level;
+      };
+      paintDensity();
       document.getElementById('p_qr_vars').addEventListener('change', (e) => {
         el.variables = Array.from(e.target.selectedOptions).map(o => o.value);
-        renderCanvas();
+        renderCanvas(); paintDensity();
+      });
+      document.getElementById('p_qr_card').addEventListener('change', (e) => {
+        if (e.target.checked) delete el.vcard; else el.vcard = false;
+        document.getElementById('p_qr_fields').disabled = !e.target.checked;
+        renderCanvas(); paintDensity();
+      });
+      document.getElementById('p_qr_fields').addEventListener('change', (e) => {
+        if (!e.target.matches('[data-qr-field]')) return;
+        el.vcard_fields = Array.from(document.querySelectorAll('[data-qr-field]')).filter(c => c.checked).map(c => c.dataset.qrField);
+        renderCanvas(); paintDensity();
       });
     } else if (el.type === 'barcode') {
       document.getElementById('p_bvariable').addEventListener('change', (e) => { el.variable = e.target.value; renderCanvas(); });

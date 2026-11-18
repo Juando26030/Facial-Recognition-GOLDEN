@@ -61,3 +61,27 @@ assert.ok(version(dynamicCard, 'L') <= 8);
 assert.ok(version(longest, 'L') <= 10, 'aun el peor caso razonable no pasa de versión 10 (57 módulos)');
 assert.ok(version(typical, 'L') < version(typical, 'M'), 'L es más chico que M para el mismo texto');
 console.log('qr_vcard_check OK');
+
+// ---- 19-nov-2026: cada QR elige qué datos lleva su vCard; sin elegir: nombre y teléfono; «sin vCard» = solo el código
+{
+  const BR = require("../../static/js/badge-render.js");
+  global.window = global.window || {}; window.GWVcard = V; global.GWVcard = V; global.qrcode = qrcode;
+  const person = { first_name: "María Fernanda", last_name: "Rodríguez Castañeda", phone: "3001234567", email: "maria@correo.com", entity: "Corporación Universitaria Minuto de Dios", role: "Coordinador general", categories: "VIP, Staff" };
+  const t = (el) => BR.qrText(el, "1016100329", person).text;
+  const base = t({});
+  assert.ok(base.includes("TEL:") && !base.includes("EMAIL:") && !base.includes("ORG:") && !base.includes("TITLE:"), "por defecto: nombre y teléfono");
+  const mini = t({ vcard_fields: [] });
+  assert.ok(!mini.includes("TEL:") && mini.includes("FN:María Fernanda Rodríguez Castañeda"), "sin datos extra: solo el nombre y el código");
+  const all = t({ vcard_fields: ["org", "title", "phone", "email", "categories"] });
+  ["ORG:", "TITLE:", "TEL:", "EMAIL:", "CATEGORIES:"].forEach((k) => assert.ok(all.includes(k), k));
+  assert.deepStrictEqual(BR.qrText({ vcard: false }, "1016100329", person), { text: "1016100329", card: false }, "sin vCard: solo el código");
+  assert.strictEqual(V.unwrap(all), "1016100329", "el lector saca el código igual");
+  if (typeof globalThis.qrcode !== "undefined") {
+    const dens = (el) => { const q = BR.qrText(el, "1016100329|María Fernanda|Rodríguez Castañeda", person); return BR.qrDensity(q.text, q.card); };
+    const dAll = dens({ vcard_fields: ["org", "title", "phone", "email", "categories"] }), dMini = dens({ vcard_fields: [] }), dPlain = dens({ vcard: false });
+    console.log("densidad (versión): todo", dAll.version, "| solo nombre", dMini.version, "| sin vCard", dPlain.version);
+    assert.ok(dAll.version > dMini.version && dMini.version >= dPlain.version, "más datos = QR más denso");
+    assert.ok(dPlain.level === "good", "solo el código: lectura buena");
+  }
+  delete global.window; delete global.GWVcard; delete global.qrcode;
+}

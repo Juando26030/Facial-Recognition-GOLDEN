@@ -193,13 +193,32 @@
   /* Fase 10 (C): el QR de la escarapela es una vCard (nombre, teléfono si el dato viene, y en NOTE el código de siempre) para poder guardar el contacto al escanear con el celular.
      Los lectores de Golden (qr.js) sacan el código de NOTE y siguen aceptando el formato anterior. Nivel de corrección «L» (la vCard es más larga y así el QR queda en una versión más chica);
      el tamaño del elemento y de la etiqueta NO cambia. Sin vcard.js cargado se dibuja el formato anterior. UTF-8 para las tildes y la ñ. */
-  function drawQr(holder, payload, person) {
-    const V = (typeof window !== 'undefined') ? window.GWVcard : null;
-    const text = V ? V.build({ first_name: person && person.first_name, last_name: person && person.last_name, phone: person && person.phone, email: person && person.email, org: person && person.entity, title: person && person.role, categories: person && person.categories, note: payload }) : payload;
+  /* 19-nov-2026: cada QR elige qué datos lleva su vCard (propiedad `vcard_fields` del elemento; el nombre va siempre). Sin la propiedad: nombre y teléfono, como antes de agregar correo, empresa y rol.
+     `vcard: false` = QR solo con el código (sin vCard): el más chico y el que mejor lee el lector. Cuantos más datos, más cuadritos (versión más alta): ver qrDensity. */
+  const VCARD_FIELDS = ['org', 'title', 'phone', 'email', 'categories'];
+  const DEFAULT_VCARD_FIELDS = ['phone'];
+  function qrText(el, payload, person) {
+    const V = (window && window.GWVcard) || (typeof globalThis !== 'undefined' ? globalThis.GWVcard : null) || null;
+    if (!V || (el && el.vcard === false)) return { text: payload, card: false };
+    const fields = el && Array.isArray(el.vcard_fields) ? el.vcard_fields : DEFAULT_VCARD_FIELDS, has = (k) => fields.indexOf(k) >= 0, p = person || {};
+    return { card: true, text: V.build({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', org: has('org') ? p.entity : '',
+      title: has('title') ? p.role : '', categories: has('categories') ? p.categories : '', note: payload }) };
+  }
+  /* Qué tan apretado queda un QR: versión (1-40) y cuadritos por lado. Hasta la 8 se lee bien en la etiqueta; de la 11 en adelante, mal en celulares y lectores. */
+  function qrDensity(text, card) {
+    if (typeof qrcode === 'undefined') return null;
     const prev = qrcode.stringToBytes;
-    if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    try { const q = qrcode(0, card ? 'L' : 'M'); q.addData(text); q.make(); const n = q.getModuleCount(); return { version: (n - 17) / 4, modules: n, level: n <= 45 ? 'good' : n <= 53 ? 'ok' : 'dense' }; }
+    catch (e) { return null; } finally { qrcode.stringToBytes = prev; }
+  }
+  function drawQr(holder, payload, person, el) {
+    const V = (window && window.GWVcard) || (typeof globalThis !== 'undefined' ? globalThis.GWVcard : null) || null;
+    const t = qrText(el, payload, person), text = t.text;
+    const prev = qrcode.stringToBytes;
+    if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
     try {
-      const qr = qrcode(0, V ? V.QR_LEVEL : 'M');
+      const qr = qrcode(0, t.card ? V.QR_LEVEL : 'M');
       qr.addData(text);
       qr.make();
       holder.innerHTML = qr.createSvgTag({ scalable: true });
@@ -216,7 +235,7 @@
     const value = variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
     if (typeof qrcode === 'undefined') { holder.innerText = 'QR'; return; }
     try {
-      drawQr(holder, value, data);
+      drawQr(holder, value, data, el);
     } catch (e) {
       holder.innerText = 'QR';
     }
@@ -298,7 +317,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrDensity, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del
