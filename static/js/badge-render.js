@@ -53,6 +53,21 @@
     return { lines, size: px, shrunk: true, truncated: true };
   }
 
+  /* ---------- Espacio libre debajo de un texto (19-nov-2026): si el texto no cabe en su caja, puede seguir hacia abajo por el espacio que dejó la persona hasta el siguiente elemento que
+     queda debajo y se cruza con él a lo ancho (o hasta el borde de la etiqueta). PURO; se prueba en tests/js/badge_text_fit_check.js. Solo textos sin girar. Devuelve milímetros (≥ 0). */
+  const ROOM_GAP_MM = 0.5;
+  function roomBelow(el, elements, labelHeightMm) {
+    if (((Number(el.rotation) || 0) % 360 + 360) % 360 !== 0) return 0;
+    const bottom = (el.y || 0) + (el.height || 0), left = el.x || 0, right = left + (el.width || 0);
+    let limit = Number(labelHeightMm) > 0 ? Number(labelHeightMm) : bottom;
+    (elements || []).forEach((o) => {
+      if (o === el || o.id === el.id) return;
+      const oTop = o.y || 0, oLeft = o.x || 0, oRight = oLeft + (o.width || 0);
+      if (oTop > (el.y || 0) + 0.01 && oLeft < right - 0.01 && oRight > left + 0.01 && oTop < limit) limit = oTop;
+    });
+    return Math.max(0, limit - bottom - ROOM_GAP_MM);
+  }
+
   /* ---------- Mayúsculas / minúsculas de cada texto (25-oct-2026): SOLO presentación; los datos de la base y los reportes no cambian. ----------
      text_case: «as_is» (como está en la base, por defecto y en las plantillas viejas) | «upper» | «lower» | «title» (Altas y Bajas).
      Se aplica ANTES del ajuste de texto, así el ajuste mide lo que de verdad se imprime. Puro: se prueba en tests/js/badge_text_case_check.js. */
@@ -124,15 +139,23 @@
 
   /* Antes: una sola línea sin saltos (`nowrap`), centrada y con lo que sobra escondido: un nombre o una empresa más largos que la caja se cortaban POR LOS DOS LADOS
      («AN SEBAS», «IGARITA ROJA» en la QL-800, 25-oct-2026). Ahora el texto se ajusta a su caja (fitText) y se dibuja con las líneas ya partidas. */
-  function renderTextElement(div, el, data) {
+  function renderTextElement(div, el, data, room) {
     const content = textContent(el, data);                 // con su modo de mayúsculas, ANTES de ajustar (se mide lo que se imprime)
-    const fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight));
+    const meas = canvasMeasurer(el.font_family, el.font_weight), sizePx = (el.font_size || 12) * PX_PER_PT;
+    let fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, sizePx, meas);
+    let grown = 0;
+    if ((fit.shrunk || fit.truncated) && room > 0) {       // no cabe en su caja: usa primero el espacio libre de abajo (más líneas) y solo si aún no alcanza, achica la letra
+      const fit2 = fitText(content, (el.width || 0) * PX_PER_MM, ((el.height || 0) + room) * PX_PER_MM, sizePx, meas);
+      fit = fit2;
+      grown = Math.max(0, Math.min(room, (fit2.lines.length * fit2.size * LINE_HEIGHT) / PX_PER_MM - (el.height || 0)));
+    }
+    if (grown > 0) { div.style.height = `${(el.height || 0) + grown}mm`; div.dataset.grown = grown.toFixed(1); }
     div.style.fontFamily = `'${el.font_family || 'Roboto'}', ${FONT_STACK_FALLBACK}`;
     div.style.fontSize = `${fit.size}px`;
     div.style.color = el.font_color || '#000000';
     div.style.fontWeight = el.font_weight || 'normal';
     div.style.display = 'flex';
-    div.style.alignItems = 'center';
+    div.style.alignItems = grown > 0 ? 'flex-start' : 'center';
     div.style.justifyContent = el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start';
     div.style.textAlign = el.align || 'left';
     div.style.overflow = 'hidden';
@@ -220,7 +243,7 @@
     div.dataset.elId = el.id;
     div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); transform-origin:50% 50%; z-index:${el.z_index || 1}; box-sizing:border-box;`;
 
-    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data);
+    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data, opts.room || 0);
     else if (el.type === 'image_static') renderImageStatic(div, el, opts);
     else if (el.type === 'image_variable') renderImageVariable(div, el, data, opts);
     else if (el.type === 'qr') renderQr(div, el, data);
@@ -251,7 +274,8 @@
       container.style.backgroundColor = template.background_value || '#ffffff';
     }
     const sorted = (template.elements || []).slice().sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
-    sorted.forEach(el => container.appendChild(renderElement(el, data, opts)));
+    const all = template.elements || [];
+    sorted.forEach(el => container.appendChild(renderElement(el, data, Object.assign({}, opts, { room: (el.type === 'text_static' || el.type === 'text_variable') ? roomBelow(el, all, template.height_mm) : 0 }))));
   }
 
   /* Espera a que las tipografías de la plantilla (normal y negrita) estén cargadas ANTES de dibujar o imprimir: si no, el navegador usa una de respaldo y la etiqueta impresa cambia de tipografía. */
@@ -274,7 +298,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del

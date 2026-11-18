@@ -85,4 +85,29 @@ assert.ok(R.textHeightMm(el, 90, { entity: "ANA" }) < R.textHeightMm(el, 90, dat
   delete global.fetch;
 }
 
+// ---- 19-nov-2026: un texto que no cabe en su caja usa primero el espacio libre de abajo (más líneas) hasta el siguiente elemento; solo si aún no alcanza, achica la letra
+{
+  const els = [
+    { id: "a", type: "text_variable", variable: "entity", x: 5, y: 20, width: 50, height: 8, font_size: 14, rotation: 0 },
+    { id: "b", type: "text_variable", variable: "role", x: 5, y: 44, width: 50, height: 8, font_size: 14, rotation: 0 },
+    { id: "c", type: "qr", variables: ["id"], x: 60, y: 22, width: 10, height: 10, rotation: 0 },
+  ];
+  assert.ok(Math.abs(R.roomBelow(els[0], els, 100) - (44 - 28 - 0.5)) < 1e-9, "llega hasta el siguiente elemento que se cruza a lo ancho (el QR de la derecha no cuenta)");
+  assert.ok(Math.abs(R.roomBelow(els[1], els, 100) - (100 - 52 - 0.5)) < 1e-9, "sin nada debajo: hasta el borde de la etiqueta");
+  assert.strictEqual(R.roomBelow({ ...els[0], rotation: 30 }, els, 100), 0, "girado: no crece");
+  assert.strictEqual(R.roomBelow({ id: "z", x: 5, y: 20, width: 50, height: 30 }, els, 100), 0, "caja que ya llega al siguiente elemento: sin espacio");
+
+  const fake = () => ({ style: {}, dataset: {}, children: [], appendChild(c) { this.children.push(c); return c; }, getContext: () => null });
+  global.document = { createElement: fake };
+  const data = { entity: "INSTITUCIÓN EDUCATIVA TÉCNICA AGROPECUARIA DEL MUNICIPIO DE SAN JOSÉ" };
+  const solo = R.renderElement(els[0], data, {}), conEspacio = R.renderElement(els[0], data, { room: R.roomBelow(els[0], els, 100) });
+  const px = (d) => parseFloat(d.style.fontSize);
+  assert.ok(!conEspacio.children[0].textContent.endsWith("…"), "con espacio libre ya no se recorta con «…»");
+  assert.ok(conEspacio.children[0].textContent.split("\n").length > solo.children[0].textContent.split("\n").length, "toma más líneas");
+  assert.ok(px(conEspacio) >= px(solo), "y la letra no queda más chica que sin espacio");
+  assert.ok(parseFloat(conEspacio.style.cssText.match(/height:([\d.]+)mm/) ? conEspacio.style.cssText.match(/height:([\d.]+)mm/)[1] : 0) >= 8, "la caja sigue su alto original o más");
+  assert.ok(conEspacio.dataset.grown === undefined || parseFloat(conEspacio.dataset.grown) <= 15.5 + 1e-9, "nunca más allá del espacio libre");
+  delete global.document;
+}
+
 console.log("badge_text_fit_check ok");
