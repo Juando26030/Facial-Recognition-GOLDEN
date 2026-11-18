@@ -86,7 +86,6 @@
       $('hDate').value = h.legalization_date || '';
     }
     form.querySelectorAll('input').forEach((i) => { i.disabled = !ed; });
-    $('hSave').hidden = !ed;
     $('legEventLine').textContent = 'Evento ' + h.event_code + ' · ' + h.event_name + (h.city ? ' · ' + h.city : '') + '. El archivo se descarga como ' + state.file_name + '.';
     const n = $('legNotice');
     if (h.status === 'devuelta') {
@@ -290,14 +289,16 @@
     }).catch((err) => showToast(err.message || 'No se pudo guardar el gasto', 'error'));
   });
 
+  // El encabezado se guarda con la barra única («Guardar cambios», Ctrl/Cmd+S); los gastos siguen con su propio formulario.
   $('legHeadForm').addEventListener('input', () => { $('legHeadForm').dataset.dirty = '1'; });
-  $('legHeadForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    busy($('hSave'), () => api('/legalization', jsonOpts('PUT', {
+  $('legHeadForm').addEventListener('submit', (e) => { e.preventDefault(); });
+  GWParams.register({ key: 'leghead', label: 'Encabezado de la legalización', order: 10, save: async () => {
+    await api('/legalization', jsonOpts('PUT', {
       responsible_name: $('hName').value, responsible_cc: $('hCc').value, advance_amount: $('hAdvance').value || null, legalization_date: $('hDate').value || null,
-    }))).then(() => { delete $('legHeadForm').dataset.dirty; showToast('Encabezado guardado', 'success'); return load(); })
-      .catch((err) => showToast(err.message || 'No se pudo guardar el encabezado', 'error'));
-  });
+    }));
+    delete $('legHeadForm').dataset.dirty;
+    await load();
+  } });
 
   /* ---------------------------------------------------------------- Clics (delegación) */
   $('legTablist').addEventListener('click', (e) => {
@@ -402,7 +403,7 @@
 
   /* ---------------------------------------------------------------- Envío y aprobación */
   $('legSubmit').addEventListener('click', async () => {
-    if ($('legHeadForm').dataset.dirty) { showToast('Guarda el encabezado antes de enviar la legalización', 'error'); return; }
+    if ($('legHeadForm').dataset.dirty) { showToast('Guarda los cambios del encabezado antes de enviar la legalización', 'error'); return; }
     if (!await showConfirm('¿Enviar la legalización al director? Quedará bloqueada para cambios hasta que la apruebe o te la devuelva.', { confirmLabel: 'Enviar a revisión', variant: 'warning' })) return;
     busy($('legSubmit'), () => api('/legalization/submit', { method: 'POST' })).then(() => { showToast('Legalización enviada a revisión', 'success'); return load(); })
       .catch((err) => showToast(err.message || 'No se pudo enviar la legalización', 'error'));

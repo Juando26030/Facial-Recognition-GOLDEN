@@ -1,6 +1,6 @@
 /* Opciones de «Categoría (tipo de evento)» dentro del diseñador de la plantilla de evento (panel de propiedades del campo, debajo de «Obligatorio»).
    Es la MISMA lista que Configuración › Tipos de evento (tabla event_types, /api/event-types): lo que se cambie aquí se ve de inmediato en el selector de
-   Nuevo evento / Editar evento y en los chips del calendario. Cada cambio se guarda al instante (no espera el botón Guardar de la plantilla).
+   Nuevo evento / Editar evento y en los chips del calendario. Agregar, renombrar (ventana propia), archivar y restaurar actúan al instante; el COLOR queda pendiente hasta el «Guardar cambios» de la barra única (GWParams, clave «tipos_color»).
    Agregar, renombrar, cambiar color, archivar y restaurar: solo super_admin; los demás administradores ven la lista. */
 (function (root) {
   'use strict';
@@ -8,13 +8,24 @@
   const HEX = /^#[0-9a-fA-F]{6}$/;
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const pending = {};            // id -> color elegido y sin guardar (vive aquí porque el panel de propiedades se vuelve a pintar al cambiar de campo)
+  const colorOf = (t) => (Object.prototype.hasOwnProperty.call(pending, t.id) ? pending[t.id] : (t.color || ''));
+  let registered = false, reloadCurrent = null;
   const toast = (m, k) => { if (root.showToast) root.showToast(m, k || 'info'); };
 
   function mount(box, opts) {
     const canEdit = !!(opts && opts.canEdit), icons = (opts && opts.icons) || '';
     const icon = (n) => '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + esc(icons) + '#i-' + n + '"/></svg>';
     let showArchived = false;
-    box.innerHTML = '<p class="gw-hint">Es la misma lista de «Configuración › Tipos de evento». ' + (canEdit ? 'Los cambios se guardan al instante y se ven en el selector de eventos y en los chips del calendario.' : 'Solo un super administrador puede cambiarla.') + '</p>' +
+    box.setAttribute('data-pnodirty', '');          // lo escrito aquí no marca pendiente la plantilla; el color tiene su propio bloque
+    if (!registered && root.GWParams && canEdit) {
+      registered = true;
+      root.GWParams.register({ key: 'tipos_color', label: 'Colores de las categorías de evento', order: 5, save: async () => {
+        for (const id of Object.keys(pending)) { await send('/api/event-types/' + id, 'PATCH', { color: pending[id] }); delete pending[id]; }
+        if (reloadCurrent) await reloadCurrent();
+      } });
+    }
+    box.innerHTML = '<p class="gw-hint">Es la misma lista de «Configuración › Tipos de evento». ' + (canEdit ? 'Agregar, renombrar y archivar actúan al instante; el color se guarda con «Guardar cambios». Se ven en el selector de eventos y en los chips del calendario.' : 'Solo un super administrador puede cambiarla.') + '</p>' +
       (canEdit ? '<form class="gw-tpl-evt__add" data-evt-form><input class="gw-input" type="text" maxlength="80" placeholder="Nueva opción (ej. Feria)" aria-label="Nombre de la nueva opción" data-evt-name autocomplete="off" required>' +
         '<button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">' + icon('plus') + ' Agregar</button></form>' +
         '<label class="gw-check"><input type="checkbox" data-evt-arch> Ver archivadas</label>' : '') +
@@ -24,7 +35,7 @@
       const using = t.events_using ? t.events_using + (t.events_using === 1 ? ' evento' : ' eventos') : 'Sin eventos';
       const tools = !canEdit ? '' : t.archived
         ? '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-evt-restore="' + t.id + '" aria-label="Restaurar ' + esc(t.name) + '">Restaurar</button>'
-        : '<input type="color" class="gw-config__swatch" data-evt-color="' + t.id + '" value="' + (HEX.test(t.color) ? esc(t.color) : '#D4AF37') + '" aria-label="Color de ' + esc(t.name) + '">' +
+        : '<input type="color" class="gw-config__swatch" data-evt-color="' + t.id + '" value="' + (HEX.test(colorOf(t)) ? esc(colorOf(t)) : '#D4AF37') + '" aria-label="Color de ' + esc(t.name) + '">' +
           '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-evt-rename="' + t.id + '" data-name="' + esc(t.name) + '" aria-label="Renombrar ' + esc(t.name) + '">' + icon('edit') + '</button>' +
           '<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-evt-archive="' + t.id + '" data-name="' + esc(t.name) + '" aria-label="Archivar ' + esc(t.name) + '">' + icon('trash') + '</button>';
       return '<li class="gw-tpl-evt__row"><span class="gw-tpl-evt__name">' + esc(t.name) + (t.archived ? ' <small class="gw-hint">(archivada)</small>' : '') + ' <small class="gw-hint">' + using + '</small></span><span class="gw-tpl-evt__tools">' + tools + '</span></li>';
@@ -46,7 +57,7 @@
     });
     box.addEventListener('change', (e) => {
       const a = e.target.closest('[data-evt-arch]'); if (a) { showArchived = a.checked; load(); return; }
-      const c = e.target.closest('[data-evt-color]'); if (c) run(() => send('/api/event-types/' + c.dataset.evtColor, 'PATCH', { color: c.value }), 'Color guardado');
+      const c = e.target.closest('[data-evt-color]'); if (c) { pending[c.dataset.evtColor] = c.value; if (root.GWParams) root.GWParams.markDirty('tipos_color'); }
     });
     box.addEventListener('click', async (e) => {
       const ren = e.target.closest('[data-evt-rename]');
@@ -63,6 +74,7 @@
       const res = e.target.closest('[data-evt-restore]');
       if (res) run(() => send('/api/event-types/' + res.dataset.evtRestore + '/restore', 'POST'), 'Opción restaurada');
     });
+    reloadCurrent = load;
     load();
   }
   root.EventTypeOptions = { mount: mount };

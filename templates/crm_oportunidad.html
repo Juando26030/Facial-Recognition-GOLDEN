@@ -1,6 +1,6 @@
 {# CRM - Ficha de oportunidad (C2): etapa, datos, actividades e historial. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_oportunidad.js; API: /api/crm/opportunities y /api/crm/activities. #}
 {% from "_crm_macros.html" import ic, ayuda with context %}
-{% set page_title = "CRM - Oportunidad" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/crm_oportunidad.js"] %}{% set crm_section = 'oportunidades' %}
+{% set page_title = "CRM - Oportunidad" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/params-save.js", "js/crm_oportunidad.js"] %}{% set crm_section = 'oportunidades' %}
 {% include "_crm_shell_top.html" %}
   <div class="gw-container gw-stack-lg" id="oppDetail" data-opportunity-id="{{ opportunity_id }}" data-can-admin="{{ '1' if can_admin else '0' }}">
     <a class="crm-back" href="/crm/oportunidades">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a las oportunidades</a>
@@ -27,10 +27,10 @@
         <p class="gw-hint" id="opStageHint"></p>
       </section>
 
-      <form id="opForm" class="crm-form gw-stack" novalidate>
+      <div id="paramsRoot">
+      <form id="opForm" class="crm-form gw-stack" novalidate data-psave="oportunidad">
         <div class="gw-card gw-stack">
           <h2 class="crm-panel__title">Datos</h2>
-          <div class="gw-alert gw-alert--err" id="opFormErr" role="alert" hidden><div class="gw-alert__body"></div></div>
           <div class="gw-field"><label class="gw-label" for="f_name">Nombre de la oportunidad</label><input class="gw-input" id="f_name" name="name" maxlength="200" autocomplete="off"></div>
           <div class="gw-fields-row gw-fields-row--3">
             <div class="gw-field"><label class="gw-label" for="f_amount">Monto</label><input class="gw-input" id="f_amount" name="amount" inputmode="decimal" maxlength="20" autocomplete="off"></div>
@@ -51,10 +51,10 @@
           <div class="gw-field"><label class="gw-label" for="f_next_step">Siguiente paso</label><input class="gw-input" id="f_next_step" name="next_step" maxlength="200" autocomplete="off"></div>
           <div class="gw-field"><label class="gw-label" for="f_description">Descripción</label><textarea class="gw-textarea" id="f_description" name="description" rows="4" maxlength="20000"></textarea>
             <p class="gw-hint">Texto libre: no escribas datos personales de terceros. El historial registra que cambió, no lo que dice.</p></div>
-          <div class="crm-actions"><button type="submit" class="gw-btn gw-btn--primary" id="opSave">Guardar cambios</button>
-            {% if can_admin %}<button type="button" class="gw-btn gw-btn--secondary" id="opArchive"><span id="opArchiveLabel">Archivar oportunidad</span></button>{% endif %}</div>
+          {% if can_admin %}<div class="crm-actions"><button type="button" class="gw-btn gw-btn--secondary" id="opArchive"><span id="opArchiveLabel">Archivar oportunidad</span></button></div>{% endif %}
         </div>
       </form>
+      </div>
 
       <section aria-labelledby="opQuotesTitle" class="gw-card gw-stack">
         <div class="crm-panel__bar"><h2 class="crm-panel__title" id="opQuotesTitle">Cotizaciones</h2></div>
@@ -73,6 +73,8 @@
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="opHistLoad">Ver el historial</button></div>
         <div id="opHist" aria-live="polite"></div>
       </section>
+      {# Barra única de guardado (datos de la oportunidad). #}
+      {% include "_gw_savebar.html" %}
     </div>
   </div>
 {% include "_crm_shell_bottom.html" %}

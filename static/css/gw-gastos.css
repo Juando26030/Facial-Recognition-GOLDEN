@@ -62,3 +62,8 @@
 .gw-gx__help summary { cursor: pointer; font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .gw-gx__help ol { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); display: flex; flex-direction: column; gap: var(--gw-sp-1); }
 .gw-gx__help code { font-size: var(--gw-fs-sm); }
+
+/* Barra de guardado única (criterio de reparto y TRM por defecto): con el menú lateral fijo no queda debajo de él */
+@media (min-width: 901px) {
+  body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
+}

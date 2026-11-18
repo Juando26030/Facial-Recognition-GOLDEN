@@ -1,4 +1,4 @@
-/* CRM - Cotización (C3): editor. Se carga al abrir (una consulta del detalle + catálogos) y al guardar; sin temporizadores ni sondeos.
+/* CRM - Cotización (C3): editor. Datos y líneas se guardan con la barra única de la pantalla (GWParams, bloque «cotizacion»); cambiar de etapa, versión nueva, proforma y archivar son actos inmediatos. Se carga al abrir (una consulta del detalle + catálogos) y al guardar; sin temporizadores ni sondeos.
    Lo escrito por personas se pinta con textContent / .value. Los totales de pantalla son una vista previa: el servidor los recalcula siempre al guardar. */
 (function () {
   "use strict";
@@ -7,7 +7,7 @@
   const { $, el, api, qs, stateBlock, busy, dialog, field, input, select, errorBox, menu } = X;
   const id = Number(root.dataset.quoteId), canAdmin = root.dataset.canAdmin === "1";
   const STAGE = { borrador: "Borrador", enviada: "Enviada", negociada: "Negociada", aprobada: "Aprobada", rechazada: "Rechazada", vencida: "Vencida" };
-  let q = null, meta = null, lines = [], dirty = false;
+  let q = null, meta = null, lines = [];
 
   /* Dinero con 2 decimales y redondeo de mitad hacia arriba, igual que el servidor (se calcula en centavos enteros). */
   const toCents = (v) => Math.round((Number(String(v).replace(",", ".")) || 0) * 100 + 1e-9);
@@ -22,8 +22,14 @@
     [["Subtotal con descuento", t.sub], ["Descuento incluido", t.disc], ["Impuestos", t.tax]].forEach(([k, v]) => { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", fmt(v, q.currency))); });
     const a = el("dt", "is-total", "Total"), b = el("dd", "is-total", fmt(t.total, q.currency)); dl.appendChild(a); dl.appendChild(b);
   }
-  const markDirty = () => { dirty = true; };
-  window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+  const markDirty = () => { if (window.GWParams) GWParams.markDirty("cotizacion"); };
+  const hasPending = () => !!(window.GWParams && GWParams.hasDirty());
+  /* Archivada: no se edita (antes se ocultaba el botón Guardar): se bloquean los campos y se esconde la barra. */
+  function lockUI() {
+    const on = !!(q && q.archived);
+    document.querySelectorAll("#paramsRoot input, #paramsRoot select, #paramsRoot textarea, #paramsRoot button").forEach((n) => { n.disabled = on; });
+    const bar = $("paramsSaveBar"); if (bar) bar.hidden = on;
+  }
 
   function lineRow(l, i) {
     const tr = document.createElement("tr"), cell = (label, node) => { const td = document.createElement("td"); td.dataset.label = label; td.appendChild(node); tr.appendChild(td); return td; };
@@ -41,7 +47,7 @@
     return tr;
   }
   function renderLines() {
-    const body = $("qLines"); body.replaceChildren(); lines.forEach((l, i) => body.appendChild(lineRow(l, i))); $("qLinesEmpty").hidden = lines.length > 0; showTotals();
+    const body = $("qLines"); body.replaceChildren(); lines.forEach((l, i) => body.appendChild(lineRow(l, i))); $("qLinesEmpty").hidden = lines.length > 0; showTotals(); lockUI();
   }
   $("qLines").addEventListener("click", (e) => { const b = e.target.closest("[data-remove]"); if (!b) return; lines.splice(Number(b.dataset.remove), 1); markDirty(); renderLines(); });
   $("qAddLine").addEventListener("click", () => { lines.push({ name: "", description: "", qty: "1", unit_price: "0", discount_percent: "0", tax_percent: "19", product_id: null }); markDirty(); renderLines(); const rows = $("qLines").querySelectorAll("tr"); const last = rows[rows.length - 1]; if (last) last.querySelector("input").focus(); });
@@ -70,18 +76,18 @@
              template_id: $("fTemplate").value || null, terms_id: $("fTerms").value || null, terms_text: $("fTermsText").value, meeting_notes: $("fNotes").value,
              lines: lines.map((l) => ({ product_id: l.product_id, name: l.name, description: l.description, qty: l.qty, unit_price: l.unit_price, discount_percent: l.discount_percent, tax_percent: l.tax_percent })) };
   }
-  async function save(btn) {
+  /* Lo guarda la barra única. Lanza Error(mensaje) si falla (la barra lo muestra y lo pendiente sigue pendiente). */
+  async function saveQuote() {
     err("");
-    try { await busy(btn, async () => { q = await api("PUT", "/api/crm/quotes/" + id, body()); dirty = false; paint(); showToast("Cotización guardada.", "success"); loadHistory(); }); }
-    catch (e) { err(e.message); }
+    q = await api("PUT", "/api/crm/quotes/" + id, body());
+    paint(); loadHistory();
   }
-  $("qSave").addEventListener("click", (e) => save(e.currentTarget));
   $("fTerms").addEventListener("change", () => { const t = meta.terms.find((x) => String(x.id) === $("fTerms").value); if (t) $("fTermsText").value = t.body; markDirty(); });
-  ["fTitle", "fContact", "fCurrency", "fValid", "fEvent", "fTemplate", "fTermsText", "fNotes"].forEach((k) => $(k).addEventListener("input", markDirty));
   $("fCurrency").addEventListener("change", () => { q.currency = $("fCurrency").value; renderLines(); });
+  if (window.GWParams) GWParams.register({ key: "cotizacion", label: "Datos y líneas de la cotización", order: 10, save: saveQuote });
 
-  async function guarded(fn) { if (dirty && !(await showConfirm("Tienes cambios sin guardar. Guárdalos primero con «Guardar cambios». ¿Continuar sin guardarlos?", { title: "Cambios sin guardar", confirmLabel: "Continuar" }))) return; err(""); try { await fn(); } catch (e) { err(e.message); } }
-  async function setStage(stage) { await guarded(async () => { q = await api("POST", "/api/crm/quotes/" + id + "/stage", { stage, updated_at: q.updated_at }); dirty = false; fillForm(); paint(); loadHistory(); showToast("Etapa actualizada.", "success"); }); }
+  async function guarded(fn) { if (hasPending() && !(await showConfirm("Tienes cambios sin guardar. Guárdalos primero con «Guardar cambios». ¿Continuar sin guardarlos?", { title: "Cambios sin guardar", confirmLabel: "Continuar" }))) return; err(""); try { await fn(); } catch (e) { err(e.message); } }
+  async function setStage(stage) { await guarded(async () => { q = await api("POST", "/api/crm/quotes/" + id + "/stage", { stage, updated_at: q.updated_at }); fillForm(); if (window.GWParams) GWParams.markClean("cotizacion"); paint(); loadHistory(); showToast("Etapa actualizada.", "success"); }); }
   async function newVersion() { await guarded(async () => { const nq = await api("POST", "/api/crm/quotes/" + id + "/new-version"); window.location.href = "/crm/cotizaciones/" + nq.id; }); }
   async function toProforma() {
     const ev = input("text", 200), city = input("text", 120), e2 = errorBox(), b = el("div", "gw-stack"); ev.value = q.title; b.appendChild(e2); b.appendChild(field("pfEvent", "Nombre del evento", ev)); b.appendChild(field("pfCity", "Ciudad (opcional)", city));
@@ -105,7 +111,7 @@
   function paint() {
     $("qNumber").textContent = "Cotización N.º " + q.number + (q.version > 1 ? " · versión " + q.version : "");
     $("qTitle").textContent = q.title; $("qSub").textContent = (q.account_name || "") + (q.owner_name ? " · Responsable: " + q.owner_name : "");
-    const open = q.stage === "borrador" || q.stage === "enviada" || q.stage === "negociada", locked = q.archived;
+    const open = q.stage === "borrador" || q.stage === "enviada" || q.stage === "negociada";
     const notice = $("qNotice"), msgs = []; if (q.expired) msgs.push("Esta cotización ya pasó su fecha de validez."); if (q.archived) msgs.push("Está archivada: no se puede editar."); if (q.stage !== "borrador" && !q.archived) msgs.push("Ya fue enviada. Si necesitas cambiar precios, crea una versión nueva; la anterior queda intacta.");
     notice.hidden = !msgs.length; notice.firstChild.textContent = msgs.join(" ");
     const acts = $("qActions"); acts.replaceChildren();
@@ -119,7 +125,7 @@
     if (canAdmin) items.push({ label: q.archived ? "Restaurar" : "Archivar", data: { act: q.archived ? "restore" : "archive" } });
     if (items.length) acts.appendChild(menu("Más acciones", items, "Más acciones de la cotización"));
     const sb = el("span", "gw-badge", STAGE[q.stage] || q.stage); acts.insertBefore(sb, acts.firstChild);
-    $("qSave").disabled = locked; $("qSaveBar").hidden = locked;
+    lockUI();
     const ul = $("qVersions"); ul.replaceChildren();
     q.versions.forEach((v) => {
       const li = document.createElement("li"), t = "Versión " + v.version + " · " + (STAGE[v.stage] || v.stage) + (v.created_at ? " · " + X.fmtDateTime(v.created_at) : "");

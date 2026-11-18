@@ -1,6 +1,7 @@
 /* Configuración (templates/configuracion.html). Dos bloques que se guardan con la barra única (GWParams, static/js/params-save.js):
    - «apariencia»: preferencia LOCAL de este navegador (localStorage; la lee static/js/theme.js en todas las pantallas). Mismas claves de siempre.
    - «sesion» (solo admin): interruptor «Sesión única» → PUT /api/settings/single-session (app/routers/print_stations.py).
+   - «guias» (todos): preferencia de la CUENTA «Deshabilitar demos automáticas» → PUT /api/me/tours-auto-off (antes se guardaba al marcar; ahora queda pendiente como lo demás).
    «Restablecer» actúa al instante (no es edición pendiente). */
 (function () {
   'use strict';
@@ -50,6 +51,19 @@
   }
 
   GWParams.register({ key: 'apariencia', label: 'Apariencia', order: 10, save: async () => applyAppearance() });
+
+  /* Guías automáticas: el casillero ya no lleva data-gw-tour-off (ese guarda al marcar, en gw-ui.js); aquí queda pendiente hasta «Guardar cambios». */
+  const toursOff = document.getElementById('toursOff');
+  if (toursOff) {
+    GWParams.register({
+      key: 'guias', label: 'Guías automáticas', order: 12,
+      save: async () => {
+        const res = await fetch('/api/me/tours-auto-off', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ off: toursOff.checked }) });
+        if (!res.ok) throw new Error('No se pudo guardar la preferencia de las guías');
+        window.GW_TOURS_OFF = toursOff.checked;
+      },
+    });
+  }
 
   document.getElementById('resetThemeBtn').addEventListener('click', () => {
     try {

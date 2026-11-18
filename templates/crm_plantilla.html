@@ -1,18 +1,14 @@
 {# CRM - Diseñador del PDF de cotización (solo admin). Bloques que se arrastran y ordenan, con vista previa del PDF real. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_plantilla.js; API: /api/crm/doc-templates, /doc-layout/starter. #}
 {% from "_crm_macros.html" import ic, ayuda with context %}
-{% set page_title = "CRM - Diseñar plantilla del PDF" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css", "css/p-crm-c5.css"] %}{% set page_js = ["js/crm_plantilla.js"] %}{% set crm_section = 'cotizaciones' %}
+{% set page_title = "CRM - Diseñar plantilla del PDF" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css", "css/p-crm-c5.css"] %}{% set page_js = ["js/params-save.js", "js/crm_plantilla.js"] %}{% set crm_section = 'cotizaciones' %}
 {% include "_crm_shell_top.html" %}
-  <div class="gw-container gw-stack-lg" id="plRoot" data-template-id="{{ template_id }}">
+  <div class="gw-container gw-stack-lg" id="plRoot" data-template-id="{{ template_id }}"><div id="paramsRoot" class="gw-stack-lg">
     <a class="crm-back" href="/crm/productos">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a productos y plantillas</a>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">CRM · Administración</p>
         <h1 class="gw-page-head__title" id="plTitle">Diseñar la plantilla del PDF</h1>
-        <p class="gw-page-head__sub">Arma la cotización con bloques: agrega, arrastra para ordenar y mira cómo queda el PDF a la derecha. Nada cambia en las cotizaciones hasta que guardes.</p>
-      </div>
-      <div class="crm-card-actions">
-        <span class="gw-badge" id="plDirty" hidden>Cambios sin guardar</span>
-        <button type="button" class="gw-btn gw-btn--primary" id="plSave" disabled>Guardar diseño</button>
+        <p class="gw-page-head__sub">Arma la cotización con bloques: agrega, arrastra para ordenar y mira cómo queda el PDF a la derecha. Nada cambia en las cotizaciones hasta que pulses «Guardar cambios» abajo.</p>
       </div>
     </div>
 
@@ -53,5 +49,8 @@
         <iframe class="pl-preview__frame" id="plFrame" title="Vista previa del PDF de la cotización"></iframe>
       </section>
     </div>
+    </div>
+    {# Barra única de guardado (diseño del PDF). #}
+    {% include "_gw_savebar.html" %}
   </div>
 {% include "_crm_shell_bottom.html" %}

@@ -23,6 +23,7 @@
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+<script src="{{ url_for('static', path='js/params-save.js') }}"></script>
 <script src="{{ url_for('static', path='js/usuarios-compromiso.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
@@ -57,7 +58,7 @@
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main" data-gw-fold>
-  <div class="gw-container gw-stack-lg" data-gw-tour="usuarios" data-gw-tour-auto>
+  <div class="gw-container gw-stack-lg" id="paramsRoot" data-gw-tour="usuarios" data-gw-tour-auto>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name }}</p>
@@ -140,7 +141,7 @@
     </details>
 
     {% if staff_role != "comercial" %}
-    <label class="gw-check gw-check--top"><input type="checkbox" id="staffMailToggle" {% if event.staff_mail_enabled %}checked{% endif %}> <span>Avisar por correo a los digitadores que se asignan a este evento (si tienen correo)</span></label>
+    <label class="gw-check gw-check--top" data-psave="staffmail"><input type="checkbox" id="staffMailToggle" {% if event.staff_mail_enabled %}checked{% endif %}> <span>Avisar por correo a los digitadores que se asignan a este evento (si tienen correo)</span></label>
     {% endif %}
     <details class="gw-group" id="grpExistente">
       <summary class="gw-group__sum"><span class="gw-group__title">Asignar cuentas ya existentes</span><span class="gw-group__hint">Dos formas: buscar una por una o cargar un Excel.</span></summary>
@@ -192,7 +193,7 @@
         <button type="button" class="gw-btn gw-btn--primary" data-pl-make>Generar el enlace</button>
         <button type="button" class="gw-btn gw-btn--danger-outline" data-pl-revoke hidden>Revocar</button>
       </div>
-      <label class="gw-check"><input type="checkbox" data-pl-enabled> Exigir el compromiso en este evento</label>
+      <label class="gw-check" data-psave="pledge"><input type="checkbox" data-pl-enabled> Exigir el compromiso en este evento</label>
       <p class="gw-hint" data-pl-note></p>
       <p class="gw-msg gw-msg--err" data-pl-unavailable hidden role="note">El texto de autorización de datos de salud aún no está aprobado por la auditora: el enlace no se puede publicar todavía.</p>
       <p class="gw-hint" data-pl-draft hidden>Aviso: se está usando un texto en borrador (solo pruebas).</p>
@@ -214,6 +215,7 @@
       </div>
       <div id="tempUsersPager"></div>
     </section>
+    {% if staff_role != "comercial" %}{% include "_gw_savebar.html" %}{% endif %}
   </div>
 </main>
 </body>

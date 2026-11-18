@@ -1,5 +1,6 @@
 /* Tipos de evento (Configuración → «Tipos de evento», solo super_admin): agregar, renombrar, color opcional, archivar y restaurar. API: /api/event-types (app/routers/event_types.py).
-   Archivar no toca los eventos que ya tienen el tipo. Las reglas del servidor llegan como mensaje y se muestran con showToast. */
+   Archivar no toca los eventos que ya tienen el tipo. Las reglas del servidor llegan como mensaje y se muestran con showToast.
+   El COLOR de cada tipo es una edición en línea: queda pendiente y se guarda con la barra única de Configuración (GWParams, bloque «tipos»); agregar, renombrar (ventana con su propio «Guardar»), archivar y restaurar actúan al instante. */
 (function () {
   'use strict';
   const root = document.getElementById('tipos');
@@ -11,12 +12,14 @@
   const HEX = /^#[0-9a-fA-F]{6}$/;
   if ($('typeColor')) $('typeColor').value = '#D4AF37';
   let showArchived = false;
+  const pendingColor = new Map();          // id del tipo -> color nuevo ('' = quitar el color); lo pendiente sobrevive a recargar la lista
 
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const busy = (btn, fn) => (window.GW && window.GW.busy ? window.GW.busy(btn, fn) : fn());
 
-  function row(t) {
+  function row(base) {
+    const t = pendingColor.has(base.id) ? Object.assign({}, base, { color: pendingColor.get(base.id) }) : base;
     const using = t.events_using ? `${t.events_using} ${t.events_using === 1 ? 'evento' : 'eventos'}` : 'Sin eventos';
     const btns = [];
     if (!t.archived) {
@@ -64,10 +67,23 @@
   const archToggle = $('showArchivedTypes');
   if (archToggle) archToggle.addEventListener('change', () => { showArchived = archToggle.checked; load(); });
 
-  $('tiposList').addEventListener('change', async (e) => {
+  const onColor = (e) => {
     const c = e.target.closest('[data-color-of]');
     if (!c) return;
-    try { await send(`/api/event-types/${c.dataset.colorOf}`, 'PATCH', { color: c.value }); showToast('Color guardado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
+    pendingColor.set(Number(c.dataset.colorOf), c.value);          // pendiente: la barra única avisa «Cambios sin guardar» (el evento change ya sube hasta #paramsRoot)
+  };
+  $('tiposList').addEventListener('input', onColor);
+  $('tiposList').addEventListener('change', onColor);
+  GWParams.register({
+    key: 'tipos', label: 'Tipos de evento', order: 40,
+    save: async () => {
+      const failed = [];
+      for (const [id, color] of Array.from(pendingColor.entries())) {
+        try { await send(`/api/event-types/${id}`, 'PATCH', { color }); pendingColor.delete(id); } catch (err) { failed.push(err.message); }
+      }
+      await load();
+      if (failed.length) throw new Error(failed[0]);
+    },
   });
   $('tiposList').addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry]')) { load(); return; }
@@ -79,11 +95,11 @@
       return;
     }
     const nc = e.target.closest('[data-nocolor]');
-    if (nc) { try { await busy(nc, () => send(`/api/event-types/${nc.dataset.nocolor}`, 'PATCH', { color: '' })); load(); } catch (err) { showToast(err.message, 'error'); } return; }
+    if (nc) { pendingColor.set(Number(nc.dataset.nocolor), ''); GWParams.markDirty('tipos'); await load(); return; }
     const arch = e.target.closest('[data-archive]');
     if (arch) {
       if (!(await showConfirm(`¿Archivar el tipo «${esc(arch.dataset.name)}»? Deja de ofrecerse al crear o editar eventos; los eventos que ya lo tienen lo conservan. Se puede restaurar.`, { confirmLabel: 'Archivar' }))) return;
-      try { await busy(arch, () => send(`/api/event-types/${arch.dataset.archive}/archive`, 'POST')); showToast('Tipo archivado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
+      try { await busy(arch, () => send(`/api/event-types/${arch.dataset.archive}/archive`, 'POST')); pendingColor.delete(Number(arch.dataset.archive)); showToast('Tipo archivado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
       return;
     }
     const rest = e.target.closest('[data-restore]');

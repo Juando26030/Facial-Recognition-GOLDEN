@@ -48,9 +48,9 @@
             (isSuper ? '<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-act="purge" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">Eliminar definitivamente</button>' : '')
           : '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="edit" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">Editar</button>' +
             '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="archive" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">Archivar</button>';
-        return '<div class="gw-row" style="display:flex;flex-wrap:wrap;gap:var(--gw-sp-2);align-items:center;justify-content:space-between;padding:var(--gw-sp-2) 0">' +
-          '<span><strong>' + esc(s.name) + '</strong> (' + esc(s.events) + ' eventos)' + (s.archived ? ' <span class="gw-badge gw-badge--warn">Archivado</span>' : '') + '</span>' +
-          '<span style="display:flex;gap:var(--gw-sp-2);flex-wrap:wrap">' + btns + '</span></div>';
+        return '<div class="gw-card-row"><div class="gw-card-row__head">' +
+          '<span class="gw-card-row__title">' + esc(s.name) + ' <span class="gw-card-row__meta">(' + esc(s.events) + ' eventos)</span></span>' + (s.archived ? '<span class="gw-badge gw-badge--warn">Archivado</span>' : '') + '</div>' +
+          '<div class="gw-card-row__actions">' + btns + '</div></div>';
       }).join('');
     }
 
