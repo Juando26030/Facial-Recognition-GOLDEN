@@ -183,8 +183,25 @@ body.gw-disenador { background: var(--gw-bg); color: var(--gw-text); --gw-ed-sav
   .badge-canvas-wrapper { height: 32vh; min-height: 0; max-height: none; padding: var(--gw-sp-2); border-radius: var(--gw-radius-md); }          /* alto fijo: «Ajustar a pantalla» cabe la escarapela entera en esa franja */
   .badge-canvas-zone .zoom-bar { flex-wrap: nowrap; overflow-x: auto; margin-bottom: var(--gw-sp-1); }
   .zoom-bar .gw-btn { flex: 0 0 auto; white-space: nowrap; min-height: 2rem; }
-  #zoomLabel { min-width: 0; white-space: nowrap; }
-  #sizeInfo { white-space: nowrap; }
+  #zoomLabel { flex: 0 0 auto; min-width: 6.5rem; white-space: nowrap; text-align: center; }          /* el texto «Ajustado · 85 %» no se encoge entre − y + */
+  #sizeInfo { flex: 0 0 auto; white-space: nowrap; }
+  /* 18-nov-2026 · Más alto para el lienzo en pantalla pequeña: lo que va ANTES del lienzo se compacta (título, nota de categorías, franja del evento, aviso de la impresora). */
+  body.editor-page .gw-disenador__kicker, body.editor-page .gw-page-head__sub { display: none; }
+  body.editor-page .gw-disenador .gw-page-head { margin-bottom: var(--gw-sp-1); gap: var(--gw-sp-2); }
+  body.editor-page .gw-disenador .gw-page-head__title { font-size: var(--gw-fs-lg); line-height: 1.2; }
+  body.editor-page .gw-disenador .gw-page-head__actions { display: flex; gap: var(--gw-sp-2); }
+  body.editor-page .golden-event-strip strong { display: inline; margin-right: var(--gw-sp-1); }
+  #categoryBar { padding: var(--gw-sp-1) var(--gw-sp-2); margin-bottom: var(--gw-sp-1); gap: var(--gw-sp-1) var(--gw-sp-2); }
+  #categoryBar .gw-ed-note { display: none; }
+  #mobileTopBar { margin-bottom: var(--gw-sp-1); }
+  .gw-ed-info { margin-bottom: var(--gw-sp-1); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .badge-canvas-wrapper { height: 40vh; }
+  body.editor-page .gw-disenador__guide { display: none; }          /* queda el botón «Ver la guía» */
+  body.editor-page .golden-event-strip-inner > span:not(:nth-of-type(2)) { display: none; }          /* en la franja solo el nombre del evento */
+  body.editor-page .golden-event-strip { padding: 2px var(--gw-sp-3); }
+  #categoryBar .gw-ed-field { flex: 1 1 40%; }
+  #categoryBar .gw-label { font-size: 0.68rem; }
+  #categoryBar .gw-select { min-height: 2rem; }
   /* barra de elementos fija ENCIMA de la barra de guardado (que queda pegada abajo) */
   .gw-ed-tools { position: fixed; left: 0; right: 0; bottom: var(--gw-ed-savebar-h); z-index: 900; flex-wrap: nowrap; margin: 0; padding: var(--gw-sp-2); overflow-x: auto; background: var(--gw-surface); box-shadow: var(--gw-shadow-lg); border-top: 1px solid var(--gw-border); }
   .gw-ed-tool { flex: 0 0 auto; white-space: nowrap; }
