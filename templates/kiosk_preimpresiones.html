@@ -68,6 +68,16 @@
         <button type="button" class="gw-segment__opt" id="ppModeFilter" aria-pressed="false">Por filtro</button>
       </div>
 
+      <div class="gw-field">
+        <label class="gw-label" for="ppReg">Estado de registro</label>
+        <select class="gw-select" id="ppReg">
+          <option value="todos" selected>Todos (registrados y no registrados)</option>
+          <option value="si">Solo los ya registrados</option>
+          <option value="no">Solo los no registrados</option>
+        </select>
+        <p class="gw-hint">Este filtro va primero; las condiciones de abajo se aplican sobre lo que quede.</p>
+      </div>
+
       <div class="gw-field gw-field--grow">
         <label class="gw-label" for="ppSearch">Buscar una persona</label>
         <input class="gw-input" type="search" id="ppSearch" placeholder="Nombre, cédula o entidad" autocomplete="off" spellcheck="false">

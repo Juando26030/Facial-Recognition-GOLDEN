@@ -11,7 +11,7 @@
   const RENDER_CAP = 500;                                   // filas dibujadas (el resto se alcanza buscando o filtrando); «elegir todas» sí toma todas las que cumplen
   const PRINT_WINDOW = 'goldenweb_print';
 
-  const state = { mode: 'hand', conds: [], selected: new Set(), people: [], total: 0, preprinted: 0, pending: 0, canPreprint: true, maxBatch: 300, eventStatus: '', busy: false };
+  const state = { mode: 'hand', reg: 'todos', conds: [], selected: new Set(), people: [], total: 0, preprinted: 0, pending: 0, canPreprint: true, maxBatch: 300, eventStatus: '', busy: false };
   let fields = [];
   let loadTimer = null, loadSeq = 0;
 
@@ -34,6 +34,7 @@
     const conds = state.mode === 'filter' ? activeConds() : [];
     const qs = new URLSearchParams();
     if (q) qs.set('q', q);
+    if (state.reg !== 'todos') qs.set('reg', state.reg);
     if (conds.length) qs.set('filter', JSON.stringify({ conditions: conds }));
     try {
       const d = await j(`${API}/people?${qs}`);
@@ -121,6 +122,7 @@
   $('ppModeHand').addEventListener('click', () => setMode('hand'));
   $('ppModeFilter').addEventListener('click', () => setMode('filter'));
   $('ppSearch').addEventListener('input', () => scheduleLoad(250));
+  $('ppReg').addEventListener('change', (e) => { state.reg = e.target.value; state.selected.clear(); scheduleLoad(0); });
 
   /* ---------- Selección ---------- */
   $('ppList').addEventListener('change', (e) => {

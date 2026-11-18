@@ -62,6 +62,18 @@ def condition_met(person: dict, cond: dict, base_match: Callable[[dict, dict], b
     return base_match(person, cond)
 
 
+REG_MODES = ("todos", "si", "no")
+
+
+def by_registration(people: List[dict], mode: str) -> List[dict]:
+    """Filtro de estado de registro que va SIEMPRE primero: `si` = solo registradas, `no` = solo no registradas, `todos` (o cualquier otro valor) = sin recorte. El filtro por condiciones se aplica después sobre lo que queda."""
+    if mode == "si":
+        return [p for p in people if p.get("status") == "registrado"]
+    if mode == "no":
+        return [p for p in people if p.get("status") != "registrado"]
+    return people
+
+
 def apply_filter(people: List[dict], filt: Optional[dict], base_match: Callable[[dict, dict], bool]) -> List[dict]:
     """Todas las condiciones deben cumplirse (igual que la ruleta). Sin condiciones devuelve a todos."""
     conds = (filt or {}).get("conditions") or []
