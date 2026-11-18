@@ -4,20 +4,22 @@
 
 Escrita a mano; sin SET de sesión (pooler de Neon). Id ≤ 32 caracteres.
 
-Revision ID: 0155_legalizacion_orden
-Revises: 0154_crm_implica_categorias
+Revision ID: 0156_legalizacion_orden
+Revises: 0155_almacen_serial_y_archivos
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0155_legalizacion_orden"
-down_revision = "0154_crm_implica_categorias"
+revision = "0156_legalizacion_orden"
+down_revision = "0155_almacen_serial_y_archivos"
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
-    op.add_column("event_expenses", sa.Column("position", sa.Integer(), nullable=True))
+    cols = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("event_expenses")}
+    if "position" not in cols:          # tolerante: si un intento anterior ya la creó, no falla
+        op.add_column("event_expenses", sa.Column("position", sa.Integer(), nullable=True))
 
 
 def downgrade():
