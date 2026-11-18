@@ -84,3 +84,13 @@ def test_el_plan_marca_lo_que_viene_del_crm_y_las_asignaciones_a_mano_se_bloquea
 def test_sin_colores_sueltos_ni_onclick_en_el_bloque_nuevo():
     js = _src("static/js/event-inventory-plan.js")
     assert "onclick" not in js and "alert(" not in js.replace("showToast", "")
+
+
+def test_historial_de_cotizaciones_visible_con_anotacion_y_pdf():
+    r = _src("app/routers/crm_quotes.py")
+    assert '"/opportunities/{opportunity_id}/quotes"' in r and '"is_last"' in r
+    opp = _src("static/js/crm_oportunidad.js")
+    assert "/api/crm/opportunities/" in opp and "Descargar PDF" in opp and "Anotación" in opp and "loadQuotes();" in opp
+    assert 'id="opQuotes"' in _src("templates/crm_oportunidad.html")
+    cot = _src("static/js/crm_cotizacion.js")
+    assert "v.meeting_notes" in cot and '"/api/crm/quotes/" + v.id + "/pdf"' in cot

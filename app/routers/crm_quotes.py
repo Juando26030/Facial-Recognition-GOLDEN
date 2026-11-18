@@ -55,6 +55,17 @@ def update_product(product_id: int, data: dict = Body(...), db: Session = Depend
     return _run(db, lambda: svc.serialize_product(svc.update_product(db, product_id, data, _expected(data))))
 
 
+@router.get("/opportunities/{opportunity_id}/quotes")
+def opportunity_quotes(opportunity_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
+    """Historial de cotizaciones de una oportunidad (todas las versiones, la más nueva primero) con su anotación; `is_last` marca la que toma el inventario del evento al ganar."""
+    from app import crm_inventory
+    from app.models import CrmQuote
+    rows = db.query(CrmQuote).filter(CrmQuote.opportunity_id == opportunity_id).order_by(CrmQuote.id.desc()).all()
+    last = crm_inventory.last_quote(db, opportunity_id)
+    return {"items": [{"id": r.id, "number": r.number, "version": r.version, "title": r.title, "stage": r.stage, "total": str(r.total), "currency": r.currency, "created_at": r.created_at.isoformat() if r.created_at else None,
+                       "meeting_notes": r.meeting_notes, "archived": r.archived_at is not None, "is_last": last is not None and last.id == r.id} for r in rows]}
+
+
 @router.get("/products/{product_id}/inventory")
 def get_product_inventory(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(view_staff)):
     """Elementos de Almacén que implica el producto (por unidad vendida) y las opciones del catálogo de Almacén para elegirlos."""
