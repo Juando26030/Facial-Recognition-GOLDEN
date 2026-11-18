@@ -84,6 +84,7 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
         <p class="gw-page-head__sub">{{ 'Arma el certificado del evento: elementos, medidas y fondo.' if is_cert else 'Arma la escarapela del evento: elementos, medidas y fondo.' }} Lo que ves en el lienzo es lo que se imprime.</p>
       </div>
       <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--primary gw-ed-fullbtn" id="edFullOpen" aria-haspopup="dialog" title="Abre el diseñador a pantalla completa: el lienzo, los elementos y las propiedades ocupan toda la pantalla">{{ ic('eye', 'gw-icon--sm') }} Diseñador a pantalla completa</button>
         <details class="gw-group gw-disenador__guide">
           <summary class="gw-group__sum"><span class="gw-group__title">Guía de 3 pasos</span></summary>
           <div class="gw-group__body">
@@ -195,6 +196,11 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     </div>
 
     <div class="gw-ed-body" id="editorBody" data-tab="canvas">
+      <div class="gw-ed-fullbar" id="edFullBar" hidden>
+        <strong class="gw-ed-fullbar__title" id="edFullTitle">Diseñador a pantalla completa</strong>
+        <span class="gw-ed-fullbar__hint">Los cambios quedan pendientes y se guardan con «Guardar cambios», abajo. Hacer clic afuera no cierra esta ventana.</span>
+        <button type="button" class="gw-btn gw-btn--secondary" id="edFullClose">Cerrar ventana</button>
+      </div>
       <div class="gw-ed-tools" id="toolsCol" role="group" aria-label="Agregar elementos" data-gw-tour-step="1" data-gw-tour-title="1. Elige los elementos" data-gw-tour-text="Agrega texto, datos de la persona, logos, foto, QR o código de barras. Cada uno aparece en el lienzo.">
         <p class="gw-ed-tools__title">Agregar</p>
         <button type="button" class="gw-ed-tool" data-add="text_static">{{ ic('form', 'gw-icon--sm') }} Texto fijo</button>
@@ -705,6 +711,19 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
   document.getElementById('zoomReal').addEventListener('click', () => setZoom('manual', 1));
   document.getElementById('zoomIn').addEventListener('click', () => setZoom('manual', editorScale * 1.25));
   document.getElementById('zoomOut').addEventListener('click', () => setZoom('manual', editorScale / 1.25));
+  /* Pantalla completa (18-nov-2026): el MISMO cuerpo del diseñador (herramientas · lienzo · propiedades) pasa a ocupar toda la pantalla; la barra única de guardado sigue abajo
+     (avisa de cambios sin guardar). Solo se cierra con «Cerrar ventana»: ni el clic afuera ni Esc la cierran (Esc sigue soltando el elemento). */
+  const fullOpenBtn = document.getElementById('edFullOpen'), fullCloseBtn = document.getElementById('edFullClose'), fullBar = document.getElementById('edFullBar');
+  function setFull(on) {
+    document.body.classList.toggle('editor-full', on);
+    fullBar.hidden = !on;
+    if (on) { bodyEl.setAttribute('role', 'dialog'); bodyEl.setAttribute('aria-modal', 'true'); bodyEl.setAttribute('aria-labelledby', 'edFullTitle'); }
+    else { bodyEl.removeAttribute('role'); bodyEl.removeAttribute('aria-modal'); bodyEl.removeAttribute('aria-labelledby'); }
+    zoomMode = 'fit';
+    requestAnimationFrame(() => { if (template) renderCanvas(); (on ? fullCloseBtn : fullOpenBtn).focus(); });
+  }
+  fullOpenBtn.addEventListener('click', () => setFull(true));
+  fullCloseBtn.addEventListener('click', () => setFull(false));
   let resizeTimer = null;
   const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (template) renderCanvas(); }, 80); };
   window.addEventListener('resize', onResize);
