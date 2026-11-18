@@ -9,9 +9,9 @@ import logging
 
 from sqlalchemy import text
 
-from app import consent, faces, jobs, minors
+from app import consent, faces, jobs, minors, personform
 from app.database import SessionLocal
-from app.models import User
+from app.models import Event, User
 from app.storage import get_storage, photo_key
 from app.timeutil import utcnow
 
@@ -36,8 +36,9 @@ def run_enroll(payload: dict) -> None:
         key = photo_key(tenant, uid)
         if user is not None and user.face_encoding:
             return                                             # idempotente: un reintento (o una tarea repetida) no recalcula ni duplica el vector
-        if user is None or minors.is_minor(user.birth_date) or not consent.has_acceptance(db, tenant, uid, event_id):
-            get_storage().delete(key)                          # sin aceptación vigente (o revocó entre tanto, o es menor): no se calcula nada y no queda foto
+        event = db.get(Event, event_id)
+        if user is None or minors.is_minor(user.birth_date) or not consent.has_acceptance(db, tenant, uid, event_id) or (event is not None and personform.user_flow(db, event, uid).get("facial_off")):
+            get_storage().delete(key)                          # sin aceptación vigente (o revocó entre tanto, o es menor, o su categoría no usa reconocimiento facial): no se calcula nada y no queda foto
             return
         arr = crypto.read_array(key)
         encodings = faces.extract(arr, is_registration=True) if arr is not None else None

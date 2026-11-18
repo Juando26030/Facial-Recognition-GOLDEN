@@ -33,7 +33,7 @@
       });
     });
     cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, hidden: false, canHide: !NEVER_HIDDEN.includes(cfg.key), canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key) && !EVENT_DECIDES.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
-    return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets) };
+    return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets), flow: Object.assign({}, def.flow || {}) };
   }
 
   function sortBySheet(items, sheets) {
@@ -57,7 +57,9 @@
       else if (it.showField && String(it.showValue).trim() !== '') f.show_if = { field: it.showField, op: 'equals', value: String(it.showValue).trim() };
       fields[it.key] = f;
     });
-    return { enabled: !!model.enabled, sheets: model.sheets.map((s) => ({ id: s.id, title: s.title, open: !!s.open })), rows, fields };
+    const out = { enabled: !!model.enabled, sheets: model.sheets.map((s) => ({ id: s.id, title: s.title, open: !!s.open })), rows, fields };
+    if (variant && model.flow) { const flow = {}; ['facial_off', 'digital_off', 'autoprint_off'].forEach((k) => { if (model.flow[k]) flow[k] = true; }); if (Object.keys(flow).length) out.flow = flow; }          // flujos que esta categoría APAGA
+    return out;
   }
 
   /* Mueve un campo una posición dentro de SU grupo (dir -1 arriba, +1 abajo). Devuelve true si cambió algo. */
@@ -424,6 +426,18 @@
             delete state.variants[state.cat]; state.cat = ''; state.model = state.general; state.selected = null; dirty(); render();
           });
           container.appendChild(rm);
+          // Flujos propios de la categoría: solo APAGAN algo que el evento tiene (nunca encienden lo que el evento no usa).
+          const flow = m.flow = m.flow || {}, fbox = el('fieldset', 'gw-field gw-pf-flow');
+          fbox.appendChild(el('legend', 'gw-label', `Qué pasa con «${state.cat}» al registrarse`));
+          [['facial_off', 'Ofrecer el reconocimiento facial', 'Apagado: a esta categoría no se le ofrece la aceptación, no se calcula su rostro y no entra al reconocimiento. La aceptación sigue siendo de cada persona y los textos legales no cambian.'],
+            ['digital_off', 'Enviar la escarapela digital', 'Apagado: no se le envía el enlace por correo aunque tenga correo guardado.'],
+            ['autoprint_off', 'Imprimir sola la escarapela al registrar', 'Apagado: al registrarla no se abre la impresión sola (se puede imprimir a mano o ya estar preimpresa).']].forEach(([k, t, hint]) => {
+            const cb = el('input', null, null, { type: 'checkbox', id: `pfFlow_${k}`, 'aria-label': `${t} a ${state.cat}` }); cb.checked = !flow[k];
+            cb.addEventListener('change', () => { flow[k] = !cb.checked; dirty(); });
+            const lb = el('label', 'gw-check'); lb.append(cb, doc.createTextNode(` ${t}`));
+            fbox.append(lb, el('p', 'gw-hint', hint));
+          });
+          container.appendChild(fbox);
         }
       }
 

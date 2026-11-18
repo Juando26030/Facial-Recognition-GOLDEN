@@ -48,6 +48,9 @@ def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name:
     contact = attendee.digital_contact
     if not contact:
         return {"sent": False, "detail": "Sin correo para enviar"}
+    from app import personform          # import tardío: personform importa modelos
+    if personform.flow_for(db, event, attendee.get_categories()).get("digital_off"):
+        return {"sent": False, "detail": "La categoría de esta persona no recibe la escarapela digital"}
     base = publicurl.base(base_url)
     if not base:       # un enlace relativo («/b/…») no sirve en un correo: sin dominio público conocido no se envía nada
         return {"sent": False, "detail": "Falta PUBLIC_BASE_URL: no se puede armar el enlace de la escarapela"}
