@@ -7,6 +7,9 @@
     <title>Servidor local | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-clientes.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -62,7 +65,7 @@
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="slReload">Actualizar lista</button>
       </div>
     </div>
-    <div id="slEvents" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
+    <div id="slEvents" class="ev-list gw-tenant__body" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
     <p class="gw-hint">¿Sin conexión o prefieres hacerlo a mano? En la nube exporta el evento y aquí impórtalo (Parámetros del sistema). El resultado es el mismo.</p>
   </div>
 </main>

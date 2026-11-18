@@ -7,6 +7,7 @@ crear el Super Admin con `scripts/create_staff_user.py`.
 Uso (desde la carpeta del proyecto, con el .env cargado):
     python scripts/wipe_all_data.py
 Muestra qué base es y cuántos registros hay, y exige escribir el NOMBRE de la base para continuar.
+Solo corre con una base local (localhost/127.0.0.1) o con DEPLOY_ENV=staging; con DEPLOY_ENV o ENVIRONMENT en «production» se niega siempre.
 """
 import os
 import shutil
@@ -23,11 +24,13 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 from app.database import engine  # noqa: E402
 from app.models import Base  # noqa: E402
+from app.script_guard import require_destructive_allowed  # noqa: E402
 
 KEEP = {"alembic_version"}
 
 
 def main():
+    require_destructive_allowed(engine.url.host)          # lista de lo permitido: base local o DEPLOY_ENV=staging; nunca en producción (app/script_guard.py)
     db_name = make_url(str(engine.url)).database
     tables = [t.name for t in Base.metadata.sorted_tables if t.name not in KEEP]
     print(f"Base de datos: {db_name}  ({engine.url.host})")
