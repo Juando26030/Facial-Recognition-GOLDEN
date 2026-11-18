@@ -64,25 +64,19 @@ $primary = if ($ips.Count -gt 0) { $ips[0] } else { 'localhost' }
 Set-EnvKey 'PUBLIC_BASE_URL' "https://${primary}:$AppPort"
 
 # ---- 4. Base de datos PostgreSQL como servicio (corre como NetworkService: Postgres no arranca con permisos de administrador)
-function Invoke-AsNetworkService([string]$Exe, [string]$Args_, [string]$LogName) {
-    $log = Join-Path $LogDir $LogName
-    $act = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"`"$Exe`" $Args_ > `"$log`" 2>&1`""
-    $pr = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\NETWORK SERVICE' -LogonType ServiceAccount -RunLevel Limited
-    $name = "GoldenLocal-$LogName"
-    Register-ScheduledTask -TaskName $name -Action $act -Principal $pr -Force | Out-Null
-    Start-ScheduledTask -TaskName $name
-    do { Start-Sleep -Seconds 1 } while ((Get-ScheduledTask -TaskName $name).State -eq 'Running')
-    $code = (Get-ScheduledTaskInfo -TaskName $name).LastTaskResult
-    Unregister-ScheduledTask -TaskName $name -Confirm:$false
-    if ($code -ne 0) { throw "$Exe falló ($code); ver $log" }
-}
 if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
+    # initdb se corre DIRECTO (no en una tarea programada: en algunos equipos la tarea se queda en «Queued» y nunca corre, y se daba por buena sin haber creado la base).
+    # initdb de Windows suelta solo los privilegios de administrador (token restringido); después se le da el control de la carpeta a NetworkService, que es quien corre el servicio.
+    if (Test-Path $PgData) { Remove-Item $PgData -Recurse -Force }      # una carpeta a medias (sin PG_VERSION) impide crear la base
     New-Item -ItemType Directory -Force -Path $PgData | Out-Null
     $pwfile = Join-Path $ConfigDir 'pg.pw'
     Write-Utf8NoBom $pwfile $cfg['LOCAL_DB_PASSWORD']
-    & icacls $pwfile /grant 'NT AUTHORITY\NETWORK SERVICE:R' | Out-Null
-    Invoke-AsNetworkService (Join-Path $PgDir 'bin\initdb.exe') "-D `"$PgData`" -U golden --pwfile=`"$pwfile`" --auth=scram-sha-256 -E UTF8 --locale=C" 'initdb.log'
-    Remove-Item $pwfile -Force
+    $initOut = & (Join-Path $PgDir 'bin\initdb.exe') -D $PgData -U golden --pwfile=$pwfile --auth=scram-sha-256 -E UTF8 --locale=C 2>&1
+    $initCode = $LASTEXITCODE
+    Remove-Item $pwfile -Force -ErrorAction SilentlyContinue
+    Set-Content -Path (Join-Path $LogDir 'initdb.log') -Value ($initOut | Out-String) -Encoding UTF8
+    if ($initCode -ne 0 -or -not (Test-Path (Join-Path $PgData 'PG_VERSION'))) { throw "No se pudo crear la base de datos (initdb código $initCode); ver logs\initdb.log" }
+    & icacls $PgData /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)F' /T /C /Q | Out-Null
     $conf = Join-Path $PgData 'postgresql.conf'
     Add-Content $conf "`nport = $PgPort`nlisten_addresses = 'localhost'`nshared_buffers = 256MB`nmax_connections = 60`nwork_mem = 8MB`nlog_destination = 'stderr'`nlogging_collector = on`nlog_directory = '$($LogDir -replace '\\','/')'`nlog_filename = 'postgres-%a.log'`nlog_truncate_on_rotation = on"
     Write-Log 'Base de datos inicializada'
