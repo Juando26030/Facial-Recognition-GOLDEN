@@ -25,6 +25,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
+from app import preprint as preprint_mod
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
 from app.routers import clean_url as clean_url_router      # D2.5k: /inscripciones/<evento>/<formulario> (se registra al final)
 from app.routers import public_link as public_link_router
@@ -45,7 +46,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import crm as crm_router
 from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
-from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, preprint as preprint_router, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -417,6 +418,7 @@ _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) 
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
 _include(contacts_router.router)      # Fase 8: captura de contactos para expositores (/contacto, /tarjeta, /expositor y /api/events/{id}/exhibitors)
 _include(roulette.router, prefix="/api")
+_include(preprint_router.router, prefix="/api")          # Preimpresiones: elegir a quién se le imprime la escarapela antes de que llegue
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
 _include(event_history_router.router, prefix="/api")      # GET /api/events/{id}/change-history (coordinador del evento, comercial, admin)
@@ -1162,6 +1164,12 @@ def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(get_db
     return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta.html", min_role="coordinador")
 
 
+@app.get("/kiosk/{event_id}/preimpresiones")
+def kiosk_preprint(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Preimpresiones — elegir a quién se le imprime la escarapela ANTES de que llegue (VIPs, expositores…) — coordinador+ (la comercial no imprime)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_preimpresiones.html", min_role="coordinador", exclude_roles=["comercial"])
+
+
 @app.get("/kiosk/{event_id}/ruleta/visual")
 def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Ruleta — configuración visual (fuente, colores, imagen, fondo) — coordinador+."""
@@ -1273,14 +1281,15 @@ def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
-def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, db: Session = Depends(get_db)):
+def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, preprint: int = 0, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
     auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
     excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
     imprimir")."""
     # `?users=a,b,c` (29-oct-2026, «Imprimir pendientes»): UNA sola ventana con una página por escarapela (hasta 50); sin él, una sola persona como siempre.
-    many = [u.strip() for u in (users or "").split(",") if u.strip()][:50]
+    # Preimpresiones (18-nov-2026): también UNA sola ventana/ejecución de impresión, pero con más hojas (tope MAX_PRINT_WINDOW; la dirección sigue siendo corta con cédulas).
+    many = [u.strip() for u in (users or "").split(",") if u.strip()][:(preprint_mod.MAX_BATCH if preprint else 50)]
     return _resolve_kiosk_page(event_id, request, db, "badge_print.html", exclude_roles=["comercial"], extra_context={
         "print_user_id": user_id,
         "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),
