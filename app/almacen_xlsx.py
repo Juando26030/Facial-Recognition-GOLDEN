@@ -16,7 +16,9 @@ SHEET = "Hoja1"
 HEADER_CELLS = {"code": "B2", "name": "B3", "when": "B4", "client": "B5", "place": "B6", "coordinator": "B7"}
 RESPONSIBLE_CELL = "B54"
 YES, NO = "SÍ", "NO"
-CHARS_PER_LINE, LINE_HEIGHT = 48, 12.5          # columna E: ~46 de ancho con letra de 8
+OBS_WIDTH, OBS_CHARS = 64, 52          # columna E ampliada (era 46): caracteres por línea con la letra del formato
+HEADER_CHARS = 80          # datos del encabezado (B:E combinadas)
+LINE_HEIGHT = 13
 
 
 def _row_cells(row: dict, excel_row: int) -> Dict[str, object]:
@@ -35,12 +37,27 @@ def _row_cells(row: dict, excel_row: int) -> Dict[str, object]:
             f"D{excel_row}": YES if row.get("done") else (NO if active and row["kind"] == "inv" else None), f"E{excel_row}": " · ".join(notes) or None}
 
 
+def _fit(ws, cell: str, row: int, chars_per_line: int) -> None:
+    """Texto largo: se parte en líneas (ajuste de texto) y la fila crece lo necesario; si no, el Excel lo corta."""
+    c = ws[cell]
+    text = c.value
+    if not text or len(str(text)) <= chars_per_line:
+        return
+    al = copy.copy(c.alignment)
+    al.wrap_text = True
+    al.vertical = al.vertical or "center"
+    c.alignment = al
+    ws.row_dimensions[row].height = max(ws.row_dimensions[row].height or 15, LINE_HEIGHT * math.ceil(len(str(text)) / chars_per_line))
+
+
 def build(event_info: Dict[str, str], board: Iterable[dict], responsible: str) -> bytes:
     """`event_info`: code, name, when, client, place, coordinator (texto ya armado). `board`: las filas de build_board en el orden del formato. Devuelve el .xlsx."""
     wb = load_workbook(TEMPLATE, rich_text=True)          # rich_text: conserva los textos con dos tipos de letra de la columna A
     ws = wb[SHEET]
+    ws.column_dimensions["E"].width = OBS_WIDTH          # observaciones más anchas que en el formato a mano (ahí se escribe con lapicero; aquí hay texto armado)
     for key, cell in HEADER_CELLS.items():
         ws[cell] = event_info.get(key) or None
+        _fit(ws, cell, int(cell[1:]), HEADER_CHARS)
     by_key = {r["key"]: r for r in almacen.CHECKLIST_ROWS}
     for row in board:
         meta = by_key.get(row["key"])
@@ -48,14 +65,7 @@ def build(event_info: Dict[str, str], board: Iterable[dict], responsible: str) -
             continue
         for cell, value in _row_cells(row, meta["excel_row"]).items():
             ws[cell] = value
-        text = ws[f"E{meta['excel_row']}"].value
-        if text and len(text) > CHARS_PER_LINE:          # una observación larga se parte en líneas y la fila crece (si no, el Excel la corta)
-            c = ws[f"E{meta['excel_row']}"]
-            al = copy.copy(c.alignment)
-            al.wrap_text = True
-            c.alignment = al
-            lines = math.ceil(len(text) / CHARS_PER_LINE)
-            ws.row_dimensions[meta["excel_row"]].height = max(ws.row_dimensions[meta["excel_row"]].height or 15, LINE_HEIGHT * lines)
+        _fit(ws, f"E{meta['excel_row']}", meta["excel_row"], OBS_CHARS)
     ws[RESPONSIBLE_CELL] = responsible or None
     ws.sheet_view.selection[0].activeCell = "A1"
     ws.sheet_view.selection[0].sqref = "A1"

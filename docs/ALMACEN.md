@@ -84,5 +84,10 @@ Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details
 - **Responsable checklist** = quien descarga (usuario de almacén). Nombre del archivo: «<evento> - <código> - Checklist GEYL.xlsx».
 - Pruebas: `tests/test_almacen_xlsx.py` (4, pasan) y 2 de API al final de `tests/test_almacen_api.py` (necesitan Postgres).
 
+### Ajustes del 18-nov (tarde)
+- La **barra de búsqueda del evento** quedó fuera del bloque plegable (solo se pliega la lista «Eventos encontrados»): «Plegar todo» ya no la oculta. Regla general: en pantallas con «Plegar todo», la barra de búsqueda nunca va dentro de un `<details>`.
+- **Novedades** pasó a su **propia pestaña** de Inventario («Novedades», `templates/_almacen_novedades_panel.html`); Almacén conserva solo el bloque «¿Vuelve con novedad?» de las entradas.
+- Botón del Excel con el icono de descarga. En el Excel, la columna E es más ancha y el texto largo (observaciones y datos del encabezado) se ajusta y agranda la fila.
+
 ## Siguiente
 **Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Después: alertas de equipos sin devolver y reportes de uso.

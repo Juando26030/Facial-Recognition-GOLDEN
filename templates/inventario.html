@@ -68,6 +68,7 @@
       <button type="button" class="gw-segment__opt" role="tab" id="invTabCat" data-tab="cat" aria-controls="invPanelCat" aria-selected="true">Catálogo</button>
       <button type="button" class="gw-segment__opt" role="tab" id="invTabCal" data-tab="cal" aria-controls="invPanelCal" aria-selected="false" tabindex="-1">Dónde está cada equipo</button>
       {% if almacen_on %}<button type="button" class="gw-segment__opt" role="tab" id="invTabAlm" data-tab="alm" aria-controls="invPanelAlm" aria-selected="false" tabindex="-1">Almacén</button>{% endif %}
+      {% if almacen_on %}<button type="button" class="gw-segment__opt" role="tab" id="invTabNov" data-tab="nov" aria-controls="invPanelNov" aria-selected="false" tabindex="-1">Novedades</button>{% endif %}
       {% if inv_manager %}<button type="button" class="gw-segment__opt" role="tab" id="tab_inventario" data-tab="adm" aria-controls="inventario" aria-selected="false" tabindex="-1">Administrar catálogo</button>{% endif %}
     </div>
 
@@ -119,7 +120,7 @@
       <div class="gw-invcal__detail" id="invCalDetail"></div>
     </section>
 
-    {% if almacen_on %}{% include "_almacen_panel.html" %}{% endif %}
+    {% if almacen_on %}{% include "_almacen_panel.html" %}{% include "_almacen_novedades_panel.html" %}{% endif %}
 
     {% if inv_manager %}{% include "_inventory_catalog_admin.html" %}{% endif %}
 

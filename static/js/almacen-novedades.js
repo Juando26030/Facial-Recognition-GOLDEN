@@ -1,11 +1,11 @@
-/* Almacén (Inventario → pestaña «Almacén», Pieza 3): novedades (daños o problemas de un elemento). Reportar por código, foto del daño (con la cámara en el celular), lista con filtro y
+/* Almacén (Inventario → pestaña «Novedades», Pieza 3): novedades (daños o problemas de un elemento). Reportar por código, foto del daño (con la cámara en el celular), lista con filtro y
    buscador, y «Resolver» (deja el equipo disponible de nuevo). API: /api/almacen/novelties (GET lista, POST reportar), /{id}/photo, /{id}/resolve. Todo se escapa; sin manejadores en línea. */
 (function () {
   'use strict';
-  const root = document.getElementById('invPanelAlm');
+  const root = document.getElementById('invPanelNov');
   const card = document.getElementById('almNovCard');
   if (!root || !card) return;
-  const tab = document.getElementById('invTabAlm');
+  const tab = document.getElementById('invTabNov');
   const $ = (id) => document.getElementById(id);
   const esc = (t) => window.escapeHtml(String(t == null ? '' : t));
   let items = [];

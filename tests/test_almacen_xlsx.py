@@ -45,4 +45,11 @@ def test_rows_carry_needed_out_ok_and_observations():
 def test_long_observations_wrap_and_grow_the_row():
     lines = [{"row_key": "mouse", "assigned": 5, "out": 6, "returned": 0, "consumed": 0, "extra": 1, "plan_b": True}]
     ws = _book(lines)["Hoja1"]
-    assert ws["E10"].alignment.wrap_text and ws.row_dimensions[10].height >= 25
+    assert ws.column_dimensions["E"].width >= 60
+    assert ws["E10"].alignment.wrap_text and ws.row_dimensions[10].height >= 25 and "faltan 6" in ws["E10"].value
+
+
+def test_long_header_values_wrap_too():
+    long_place = NS(**{**EVENT.__dict__, "location": "Centro de Convenciones " * 6})
+    ws = load_workbook(io.BytesIO(x.build(x.event_info(long_place, "ACME", None, "Camilo"), m.build_board([], {}), "Ana")))["Hoja1"]
+    assert ws["B6"].alignment.wrap_text and ws.row_dimensions[6].height > 15
