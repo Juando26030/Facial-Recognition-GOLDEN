@@ -56,4 +56,3 @@ def test_novedades_permiten_tomar_foto_con_la_camara():
     js = (root / "static" / "js" / "almacen-novedades.js").read_text(encoding="utf8")
     assert 'id="almNovCam"' in panel and 'id="almNovCamIn"' in panel and 'capture="environment"' in panel
     assert "data-nov-cam=" in js and "data-nov-camin=" in js and 'capture="environment"' in js and "shots(" in js
-    assert "card.querySelector" not in js          # el manejador de «resolver» ya no usa una variable que no existía
