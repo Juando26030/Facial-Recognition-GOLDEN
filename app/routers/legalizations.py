@@ -114,10 +114,19 @@ def _apply(e: EventExpense, body: LineIn) -> None:
     values = {f: _money(getattr(body, f), lbl) for f, lbl in (("amount", "Valor"), ("iva", "IVA"), ("unit_value", "Valor unitario"),
                                                               ("breakfast", "Desayuno"), ("lunch", "Almuerzo"), ("dinner", "Cena"), ("snack", "Refrigerio"))}
     if kind == lx.ALIMENTACION:
+        # 18-nov-2026: desayuno, almuerzo, comida y refrigerio son CANTIDADES (enteras); el valor del gasto = valor unitario × esa suma.
+        for m, lbl in (("breakfast", "Desayunos"), ("lunch", "Almuerzos"), ("dinner", "Comidas"), ("snack", "Refrigerios")):
+            if values[m] is not None and values[m] != values[m].to_integral_value():
+                raise HTTPException(status_code=400, detail=f"{lbl}: escribe una cantidad entera")
         meals = sum((values[m] or Decimal(0)) for m in MEALS)
-        total = meals if meals else values["amount"]
+        if meals:
+            if not values["unit_value"]:
+                raise HTTPException(status_code=400, detail="Alimentación: escribe el valor unitario de cada comida")
+            total = values["unit_value"] * meals
+        else:
+            total = values["amount"] if values["amount"] is not None else (Decimal(0) if values["unit_value"] else None)
         if total is None:
-            raise HTTPException(status_code=400, detail="Alimentación: escribe el valor de al menos una comida")
+            raise HTTPException(status_code=400, detail="Alimentación: escribe el valor unitario y cuántos desayunos, almuerzos, comidas o refrigerios fueron")
     else:
         total = values["amount"]
         if total is None:
@@ -189,15 +198,70 @@ def _new_line(event_id: int, kind: str, staff: StaffUser, leg: EventLegalization
     return e
 
 
+def _kind_rows(db: Session, event_id: int, kind: str) -> list:
+    """Los gastos NO archivados del rubro, en el orden en que se ven."""
+    return [r for r in svc.active_lines(db, event_id) if (r.kind or lx.OTRO) == kind]
+
+
+def _renumber(rows: list) -> None:
+    for i, r in enumerate(rows, start=1):
+        r.position = i
+
+
 @router.post("/events/{event_id}/legalization/lines")
 def add_line(event_id: int, body: LineIn, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     event, leg = _event_leg(event_id, db, staff)
     _check_editable(leg)
     leg = leg or svc.ensure_legalization(db, event)
     e = _new_line(event.id, body.kind, staff, leg, body)
+    rows = _kind_rows(db, event.id, e.kind)
     db.add(e)
+    _renumber(rows)
+    e.position = len(rows) + 1          # el gasto nuevo va al final del rubro
     db.commit()
     return svc.line_json(e)
+
+
+class OrderIn(BaseModel):
+    kind: str
+    ids: list[int] = Field(..., max_length=2000)
+
+
+@router.put("/events/{event_id}/legalization/lines/order")
+def reorder_lines(event_id: int, body: OrderIn, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Orden manual de los gastos de un rubro (arrastrar y soltar): `ids` en el orden nuevo. Un gasto que no venga en la lista queda al final; uno ajeno al rubro se rechaza."""
+    event, leg = _event_leg(event_id, db, staff)
+    _check_editable(leg)
+    if body.kind not in lx.KINDS:
+        raise HTTPException(status_code=400, detail="Rubro de gasto no válido")
+    rows = _kind_rows(db, event.id, body.kind)
+    by_id = {r.id: r for r in rows}
+    if len(set(body.ids)) != len(body.ids) or any(i not in by_id for i in body.ids):
+        raise HTTPException(status_code=400, detail="La lista de gastos no corresponde a este rubro")
+    _renumber([by_id[i] for i in body.ids] + [r for r in rows if r.id not in set(body.ids)])
+    db.commit()
+    return {"ids": [r.id for r in _kind_rows(db, event.id, body.kind)]}
+
+
+@router.post("/events/{event_id}/legalization/lines/{line_id}/duplicate")
+def duplicate_line(event_id: int, line_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Copia un gasto justo debajo del original, para corregirlo después (mismo comercio con otro día o valor). No copia la foto ni la revisión: la copia nace pendiente y sin soporte adjunto."""
+    event, leg = _event_leg(event_id, db, staff)
+    _check_editable(leg)
+    src = _find_line(db, event.id, line_id)
+    if src.archived_at is not None:
+        raise HTTPException(status_code=400, detail="El gasto está archivado: restáuralo para duplicarlo")
+    kind = src.kind or lx.OTRO
+    rows = _kind_rows(db, event.id, kind)
+    copy = EventExpense(event_id=event.id, kind=kind, category=src.category, responsible=src.responsible, created_by_id=staff.id, created_at=utcnow(), amount=src.amount)
+    for f in ("description", "applies_to", "expense_date", "vehicle", "observation", "has_support", "iva", *TEXT, *MEALS, "unit_value"):
+        setattr(copy, f, getattr(src, f))
+    db.add(copy)
+    at = next((i for i, r in enumerate(rows) if r.id == src.id), len(rows) - 1) + 1
+    rows.insert(at, copy)
+    _renumber(rows)
+    db.commit()
+    return svc.line_json(copy)
 
 
 def _find_line(db: Session, event_id: int, line_id: int) -> EventExpense:
