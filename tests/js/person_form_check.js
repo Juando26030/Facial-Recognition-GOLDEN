@@ -126,3 +126,10 @@ assert.strictEqual(PF.pick(null, null), null);
   assert.strictEqual(vip.fields.first_name.text_case, 'upper', 'idem: el general manda');
   assert.strictEqual(PF.forCategory(null, 'VIP'), null);
 })();
+
+// Flujos por categoría: el diseñador los guarda como flow:{...} solo si están APAGADOS
+(function () {
+  const src = require('fs').readFileSync(__dirname + '/../../static/js/person-form-designer.js', 'utf8');
+  ['facial_off', 'digital_off', 'autoprint_off'].forEach((k) => { if (!src.includes(k)) throw new Error('falta el flujo ' + k + ' en el diseñador'); });
+  console.log('person_form_flow: OK');
+})();

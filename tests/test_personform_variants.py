@@ -79,3 +79,25 @@ def test_person_configs_con_entorno_apagado(monkeypatch):
 @pytest.mark.parametrize("raw", [None, "x", []])
 def test_sanitize_variants_tolera_basura(raw):
     assert pf.sanitize_variants({"variants": raw}, CFGS, ["VIP"]) == {}
+
+
+# ── Flujos por categoría (solo APAGAN; nunca encienden lo que el evento no usa) ──
+def test_flow_se_limpia_y_solo_guarda_lo_apagado():
+    assert pf._clean_flow({"facial_off": True, "digital_off": False, "x": True}) == {"facial_off": True}
+    assert pf._clean_flow(None) == {}
+    assert pf._clean_flow("basura") == {}
+
+
+def test_flow_for_usa_la_primera_categoria(monkeypatch):
+    stored = {"enabled": True, "variants": {"VIP": {"flow": {"autoprint_off": True}}, "Staff": {"flow": {"facial_off": True}}}}
+    monkeypatch.setattr(pf, "env_enabled", lambda: True)
+    assert pf.flow_for(None, None, ["VIP", "Staff"], stored=stored) == {"autoprint_off": True}
+    assert pf.flow_for(None, None, ["Otra"], stored=stored) == {}
+    assert pf.flow_for(None, None, [], stored=stored) == {}
+
+
+def test_flow_for_sin_formulario_activo_no_restringe(monkeypatch):
+    monkeypatch.setattr(pf, "env_enabled", lambda: True)
+    assert pf.flow_for(None, None, ["VIP"], stored={"enabled": False, "variants": {"VIP": {"flow": {"facial_off": True}}}}) == {}
+    monkeypatch.setattr(pf, "env_enabled", lambda: False)
+    assert pf.flow_for(None, None, ["VIP"], stored={"enabled": True, "variants": {"VIP": {"flow": {"facial_off": True}}}}) == {}

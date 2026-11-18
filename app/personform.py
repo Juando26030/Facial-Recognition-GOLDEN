@@ -20,7 +20,7 @@ import re
 from typing import Optional
 
 from app import formlib, roster_text
-from app.models import AppSetting, EventFieldConfig
+from app.models import AppSetting, EventAttendee, EventFieldConfig
 from app.timeutil import utcnow
 
 ENV_FLAG = "PERSON_FORM_ENABLED"
@@ -170,6 +170,14 @@ def sanitize(raw: dict, configs: list, allow_hidden: bool = False) -> dict:
     return {"enabled": bool(raw.get("enabled")), "sheets": sheets, "rows": rows, "fields": fields}
 
 
+FLOW_KEYS = ("facial_off", "digital_off", "autoprint_off")          # flujos que una categoría puede APAGAR (solo restringen: nunca encienden algo que el evento no tiene)
+
+
+def _clean_flow(raw) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+    return {k: bool(raw.get(k)) for k in FLOW_KEYS if raw.get(k)}
+
+
 def sanitize_variants(raw: dict, configs: list, categories: list) -> dict:
     """Formularios por CATEGORÍA (19-nov-2026): `{categoría: {sheets, rows, fields}}`. Solo de categorías que el evento tiene; cada uno se valida igual que el general (más campos ocultos).
     Lo obligatorio de una categoría vive aquí (no en `event_field_configs`, que es el del formulario general)."""
@@ -180,6 +188,9 @@ def sanitize_variants(raw: dict, configs: list, categories: list) -> dict:
             continue
         clean = sanitize({**v, "enabled": True}, configs, allow_hidden=True)
         out[cat] = {k: clean[k] for k in ("sheets", "rows", "fields")}
+        flow = _clean_flow(v.get("flow"))
+        if flow:
+            out[cat]["flow"] = flow
     return out
 
 
@@ -301,7 +312,11 @@ def effective_variant(v: dict, configs: list) -> Optional[dict]:
     for sheet in clean["sheets"]:
         if any(fields[k]["required"] for r in clean["rows"] if r["sheet"] == sheet["id"] for k in r["items"]):
             sheet["open"] = True
-    return {"sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+    out = {"sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+    flow = _clean_flow((v or {}).get("flow"))
+    if flow:
+        out["flow"] = flow
+    return out
 
 
 def for_category(definition: Optional[dict], category: Optional[str]) -> Optional[dict]:
@@ -403,3 +418,48 @@ def is_stale(definition: dict, op_version, op_sig=None) -> bool:
     except ValueError:
         return False
     return 1 <= v < int(definition.get("form_version") or 1)
+
+
+# ------------------------------------------------------------------ flujos por categoría (19-nov-2026): reconocimiento facial, escarapela digital e impresión automática
+def _stored_active(db, event, stored=None) -> Optional[dict]:
+    if not env_enabled():
+        return None
+    stored = stored if stored is not None else load_raw(db, event)
+    return stored if stored and stored.get("enabled") and stored.get("variants") else None
+
+
+def flow_for(db, event, categories: Optional[list], stored: Optional[dict] = None) -> dict:
+    """Flujos APAGADOS para la categoría de la persona (una sola; se usa la primera): `{facial_off, digital_off, autoprint_off}`. Vacío = todo como lo decide el evento."""
+    cat = (categories or [None])[0]
+    st = _stored_active(db, event, stored)
+    if not cat or not st:
+        return {}
+    return _clean_flow(((st["variants"].get(cat) or {}).get("flow")))
+
+
+def user_flow(db, event, user_id: str, stored: Optional[dict] = None) -> dict:
+    """Lo mismo, buscando la categoría de la persona en este evento."""
+    st = _stored_active(db, event, stored)
+    if not st:
+        return {}
+    att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user_id).first()
+    return flow_for(db, event, att.get_categories() if att else [], stored=st)
+
+
+def facial_off_user_ids(db, event) -> set:
+    """Personas de este evento cuya categoría NO usa reconocimiento facial (no se les ofrece la aceptación, no se les calcula el vector y no entran al índice de reconocimiento)."""
+    st = _stored_active(db, event)
+    if not st:
+        return set()
+    cats = {c for c, v in st["variants"].items() if (v or {}).get("flow", {}).get("facial_off")}
+    if not cats:
+        return set()
+    out = set()
+    for uid, raw in db.query(EventAttendee.user_id, EventAttendee.categories).filter(EventAttendee.event_id == event.id, EventAttendee.categories.isnot(None)):
+        try:
+            mine = json.loads(raw) if raw else []
+        except ValueError:
+            continue
+        if mine and mine[0] in cats:
+            out.add(uid)
+    return out
