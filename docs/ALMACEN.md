@@ -97,5 +97,11 @@ Plegar y desplegar (18-nov-2026, copiado del patrón de la plataforma: `<details
 - Se quitó «¿Vuelve con novedad?» de las entradas (redundante con la pestaña Novedades; el API de `/almacen/move` aún la acepta, la pantalla ya no la usa).
 - Buscadores del panel: campos y botón de cámara del tamaño normal del sistema (se quitaron las píldoras grandes y las cajas dentro de cajas).
 
+### Cambios del 18-nov (tarde) — migración `0153_almacen_serial_y_archivos`
+- **Serial = valor del QR (un solo dato).** En «Objetos y QR» ya no hay «Código QR» y «Serial» por separado: solo **Serial**, y ese es el texto que lleva el QR de la etiqueta. Se escribe de 4 a 32 caracteres (letras, números, guion, punto o guion bajo; sin espacios; se guarda en MAYÚSCULA) y es único en todo el almacén. Si se deja vacío al crear, se genera uno («GW…»). Cambiarlo cambia el QR: **hay que reimprimir la etiqueta**. `inventory_units.code` pasó a 32 caracteres y `serial` se iguala a `code` (la etiqueta ya no repite «Serial …»). Los productos por modelo/cantidad conservan su QR de tipo.
+- **Novedades con archivos obligatorios:** reportar y resolver exigen **al menos un archivo** (foto, PDF o video MP4/MOV; hasta 8 por envío, 10 MB cada uno, 25 MB en total). Las fotos se re-codifican a JPEG; PDF y video se validan por contenido. Tabla `inventory_novelty_files` (tipo `reporte` o `resolucion`); las fotos de la versión anterior (`photo_key`) se siguen mostrando. Reportar y resolver son multipart (ya no JSON). La entrada «con novedad» del API de movimientos se eliminó (no podía exigir archivos); un equipo que vuelve con una novedad abierta queda bloqueado igual.
+- **Búsqueda de evento:** si el bloque «Eventos encontrados» está plegado y se escribe en la barra, se despliega solo.
+- **Administrar catálogo (con Almacén):** el formulario de producto ya no pide **Unidad de medida** ni **SKU** (la unidad queda «unidad», el SKU vacío); tampoco se muestran en las tarjetas ni en la búsqueda.
+
 ## Siguiente
 **Sticker con el serial** usando el diseñador de escarapelas (plantilla propia de inventario; respeta `docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`): primero análisis y plan, luego aprobación de Juan David. Después: alertas de equipos sin devolver y reportes de uso.

@@ -19,7 +19,7 @@
           {% endif %}
 
           <div class="gw-group__item" data-pnodirty>
-            <div class="gw-item-head"><h4 id="invProdFormTitle">{% if almacen_on %}Tipos de elemento (productos){% else %}Productos{% endif %}</h4>{% call ayuda('ay_invprod', 'Productos') %}Cada producto tiene una unidad de medida, un SKU opcional y, si lo necesita, campos propios que se piden en cada evento (por ejemplo «Marca» o «Voltaje»). Escribe un campo por línea; para que sea numérico agrega «:número» al final.{% endcall %}</div>
+            <div class="gw-item-head"><h4 id="invProdFormTitle">{% if almacen_on %}Tipos de elemento (productos){% else %}Productos{% endif %}</h4>{% call ayuda('ay_invprod', 'Productos') %}Cada producto {% if almacen_on %}tiene{% else %}tiene una unidad de medida, un SKU opcional y,{% endif %} si lo necesita, campos propios que se piden en cada evento (por ejemplo «Marca» o «Voltaje»). Escribe un campo por línea; para que sea numérico agrega «:número» al final.{% endcall %}</div>
             {% if almacen_on %}<p class="gw-hint">Aquí creas el <strong>tipo</strong> de elemento (por ejemplo «Portátil Lenovo»). Después, con el botón <strong>«Objetos y QR»</strong> de su tarjeta, agregas cada portátil real: cada objeto recibe su propio código QR. Los elementos por modelo o por cantidad (cables, impresoras) llevan un solo QR por tipo.</p>{% endif %}
             <details class="gw-form-group" id="invProdFormBox" open>
               <summary class="gw-form-group__summary"><span id="invProdFormSum">Crear un tipo de elemento</span></summary>
@@ -28,9 +28,9 @@
                 <div class="gw-fields-row gw-fields-row--2">
                   <div class="gw-field"><label class="gw-label" for="invProdName">Nombre del producto</label><input class="gw-input" type="text" id="invProdName" maxlength="80" required autocomplete="off"></div>
                   {% if not almacen_on %}<div class="gw-field"><label class="gw-label" for="invProdCat">Categoría</label><select class="gw-select" id="invProdCat"></select></div>{% endif %}
-                  <div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>
+                  {% if not almacen_on %}<div class="gw-field"><label class="gw-label" for="invProdUnit">Unidad de medida</label><input class="gw-input" type="text" id="invProdUnit" maxlength="20" value="unidad" list="invUnitList" autocomplete="off"><datalist id="invUnitList"></datalist></div>{% endif %}
                   <div class="gw-field"><label class="gw-label" for="invProdStock">Existencias de Golden <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="number" min="0" id="invProdStock" inputmode="numeric" autocomplete="off" aria-describedby="invProdStockHint"><p class="gw-hint" id="invProdStockHint">Cuánto tiene Golden de este producto. Si lo asignado a eventos que se cruzan en fechas lo supera, se avisa para alquilar; nunca se bloquea un evento. Vacío = no se controla.</p></div>
-                  <div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>
+                  {% if not almacen_on %}<div class="gw-field"><label class="gw-label" for="invProdSku">SKU <span class="gw-hint">(opcional)</span></label><input class="gw-input" type="text" id="invProdSku" maxlength="40" autocomplete="off"></div>{% endif %}
                 </div>
                 {% if almacen_on %}<fieldset class="gw-field gw-fieldset" id="almCatBox"><legend class="gw-label">Control de bodega</legend>
                   <div class="gw-fields-row gw-fields-row--2">
@@ -53,7 +53,7 @@
                 <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-units-close>Cerrar</button></div>
               <form id="almUnitsForm" class="gw-fields-row gw-fields-row--3">
                 <div class="gw-field"><label class="gw-label" for="almUnitsCount">¿Cuántos objetos nuevos?</label><input class="gw-input" type="number" id="almUnitsCount" min="1" max="100" value="1" inputmode="numeric" required></div>
-                <div class="gw-field"><label class="gw-label" for="almUnitsSerial">Serial <span class="gw-hint">(opcional, solo si es uno)</span></label><input class="gw-input" type="text" id="almUnitsSerial" maxlength="80" autocomplete="off"></div>
+                <div class="gw-field"><label class="gw-label" for="almUnitsSerial">Serial <span class="gw-hint">(opcional, solo si es uno; si lo dejas vacío se genera uno)</span></label><input class="gw-input" type="text" id="almUnitsSerial" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
                 <div class="gw-field"><span class="gw-label" aria-hidden="true">&nbsp;</span><button type="submit" class="gw-btn gw-btn--primary" id="almUnitsBtn">Agregar objetos</button></div>
               </form>
               <div class="gw-actions">
@@ -66,7 +66,7 @@
               <label class="gw-sr-only" for="invProdSearch">Buscar un tipo de elemento</label>
               <div class="gw-search__row"><div class="gw-search__field">
                 <svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>
-                <input class="gw-input" type="search" id="invProdSearch" placeholder="Buscar por nombre o SKU" autocomplete="off" spellcheck="false">
+                <input class="gw-input" type="search" id="invProdSearch" placeholder="{% if almacen_on %}Buscar por nombre{% else %}Buscar por nombre o SKU{% endif %}" autocomplete="off" spellcheck="false">
               </div></div>
               <p class="gw-hint" id="invProdSearchInfo" role="status" aria-live="polite"></p>
             </div>

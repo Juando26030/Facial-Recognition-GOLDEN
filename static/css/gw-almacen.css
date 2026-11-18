@@ -39,5 +39,11 @@
 /* Aviso ⚠ «presenta una novedad» junto al estado del objeto: pestañita con mensaje al pasar el mouse o enfocar con el teclado. */
 #inventario .gw-alm__warn { position: relative; display: inline-flex; align-items: center; margin-inline-start: var(--gw-sp-2); padding: 0 var(--gw-sp-2); border-radius: var(--gw-radius-sm); background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 1px solid var(--gw-warn-line); cursor: help; vertical-align: middle; }
 #inventario .gw-alm__warn .gw-icon { width: 1.1rem; height: 1.1rem; }
-#inventario .gw-alm__warn::after { content: attr(data-tip); position: absolute; z-index: 40; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 16rem; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); background: var(--gw-navy); color: #fff; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal, 400); line-height: 1.3; box-shadow: var(--gw-shadow-lg); opacity: 0; pointer-events: none; transition: opacity 120ms; }
+#inventario .gw-alm__warn::after { content: attr(data-tip); position: absolute; z-index: 40; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 16rem; padding: var(--gw-sp-2) var(--gw-sp-3); border-radius: var(--gw-radius-sm); background: var(--gw-text); color: var(--gw-surface); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal, 400); line-height: 1.3; box-shadow: var(--gw-shadow-lg); opacity: 0; pointer-events: none; transition: opacity 120ms; }
 #inventario .gw-alm__warn:hover::after, #inventario .gw-alm__warn:focus-visible::after { opacity: 1; }
+/* Archivos adjuntos de las novedades (elegidos y ya guardados). */
+#invPanelNov .gw-alm__files, #invPanelNov .gw-alm__attach { list-style: none; margin: var(--gw-sp-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+#invPanelNov .gw-alm__file { display: flex; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-1) var(--gw-sp-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); }
+#invPanelNov .gw-alm__thumb { width: 4rem; height: 4rem; object-fit: cover; border-radius: var(--gw-radius-sm); border: 1px solid var(--gw-border); display: block; }
+#invPanelNov .gw-alm__resolve { margin-top: var(--gw-sp-3); padding-top: var(--gw-sp-3); border-top: 1px solid var(--gw-border); }
+#invPanelNov .gw-alm__resolve[hidden] { display: none; }

@@ -10,6 +10,9 @@
               <input type="text" id="almNovCode" data-gw-clearable class="gw-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="Escanea o escribe el código"></div>
             <div class="gw-field"><label class="gw-label" for="almNovText">Qué pasó</label>
               <textarea class="gw-input" id="almNovText" rows="2" maxlength="500" placeholder="Ej.: golpe en la carcasa, no enciende"></textarea></div>
+            <div class="gw-field"><label class="gw-label" for="almNovFiles">Foto o archivo del daño <span class="gw-hint">(obligatorio; puedes adjuntar varios: fotos, PDF o video MP4/MOV)</span></label>
+              <input class="gw-input" type="file" id="almNovFiles" multiple accept="image/*,application/pdf,video/mp4,video/quicktime" required>
+              <ul class="gw-alm__files" id="almNovFilesList" aria-live="polite"></ul></div>
             <div class="gw-field"><label class="gw-label" for="almNovQty">Piezas afectadas <span class="gw-hint">(solo elementos por modelo o por cantidad)</span></label>
               <input class="gw-input" type="number" id="almNovQty" min="1" value="1" inputmode="numeric"></div>
             <div class="gw-row"><button type="button" class="gw-btn gw-btn--primary" id="almNovSave">Registrar novedad</button></div>

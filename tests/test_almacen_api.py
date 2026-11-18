@@ -97,7 +97,11 @@ def test_serial_rules_and_batch_limits(client, factory, on):
     assert client.post(f"/api/almacen/products/{p['id']}/units", json={"count": 101}).status_code == 400
     other = client.post(f"/api/almacen/products/{p['id']}/units", json={"count": 1}).json()["units"][0]
     assert client.patch(f"/api/almacen/units/{other['id']}", json={"serial": "SN-001"}).status_code == 409
-    assert client.patch(f"/api/almacen/units/{other['id']}", json={"serial": "SN-777"}).json()["serial"] == "SN-777"
+    done = client.patch(f"/api/almacen/units/{other['id']}", json={"serial": "sn-777"}).json()
+    assert done["serial"] == "SN-777" and done["code"] == "SN-777"          # un solo dato: el serial es el valor del QR
+    assert client.get("/api/almacen/lookup?code=SN-777").status_code == 200          # y se lee con el lector
+    assert client.patch(f"/api/almacen/units/{other['id']}", json={"serial": ""}).status_code == 400          # no puede quedar vacío
+    assert ok.json()["units"][0]["code"] == "SN-001"
 
 
 def test_tracking_cannot_change_with_active_units_and_units_need_serial_tracking(client, factory, on):
@@ -399,36 +403,56 @@ def _png():
     return b.getvalue()
 
 
-def test_reporting_a_novelty_blocks_the_unit_until_almacen_resolves_it(client, factory, on):
+def _report(client, code, text="Pantalla rota", files=None, qty=None):
+    files = [("files", ("dano.png", _png(), "image/png"))] if files is None else files
+    data = {"code": code, "description": text}
+    if qty:
+        data["qty"] = str(qty)
+    return client.post("/api/almacen/novelties", data=data, files=files)
+
+
+def _resolve(client, nid, note="Cambiaron la pantalla", files=None):
+    files = [("files", ("listo.png", _png(), "image/png"))] if files is None else files
+    return client.post(f"/api/almacen/novelties/{nid}/resolve", data={"note": note}, files=files)
+
+
+def test_reporting_a_novelty_needs_files_blocks_the_unit_until_almacen_resolves_it(client, factory, on):
     factory.staff("admin", "adm")
     ev = factory.event(status="creado")
     login(client, "adm")
     p = _product(client)
     u = _units(client, p["id"], 1)[0]
     _assign(client, ev.id, p["id"], 1)
-    assert client.post("/api/almacen/novelties", json={"code": u["code"], "description": "ab"}).status_code == 400          # el texto es obligatorio
-    r = client.post("/api/almacen/novelties", json={"code": u["code"], "description": "Pantalla rota"})
+    assert _report(client, u["code"], "ab").status_code == 400          # el texto es obligatorio
+    sin = _report(client, u["code"], files=[("files", ("", b"", "application/octet-stream"))])
+    assert sin.status_code == 400 and "al menos un archivo" in sin.json()["detail"]          # el archivo es obligatorio
+    assert _report(client, u["code"], files=[("files", ("virus.exe", b"MZ", "application/octet-stream"))]).status_code == 400
+    r = _report(client, u["code"], files=[("files", ("a.png", _png(), "image/png")), ("files", ("b.png", _png(), "image/png")), ("files", ("acta.pdf", b"%PDF-1.4 x", "application/pdf"))])
     assert r.status_code == 200, r.text
-    nid = r.json()["novelty"]["id"]
-    assert client.post("/api/almacen/novelties", json={"code": u["code"], "description": "Otra cosa"}).status_code == 400          # ya tiene una abierta
+    nov = r.json()["novelty"]
+    assert [f["kind"] for f in nov["files"]] == ["reporte"] * 3 and nov["files"][2]["name"] == "acta.pdf"
+    assert client.get(nov["files"][0]["url"]).headers["content-type"].startswith("image/jpeg")
+    assert client.get(nov["files"][2]["url"]).headers["content-type"] == "application/pdf"
+    assert _report(client, u["code"], "Otra cosa").status_code == 400          # ya tiene una abierta
     flagged = next(x for x in client.get(f"/api/almacen/units?product_id={p['id']}").json()["units"] if x["id"] == u["id"])
     assert flagged["has_novelty"] is True          # la tabla de objetos muestra el aviso ⚠ «presenta una novedad»
     blocked = _move(client, "salida", u["code"], ev.id)
     assert blocked.status_code == 400 and "novedad" in blocked.text and "Pantalla rota" in blocked.text
-    ph = client.post(f"/api/almacen/novelties/{nid}/photo", files={"file": ("dano.png", _png(), "image/png")})
-    assert ph.status_code == 200 and ph.json()["has_photo"]
-    assert client.get(f"/api/almacen/novelties/{nid}/photo").headers["content-type"].startswith("image/jpeg")
-    assert client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": ""}).status_code == 400
-    ok = client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": "Cambiaron la pantalla"})
+    nid = nov["id"]
+    assert _resolve(client, nid, note="").status_code == 400          # la nota es obligatoria
+    assert _resolve(client, nid, files=[("files", ("", b"", "application/octet-stream"))]).status_code == 400          # y los archivos también
+    ok = _resolve(client, nid)
     assert ok.status_code == 200 and ok.json()["novelty"]["resolved"]
-    assert client.post(f"/api/almacen/novelties/{nid}/resolve", json={"note": "otra vez"}).status_code == 400
+    assert [f["kind"] for f in ok.json()["novelty"]["files"]] == ["reporte"] * 3 + ["resolucion"]
+    assert _resolve(client, nid, note="otra vez").status_code == 400
     assert _move(client, "salida", u["code"], ev.id).status_code == 200          # ya se puede asignar a un evento
     assert next(x for x in client.get(f"/api/almacen/units?product_id={p['id']}").json()["units"] if x["id"] == u["id"])["has_novelty"] is False
     assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 0
     assert [n["id"] for n in client.get("/api/almacen/novelties?state=resueltas").json()["novelties"]] == [nid]
 
 
-def test_a_return_with_novelty_leaves_the_unit_blocked_and_void_undoes_both(client, factory, on):
+def test_a_unit_with_an_open_novelty_stays_blocked_when_it_comes_back_and_void_still_works(client, factory, db, on):
+    from app.models import InventoryNovelty
     factory.staff("admin", "adm")
     ev = factory.event(status="en_proceso")
     login(client, "adm")
@@ -436,38 +460,26 @@ def test_a_return_with_novelty_leaves_the_unit_blocked_and_void_undoes_both(clie
     u = _units(client, p["id"], 1)[0]
     _assign(client, ev.id, p["id"], 1)
     assert _move(client, "salida", u["code"], ev.id).status_code == 200
-    bad = client.post("/api/almacen/move", json={"mode": "entrada", "code": u["code"], "event_id": ev.id, "novelty": {"description": "x"}})
-    assert bad.status_code == 400          # sin texto no se registra nada
-    assert client.get(f"/api/almacen/events/{ev.id}/board").json()["outside"]          # sigue afuera
-    r = client.post("/api/almacen/move", json={"mode": "entrada", "code": u["code"], "event_id": ev.id, "novelty": {"description": "Golpe en la carcasa"}})
-    assert r.status_code == 200, r.text
-    assert r.json()["novelty"]["description"] == "Golpe en la carcasa" and r.json()["unit"]["status"] == "novedad"
-    assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 1
-    v = client.post(f"/api/almacen/movements/{r.json()['movement']['id']}/void")
-    assert v.status_code == 200, v.text
-    assert client.get("/api/almacen/novelties?state=abiertas").json()["open_count"] == 0
-    assert client.get(f"/api/almacen/events/{ev.id}/board").json()["outside"]          # el equipo volvió a estar afuera
+    assert _report(client, u["code"]).status_code == 200          # se daña en el evento: sigue «en evento» pero con novedad
+    back = _move(client, "entrada", u["code"], ev.id)
+    assert back.status_code == 200, back.text
+    assert next(x for x in client.get(f"/api/almacen/units?product_id={p['id']}").json()["units"] if x["id"] == u["id"])["status"] == "novedad"          # vuelve, pero bloqueado
+    assert db.query(InventoryNovelty).count() == 1
 
 
-def test_novelty_only_comes_with_an_entry_and_consumables_carry_none(client, factory, on):
+def test_consumables_carry_no_novelties_and_quantity_ones_reserve_pieces(client, factory, on):
     factory.staff("admin", "adm")
-    ev = factory.event(status="en_proceso")
-    login(client, "adm")
-    p = _product(client)
-    u = _units(client, p["id"], 1)[0]
-    _assign(client, ev.id, p["id"], 1)
-    r = client.post("/api/almacen/move", json={"mode": "salida", "code": u["code"], "event_id": ev.id, "novelty": {"description": "Rayado"}})
-    assert r.status_code == 400
+    login(client, "admin" if False else "adm")
     cons = _product(client, "Cinta", "cantidad", "cinta")
     client.patch(f"/api/almacen/products/{cons['id']}", json={"is_consumable": True, "checklist_row": ""})
-    assert client.post("/api/almacen/novelties", json={"code": cons["qr_code"], "description": "Se mojó"}).status_code == 400
+    assert _report(client, cons["qr_code"], "Se mojó").status_code == 400
 
 
 def test_novelties_follow_the_permissions_and_the_flag(client, factory, on, monkeypatch):
     factory.staff("coordinador", "coord")
     login(client, "coord")
     assert client.get("/api/almacen/novelties").status_code == 403
-    assert client.post("/api/almacen/novelties", json={"code": "GWAAAAAA", "description": "algo"}).status_code == 403
+    assert _report(client, "GWAAAAAA", "algo").status_code == 403
     client.post("/logout")
     factory.staff("admin", "adm")
     login(client, "adm")

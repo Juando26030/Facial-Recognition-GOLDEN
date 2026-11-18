@@ -112,12 +112,11 @@
   function unitsTable() {
     if (!units.length) return `<div class="gw-state" role="status"><p class="gw-state__title">Todavía no hay objetos de este tipo. Agrega los primeros arriba.</p></div>`;
     return `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Objetos de ${esc(currentProduct.name)} con su código QR</caption>
-      <thead><tr><th scope="col"><span class="gw-sr-only">Marcar</span></th><th scope="col">Objeto</th><th scope="col">Código QR</th><th scope="col">Serial</th><th scope="col">Estado</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
+      <thead><tr><th scope="col"><span class="gw-sr-only">Marcar</span></th><th scope="col">Objeto</th><th scope="col">Serial (valor del QR)</th><th scope="col">Estado</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead>
       <tbody>${units.map((u) => `<tr data-alm-unit="${u.id}">
         <td><input type="checkbox" class="gw-alm__pick" data-pick="${u.id}" aria-label="Marcar ${esc(u.title)} para imprimir"></td>
         <td>${esc(u.title)}</td>
-        <td><input class="gw-input gw-alm__qr" type="text" readonly value="${esc(u.code)}" data-alm-select aria-label="Código QR de ${esc(u.title)}"></td>
-        <td><input class="gw-input" type="text" value="${esc(pendingSerial.has(u.id) ? pendingSerial.get(u.id) : (u.serial || ''))}" maxlength="80" data-serial="${u.id}" aria-label="Serial de ${esc(u.title)}" autocomplete="off"></td>
+        <td><input class="gw-input" type="text" value="${esc(pendingSerial.has(u.id) ? pendingSerial.get(u.id) : (u.serial || ''))}" maxlength="32" data-serial="${u.id}" aria-label="Serial de ${esc(u.title)} (es el valor de su QR)" autocomplete="off" autocapitalize="characters" spellcheck="false"></td>
         <td><span class="gw-badge${u.status === 'novedad' ? ' gw-badge--warn' : u.status === 'en_evento' ? ' gw-badge--info' : ' gw-badge--ok'}">${esc(u.status_label)}</span>${u.has_novelty ? `<span class="gw-alm__warn" tabindex="0" role="img" aria-label="Este elemento presenta una novedad" data-tip="Este elemento presenta una novedad"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-alert"/></svg></span>` : ''}${u.event_name ? `<br><span class="gw-hint">${esc(u.event_name)}</span>` : ''}</td>
         <td class="gw-alm__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-alm-print-one="${u.id}">Etiqueta</button>
           <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-alm-archive="${u.id}" data-title="${esc(u.title)}">Archivar</button></td></tr>`).join('')}</tbody></table></div>`;
@@ -211,7 +210,7 @@
     const id = Number(t.dataset.serial);
     const u = units.find((x) => x.id === id);
     if (!u || !window.GWAlmSave) return;
-    if ((t.value || '').trim() === (u.serial || '')) { pendingSerial.delete(id); GWAlmSave.clean('serial:' + id); return; }
+    if ((t.value || '').trim().toUpperCase() === (u.serial || '')) { pendingSerial.delete(id); GWAlmSave.clean('serial:' + id); return; }
     pendingSerial.set(id, t.value);
     GWAlmSave.mark('serial:' + id, 'Serial de ' + u.title, async () => {
       const value = pendingSerial.get(id);

@@ -44,11 +44,11 @@ def test_clean_tracking_and_checklist_row():
 
 
 def test_clean_serial_count_and_ids():
-    assert almacen.clean_serial(None) is None and almacen.clean_serial("  ") is None and almacen.clean_serial(" SN-123 ") == "SN-123"
-    with pytest.raises(almacen.AlmacenError):
-        almacen.clean_serial("x" * 81)
-    with pytest.raises(almacen.AlmacenError):
-        almacen.clean_serial("<b>")
+    assert almacen.clean_serial(None) is None and almacen.clean_serial("  ") is None and almacen.clean_serial(" sn-123 ") == "SN-123"
+    for bad in ("x" * 33, "<b>", "SN 12", "ab", "-ABC12"):          # el serial ES el valor del QR: 4–32, sin espacios, letras/números/guion/punto/guion bajo
+        with pytest.raises(almacen.AlmacenError):
+            almacen.clean_serial(bad)
+    assert almacen.clean_serial("5CG1234.AB_c-9") == "5CG1234.AB_C-9" and almacen.normalize_scan(" sn-123 \n") == "SN-123"
     assert almacen.clean_count("5") == 5 and almacen.clean_count(100) == 100
     for bad in (0, 101, "x", None, -1):
         with pytest.raises(almacen.AlmacenError):
@@ -73,8 +73,9 @@ def test_codes_are_uppercase_alphanumeric_without_ambiguous_characters():
 
 
 def test_normalize_scan_cleans_what_the_usb_reader_types():
+    assert almacen.normalize_scan("sn-123.a_b") == "SN-123.A_B"          # un serial con guion también se lee
     assert almacen.normalize_scan("gwk7m2pa\r\n") == "GWK7M2PA" and almacen.normalize_scan("  gw k7 m2pa ") == "GWK7M2PA"
-    for bad in (None, "", "abc", "GW-K7M2PA", "GWK7M2PA" * 5, "¡GWK7M2!"):
+    for bad in (None, "", "abc", "GW/K7M2PA", "GWK7M2PA" * 5, "¡GWK7M2!"):
         assert almacen.normalize_scan(bad) is None
 
 
@@ -94,7 +95,7 @@ def test_the_new_screen_and_label_page_respect_the_house_rules():
     hexc = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}(?![0-9a-zA-Z_-])")
     handler = re.compile(r"\son(?:click|change|submit|input|keydown|keyup|load|error)=", re.I)
     emoji = re.compile("[☀-➿\U0001F300-\U0001FAFF]")
-    for name in ("_almacen_panel.html", "almacen_etiquetas.html"):
+    for name in ("_almacen_panel.html", "_almacen_novedades_panel.html", "almacen_etiquetas.html"):
         html = (ROOT / "templates" / name).read_text(encoding="utf-8")
         assert not re.search(r'\sstyle="', html) and not hexc.search(html) and not handler.search(html) and not emoji.search(html), name
         assert not re.search(r'(?:src|href)="/static/', html), name

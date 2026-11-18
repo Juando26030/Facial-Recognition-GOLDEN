@@ -1113,8 +1113,8 @@ class InventoryUnit(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
     number = Column(Integer, nullable=False)
-    code = Column(String(12), nullable=False, unique=True)
-    serial = Column(String(80), nullable=True)
+    code = Column(String(32), nullable=False, unique=True)          # = el serial (0153: un solo dato; antes «GW»+6 y un serial aparte)
+    serial = Column(String(80), nullable=True)          # copia de `code` (se conserva por compatibilidad)
     status = Column(String(20), nullable=False, default='disponible', server_default='disponible')
     created_at = Column(DateTime, default=utcnow)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -1173,6 +1173,23 @@ class InventoryNovelty(Base):
     unit = relationship('InventoryUnit')
     event = relationship('Event')
     __table_args__ = (Index('ix_inventory_novelties_product', 'product_id', 'resolved_at'), Index('ix_inventory_novelties_unit', 'unit_id'))
+
+
+class InventoryNoveltyFile(Base):
+    """Archivo adjunto de una novedad (0153): evidencia al reportarla (`kind='reporte'`) o al resolverla (`'resolucion'`). Foto (JPEG re-codificado), PDF o video corto. Nada se borra."""
+    __tablename__ = 'inventory_novelty_files'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    novelty_id = Column(Integer, ForeignKey('inventory_novelties.id'), nullable=False)
+    kind = Column(String(12), nullable=False)
+    file_key = Column(String(200), nullable=False)
+    filename = Column(String(120), nullable=False)
+    content_type = Column(String(60), nullable=False)
+    size = Column(Integer, nullable=False, default=0, server_default='0')
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    novelty = relationship('InventoryNovelty', backref='files')
+    __table_args__ = (Index('ix_inventory_novelty_files_novelty', 'novelty_id'),)
 
 
 class EventChecklistRow(Base):
