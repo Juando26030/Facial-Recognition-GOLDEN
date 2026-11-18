@@ -8,6 +8,7 @@
   var GROUPS = ['google', 'neon', 'microsoft', 'cloudflare', 'otros'];
   var data = null;           // último resumen
   var costs = [];            // gastos del rango
+  var provFilter = '';       // filtro del gráfico «Gasto por mes y proveedor»: '' = todo, o un proveedor / 'total'
   var evFilter = '';         // id del evento elegido en «Costo de un evento» ('' = ninguno)
   var tableViews = {};       // gráfico -> mostrar tabla
   var nf = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
@@ -139,7 +140,14 @@
     var months = data.months, W = 760, H = 320, ML = 56, MB = 30;
     var present = GROUPS.filter(function (g) { return data.series[g].some(function (v) { return v > 0; }); });
     var keys = present.concat(['total']);
-    var max = niceMax(Math.max.apply(null, data.totals.concat([1])) * 1.25);          // aire arriba para la cifra de la barra más alta
+    if (provFilter) keys = [provFilter];                                                // filtro: solo ese proveedor (o solo el total)
+    var vals = [1];
+    keys.forEach(function (k) { (k === 'total' ? data.totals : data.series[k]).forEach(function (v) { vals.push(v); }); });
+    if (provFilter && !keys.some(function (k) { return (k === 'total' ? data.totals : data.series[k]).some(function (v) { return v > 0; }); })) {
+      var empty = document.createElement('p'); empty.className = 'gw-hint'; empty.textContent = 'No hay gasto de «' + data.group_labels[provFilter] + '» en este periodo.';
+      return empty;
+    }
+    var max = niceMax(Math.max.apply(null, vals) * 1.25);          // aire arriba para la cifra de la barra más alta
     var s = frame(W, H, max, ML);
     var slot = (W - ML - 8) / months.length, gap = 2, n = keys.length;
     var bw = Math.max(6, Math.min(26, (slot * 0.86 - gap * (n - 1)) / n)), gw = bw * n + gap * (n - 1), base = H - MB;
@@ -210,6 +218,24 @@
   // ---------------------------------------------------------------- piezas de la pantalla
   function legend(items) {
     return '<ul class="gw-gx__legend" aria-label="Leyenda">' + items.map(function (i) { return '<li><span class="gw-gx__sw gw-gx-c-' + i[0] + '" aria-hidden="true"></span>' + esc(i[1]) + '</li>'; }).join('') + '</ul>';
+  }
+  function filterLegend() {
+    var items = GROUPS.map(function (g) { return [g, data.group_labels[g]]; }).concat([['total', 'Total del mes']]);
+    return '<ul class="gw-gx__legend gw-gx__legend--filter" aria-label="Filtrar el gráfico por proveedor">' + items.map(function (i) {
+      var on = provFilter === i[0];
+      return '<li><button type="button" class="gw-gx__chip' + (on ? ' is-on' : '') + '" data-act="prov-filter" data-key="' + i[0] + '" aria-pressed="' + on + '">' +
+        '<span class="gw-gx__sw gw-gx-c-' + i[0] + '" aria-hidden="true"></span>' + esc(i[1]) + '</button></li>';
+    }).join('') + '</ul>' + (provFilter ? '<p class="gw-hint gw-gx__filter-hint">Mostrando solo «' + esc(provFilter === 'total' ? 'Total del mes' : data.group_labels[provFilter]) + '». Vuelve a pulsarlo para ver todo.</p>' : '');
+  }
+  function redrawMonth() {
+    var slot = root.querySelector('[data-slot="month"]'); if (!slot || tableViews.month) return;
+    slot.innerHTML = ''; mount('month', stackedChart);
+    var lg = root.querySelector('.gw-gx__legend--filter'); if (!lg) return;
+    [].forEach.call(lg.querySelectorAll('[data-act="prov-filter"]'), function (btn) { var on = btn.getAttribute('data-key') === provFilter; btn.classList.toggle('is-on', on); btn.setAttribute('aria-pressed', on); });
+    var hint = root.querySelector('.gw-gx__filter-hint'), txt = provFilter ? 'Mostrando solo «' + (provFilter === 'total' ? 'Total del mes' : data.group_labels[provFilter]) + '». Vuelve a pulsarlo para ver todo.' : '';
+    if (hint && !provFilter) hint.remove();
+    else if (hint) hint.textContent = txt;
+    else if (provFilter) { var p = document.createElement('p'); p.className = 'gw-hint gw-gx__filter-hint'; p.textContent = txt; lg.insertAdjacentElement('afterend', p); }
   }
   function panel(id, title, legendHtml, chartHtmlOrNode, tableHtml, extra) {
     var showTable = !!tableViews[id];
@@ -296,7 +322,7 @@
     var empty = !costs.length;
     body.innerHTML = (empty ? '<div class="gw-alert gw-alert--warn"><div class="gw-alert__body"><p class="gw-alert__title">Aún no hay gastos en este periodo</p><p>Registra los gastos de cada proveedor, sube un archivo o conecta Google, y aquí aparecerán los gráficos.</p></div></div>' : '') +
       kpis() +
-      panel('month', 'Gasto por mes y proveedor', legend(GROUPS.map(function (g) { return [g, data.group_labels[g]]; }).concat([['total', 'Total del mes']])), null, monthTable()) +
+      panel('month', 'Gasto por mes y proveedor', filterLegend(), null, monthTable()) +
       panel('trend', 'Tendencia del gasto total', '', null, trendTable()) +
       panel('events', 'Costo por evento', legend([['fixed', 'Parte fija (días activos)'], ['variable', 'Parte variable (ingresos)']]), null, eventsTable(),
         data.events.some(function (r) { return r.total > 0; }) ? '' : '<p class="gw-hint">Aún no hay eventos con costo asignado en este periodo.</p>') +
@@ -415,7 +441,8 @@
       window.showConfirm('¿Borrar este gasto? No se puede deshacer.').then(function (ok) {
         if (ok) api('/api/gastos/infra/costs/' + cid, { method: 'DELETE' }).then(function () { toast('Gasto borrado'); return load(); }).catch(function (er) { toast(er.message, 'error'); });
       });
-    } else if (act === 'toggle-table') { var k = b.getAttribute('data-chart'); tableViews[k] = !tableViews[k]; render(); }
+    } else if (act === 'prov-filter') { var key = b.getAttribute('data-key'); provFilter = provFilter === key ? '' : key; redrawMonth(); }
+    else if (act === 'toggle-table') { var k = b.getAttribute('data-chart'); tableViews[k] = !tableViews[k]; render(); }
     else if (act === 'upload') { var inp = document.getElementById('gxFile'); if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.id = 'gxFile'; inp.accept = '.csv,text/csv,text/plain'; inp.hidden = true; root.appendChild(inp); } inp.value = ''; inp.click(); }
     else if (act === 'export') { var r = range(); window.location.href = '/api/gastos/infra/export.xlsx' + qs(r); }
     else if (act === 'import-google') {
