@@ -88,6 +88,13 @@ def test_alimentacion_suma_las_comidas_o_toma_el_valor_directo():
     assert ws["O10"].value == 7777 and ws["O26"].value == "=SUM(O9:O25)"
 
 
+def test_alimentacion_nueva_es_valor_unitario_por_cantidad_de_comidas():
+    lines = [dict(kind="alimentacion", date=D, name="a", unit_value=12000, breakfast=1, lunch=2, dinner=1, snack=3)]
+    ws = _wb(lines)[L.S_ALIM]
+    assert ws["H9"].value == 12000 and ws["M9"].value == "=SUM(I9:L9)" and ws["O9"].value == "=H9*M9"
+    assert L.line_amount(lines[0]) == 84000 and L.summarize(lines)["alimentacion"] == 84000
+
+
 def test_summarize_y_nombre_del_archivo():
     s = L.summarize(_many("taxi_ciudad", 2) + _many("digitador", 1) + [dict(kind="alimentacion", lunch=500, snack=250)], anticipo=10000)
     assert s["taxis_ciudad"] == 3000 and s["digitadores"] == 1000 and s["alimentacion"] == 750

@@ -26,7 +26,8 @@ def active_lines(db: Session, event_id: int, include_archived: bool = False) -> 
     q = db.query(EventExpense).filter(EventExpense.event_id == event_id)
     if not include_archived:
         q = q.filter(EventExpense.archived_at.is_(None))
-    return q.order_by(EventExpense.expense_date.is_(None), EventExpense.expense_date, EventExpense.id).all()
+    # 0148: lo que ya tiene lugar manual va por `position`; los gastos anteriores al orden manual (NULL) salen primero, por fecha
+    return q.order_by(EventExpense.position.isnot(None), EventExpense.position, EventExpense.expense_date.is_(None), EventExpense.expense_date, EventExpense.id).all()
 
 
 def get_legalization(db: Session, event_id: int) -> EventLegalization | None:

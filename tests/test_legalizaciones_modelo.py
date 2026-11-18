@@ -32,7 +32,7 @@ def test_columnas_nuevas_del_gasto_coinciden_con_la_migracion():
     ns = {}
     with patch.dict(sys.modules, {"alembic": MagicMock(), "sqlalchemy": MagicMock()}):      # solo se lee ALL_NEW; no hace falta Alembic
         exec(compile(MIG.read_text(encoding="utf-8"), str(MIG), "exec"), ns)
-    assert set(_class_columns("EventExpense")) - ANTES == set(ns["ALL_NEW"]), "el modelo y la migración 0147 no coinciden"
+    assert set(_class_columns("EventExpense")) - ANTES - {"position"} == set(ns["ALL_NEW"])          # position: 0148, "el modelo y la migración 0147 no coinciden"
 
 
 def test_tabla_del_encabezado_coincide_con_la_migracion():

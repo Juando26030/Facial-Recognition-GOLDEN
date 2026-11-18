@@ -68,12 +68,20 @@ def _num(v):
 
 
 def _meals(line: dict) -> float:
+    """Cantidad de comidas del gasto (desayunos + almuerzos + comidas + refrigerios)."""
     return sum(float(line.get(k) or 0) for k in ("breakfast", "lunch", "dinner", "snack"))
 
 
+def _by_unit(line: dict) -> bool:
+    """Alimentación nueva: valor unitario × cantidad de comidas. Un gasto anterior (sin valor unitario) guardaba el valor de cada comida y su total es la suma."""
+    return bool(float(line.get("unit_value") or 0)) and bool(_meals(line))
+
+
 def line_amount(line: dict) -> float:
-    """Valor de un gasto (en alimentación: la suma de las comidas, o el valor directo si no hay desglose)."""
+    """Valor de un gasto (en alimentación: valor unitario × comidas; los gastos anteriores, la suma de lo escrito en cada comida; sin desglose, el valor directo)."""
     if line.get("kind") == ALIMENTACION:
+        if _by_unit(line):
+            return float(line["unit_value"]) * _meals(line)
         return _meals(line) or float(line.get("amount") or 0)
     return float(line.get("amount") or 0)
 
@@ -303,7 +311,7 @@ def build_workbook(header: dict, lines: list[dict], photos: list[dict] | None = 
     ws[f"H{tot_dig}"].value = f"=SUM(H9:H{tot_dig - 1})"
     ws.print_area = f"A1:H{tot_dig}"
 
-    # Alimentación: M = suma de las comidas y O = valor; si solo hay un valor sin desglose, va directo en O
+    # Alimentación: I:L = cantidad de cada comida, M = total de comidas y O = valor unitario × M; si solo hay un valor sin desglose, va directo en O
     ws = wb[S_ALIM]
     tot_ali, _ = _fill_table(ws, 9, 17, 26, 0, by[ALIMENTACION], _COLS_ALIM)
     _renumber(ws, 9, tot_ali - 1)
@@ -313,8 +321,13 @@ def build_workbook(header: dict, lines: list[dict], photos: list[dict] | None = 
         ws[f"M{r}"].value = f"=SUM(I{r}:L{r})"
         ws[f"O{r}"].value = f"=M{r}"
     for i, ln in enumerate(by[ALIMENTACION]):
-        if not _meals(ln) and ln.get("amount"):
-            ws[f"O{9 + i}"].value = _num(ln["amount"])
+        r = 9 + i
+        if _by_unit(ln):          # O = valor unitario (H) × total de comidas (M); I:M son cantidades, no pesos
+            ws[f"O{r}"].value = f"=H{r}*M{r}"
+            for col in "IJKLM":
+                ws[f"{col}{r}"].number_format = "0"
+        elif not _meals(ln) and ln.get("amount"):
+            ws[f"O{r}"].value = _num(ln["amount"])
     ws[f"O{tot_ali}"].value = f"=SUM(O9:O{tot_ali - 1})"
     ws[f"P{tot_ali}"].value = f"=SUM(P9:P{tot_ali - 1})"
     ws.print_area = f"A1:Q{tot_ali}"

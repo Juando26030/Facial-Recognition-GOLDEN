@@ -85,3 +85,9 @@
 .gw-leg-table tr.gw-leg-row--ok > td { background: var(--gw-ok-bg); }
 .gw-leg-table tr.gw-leg-row--no > td { background: color-mix(in srgb, var(--gw-warn-line) 16%, var(--gw-surface)); }
 .gw-leg-table tbody tr.gw-leg-row--ok:hover > td, .gw-leg-table tbody tr.gw-leg-row--no:hover > td { filter: brightness(0.97); }
+
+/* Orden de los gastos (18-nov-2026): arrastrar la fila o usar ↑ ↓ */
+.gw-leg-order { white-space: nowrap; }
+.gw-leg-grip { cursor: grab; padding: 0 var(--gw-sp-2); color: var(--gw-text-muted, inherit); }
+.gw-leg-row--drag { opacity: .5; }
+.gw-leg-row--over { outline: 2px dashed var(--gw-ok-line); outline-offset: -2px; }

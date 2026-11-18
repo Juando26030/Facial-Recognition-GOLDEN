@@ -55,7 +55,7 @@ def test_registrar_un_gasto_por_rubro_y_sumar(client, ev, db):
     _header(client, ev)
     _line(client, ev)
     _line(client, ev, kind="taxi_ciudad", vendor_name="Pedro", plate="ABC123", vehicle="taxi", amount="20000", has_support=False)
-    _line(client, ev, kind="alimentacion", vendor_name="Restaurante", breakfast="10000", lunch="15000", amount=None)
+    _line(client, ev, kind="alimentacion", vendor_name="Restaurante", unit_value="5000", breakfast="2", lunch="3", amount=None)          # 5 comidas × 5.000
     _line(client, ev, kind="digitador", vendor_name="Laura", amount="90000")
     _line(client, ev, kind="otro", concept="Cinta", amount="8000")
     data = client.get(_url(ev)).json()
@@ -186,3 +186,30 @@ def test_las_fotos_subidas_salen_en_la_hoja_soportes_del_excel(client, ev):
     client.post(f"/api/events/{ev.id}/expenses/{a['id']}/archive")
     ws = openpyxl.load_workbook(io.BytesIO(client.get(_url(ev, "/report")).content))["Soportes"]
     assert len(ws._images) == 1 + 1          # el gasto archivado no aporta su foto
+
+
+def test_alimentacion_multiplica_el_valor_unitario_por_las_comidas(client, ev):
+    row = _line(client, ev, kind="alimentacion", vendor_name="Rest", unit_value="12000", breakfast="1", lunch="2", dinner="1", snack="3", amount=None)
+    assert row["amount"] == 7 * 12000
+    assert client.post(_url(ev, "/lines"), json={"kind": "alimentacion", "vendor_name": "x", "breakfast": "2", "amount": None}).status_code == 400          # comidas sin valor unitario
+    assert client.post(_url(ev, "/lines"), json={"kind": "alimentacion", "vendor_name": "x", "unit_value": "5000", "lunch": "1.5"}).status_code == 400          # cantidades enteras
+
+
+def test_duplicar_deja_la_copia_debajo_y_sin_soporte_ni_revision(client, ev, db):
+    a = _line(client, ev, vendor_name="A")
+    b = _line(client, ev, vendor_name="B")
+    r = client.post(_url(ev, f"/lines/{a['id']}/duplicate"))
+    assert r.status_code == 200 and r.json()["vendor_name"] == "A" and r.json()["id"] not in (a["id"], b["id"]) and not r.json()["has_evidence"] and r.json()["approved"] is None
+    names = [x["vendor_name"] for x in client.get(_url(ev)).json()["lines"] if x["kind"] == "hospedaje"]
+    assert names == ["A", "A", "B"]
+
+
+def test_reordenar_los_gastos_de_un_rubro(client, ev):
+    ids = [_line(client, ev, vendor_name=n)["id"] for n in ("A", "B", "C")]
+    r = client.put(_url(ev, "/lines/order"), json={"kind": "hospedaje", "ids": [ids[2], ids[0], ids[1]]})
+    assert r.status_code == 200 and r.json()["ids"] == [ids[2], ids[0], ids[1]]
+    assert [x["id"] for x in client.get(_url(ev)).json()["lines"]] == [ids[2], ids[0], ids[1]]
+    assert client.put(_url(ev, "/lines/order"), json={"kind": "pasaje", "ids": [ids[0]]}).status_code == 400          # un gasto de otro rubro
+    assert client.put(_url(ev, "/lines/order"), json={"kind": "hospedaje", "ids": [ids[0], ids[0]]}).status_code == 400
+    new = _line(client, ev, vendor_name="D")["id"]
+    assert [x["id"] for x in client.get(_url(ev)).json()["lines"]][-1] == new          # el nuevo va al final
