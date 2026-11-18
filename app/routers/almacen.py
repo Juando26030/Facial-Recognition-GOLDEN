@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app import almacen, almacen_moves as moves, almacen_novelties as nov, almacen_photos, audit_actions, inventory, inventory_svc
 from app.auth import require_role_or_any
 from app.database import get_db
-from app.models import Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryNovelty, InventoryProduct, InventoryUnit, StaffUser
+from app.models import AuditAction, Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryNovelty, InventoryProduct, InventoryUnit, StaffUser
 from app.routers.inventory import _event as _inventory_event          # mismo acceso al evento que el inventario (cliente/empresa y alcance)
 from app.storage import get_storage
 from app.timeutil import to_local, utcnow
@@ -526,9 +526,30 @@ def event_board(event_id: int, db: Session = Depends(get_db), staff: StaffUser =
     return _board_data(db, _inventory_event(db, event_id, staff))
 
 
+def checklist_responsibles(db: Session, event: Event) -> list:
+    """Quienes llenaron el checklist de este evento, en el orden en que intervinieron por primera vez: los que marcaron o escribieron una fila del checklist (hoy o antes, según la
+    bitácora), los que dejaron la última edición de cada fila y los que registraron salidas o regresos del almacén. NO es quien lo descarga ni quien creó el evento."""
+    first = {}
+
+    def seen(user_id, when):
+        if user_id is not None and when is not None and (user_id not in first or when < first[user_id]):
+            first[user_id] = when
+    for uid, at in db.query(AuditAction.actor_id, func.min(AuditAction.at)).filter(AuditAction.entity == "almacen_checklist_row", AuditAction.entity_id == str(event.id), AuditAction.actor_id.isnot(None)).group_by(AuditAction.actor_id).all():
+        seen(uid, at)
+    for uid, at in db.query(EventChecklistRow.updated_by_id, func.min(EventChecklistRow.updated_at)).filter(EventChecklistRow.event_id == event.id, EventChecklistRow.updated_by_id.isnot(None)).group_by(EventChecklistRow.updated_by_id).all():
+        seen(uid, at)
+    for uid, at in db.query(InventoryMovement.created_by_id, func.min(InventoryMovement.created_at)).filter(InventoryMovement.event_id == event.id, InventoryMovement.voided_at.is_(None), InventoryMovement.created_by_id.isnot(None)).group_by(InventoryMovement.created_by_id).all():
+        seen(uid, at)
+    if not first:
+        return []
+    users = {u.id: u for u in db.query(StaffUser).filter(StaffUser.id.in_(list(first))).all()}
+    return [(users[i].full_name or users[i].username) for i in sorted(first, key=lambda k: (first[k], k)) if i in users]
+
+
 @router.get("/almacen/events/{event_id}/checklist.xlsx")
 def download_checklist(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
-    """Pieza 4: el checklist del evento en Excel, idéntico al formato GEYL. «Responsable checklist» = quien lo descarga (almacén). Mismos permisos y misma tabla que la pantalla."""
+    """Pieza 4: el checklist del evento en Excel, con el formato GEYL (hoja «Checklist» + «Instrucciones Básicas»). «Responsable checklist» = TODOS los usuarios que llenaron el checklist de este evento
+    (ver checklist_responsibles), no quien lo descarga. Mismos permisos y misma tabla que la pantalla."""
     from fastapi.responses import Response
 
     from app import almacen_xlsx, event_contacts, heavy
@@ -537,7 +558,7 @@ def download_checklist(event_id: int, db: Session = Depends(get_db), staff: Staf
     main = next((c for c in contacts if c["is_primary"]), contacts[0] if contacts else None)
     contact = main["name"] if main else (event.tenant.contact_name if event.tenant is not None else None)
     info = almacen_xlsx.event_info(event, event.tenant.name if event.tenant is not None else "", contact, (event.coordinator.full_name or event.coordinator.username) if event.coordinator is not None else "")
-    data = almacen_xlsx.build(info, _board_data(db, event)["board"], staff.full_name or staff.username)
+    data = almacen_xlsx.build(info, _board_data(db, event)["board"], almacen_xlsx.join_names(checklist_responsibles(db, event)))
     audit_actions.record(db, staff, "export", "almacen_checklist", event.id, event.name)
     db.commit()
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

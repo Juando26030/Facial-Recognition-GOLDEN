@@ -14,13 +14,40 @@ from openpyxl import load_workbook
 from app import almacen
 
 TEMPLATE = os.path.join(os.path.dirname(__file__), "xlsx_templates", "Checklist_GEYL.xlsx")
-SHEET = "Hoja1"
+TEMPLATE_SHEET = "Hoja1"          # nombre de la hoja en la plantilla original
+SHEET = "Checklist"            # nombre con el que sale en el Excel (18-nov-2026: «Hoja1» → «Checklist»; la «Hoja3» vacía del formato ya no viene)
+EXTRA_SHEETS = ("Hoja3",)
 HEADER_CELLS = {"code": "B2", "name": "B3", "when": "B4", "client": "B5", "place": "B6", "coordinator": "B7"}
 RESPONSIBLE_CELL = "B54"
 YES, NO = "SÍ", "NO"
 OBS_WIDTH, OBS_CHARS = 64, 46          # columna E ampliada (era 46): caracteres por línea con la letra del formato
 HEADER_CHARS = 80          # datos del encabezado (B:E combinadas)
 OBS_LINE, HEADER_LINE = 17, 16          # alto de una línea con la letra del formato (13 pt en observaciones, 12 pt en el encabezado)
+
+
+def sentence_case(text) -> str:
+    """Mayúscula al inicio de cada frase (inicio del texto y después de punto, signo de cierre o salto de línea): «es plan B» → «Es plan B». Lo demás no se toca (siglas, nombres, «Plan B»)."""
+    s = str(text or "")
+    out, start = [], True
+    for ch in s:
+        if start and ch.isalpha():
+            ch, start = ch.upper(), False
+        elif ch.isalnum():
+            start = False
+        if ch in ".!?\n":
+            start = True
+        out.append(ch)
+    return "".join(out)
+
+
+def join_names(names) -> str:
+    """Los responsables del checklist, sin repetir y en el orden dado: «Ana, Luis y Juan David»."""
+    seen, clean = set(), []
+    for n in names or []:
+        n = " ".join(str(n or "").split())
+        if n and n.lower() not in seen:
+            seen.add(n.lower()); clean.append(n)
+    return clean[0] if len(clean) == 1 else (", ".join(clean[:-1]) + " y " + clean[-1] if clean else "")
 
 
 def _row_cells(row: dict, excel_row: int) -> Dict[str, object]:
@@ -36,7 +63,7 @@ def _row_cells(row: dict, excel_row: int) -> Dict[str, object]:
             notes.append(f"Volvieron {returned or 0}" + (f" · faltan {pending}" if pending else ""))
     active = bool((needed or 0) or (out or 0) or row.get("done") or notes)
     return {f"B{excel_row}": needed or None, f"C{excel_row}": out or None,
-            f"D{excel_row}": YES if row.get("done") else (NO if active and row["kind"] == "inv" else None), f"E{excel_row}": " · ".join(notes) or None}
+            f"D{excel_row}": YES if row.get("done") else (NO if active and row["kind"] == "inv" else None), f"E{excel_row}": " · ".join(sentence_case(n) for n in notes) or None}
 
 
 def _fit(ws, cell: str, row: int, chars_per_line: int, line_height: float) -> None:
@@ -82,9 +109,13 @@ def repair_for_excel(data: bytes) -> bytes:
 
 
 def build(event_info: Dict[str, str], board: Iterable[dict], responsible: str) -> bytes:
-    """`event_info`: code, name, when, client, place, coordinator (texto ya armado). `board`: las filas de build_board en el orden del formato. Devuelve el .xlsx."""
+    """`responsible`: quienes llenaron el checklist de ESE evento (ya unidos en un texto; ver join_names). `event_info`: code, name, when, client, place, coordinator (texto ya armado). `board`: las filas de build_board en el orden del formato. Devuelve el .xlsx."""
     wb = load_workbook(TEMPLATE, rich_text=True)          # rich_text: conserva los textos con dos tipos de letra de la columna A
-    ws = wb[SHEET]
+    ws = wb[TEMPLATE_SHEET]
+    ws.title = SHEET
+    for extra in EXTRA_SHEETS:
+        if extra in wb.sheetnames and wb[extra].max_row <= 1 and wb[extra].max_column <= 1 and wb[extra]["A1"].value is None:          # solo la hoja vacía; si alguna vez trae algo, se deja
+            del wb[extra]
     ws.column_dimensions["E"].width = OBS_WIDTH          # observaciones más anchas que en el formato a mano (ahí se escribe con lapicero; aquí hay texto armado)
     for key, cell in HEADER_CELLS.items():
         ws[cell] = event_info.get(key) or None
@@ -98,6 +129,7 @@ def build(event_info: Dict[str, str], board: Iterable[dict], responsible: str) -
             ws[cell] = value
         _fit(ws, f"E{meta['excel_row']}", meta["excel_row"], OBS_CHARS, OBS_LINE)
     ws[RESPONSIBLE_CELL] = responsible or None
+    _fit(ws, RESPONSIBLE_CELL, int(RESPONSIBLE_CELL[1:]), HEADER_CHARS, HEADER_LINE)
     ws.sheet_view.selection[0].activeCell = "A1"
     ws.sheet_view.selection[0].sqref = "A1"
     wb.active = wb.sheetnames.index(SHEET)

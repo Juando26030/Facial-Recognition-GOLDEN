@@ -491,9 +491,26 @@ def test_the_checklist_downloads_as_the_geyl_xlsx_with_the_event_data(client, fa
     r = client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx")
     assert r.status_code == 200 and "spreadsheetml" in r.headers["content-type"] and ".xlsx" in r.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(r.content))
-    ws = wb["Hoja1"]
-    assert wb.sheetnames[:2] == ["Hoja1", "Instrucciones Básicas"] and ws["B2"].value == ev.event_code and ws["B54"].value
+    ws = wb["Checklist"]
+    assert wb.sheetnames[:2] == ["Checklist", "Instrucciones Básicas"] and ws["B2"].value == ev.event_code and ws["B54"].value
     assert (ws["B14"].value, ws["C14"].value, ws["D14"].value) == (2, 1, "SÍ") and "Revisados" in ws["E14"].value
+    assert ws["B54"].value == "adm"          # «Responsable checklist» = quien llenó el checklist (aquí solo adm), no quien lo descarga ni quien creó el evento
+
+
+def test_the_checklist_lists_every_user_who_filled_it_not_the_downloader(client, factory, on):
+    import io
+    from openpyxl import load_workbook
+    factory.staff("admin", "adm")
+    factory.staff("coordinador", "alm", extra_roles="almacen")
+    ev = factory.event(status="en_proceso")
+    login(client, "alm")
+    assert client.put(f"/api/almacen/events/{ev.id}/checklist/portatiles", json={"done": True, "notes": "es plan B"}).status_code == 200
+    client.post("/logout")
+    login(client, "adm")
+    assert client.put(f"/api/almacen/events/{ev.id}/checklist/impresoras", json={"done": True}).status_code == 200
+    ws = load_workbook(io.BytesIO(client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx").content))["Checklist"]
+    assert ws["B54"].value == "alm y adm"          # los dos que intervinieron, en orden de intervención
+    assert "Es plan B" in ws["E14"].value          # mayúscula al inicio de la frase
 
 
 def test_the_xlsx_follows_the_permissions_and_the_flag(client, factory, on, monkeypatch):
