@@ -150,3 +150,6 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-pf-gap--over { min-height: var(--gw-sp-6); background: var(--gw-warn-bg); outline: 2px dashed var(--gw-warn-line); }
 .gw-pf-preview .gw-modal { max-width: 56rem; }
 .gw-pf-preview .gw-fields-row { margin-bottom: var(--gw-sp-3); }
+
+/* 18-nov-2026 · Zonas e inventarios: el campo del nombre se encogía a cero (la celda tiene min-width:0 y la tabla ajusta sola). Ancho mínimo para que el nombre siempre se lea y se edite. */
+.gw-parametros .gw-table input.area-name, .gw-parametros .gw-table input.item-name { min-width: 12rem; width: 100%; box-sizing: border-box; }
