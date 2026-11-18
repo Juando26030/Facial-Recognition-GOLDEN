@@ -1,4 +1,4 @@
-/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR a un evento, justificación de lo que excede lo asignado (razón o Plan B), checklist del evento
+/* Almacén (Inventario → pestaña «Almacén», Pieza 2): salidas y entradas por QR (lector USB o cámara) a un evento, aviso (sin bloqueo) cuando falta asignar lo que sale, checklist del evento
    con la casilla «OK S/N» por fila, equipos fuera de bodega y anulación del último movimiento. API: /api/almacen/move, /movements/{id}/void, /events/{id}/board, /events/{id}/checklist/{fila}
    y /api/inventory/events (lista de eventos de siempre). Todo se escapa; sin manejadores en línea (delegación); mensajes con showToast / showConfirm. */
 (function () {
@@ -10,7 +10,7 @@
   const esc = (t) => window.escapeHtml(String(t == null ? '' : t));
   const STATUS = { creado: 'Creado', en_proceso: 'En proceso', finalizado: 'Finalizado' };
   let events = [];
-  let pending = null;          // salida que espera razón o Plan B: el mismo cuerpo, para reenviarlo
+  let scanner = null;          // ventana de la cámara (qr.js), si está abierta
   let loaded = false;
   let busyMove = false;
 
@@ -24,72 +24,89 @@
   const fail = (e) => showToast(e && e.message ? e.message : 'No se pudo completar la acción', 'error');
   const mode = () => (root.querySelector('input[name=almMvMode]:checked') || {}).value || 'salida';
   const eventId = () => Number($('almMvEvent').value) || null;
+  const camOpen = () => !!document.querySelector('.gw-cam .qr-status');
   const focusScan = () => { const s = $('almMvScan'); if (s && !s.disabled) s.focus(); };
 
-  /* ---- eventos */
-  function eventOptions() {
-    const term = $('almMvEventFilter').value.trim().toLowerCase();
-    const keep = $('almMvEvent').value;
-    const rows = events.filter((e) => e.status !== 'archivado' && (!term || (e.name + ' ' + (e.code || '')).toLowerCase().includes(term)));
-    $('almMvEvent').innerHTML = '<option value="">Elige un evento…</option>' + rows.map((e) => `<option value="${e.id}"${String(e.id) === keep ? ' selected' : ''}>${esc(e.name)}${e.code ? ' · ' + esc(e.code) : ''} (${esc(STATUS[e.status] || e.status)})</option>`).join('');
+  /* ---- eventos: un solo buscador (igual al de Inicio: sin tildes ni mayúsculas, «N de M eventos») */
+  const norm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('es-CO') : '');
+  const eventMeta = (e) => [e.code, fmtDate(e.start_date), STATUS[e.status] || e.status].filter(Boolean).join(' · ');
+  function renderEvents() {
+    const q = norm($('almMvEventSearch').value).trim();
+    const shown = q ? events.filter((e) => norm(e.name + ' ' + (e.code || '')).includes(q)) : events;
+    const list = shown.slice(0, 12);
+    $('almMvEventList').innerHTML = !list.length
+      ? '<div class="gw-state" role="status"><p class="gw-state__title">Ningún evento coincide</p><p class="gw-state__text">Prueba con otra palabra o borra la búsqueda.</p></div>'
+      : '<div class="gw-cards">' + list.map((e) => `<article class="gw-card-row"><div class="gw-card-row__head"><span class="gw-card-row__title">${esc(e.name)}</span>
+          <span class="gw-badge${e.status === 'en_proceso' ? ' gw-badge--ok' : ''}">${esc(STATUS[e.status] || e.status)}</span></div>
+          <p class="gw-card-row__meta">${esc([e.code, fmtDate(e.start_date)].filter(Boolean).join(' · '))}</p>
+          <div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-alm-pick="${e.id}">Elegir este evento</button></div></article>`).join('') + '</div>';
+    $('almMvEventInfo').textContent = q ? `${shown.length} de ${events.length} eventos` + (shown.length > list.length ? ` (se muestran ${list.length}; escribe más para acotar)` : '') : (events.length > list.length ? `Se muestran ${list.length} de ${events.length} eventos: escribe para buscar.` : '');
   }
   async function loadEvents() {
     const d = await j('/api/inventory/events');
-    events = d.events || [];
-    eventOptions();
+    events = (d.events || []).filter((e) => e.status !== 'archivado');
+    renderEvents();
+  }
+  function chooseEvent(id) {
+    const e = events.find((x) => x.id === Number(id));
+    $('almMvEvent').value = e ? String(e.id) : '';
+    $('almMvEventBox').hidden = !!e;
+    $('almMvEventList').hidden = !!e;
+    $('almMvEventChosen').hidden = !e;
+    if (e) { $('almMvEventChosenName').textContent = e.name; $('almMvEventChosenMeta').textContent = eventMeta(e); } else { $('almMvEventSearch').value = ''; renderEvents(); }
+    onEventChange();
   }
   function onEventChange() {
     const id = eventId();
     $('almMvScan').disabled = !id;
-    $('almMvHint').textContent = id ? 'El lector escribe el código y pulsa Enter; cada lectura registra un movimiento.' : 'Primero elige el evento. El lector escribe el código y pulsa Enter; cada lectura registra un movimiento.';
+    $('almMvQrBtn').disabled = !id;
+    $('almMvHint').textContent = id ? 'El lector escribe el código y pulsa Enter, o usa la cámara; cada lectura registra un movimiento.' : 'Primero elige el evento. El lector escribe el código y pulsa Enter, o usa la cámara; cada lectura registra un movimiento.';
     $('almMvResult').innerHTML = '';
-    hideReason();
-    if (id) { loadBoard(); focusScan(); } else { $('almBoardCard').hidden = true; }
+    if (id) { loadBoard(); focusScan(); } else { $('almBoardCard').hidden = true; if (scanner) scanner.close(); }
   }
 
   /* ---- movimiento por lectura */
-  function result(ok, text, extra) {
-    $('almMvResult').innerHTML = `<div class="gw-state${ok ? '' : ' gw-state--error'}" role="${ok ? 'status' : 'alert'}"><p class="gw-state__title"><span class="gw-badge ${ok ? 'gw-badge--ok' : 'gw-badge--err'}">${ok ? 'Registrado' : 'No registrado'}</span> ${esc(text)}</p>${extra || ''}</div>`;
-  }
-  function hideReason() {
-    pending = null;
-    $('almMvReason').hidden = true;
-    $('almMvReasonText').value = '';
-    $('almMvPlanB').checked = false;
+  function result(ok, text, warning) {
+    $('almMvResult').innerHTML = `<div class="gw-state${ok ? '' : ' gw-state--error'}" role="${ok ? 'status' : 'alert'}"><p class="gw-state__title"><span class="gw-badge ${ok ? 'gw-badge--ok' : 'gw-badge--err'}">${ok ? 'Registrado' : 'No registrado'}</span> ${esc(text)}</p></div>`
+      + (warning ? `<div class="gw-alert gw-alert--warn" role="status"><p><strong>Aviso:</strong> ${esc(warning)}</p></div>` : '');
+    const st = document.querySelector('.gw-cam .qr-status');          // con la cámara abierta el resultado se ve en su ventana
+    if (st) st.textContent = (ok ? '✓ ' : '✕ ') + text + (warning ? ' ⚠ ' + warning : '');
   }
   async function doMove(body) {
-    if (busyMove) return;
+    if (busyMove) return false;
     busyMove = true;
     $('almMvScan').disabled = true;
+    let ok = false;
     try {
       const d = await send('/api/almacen/move', 'POST', body);
-      hideReason();
-      result(true, d.message);
+      ok = true;
+      result(true, d.message, d.warning);          // si falta asignar el elemento al evento: solo se avisa, el movimiento ya quedó registrado
       if (d.product && d.product.tracking !== 'serial') $('almMvQty').value = '1';
       await loadBoard();
     } catch (e) {
-      if (e.status === 409 && e.detail && e.detail.needs_reason) {
-        pending = body;
-        $('almMvReasonMsg').textContent = e.detail.message;
-        $('almMvReason').hidden = false;
-        $('almMvReasonText').focus();
-        result(false, 'Falta justificar: escribe la razón o marca Plan B.');
-        busyMove = false;
-        return;
-      }
       result(false, e.message);
     }
     busyMove = false;
     $('almMvScan').disabled = !eventId();
-    focusScan();
+    if (!camOpen()) focusScan();
+    return ok;
   }
   async function onScan(raw) {
     const code = String(raw || '').trim();
-    if (!code || pending) return;
-    const m = mode();
-    const body = { mode: m, code, event_id: eventId(), qty: Number($('almMvQty').value) || 1 };
-    if (!body.event_id) { result(false, 'Primero elige el evento.'); return; }
-    await doMove(body);
+    if (!code) return false;
+    const body = { mode: mode(), code, event_id: eventId(), qty: Number($('almMvQty').value) || 1 };
+    if (!body.event_id) { result(false, 'Primero elige el evento.'); return false; }
+    return doMove(body);
+  }
+  /* Cámara del dispositivo (la misma ventana de qr.js que usan Registro, Áreas e Inventario): cada QR leído registra un movimiento y la ventana sigue abierta para el siguiente. */
+  function openCamera() {
+    if (!eventId()) { showToast('Primero elige el evento', 'error'); return; }
+    if (!window.QrScanner) { showToast('El lector de cámara no está disponible en esta página', 'error'); return; }
+    scanner = QrScanner.open({
+      title: 'Escanear QR — Almacén',
+      onCode: (text) => { onScan(text); },          // qr.js ya entrega el código limpio (una vCard de Golden se desenvuelve sola)
+    });
   }
 
   /* ---- tablero del evento */
@@ -158,19 +175,11 @@
     e.target.value = '';
     onScan(v);
   });
-  $('almMvEvent').addEventListener('change', onEventChange);
-  $('almMvEventFilter').addEventListener('input', eventOptions);
-  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; hideReason(); focusScan(); }));
-
-  $('almMvReason').addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!pending) return;
-    const reason = $('almMvReasonText').value.trim();
-    const planB = $('almMvPlanB').checked;
-    if (!reason && !planB) { showToast('Escribe la razón o marca Plan B', 'error'); return; }
-    doMove(Object.assign({}, pending, { reason, plan_b: planB }));
-  });
-  $('almMvReasonCancel').addEventListener('click', () => { hideReason(); $('almMvResult').innerHTML = ''; focusScan(); });
+  $('almMvEventSearch').addEventListener('input', renderEvents);
+  $('almMvEventList').addEventListener('click', (e) => { const b = e.target.closest('button[data-alm-pick]'); if (b) chooseEvent(b.dataset.almPick); });
+  $('almMvEventChange').addEventListener('click', () => { chooseEvent(''); $('almMvEventSearch').focus(); });
+  $('almMvQrBtn').addEventListener('click', openCamera);
+  root.querySelectorAll('input[name=almMvMode]').forEach((r) => r.addEventListener('change', () => { $('almMvResult').innerHTML = ''; focusScan(); }));
 
   $('almBoardCard').addEventListener('change', (e) => {
     const t = e.target;

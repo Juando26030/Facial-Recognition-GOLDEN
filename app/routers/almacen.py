@@ -343,7 +343,7 @@ def _movement_json(m: InventoryMovement, can_void: bool = False) -> dict:
 def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
     """Una lectura del QR = un movimiento. Cuerpo: {mode: salida|entrada, code, event_id?, qty?, reason?, plan_b?}.
     Equipo con serial: la entrada deduce sola el evento donde estaba. Por modelo/cantidad: siempre hace falta el evento y la cantidad (1 por defecto).
-    Salir más de lo asignado → 409 con `needs_reason` (se reenvía con `reason` o `plan_b`)."""
+    Salir más de lo asignado NO se bloquea: se registra como extra y la respuesta trae `warning` («falta asignar…»). `reason` y `plan_b` son opcionales."""
     mode = _guard(lambda: moves.clean_mode(data.get("mode")))
     code = almacen.normalize_scan(data.get("code"))
     if not code:
@@ -379,7 +379,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         db.add(line)
         db.flush()
     consumable = bool(product.is_consumable)
-    extra_applied = 0
+    extra_applied, warning = 0, ""
     if mode == "salida":
         plan = _guard(lambda: moves.plan_exit(tracking=tracking, consumable=consumable, assigned=line.qty_assigned or 0, out=line.qty_out or 0, qty=qty,
                                               unit_status=unit.status if unit is not None else None, unit_event_name=unit.event.name if unit is not None and unit.event_id else None,
@@ -387,7 +387,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         line.qty_out = (line.qty_out or 0) + plan.out_add
         line.qty_consumed = (line.qty_consumed or 0) + plan.consumed_add
         line.qty_assigned = (line.qty_assigned or 0) + plan.extra
-        extra_applied, reason, plan_b = plan.extra, plan.reason, plan.plan_b
+        extra_applied, reason, plan_b, warning = plan.extra, plan.reason, plan.plan_b, plan.warning
         if unit is not None:
             unit.status, unit.event_id = "en_evento", event.id
     else:
@@ -415,7 +415,7 @@ def move(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(M
         msg += f" · {ln['out']} de {ln['assigned']}"
     else:
         msg += f" · faltan {ln['pending']} por volver"
-    return {"ok": True, "message": msg, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
+    return {"ok": True, "message": msg, "warning": warning, "movement": _movement_json(mv, True), "line": ln, "product": _product_json(product), "unit": _unit_json(unit, product) if unit is not None else None,
             "event": {"id": event.id, "name": event.name, "status": event.status}}
 
 

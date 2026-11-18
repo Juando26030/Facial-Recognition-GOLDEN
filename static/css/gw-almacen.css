@@ -24,3 +24,6 @@
 #inventario .gw-table .gw-select, #inventario .gw-table .gw-input { min-width: 9rem; }
 #inventario .gw-alm__pick { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
 :root[data-theme="dark"] #inventario .gw-alm__pick { accent-color: var(--gw-gold-2); }
+
+/* Buscadores del panel (evento y código): dentro de la tarjeta no se quedan pegados arriba como en el quiosco. */
+#invPanelAlm .gw-search { position: static; margin-bottom: 0; box-shadow: none; }

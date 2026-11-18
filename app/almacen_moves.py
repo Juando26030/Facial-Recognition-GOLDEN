@@ -38,6 +38,7 @@ class ExitPlan:
     extra: int
     reason: Optional[str]
     plan_b: bool
+    warning: str = ""          # aviso (no bloquea): lo que se despacha pasa de lo asignado al evento
 
 
 def clean_mode(value) -> str:
@@ -85,7 +86,7 @@ def check_event(status: str, archived: bool, mode: str) -> None:
 
 def plan_exit(*, tracking: str, consumable: bool, assigned: int, out: int, qty: int, unit_status: Optional[str] = None, unit_event_name: Optional[str] = None,
               reason=None, plan_b: bool = False, product_name: str = "") -> ExitPlan:
-    """Salida de `qty` hacia el evento. Lanza MoveError si no procede; con `needs_reason` cuando solo falta justificar lo que excede lo asignado."""
+    """Salida de `qty` hacia el evento. Lanza MoveError si no procede; y, si lo despachado excede lo asignado, NO bloquea: devuelve `warning` y el sobrante como `extra`."""
     if tracking == "serial":
         if qty != 1:
             raise MoveError("Un equipo con serial sale de a uno.")
@@ -98,16 +99,16 @@ def plan_exit(*, tracking: str, consumable: bool, assigned: int, out: int, qty: 
     free = max(assigned - out, 0)
     extra = max(qty - free, 0)
     why = clean_text(reason, MAX_REASON, "La razón")
-    if extra and not (why or plan_b):
+    warning = ""
+    if extra:          # No se bloquea: se registra igual y se avisa que hace falta asignarlo al evento (la razón y el Plan B quedan como datos opcionales)
         name = f"«{product_name}»" if product_name else "Este producto"
         if assigned <= 0:
-            msg = f"El evento no pidió {name}. Ajusta primero lo asignado del evento; si no es posible, escribe la razón de incluirlo o márcalo como Plan B."
+            warning = f"Falta asignar {name} al evento: el evento no lo pidió. Quedó registrado como extra; agrégalo a lo asignado del evento."
         else:
-            msg = f"El evento tiene asignados {assigned} de {name} y ya salieron {out}: salir {qty} más lo excede. Ajusta primero lo asignado; si no es posible, escribe la razón o márcalo como Plan B."
-        raise MoveError(msg, needs_reason=True, extra=extra)
+            warning = f"Falta asignar más {name} al evento: tiene {assigned} asignados y ya salieron {out + qty}. Quedó registrado como extra ({extra}); ajusta lo asignado del evento."
     if out + qty > MAX_QTY:
         raise MoveError(f"Las cantidades no pueden pasar de {MAX_QTY}.")
-    return ExitPlan(out_add=qty, consumed_add=qty if consumable else 0, extra=extra, reason=why if extra else None, plan_b=bool(plan_b) if extra else False)
+    return ExitPlan(out_add=qty, consumed_add=qty if consumable else 0, extra=extra, reason=why if extra else None, plan_b=bool(plan_b) if extra else False, warning=warning)
 
 
 def plan_entry(*, tracking: str, consumable: bool, out: int, returned: int, consumed: int, qty: int, unit_status: Optional[str] = None, product_name: str = "") -> int:

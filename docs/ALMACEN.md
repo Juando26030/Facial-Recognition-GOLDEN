@@ -9,7 +9,7 @@ Nada en `main`, nada en producción.
 | Lógica pura (tipos de control, las 43 filas del checklist GEYL, códigos QR, validaciones) | `app/almacen.py` |
 | Columnas nuevas del catálogo (`tracking`, `checklist_row`, `is_consumable`, `qr_code`) y tabla `inventory_units` | `app/models.py`, migración `0148_almacen_unidades` (solo agrega) |
 | API `/api/almacen/*` (meta, productos, unidades, archivar/restaurar, `scan`, `labels`) | `app/routers/almacen.py` |
-| Pestaña «Almacén» dentro de `/inventario` | `templates/_almacen_panel.html`, `static/js/almacen-page.js`, `static/css/gw-almacen.css` |
+| Pestaña «Almacén» dentro de `/inventario` | `templates/_almacen_panel.html`, `static/js/almacen-moves.js`, `static/css/gw-almacen.css` |
 | Ventana de impresión de etiquetas QR (`/inventario/etiquetas`) | `templates/almacen_etiquetas.html`, `static/js/almacen-etiquetas.js`, `static/css/gw-almacen-etiquetas.css` |
 | Interruptor `ALMACEN_ENABLED` | `deploy/gcp/config.sh` (staging 1, producción 0), `deploy.sh` (solo servicio `web`), `manual_deploy.sh` (lo muestra) |
 | Pruebas | `tests/test_almacen_logica.py` (sin base), `tests/test_almacen_api.py` (Postgres) |
@@ -40,7 +40,7 @@ Plan: `claude/60_PLAN_ALMACEN_PIEZA2_2026-11-17.md`. Migración `0149_almacen_mo
 | Fotos del elemento: validación, re-codificación a JPEG ≤ 1280 px sin metadatos | `app/almacen_photos.py` |
 | Tablas `inventory_movements` (solo se agrega; anular marca `voided_*`), `event_checklist_rows`; columnas `inventory_units.event_id`, `inventory_products.photo_key` | `app/models.py`, migración 0149 |
 | API: `POST /api/almacen/move`, `POST /api/almacen/movements/{id}/void`, `GET /api/almacen/events/{id}/board`, `PUT /api/almacen/events/{id}/checklist/{fila}`, `POST/GET/DELETE /api/almacen/products/{id}/photo` | `app/routers/almacen.py` |
-| Pestaña «Almacén»: modo escáner, «Salidas y entradas por evento» y «Checklist del evento» | `templates/_almacen_panel.html`, `static/js/almacen-page.js`, `static/js/almacen-moves.js` |
+| Pestaña «Almacén»: «Salidas y entradas por evento» (un solo buscador de evento, lector USB y cámara QR) y «Checklist del evento» | `templates/_almacen_panel.html`, `static/js/almacen-moves.js`, `static/js/qr.js` (compartido) |
 | «Administrar catálogo» (único lugar para crear): control de bodega, foto, botón «Objetos y QR», QR visible, etiquetas | `templates/_inventory_catalog_admin.html`, `static/js/almacen-catalog.js` (se engancha a `inventory-catalog-admin.js` por eventos `gw:*`) |
 | Pruebas | `tests/test_almacen_moves.py` (sin base, 16), `tests/test_almacen_api.py` (Postgres) |
 
@@ -48,7 +48,7 @@ Decisiones (Juan David, 17-nov-2026):
 - **Un solo lugar para crear (cambio pedido el 17-nov, tras ver staging):** se quitó «Nuevo elemento» de la pestaña Almacén; el producto del catálogo es el TIPO («Portátil Lenovo») y se crea en «Administrar catálogo», con los campos de bodega en el mismo formulario. Cada tarjeta de tipo con serial tiene «Objetos y QR»: ahí se agregan los objetos reales y cada uno recibe su QR, mostrado en un campo (solo lectura, se selecciona al tocarlo). Los de modelo/cantidad muestran el QR del tipo en la tarjeta. La pestaña Almacén quedó solo para escanear, mover y el checklist.
 - **Una lectura = un movimiento.** Salida: evento + QR (+ cantidad si es por modelo/cantidad). Entrada de un equipo con serial: el sistema deduce el evento donde estaba; por modelo/cantidad hace falta evento y cantidad.
 - **Contadores:** cada movimiento actualiza `qty_out` / `qty_returned` de `event_inventory_items` en la misma transacción y pasa por `check_balance` (nada se guarda si no cuadra). NECESARIO = asignado − extras; CANTIDAD = `qty_out`.
-- **Salir más de lo pedido (o algo que el evento no pidió):** primero se ajusta lo asignado; si no se puede, la API responde 409 `needs_reason` y la pantalla pide la RAZÓN (texto) o la casilla «Plan B». El sobrante sube `qty_assigned` (para no romper el cuadre) pero queda como `extra` del movimiento y no cuenta como NECESARIO.
+- **Salir más de lo pedido (o algo que el evento no pidió) — cambio del 18-nov:** NO se bloquea. El movimiento se registra normal y la pantalla muestra el aviso «Falta asignar … al evento» (la API devuelve `warning`). El sobrante sube `qty_assigned` (para no romper el cuadre) pero queda como `extra` del movimiento y no cuenta como NECESARIO; `reason` y `plan_b` siguen aceptándose como datos opcionales (la pantalla ya no los pide).
 - **Consumibles:** al salir cuentan como consumidos al instante; no tienen entrada.
 - **Estados del evento:** salidas con «creado» o «en proceso»; entradas también con «finalizado»; archivado, nada.
 - **Alistado por fila del checklist** (incluye las 5 filas de verificación manual) con observación por fila. Un elemento sin fila del checklist avisa en el tablero que no saldrá en el Excel.
@@ -56,6 +56,12 @@ Decisiones (Juan David, 17-nov-2026):
 - **Fotos del elemento:** opcionales al crearlo, reemplazables/quitables después; JPEG reducido y sin datos de ubicación. La foto de la novedad por daño va en la Pieza 3.
 
 Pruebas Pieza 2: ejecutadas `tests/test_almacen_moves.py` + `tests/test_almacen_logica.py` (26), `test_design_system`, `test_visual_global`, `ruff check .`, `node --check` y análisis de las plantillas. **SIN EJECUTAR** (necesitan Postgres): `tests/test_almacen_api.py`.
+
+Ajustes del 18-nov-2026 (pedidos por Juan David tras probar en staging):
+- Se quitó «Categorías» de «Administrar catálogo» (y el selector de categoría del producto) cuando Almacén está activo; con `ALMACEN_ENABLED=1`, `inventory.check_balance` ya no pide categoría para pasar un evento a «En proceso». Con el interruptor apagado todo queda como siempre.
+- Se quitó «Modo escáner» (y `almacen-page.js`); `/api/almacen/scan` sigue existiendo.
+- Un solo buscador de evento (como el de Inicio: sin tildes, «N de M eventos», tarjetas con «Elegir este evento», «Cambiar evento»).
+- «Escanear código» tiene el botón de cámara de siempre (`qr.js`, el mismo de Registro/Áreas/Inventario); la ventana sigue abierta y muestra el resultado y el aviso de cada lectura.
 
 ## Siguiente
 Pieza 3: novedades y bloqueo (con **foto** del daño y texto; un elemento en novedad no se asigna a un evento hasta que Almacén lo deje «disponible»; disponibilidad = existencias − novedades abiertas). Pieza 4: Excel `.xlsx` igual al formato GEYL (hoja «Instrucciones Básicas» incluida). Después: alertas de equipos sin devolver y reportes de uso.

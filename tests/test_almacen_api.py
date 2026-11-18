@@ -223,7 +223,7 @@ def test_the_event_can_go_in_process_once_the_scans_match_what_it_asked(client, 
     inventory_svc.assert_can_enter_in_progress(db, db.get(type(ev), ev.id))          # salió = asignado: pasa
 
 
-def test_exceeding_what_was_asked_needs_a_reason_or_plan_b_and_keeps_needed_intact(client, factory, on):
+def test_exceeding_what_was_asked_only_warns_and_keeps_needed_intact(client, factory, on):
     factory.staff("admin", "adm")
     ev = factory.event(status="creado")
     login(client, "adm")
@@ -232,23 +232,26 @@ def test_exceeding_what_was_asked_needs_a_reason_or_plan_b_and_keeps_needed_inta
     _assign(client, ev.id, p["id"], 5)
     assert _move(client, "salida", code, ev.id, qty=5).status_code == 200
     r = _move(client, "salida", code, ev.id, qty=2)
-    assert r.status_code == 409 and r.json()["detail"]["needs_reason"] and r.json()["detail"]["extra"] == 2
+    assert r.status_code == 200, r.text          # no se bloquea: se registra y avisa que falta asignar
+    assert "Falta asignar" in r.json()["warning"] and r.json()["movement"]["extra"] == 2
+    assert _move(client, "salida", code, ev.id, qty=1).status_code == 200          # sigue sin bloquear
     r = _move(client, "salida", code, ev.id, qty=2, reason="El cliente sumó dos puestos")
     assert r.status_code == 200, r.text
     r = _move(client, "salida", code, ev.id, qty=1, plan_b=True)
     assert r.status_code == 200, r.text
     row = next(x for x in client.get(f"/api/almacen/events/{ev.id}/board").json()["board"] if x["key"] == "cable_usb_hp1100")
-    assert (row["needed"], row["out"], row["extra"], row["plan_b"]) == (5, 8, 3, True)
+    assert (row["needed"], row["out"], row["extra"], row["plan_b"]) == (5, 11, 6, True)
     plan = client.get(f"/api/events/{ev.id}/inventory-plan").json()
-    assert [l for l in plan["lines"] if l["product_id"] == p["id"]][0]["assigned"] == 8          # el cuadre de siempre se mantiene
+    assert [l for l in plan["lines"] if l["product_id"] == p["id"]][0]["assigned"] == 11          # el cuadre de siempre se mantiene
 
 
-def test_a_product_the_event_never_asked_for_can_leave_with_a_reason(client, factory, on):
+def test_a_product_the_event_never_asked_for_leaves_with_a_warning_not_a_block(client, factory, on):
     factory.staff("admin", "adm")
     ev = factory.event(status="creado")
     login(client, "adm")
     p = _product(client, "Pulpos", "cantidad", "pulpos")
-    assert _move(client, "salida", p["qr_code"], ev.id, qty=2).status_code == 409
+    r = _move(client, "salida", p["qr_code"], ev.id, qty=2)
+    assert r.status_code == 200 and "el evento no lo pidió" in r.json()["warning"]
     assert _move(client, "salida", p["qr_code"], ev.id, qty=2, reason="Faltan tomas en la sala").status_code == 200
 
 
@@ -378,7 +381,7 @@ def test_the_catalog_admin_carries_the_warehouse_fields_and_the_alm_tab_has_no_c
     page = client.get("/inventario").text
     assert 'id="almCatBox"' in page and 'id="almUnitsCard"' in page and "almacen-catalog.js" in page          # crear tipo, objetos y QR viven en «Administrar catálogo»
     assert 'id="almNewForm"' not in page and 'id="almProducts"' not in page                                   # y ya no hay un segundo formulario en la pestaña Almacén
-    assert 'id="almMvScan"' in page and 'id="almScan"' in page
+    assert 'id="almMvScan"' in page and 'id="almMvQrBtn"' in page and 'id="almMvEventSearch"' in page and 'id="almScan"' not in page and 'invCatForm' not in page
     monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
     off = client.get("/inventario").text
-    assert 'id="almCatBox"' not in off and "almacen-catalog.js" not in off and 'id="invProdForm"' in off          # sin el interruptor el catálogo queda como siempre
+    assert 'id="almCatBox"' not in off and "almacen-catalog.js" not in off and 'id="invProdForm"' in off and 'invCatForm' in off          # sin el interruptor el catálogo queda como siempre

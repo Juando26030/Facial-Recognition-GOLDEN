@@ -18,20 +18,20 @@ def test_a_normal_exit_inside_what_the_event_asked_needs_no_reason():
     assert (p.out_add, p.extra, p.consumed_add, p.reason, p.plan_b) == (6, 0, 0, None, False)
 
 
-def test_exceeding_the_assigned_quantity_asks_for_a_reason_or_plan_b():
-    with pytest.raises(m.MoveError) as e:
-        exit_(assigned=10, out=9, qty=3, product_name="Cable USB")
-    assert e.value.needs_reason and e.value.extra == 2 and "Ajusta primero" in str(e.value)
+def test_exceeding_the_assigned_quantity_only_warns_and_records_the_extra():
+    p = exit_(assigned=10, out=9, qty=3, product_name="Cable USB")
+    assert p.extra == 2 and p.out_add == 3 and p.reason is None and not p.plan_b
+    assert "Falta asignar" in p.warning and "Cable USB" in p.warning
     p = exit_(assigned=10, out=9, qty=3, reason="  El cliente pidió dos más  ")
     assert p.extra == 2 and p.reason == "El cliente pidió dos más" and not p.plan_b
     p = exit_(assigned=10, out=9, qty=3, plan_b=True)
     assert p.extra == 2 and p.plan_b and p.reason is None
+    assert exit_(assigned=10, out=4, qty=6).warning == ""
 
 
-def test_a_product_the_event_never_asked_for_needs_justification_too():
-    with pytest.raises(m.MoveError) as e:
-        exit_(assigned=0, out=0, qty=1, product_name="Pulpos")
-    assert e.value.needs_reason and "no pidió" in str(e.value)
+def test_a_product_the_event_never_asked_for_warns_instead_of_blocking():
+    p = exit_(assigned=0, out=0, qty=1, product_name="Pulpos")
+    assert p.extra == 1 and "el evento no lo pidió" in p.warning
 
 
 def test_reason_and_plan_b_are_ignored_when_nothing_exceeds():
@@ -159,3 +159,12 @@ def test_photos_reject_wrong_formats_and_disguised_files():
         almacen_photos.process_photo(_img("PNG", (50, 50)), "equipo.jpg")
     with pytest.raises(almacen.AlmacenError):
         almacen_photos.process_photo(b"", "equipo.jpg")
+
+
+def test_without_categories_in_almacen_a_product_without_category_no_longer_blocks_the_event(monkeypatch):
+    from app import inventory
+    rows = [dict(name="Cable", assigned=2, out=2, returned=0, consumed=0, category_id=None)]
+    monkeypatch.delenv("ALMACEN_ENABLED", raising=False)
+    assert [i.code for i in inventory.check_balance(rows, "en_proceso").issues] == ["uncategorized"]          # como siempre
+    monkeypatch.setenv("ALMACEN_ENABLED", "1")
+    assert inventory.check_balance(rows, "en_proceso").issues == []
