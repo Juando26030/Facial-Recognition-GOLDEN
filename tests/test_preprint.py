@@ -85,3 +85,11 @@ def test_estado_de_registro_va_primero():
     assert [p["id"] for p in preprint.by_registration(ppl, "no")] == ["2", "3"]
     assert len(preprint.by_registration(ppl, "todos")) == 3
     assert len(preprint.by_registration(ppl, "cualquiera")) == 3
+
+
+def test_la_impresion_normal_de_una_escarapela_tampoco_deja_hoja_en_blanco():
+    """19-nov-2026: la ventana de UNA escarapela usa el mismo tope de alto (100vh) y sin salto de página final que las hojas múltiples; las medidas inamovibles no cambian."""
+    html = (ROOT / "templates" / "badge_print.html").read_text(encoding="utf-8")
+    assert html.count("height:min(calc(${pageH}mm - 0.2mm), 100vh)") >= 2
+    assert "break-after:avoid; page-break-after:avoid" in html and "body { overflow:hidden; }" in html
+    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;" in html

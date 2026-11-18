@@ -130,8 +130,8 @@
             if (img.decode) await img.decode().catch(() => {});
             return true;
         }
-        pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; } ` +
-            `#badgePrint { display:none !important; } #labelImg { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
+        pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; height:min(calc(${pageH}mm - 0.2mm), 100vh); overflow:hidden; break-after:avoid; page-break-after:avoid; } ` +
+            `body { overflow:hidden; } #badgePrint { display:none !important; } #labelImg { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
         statusEl.style.display = 'none';
         if (img.decode) await img.decode().catch(() => {});
         return true;
