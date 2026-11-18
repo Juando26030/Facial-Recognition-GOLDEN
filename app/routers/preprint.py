@@ -93,11 +93,11 @@ def preprint_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUs
 
 
 @router.get("/events/{event_id}/preprint/people")
-def preprint_people(event_id: int, filter: str = "", q: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(_ROLE)):
+def preprint_people(event_id: int, filter: str = "", q: str = "", reg: str = "todos", db: Session = Depends(get_db), staff: StaffUser = Depends(_ROLE)):
     """La base del evento (sin la persona de prueba), recortada por el filtro (JSON `{"conditions":[...]}`) y por el texto del buscador."""
     import json
     event = _event(event_id, db, staff)
-    people = _people(db, event)
+    people = preprint.by_registration(_people(db, event), reg if reg in preprint.REG_MODES else "todos")          # primero el estado de registro; el filtro siguiente trabaja sobre lo que queda
     if filter:
         try:
             filt = json.loads(filter)
