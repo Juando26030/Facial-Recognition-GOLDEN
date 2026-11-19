@@ -53,17 +53,15 @@
       </div>
     </div>
     <div id="slAlert" role="status" hidden></div>
-    <div class="gw-toolbar">
-      <div class="gw-search gw-search--hero gw-toolbar__grow">
-        <div class="gw-search__row"><div class="gw-search__field">
-          <input class="gw-input" type="search" id="slSearch" placeholder="Buscar por evento, código o cliente" aria-label="Buscar evento" autocomplete="off" spellcheck="false">
+    <div class="ev-filters gw-card-row sl-filters">
+      <div class="gw-field"><label class="gw-label" for="slSearch">Buscar</label>
+        <input class="gw-input" type="search" id="slSearch" placeholder="Evento, código o cliente" autocomplete="off" spellcheck="false"></div>
+      <div class="gw-field sl-filters__group"><span class="gw-label" id="slGroupLbl">Agrupar</span>
+        <div class="sl-filters__chips" role="group" aria-labelledby="slGroupLbl">
+          <button type="button" class="gw-chip" data-group="client" aria-pressed="true">Por cliente</button>
+          <button type="button" class="gw-chip" data-group="calendar" aria-pressed="false">Por calendario</button>
         </div></div>
-      </div>
-      <div class="gw-toolbar__actions" role="group" aria-label="Agrupar eventos">
-        <button type="button" class="gw-chip" data-group="client" aria-pressed="true">Por cliente</button>
-        <button type="button" class="gw-chip" data-group="calendar" aria-pressed="false">Por calendario</button>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="slReload">Actualizar lista</button>
-      </div>
+      <button type="button" class="gw-btn gw-btn--secondary" id="slReload">Actualizar lista</button>
     </div>
     <div id="slEvents" class="ev-list gw-tenant__body" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
     <p class="gw-hint">¿Sin conexión o prefieres hacerlo a mano? En la nube exporta el evento y aquí impórtalo (Parámetros del sistema). El resultado es el mismo.</p>

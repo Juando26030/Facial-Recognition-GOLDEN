@@ -65,3 +65,11 @@ def test_status_states_written_by_the_updater_are_known_to_the_app():
 def test_workflow_is_manual_only_and_does_not_publish():
     wf = (SRC / ".github" / "workflows" / "instalador-windows.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch" in wf and "push:" not in wf and "pull_request" not in wf and "schedule" not in wf
+
+
+def test_instalador_cierra_procesos_antes_de_reinstalar():
+    """Reinstalar encima con el servicio corriendo falló con «código 5» (postgres.exe mantenía icudt77.dll): el instalador debe parar servicios y procesos de la carpeta."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8")
+    for svc in ("GoldenLocalUpdater", "GoldenLocalApp", "GoldenLocalDB"):
+        assert f"stop {svc}" in iss
+    assert "Stop-Process -Force" in iss and "StartsWith($d" in iss

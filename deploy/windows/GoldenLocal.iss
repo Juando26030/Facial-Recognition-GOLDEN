@@ -24,6 +24,7 @@ WizardStyle=modern
 UninstallDisplayName=Golden Local (servidor sin internet)
 ; Si ya está instalado, se instala encima (actualización de emergencia): la base y la configuración NO se tocan.
 CloseApplications=no
+RestartApplications=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -57,13 +58,20 @@ Filename: "https://localhost:8443"; Description: "Abrir Golden Local ahora"; Fla
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "GoldenLocalUninstall"
 
 [Code]
-// Si ya hay una instalación corriendo, se detienen sus servicios antes de copiar archivos (la base y la configuración no se tocan).
+// Si ya hay una instalación corriendo, se detienen sus servicios Y cualquier proceso que siga usando archivos de C:\GoldenLocal antes de copiar
+// (la base y la configuración no se tocan). Sin esto, reinstalar encima fallaba con «código 5 / Acceso denegado» en pgsql\bin\icudt77.dll.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
+  Ps: String;
 begin
   Exec('net.exe', 'stop GoldenLocalUpdater', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('net.exe', 'stop GoldenLocalApp', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Exec('net.exe', 'stop GoldenLocalDB', '', SW_HIDE, ewWaitUntilTerminated, Code);          { PostgreSQL mantiene abiertas sus DLL (icudt77.dll...): sin pararlo, reinstalar encima falla con «Acceso denegado» }
+  Exec('net.exe', 'stop GoldenLocalDB', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  { Lo que quede vivo (postgres.exe, python.exe, WinSW) se cierra: solo procesos cuyo ejecutable está dentro de la carpeta de instalación; se espera hasta 30 s a que suelten los archivos }
+  Ps := '-NoProfile -ExecutionPolicy Bypass -Command "$d=''' + ExpandConstant('{app}') + '''; ' +
+        'for($i=0;$i -lt 15;$i++){ $p=Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($d,[StringComparison]::OrdinalIgnoreCase) }; ' +
+        'if(-not $p){break}; $p | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }"';
+  Exec('powershell.exe', Ps, '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
 end;
