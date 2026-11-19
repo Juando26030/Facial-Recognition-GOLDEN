@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>Lector de cédula colombiana</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#131a22; --line:#243040; --txt:#e8eef5; --mut:#8a9bb0;
+    --ok:#2ee59d; --warn:#ffc857; --err:#ff6b6b; --acc:#4da3ff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--txt);
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  #app{height:100dvh;display:flex;flex-direction:column;max-width:720px;margin:0 auto}
+  header{padding:12px 16px 8px;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.2px}
+  header small{color:var(--mut);font-size:12px}
+
+  #stage{position:relative;flex:1;min-height:0;background:#000;overflow:hidden;border-radius:14px;margin:0 10px}
+  #stage video,#stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #guide{position:absolute;inset:10% 6%;border:2px dashed rgba(255,255,255,.35);border-radius:14px;pointer-events:none;
+    transition:opacity .3s}
+  #guide.off{opacity:0}
+  #hint{position:absolute;left:10px;right:10px;bottom:10px;padding:8px 12px;border-radius:10px;
+    background:rgba(11,15,20,.78);backdrop-filter:blur(6px);font-size:14px;text-align:center}
+  #hint.ok{color:var(--ok)} #hint.warn{color:var(--warn)} #hint.err{color:var(--err)}
+  #placeholder{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--mut)}
+
+  #controls{display:flex;flex-wrap:wrap;gap:8px;padding:10px;justify-content:center}
+  button,label.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--txt);
+    padding:12px 16px;border-radius:12px;font:inherit;font-weight:600;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;gap:6px}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#06121f}
+  button:disabled{opacity:.45}
+  input[type=file]{display:none}
+
+  #sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+  #sheet[hidden]{display:none}
+  #card{width:100%;max-width:720px;max-height:88dvh;overflow:auto;background:var(--panel);
+    border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+  #card h2{margin:0 0 4px;font-size:16px}
+  #card h2.ok{color:var(--ok)} #card h2.warn{color:var(--warn)}
+  .csv{font:600 15px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0c1218;border:1px solid var(--line);
+    border-radius:10px;padding:12px;word-break:break-all;margin:10px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+  .grid div{background:#0f161d;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .grid span{display:block;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+  .grid b{font-size:15px;word-break:break-word}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .row button{flex:1 1 140px}
+  details{margin-top:12px;color:var(--mut);font-size:13px}
+  pre{white-space:pre-wrap;word-break:break-all;background:#0c1218;border:1px solid var(--line);border-radius:10px;
+    padding:10px;max-height:180px;overflow:auto;color:#b8c6d8;font-size:12px}
+  .note{color:var(--mut);font-size:12px;margin:10px 0 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Lector de cédula · PDF417</h1>
+    <small id="status">Iniciando…</small>
+  </header>
+
+  <section id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+    <div id="guide" class="off"></div>
+    <div id="placeholder">Pulsa <b>«Abrir cámara»</b> y muestra la parte de atrás de la cédula (la del código de barras).</div>
+    <div id="hint">Cargando decodificador…</div>
+  </section>
+
+  <div id="controls">
+    <button id="btnStart" class="primary" disabled>📷 Abrir cámara</button>
+    <button id="btnTorch" hidden>🔦 Linterna</button>
+    <label class="btn" title="Abre la cámara nativa del celular (mejor calidad)">
+      🖼️ Tomar foto
+      <input id="filePhoto" type="file" accept="image/*" capture="environment">
+    </label>
+    <label class="btn" title="Elegir una imagen de la galería">
+      📁 Galería
+      <input id="fileGallery" type="file" accept="image/*">
+    </label>
+  </div>
+</div>
+
+<div id="sheet" hidden>
+  <div id="card">
+    <h2 id="cardTitle"></h2>
+    <div id="cardBody"></div>
+  </div>
+</div>
+
+<script type="module">
+/*
+ * Parser del PDF417 de la cédula de ciudadanía colombiana.
+ * Recibe los BYTES crudos del código (no el texto) y devuelve:
+ *   { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento:'YYYYMMDD', sexo, rh, linea }
+ *
+ * Disposición conocida (posiciones desde el inicio del payload, campos de 23 bytes rellenos con \0):
+ *   48  cédula (10)     58 apellido1   81 apellido2   104 nombre1   127 nombre2
+ *   151 sexo (M/F)      152 año(4) 156 mes(2) 158 día(2)           166 RH (2)
+ * Para tolerar cabeceras distintas, las posiciones se calculan RELATIVAS al byte de sexo+fecha.
+ */
+function bytesToLatin1(b){
+  let s=''; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s;
+}
+function cleanField(str){
+  return str.replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim();
+}
+const NAME_RE=/^[A-ZÑÁÉÍÓÚÜ' .-]+$/;
+function validDate(y,m,d){
+  const dt=new Date(Date.UTC(y,m-1,d));
+  return y>=1900 && y<=new Date().getUTCFullYear() &&
+         dt.getUTCFullYear()===y && dt.getUTCMonth()===m-1 && dt.getUTCDate()===d;
+}
+function buildResult(o){
+  const ced=String(o.cedula).replace(/^0+(?=\d)/,'');
+  const r={
+    cedula:ced, nombre1:o.nombre1||'', nombre2:o.nombre2||'',
+    apellido1:o.apellido1||'', apellido2:o.apellido2||'',
+    nacimiento:o.nacimiento, sexo:o.sexo||'', rh:o.rh||'', aproximado:!!o.aproximado
+  };
+  r.linea=[r.cedula,r.nombre1,r.nombre2,r.apellido1,r.apellido2,r.nacimiento].join(',');
+  return r;
+}
+function parseCedula(bytes){
+  const s=bytesToLatin1(bytes);
+  const re=/([MF])((?:19|20)\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])/g;
+  let m;
+  while((m=re.exec(s))){
+    const g=m.index;
+    if(!validDate(+m[2],+m[3],+m[4])) continue;
+    const nacimiento=m[2]+m[3]+m[4];
+    const rhM=cleanField(s.slice(g+15,g+18)).match(/^(AB|A|B|O)[+-]/);
+    const rh=rhM?rhM[0]:'';
+
+    // --- Estrategia A: posiciones fijas relativas al sexo ---
+    if(g>=103){
+      const ced=cleanField(s.slice(g-103,g-93));
+      const f=[s.slice(g-93,g-70),s.slice(g-70,g-47),s.slice(g-47,g-24),s.slice(g-24,g-1)].map(cleanField);
+      const ok=/^\d{5,10}$/.test(ced) && f[0] && f[2] && f.every(x=>x===''||NAME_RE.test(x));
+      if(ok) return buildResult({cedula:ced,apellido1:f[0],apellido2:f[1],nombre1:f[2],nombre2:f[3],nacimiento,sexo:m[1],rh});
+    }
+
+    // --- Estrategia B: heurística por "bloques de letras" antes del sexo ---
+    const before=s.slice(0,g);
+    const runs=[]; const rr=/[A-ZÑÁÉÍÓÚÜ][A-ZÑÁÉÍÓÚÜ' .-]*/g; let x;
+    while((x=rr.exec(before))){ const t=x[0].trim(); if(t.length>=2) runs.push({t,i:x.index}); }
+    const names=runs.slice(-4);
+    if(names.length>=2){
+      const first=names[0].i;
+      const nums=[...before.slice(0,first).matchAll(/\d{6,10}/g)];
+      if(nums.length){
+        const ced=nums[nums.length-1][0];
+        const t=names.map(n=>n.t);
+        let ap1=t[0],ap2='',n1='',n2='';
+        if(t.length===4){ap2=t[1];n1=t[2];n2=t[3];}
+        else if(t.length===3){ap2=t[1];n1=t[2];}
+        else {n1=t[1];}
+        return buildResult({cedula:ced,apellido1:ap1,apellido2:ap2,nombre1:n1,nombre2:n2,nacimiento,sexo:m[1],rh,aproximado:true});
+      }
+    }
+  }
+  return null;
+}
+function formatBirth(yyyymmdd){ return yyyymmdd.slice(6,8)+'/'+yyyymmdd.slice(4,6)+'/'+yyyymmdd.slice(0,4); }
+function rawDump(bytes){
+  const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join(' ');
+  const txt=[...bytes].map(b=>(b>=32&&b<127)||b>=0xA0?String.fromCharCode(b):'·').join('');
+  return 'TEXTO (· = byte no imprimible):\n'+txt+'\n\nHEX ('+bytes.length+' bytes):\n'+hex;
+}
+
+
+/*
+ * Localizador de PDF417 por textura: el PDF417 es una malla densa con transiciones
+ * claro/oscuro en AMBOS ejes (el texto y los fondos no). Se mide la densidad de bordes
+ * por bloques, se agrupan bloques "calientes" y de cada grupo se calcula el rectángulo
+ * orientado (PCA) -> centro, ángulo, largo y ancho.
+ * gray: Uint8ClampedArray|Uint8Array (w*h). Devuelve candidatos ordenados por puntaje.
+ */
+function locateBarcodes(gray,w,h,o){
+  o=o||{};
+  const B=o.block||6, T=o.edge||22, DH=o.dh||0.28, DV=o.dv||0.28;
+  const gw=Math.floor(w/B), gh=Math.floor(h/B);
+  if(gw<4||gh<4) return [];
+  const ch=new Uint16Array(gw*gh), cv=new Uint16Array(gw*gh);
+  for(let y=1;y<h-1;y++){
+    const by=Math.min(gh-1,(y/B)|0), row=y*w;
+    for(let x=1;x<w-1;x++){
+      const i=row+x, bx=Math.min(gw-1,(x/B)|0);
+      const dx=gray[i+1]-gray[i-1], dy=gray[i+w]-gray[i-w];
+      if(dx>T||dx<-T) ch[by*gw+bx]++;
+      if(dy>T||dy<-T) cv[by*gw+bx]++;
+    }
+  }
+  const area=B*B, hot=new Uint8Array(gw*gh);
+  for(let i=0;i<hot.length;i++) hot[i]=(ch[i]/area>=DH && cv[i]/area>=DV)?1:0;
+  // dilatación 3x3 para unir huecos pequeños
+  const dil=new Uint8Array(gw*gh);
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){
+    let v=0;
+    for(let j=-1;j<=1&&!v;j++)for(let i=-1;i<=1;i++){
+      const X=x+i,Y=y+j; if(X>=0&&Y>=0&&X<gw&&Y<gh&&hot[Y*gw+X]){v=1;break;}
+    }
+    dil[y*gw+x]=v;
+  }
+  // componentes conexas (4-vecinos) sobre la dilatada
+  const lab=new Int32Array(gw*gh).fill(-1), out=[]; let nl=0;
+  const stack=[];
+  for(let s0=0;s0<gw*gh;s0++){
+    if(!dil[s0]||lab[s0]>=0) continue;
+    const cells=[]; stack.push(s0); lab[s0]=nl;
+    while(stack.length){
+      const c=stack.pop(), cx=c%gw, cy=(c/gw)|0;
+      if(hot[c]) cells.push(c);
+      if(cx>0&&dil[c-1]&&lab[c-1]<0){lab[c-1]=nl;stack.push(c-1);}
+      if(cx<gw-1&&dil[c+1]&&lab[c+1]<0){lab[c+1]=nl;stack.push(c+1);}
+      if(cy>0&&dil[c-gw]&&lab[c-gw]<0){lab[c-gw]=nl;stack.push(c-gw);}
+      if(cy<gh-1&&dil[c+gw]&&lab[c+gw]<0){lab[c+gw]=nl;stack.push(c+gw);}
+    }
+    nl++;
+    const cand=analyse(cells,gw,B,o);
+    if(cand) out.push(cand);
+  }
+  out.sort((a,b)=>b.score-a.score);
+  return out;
+}
+function analyse(cells,gw,B,o){
+  const minCells=o.minCells||30;
+  if(cells.length<minCells) return null;
+  let mx=0,my=0; const px=new Float32Array(cells.length), py=new Float32Array(cells.length);
+  for(let i=0;i<cells.length;i++){ px[i]=cells[i]%gw+.5; py[i]=((cells[i]/gw)|0)+.5; mx+=px[i]; my+=py[i]; }
+  mx/=cells.length; my/=cells.length;
+  let sxx=0,syy=0,sxy=0;
+  for(let i=0;i<cells.length;i++){ const dx=px[i]-mx,dy=py[i]-my; sxx+=dx*dx; syy+=dy*dy; sxy+=dx*dy; }
+  const ang=0.5*Math.atan2(2*sxy,sxx-syy), ca=Math.cos(ang), sa=Math.sin(ang);
+  // proyecciones u (eje largo) / v (eje corto)
+  const U=new Float32Array(cells.length), V=new Float32Array(cells.length);
+  let umin=1e9,umax=-1e9,vmin=1e9,vmax=-1e9;
+  for(let i=0;i<cells.length;i++){
+    U[i]=(px[i]-mx)*ca+(py[i]-my)*sa; V[i]=-(px[i]-mx)*sa+(py[i]-my)*ca;
+  }
+  // recorte por perfiles: descarta colas (texto pegado, bordes) con <40% del máximo
+  const trim=(arr)=>{
+    let lo=1e9,hi=-1e9; for(const a of arr){ if(a<lo)lo=a; if(a>hi)hi=a; }
+    const n=Math.max(1,Math.ceil(hi-lo)+1), bins=new Int32Array(n);
+    for(const a of arr) bins[Math.min(n-1,Math.floor(a-lo))]++;
+    let m=0,mi=0; for(let i=0;i<n;i++) if(bins[i]>m){m=bins[i];mi=i;}
+    let a=mi,b=mi; const th=m*0.4;
+    while(a>0&&bins[a-1]>=th) a--; while(b<n-1&&bins[b+1]>=th) b++;
+    return [lo+a,lo+b+1];
+  };
+  [umin,umax]=trim(U); [vmin,vmax]=trim(V);
+  let n=0; for(let i=0;i<cells.length;i++) if(U[i]>=umin&&U[i]<=umax&&V[i]>=vmin&&V[i]<=vmax) n++;
+  const L=umax-umin, Wd=vmax-vmin;
+  if(L<=0||Wd<=0) return null;
+  const fill=n/(L*Wd), elong=L/Wd;
+  const minL=o.minLen||14; // celdas
+  if(L<minL||fill<(o.minFill||0.45)||elong<(o.minElong||2.2)||elong>(o.maxElong||14)) return null;
+  // las barras de inicio/fin (verticales) y la zona de silencio tienen poca textura 2D: se amplía el rectángulo
+  const ex=o.expandU===undefined?0.14:o.expandU, ey=o.expandV===undefined?0.06:o.expandV;
+  umin-=L*ex+1; umax+=L*ex+1; vmin-=Wd*ey+0.5; vmax+=Wd*ey+0.5;
+  const uc=(umin+umax)/2, vc=(vmin+vmax)/2;
+  return {
+    cx:(mx+uc*ca-vc*sa)*B, cy:(my+uc*sa+vc*ca)*B, angle:ang,
+    L:(umax-umin)*B, W:(vmax-vmin)*B, count:n, fill, elong, score:n*fill
+  };
+}
+
+
+/*
+ * CedulaScanner — lee el PDF417 de la cédula colombiana desde la cámara o desde una imagen.
+ *
+ *   import { CedulaScanner } from './cedula-scanner.js';
+ *   const sc = new CedulaScanner({
+ *     onResult:  (data, bytes) => console.log(data.linea),   // "1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206"
+ *     onUnknown: (bytes)       => {},                         // PDF417 leído pero con otro formato
+ *     onStatus:  (msg, kind)   => {},                         // kind: '' | 'ok' | 'warn' | 'err'
+ *   });
+ *   await sc.init();
+ *   await sc.startCamera(videoEl, overlayCanvasEl);           // en vivo (HTTPS + permiso de cámara)
+ *   const data = await sc.scanImage(fileOrBlob);              // foto / galería -> objeto | null
+ *   sc.lastDebug                                              // diagnóstico del último escaneo de imagen
+ *   sc.stop();
+ *
+ * data = { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento:'YYYYMMDD', sexo, rh, linea, aproximado }
+ */
+
+const ZX_VERSION = '3.1.3';
+const ZX_URLS = [
+  `https://cdn.jsdelivr.net/npm/zxing-wasm@${ZX_VERSION}/dist/iife/reader/index.js`,
+  `https://unpkg.com/zxing-wasm@${ZX_VERSION}/dist/iife/reader/index.js`,
+];
+const MAX_SIDE = 1920;
+const GAP_MS = 60;
+const MODULES_EST = 340;                       // módulos aprox. de ancho del PDF417 de la cédula (para estimar px/módulo)
+const ROIS = [[0,0,1,1],[0,.3,1,.7],[0,0,1,.7],[.08,.08,.84,.84]];
+const SCALES = [[1100,{}],[600,{}],[600,{minFill:.3,dh:.22,dv:.22}]];
+
+const BASE = { formats:['PDF417'], tryHarder:true, tryRotate:true, tryInvert:true, tryDownscale:true, maxNumberOfSymbols:1 };
+const OPT_SETS = {
+  def: BASE,
+  gh:  { ...BASE, binarizer:'GlobalHistogram' },
+  dn:  { ...BASE, tryDenoise:true, minLineCount:1 },
+};
+const OPTS_MIN = { formats:['PDF417'], tryHarder:true };
+
+/* ============ utilidades de imagen (gris, desenfoque, umbral, enderezado de perspectiva) ============ */
+const toGray = img => { const d = img.data, g = new Uint8Array(img.width * img.height);
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i]*77 + d[i+1]*150 + d[i+2]*29) >> 8; return g; };
+const fromGray = (g, w, h) => { const o = new ImageData(w, h), d = o.data;
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) { d[i] = d[i+1] = d[i+2] = g[j]; d[i+3] = 255; } return o; };
+function boxBlur(g, w, h, r) {
+  const tmp = new Float32Array(w * h), out = new Uint8Array(w * h), n = 2 * r + 1, cl = (v, m) => v < 0 ? 0 : v > m ? m : v;
+  for (let y = 0; y < h; y++) { const row = y * w; let acc = 0;
+    for (let x = -r; x <= r; x++) acc += g[row + cl(x, w-1)];
+    for (let x = 0; x < w; x++) { tmp[row + x] = acc / n; acc += g[row + cl(x + r + 1, w-1)] - g[row + cl(x - r, w-1)]; } }
+  for (let x = 0; x < w; x++) { let acc = 0;
+    for (let y = -r; y <= r; y++) acc += tmp[cl(y, h-1) * w + x];
+    for (let y = 0; y < h; y++) { out[y*w + x] = acc / n; acc += tmp[cl(y + r + 1, h-1) * w + x] - tmp[cl(y - r, h-1) * w + x]; } }
+  return out;
+}
+function gauss(g, w, h, sigma) {                 // gaussiana separable real (devuelve 8 bits)
+  const r = Math.max(1, Math.ceil(sigma * 3)), k = new Float32Array(2 * r + 1); let tot = 0;
+  for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-i * i / (2 * sigma * sigma)); tot += k[i + r]; }
+  for (let i = 0; i < k.length; i++) k[i] /= tot;
+  const t = new Float32Array(w * h), o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { const row = y * w;
+    for (let x = 0; x < w; x++) { let a = 0; for (let i = -r; i <= r; i++) { const xx = x + i < 0 ? 0 : x + i >= w ? w - 1 : x + i; a += g[row + xx] * k[i + r]; } t[row + x] = a; } }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let a = 0;
+    for (let i = -r; i <= r; i++) { const yy = y + i < 0 ? 0 : y + i >= h ? h - 1 : y + i; a += t[yy * w + x] * k[i + r]; } o[y*w + x] = a + .5; }
+  return o;
+}
+/* Paso-banda: suaviza levemente (mata la trama de pantalla) y luego realza el contraste local (compensa el desenfoque).
+   Los radios se escalan con el tamaño del módulo del código en el recorte (~ancho/435 px). */
+function bandPass(img, fp, fu, amt) {
+  const w = img.width, h = img.height, mod = w / 435, g = toGray(img);
+  const p = gauss(g, w, h, Math.max(.5, fp * mod)), b = gauss(p, w, h, Math.max(1.5, fu * mod)), o = new Uint8Array(g.length);
+  for (let i = 0; i < o.length; i++) { const v = p[i] + amt * (p[i] - b[i]); o[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
+  return o;
+}
+function stretchGray(g) {                       // estira contraste (percentiles 1–99)
+  const h = new Uint32Array(256), n = g.length; for (let i = 0; i < n; i++) h[g[i]]++;
+  let lo = 0, hi = 255, acc = 0;
+  for (let i = 0; i < 256; i++) { acc += h[i]; if (acc >= n * .01) { lo = i; break; } }
+  acc = 0; for (let i = 255; i >= 0; i--) { acc += h[i]; if (acc >= n * .01) { hi = i; break; } }
+  const sc = 255 / Math.max(1, hi - lo), o = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { const v = (g[i] - lo) * sc; o[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
+  return o;
+}
+function binarGray(g, w, h) {                   // umbral adaptativo por media local (imagen integral)
+  const W = w + 1, I = new Float64Array(W * (h + 1));
+  for (let y = 0; y < h; y++) { let r = 0; for (let x = 0; x < w; x++) { r += g[y*w + x]; I[(y+1)*W + x + 1] = I[y*W + x + 1] + r; } }
+  const R = Math.max(8, Math.round(w / 70)), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) { const y0 = Math.max(0, y - R), y1 = Math.min(h, y + R + 1);
+    for (let x = 0; x < w; x++) { const x0 = Math.max(0, x - R), x1 = Math.min(w, x + R + 1);
+      const m = (I[y1*W + x1] - I[y0*W + x1] - I[y1*W + x0] + I[y0*W + x0]) / ((x1 - x0) * (y1 - y0));
+      out[y*w + x] = g[y*w + x] < m * .93 ? 0 : 255; } }
+  return out;
+}
+function fitLine(xs, ys) {                      // mínimos cuadrados con un descarte de atípicos
+  const run = (X, Y) => { const n = X.length; let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = 0; i < n; i++) { sx += X[i]; sy += Y[i]; sxx += X[i]*X[i]; sxy += X[i]*Y[i]; }
+    const d = n*sxx - sx*sx || 1e-9, b = (n*sxy - sx*sy) / d; return [(sy - b*sx) / n, b]; };
+  let [a, b] = run(xs, ys);
+  const res = ys.map((y, i) => Math.abs(y - (a + b*xs[i]))), med = [...res].sort((p, q) => p - q)[res.length >> 1] || 1;
+  const kx = [], ky = []; res.forEach((r, i) => { if (r <= 2.5 * med + 1) { kx.push(xs[i]); ky.push(ys[i]); } });
+  return kx.length >= 4 ? run(kx, ky) : [a, b];
+}
+/* Corrige la perspectiva (trapecio) del recorte: ajusta el borde superior e inferior del código y los vuelve horizontales */
+function dewarpGray(g, w, h) {
+  const NB = 16, bw = Math.floor(w / NB), xs = [], tops = [], bots = [];
+  for (let b = 1; b < NB - 1; b++) {
+    const x0 = b * bw, x1 = x0 + bw, dens = new Float32Array(h);
+    for (let y = 0; y < h; y++) { let c = 0; const row = y * w;
+      for (let x = x0 + 1; x < x1 - 1; x++) { const d = g[row + x + 1] - g[row + x - 1]; if (d > 22 || d < -22) c++; } dens[y] = c; }
+    const sm = new Float32Array(h); let m = 0, mi = 0;
+    for (let y = 0; y < h; y++) { sm[y] = dens[y] + (dens[y-1] || 0) + (dens[y+1] || 0); if (sm[y] > m) { m = sm[y]; mi = y; } }
+    if (m < 6) continue;
+    let t = mi, bt = mi; while (t > 0 && sm[t-1] >= .4 * m) t--; while (bt < h - 1 && sm[bt+1] >= .4 * m) bt++;
+    xs.push(x0 + bw / 2); tops.push(t); bots.push(bt + 1);
+  }
+  if (xs.length < 6) return null;
+  const [at, bt_] = fitLine(xs, tops), [ab, bb] = fitLine(xs, bots), f = .07, out = new Uint8Array(w * h).fill(255);
+  const hm = xs.reduce((s, _, i) => s + bots[i] - tops[i], 0) / xs.length; if (hm < .25 * h) return null;
+  for (let x = 0; x < w; x++) {
+    const t = at + bt_ * x, bo = ab + bb * x, ht = Math.max(4, bo - t);
+    for (let y = 0; y < h; y++) {
+      const sy = t - f * ht + (y / (h - 1)) * (1 + 2 * f) * ht, y0 = Math.floor(sy);
+      if (y0 < 0 || y0 >= h - 1) continue; const fr = sy - y0;
+      out[y*w + x] = g[y0*w + x] * (1 - fr) + g[(y0+1)*w + x] * fr;
+    }
+  }
+  return out;
+}
+const VARIANTS = {
+  raw:     img => img,
+  stretch: img => fromGray(stretchGray(toGray(img)), img.width, img.height),
+  binar:   img => fromGray(binarGray(stretchGray(toGray(img)), img.width, img.height), img.width, img.height),
+  denoise: img => { const w = img.width, h = img.height, b = gauss(toGray(img), w, h, 1.3);        // quita trama de pantalla / ruido
+                    return fromGray(binarGray(stretchGray(b), w, h), w, h); },
+  sharp:   img => { const w = img.width, h = img.height, g = toGray(img), b = gauss(g, w, h, 2.4), o = new Uint8Array(g.length); // desenfoque
+                    for (let i = 0; i < g.length; i++) { const v = g[i] + 1.7 * (g[i] - b[i]); o[i] = v < 0 ? 0 : v > 255 ? 255 : v; }
+                    return fromGray(stretchGray(o), w, h); },
+  bandA:   img => fromGray(stretchGray(bandPass(img, .28, .95, 1.5)), img.width, img.height),
+  bandB:   img => fromGray(stretchGray(bandPass(img, .40, 1.25, 2)), img.width, img.height),
+  bandC:   img => fromGray(stretchGray(bandPass(img, .40, 1.0, 2)), img.width, img.height),
+  bandAb:  img => fromGray(binarGray(stretchGray(bandPass(img, .28, .95, 1.5)), img.width, img.height), img.width, img.height),
+  dewarpA: img => { const d = dewarpGray(toGray(img), img.width, img.height); if (!d) return null;
+                    const im = fromGray(stretchGray(d), img.width, img.height); return fromGray(stretchGray(bandPass(im, .28, .95, 1.5)), img.width, img.height); },
+  dewarp:  img => { const d = dewarpGray(toGray(img), img.width, img.height); return d && fromGray(stretchGray(d), img.width, img.height); },
+  dewarpB: img => { const d = dewarpGray(toGray(img), img.width, img.height); return d && fromGray(binarGray(stretchGray(d), img.width, img.height), img.width, img.height); },
+};
+/* Planes de intento (en orden de costo/probabilidad). mult = escala del recorte relativa a la automática */
+const V3 = ['raw', 'stretch', 'binar'];
+const PLANS = {
+  legacy:     [{ mult: 1, flip: false, variants: V3 }],
+  legacyFlip: [{ mult: 1, flip: false, variants: V3 }, { mult: 1, flip: true, variants: V3 }],
+  fast:       [{ mult: 1, flip: false, variants: [...V3, 'bandA'] }],
+  deep: [
+    { mult: 1,   flip: false, variants: ['raw', 'stretch', 'binar', 'bandA', 'bandB', 'bandC', 'bandAb', 'denoise', 'sharp'] },
+    { mult: 1,   flip: false, variants: ['dewarp', 'dewarpA', 'dewarpB'] },
+    { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
+    { mult: 1,   flip: false, variants: ['stretch', 'binar', 'bandA'], opts: 'dn' },
+    { mult: .65, flip: false, variants: ['raw', 'stretch', 'binar', 'bandA', 'denoise'] },
+    { mult: 1.5, flip: false, variants: ['raw', 'stretch', 'binar', 'bandA', 'denoise'] },
+    { mult: 1,   flip: true,  variants: [...V3, 'bandA'] },
+    { mult: 1,   flip: true,  variants: ['dewarp', 'denoise'] },
+  ],
+};
+
+const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+class CedulaScanner {
+  /** opts.legacy = true -> comportamiento de la versión 2 (solo para comparar) */
+  constructor({ onResult = () => {}, onUnknown = () => {}, onStatus = () => {}, legacy = false, autoStill = true } = {}) {
+    Object.assign(this, { onResult, onUnknown, onStatus, legacy, autoStill });
+    [this.ana, this.actx] = mk(); [this.crop, this.cctx] = mk(); [this.work, this.wctx] = mk();
+    this.useMin = false; this.scanning = false; this.stream = null; this.track = null; this.lastDebug = null;
+  }
+
+  /* ---------- decodificador ---------- */
+  async init() {
+    if (!window.ZXingWASM) {
+      let base = '';
+      for (const u of ZX_URLS) {
+        try { await new Promise((res, rej) => { const s = document.createElement('script'); s.src = u; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+              base = u.replace('/iife/reader/index.js', '/reader/'); break; } catch (e) { console.warn('CDN falló', u); }
+      }
+      if (!window.ZXingWASM) throw new Error('No se pudo cargar zxing-wasm (revisa la conexión).');
+      try { ZXingWASM.prepareZXingModule({ overrides: { locateFile: (p, prefix) => p.endsWith('.wasm') ? base + p : prefix + p } }); } catch (e) {}
+    }
+    await this._decode(new ImageData(16, 16));
+  }
+  async _decode(img, key = 'def') {
+    try { return await ZXingWASM.readBarcodes(img, this.useMin ? OPTS_MIN : OPT_SETS[key] || BASE); }
+    catch (e) { if (this.useMin) throw e; this.useMin = true; console.warn('opciones avanzadas no soportadas', e); return await ZXingWASM.readBarcodes(img, OPTS_MIN); }
+  }
+  static _hit(r) { return (r || []).find(x => (x.bytes && x.bytes.length) || x.text) || null; }
+  static _bytes(hit) {
+    if (hit.bytes && hit.bytes.length) return Uint8Array.from(hit.bytes);
+    return Uint8Array.from([...(hit.text || '')].map(c => c.charCodeAt(0) & 0xFF));
+  }
+
+  /* ---------- localizar el código en la imagen ---------- */
+  findCandidates(src, sw, sh) {
+    const all = [];
+    for (const [side, opt] of SCALES) {
+      const s = Math.min(1, side / Math.max(sw, sh)), aw = Math.max(8, Math.round(sw * s)), ah = Math.max(8, Math.round(sh * s));
+      this._downscale(src, sw, sh, aw, ah);
+      const g = toGray(this.actx.getImageData(0, 0, aw, ah));
+      for (const c of locateBarcodes(g, aw, ah, opt))
+        all.push({ cx: c.cx / s, cy: c.cy / s, angle: c.angle, L: c.L / s, W: c.W / s, score: c.score * c.fill * (6 / s) * (6 / s) });
+    }
+    all.sort((a, b) => b.score - a.score);
+    const keep = [];
+    for (const c of all) {
+      if (keep.every(k => Math.hypot(k.cx - c.cx, k.cy - c.cy) > .4 * Math.min(k.L, c.L))) keep.push(c);
+      if (keep.length >= 3) break;
+    }
+    return keep;
+  }
+  /* reducción por mitades sucesivas: evita el aliasing (falsa trama) de un solo drawImage muy reducido */
+  _downscale(src, sw, sh, aw, ah) {
+    const bufs = this._bufs || (this._bufs = [mk(), mk()]);
+    let cur = src, cw = sw, ch = sh, i = 0;
+    while (cw / 2 >= aw && ch / 2 >= ah) {
+      const nw = Math.max(aw, Math.round(cw / 2)), nh = Math.max(ah, Math.round(ch / 2)), [c, cx] = bufs[i];
+      c.width = nw; c.height = nh; cx.imageSmoothingQuality = 'high'; cx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+      cur = c; cw = nw; ch = nh; i ^= 1;
+    }
+    this.ana.width = aw; this.ana.height = ah; this.actx.imageSmoothingQuality = 'high'; this.actx.drawImage(cur, 0, 0, cw, ch, 0, 0, aw, ah);
+  }
+  _cropCandidate(src, c, flip, mult = 1) {
+    const target = Math.min(2200, Math.max(1400, c.L)) * mult, k = Math.min(4, target / c.L);
+    const ow = Math.min(4200, Math.max(32, Math.round(c.L * k))), oh = Math.min(1600, Math.max(16, Math.round(c.W * k)));
+    const { crop, cctx } = this; crop.width = ow; crop.height = oh;
+    cctx.save(); cctx.fillStyle = '#fff'; cctx.fillRect(0, 0, ow, oh);
+    cctx.translate(ow / 2, oh / 2); cctx.rotate(-c.angle + (flip ? Math.PI : 0)); cctx.scale(ow / c.L, oh / c.W); cctx.translate(-c.cx, -c.cy);
+    cctx.imageSmoothingQuality = 'high'; cctx.drawImage(src, 0, 0); cctx.restore();
+    return cctx.getImageData(0, 0, ow, oh);
+  }
+  /* aplica el plan de intentos a un candidato; devuelve {hit,cand,how} o null */
+  async _tryCandidate(src, c, plan, deadline = Infinity) {
+    const cache = new Map();
+    for (const st of plan) {
+      if (performance.now() > deadline) return null;
+      const key = st.mult + '|' + st.flip; let base = cache.get(key);
+      if (!base) { base = this._cropCandidate(src, c, st.flip, st.mult); cache.set(key, base); }
+      for (const vn of st.variants) {
+        if (performance.now() > deadline) return null;
+        const img = VARIANTS[vn](base); if (!img) continue;
+        const hit = CedulaScanner._hit(await this._decode(img, st.opts || 'def'));
+        if (hit) return { hit, cand: c, how: `${vn}@${st.mult}${st.flip ? '/180°' : ''}${st.opts ? '/' + st.opts : ''}` };
+      }
+    }
+    return null;
+  }
+  /* búsqueda por ventanas: si no se localizó el rectángulo, decodifica porciones de la imagen */
+  async _tiles(bmp, deadline) {
+    const W = bmp.width, H = bmp.height, pos = f => { const a = [], st = f * .5; for (let p = 0; ; p += st) { if (p + f >= 1 - 1e-6) { a.push(1 - f); break; } a.push(p); } return a; };
+    for (const f of [.6, .4, .28]) for (const py of pos(f)) for (const px of pos(f)) {
+      if (performance.now() > deadline) return null;
+      const sx = Math.round(px * W), sy = Math.round(py * H), sw = Math.round(f * W), sh = Math.round(f * H), k = Math.min(1, MAX_SIDE / Math.max(sw, sh));
+      this.work.width = Math.round(sw * k); this.work.height = Math.round(sh * k);
+      this.wctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, this.work.width, this.work.height);
+      const hit = CedulaScanner._hit(await this._decode(this.wctx.getImageData(0, 0, this.work.width, this.work.height)));
+      if (hit) return { hit, how: `ventana ${f}` };
+    }
+    return null;
+  }
+
+  /* ---------- resultado ---------- */
+  _handle(bytes) {
+    const data = parseCedula(bytes);
+    if (data) { this.onStatus('Cédula leída', 'ok'); this.onResult(data, bytes); }
+    else      { this.onStatus('Se leyó un PDF417 con formato desconocido', 'warn'); this.onUnknown(bytes); }
+    return data;
+  }
+
+  /* ---------- foto / galería ---------- */
+  async scanImage(file, { budgetMs = 15000 } = {}) {
+    const t0 = performance.now(), deadline = t0 + budgetMs;
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const dbg = this.lastDebug = { w: bmp.width, h: bmp.height, cands: [], how: '', ms: 0, ppm: null, hint: '', preview: null };
+    const done = (hit, how) => { dbg.how = how; dbg.ms = Math.round(performance.now() - t0); return this._handle(CedulaScanner._bytes(hit)) || null; };
+
+    const cands = dbg.cands = this.findCandidates(bmp, bmp.width, bmp.height);
+    if (cands.length) dbg.ppm = +(cands[0].L / 1.28 / MODULES_EST).toFixed(2);
+    for (const c of cands.slice(0, 3)) {
+      const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS.deep, this.legacy ? Infinity : deadline);
+      if (r) return done(r.hit, 'recorte ' + r.how);
+    }
+    for (const side of [2800, 1800, 1100]) {                                    // imagen completa a varias escalas
+      if (performance.now() > deadline) break;
+      const k = Math.min(1, side / Math.max(bmp.width, bmp.height));
+      this.work.width = Math.round(bmp.width * k); this.work.height = Math.round(bmp.height * k);
+      this.wctx.drawImage(bmp, 0, 0, this.work.width, this.work.height);
+      const hit = CedulaScanner._hit(await this._decode(this.wctx.getImageData(0, 0, this.work.width, this.work.height)));
+      if (hit) return done(hit, 'imagen completa @' + side);
+    }
+    if (!this.legacy) { const r = await this._tiles(bmp, deadline); if (r) return done(r.hit, r.how); }
+
+    // sin lectura: diagnóstico
+    dbg.ms = Math.round(performance.now() - t0);
+    if (!cands.length) dbg.hint = 'No se distingue ningún código PDF417. Enfoca el reverso de la cédula, con el código ocupando buena parte de la foto.';
+    else if (dbg.ppm < 1.8) dbg.hint = `El código se ve muy pequeño o pixelado (≈${dbg.ppm} px por módulo; se necesitan ≥2.5). Acércate para que ocupe casi todo el ancho de la foto.`;
+    else dbg.hint = 'El código se encontró pero está borroso, con reflejos o con trama de pantalla. Enfoca bien (toca la pantalla sobre el código), usa buena luz y evita fotografiar otra pantalla.';
+    if (cands.length) { const im = this._cropCandidate(bmp, cands[0], false, 1), cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height; cv.getContext('2d').putImageData(im, 0, 0); dbg.preview = cv.toDataURL('image/jpeg', .8); }
+    this.onStatus(dbg.hint, 'err');
+    return null;
+  }
+
+  /* ---------- cámara en vivo ---------- */
+  async startCamera(video, overlay) {
+    this.video = video; this.overlay = overlay; this.octx = overlay ? overlay.getContext('2d') : null;
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+    });
+    this.track = this.stream.getVideoTracks()[0];
+    try { await this.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    video.srcObject = this.stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
+    this.scanning = true; this.startedAt = performance.now(); this._loop();
+  }
+  async setTorch(on) { try { await this.track.applyConstraints({ advanced: [{ torch: !!on }] }); return true; } catch (e) { return false; } }
+  resume() { if (this.stream && !this.scanning) { this.video.play(); this.scanning = true; this.startedAt = performance.now(); this._loop(); } }
+  stop() {
+    this.scanning = false;
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.stream = this.track = null; if (this.video) this.video.srcObject = null;
+    if (this.octx) this.octx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+  }
+  /** Foto fija de alta resolución (ImageCapture) del sensor, mucho más detalle que un cuadro de video. */
+  async captureStill() {
+    if (!this.track || typeof ImageCapture === 'undefined') return null;
+    try { const blob = await new ImageCapture(this.track).takePhoto(); return blob; } catch (e) { return null; }
+  }
+  _rect(c, color) {
+    if (!this.octx) return; const { overlay, octx, video } = this, vw = video.videoWidth, vh = video.videoHeight;
+    if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
+    octx.clearRect(0, 0, vw, vh); if (!c) return;
+    const ca = Math.cos(c.angle), sa = Math.sin(c.angle), L = c.L / 2, W = c.W / 2;
+    octx.lineWidth = Math.max(4, vw / 220); octx.strokeStyle = color; octx.fillStyle = color + '30'; octx.beginPath();
+    [[-L, -W], [L, -W], [L, W], [-L, W]].forEach(([u, v], i) => { const X = c.cx + u*ca - v*sa, Y = c.cy + u*sa + v*ca; i ? octx.lineTo(X, Y) : octx.moveTo(X, Y); });
+    octx.closePath(); octx.fill(); octx.stroke();
+  }
+  _finish(hit, cand) {
+    this.scanning = false; this.video.pause(); if (cand) this._rect(cand, '#2ee59d'); this._handle(CedulaScanner._bytes(hit));
+  }
+  async _loop() {
+    let attempts = 0, roi = 0, lastStill = performance.now(); const { video } = this;
+    while (this.scanning) {
+      try {
+        if (video.readyState >= 2 && video.videoWidth) {
+          const vw = video.videoWidth, vh = video.videoHeight; attempts++;
+          const cands = this.findCandidates(video, vw, vh);
+          if (cands.length) {
+            this._rect(cands[0], '#ffc857'); this.onStatus('Código detectado, mantén el celular firme…', 'warn');
+            let r = await this._tryCandidate(video, cands[0], this.legacy ? PLANS.legacy : PLANS.fast);
+            if (!r && cands[1] && !this.legacy) r = await this._tryCandidate(video, cands[1], PLANS.fast);
+            if (!r && !this.legacy && attempts % 5 === 0) r = await this._tryCandidate(video, cands[0], PLANS.deep, performance.now() + 1500); // análisis a fondo periódico
+            if (!this.scanning) break;
+            if (r) return this._finish(r.hit, r.cand);
+          } else this._rect(null);
+          if (!cands.length || attempts % 3 === 0) {
+            const [rx, ry, rw, rh] = ROIS[roi++ % ROIS.length];
+            const sx = Math.round(rx*vw), sy = Math.round(ry*vh), sw = Math.round(rw*vw), sh = Math.round(rh*vh), k = Math.min(1, MAX_SIDE / Math.max(sw, sh));
+            this.work.width = Math.round(sw*k); this.work.height = Math.round(sh*k);
+            this.wctx.drawImage(video, sx, sy, sw, sh, 0, 0, this.work.width, this.work.height);
+            const hit = CedulaScanner._hit(await this._decode(this.wctx.getImageData(0, 0, this.work.width, this.work.height)));
+            if (!this.scanning) break;
+            if (hit) return this._finish(hit, null);
+          }
+          // si pasan ~7 s sin leer, se pide una foto fija de alta resolución al sensor y se analiza a fondo
+          if (this.autoStill && !this.legacy && performance.now() - lastStill > 7000) {
+            lastStill = performance.now(); this.onStatus('Analizando una foto de alta resolución…', 'warn');
+            const blob = await this.captureStill();
+            if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 6000 }); if (d) { this.scanning = false; this.video.pause(); return; } }
+          }
+          if (!cands.length && performance.now() - this.startedAt > 5000) this.onStatus('No veo el código. Acerca o aleja un poco, con buena luz y sin reflejos.', 'warn');
+        }
+      } catch (e) { console.error(e); this.onStatus('Error: ' + e.message, 'err'); }
+      await sleep(GAP_MS);
+    }
+  }
+}
+
+/* ============ Interfaz de la demo ============ */
+const $ = id => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), hint = $('hint'), status_ = $('status'),
+      btnStart = $('btnStart'), btnTorch = $('btnTorch'), guide = $('guide'), placeholder = $('placeholder');
+const setHint = (t, cls = '') => { hint.textContent = t; hint.className = cls; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let cameraOn = false;
+
+const scanner = new CedulaScanner({
+  onResult:  (data, bytes) => { setStatus('Listo'); showResult(data, bytes); },
+  onUnknown: (bytes)       => { setStatus('Formato desconocido'); showUnknown(bytes); },
+  onStatus:  (msg, kind)   => setHint(msg, kind),
+});
+window.scanner = scanner; window.CedulaScanner = CedulaScanner; window.parseCedula = parseCedula;   // útiles para pruebas en consola
+
+function setStatus(t) { status_.textContent = t; }
+function setBusy(b) { document.querySelectorAll('#controls button, #controls label.btn').forEach(e => e.style.pointerEvents = b ? 'none' : ''); document.getElementById('controls').style.opacity = b ? .55 : 1; }
+
+/* ---------- Cámara en vivo ---------- */
+function cameraBlockedReason() {
+  if (!window.isSecureContext) return 'La cámara en vivo necesita HTTPS. Abre esta página desde una dirección https:// (por ejemplo, tu propio dominio).';
+  const pp = document.permissionsPolicy || document.featurePolicy;
+  if ((pp && pp.allowsFeature && !pp.allowsFeature('camera')) || (window.self !== window.top && /claude\.ai|claudeusercontent/.test(location.hostname + document.referrer)))
+    return 'Este visor (claude.ai) no permite la cámara en vivo dentro de la página. Publica el archivo en tu propio dominio con HTTPS (p. ej. golden-eventos.com) y ahí sí abrirá la cámara. Mientras tanto, usa «Tomar foto».';
+  return '';
+}
+async function startCamera() {
+  const why = cameraBlockedReason();
+  if (why) { setHint(why, 'err'); return; }
+  try {
+    await scanner.startCamera(video, overlay);
+  } catch (e) {
+    const msg = e.name === 'NotAllowedError' ? 'Permiso de cámara denegado (revisa el candado de la barra de direcciones).'
+              : e.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo abrir la cámara (' + (e.name || e.message) + ').';
+    setHint(msg + ' Puedes usar «Tomar foto».', 'err'); return;
+  }
+  cameraOn = true; placeholder.hidden = true; guide.classList.remove('off'); btnStart.textContent = '⏹ Detener'; setStatus('Escaneando');
+  setHint('Muestra la parte de atrás de la cédula (la del código de barras).');
+  const caps = scanner.track.getCapabilities ? scanner.track.getCapabilities() : {}; btnTorch.hidden = !caps.torch;
+}
+function stopCamera() {
+  scanner.stop(); cameraOn = false; btnStart.textContent = '📷 Abrir cámara'; guide.classList.add('off'); placeholder.hidden = false; btnTorch.hidden = true; setStatus('Detenido');
+}
+btnStart.addEventListener('click', () => cameraOn ? stopCamera() : startCamera());
+let torch = false;
+btnTorch.addEventListener('click', async () => { torch = !torch; if (!(await scanner.setTorch(torch))) torch = false; });
+document.addEventListener('visibilitychange', () => { if (document.hidden && cameraOn) stopCamera(); });
+
+/* ---------- Foto / galería ---------- */
+async function onFile(file) {
+  if (!file) return;
+  if (cameraOn) stopCamera();                      // los lienzos de trabajo se comparten: no mezclar con el modo en vivo
+  setBusy(true); setStatus('Analizando…'); setHint('Analizando la imagen a fondo (puede tardar hasta ~15 s)…', 'warn');
+  await new Promise(r => setTimeout(r, 40));
+  try {
+    const data = await scanner.scanImage(file, { budgetMs: 15000 });
+    if (!data && scanner.lastDebug && !scanner.lastDebug.how) { setStatus('Sin lectura'); showFail(scanner.lastDebug); }
+  } catch (e) { console.error(e); setHint('No pude procesar la imagen: ' + e.message, 'err'); setStatus('Error'); }
+  setBusy(false);
+}
+$('filePhoto').addEventListener('change', e => { onFile(e.target.files[0]); e.target.value = ''; });
+$('fileGallery').addEventListener('change', e => { onFile(e.target.files[0]); e.target.value = ''; });
+
+/* ---------- Hoja de resultado ---------- */
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (_) {
+    const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {} ta.remove(); return ok;
+  }
+}
+function openSheet(cls, title, html, againLabel, copyValue) {
+  $('cardTitle').className = cls; $('cardTitle').textContent = title; $('cardBody').innerHTML = html;
+  const again = $('btnAgain'); if (again) { again.textContent = againLabel; again.onclick = closeSheet; }
+  const cp = $('btnCopy'); if (cp) cp.onclick = async e => { const ok = await copyText(copyValue); const t = e.target.textContent; e.target.textContent = ok ? '¡Copiado!' : 'No se pudo copiar'; setTimeout(() => e.target.textContent = t, 1500); };
+  $('sheet').hidden = false;
+}
+function closeSheet() { $('sheet').hidden = true; if (cameraOn) { scanner.resume(); setStatus('Escaneando'); setHint('Muestra la parte de atrás de la cédula.'); } else setHint('Listo para otra lectura.'); }
+$('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
+
+function showResult(d, bytes) {
+  if (navigator.vibrate) navigator.vibrate(120);
+  const dbg = scanner.lastDebug, how = dbg && dbg.how ? `<p class="note">Método de lectura: ${esc(dbg.how)} · ${dbg.ms} ms</p>` : '';
+  openSheet('ok', 'Cédula leída' + (d.aproximado ? ' (lectura aproximada, verifica)' : ''), `
+    <div class="csv">${esc(d.linea)}</div>
+    <div class="grid">
+      <div><span>Cédula</span><b>${esc(d.cedula)}</b></div><div><span>Nacimiento</span><b>${esc(formatBirth(d.nacimiento))}</b></div>
+      <div><span>Primer nombre</span><b>${esc(d.nombre1) || '—'}</b></div><div><span>Segundo nombre</span><b>${esc(d.nombre2) || '—'}</b></div>
+      <div><span>Primer apellido</span><b>${esc(d.apellido1) || '—'}</b></div><div><span>Segundo apellido</span><b>${esc(d.apellido2) || '—'}</b></div>
+      <div><span>Sexo</span><b>${esc(d.sexo) || '—'}</b></div><div><span>G.S. RH</span><b>${esc(d.rh) || '—'}</b></div>
+    </div>
+    <div class="row"><button class="primary" id="btnCopy">Copiar línea</button><button id="btnAgain"></button></div>
+    ${how}
+    <details><summary>Datos crudos</summary><pre>${esc(rawDump(bytes))}</pre></details>
+    <p class="note">Todo se procesa en este dispositivo; los datos no se envían a ningún servidor.</p>`, 'Escanear otra', d.linea);
+}
+function showUnknown(bytes) {
+  openSheet('warn', 'Se leyó un PDF417, pero con formato desconocido', `
+    <p class="note">Copia los datos crudos de abajo: con ellos se puede ajustar el lector a este tipo de cédula.</p>
+    <div class="row"><button class="primary" id="btnCopy">Copiar datos crudos</button><button id="btnAgain"></button></div>
+    <details open><summary>Datos crudos</summary><pre>${esc(rawDump(bytes))}</pre></details>`, 'Seguir', rawDump(bytes));
+}
+function showFail(dbg) {
+  const tips = ['Toma la foto al <b>reverso</b> de la cédula, con el código ocupando casi todo el ancho.',
+    'Toca la pantalla sobre el código para que enfoque antes de disparar.', 'Buena luz, sin reflejos ni sombras sobre el código.',
+    'Fotografía la cédula <b>física</b>: una foto a otra pantalla añade una trama que estropea el código.'];
+  const info = `Imagen ${dbg.w}×${dbg.h} · ${dbg.cands.length} zona(s) candidata(s)` + (dbg.ppm ? ` · ≈${dbg.ppm} px por módulo (ideal ≥ 2.5)` : '') + ` · ${dbg.ms} ms`;
+  openSheet('warn', 'No pude leer el código', `
+    <p>${esc(dbg.hint)}</p>
+    ${dbg.preview ? `<p class="note">Zona que se analizó:</p><img alt="zona analizada" src="${dbg.preview}" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ''}
+    <p class="note">${esc(info)}</p>
+    <ul class="note" style="padding-left:18px;margin:8px 0">${tips.map(t => `<li>${t}</li>`).join('')}</ul>
+    <div class="row"><button class="primary" id="btnAgain"></button></div>`, 'Reintentar', '');
+}
+
+/* ---------- Arranque ---------- */
+btnStart.disabled = true;
+scanner.init().then(() => {
+  btnStart.disabled = false; setStatus('Listo'); setHint('Listo. Pulsa «Abrir cámara» o usa «Tomar foto».');
+  const why = cameraBlockedReason(); if (why) setHint(why, 'warn');
+}).catch(e => { setStatus('Error'); setHint(e.message, 'err'); });
+
+</script>
+</body>
+</html>
