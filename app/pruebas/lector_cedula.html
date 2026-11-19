@@ -712,7 +712,7 @@ class CedulaScanner {
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
     // enfocado (o con el código a la vista ~1 s): primero la foto fija de alta resolución, que es lo que de verdad decodifica; luego, y solo un momento, el análisis a fondo del cuadro
-    if (!r && this.scanning && present && (sharp || seenFor > 900)) {
+    if (!r && this.scanning && present && (sharp || seenFor > 700)) {
       if (this.autoStill && now - (this._lastStill || 0) > 1500) {
         this._lastStill = performance.now(); const blob = await this.captureStill();
         if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 1800 }); if (d) { if (this.lastDebug) { this.lastDebug.how = 'foto fija · ' + this.lastDebug.how; this.lastDebug.ms = Math.round(performance.now() - (this._seen || now)); } this.scanning = false; video.pause(); return true; } }
