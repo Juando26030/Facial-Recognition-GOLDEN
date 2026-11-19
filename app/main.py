@@ -712,7 +712,7 @@ _LECTOR_CEDULA_HTML = Path(__file__).resolve().parent / "pruebas" / "lector_cedu
 
 @app.get("/pruebas/lector-cedula")
 def lector_cedula_prueba_page(request: Request):
-    """Prueba del lector de cédula por cámara (PDF417). Digitador o más (sesión de la app). Sin base de datos y sin enviar nada al servidor."""
+    """Prueba del lector de cédula por cámara: PDF417 (cédula vieja) y las 3 líneas de abajo (cédula nueva). Digitador o más (sesión de la app). Sin base de datos y sin enviar nada al servidor."""
     redirect = _require_page_role(request, "digitador")
     if redirect:
         return redirect
