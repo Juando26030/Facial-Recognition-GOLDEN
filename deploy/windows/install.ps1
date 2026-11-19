@@ -75,11 +75,15 @@ if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) {
     New-Item -ItemType Directory -Force -Path $PgData | Out-Null
     $pwfile = Join-Path $ConfigDir 'pg.pw'
     Write-Utf8NoBom $pwfile $cfg['LOCAL_DB_PASSWORD']
+    # initdb corre con un token SIN el grupo Administradores: no puede leer la clave ni escribir en la carpeta que creó un administrador. Acceso temporal para Usuarios (se retira al terminar).
+    & icacls $pwfile /grant '*S-1-5-32-545:R' | Out-Null
+    & icacls $PgData /grant '*S-1-5-32-545:(OI)(CI)F' | Out-Null
     $initOut = & (Join-Path $PgDir 'bin\initdb.exe') -D $PgData -U golden --pwfile=$pwfile --auth=scram-sha-256 -E UTF8 --locale=C 2>&1
     $initCode = $LASTEXITCODE
     Remove-Item $pwfile -Force -ErrorAction SilentlyContinue
     Set-Content -Path (Join-Path $LogDir 'initdb.log') -Value ($initOut | Out-String) -Encoding UTF8
     if ($initCode -ne 0 -or -not (Test-Path (Join-Path $PgData 'PG_VERSION'))) { throw "No se pudo crear la base de datos (initdb código $initCode); ver logs\initdb.log" }
+    & icacls $PgData /reset /T /C /Q | Out-Null                              # quita el acceso temporal: la carpeta vuelve a heredar solo SYSTEM, administradores y NetworkService
     & icacls $PgData /grant '*S-1-5-20:(OI)(CI)F' /T /C /Q | Out-Null
     $conf = Join-Path $PgData 'postgresql.conf'
     Add-Content $conf "`nport = $PgPort`nlisten_addresses = 'localhost'`nshared_buffers = 256MB`nmax_connections = 60`nwork_mem = 8MB`nlog_destination = 'stderr'`nlogging_collector = on`nlog_directory = '$($LogDir -replace '\\','/')'`nlog_filename = 'postgres-%a.log'`nlog_truncate_on_rotation = on"
