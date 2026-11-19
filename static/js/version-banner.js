@@ -77,7 +77,7 @@
       return;
     }
     bar = document.createElement('div');
-    bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' ? 'err' : 'warn');
+    bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' || d.status === 'distinta_version' ? 'err' : 'warn');          // sin comprobar = naranja; no está al día = rojo
     bar.setAttribute('role', 'alert');
     bar.title = d.message || '';
     bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Versión adelantada' : 'Versión desactualizada'}</strong></span>`;

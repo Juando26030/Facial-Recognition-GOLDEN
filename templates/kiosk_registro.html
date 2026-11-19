@@ -580,6 +580,17 @@
         document.querySelectorAll('.tab').forEach((tb) => tb.addEventListener('click', () => setTimeout(fit, 0)));
         window.addEventListener('gw:flags', fit);
         fit(); setTimeout(fit, 400);
+        /* Lo que hay encima (encabezado, franja del evento, avisos de versión/sin conexión, aviso de contingencia) cambia de alto después de cargar:
+           se vuelve a medir cada vez que algo de arriba cambia, para que la tarjeta ocupe la pantalla sin cortarse ni dejar la página vacía. */
+        let raf = 0; const later = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; fit(); }); };
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(later); const seen = new Set();
+            for (let n = wa; n && n !== document.body; n = n.parentElement) {
+                for (let sib = n.previousElementSibling; sib; sib = sib.previousElementSibling) { if (!seen.has(sib)) { seen.add(sib); ro.observe(sib); } }
+            }
+            ro.observe(document.body);
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(later);
     })();
 
     /* Plan 8: aviso «Sin conexión». Solo se muestra si el navegador dice que no hay red, la copia de contingencia está activa o el último sondeo del directorio falló. No toca la sincronización. */

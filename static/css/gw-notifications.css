@@ -19,6 +19,8 @@
 .golden-header .gw-versionbar { position: static; display: inline-flex; align-items: center; gap: var(--gw-sp-2); flex: 0 1 auto; min-width: 0; max-width: 22rem; margin-right: auto; margin-left: var(--gw-sp-3); padding: var(--gw-sp-1) var(--gw-sp-3); border-radius: var(--gw-radius-md); text-align: left; font-size: var(--gw-fs-sm); white-space: nowrap; }
 .golden-header .gw-versionbar__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .golden-header .golden-nav { flex-shrink: 0; }
+.golden-header .golden-logo { flex: 0 0 auto; }
+.golden-header .golden-logo img { max-width: none; object-fit: contain; }
 
 /* Revisión visual F5-9: la campana flotante tapaba el botón «Guardar cambios» de la barra de guardado (Parámetros, Configuración), el «⋯» de la última fila del Registro
    y el final de las páginas. Sube por encima de la barra de guardado y las páginas dejan aire abajo para que lo último se pueda ver y tocar. */
