@@ -80,7 +80,39 @@
     return unesc(m[1].replace(/END:VCARD\s*$/i, '')).trim();
   }
 
-  const api = { build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, QR_LEVEL, PREFIX };
+  /* Lector 2D que escribe la vCard SIN saltos de línea («BEGIN:VCARDVERSION:3.0N:PEREZ;ANA;;;FN:ANA PEREZTEL:300…NOTE:GW:123END:VCARD»): los campos se separan por su ORDEN fijo
+     (el de build), buscando cada nombre desde donde terminó el anterior. Sirve igual con saltos de línea. Devuelve { campo: valor } con las claves en MAYÚSCULAS. */
+  const ORDER = ['BEGIN:VCARD', 'VERSION:', 'N:', 'FN:', 'ORG:', 'TITLE:', 'TEL:', 'EMAIL:', 'CATEGORIES:', 'NOTE:', 'END:VCARD'];
+  function fields(text) {
+    const t = String(text == null ? '' : text).replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, '');
+    const found = [];
+    let pos = 0;
+    for (const key of ORDER) {
+      const name = key.replace(/:$/, '');
+      const re = key === 'END:VCARD' ? /END:VCARD/i : new RegExp(name + '(?:;[^:\\n]*)?:', 'i');       // con parámetros opcionales: «TEL;TYPE=CELL:»
+      const m = re.exec(t.slice(pos));
+      if (!m) continue;
+      found.push({ key: name, at: pos + m.index, len: m[0].length });
+      pos += m.index + m[0].length;
+    }
+    const out = {};
+    found.forEach((f, i) => { const end = i + 1 < found.length ? found[i + 1].at : t.length; out[f.key] = t.slice(f.at + f.len, end).replace(/\n+$/g, '').trim(); });
+    return out;
+  }
+  /* Qué trae lo leído: { golden, code, name, phone }. `golden` = lleva el código de Golden (NOTE:GW:…); `name` sale de FN (o de N: Apellido;Nombre); null si no es una vCard. */
+  function parseCard(text) {
+    if (!isVcard(text)) return null;
+    const f = fields(text);
+    const note = f.NOTE || '';
+    const golden = /^GW:/i.test(note);
+    let name = f.FN ? unesc(f.FN).trim() : '';
+    if (!name && f.N) { const p = f.N.split(';'); name = (unesc(p[1] || '') + ' ' + unesc(p[0] || '')).trim(); }
+    return { golden, code: golden ? unesc(note.replace(/^GW:/i, '')).trim() : '', name, phone: f.TEL || '' };
+  }
+  /* Una vCard que todavía se está escribiendo (el lector teclea carácter por carácter): sin END:VCARD no se busca nada. */
+  function isPartial(text) { return isVcard(text) && !/END:VCARD/i.test(String(text)); }
+
+  const api = { build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, fields, parseCard, isPartial, QR_LEVEL, PREFIX };
   if (typeof window !== 'undefined') window.GWVcard = api;
   if (typeof module !== 'undefined') module.exports = api;       // para las pruebas en Node
 })();

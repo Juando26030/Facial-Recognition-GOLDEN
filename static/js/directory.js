@@ -1512,9 +1512,11 @@
           e.preventDefault();
           let raw = cedulaInput.value.trim();
           if (!raw) return;
+          let leido = raw;                                                // lo que escribió el lector, tal cual (una vCard entera): el buscador la entiende completa
           if (window.QrCode && QrCode.collect) {                       // QR en vCard con lector de mano: llega en varias líneas; se espera a que termine (Fase 10, C)
             const whole = QrCode.collect(raw);
             if (whole === null) { cedulaInput.value = ''; syncClearBtn(); return; }
+            leido = whole;
             raw = QrCode.unwrap(whole).trim();
             if (!raw) { cedulaInput.value = ''; syncClearBtn(); return; }
           }
@@ -1527,7 +1529,7 @@
             return;
           }
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
-            const q = SC.classifyQuery(raw);
+            const q = SC.classifyQuery(leido);
             const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
               || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }

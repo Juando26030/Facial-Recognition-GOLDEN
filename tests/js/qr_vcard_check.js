@@ -97,7 +97,21 @@ console.log('qr_vcard_check OK');
   assert.strictEqual(tm({ qr_mode: "mecard" }).text.includes("EMAIL"), false, "MECARD por defecto: nombre y teléfono");
   if (typeof globalThis.qrcode !== "undefined") {
     const v = (el) => { const q = tm(el); return BR.qrDensity(q.text, q.level).version; };
-    console.log("versión por modo: código", v({ qr_mode: "code" }), "| enlace", v({ qr_mode: "link" }), "| MECARD", v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }), "| vCard completa", v({ vcard_fields: VF }));
+    
+// ---- 18-nov-2026: lector 2D que escribe la vCard SIN saltos de línea (la de la prueba en la máquina virtual)
+const plana = 'BEGIN:VCARDVERSION:3.0N:HORTA POLANIA;JENNIFER;;;FN:JENNIFER HORTA POLANIATEL:3112632479NOTE:GW:1END:VCARD';
+assert.deepStrictEqual(V.parseCard(plana), { golden: true, code: '1', name: 'JENNIFER HORTA POLANIA', phone: '3112632479' });
+const completa = V.build({ first_name: 'Ana', last_name: 'Pérez', phone: '300 123', org: 'ACME', title: 'Jefe', email: 'a@b.co', categories: 'VIP,Staff', note: '1016100329|Ana|Pérez' });
+assert.deepStrictEqual(V.parseCard(completa), V.parseCard(completa.replace(/\n/g, '')), 'con o sin saltos de línea sale lo mismo');
+assert.strictEqual(V.parseCard('BEGIN:VCARD\nVERSION:3.0\nFN:Juan Ajeno\nTEL:555\nEND:VCARD').golden, false);
+assert.strictEqual(SC.classifyQuery(plana).kind, 'qr', 'código de Golden, aunque sea corto, se busca exacto');
+assert.strictEqual(SC.classifyQuery(plana).cedula, '1');
+assert.strictEqual(SC.classifyQuery('BEGIN:VCARDVERSION:3.0N:HORTA PO').kind, 'vacio', 'mientras el lector todavía escribe no se busca');
+const ajena = SC.classifyQuery('BEGIN:VCARDVERSION:3.0FN:Juan AjenoTEL:555END:VCARD');
+assert.deepStrictEqual([ajena.kind, ajena.words], ['texto', ['juan', 'ajeno']], 'vCard de un celular: se busca por el nombre');
+const gente = [{ id: '1', first_name: 'JENNIFER', last_name: 'HORTA POLANIA' }, { id: '1001', first_name: 'X', last_name: 'Y' }];
+assert.deepStrictEqual(SC.search(gente, SC.classifyQuery(plana)).map((r) => r.persona.id), ['1']);
+console.log("versión por modo: código", v({ qr_mode: "code" }), "| enlace", v({ qr_mode: "link" }), "| MECARD", v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }), "| vCard completa", v({ vcard_fields: VF }));
     assert.ok(v({ qr_mode: "link" }) <= 6, "el enlace queda chico"); assert.ok(v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }) < v({ vcard_fields: VF }), "MECARD más chico que la vCard completa");
   }
   // escarapela digital (19-nov-2026): el QR de la plantilla lleva el código DINÁMICO con el modo del diseño y el lector lo reconoce igual
