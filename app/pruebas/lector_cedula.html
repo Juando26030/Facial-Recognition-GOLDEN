@@ -692,18 +692,19 @@ class CedulaScanner {
     work.width = ww; work.height = wh; wctx.drawImage(video, rx, ry, rw, rh, 0, 0, ww, wh);       // copia fija del cuadro: lo que se analiza no cambia aunque muevas el celular
     const gx = (g.x - rx) * k, gy = (g.y - ry) * k, gw = g.w * k, gh = g.h * k;
     const fallback = { cx: gx + gw / 2, cy: gy + gh / 2, angle: 0, L: gw * 1.08, W: gh * 1.22 };          // el recuadro tal cual, con un poco de margen
-    const found = this.findCandidates(work, ww, wh).filter(c => c.L > gw * .75 && c.L < gw * 1.5 && Math.hypot(c.cx - fallback.cx, c.cy - fallback.cy) < gh * 1.2);
+    const all = this.findCandidates(work, ww, wh), found = all.filter(c => c.L > gw * .75 && c.L < gw * 1.5 && Math.hypot(c.cx - fallback.cx, c.cy - fallback.cy) < gh * 1.2);
     const best = found[0] || null, ppm = +((best ? best.L / k : g.w * 1.08) / 1.28 / MODULES_EST).toFixed(1);
     const sharpNow = this._sharp(gx, gy, gw, gh), hist = this._sh = (this._sh || []).filter(h => now - h.t < 2500); hist.push({ t: now, v: sharpNow });
-    const peak = Math.max(...hist.map(h => h.v)), sharp = !!best && sharpNow >= SHARP_MIN && sharpNow >= .9 * peak;       // enfocado = hay código, nítido y cerca de lo mejor de los últimos 2,5 s
-    this._drawGuide(g, sharp ? '#2ee59d' : best ? '#ffc857' : 'rgba(255,255,255,.9)', best, off, k);
+    const peak = Math.max(...hist.map(h => h.v)), present = !!best || all.some(c => c.L > gw * .35) || sharpNow >= .45, sharp = present && sharpNow >= SHARP_MIN && sharpNow >= .9 * peak;       // enfocado = hay código, nítido y cerca de lo mejor de los últimos 2,5 s
+    this._drawGuide(g, sharp ? '#2ee59d' : present ? '#ffc857' : 'rgba(255,255,255,.9)', best, off, k);
     this.guideInfo = { ppm, found: !!best, sharp: +sharpNow.toFixed(2) };
     const tall = vh > vw;
     this.onStatus(ppm < 3.4 && tall ? 'Gira el celular a horizontal y acércate: así el código sale más nítido.' : ppm < 2.4 ? 'Acércate un poco: el código se ve pequeño.'
-      : !best ? 'Encaja el código de barras dentro del recuadro.' : sharp ? 'Enfocado, analizando…' : 'Enfocando… mantén el celular firme.', best ? 'warn' : '');
+      : !present ? 'Encaja el código de barras dentro del recuadro.' : sharp ? 'Enfocado, analizando…' : 'Enfocando… mantén el celular firme.', present ? 'warn' : '');
     let r = null;
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
+    if (!r && this.scanning && !sharp && attempts % 6 === 0) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1200);     // respaldo periódico aunque no se mida enfoque
     if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 1500) {                 // enfocado: análisis a fondo de ESTE cuadro
       this._lastDeep = performance.now(); r = await this._tryCandidate(work, fallback, PLANS.deep, this._lastDeep + 1800);
       if (!r && best && this.scanning) r = await this._tryCandidate(work, best, PLANS.deep, performance.now() + 1000);
