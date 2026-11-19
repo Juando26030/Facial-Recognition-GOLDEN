@@ -55,14 +55,25 @@
   pre{white-space:pre-wrap;word-break:break-all;background:#0c1218;border:1px solid var(--line);border-radius:10px;
     padding:10px;max-height:180px;overflow:auto;color:#b8c6d8;font-size:12px}
   .note{color:var(--mut);font-size:12px;margin:10px 0 0}
+  #tabs{display:flex;gap:6px;padding:0 10px 8px}
+  #tabs .tab{flex:1 1 0;padding:10px 8px;font-size:14px;line-height:1.2;text-align:center;flex-direction:column;gap:2px}
+  #tabs .tab small{font-weight:400;font-size:11px;color:var(--mut)}
+  #tabs .tab.on{background:var(--acc);border-color:var(--acc);color:#06121f} #tabs .tab.on small{color:#06121fb0}
+  .chk{display:inline-block;margin:2px 4px 0 0;padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+  .chk.ok{color:var(--ok);border-color:var(--ok)} .chk.no{color:var(--warn);border-color:var(--warn)}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Lector de cédula · PDF417</h1>
+    <h1 id="title">Lector de cédula · PDF417</h1>
     <small id="status">Iniciando…</small>
   </header>
+
+  <nav id="tabs" role="tablist">
+    <button class="tab on" role="tab" data-mode="old" aria-selected="true">Cédula vieja<small>código de barras (PDF417)</small></button>
+    <button class="tab" role="tab" data-mode="new" aria-selected="false">Cédula nueva<small>las 3 líneas de abajo</small></button>
+  </nav>
 
   <section id="stage">
     <video id="video" playsinline muted autoplay></video>
@@ -771,6 +782,411 @@ class CedulaScanner {
   }
 }
 
+/* ============ Cédula NUEVA: las 3 líneas de abajo (zona legible por máquina, «MRZ») ============
+ * Cada línea tiene 30 caracteres (A–Z, 0–9 y «<» de relleno):
+ *   1)  IC COL <n.º de documento(9)><dígito>…<<<<<
+ *   2)  <nacimiento AAMMDD><dc><sexo><vence AAMMDD><dc> COL <cédula …><  …><dígito compuesto>
+ *   3)  <APELLIDO1><APELLIDO2><<<NOMBRE1><NOMBRE2><<<<<
+ * No se confía en posiciones fijas: la cédula se toma de lo que sigue a «COL» hasta el siguiente «<», y los nombres se separan por «<<» y «<».
+ * Los dígitos de control (7-3-1) dicen si lo leído es correcto.
+ */
+const MRZ_D = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', S: '5', B: '8', G: '6', T: '7' };   // letras que el OCR confunde con dígitos
+const MRZ_A = { '0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B', '6': 'G' };                       // y al revés (en la línea de nombres)
+const mrzClean = s => String(s || '').toUpperCase().replace(/[«‹〈＜]/g, '<').replace(/[^A-Z0-9<]/g, '');
+const mrzDig = s => s.replace(/[A-Z]/g, c => MRZ_D[c] || c);
+const mrzAlf = s => s.replace(/[0-9]/g, c => MRZ_A[c] || c);
+function mrzCheck(s) {
+  let t = 0;
+  for (let i = 0; i < s.length; i++) { const c = s[i], v = c === '<' ? 0 : (c >= '0' && c <= '9') ? +c : c.charCodeAt(0) - 55; t += v * [7, 3, 1][i % 3]; }
+  return t % 10;
+}
+function mrzDate(s, birth) {                                       // 'AAMMDD' → 'AAAAMMDD' ('' si no es una fecha)
+  if (!/^\d{6}$/.test(s)) return '';
+  const yy = +s.slice(0, 2), m = +s.slice(2, 4), d = +s.slice(4, 6), cur = new Date().getUTCFullYear();
+  let y = 2000 + yy; if (birth && y > cur) y -= 100;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return '';
+  return String(y) + s.slice(2, 4) + s.slice(4, 6);
+}
+const mrzNat = (s, i) => /^C[O0Q][L1I]/.test(s.slice(i, i + 3));
+/** Entiende las líneas leídas (en cualquier orden y con errores de OCR). Devuelve null si no encuentra la estructura. */
+function parseMrz(raw) {
+  const L = (raw || []).map(mrzClean).filter(s => s.length >= 8);
+  if (L.length < 2) return null;
+  let best = null;                                                  // línea 2 = la que tiene «COL» pasando el carácter ~15 y casi solo dígitos antes
+  for (const s of L) for (let i = 12; i <= 18; i++) if (mrzNat(s, i)) {
+    const pre = s.slice(0, i), dg = [...pre].filter(c => /[0-9OQDILZSBGT]/.test(c)).length;
+    const sc = dg / pre.length - Math.abs(i - 15) * .04 + (s.length >= 26 && s.length <= 32 ? .1 : 0);
+    if (!best || sc > best.sc) best = { s, i, sc };
+  }
+  if (!best || best.sc < .5) return null;
+  const s2 = best.s, ci = best.i, pre = s2.slice(0, ci);
+  let si = [7, 6, 8].find(k => /[MF]/.test(pre[k] || ''));
+  if (si === undefined) { if (pre.length === 15) si = 7; else return null; }
+  const sexo = /[MF]/.test(pre[si] || '') ? pre[si] : '';
+  const bRaw = si >= 7 ? mrzDig(pre.slice(si - 7, si - 1)) : '', bChk = si >= 7 ? mrzDig(pre[si - 1]) : '';
+  const eRaw = mrzDig(pre.slice(si + 1, si + 7)), eChk = mrzDig(pre[si + 7] || '');
+  const nacimiento = mrzDate(bRaw, true), vencimiento = mrzDate(eRaw, false);
+  const okB = !!nacimiento && bChk === String(mrzCheck(bRaw)), okE = !!vencimiento && eChk === String(mrzCheck(eRaw));
+  // cédula: lo que sigue a «COL» hasta el siguiente «<» (si no hay «<», todo menos el último carácter, que es el dígito de control)
+  const rest = s2.slice(ci + 3).replace(/^<+/, ''), k = rest.indexOf('<');
+  const cedula = mrzDig(k > 0 ? rest.slice(0, k) : rest.slice(0, -1)).replace(/^0+(?=\d)/, '');
+  if (!/^\d{4,11}$/.test(cedula)) return null;
+  // línea 1 (n.º de documento) y línea 3 (nombres)
+  const l1 = L.find(s => s !== s2 && [1, 2, 3, 4].some(i => mrzNat(s, i)) && /\d/.test(s.slice(5, 12))) || '';
+  const lett = s => { const a = (s.match(/[A-Z]/g) || []).length, d = (s.match(/[0-9]/g) || []).length; return a / Math.max(1, a + d); };
+  const l3 = L.filter(s => s !== s2 && s !== l1 && lett(s) >= .6).sort((a, b) => (/<</.test(b) - /<</.test(a)) || (b.length - a.length))[0] || '';
+  let documento = '', okD = null;
+  if (l1) { const ni = [1, 2, 3, 4].find(i => mrzNat(l1, i)); documento = l1.slice(ni + 3, ni + 12);
+    if (documento.length === 9 && l1[ni + 12]) okD = [documento, mrzDig(documento)].some(d => String(mrzCheck(d)) === mrzDig(l1[ni + 12])); }
+  let comp = null;                                                   // dígito compuesto: cubre el n.º de documento, las fechas y la cédula
+  if (l1.length === 30 && s2.length === 30) {
+    const fix = (s, from, to) => s.slice(0, from) + mrzDig(s.slice(from, to)) + s.slice(to);
+    const opt = s2.slice(18, 29), ok = opt.indexOf('<'), optF = (ok < 0 ? mrzDig(opt) : mrzDig(opt.slice(0, ok)) + opt.slice(ok));
+    const v = [l1.slice(5, 30) + s2.slice(0, 7) + s2.slice(8, 15) + s2.slice(18, 29),
+               fix(l1, 5, 14).slice(5, 30) + mrzDig(s2.slice(0, 7)) + mrzDig(s2.slice(8, 15)) + optF];
+    comp = v.some(x => String(mrzCheck(x)) === mrzDig(s2[29]));
+  }
+  // nombres
+  const t = mrzAlf(l3).replace(/[^A-Z<]/g, '').replace(/^<+|<+$/g, ''), j = t.indexOf('<<');
+  const surnames = j > 0 ? t.slice(0, j).split('<').filter(Boolean) : [], given = j > 0 ? t.slice(j + 2).split('<').filter(Boolean) : [];
+  const r = { cedula, apellido1: surnames[0] || '', apellido2: surnames.slice(1).join(' '), nombre1: given[0] || '', nombre2: given.slice(1).join(' '),
+              nacimiento, sexo, vencimiento, documento, checks: { birth: okB, expiry: okE, doc: okD, composite: comp }, lines: [l1, s2, l3] };
+  r.linea = [r.cedula, r.nombre1, r.nombre2, r.apellido1, r.apellido2, r.nacimiento].join(',');
+  return r;
+}
+/** «Fuerte» = los dígitos de control cuadran (incluido el compuesto, que cubre la cédula) y hay nombre y apellido. Los nombres no tienen control: por eso se confirman con otro cuadro. */
+const mrzStrong = p => !!p && p.checks.birth && p.checks.expiry && p.checks.composite === true && !!p.nombre1 && !!p.apellido1;
+const mrzKey = p => [p.cedula, p.nombre1, p.nombre2, p.apellido1, p.apellido2, p.nacimiento].join('|');
+
+/* ---------- geometría pura sobre arrays de gris (también se prueba fuera del navegador) ---------- */
+function mrzResize(g, w, h, nw, nh) {
+  let src = g, sw = w, sh = h;
+  const f = Math.min(Math.floor(w / nw), Math.floor(h / nh));
+  if (f >= 2) {                                                     // al achicar mucho, primero promedio por bloques (evita aliasing)
+    const rw = Math.floor(w / f), rh = Math.floor(h / f), o = new Uint8Array(rw * rh);
+    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) { let s = 0; for (let dy = 0; dy < f; dy++) { const r = (y * f + dy) * w + x * f; for (let dx = 0; dx < f; dx++) s += g[r + dx]; } o[y * rw + x] = s / (f * f); }
+    src = o; sw = rw; sh = rh;
+  }
+  const o = new Uint8Array(nw * nh), kx = sw / nw, ky = sh / nh;
+  for (let y = 0; y < nh; y++) {
+    const fy = Math.min(sh - 1, Math.max(0, (y + .5) * ky - .5)), y0 = Math.floor(fy), y1 = Math.min(sh - 1, y0 + 1), wy = fy - y0;
+    for (let x = 0; x < nw; x++) {
+      const fx = Math.min(sw - 1, Math.max(0, (x + .5) * kx - .5)), x0 = Math.floor(fx), x1 = Math.min(sw - 1, x0 + 1), wx = fx - x0;
+      o[y * nw + x] = (src[y0 * sw + x0] * (1 - wx) + src[y0 * sw + x1] * wx) * (1 - wy) + (src[y1 * sw + x0] * (1 - wx) + src[y1 * sw + x1] * wx) * wy + .5;
+    }
+  }
+  return o;
+}
+function mrzRot90(g, w, h, k) {                                     // gira k·90° en sentido horario → {g,w,h}
+  k = ((k % 4) + 4) % 4; if (!k) return { g, w, h };
+  const nw = k === 2 ? w : h, nh = k === 2 ? h : w, o = new Uint8Array(nw * nh);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [X, Y] = k === 1 ? [h - 1 - y, x] : k === 2 ? [w - 1 - x, h - 1 - y] : [y, w - 1 - x]; o[Y * nw + X] = g[y * w + x];
+  }
+  return { g: o, w: nw, h: nh };
+}
+function mrzRotate(g, w, h, deg) {                                  // endereza: gira la imagen -deg (bilineal, bordes replicados)
+  const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), cx = (w - 1) / 2, cy = (h - 1) / 2, o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = x - cx, dy = y - cy, sx = Math.min(w - 1, Math.max(0, cx + dx * c - dy * s)), sy = Math.min(h - 1, Math.max(0, cy + dx * s + dy * c));
+    const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1), fx = sx - x0, fy = sy - y0;
+    o[y * w + x] = (g[y0 * w + x0] * (1 - fx) + g[y0 * w + x1] * fx) * (1 - fy) + (g[y1 * w + x0] * (1 - fx) + g[y1 * w + x1] * fx) * fy + .5;
+  }
+  return o;
+}
+/** Inclinación del texto en grados (positivo = las líneas bajan hacia la derecha): la que hace más «afilado» el perfil de filas. */
+function mrzDeskew(g, w, h) {
+  const nw = Math.min(480, w), nh = Math.max(8, Math.round(h * nw / w)), s = mrzResize(g, w, h, nw, nh), bin = binarGray(s, nw, nh), xs = [], ys = [];
+  for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) if (!bin[y * nw + x]) { xs.push(x); ys.push(y); }
+  if (xs.length < 200) return 0;
+  const cx = nw / 2, off = Math.ceil(nw * .2) + 2, score = a => {
+    const t = Math.tan(a * Math.PI / 180), bins = new Float32Array(nh + 2 * off);
+    for (let i = 0; i < xs.length; i++) bins[Math.round(ys[i] - (xs[i] - cx) * t) + off]++;
+    let q = 0; for (let i = 0; i < bins.length; i++) q += bins[i] * bins[i]; return q;
+  };
+  let ba = 0, bs = score(0); for (let a = -7; a <= 7; a += .5) { const q = score(a); if (q > bs) { bs = q; ba = a; } }
+  for (let a = ba - .5; a <= ba + .5; a += .1) { const q = score(a); if (q > bs) { bs = q; ba = a; } }
+  return Math.abs(ba) < .3 ? 0 : +ba.toFixed(1);
+}
+/** Busca las 3 líneas de texto apiladas. bin: 0 = tinta. → {bands:[{y0,y1}], x0, x1, ok} */
+function mrzBands(bin, w, h) {
+  const prof = new Float32Array(h); let mx = 0;
+  for (let y = 0; y < h; y++) { let n = 0; for (let x = 0; x < w; x++) if (!bin[y * w + x]) n++; prof[y] = n; }
+  const p = new Float32Array(h); for (let y = 0; y < h; y++) { p[y] = ((prof[y - 1] || 0) + 2 * prof[y] + (prof[y + 1] || 0)) / 4; if (p[y] > mx) mx = p[y]; }
+  if (mx < w * .03) return { ok: false, bands: [] };
+  let runs = [], st = -1;
+  for (let y = 0; y <= h; y++) { const on = y < h && p[y] > mx * .3; if (on && st < 0) st = y; if (!on && st >= 0) { runs.push({ y0: st, y1: y - 1 }); st = -1; } }
+  for (let i = runs.length - 2; i >= 0; i--) if (runs[i + 1].y0 - runs[i].y1 <= 3) { runs[i].y1 = runs[i + 1].y1; runs.splice(i + 1, 1); }   // huecos mínimos dentro de una línea
+  runs = runs.filter(r => r.y1 - r.y0 + 1 >= Math.max(5, h * .03));
+  for (const r of runs) { r.m = 0; for (let y = r.y0; y <= r.y1; y++) r.m += p[y]; }
+  while (runs.length > 3) { let k = 0; for (let i = 1; i < runs.length; i++) if (runs[i].m < runs[k].m) k = i; runs.splice(k, 1); }
+  if (runs.length === 2) { const a = runs[0], b = runs[1], ha = a.y1 - a.y0 + 1, hb = b.y1 - b.y0 + 1;      // dos líneas pegadas contadas como una
+    if (ha > hb * 1.7) { const m = Math.round((a.y0 + a.y1) / 2); runs = [{ y0: a.y0, y1: m - 1 }, { y0: m + 1, y1: a.y1 }, b]; }
+    else if (hb > ha * 1.7) { const m = Math.round((b.y0 + b.y1) / 2); runs = [a, { y0: b.y0, y1: m - 1 }, { y0: m + 1, y1: b.y1 }]; } }
+  if (runs.length !== 3) return { ok: false, bands: runs };
+  const hs = runs.map(r => r.y1 - r.y0 + 1), ps = [runs[1].y0 - runs[0].y0, runs[2].y0 - runs[1].y0];
+  const ok = Math.max(...hs) / Math.min(...hs) < 1.8 && Math.max(...ps) / Math.min(...ps) < 1.45;           // alturas y separación parecidas
+  let x0 = w, x1 = -1; const colN = new Uint16Array(w);
+  for (const r of runs) for (let y = r.y0; y <= r.y1; y++) for (let x = 0; x < w; x++) if (!bin[y * w + x]) colN[x]++;
+  for (let x = 0; x < w; x++) if (colN[x] >= 2) { if (x < x0) x0 = x; x1 = x; }
+  return { ok: ok && x1 > x0, bands: runs, x0, x1 };
+}
+/** Nitidez relativa: energía de bordes horizontales sobre la varianza, en las filas de texto. */
+function mrzSharp(g, w, y0, y1) {
+  let s = 0, m = 0, n = 0; for (let y = y0; y <= y1; y += 2) for (let x = 1; x < w - 1; x++) { const a = g[y * w + x + 1] - g[y * w + x - 1]; s += a * a; m += g[y * w + x]; n++; }
+  if (!n) return 0; m /= n; let v = 0; for (let y = y0; y <= y1; y += 2) for (let x = 1; x < w - 1; x++) { const q = g[y * w + x] - m; v += q * q; }
+  return (s / n) / (v / n + 1);
+}
+const MRZ_CAP = 36;                                                 // altura de las letras (px) con que se le entrega cada línea al OCR (se alterna 30 / 36 / 44 entre intentos)
+/** Recorta cada línea, la lleva a ~44 px de alto de letra y le quita fondo/sombras. → [{g,w,h,x0,ext}] (x0 = inicio de la tinta, ext = ancho de la tinta, en px del recorte) */
+function mrzCrops(g, w, h, info, cap = MRZ_CAP) {
+  const out = [], PAD = 20;
+  for (const b of info.bands) {
+    const bh = b.y1 - b.y0 + 1, sc = Math.min(3.2, Math.max(.4, cap / bh)), pv = Math.round(bh * .55), ph = Math.round(bh * 1.0);
+    const cy0 = Math.max(0, b.y0 - pv), cy1 = Math.min(h - 1, b.y1 + pv), cx0 = Math.max(0, info.x0 - ph), cx1 = Math.min(w - 1, info.x1 + ph), cw = cx1 - cx0 + 1, ch = cy1 - cy0 + 1;
+    const sub = new Uint8Array(cw * ch); for (let y = 0; y < ch; y++) sub.set(g.subarray((cy0 + y) * w + cx0, (cy0 + y) * w + cx0 + cw), y * cw);
+    const nw = Math.max(8, Math.round(cw * sc)), nh = Math.max(8, Math.round(ch * sc)), rs = mrzResize(sub, cw, ch, nw, nh);
+    const bg = boxBlur(rs, nw, nh, Math.round(cap * 1.1)), W = nw + 2 * PAD, H = nh + 2 * PAD, o = new Uint8Array(W * H).fill(255);
+    for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) { const v = 255 - (bg[y * nw + x] - rs[y * nw + x]) * 2.8; o[(y + PAD) * W + x + PAD] = v < 0 ? 0 : v > 255 ? 255 : v; }
+    out.push({ g: o, w: W, h: H, x0: (info.x0 - cx0) * (nw / cw) + PAD, ext: (info.x1 - info.x0 + 1) * (nw / cw) });
+  }
+  return out;
+}
+/** Análisis barato (imagen reducida, ~640 px de ancho): inclinación, dónde están las 3 líneas y qué tan nítidas. Aún no lee nada. */
+function mrzScan(g, w, h) {
+  const ang = mrzDeskew(g, w, h), r = ang ? mrzRotate(g, w, h, ang) : g, info = mrzBands(binarGray(r, w, h), w, h);
+  info.angle = ang; info.w = w; info.h = h; info.sharp = info.ok ? mrzSharp(r, w, info.bands[0].y0, info.bands[2].y1) : 0;
+  return info;
+}
+/** Recortes para el OCR a partir de la imagen COMPLETA ya enderezada (gRot, W×H); `info` viene de mrzScan sobre una versión reducida k veces. */
+function mrzMakeCrops(gRot, W, H, info, k, cap) {
+  const s = { bands: info.bands.map(b => ({ y0: Math.max(0, Math.round(b.y0 * k)), y1: Math.min(H - 1, Math.round(b.y1 * k)) })), x0: Math.max(0, Math.round(info.x0 * k)), x1: Math.min(W - 1, Math.round(info.x1 * k)) };
+  return mrzCrops(gRot, W, H, s, cap);
+}
+/** Localiza las 3 líneas dentro de una foto cualquiera (otra orientación, la cédula en cualquier parte): 3 bloques de texto alargados, apilados y del mismo ancho. */
+function mrzLocate(g, w, h) {
+  let best = null;
+  for (let rot = 0; rot < 2; rot++) {                              // 0 y 90°: las lecturas al revés (180°/270°) las prueba quien llama
+    const R = mrzRot90(g, w, h, rot), nw = Math.min(720, R.w), nh = Math.round(R.h * nw / R.w), s = mrzResize(R.g, R.w, R.h, nw, nh), bin = binarGray(s, nw, nh);
+    for (const gapK of [.007, .014]) {
+      const G = Math.max(3, Math.round(nw * gapK)), cl = new Uint8Array(bin);                    // cierre horizontal: une las letras de cada línea en un bloque
+      for (let y = 0; y < nh; y++) { let last = -1e9; for (let x = 0; x < nw; x++) if (!bin[y * nw + x]) { if (x - last <= G) for (let q = last + 1; q < x; q++) cl[y * nw + q] = 0; last = x; } }
+      const lab = new Int32Array(nw * nh).fill(-1), blobs = [], st = [];
+      for (let i = 0; i < nw * nh; i++) if (!cl[i] && lab[i] < 0) {
+        const b = { x0: nw, y0: nh, x1: 0, y1: 0, n: 0 }; lab[i] = blobs.length; st.push(i);
+        while (st.length) { const j = st.pop(), x = j % nw, y = (j / nw) | 0; b.n++; if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+          for (const k of [j - 1, j + 1, j - nw, j + nw]) if (k >= 0 && k < nw * nh && !cl[k] && lab[k] < 0 && Math.abs((k % nw) - x) <= 1) { lab[k] = blobs.length; st.push(k); } }
+        blobs.push(b);
+      }
+      const L = blobs.filter(b => { const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1; return bw >= nw * .12 && bh >= 3 && bw / bh >= 5 && bw / bh <= 60; }).sort((a, b) => a.y0 - b.y0);
+      for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) for (let k = j + 1; k < L.length; k++) {
+        const A = L[i], B = L[j], C = L[k], wa = A.x1 - A.x0, ha = A.y1 - A.y0 + 1; if (B.y0 - A.y1 > ha * 2) break;
+        const ok = (P, Q) => Math.abs(P.x0 - Q.x0) < wa * .1 && Math.abs((P.x1 - P.x0) - (Q.x1 - Q.x0)) < wa * .15 && Q.y0 - P.y1 > -ha * .2 && Q.y0 - P.y1 < ha * 1.2 && Math.abs((Q.y1 - Q.y0 + 1) - ha) < ha * .6;
+        if (!ok(A, B) || !ok(B, C)) continue;
+        const sc = wa * (1 - Math.abs((B.y0 - A.y0) - (C.y0 - B.y0)) / (ha * 3));
+        if (!best || sc / nw > best.sc) best = { sc: sc / nw, rot, x0: Math.min(A.x0, B.x0, C.x0) / nw, x1: Math.max(A.x1, B.x1, C.x1) / nw, y0: A.y0 / nh, y1: C.y1 / nh, R };
+      }
+    }
+  }
+  if (!best) return null;
+  const { R } = best, mx = (best.x1 - best.x0) * .06, my = (best.y1 - best.y0) * .35;
+  const X0 = Math.max(0, Math.floor((best.x0 - mx) * R.w)), X1 = Math.min(R.w, Math.ceil((best.x1 + mx) * R.w)), Y0 = Math.max(0, Math.floor((best.y0 - my) * R.h)), Y1 = Math.min(R.h, Math.ceil((best.y1 + my) * R.h));
+  const cw = X1 - X0, ch = Y1 - Y0, sub = new Uint8Array(cw * ch); for (let y = 0; y < ch; y++) sub.set(R.g.subarray((Y0 + y) * R.w + X0, (Y0 + y) * R.w + X0 + cw), y * cw);
+  return { g: sub, w: cw, h: ch, rot: best.rot, score: best.sc, flip: () => { const f = mrzRot90(sub, cw, ch, 2); return { g: f.g, w: f.w, h: f.h, rot: best.rot + 2, score: best.sc }; } };
+}
+
+/* ---------- del resultado del OCR a una línea de 30 columnas ---------- */
+/** syms: [{c, conf, cx}] en px del recorte. Quita duplicados (dos símbolos en la misma celda) y rellena huecos con «<». */
+function mrzGrid(syms, x0, ext, n = 30) {
+  const p = ext / (n - .3);
+  const S = syms.slice().sort((a, b) => a.cx - b.cx), keep = [];
+  for (const s of S) { const l = keep[keep.length - 1]; if (l && s.cx - l.cx < .62 * p) { if (s.conf > l.conf) keep[keep.length - 1] = s; } else keep.push(s); }
+  let txt = '', conf = [];
+  keep.forEach((s, i) => {
+    if (i) { const gap = Math.round((s.cx - keep[i - 1].cx) / p) - 1; for (let q = 0; q < Math.min(gap, 3); q++) { txt += '<'; conf.push(0); } }
+    txt += s.c; conf.push(s.conf);
+  });
+  return { text: txt, conf };
+}
+
+
+/* ============ OCR en el navegador (Tesseract.js: se descarga la primera vez y queda en caché) ============ */
+const TESS_VER = '5.1.1';
+const TESS_SRC = [`https://cdn.jsdelivr.net/npm/tesseract.js@${TESS_VER}/dist/tesseract.min.js`, `https://unpkg.com/tesseract.js@${TESS_VER}/dist/tesseract.min.js`];
+const TESS_LANG = ['https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int', 'https://unpkg.com/@tesseract.js-data/eng/4.0.0_best_int'];
+const MRZ_WL = ['ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<', '0123456789MFCOLX<', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ<'];   // un trabajador por línea, cada uno con SOLO los caracteres posibles en esa línea
+const MRZ_GUIDE_AR = 4.6;                                           // proporción ancho/alto del recuadro (las 3 líneas miden ~5.5:1; el recuadro deja margen)
+const MRZ_W = 1400;                                                 // ancho máximo del recorte que se analiza
+const MRZ_CAPS = [36, 30, 44];                                      // alto de letra con que se le pasa la línea al OCR; se alterna entre intentos
+const loadScript = url => new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = () => rej(new Error('no se pudo descargar ' + url)); document.head.appendChild(s); });
+const grayCanvas = (g, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(fromGray(g, w, h), 0, 0); return c; };
+
+class MrzOcr {
+  constructor() { this.workers = []; this.ready = false; this._p = null; }
+  load() { return this._p || (this._p = this._load().catch(e => { this._p = null; throw e; })); }
+  async _load() {
+    if (!window.Tesseract) {
+      let err; for (const u of TESS_SRC) { try { await loadScript(u); if (window.Tesseract) break; } catch (e) { err = e; } }
+      if (!window.Tesseract) throw err || new Error('No se pudo cargar el lector de texto (revisa la conexión).');
+    }
+    let last;
+    for (const lp of TESS_LANG) {
+      try {
+        const mkw = async wl => { const w = await window.Tesseract.createWorker('eng', 1, { langPath: lp, gzip: true, logger: () => {} });
+          await w.setParameters({ tessedit_char_whitelist: wl, tessedit_pageseg_mode: '7', user_defined_dpi: '300' }); return w; };
+        const first = await mkw(MRZ_WL[0]);                           // el primero baja y guarda el idioma; los otros ya lo encuentran en caché
+        const rest = await Promise.all(MRZ_WL.slice(1).map(mkw));
+        this.workers = [first, ...rest]; this.ready = true; return;
+      } catch (e) { last = e; }
+    }
+    throw last || new Error('No se pudieron cargar los datos del idioma.');
+  }
+  /** crops: [{g,w,h}] (línea 1, 2 y 3) → [{text, conf}] */
+  async read(crops) {
+    return Promise.all(crops.map((c, i) => this.workers[i].recognize(grayCanvas(c.g, c.w, c.h)).then(r => ({ text: String((r.data && r.data.text) || '').replace(/\s+/g, ''), conf: Math.round((r.data && r.data.confidence) || 0) }))));
+  }
+}
+
+class MrzScanner {
+  constructor({ onResult = () => {}, onStatus = () => {} } = {}) {
+    this.onResult = onResult; this.onStatus = onStatus; this.ocr = new MrzOcr(); [this.work, this.wctx] = mk(); [this.rot, this.rctx] = mk();
+    this.scanning = false; this.lastDebug = null; this._reset();
+  }
+  _reset() { this.votes = new Map(); this.fails = 0; this.flip = false; this.attempt = 0; this.sh = []; this.lastOcr = 0; }
+  init() { return this.ocr.load(); }
+  async startCamera(video, overlay) {
+    this.video = video; this.overlay = overlay; this.octx = overlay ? overlay.getContext('2d') : null; let last = null; this.stream = null;
+    for (const size of [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, {}]) {
+      try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, ...size } }); break; }
+      catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e; }
+    }
+    if (!this.stream) throw last || new Error('No se pudo abrir la cámara');
+    this.track = this.stream.getVideoTracks()[0];
+    try { await this.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    video.srcObject = this.stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
+    this._reset(); this.scanning = true; this._loop(); this.ocr.load().catch(() => {});
+  }
+  async setTorch(on) { try { await this.track.applyConstraints({ advanced: [{ torch: !!on }] }); return true; } catch (e) { return false; } }
+  resume() { if (this.stream && !this.scanning) { this.video.play(); this._reset(); this.scanning = true; this._loop(); } }
+  stop() {
+    this.scanning = false; if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.stream = this.track = null; if (this.video) this.video.srcObject = null; if (this.octx) this.octx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+  }
+  async refocus(nx, ny) {
+    const t = this.track; if (!t) return false;
+    try { await t.applyConstraints({ advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x: nx, y: ny }] }] }); setTimeout(() => t && t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {}), 1400); return true; }
+    catch (e) { try { await t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (_) {} return false; }
+  }
+  /** Recuadro guía en píxeles del video, sobre la parte VISIBLE (el video se muestra con object-fit: cover). */
+  _guideRect(vw, vh) {
+    const r = this.video.getBoundingClientRect(); let visW = vw, visH = vh;
+    if (r.width && r.height) { const k = Math.max(r.width / vw, r.height / vh); visW = r.width / k; visH = r.height / k; }
+    const x0 = (vw - visW) / 2, y0 = (vh - visH) / 2, w = Math.min(visW * .94, visH * .94 * MRZ_GUIDE_AR), h = w / MRZ_GUIDE_AR;
+    return { x: x0 + (visW - w) / 2, y: y0 + (visH - h) / 2, w, h };
+  }
+  _drawGuide(g, color) {
+    if (!this.octx) return; const { overlay, octx, video } = this, vw = video.videoWidth, vh = video.videoHeight;
+    if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
+    octx.clearRect(0, 0, vw, vh); octx.fillStyle = 'rgba(0,0,0,.45)'; octx.beginPath(); octx.rect(0, 0, vw, vh); octx.rect(g.x, g.y, g.w, g.h); octx.fill('evenodd');
+    const lw = Math.max(4, vw / 260), c = Math.min(g.h * .35, g.w * .06);
+    octx.lineWidth = lw; octx.strokeStyle = color; octx.lineCap = 'round'; octx.strokeRect(g.x, g.y, g.w, g.h); octx.lineWidth = lw * 1.8;
+    [[g.x, g.y, 1, 1], [g.x + g.w, g.y, -1, 1], [g.x, g.y + g.h, 1, -1], [g.x + g.w, g.y + g.h, -1, -1]].forEach(([x, y, sx, sy]) => { octx.beginPath(); octx.moveTo(x, y + sy * c); octx.lineTo(x, y); octx.lineTo(x + sx * c, y); octx.stroke(); });
+    octx.lineWidth = lw * .5; octx.strokeStyle = color + '88'; octx.setLineDash([lw * 3, lw * 3]);                     // 3 renglones de ayuda: dónde caen las 3 líneas
+    [1 / 6, .5, 5 / 6].forEach(f => { octx.beginPath(); octx.moveTo(g.x + g.w * .03, g.y + g.h * f); octx.lineTo(g.x + g.w * .97, g.y + g.h * f); octx.stroke(); }); octx.setLineDash([]);
+  }
+  /** Copia fija de la zona del recuadro (con un poco de margen) → gris a resolución completa de trabajo. */
+  _grab(src, sx, sy, sw, sh, k) {
+    const w = Math.round(sw * k), h = Math.round(sh * k); this.work.width = w; this.work.height = h; this.wctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+    return { gray: toGray(this.wctx.getImageData(0, 0, w, h)), w, h };
+  }
+  /** Imagen en gris → [textos de las 3 líneas] (o null si no se ven 3 líneas). `canvasRot`: enderezar con el lienzo (rápido) en vez de en JS. */
+  async _read(gray, W, H, opts = {}) {
+    const sw = Math.min(640, W), sh = Math.max(8, Math.round(H * sw / W)), info = opts.info || mrzScan(mrzResize(gray, W, H, sw, sh), sw, sh); if (!info.ok) return { info };
+    let gr = gray;
+    if (info.angle) {
+      if (opts.fromCanvas) { const { rot, rctx } = this; rot.width = W; rot.height = H; rctx.fillStyle = '#c8c8c8'; rctx.fillRect(0, 0, W, H); rctx.save(); rctx.translate(W / 2, H / 2); rctx.rotate(-info.angle * Math.PI / 180); rctx.drawImage(this.work, -W / 2, -H / 2); rctx.restore(); gr = toGray(rctx.getImageData(0, 0, W, H)); }
+      else gr = mrzRotate(gray, W, H, info.angle);
+    }
+    let crops = mrzMakeCrops(gr, W, H, info, W / sw, MRZ_CAPS[(opts.attempt || 0) % MRZ_CAPS.length]);
+    if (opts.flip) crops = crops.reverse().map(c => { const f = mrzRot90(c.g, c.w, c.h, 2); return { g: f.g, w: f.w, h: f.h }; });   // cédula al revés: se leen las líneas giradas 180°
+    const texts = await this.ocr.read(crops); return { info, texts, crops };
+  }
+  _consider(texts) {                                                // ¿ya hay una lectura confiable? → parsed | null
+    const parsed = parseMrz(texts.map(t => t.text)), conf = texts.map(t => t.conf);
+    this.lastDebug = { lines: texts.map(t => t.text), conf, parsed };
+    if (!parsed) { this.fails++; if (this.fails % 3 === 0) this.flip = !this.flip; return null; }
+    this.fails = 0;
+    const key = mrzKey(parsed), n = (this.votes.get(key) || 0) + 1; this.votes.set(key, n);
+    if (mrzStrong(parsed)) {
+      if (n >= 2 || Math.min(...conf) >= 80) return { ...parsed, verificada: true };                   // controles OK + dos cuadros iguales (o letras muy seguras)
+    } else if (parsed.checks.birth && parsed.checks.expiry && n >= 3) return { ...parsed, verificada: false, aproximado: true };
+    return null;
+  }
+  async _step() {
+    const { video } = this, vw = video.videoWidth, vh = video.videoHeight, g = this._guideRect(vw, vh), now = performance.now();
+    const rx = Math.max(0, g.x - g.w * .03), ry = Math.max(0, g.y - g.h * .05), rw = Math.min(vw - rx, g.w * 1.06), rh = Math.min(vh - ry, g.h * 1.10), k = Math.min(1, MRZ_W / rw);
+    const { gray, w: W, h: H } = this._grab(video, rx, ry, rw, rh, k);
+    const sw = Math.min(640, W), sh = Math.max(8, Math.round(H * sw / W)), info = mrzScan(mrzResize(gray, W, H, sw, sh), sw, sh);
+    const hist = this.sh = this.sh.filter(h => now - h.t < 1500); if (info.ok) hist.push({ t: now, v: info.sharp });
+    const peak = Math.max(0, ...hist.map(h => h.v)), present = info.ok, sharp = present && info.sharp >= .85 * peak && info.sharp >= .12;
+    this._drawGuide(g, sharp ? '#2ee59d' : present ? '#ffc857' : 'rgba(255,255,255,.9)');
+    if (!this.ocr.ready) { this.onStatus('Cargando el lector de texto… (la primera vez tarda unos segundos)', 'warn'); return false; }
+    if (!present) { this.onStatus('Encaja las 3 líneas de letras y números (las de abajo) dentro del recuadro.', ''); return false; }
+    if (!sharp && now - this.lastOcr < 1500) { this.onStatus('Enfocando… mantén el celular firme.', 'warn'); return false; }
+    this.lastOcr = now; this.onStatus('Leyendo…', 'warn'); const t0 = performance.now();
+    const r = await this._read(gray, W, H, { info, fromCanvas: true, flip: this.flip, attempt: this.attempt++ }); if (!this.scanning) return false;
+    if (!r.texts) return false;
+    const done = this._consider(r.texts); if (this.lastDebug) this.lastDebug.ms = Math.round(performance.now() - t0);
+    if (!done) { this.onStatus(this.fails >= 3 ? 'No logro leer: acércate un poco, evita reflejos y mantén las 3 líneas dentro del recuadro.' : 'Confirmando…', 'warn'); return false; }
+    this.scanning = false; video.pause(); this._drawGuide(g, '#2ee59d'); this.onResult(done); return true;
+  }
+  async _loop() {
+    const { video } = this, id = this._lid = (this._lid || 0) + 1;                // un solo bucle activo a la vez
+    while (this.scanning && id === this._lid) {
+      try { if (video.readyState >= 2 && video.videoWidth && await this._step()) return; }
+      catch (e) { console.error(e); this.onStatus('Error: ' + e.message, 'err'); }
+      await sleep(40);
+    }
+  }
+  /** Foto de diagnóstico: lee UN cuadro sin esperar nitidez y devuelve lo que vio (recortes, texto de cada línea y qué falló). */
+  async diagnose() {
+    const { video } = this, vw = video.videoWidth, vh = video.videoHeight, g = this._guideRect(vw, vh);
+    const rx = Math.max(0, g.x - g.w * .03), ry = Math.max(0, g.y - g.h * .05), rw = Math.min(vw - rx, g.w * 1.06), rh = Math.min(vh - ry, g.h * 1.10), k = Math.min(1, MRZ_W / rw);
+    await this.ocr.load(); const { gray, w: W, h: H } = this._grab(video, rx, ry, rw, rh, k);
+    return this._diagnoseGray(gray, W, H, 'cuadro de video');
+  }
+  async _diagnoseGray(gray, W, H, source, flips = [false, true]) {
+    const out = { source, w: W, h: H, tries: [] }; let preview = null;
+    for (const flip of flips) {
+      const r = await this._read(gray, W, H, { flip, attempt: flip ? 1 : 0 });
+      if (!r.texts) { out.tries.push({ flip, found: false, bands: r.info.bands.length }); if (!flip) out.hint = 'No se distinguen 3 líneas de texto parecidas dentro del recuadro.'; continue; }
+      const p = parseMrz(r.texts.map(t => t.text)); out.tries.push({ flip, found: true, lines: r.texts.map(t => t.text), conf: r.texts.map(t => t.conf), parsed: p });
+      if (!preview) { const cw = Math.max(...r.crops.map(c => c.w)), ch = r.crops.reduce((a, c) => a + c.h, 0), cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+        let y = 0; r.crops.forEach(c => { cv.getContext('2d').putImageData(fromGray(c.g, c.w, c.h), 0, y); y += c.h; }); preview = cv.toDataURL('image/jpeg', .8); }
+      if (mrzStrong(p)) { out.parsed = p; break; }
+      if (p && !out.parsed) out.parsed = p;
+    }
+    out.preview = preview; return out;
+  }
+  /** Foto / galería: busca las 3 líneas en cualquier parte y orientación de la imagen. */
+  async scanImage(file) {
+    await this.ocr.load();
+    const bmp = await createImageBitmap(file), k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height)), W = Math.round(bmp.width * k), H = Math.round(bmp.height * k);
+    this.work.width = W; this.work.height = H; this.wctx.drawImage(bmp, 0, 0, W, H); if (bmp.close) bmp.close();
+    const gray = toGray(this.wctx.getImageData(0, 0, W, H)), loc = mrzLocate(gray, W, H);
+    const variants = loc ? [loc, loc.flip()] : [0, 1, 2, 3].map(r => mrzRot90(gray, W, H, r));
+    let best = null, dbg = { source: 'foto', w: W, h: H, tries: [], located: !!loc };
+    for (const v of variants) {
+      const d = await this._diagnoseGray(v.g, v.w, v.h, 'foto', [false]); dbg.tries.push(...d.tries); if (d.preview && !dbg.preview) dbg.preview = d.preview;
+      if (d.parsed && (!best || mrzStrong(d.parsed))) best = d.parsed; if (mrzStrong(best)) break;
+    }
+    this.lastDebug = dbg;
+    if (best && best.checks.birth && best.checks.expiry) { const strong = mrzStrong(best); this.onResult({ ...best, verificada: strong, aproximado: !strong }); return best; }
+    return null;
+  }
+}
+
 /* ============ Interfaz de la demo ============ */
 const $ = id => document.getElementById(id);
 const video = $('video'), overlay = $('overlay'), hint = $('hint'), status_ = $('status'),
@@ -785,6 +1201,14 @@ const scanner = new CedulaScanner({
   onStatus:  (msg, kind)   => setHint(msg, kind),
 });
 window.scanner = scanner; window.CedulaScanner = CedulaScanner; window.parseCedula = parseCedula;   // útiles para pruebas en consola
+const mrz = new MrzScanner({
+  onResult: d => { setStatus('Listo'); showMrz(d); },
+  onStatus: (msg, kind) => setHint(msg, kind),
+});
+window.mrz = mrz; window.parseMrz = parseMrz;
+let mode = 'old', oldReady = false;                          // 'old' = código de barras (PDF417) · 'new' = las 3 líneas de la cédula nueva
+const active = () => mode === 'new' ? mrz : scanner;
+const HINT_CAM = () => mode === 'new' ? 'Encaja las 3 líneas de letras y números dentro del recuadro.' : scanner.guideMode ? 'Encaja el código de barras dentro del recuadro.' : 'Muestra la parte de atrás de la cédula (la del código de barras).';
 
 function setStatus(t) { status_.textContent = t; }
 function setBusy(b) { document.querySelectorAll('#controls button, #controls label.btn').forEach(e => e.style.pointerEvents = b ? 'none' : ''); document.getElementById('controls').style.opacity = b ? .55 : 1; }
@@ -801,25 +1225,32 @@ async function startCamera() {
   const why = cameraBlockedReason();
   if (why) { setHint(why, 'err'); return; }
   try {
-    await scanner.startCamera(video, overlay);
+    await active().startCamera(video, overlay);
   } catch (e) {
     const msg = e.name === 'NotAllowedError' ? 'Permiso de cámara denegado (revisa el candado de la barra de direcciones).'
               : e.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo abrir la cámara (' + (e.name || e.message) + ').';
     setHint(msg + ' Puedes usar «Tomar foto».', 'err'); return;
   }
-  cameraOn = true; placeholder.hidden = true; btnStart.textContent = '⏹ Detener'; setStatus('Escaneando ' + ((scanner.track.getSettings && scanner.track.getSettings().height) ? scanner.track.getSettings().width + '×' + scanner.track.getSettings().height : '')); btnGuide.hidden = false; btnDiag.hidden = false; syncGuideUI();
-  setHint(scanner.guideMode ? 'Encaja el código de barras dentro del recuadro.' : 'Muestra la parte de atrás de la cédula (la del código de barras).');
-  const caps = scanner.track.getCapabilities ? scanner.track.getCapabilities() : {}; btnTorch.hidden = !caps.torch;
+  cameraOn = true; placeholder.hidden = true; btnStart.textContent = '⏹ Detener'; const trk = active().track; setStatus('Escaneando ' + ((trk.getSettings && trk.getSettings().height) ? trk.getSettings().width + '×' + trk.getSettings().height : '')); btnGuide.hidden = mode === 'new'; btnDiag.hidden = false; syncGuideUI();
+  setHint(HINT_CAM());
+  const caps = trk.getCapabilities ? trk.getCapabilities() : {}; btnTorch.hidden = !caps.torch;
 }
 function stopCamera() {
-  scanner.stop(); cameraOn = false; btnStart.textContent = '📷 Abrir cámara'; guide.classList.add('off'); placeholder.hidden = false; btnTorch.hidden = true; btnGuide.hidden = true; btnDiag.hidden = true; setStatus('Detenido');
+  scanner.stop(); mrz.stop(); cameraOn = false; btnStart.textContent = '📷 Abrir cámara'; guide.classList.add('off'); placeholder.hidden = false; btnTorch.hidden = true; btnGuide.hidden = true; btnDiag.hidden = true; setStatus('Detenido');
 }
 btnStart.addEventListener('click', () => cameraOn ? stopCamera() : startCamera());
 let torch = false;
-function syncGuideUI() { btnGuide.textContent = scanner.guideMode ? '🎯 Guía: sí' : '🔎 Guía: no'; guide.classList.toggle('off', scanner.guideMode || !cameraOn); }
+function syncGuideUI() { btnGuide.textContent = scanner.guideMode ? '🎯 Guía: sí' : '🔎 Guía: no'; guide.classList.toggle('off', mode === 'new' || scanner.guideMode || !cameraOn); }
 btnGuide.addEventListener('click', () => { scanner.setGuide(!scanner.guideMode); syncGuideUI(); setHint(scanner.guideMode ? 'Encaja el código de barras dentro del recuadro.' : 'Muestra la parte de atrás de la cédula (la del código de barras).'); });
 btnDiag.addEventListener('click', async () => {             // foto de diagnóstico: analiza a fondo UNA imagen y, si falla, muestra qué se analizó
   if (!cameraOn) return;
+  if (mode === 'new') {
+    mrz.scanning = false; setBusy(true); setStatus('Analizando…'); setHint('Leyendo un cuadro a fondo…', 'warn');
+    await new Promise(r => setTimeout(r, 200));
+    try { const d = await mrz.diagnose(); if (d.parsed && mrzStrong(d.parsed)) showMrz({ ...d.parsed, verificada: true }); else { setStatus('Sin lectura'); showMrzFail(d); } }
+    catch (e) { console.error(e); setHint('No pude procesar la imagen: ' + e.message, 'err'); setStatus('Error'); }
+    setBusy(false); return;
+  }
   scanner.scanning = false; setBusy(true); setStatus('Analizando…'); setHint('Tomando una foto de alta resolución y analizándola a fondo…', 'warn');
   await new Promise(r => setTimeout(r, 300));
   try {
@@ -831,9 +1262,9 @@ btnDiag.addEventListener('click', async () => {             // foto de diagnóst
 });
 $('stage').addEventListener('click', e => {                 // tocar la imagen = enfocar ahí (si el navegador lo permite)
   if (!cameraOn || !video.videoWidth) return; const r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight, k = Math.max(r.width / vw, r.height / vh);
-  scanner.refocus(((e.clientX - r.left) / k + (vw - r.width / k) / 2) / vw, ((e.clientY - r.top) / k + (vh - r.height / k) / 2) / vh);
+  active().refocus(((e.clientX - r.left) / k + (vw - r.width / k) / 2) / vw, ((e.clientY - r.top) / k + (vh - r.height / k) / 2) / vh);
 });
-btnTorch.addEventListener('click', async () => { torch = !torch; if (!(await scanner.setTorch(torch))) torch = false; });
+btnTorch.addEventListener('click', async () => { torch = !torch; if (!(await active().setTorch(torch))) torch = false; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && cameraOn) stopCamera(); });
 
 /* ---------- Foto / galería ---------- */
@@ -843,8 +1274,11 @@ async function onFile(file) {
   setBusy(true); setStatus('Analizando…'); setHint('Analizando la imagen a fondo (puede tardar hasta ~15 s)…', 'warn');
   await new Promise(r => setTimeout(r, 40));
   try {
-    const data = await scanner.scanImage(file, { budgetMs: 15000 });
-    if (!data && scanner.lastDebug && !scanner.lastDebug.how) { setStatus('Sin lectura'); showFail(scanner.lastDebug); }
+    if (mode === 'new') { const d = await mrz.scanImage(file); if (!d) { setStatus('Sin lectura'); showMrzFail(mrz.lastDebug || {}); } }
+    else {
+      const data = await scanner.scanImage(file, { budgetMs: 15000 });
+      if (!data && scanner.lastDebug && !scanner.lastDebug.how) { setStatus('Sin lectura'); showFail(scanner.lastDebug); }
+    }
   } catch (e) { console.error(e); setHint('No pude procesar la imagen: ' + e.message, 'err'); setStatus('Error'); }
   setBusy(false);
 }
@@ -864,7 +1298,7 @@ function openSheet(cls, title, html, againLabel, copyValue) {
   const cp = $('btnCopy'); if (cp) cp.onclick = async e => { const ok = await copyText(copyValue); const t = e.target.textContent; e.target.textContent = ok ? '¡Copiado!' : 'No se pudo copiar'; setTimeout(() => e.target.textContent = t, 1500); };
   $('sheet').hidden = false;
 }
-function closeSheet() { $('sheet').hidden = true; if (cameraOn) { scanner.resume(); setStatus('Escaneando'); setHint('Muestra la parte de atrás de la cédula.'); } else setHint('Listo para otra lectura.'); }
+function closeSheet() { $('sheet').hidden = true; if (cameraOn) { active().resume(); setStatus('Escaneando'); setHint(HINT_CAM()); } else setHint('Listo para otra lectura.'); }
 $('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
 
 function showResult(d, bytes) {
@@ -903,12 +1337,61 @@ function showFail(dbg) {
     <div class="row"><button class="primary" id="btnAgain"></button></div>`, 'Reintentar', '');
 }
 
+const chk = (ok, t) => `<span class="chk ${ok ? 'ok' : 'no'}">${ok ? '✓' : '·'} ${t}</span>`;
+function showMrz(d) {
+  if (navigator.vibrate) navigator.vibrate(120);
+  const c = d.checks || {}, dbg = mrz.lastDebug, ms = dbg && dbg.ms ? `<p class="note">Lectura: ${dbg.ms} ms</p>` : '';
+  openSheet(d.aproximado ? 'warn' : 'ok', 'Cédula leída' + (d.aproximado ? ' (lectura aproximada, verifica)' : ''), `
+    <div class="csv">${esc(d.linea)}</div>
+    <div class="grid">
+      <div><span>Cédula</span><b>${esc(d.cedula)}</b></div><div><span>Nacimiento</span><b>${esc(formatBirth(d.nacimiento))}</b></div>
+      <div><span>Primer nombre</span><b>${esc(d.nombre1) || '—'}</b></div><div><span>Segundo nombre</span><b>${esc(d.nombre2) || '—'}</b></div>
+      <div><span>Primer apellido</span><b>${esc(d.apellido1) || '—'}</b></div><div><span>Segundo apellido</span><b>${esc(d.apellido2) || '—'}</b></div>
+      <div><span>Sexo</span><b>${esc(d.sexo) || '—'}</b></div><div><span>Vence</span><b>${d.vencimiento ? esc(formatBirth(d.vencimiento)) : '—'}</b></div>
+    </div>
+    <div>${chk(c.birth, 'nacimiento')}${chk(c.expiry, 'vencimiento')}${chk(c.doc === true, 'n.º de documento')}${chk(c.composite === true, 'control general (incluye la cédula)')}</div>
+    <p class="note">Los nombres no tienen dígito de control: se confirman leyéndolos en dos cuadros iguales. Revisa que coincidan con la cédula.</p>
+    <div class="row"><button class="primary" id="btnCopy">Copiar línea</button><button id="btnAgain"></button></div>
+    ${ms}
+    <details><summary>Líneas leídas</summary><pre>${esc((d.lines || []).join('\n'))}</pre></details>
+    <p class="note">Todo se procesa en este dispositivo; los datos no se envían a ningún servidor.</p>`, 'Escanear otra', d.linea);
+}
+function showMrzFail(dbg) {
+  const tries = (dbg.tries || []), lines = tries.filter(t => t.found).map(t => (t.flip ? '(girado 180°)\n' : '') + t.lines.map((l, i) => l + '  [' + t.conf[i] + '%]').join('\n') + (t.parsed ? '\n→ ' + t.parsed.linea : '\n→ no se entendió la estructura')).join('\n\n');
+  const tips = ['Muestra el <b>reverso</b> de la cédula: las 3 líneas de letras y números (con muchos «&lt;») deben quedar dentro del recuadro, casi a todo el ancho.',
+    'Mantén el celular firme unos segundos para que enfoque; toca la pantalla sobre las líneas si hace falta.', 'Evita reflejos sobre el plástico: inclina un poco la cédula.', 'Mejor la cédula de plástico original que una copia o una pantalla.'];
+  openSheet('warn', 'No pude leer las 3 líneas', `
+    <p>${esc(dbg.hint || 'Revisa lo que se leyó abajo y vuelve a intentarlo.')}</p>
+    ${dbg.preview ? `<p class="note">Las 3 líneas tal como se las entregué al lector de texto:</p><img alt="líneas analizadas" src="${dbg.preview}" style="width:100%;border-radius:8px;border:1px solid var(--line);background:#fff">` : ''}
+    ${lines ? `<details open><summary>Texto leído</summary><pre>${esc(lines)}</pre></details>` : ''}
+    <ul class="note" style="padding-left:18px;margin:8px 0">${tips.map(t => `<li>${t}</li>`).join('')}</ul>
+    <div class="row"><button class="primary" id="btnAgain"></button></div>`, 'Reintentar', '');
+}
+
+/* ---------- Pestañas: cédula vieja (código de barras) / cédula nueva (3 líneas) ---------- */
+function setMode(m) {
+  if (m === mode) return;
+  if (cameraOn) stopCamera();
+  mode = m; document.querySelectorAll('#tabs .tab').forEach(b => { const on = b.dataset.mode === m; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  $('title').textContent = m === 'new' ? 'Lector de cédula nueva · 3 líneas' : 'Lector de cédula · PDF417';
+  placeholder.innerHTML = m === 'new' ? 'Pulsa <b>«Abrir cámara»</b> y muestra el <b>reverso</b> de la cédula nueva: las 3 líneas de letras y números de abajo.' : 'Pulsa <b>«Abrir cámara»</b> y muestra la parte de atrás de la cédula (la del código de barras).';
+  btnGuide.hidden = true; btnDiag.hidden = true; btnTorch.hidden = true; guide.classList.add('off');
+  if (m === 'new') {
+    btnStart.disabled = false; setStatus('Cargando lector de texto…'); setHint('Cargando el lector de texto… (la primera vez tarda unos segundos)', 'warn');
+    mrz.init().then(() => { if (mode === 'new' && !cameraOn) { setStatus('Listo'); setHint('Listo. Pulsa «Abrir cámara» o usa «Tomar foto».'); } })
+      .catch(e => { if (mode === 'new') { setStatus('Error'); setHint('No se pudo cargar el lector de texto: ' + e.message, 'err'); } });
+  } else if (oldReady) { btnStart.disabled = false; setStatus('Listo'); setHint('Listo. Pulsa «Abrir cámara» o usa «Tomar foto».'); }
+  else { btnStart.disabled = true; setStatus('Iniciando…'); setHint('Cargando decodificador…'); }
+}
+document.querySelectorAll('#tabs .tab').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
 /* ---------- Arranque ---------- */
 btnStart.disabled = true;
 scanner.init().then(() => {
+  oldReady = true; if (mode !== 'old') return;
   btnStart.disabled = false; setStatus('Listo'); setHint('Listo. Pulsa «Abrir cámara» o usa «Tomar foto».');
   const why = cameraBlockedReason(); if (why) setHint(why, 'warn');
-}).catch(e => { setStatus('Error'); setHint(e.message, 'err'); });
+}).catch(e => { if (mode !== 'old') return; setStatus('Error'); setHint(e.message, 'err'); });
 
 </script>
 </body>
