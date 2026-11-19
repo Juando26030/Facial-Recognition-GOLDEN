@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import almacen, almacen_moves as moves, almacen_novelties as nov, almacen_photos, audit_actions, inventory, inventory_svc
+from app import almacen, almacen_label, almacen_moves as moves, almacen_novelties as nov, almacen_photos, audit_actions, inventory, inventory_svc
 from app.auth import require_role_or_any
 from app.database import get_db
-from app.models import AuditAction, Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryNovelty, InventoryProduct, InventoryUnit, StaffUser
+from app.models import AppSetting, AuditAction, Event, EventChecklistRow, EventInventoryItem, InventoryMovement, InventoryNovelty, InventoryProduct, InventoryUnit, StaffUser
 from app.routers.inventory import _event as _inventory_event          # mismo acceso al evento que el inventario (cliente/empresa y alcance)
 from app.storage import get_storage
 from app.timeutil import to_local, utcnow
@@ -272,7 +272,30 @@ def labels(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends
             _ensure_product_code(db, p)
             out.append({"code": p.qr_code, "title": p.name, "subtitle": "Por modelo" if p.tracking == "modelo" else "Por cantidad"})
         db.commit()
-    return {"labels": out}
+    row = db.get(AppSetting, almacen_label.SETTING_KEY)
+    return {"labels": out, "template": almacen_label.load(row.value if row else None)}
+
+
+@router.get("/almacen/label-template")
+def get_label_template(db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    row = db.get(AppSetting, almacen_label.SETTING_KEY)
+    return {"template": almacen_label.load(row.value if row else None), "defaults": almacen_label.DEFAULTS}
+
+
+@router.put("/almacen/label-template")
+def put_label_template(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Guarda la plantilla de la etiqueta QR (la usan todos los que imprimen). Lo inválido se corrige a un valor permitido; devuelve lo que quedó guardado."""
+    import json
+    tpl = almacen_label.clean((data or {}).get("template"))
+    row = db.get(AppSetting, almacen_label.SETTING_KEY)
+    if row is None:
+        row = AppSetting(key=almacen_label.SETTING_KEY)
+        db.add(row)
+    row.value = json.dumps(tpl, ensure_ascii=False)
+    row.updated_at = utcnow()
+    audit_actions.record(db, staff, "update", "almacen_label_template", "1", "Plantilla de etiqueta QR")
+    db.commit()
+    return {"template": tpl}
 
 
 # ---------------------------------------------------------------- foto del elemento

@@ -20,6 +20,14 @@
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Error'); return d; }
   const send = (url, method, body) => j(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 
+  const STATUS_ES = { creado: 'Creado', en_proceso: 'En proceso', finalizado: 'Finalizado' };
+  function whereHtml(name, u, listOnly) {
+    const evs = (u.events || []).map((e) => `<li><strong>${esc(e.name)}</strong> · ${esc(STATUS_ES[e.status] || e.status)}${e.archived ? ' · archivado' : ''} · ${esc(e.qty_assigned)} asignado(s)${e.qty_out ? `, ${esc(e.qty_out)} salieron` : ''}</li>`).join('');
+    const units = u.units ? `<p class="gw-hint">Objetos con serial: ${esc(u.units)}</p>` : '';
+    const body = evs ? `<ul class="gw-list">${evs}</ul>` : '<p class="gw-hint">No está asignado a ningún evento.</p>';
+    return (listOnly ? '' : `«${esc(name)}»:`) + body + units;
+  }
+
   /* «Marca» · «Voltaje:número» -> [{label, kind}] (y de vuelta para editar). */
   function parseFields(text) {
     return String(text || '').split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
@@ -44,7 +52,7 @@
   }
 
   function prodRow(p) {
-    const btns = [];
+    const btns = [`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-prod-where="${p.id}" data-name="${esc(p.name)}" aria-label="¿Dónde está ${esc(p.name)}?">${icon('search')} ¿Dónde está?</button>`];
     if (!p.archived) {
       btns.push(`<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-prod-edit="${p.id}" aria-label="Editar ${esc(p.name)}">${icon('edit')} Editar</button>`);
       btns.push(`<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-prod-archive="${p.id}" data-name="${esc(p.name)}" aria-label="Archivar ${esc(p.name)}">${icon('trash')} Archivar</button>`);
@@ -152,9 +160,23 @@
       try { await busy(b, () => send(`/api/inventory/products/${b.dataset.prodArchive}/archive`, 'POST')); showToast('Producto archivado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
     } else if ((b = t('[data-prod-restore]'))) {
       try { await busy(b, () => send(`/api/inventory/products/${b.dataset.prodRestore}/restore`, 'POST')); showToast('Producto restaurado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
+    } else if ((b = t('[data-prod-where]'))) {
+      try {
+        const u = await busy(b, () => j(`/api/inventory/products/${b.dataset.prodWhere}/usage`));
+        await showConfirm(whereHtml(b.dataset.name, u), { variant: 'warning', title: '¿Dónde está?', confirmLabel: 'Cerrar' });
+      } catch (err) { showToast(err.message, 'error'); }
     } else if ((b = t('[data-prod-del]'))) {
-      if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE el producto «${esc(b.dataset.name)}»? No se puede deshacer y queda registrado.`, { confirmLabel: 'Eliminar definitivamente' }))) return;
-      try { await busy(b, () => send(`/api/inventory/products/${b.dataset.prodDel}`, 'DELETE')); showToast('Producto eliminado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
+      let u = null, force = false;
+      try { u = await busy(b, () => j(`/api/inventory/products/${b.dataset.prodDel}/usage`)); } catch (err) { showToast(err.message, 'error'); return; }
+      if (u.movements || u.novelties) {
+        await showConfirm(`«${esc(b.dataset.name)}» ya tiene salidas, entradas o novedades de almacén registradas: por su historial no se puede eliminar y se queda archivado.` + whereHtml('', u, true), { variant: 'warning', title: 'No se puede eliminar', confirmLabel: 'Entendido' });
+        return;
+      }
+      if (u.events.length || u.units) {
+        force = true;
+        if (!(await showConfirm(`«${esc(b.dataset.name)}» todavía está asignado. Si sigues, se quita de estos eventos${u.units ? ` y se eliminan sus ${u.units} objeto(s) con serial` : ''} y se elimina definitivamente (no se puede deshacer y queda registrado).` + whereHtml('', u, true), { confirmLabel: 'Quitar y eliminar' }))) return;
+      } else if (!(await showConfirm(`¿Eliminar DEFINITIVAMENTE el producto «${esc(b.dataset.name)}»? No se puede deshacer y queda registrado.`, { confirmLabel: 'Eliminar definitivamente' }))) return;
+      try { await busy(b, () => send(`/api/inventory/products/${b.dataset.prodDel}${force ? '?force=1' : ''}`, 'DELETE')); showToast('Producto eliminado', 'success'); load(); } catch (err) { showToast(err.message, 'error'); }
     }
   });
 

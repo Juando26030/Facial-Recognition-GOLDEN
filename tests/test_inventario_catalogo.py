@@ -319,3 +319,20 @@ def test_config_inventory_tab_for_admin_plus_and_inventory_page_for_managers(cli
     assert "event-inventory-plan.js" in client.get("/eventos/nuevo").text
     for name in ("inventory-catalog-admin.js", "event-inventory-plan.js"):
         assert client.get(f"/static/js/{name}").status_code == 200
+
+
+def test_delete_product_assigned_to_events_names_them_and_needs_force(client, factory, db):
+    """Un producto archivado pero asignado a un evento: «¿Dónde está?» lo dice, el borrado normal lo niega con los nombres y con force=1 lo quita de los eventos y se elimina."""
+    prod, _ = _setup(client, factory, db)
+    ev = factory.event("creado")
+    login(client, "sup")
+    assert client.put(f"/api/events/{ev.id}/inventory-plan", json={"lines": [{"product_id": prod["id"], "assigned": 2}]}).status_code == 200
+    client.post(f"/api/inventory/products/{prod['id']}/archive")
+    use = client.get(f"/api/inventory/products/{prod['id']}/usage").json()
+    assert [e["id"] for e in use["events"]] == [ev.id] and use["events"][0]["qty_assigned"] == 2 and use["movements"] == 0
+    r = client.delete(f"/api/inventory/products/{prod['id']}")
+    assert r.status_code == 409 and ev.name in r.json()["detail"]
+    assert db.get(InventoryProduct, prod["id"]) is not None
+    assert client.delete(f"/api/inventory/products/{prod['id']}?force=1").json() == {"deleted": True}
+    assert db.get(InventoryProduct, prod["id"]) is None
+    assert db.query(EventInventoryItem).filter_by(event_id=ev.id).count() == 0

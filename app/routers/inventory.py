@@ -261,16 +261,39 @@ def restore_product(product_id: int, db: Session = Depends(get_db), staff: Staff
     return _product_json(p)
 
 
+def product_usage(db: Session, p: InventoryProduct) -> dict:
+    """Dónde está un producto: eventos que lo tienen asignado, objetos con serial y si tiene historial (movimientos o novedades) que impide borrarlo."""
+    from app.models import InventoryMovement, InventoryNovelty
+    rows = (db.query(EventInventoryItem, Event).join(Event, Event.id == EventInventoryItem.event_id)
+            .filter(EventInventoryItem.product_id == p.id).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all())
+    events = [{"id": e.id, "name": e.name, "status": e.status, "archived": e.archived_at is not None, "qty_assigned": i.qty_assigned, "qty_out": i.qty_out} for (i, e) in rows]
+    return {"events": events, "units": db.query(InventoryUnit).filter(InventoryUnit.product_id == p.id).count(),
+            "movements": db.query(InventoryMovement).filter(InventoryMovement.product_id == p.id).count(),
+            "novelties": db.query(InventoryNovelty).filter(InventoryNovelty.product_id == p.id).count()}
+
+
+@router.get("/inventory/products/{product_id}/usage")
+def get_product_usage(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """«¿Dónde está?»: los eventos que tienen este producto (nombre, estado, cantidades) para decidir si se puede eliminar."""
+    return product_usage(db, _product(db, product_id))
+
+
 @router.delete("/inventory/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+def delete_product(product_id: int, force: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Eliminar definitivamente un producto ARCHIVADO. Con historial (movimientos o novedades) nunca; si solo está asignado a eventos o tiene objetos sin historial,
+    `force=true` (confirmado en pantalla con la lista de eventos) los quita y lo elimina; sin `force` el error dice en qué eventos está."""
     p = _product(db, product_id)
     if p.archived_at is None:
         _err("Archiva el producto antes de eliminarlo")
-    if db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).count():
-        _err("El producto está en el inventario de algún evento: no se puede eliminar (queda archivado)")
-    if db.query(InventoryUnit.id).filter(InventoryUnit.product_id == p.id).first() is not None:
-        _err("El producto tiene unidades con serial en el almacén (activas o archivadas): no se puede eliminar (queda archivado)")          # almacén, Pieza 1
-    audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name)
+    u = product_usage(db, p)
+    if u["movements"] or u["novelties"]:
+        _err("El producto ya tiene salidas, entradas o novedades de almacén registradas: por su historial no se puede eliminar (queda archivado)", 409)
+    if (u["events"] or u["units"]) and not force:
+        names = ", ".join(f"{e['name']} ({e['status']})" for e in u["events"][:5]) + (f" y {len(u['events']) - 5} más" if len(u["events"]) > 5 else "")
+        _err("El producto está asignado a: " + (names or "ningún evento") + (f" y tiene {u['units']} objeto(s) con serial" if u["units"] else "") + ". Confirma para quitarlo de ahí y eliminarlo.", 409)
+    db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).delete(synchronize_session=False)
+    db.query(InventoryUnit).filter(InventoryUnit.product_id == p.id).delete(synchronize_session=False)
+    audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name, f"Quitado de {len(u['events'])} evento(s) y {u['units']} objeto(s)" if (u["events"] or u["units"]) else None)
     db.delete(p)
     db.commit()
     return {"deleted": True}
