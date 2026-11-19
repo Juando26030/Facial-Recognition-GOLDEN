@@ -11,6 +11,12 @@
   };
   const BUSY = Object.keys(STEP_TEXT);
   let bar = null;
+  // La franja va en el encabezado, justo al lado del logo (fija con él); si la página no tiene ese encabezado, queda arriba del todo.
+  function place(el) {
+    const logo = document.querySelector('.golden-header-container .golden-logo');
+    if (logo && logo.parentNode) logo.parentNode.insertBefore(el, logo.nextSibling);
+    else document.body.insertBefore(el, document.body.firstChild);
+  }
 
   function paintProgress(text, cls) {
     if (!bar) return;
@@ -64,7 +70,7 @@
       info.className = 'gw-versionbar gw-versionbar--' + (ok ? 'ok' : 'warn');
       info.setAttribute('role', 'status');
       info.innerHTML = ok ? '<strong>Versión:</strong> al día con producción' + (d.local && d.local.commit && d.local.commit !== 'desconocida' ? ' (' + esc(d.local.commit) + ')' : '') + '.' : '<strong>Versión:</strong> ' + esc(d.message);
-      document.body.insertBefore(info, document.body.firstChild);
+      place(info);
       return;
     }
     bar = document.createElement('div');
@@ -77,7 +83,7 @@
       b.addEventListener('click', () => start(b));
       bar.appendChild(b);
     }
-    document.body.insertBefore(bar, document.body.firstChild);
+    place(bar);
     fetch('/api/ops/update-status', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((s) => { if (s && s.enabled && BUSY.includes(s.state)) poll(0); }).catch(() => {});      // si ya hay una en curso, sigue su avance
   }).catch(() => {});
 })();
