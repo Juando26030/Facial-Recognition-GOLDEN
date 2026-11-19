@@ -5,6 +5,9 @@
   #define AppVersion "0.0.0"
 #endif
 
+; Marca de hora (UTC, aaaammddhhmmss) de CUANDO se construyó este instalador; la fija build_en_cloudshell.sh. Sirve para avisar si se va a instalar encima de una versión MÁS NUEVA.
+#define BuildStamp GetEnv("GOLDEN_BUILD_STAMP")
+
 [Setup]
 AppId={{6F1B7C0E-2E43-4D8A-9B53-7A4C1D6E0F11}
 AppName=Golden Local
@@ -74,4 +77,43 @@ begin
         'if(-not $p){break}; $p | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }"';
   Exec('powershell.exe', Ps, '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
+end;
+
+// Antes de instalar: si ya hay una instalación MÁS NUEVA que este instalador (p. ej. se actualizó sola desde producción), se avisa y se recomienda bajar el instalador más reciente.
+function OnlyDigits(const T: String): String;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to Length(T) do
+    if (T[I] >= '0') and (T[I] <= '9') then Result := Result + T[I];
+end;
+
+function InitializeSetup(): Boolean;
+var
+  Path: String;
+  S: AnsiString;
+  P: Integer;
+  Inst, Mine: String;
+begin
+  Result := True;
+  Mine := '{#BuildStamp}';
+  Path := 'C:\GoldenLocal\app\.build_info';
+  if (Length(Mine) <> 14) or (not FileExists(Path)) then Exit;
+  if not LoadStringFromFile(Path, S) then Exit;
+  P := Pos('"date":"', String(S));
+  if P = 0 then Exit;
+  Inst := OnlyDigits(Copy(String(S), P + 8, 20));
+  if (Length(Inst) = 14) and (Inst > Mine) then
+  begin
+    if WizardSilent then
+    begin
+      Result := False;                 { instalación silenciosa: no se pisa una versión más nueva }
+      Exit;
+    end;
+    Result := MsgBox('Este equipo ya tiene instalada una versión MÁS RECIENTE de Golden Local (' + Copy(Inst, 1, 4) + '-' + Copy(Inst, 5, 2) + '-' + Copy(Inst, 7, 2) + ' ' + Copy(Inst, 9, 2) + ':' + Copy(Inst, 11, 2) + ' UTC) que este instalador (' + Copy(Mine, 1, 4) + '-' + Copy(Mine, 5, 2) + '-' + Copy(Mine, 7, 2) + ' ' + Copy(Mine, 9, 2) + ':' + Copy(Mine, 11, 2) + ' UTC).' + #13#10#13#10 +
+      'Si continúa, se sobrescribirá con una versión más vieja (después tendrá que actualizar de nuevo).' + #13#10#13#10 +
+      'Lo recomendable es CANCELAR y descargar el instalador más reciente (o dejar que Golden Local se actualice solo desde «Actualizar ahora»).' + #13#10#13#10 + '¿Instalar de todos modos?',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  end;
 end;

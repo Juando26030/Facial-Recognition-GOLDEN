@@ -66,10 +66,17 @@
   function isMecard(text) { return /^\s*MECARD:/i.test(String(text == null ? '' : text)); }
   function isLink(text) { return /^https?:\/\/\S+#GW:\S*$/i.test(String(text == null ? '' : text).trim()); }
 
-  function isVcard(text) { return /^\s*BEGIN:VCARD/i.test(String(text == null ? '' : text)); }
+  /* Lector 2D con el teclado de Windows en ESPAÑOL (19-nov-2026): el lector «teclea» como si el teclado fuera inglés, así que «:» sale «Ñ» y «;» sale «ñ»
+     («BEGINÑVCARDVERSIONÑ3.0NÑMORENO FLOREZñLUIS…»). Si el texto empieza con BEGINÑVCARD y no trae ningún «:», se deshace ese cambio. Los nombres con Ñ no importan: el código sale del NOTE. */
+  function fixLayout(text) {
+    const t = String(text == null ? '' : text);
+    if (t.indexOf(':') === -1 && /^\s*BEGIN[\u00d1\u00f1]VCARD/i.test(t)) return t.replace(/\u00d1/g, ':').replace(/\u00f1/g, ';');
+    return t;
+  }
+  function isVcard(text) { return /^\s*BEGIN:VCARD/i.test(fixLayout(text)); }
 
   function unwrap(text) {
-    const raw = String(text == null ? '' : text);
+    const raw = fixLayout(text);
     if (isLink(raw)) { const frag = raw.trim().slice(raw.trim().indexOf('#GW:') + 4); try { return decodeURIComponent(frag).trim(); } catch (e) { return frag.trim(); } }
     if (isMecard(raw)) { const mm = raw.match(/NOTE:GW:((?:\\.|[^;\\])*);/i); return mm ? mm[1].replace(/\\(.)/g, '$1').trim() : raw; }
     if (!isVcard(raw)) return raw;
@@ -84,7 +91,7 @@
      (el de build), buscando cada nombre desde donde terminó el anterior. Sirve igual con saltos de línea. Devuelve { campo: valor } con las claves en MAYÚSCULAS. */
   const ORDER = ['BEGIN:VCARD', 'VERSION:', 'N:', 'FN:', 'ORG:', 'TITLE:', 'TEL:', 'EMAIL:', 'CATEGORIES:', 'NOTE:', 'END:VCARD'];
   function fields(text) {
-    const t = String(text == null ? '' : text).replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, '');
+    const t = fixLayout(text).replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, '');
     const found = [];
     let pos = 0;
     for (const key of ORDER) {
@@ -110,9 +117,9 @@
     return { golden, code: golden ? unesc(note.replace(/^GW:/i, '')).trim() : '', name, phone: f.TEL || '' };
   }
   /* Una vCard que todavía se está escribiendo (el lector teclea carácter por carácter): sin END:VCARD no se busca nada. */
-  function isPartial(text) { return isVcard(text) && !/END:VCARD/i.test(String(text)); }
+  function isPartial(text) { return isVcard(text) && !/END:VCARD/i.test(fixLayout(text)); }
 
-  const api = { build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, fields, parseCard, isPartial, QR_LEVEL, PREFIX };
+  const api = { fixLayout, build, buildMecard, buildLink, unwrap, isVcard, isMecard, isLink, fields, parseCard, isPartial, QR_LEVEL, PREFIX };
   if (typeof window !== 'undefined') window.GWVcard = api;
   if (typeof module !== 'undefined') module.exports = api;       // para las pruebas en Node
 })();

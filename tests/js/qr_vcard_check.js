@@ -111,6 +111,13 @@ const ajena = SC.classifyQuery('BEGIN:VCARDVERSION:3.0FN:Juan AjenoTEL:555END:VC
 assert.deepStrictEqual([ajena.kind, ajena.words], ['texto', ['juan', 'ajeno']], 'vCard de un celular: se busca por el nombre');
 const gente = [{ id: '1', first_name: 'JENNIFER', last_name: 'HORTA POLANIA' }, { id: '1001', first_name: 'X', last_name: 'Y' }];
 assert.deepStrictEqual(SC.search(gente, SC.classifyQuery(plana)).map((r) => r.persona.id), ['1']);
+// lector con teclado de Windows en español (19-nov-2026): «:» llega como Ñ y «;» como ñ, sin saltos de línea
+const espanol = 'BEGINÑVCARDVERSIONÑ3.0NÑMORENO FLOREZñLUIS CARLOSñññFNÑLUIS CARLOS MORENO FLOREZTELÑ3115408570NOTEÑGWÑ479888ENDÑVCARD';
+assert.deepStrictEqual(V.parseCard(espanol), { golden: true, code: '479888', name: 'LUIS CARLOS MORENO FLOREZ', phone: '3115408570' });
+assert.strictEqual(V.unwrap(espanol), '479888');
+assert.strictEqual(SC.classifyQuery(espanol).kind, 'qr'); assert.strictEqual(SC.classifyQuery(espanol).cedula, '479888');
+assert.strictEqual(SC.classifyQuery('BEGINÑVCARDVERSIONÑ3.0NÑMORENO FLO').kind, 'vacio', 'mientras escribe, tampoco se busca');
+assert.strictEqual(V.fixLayout('Ñandú ñu'), 'Ñandú ñu', 'un texto normal con Ñ no se toca');
 console.log("versión por modo: código", v({ qr_mode: "code" }), "| enlace", v({ qr_mode: "link" }), "| MECARD", v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }), "| vCard completa", v({ vcard_fields: VF }));
     assert.ok(v({ qr_mode: "link" }) <= 6, "el enlace queda chico"); assert.ok(v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }) < v({ vcard_fields: VF }), "MECARD más chico que la vCard completa");
   }

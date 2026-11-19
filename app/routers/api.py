@@ -50,14 +50,18 @@ def person_missing_required(db: Session, event: Event, user: User) -> list:
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     all_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), attendee.get_categories() if attendee else [])          # lo obligatorio de la categoría de la persona
     field_configs = [c for c in all_configs if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
-    if not any(c["required"] for c in field_configs):
+    if not any(c["required"] for c in all_configs if not c.get("locked")):
         return []
     values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
               "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else ""}
     values["certificate"] = "true" if (attendee and attendee.certificate) else ""
     values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
     labels = set(_missing_required_fields(field_configs, values))
-    return [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]
+    if _last_name_error(field_configs, user.last_name):                      # 19-nov-2026: el apellido obligatorio también cuenta (`_missing_required_fields` lo salta porque no viaja en `values`)
+        labels.add(_last_name_label(field_configs))
+    if attendee is not None and not attendee.get_categories():              # «Tipo de asistente» obligatorio y sin elegir
+        labels.update(c["label"] for c in all_configs if c["field_type"] == "categories" and c["required"] and not c.get("locked"))
+    return [{"key": c["key"], "label": c["label"]} for c in all_configs if c["required"] and not c.get("locked") and c["label"] in labels]
 
 
 def missing_required_message(missing: list) -> str:

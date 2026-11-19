@@ -38,7 +38,7 @@
     else stamp.hidden = true;
   }
 
-  async function load(refresh) {
+  async function load(refresh, auto) {
     const btn = $('alRefresh');
     if (btn) btn.disabled = true;
     try {
@@ -46,8 +46,14 @@
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || 'No se pudo cargar el inventario');
       paint(d);
-      if (refresh && !d.warning && window.showToast) window.showToast('Inventario actualizado', 'success');
+      if (refresh && !d.warning && !auto && window.showToast) window.showToast('Inventario actualizado', 'success');
+      /* Servidor local: al abrir, si no hay foto del inventario o tiene más de 5 minutos, se intenta ponerla al día sola (si no hay internet, se deja la que haya, sin molestar). */
+      if (!refresh && d.source === 'local') {
+        const age = d.fetched_at ? Date.now() - new Date(d.fetched_at + (/[zZ]|[+-]\d\d:?\d\d$/.test(d.fetched_at) ? '' : 'Z')).getTime() : Infinity;
+        if (!d.available || age > 5 * 60 * 1000) { load(true, true); }
+      }
     } catch (e) {
+      if (auto) return;
       $('alList').setAttribute('aria-busy', 'false');
       $('alList').innerHTML = '<p class="gw-alert gw-alert--err" role="alert">' + esc(e.message) + '</p>';
     } finally { if (btn) btn.disabled = false; }

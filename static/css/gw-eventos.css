@@ -207,11 +207,8 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
 .cal-assign-chip--none { opacity: .6; cursor: default; }
 .cal-assign-chip--over { outline: 3px dashed var(--gw-ok-line); }
 
-/* Servidor local: mismo aspecto de filtros que Eventos (buscar + agrupar + actualizar en la misma tarjeta). */
-.sl-filters { grid-template-columns: minmax(0, 2fr) auto auto; }
-.sl-filters .sl-filters__chips { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); min-height: var(--gw-tap-lg); align-items: center; }
-.sl-filters .sl-filters__group { align-self: end; }
-.sl-filters .sl-filters__group .gw-label { display: block; }
-.sl-filters > .gw-btn { min-height: var(--gw-tap-lg); align-self: end; }
-@media (max-width: 760px) { .sl-filters { grid-template-columns: 1fr; } }
-@media (min-width: 641px) and (max-width: 1100px) { .sl-filters { grid-template-columns: minmax(0, 1fr); } .sl-filters > .gw-btn { justify-self: start; } }
+/* Servidor local: mismo aspecto de filtros que Eventos (buscar + agrupar + actualizar en la misma tarjeta); en pantalla estrecha, apilados. */
+.sl-filters { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; }
+.sl-filters > .gw-btn { align-self: end; min-height: var(--gw-tap-lg); white-space: nowrap; }
+@media (max-width: 900px) { .sl-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .sl-filters > .gw-field:first-child { grid-column: 1 / -1; } .sl-filters > .gw-btn { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .sl-filters { grid-template-columns: minmax(0, 1fr); } }

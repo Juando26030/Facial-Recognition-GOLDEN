@@ -63,7 +63,11 @@
     poll(0);
   }
 
-  fetch('/api/ops/version-check').then((r) => (r.ok ? r.json() : null)).then((d) => {
+  /* Vista de prueba de los estados (solo se ve, no cambia nada): añade a la dirección ?gwver=aldia | sincomprobar | desactualizada  (p. ej. https://localhost:8443/eventos?gwver=desactualizada). */
+  const PREVIEW = { aldia: 'igual', sincomprobar: 'desconocida', desactualizada: 'desactualizada' };
+  const pv = PREVIEW[new URLSearchParams(location.search).get('gwver')];
+  fetch('/api/ops/version-check').then((r) => (r.ok ? r.json() : null)).then((d0) => {
+    const d = pv && d0 && d0.configured ? Object.assign({}, d0, { status: pv, message: 'Vista de prueba: esto es solo para ver cómo se muestra el aviso.' }) : d0;
     if (!d || !d.configured) return;
     if (d.status === 'igual' || d.status === 'desconocida') {          // siempre se ve en qué estado está: al día o sin poder comprobar
       const info = document.createElement('div');
@@ -84,7 +88,7 @@
     if (d.status === 'desactualizada' || d.status === 'distinta_version') {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora';
-      b.addEventListener('click', () => start(b));
+      if (pv) { b.title = 'Vista de prueba: no actualiza'; b.addEventListener('click', () => { if (window.showToast) window.showToast('Vista de prueba: no se actualiza nada', 'info'); }); } else b.addEventListener('click', () => start(b));
       bar.appendChild(b);
     }
     place(bar);

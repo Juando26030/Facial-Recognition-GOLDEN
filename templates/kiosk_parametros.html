@@ -83,7 +83,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     <div class="gw-tabs" id="paramsRoot">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de parámetros" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la sección" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves cómo está esa sección.">
         <button type="button" class="gw-tab" role="tab" id="tab_registro" data-tab="registro" aria-controls="grp_registro" aria-selected="true">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Registro y pantalla</span><span class="gw-tab__sum">{{ event.directory_page_size or 50 }} filas · sesión {{ event.idle_minutes or idle_general_minutes }} min</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if local_server %}No disponible en el servidor local{% elif event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_invitaciones" data-tab="invitaciones" aria-controls="grp_invitaciones" aria-selected="false" tabindex="-1">{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">{% if event.aceptar_enabled %}Aceptación desde el celular activa{% else %}Aceptación desde el celular apagada{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_impresion" data-tab="impresion" aria-controls="grp_impresion" aria-selected="false" tabindex="-1">{{ ic('printer', 'gw-tab__icon') }}<span class="gw-tab__name">Impresión y reimpresión</span><span class="gw-tab__sum">Reimpresión {% if event.reprint_disabled %}deshabilitada{% else %}habilitada{% endif %}{% if event.shared_print_enabled %} · compartida{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_escarapelas" data-tab="escarapelas" aria-controls="grp_escarapelas" aria-selected="false" tabindex="-1">{{ ic('badge', 'gw-tab__icon') }}<span class="gw-tab__name">Escarapelas y certificados</span><span class="gw-tab__sum">Digital {% if event.digital_badge_enabled %}activa{% else %}apagada{% endif %} · certificados {% if event.certificates_enabled %}activos{% else %}apagados{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
@@ -169,8 +169,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         </section>
 
         {# ====================================================================================== RECONOCIMIENTO FACIAL #}
-        <section class="gw-tabpanel" role="tabpanel" id="grp_facial" data-group="facial" aria-labelledby="tab_facial" hidden>
+        <section class="gw-tabpanel" role="tabpanel" id="grp_facial" data-group="facial" aria-labelledby="tab_facial"{% if local_server %} inert data-local-nofacial{% endif %} hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Reconocimiento facial</h2><p class="gw-tabpanel__lead">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR.</p></div>
+          {% if local_server %}<div class="gw-alert gw-alert--warn" role="note">{{ ic('lock') }}<div class="gw-alert__body"><b>El reconocimiento facial no está disponible en el servidor local.</b> Aquí se registra por cédula, QR o búsqueda; el rostro solo se usa en internet. Esta sección queda bloqueada.</div></div>{% endif %}
 
           <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
           <div class="gw-group__item">
@@ -179,8 +180,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <fieldset class="gw-fieldset">
                 <legend class="gw-label">¿Este evento usa reconocimiento facial?</legend>
                 <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
-                <label class="gw-choice"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>Usa rostro.</b><span>Quien acepte entra con su rostro; quien no, por cédula o QR.</span></span></label>
-                <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled and not local_server %}checked{% endif %}{% if local_server %} disabled{% endif %}> <span class="gw-choice__text"><b>Usa rostro.</b><span>Quien acepte entra con su rostro; quien no, por cédula o QR.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled or local_server %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
               </fieldset>
 
               <div class="gw-field">
@@ -238,8 +239,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         </section>
 
         {# ====================================================================================== INVITACIONES #}
-        <section class="gw-tabpanel" role="tabpanel" id="grp_invitaciones" data-group="invitaciones" aria-labelledby="tab_invitaciones" hidden>
+        <section class="gw-tabpanel" role="tabpanel" id="grp_invitaciones" data-group="invitaciones" aria-labelledby="tab_invitaciones"{% if local_server %} inert data-local-nofacial{% endif %} hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Invitaciones</h2><p class="gw-tabpanel__lead">Que las personas acepten y se tomen la selfie desde su celular, antes de llegar.</p></div>
+          {% if local_server %}<div class="gw-alert gw-alert--warn" role="note">{{ ic('lock') }}<div class="gw-alert__body"><b>El reconocimiento facial no está disponible en el servidor local.</b> Aquí se registra por cédula, QR o búsqueda; el rostro solo se usa en internet. Esta sección queda bloqueada.</div></div>{% endif %}
           <div class="gw-group__item" data-psave="cc">
             <div class="gw-item-head"><h4>Aceptación desde el celular</h4>{% call ayuda('ay_aceptar', 'Aceptación desde el celular') %}Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en la puerta con el documento o el QR.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %}> Permitir aceptar y dar la selfie desde el celular antes del evento</label>

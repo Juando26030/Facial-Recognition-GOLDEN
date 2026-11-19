@@ -104,6 +104,18 @@
   .gw-event-card .p-cli__acts .p-cli__act { flex: 0 0 auto; font-size: var(--gw-fs-md); }
   .gw-event-card .p-cli__acts .p-cli__act:not(.p-cli__more):not(.p-cli__status) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
+/* Bajo 1200 px las tarjetas de evento van UNA por fila (nunca en cuadrícula de dos «cuadrados»): en pantalla mediana (700-1199 px) el texto a la izquierda y las acciones a la derecha, a lo largo;
+   en celular, apiladas. */
+@media (max-width: 1199px) {
+  .gw-event-list, .ev-list.gw-tenant__body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 700px) and (max-width: 1199px) {
+  .gw-event-list .gw-event-card, .ev-list .gw-event-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr; align-items: center; column-gap: var(--gw-sp-4); row-gap: var(--gw-sp-1); padding: var(--gw-sp-3) var(--gw-sp-4); }
+  .gw-event-card > .gw-card-row__head, .gw-event-card > .p-cli__meta { grid-column: 1; min-width: 0; }
+  .gw-event-card > .p-cli__acts { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(2, max-content); gap: var(--gw-sp-2); align-content: center; justify-content: end; margin: 0; }
+  .gw-event-card > .p-cli__acts > .p-cli__status { grid-column: auto; }
+  .gw-event-card > .p-cli__acts > .p-cli__status:last-child { grid-column: 1 / -1; }
+}
 /* 1200-1759 px: botones con menos separación y el aviso del informe en su versión corta (solo el ícono) para que el NOMBRE del evento tenga lugar (hasta dos renglones). */
 @media (min-width: 1200px) and (max-width: 1759px) {
   .gw-event-card .p-cli__acts .p-cli__act { gap: var(--gw-sp-1); }

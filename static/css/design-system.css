@@ -1225,3 +1225,6 @@
 .gw-linkqr__box { display: flex; justify-content: center; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); margin-bottom: var(--gw-sp-3); }
 .gw-linkqr__canvas { display: block; width: min(100%, 280px); height: auto; image-rendering: pixelated; }
 .gw-linkqr__url .gw-input { width: 100%; }
+
+/* Servidor local: las secciones del reconocimiento facial se ven apagadas y no se pueden tocar (el rostro solo existe en internet). */
+[data-local-nofacial] > :not(.gw-tabpanel__head):not(.gw-alert) { opacity: .5; pointer-events: none; }

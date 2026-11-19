@@ -106,9 +106,9 @@
   list.addEventListener('click', (e) => { const b = e.target.closest('[data-download]'); if (b) download(b); });
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 200); });
   document.addEventListener('click', (e) => {
-    const g = e.target.closest('[data-group]');
-    if (g) { group = g.dataset.group; document.querySelectorAll('[data-group]').forEach((x) => x.setAttribute('aria-pressed', String(x === g))); draw(); }
     if (e.target.closest('#slReload')) load();
   });
+  const groupSel = document.getElementById('slGroup');
+  if (groupSel) groupSel.addEventListener('change', () => { group = groupSel.value === 'calendar' ? 'calendar' : 'client'; draw(); });
   load();
 })();

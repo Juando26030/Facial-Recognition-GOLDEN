@@ -596,12 +596,13 @@
     /* Plan 8: aviso «Sin conexión». Solo se muestra si el navegador dice que no hay red, la copia de contingencia está activa o el último sondeo del directorio falló. No toca la sincronización. */
     (function () {
         const box = document.getElementById('gwOfflineAlert'); if (!box) return;
+        const LOCAL_NODE = {{ 'true' if local_server else 'false' }};          // servidor local: que no haya internet NO es «sin conexión» (los demás equipos llegan por la red del servidor); solo cuenta si falla el servidor
         let pollOk = true;
         const conn = document.getElementById('gwConn'), connText = document.getElementById('gwConnText'), connIcon = document.getElementById('gwConnIcon');
         const icons = (connIcon && connIcon.getAttribute('href') || '').split('#')[0];
         const update = () => {
             const GCi = window.GoldenContingency && window.GoldenContingency.instance;
-            const off = navigator.onLine === false || !pollOk || !!(GCi && GCi.active && GCi.active());
+            const off = (navigator.onLine === false && !LOCAL_NODE) || !pollOk || !!(GCi && GCi.active && GCi.active());
             box.hidden = !off;
             if (conn) {                                    // estado de conexión en palabras, con ícono y color (solo lo muestra; no toca la sincronización)
                 const saving = !!(GCi && GCi.active && GCi.active());

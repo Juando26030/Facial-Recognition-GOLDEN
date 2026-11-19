@@ -213,3 +213,16 @@ def test_checklist_de_inventario_foto_local(monkeypatch):
     guardado["evinv:7"].value = "{no es json"
     assert ec.load_snapshot(db, 7) is None
     assert ec.snapshot_key(7) == "evinv:7" and json.loads('{"lines": []}')["lines"] == []
+
+
+def test_local_bloquea_el_rostro_en_parametros_y_no_muestra_sin_conexion_por_falta_de_internet():
+    """19-nov-2026: en el servidor local «Usa rostro» está bloqueado (pantalla y servidor) y la falta de internet no se muestra como «Sin conexión» en Registro."""
+    import pathlib
+    tpl = pathlib.Path("templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert 'id="bsFacial" value="on"' in tpl and "{% if local_server %} disabled{% endif %}" in tpl and "data-local-nofacial" in tpl
+    api = pathlib.Path("app/routers/consents.py").read_text(encoding="utf-8")
+    assert "localmode.is_local_server()" in api and "LOCAL_NO_FACE_MSG" in api
+    reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
+    assert "navigator.onLine === false && !LOCAL_NODE" in reg
+    js = pathlib.Path("static/js/kiosk-alistamiento.js").read_text(encoding="utf-8")
+    assert "load(true, true)" in js          # al abrir, el inventario se pone al día solo si hay internet

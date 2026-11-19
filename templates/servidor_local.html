@@ -56,11 +56,8 @@
     <div class="ev-filters gw-card-row sl-filters">
       <div class="gw-field"><label class="gw-label" for="slSearch">Buscar</label>
         <input class="gw-input" type="search" id="slSearch" placeholder="Evento, código o cliente" autocomplete="off" spellcheck="false"></div>
-      <div class="gw-field sl-filters__group"><span class="gw-label" id="slGroupLbl">Agrupar</span>
-        <div class="sl-filters__chips" role="group" aria-labelledby="slGroupLbl">
-          <button type="button" class="gw-chip" data-group="client" aria-pressed="true">Por cliente</button>
-          <button type="button" class="gw-chip" data-group="calendar" aria-pressed="false">Por calendario</button>
-        </div></div>
+      <div class="gw-field"><label class="gw-label" for="slGroup">Agrupar</label>
+        <select id="slGroup" class="gw-select"><option value="client">Por cliente</option><option value="calendar">Por calendario</option></select></div>
       <button type="button" class="gw-btn gw-btn--secondary" id="slReload">Actualizar lista</button>
     </div>
     <div id="slEvents" class="ev-list gw-tenant__body" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>

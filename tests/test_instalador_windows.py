@@ -73,3 +73,12 @@ def test_instalador_cierra_procesos_antes_de_reinstalar():
     for svc in ("GoldenLocalUpdater", "GoldenLocalApp", "GoldenLocalDB"):
         assert f"stop {svc}" in iss
     assert "Stop-Process -Force" in iss and "StartsWith($d" in iss
+
+
+def test_instalador_avisa_si_pisa_una_version_mas_nueva():
+    """El instalador compara su hora de construcción con el .build_info instalado y pide confirmar antes de sobrescribir algo más nuevo (silencioso: se niega)."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8")
+    assert "function InitializeSetup" in iss and "#define BuildStamp" in iss and ".build_info" in iss
+    assert "Inst > Mine" in iss and "WizardSilent" in iss and "MB_DEFBUTTON2" in iss
+    sh = (WIN / "build_en_cloudshell.sh").read_text(encoding="utf-8")
+    assert "GOLDEN_BUILD_STAMP" in sh and "date -u +%Y%m%d%H%M%S" in sh

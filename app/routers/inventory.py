@@ -371,11 +371,13 @@ def get_checklist(event_id: int, refresh: bool = False, db: Session = Depends(ge
     if not localmode.is_local_server():
         return {"source": "nube", "available": True, "fetched_at": None, "warning": None, "lines": event_checklist.cloud_lines(db, event.id)}
     warning = None
+    if refresh and not getattr(event, "cloud_event_id", None):
+        warning = "Este evento no está vinculado con el de la nube (se importó a mano): el inventario no se puede traer desde internet."
     if refresh and getattr(event, "cloud_event_id", None):
         try:
             event_checklist.save_snapshot(db, event.id, cloud_client.inventory_checklist(event.cloud_event_id))
             db.commit()
-        except cloud_client.CloudError as e:
+        except Exception as e:          # noqa: BLE001  (sin internet, token vencido, evento de otro servidor…)
             db.rollback()
             warning = f"No se pudo actualizar desde internet: {e}"
     snap = event_checklist.load_snapshot(db, event.id)
