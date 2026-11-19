@@ -690,7 +690,7 @@
                 modes: ['old', 'new', 'qr'],                       // selector dentro de la misma ventana: cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
                 onCedula: (d) => {                                 // lectores de cédula (static/js/cedula-readers.js): mismo camino que el PDF417 de siempre
                     if (!window.directorySearch) return;
-                    window.directorySearch.submitScannedCedula(d.cedula, { nombres: [d.nombre1, d.nombre2].filter(Boolean).join(' '), apellidos: [d.apellido1, d.apellido2].filter(Boolean).join(' ') });
+                    window.directorySearch.scanCedulaCard(d.cedula, { nombres: [d.nombre1, d.nombre2].filter(Boolean).join(' '), apellidos: [d.apellido1, d.apellido2].filter(Boolean).join(' ') });
                     sc.close();                                    // al reconocer la cédula la cámara se cierra sola
                 },
                 onPhoto: processMrzPhoto,
