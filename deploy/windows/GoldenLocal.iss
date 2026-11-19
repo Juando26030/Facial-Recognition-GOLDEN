@@ -64,5 +64,6 @@ var
 begin
   Exec('net.exe', 'stop GoldenLocalUpdater', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('net.exe', 'stop GoldenLocalApp', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec('net.exe', 'stop GoldenLocalDB', '', SW_HIDE, ewWaitUntilTerminated, Code);          { PostgreSQL mantiene abiertas sus DLL (icudt77.dll...): sin pararlo, reinstalar encima falla con «Acceso denegado» }
   Result := '';
 end;
