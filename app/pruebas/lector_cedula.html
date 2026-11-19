@@ -705,18 +705,17 @@ class CedulaScanner {
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
     if (!r && this.scanning && !sharp && attempts % 6 === 0) r = await this._tryCandidate(work, best || fallback, PLANS.deep, performance.now() + 1200);     // respaldo periódico aunque no se mida enfoque
-    if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 700) {                 // enfocado: análisis a fondo de ESTE cuadro
+    if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 1500) {                 // enfocado: análisis a fondo de ESTE cuadro
       this._lastDeep = performance.now();
       if (best) r = await this._tryCandidate(work, best, PLANS.deep, this._lastDeep + 1600);                 // el rectángulo preciso del localizador primero
       if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1400);
     }
-    if (!r && this.scanning && sharp && this.autoStill && now - (this._lastStill || 0) > 1800) {     // enfocado y sin lectura: foto fija de alta resolución, con tope de tiempo
+    if (!r && this.scanning && sharp && this.autoStill && now - (this._lastStill || 0) > 3000) {     // enfocado y sin lectura: foto fija de alta resolución, con tope de tiempo
       this._lastStill = performance.now(); const blob = await this.captureStill();
-      if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 2500 }); if (d) { if (this.lastDebug) { this.lastDebug.how = 'foto fija · ' + this.lastDebug.how; this.lastDebug.ms = Math.round(performance.now() - this.startedAt); } this.scanning = false; video.pause(); return true; } }
+      if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 2500 }); if (d) { this.scanning = false; video.pause(); return true; } }
     }
     if (!this.scanning) return false;
     if (!r) return false;
-    this.lastDebug = { w: vw, h: vh, cands: [], how: 'cuadro de video · ' + r.how, ms: Math.round(performance.now() - this.startedAt), ppm, hint: '', preview: null };
     this.scanning = false; video.pause(); this._drawGuide(g, '#2ee59d', null, off, k); this._handle(CedulaScanner._bytes(r.hit)); return true;
   }
   /** Un intento en modo libre (busca el código en todo el cuadro). Devuelve true si leyó la cédula. */
