@@ -299,6 +299,7 @@ const ZX_URLS = [
 const MAX_SIDE = 1920;
 const GAP_MS = 60;
 const GUIDE_AR = 4.8;                          // proporción ancho/alto del recuadro guía (el PDF417 de la cédula es ~5:1)
+const SHARP_MIN = .30;                         // nitidez mínima (energía de bordes a un módulo / contraste) para gastar análisis a fondo
 const MODULES_EST = 340;                       // módulos aprox. de ancho del PDF417 de la cédula (para estimar px/módulo)
 const ROIS = [[0,0,1,1],[0,.3,1,.7],[0,0,1,.7],[.08,.08,.84,.84]];
 const SCALES = [[1100,{}],[600,{}],[600,{minFill:.3,dh:.22,dv:.22}]];
@@ -432,6 +433,9 @@ const PLANS = {
     { mult: 1.5, flip: false, variants: ['raw', 'stretch', 'binar', 'bandA', 'denoise'] },
     { mult: 1,   flip: true,  variants: [...V3, 'bandA'] },
     { mult: 1,   flip: true,  variants: ['dewarp', 'denoise'] },
+    { mult: 1,   flip: false, pad: .08, variants: ['raw', 'stretch', 'bandA', 'binar'] },                // con zona de silencio blanca alrededor
+    { mult: 1,   flip: false, pad: .08, variants: ['stretch', 'bandA'], rot: -4 },
+    { mult: 1,   flip: false, pad: .08, variants: ['stretch', 'bandA'], rot: 4 },
     // barrido de giro: el localizador puede errar el ángulo unos grados y un código inclinado en el recorte no se lee
     ...[-5, 5, -10, 10, -16, 16].map(rot => ({ mult: 1, flip: false, rot, variants: ['stretch', 'bandA', 'binar'] })),
   ],
@@ -444,7 +448,7 @@ class CedulaScanner {
   /** opts.legacy = true -> comportamiento de la versión 2 (solo para comparar) */
   constructor({ onResult = () => {}, onUnknown = () => {}, onStatus = () => {}, legacy = false, autoStill = true, guide = true } = {}) {
     Object.assign(this, { onResult, onUnknown, onStatus, legacy, autoStill, guideMode: guide });
-    [this.ana, this.actx] = mk(); [this.crop, this.cctx] = mk(); [this.work, this.wctx] = mk();
+    [this.ana, this.actx] = mk(); [this.crop, this.cctx] = mk(); [this.work, this.wctx] = mk(); [this.shc, this.shx] = mk();
     this.useMin = false; this.scanning = false; this.stream = null; this.track = null; this.lastDebug = null;
   }
 
@@ -500,12 +504,14 @@ class CedulaScanner {
     }
     this.ana.width = aw; this.ana.height = ah; this.actx.imageSmoothingQuality = 'high'; this.actx.drawImage(cur, 0, 0, cw, ch, 0, 0, aw, ah);
   }
-  _cropCandidate(src, c, flip, mult = 1, dAng = 0) {
+  _cropCandidate(src, c, flip, mult = 1, dAng = 0, pad = 0) {
     const target = Math.min(2200, Math.max(1400, c.L)) * mult, k = Math.min(4, target / c.L);
-    const ow = Math.min(4200, Math.max(32, Math.round(c.L * k))), oh = Math.min(1600, Math.max(16, Math.round(c.W * k)));
+    const iw = Math.min(4200, Math.max(32, Math.round(c.L * k))), ih = Math.min(1600, Math.max(16, Math.round(c.W * k)));
+    const ow = pad ? Math.round(iw * (1 + 2 * pad)) : iw, oh = pad ? Math.round(ih * (1 + 4 * pad)) : ih;      // pad = zona de silencio blanca alrededor
     const { crop, cctx } = this; crop.width = ow; crop.height = oh;
     cctx.save(); cctx.fillStyle = '#fff'; cctx.fillRect(0, 0, ow, oh);
-    cctx.translate(ow / 2, oh / 2); cctx.rotate(-c.angle - dAng + (flip ? Math.PI : 0)); cctx.scale(ow / c.L, oh / c.W); cctx.translate(-c.cx, -c.cy);
+    if (pad) { cctx.beginPath(); cctx.rect((ow - iw) / 2, (oh - ih) / 2, iw, ih); cctx.clip(); }
+    cctx.translate(ow / 2, oh / 2); cctx.rotate(-c.angle - dAng + (flip ? Math.PI : 0)); cctx.scale(iw / c.L, ih / c.W); cctx.translate(-c.cx, -c.cy);
     cctx.imageSmoothingQuality = 'high'; cctx.drawImage(src, 0, 0); cctx.restore();
     return cctx.getImageData(0, 0, ow, oh);
   }
@@ -514,13 +520,13 @@ class CedulaScanner {
     const cache = new Map();
     for (const st of plan) {
       if (performance.now() > deadline) return null;
-      const key = st.mult + '|' + st.flip + '|' + (st.rot || 0); let base = cache.get(key);
-      if (!base) { base = this._cropCandidate(src, c, st.flip, st.mult, (st.rot || 0) * Math.PI / 180); cache.set(key, base); }
+      const key = st.mult + '|' + st.flip + '|' + (st.rot || 0) + '|' + (st.pad || 0); let base = cache.get(key);
+      if (!base) { base = this._cropCandidate(src, c, st.flip, st.mult, (st.rot || 0) * Math.PI / 180, st.pad || 0); cache.set(key, base); }
       for (const vn of st.variants) {
         if (performance.now() > deadline) return null;
         const img = VARIANTS[vn](base); if (!img) continue;
         const hit = CedulaScanner._hit(await this._decode(img, st.opts || 'def'));
-        if (hit) return { hit, cand: c, how: `${vn}@${st.mult}${st.flip ? '/180°' : ''}${st.rot ? '/rot' + st.rot : ''}${st.opts ? '/' + st.opts : ''}` };
+        if (hit) return { hit, cand: c, how: `${vn}@${st.mult}${st.flip ? '/180°' : ''}${st.rot ? '/rot' + st.rot : ''}${st.pad ? '/pad' : ''}${st.opts ? '/' + st.opts : ''}` };
       }
     }
     return null;
@@ -574,7 +580,7 @@ class CedulaScanner {
     dbg.ms = Math.round(performance.now() - t0);
     if (!cands.length) dbg.hint = 'No se distingue ningún código PDF417. Enfoca el reverso de la cédula, con el código ocupando buena parte de la foto.';
     else if (dbg.ppm < 1.8) dbg.hint = `El código se ve muy pequeño o pixelado (≈${dbg.ppm} px por módulo; se necesitan ≥2.5). Acércate para que ocupe casi todo el ancho de la foto.`;
-    else dbg.hint = 'El código se encontró pero está borroso, con reflejos o con trama de pantalla. Enfoca bien (toca la pantalla sobre el código), usa buena luz y evita fotografiar otra pantalla.';
+    else dbg.hint = 'El código se encontró pero no se pudo leer. Puede estar borroso o con reflejos, o ser una fotocopia, una impresión o una pantalla: esas copias pierden detalle del código y no se recuperan. Prueba con la cédula de plástico original, bien enfocada.';
     if (cands.length) { const im = this._cropCandidate(bmp, cands[0], false, 1), cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height; cv.getContext('2d').putImageData(im, 0, 0); dbg.preview = cv.toDataURL('image/jpeg', .85); }
     { const k = Math.min(1, 720 / Math.max(bmp.width, bmp.height)), t = document.createElement('canvas'); t.width = Math.round(bmp.width * k); t.height = Math.round(bmp.height * k); t.getContext('2d').drawImage(bmp, 0, 0, t.width, t.height); dbg.thumb = t.toDataURL('image/jpeg', .7); }
     this.onStatus(dbg.hint, 'err');
@@ -590,7 +596,7 @@ class CedulaScanner {
       catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e; }
     }
     if (!this.stream) throw last || new Error('No se pudo abrir la cámara');
-    this.track = this.stream.getVideoTracks()[0]; this._ic = null; this.stillError = ''; this._hintedPhoto = false;
+    this.track = this.stream.getVideoTracks()[0]; this._ic = null; this.stillError = ''; this._hintedPhoto = false; this._sh = []; this._lastDeep = 0; this._lastStill = 0;
     try { await this.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
     video.srcObject = this.stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
     this.scanning = true; this.startedAt = performance.now(); this._loop();
@@ -668,25 +674,44 @@ class CedulaScanner {
       octx.closePath(); octx.stroke();
     }
   }
-  /** Un intento en modo guía. Devuelve true si leyó la cédula. */
+  /** Nitidez del recuadro guía (en el lienzo `work`): energía de bordes a ~1 módulo sobre el contraste. ~.6 = muy nítido, <.3 = borroso. */
+  _sharp(gx, gy, gw, gh) {
+    const W = 1000, H = Math.max(40, Math.round(W * gh / gw)), c = this.shc, x = this.shx; c.width = W; c.height = H;
+    x.imageSmoothingQuality = 'high'; x.drawImage(this.work, gx, gy, gw, gh, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H).data, g = new Uint8Array(W * H); for (let i = 0; i < g.length; i++) g[i] = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8;
+    const y0 = Math.floor(H * .25), y1 = Math.ceil(H * .75); let s1 = 0, m = 0, n = 0;
+    for (let y = y0; y < y1; y += 2) { const o = y * W; for (let xx = 6; xx < W - 6; xx++) { const a = g[o + xx + 1] - g[o + xx - 1]; s1 += a * a; m += g[o + xx]; n++; } }
+    m /= n; let v = 0; for (let y = y0; y < y1; y += 2) { const o = y * W; for (let xx = 6; xx < W - 6; xx++) { const q = g[o + xx] - m; v += q * q; } }
+    return (s1 / n) / (v / n + 1);
+  }
+  /** Un intento en modo guía. Devuelve true si leyó la cédula. Lo barato (plan rápido) se hace en cada cuadro; lo caro (análisis a fondo y foto fija) solo cuando el código está ENFOCADO. */
   async _guideStep(attempts) {
-    const { video, work, wctx } = this, vw = video.videoWidth, vh = video.videoHeight, g = this._guideRect(vw, vh);
+    const { video, work, wctx } = this, vw = video.videoWidth, vh = video.videoHeight, g = this._guideRect(vw, vh), now = performance.now();
     const rx = Math.max(0, g.x - g.w * .04), ry = Math.max(0, g.y - g.h * .9), rw = Math.min(vw - rx, g.w * 1.08), rh = Math.min(vh - ry, g.h * 2.8);
     const k = Math.min(1, 2600 / rw), ww = Math.round(rw * k), wh = Math.round(rh * k), off = { x: rx, y: ry };
-    work.width = ww; work.height = wh; wctx.drawImage(video, rx, ry, rw, rh, 0, 0, ww, wh);
+    work.width = ww; work.height = wh; wctx.drawImage(video, rx, ry, rw, rh, 0, 0, ww, wh);       // copia fija del cuadro: lo que se analiza no cambia aunque muevas el celular
     const gx = (g.x - rx) * k, gy = (g.y - ry) * k, gw = g.w * k, gh = g.h * k;
     const fallback = { cx: gx + gw / 2, cy: gy + gh / 2, angle: 0, L: gw * 1.08, W: gh * 1.22 };          // el recuadro tal cual, con un poco de margen
     const found = this.findCandidates(work, ww, wh).filter(c => c.L > gw * .75 && c.L < gw * 1.5 && Math.hypot(c.cx - fallback.cx, c.cy - fallback.cy) < gh * 1.2);
     const best = found[0] || null, ppm = +((best ? best.L / k : g.w * 1.08) / 1.28 / MODULES_EST).toFixed(1);
-    this._drawGuide(g, best ? '#ffc857' : 'rgba(255,255,255,.9)', best, off, k);
-    this.guideInfo = { ppm, found: !!best };
+    const sharpNow = this._sharp(gx, gy, gw, gh), hist = this._sh = (this._sh || []).filter(h => now - h.t < 2500); hist.push({ t: now, v: sharpNow });
+    const peak = Math.max(...hist.map(h => h.v)), sharp = !!best && sharpNow >= SHARP_MIN && sharpNow >= .9 * peak;       // enfocado = hay código, nítido y cerca de lo mejor de los últimos 2,5 s
+    this._drawGuide(g, sharp ? '#2ee59d' : best ? '#ffc857' : 'rgba(255,255,255,.9)', best, off, k);
+    this.guideInfo = { ppm, found: !!best, sharp: +sharpNow.toFixed(2) };
     const tall = vh > vw;
-    this.onStatus(ppm < 3.4 && tall ? 'Gira el celular a horizontal y acércate: así el código sale más nítido.' : ppm < 2.4 ? 'Acércate un poco: el código se ve pequeño.' : !best ? 'Encaja el código de barras dentro del recuadro.' : 'Código detectado, mantén el celular firme…', best || ppm < 3.4 ? 'warn' : '');
+    this.onStatus(ppm < 3.4 && tall ? 'Gira el celular a horizontal y acércate: así el código sale más nítido.' : ppm < 2.4 ? 'Acércate un poco: el código se ve pequeño.'
+      : !best ? 'Encaja el código de barras dentro del recuadro.' : sharp ? 'Enfocado, analizando…' : 'Enfocando… mantén el celular firme.', best ? 'warn' : '');
     let r = null;
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
-    if (!r && this.scanning && attempts % 4 === 0) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1500);
-    if (!r && best && this.scanning && attempts % 4 === 2) r = await this._tryCandidate(work, best, PLANS.deep, performance.now() + 1200);
+    if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 1500) {                 // enfocado: análisis a fondo de ESTE cuadro
+      this._lastDeep = performance.now(); r = await this._tryCandidate(work, fallback, PLANS.deep, this._lastDeep + 1800);
+      if (!r && best && this.scanning) r = await this._tryCandidate(work, best, PLANS.deep, performance.now() + 1000);
+    }
+    if (!r && this.scanning && sharp && this.autoStill && now - (this._lastStill || 0) > 3000) {     // enfocado y sin lectura: foto fija de alta resolución, con tope de tiempo
+      this._lastStill = performance.now(); const blob = await this.captureStill();
+      if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 2500 }); if (d) { this.scanning = false; video.pause(); return true; } }
+    }
     if (!this.scanning) return false;
     if (!r) return false;
     this.scanning = false; video.pause(); this._drawGuide(g, '#2ee59d', null, off, k); this._handle(CedulaScanner._bytes(r.hit)); return true;
@@ -730,13 +755,14 @@ class CedulaScanner {
           const finished = this.guideMode && !this.legacy ? await this._guideStep(attempts) : await this._freeStep(attempts);
           if (finished || !this.scanning) { if (finished) return; break; }
           // si pasan ~7 s sin leer, se pide una foto fija de alta resolución al sensor y se analiza a fondo
-          if (this.autoStill && !this.legacy && performance.now() - lastStill > 4000) {
+          if (this.autoStill && !this.legacy && !this.guideMode && performance.now() - lastStill > 4000) {
             lastStill = performance.now(); this.onStatus('Analizando una foto de alta resolución…', 'warn');
             const blob = await this.captureStill();
             if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 6000 }); if (d) { this.scanning = false; this.video.pause(); return; } }
             if (this.scanning && performance.now() - this.startedAt > 9000 && !this._hintedPhoto) { this._hintedPhoto = true; this.onStatus('Si no lee en vivo, usa «Tomar foto»: abre la cámara del celular, que es mucho más nítida.', 'warn'); }
           }
         }
+        if (this.guideMode && this.scanning && performance.now() - this.startedAt > 12000 && !this._hintedPhoto) { this._hintedPhoto = true; this.onStatus('Si no lee en vivo, usa «Tomar foto»: abre la cámara del celular, que es mucho más nítida.', 'warn'); }
       } catch (e) { console.error(e); this.onStatus('Error: ' + e.message, 'err'); }
       await sleep(GAP_MS);
     }
@@ -864,12 +890,12 @@ function showUnknown(bytes) {
 function showFail(dbg) {
   const tips = ['Toma la foto al <b>reverso</b> de la cédula, con el código ocupando casi todo el ancho.',
     'Toca la pantalla sobre el código para que enfoque antes de disparar.', 'Buena luz, sin reflejos ni sombras sobre el código.',
-    'Fotografía la cédula <b>física</b>: una foto a otra pantalla añade una trama que estropea el código.'];
+    'Usa la cédula de <b>plástico original</b>: una fotocopia, una impresión o una pantalla ya perdieron detalle del código y no se recupera.'];
   const info = `Imagen ${dbg.w}×${dbg.h}` + (dbg.source ? ` (${dbg.source})` : '') + ` · ${dbg.cands.length} zona(s) candidata(s)` + (dbg.ppm ? ` · ≈${dbg.ppm} px por módulo (ideal ≥ 2.5)` : '') + ` · ${dbg.ms} ms`;
   openSheet('warn', 'No pude leer el código', `
     <p>${esc(dbg.hint)}</p>
-    ${dbg.preview ? `<p class="note">Zona que se analizó:</p><img alt="zona analizada" src="${dbg.preview}" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ''}
-    ${dbg.thumb ? `<p class="note">Imagen completa analizada:</p><img alt="imagen completa" src="${dbg.thumb}" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ''}
+    ${dbg.preview ? `<p class="note">Zona que se analizó (recorte de la imagen original):</p><img alt="zona analizada" src="${dbg.preview}" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ''}
+    ${dbg.thumb ? `<p class="note">Miniatura de la imagen completa (solo para mostrarla aquí; el análisis usa la imagen original sin reducir):</p><img alt="imagen completa" src="${dbg.thumb}" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ''}
     <p class="note">${esc(info)}</p>
     <ul class="note" style="padding-left:18px;margin:8px 0">${tips.map(t => `<li>${t}</li>`).join('')}</ul>
     <div class="row"><button class="primary" id="btnAgain"></button></div>`, 'Reintentar', '');
