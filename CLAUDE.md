@@ -31,6 +31,7 @@ app/storage.py         archivos: LocalStorage | GcsStorage (STORAGE_BACKEND); cl
 app/uploads.py         subida directa de archivos grandes (URLs firmadas / PUT local)
 app/jobs.py            cola en Postgres; la despierta un hilo (JOBS_BACKEND=db) o Cloud Tasks (cloudtasks)
 app/bulk_jobs.py       carga masiva con progreso: hilo (BULK_BACKEND=thread) o Cloud Run Job (cloudrun, app/bulk_runner.py)
+app/name_index.py      cédula no encontrada → candidatos por NOMBRE (índice por cliente; misma regla que api._identity_name_matches; no recorrer personas a mano)
 app/faces.py           reconocimiento: matriz del evento en memoria, cálculo en procesos hijo (face_worker.py), biometrics.py
 app/formlib.py         lógica pura de formularios; app/formsvc.py lo que toca la base (cupo atómico: form_reserve_slot)
 app/ops.py             estado del sistema; app/ops_runner.py Job horario (respaldos, purga, cola, precalentamiento: app/warmup.py)

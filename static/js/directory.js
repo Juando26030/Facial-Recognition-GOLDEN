@@ -1213,6 +1213,14 @@
       } catch (err) { pollSignal(false); /* sin red: se reintenta en el siguiente ciclo */ }
     }
 
+    /* Después de un escaneo o de deshacer: solo lo que cambió (`refresh`, por cursor) en vez de volver a bajar TODO el directorio. Con 40.000 personas la recarga completa eran
+       40 peticiones de 1.000 filas y repintar la tabla en CADA escaneo (lento para la estación y carga innecesaria para el servidor). Si no hay cursor todavía, si el directorio
+       está en modo local o si el total no cuadra, `refresh` cae a la recarga completa de siempre. */
+    async function syncAfterScan() {
+      if (loading) { await loading; return; }
+      if (cursor && !localMode) { await refresh(); return; }
+      await reload();
+    }
     function reload() {
       if (loading) T('directory:reload-joined-in-flight');          // ya hay una carga en curso: esta llamada espera a ESA (si está colgada en una petición, espera con ella)
       if (!loading) loading = fullLoad().finally(() => { loading = null; checkIncomplete(); });
@@ -1311,7 +1319,7 @@
           if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
           applyFlags(data);
           if (window.BadgePrint && BadgePrint.releaseClaim) BadgePrint.releaseClaim(data.user_id || acc.id);       // PR3 (causa B/T5): volver a acreditar a la misma persona dentro de los 30 s sí imprime
-          await reload();
+          await reload();          // deshacer QUITA un ingreso: el incremental no ve bajas, así que aquí sí va la recarga completa
         }
         showToast(`Acreditación de ${acc.name} deshecha`, 'success');
       } catch (e) { showToast('No se pudo deshacer: sin conexión con el servidor', 'error'); }
@@ -1443,7 +1451,7 @@
           // primer campo vacío; al guardar queda acreditado(a) en el mismo paso y la autoimpresión imprime después, con el dato ya lleno.
           const faltan = (data.missing || []).map((m) => m.label).join(', ');
           verdict('warn', 'Falta un dato obligatorio', faltan);
-          await reload();
+          await syncAfterScan();
           const person = allUsers.find((u) => u.id === data.data.id) || Object.assign({ status: 'No registrado' }, data.data);
           const nombre = `${data.data.first_name || ''} ${data.data.last_name || ''}`.trim();
           // Se AVISA y se ofrece abrir «Editar persona» (antes se abría sola o solo salía un aviso que se iba): no se acredita hasta completar el dato.
@@ -1468,7 +1476,7 @@
           }
           applyFlags(data);
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print, skip: data.auto_print_skip });
-          await reload();
+          await syncAfterScan();
           clearSearchBox();                                         // 5-nov-2026: acreditar deja la caja vacía (antes dejaba la cédula escrita)
           return;
         }
@@ -1477,7 +1485,7 @@
           // real: antes esto acreditaba igual, quedaba "verde" sin querer) — se deja la fila
           // filtrada y VISIBLE pero SIN acreditar (blanco/"No registrado"); un botón puntual en
           // esa misma fila confirma con un clic, sin modal aparte.
-          await reload();
+          await syncAfterScan();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
           const row = document.querySelector(`#directoryTableBody tr[data-user-id="${CSS.escape(data.data.id)}"]`);
           const actionTd = row ? row.querySelector('.action-cell') : null;

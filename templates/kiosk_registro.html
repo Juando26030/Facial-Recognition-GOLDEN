@@ -682,6 +682,7 @@
         box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     }
 
+    if (scanQrBtn && canAccredit && window.QrScanner && QrScanner.warm) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara ya no traba)
     if (scanQrBtn && canAccredit) {
         scanQrBtn.addEventListener('click', () => {
             const sc = QrScanner.open({
