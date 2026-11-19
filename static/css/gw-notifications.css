@@ -17,7 +17,7 @@
 .gw-versionbar--err { background: var(--gw-err-bg); color: var(--gw-err-text); }
 /* En pantalla ancha el encabezado es fijo y tapaba la franja de versión (solo se veía en pantallas angostas): ahí pasa a una etiqueta fija abajo a la izquierda, encima de la barra de guardado. */
 @media (min-width: 901px) {
-  .gw-versionbar { position: fixed; z-index: 1100; left: calc(220px + var(--gw-sp-4)); bottom: 5.5rem; max-width: min(34rem, calc(100vw - 220px - 2 * var(--gw-sp-4))); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); text-align: left; font-size: var(--gw-fs-sm); }
+  .gw-versionbar { position: fixed; top: auto; z-index: 1100; left: calc(220px + var(--gw-sp-4)); bottom: 5.5rem; max-width: min(34rem, calc(100vw - 220px - 2 * var(--gw-sp-4))); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); text-align: left; font-size: var(--gw-fs-sm); }
   body.sidebar-collapsed .gw-versionbar { left: var(--gw-sp-4); }
 }
 

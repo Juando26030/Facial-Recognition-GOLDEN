@@ -10,10 +10,16 @@ def _leer(ruta):
 
 def test_barra_se_oculta_sin_bloques_editables():
     js = _leer("static/js/params-save.js")
-    assert "gw-savebar--vacia" in js and "[data-psave]" in js and "MutationObserver" in js
+    assert "gw-savebar--vacia" in js and "[data-psave]" in js and "MutationObserver" in js and "getClientRects" in js
     assert ".gw-savebar.gw-savebar--vacia { display: none; }" in _leer("static/css/design-system.css")
 
 
 def test_worker_sin_copia_espera_la_red_sin_tope():
     sw = _leer("static/js/kiosk-sw.js")
     assert "(await cached()) ? await withTimeout(req) : await fetch(req)" in sw
+
+
+def test_franja_de_version_no_se_estira_en_pantalla_ancha():
+    css = _leer("static/css/gw-notifications.css")
+    bloque = css.split("@media (min-width: 901px)", 1)[1].split("}", 1)[0]
+    assert "top: auto" in bloque

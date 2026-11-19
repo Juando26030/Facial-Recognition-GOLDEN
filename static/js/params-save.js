@@ -186,12 +186,16 @@
             e.preventDefault(); e.returnValue = '';
             return '';
         });
-        // La barra solo aparece donde hay algo que guardar: sin ningún bloque editable ([data-psave]) en la pantalla y sin cambios pendientes, se oculta (pantallas de consulta).
+        // La barra solo aparece donde hay algo que guardar: sin ningún campo editable VISIBLE ([data-psave] fuera de pestañas ocultas y de «Editar…» plegados) y sin cambios pendientes, se oculta (pantallas de consulta).
         function syncVisibility() {
-            const quiet = ctl.snapshot().state === 'idle' && !rootEl.querySelector('[data-psave]');
-            bar.classList.toggle('gw-savebar--vacia', quiet);
+            const editable = Array.from(rootEl.querySelectorAll('[data-psave]')).some((el) => el.getClientRects().length > 0);
+            bar.classList.toggle('gw-savebar--vacia', ctl.snapshot().state === 'idle' && !editable);
         }
-        try { new win.MutationObserver(syncVisibility).observe(rootEl, { childList: true, subtree: true }); } catch (e) { /* sin observador: se revisa en cada cambio de estado */ }
+        let pending = false;
+        const later = () => { if (pending) return; pending = true; win.setTimeout(() => { pending = false; syncVisibility(); }, 30); };
+        try { new win.MutationObserver(later).observe(rootEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'open'] }); } catch (e) { /* sin observador: se revisa con los clics */ }
+        rootEl.addEventListener('toggle', later, true);
+        rootEl.addEventListener('click', later);
         render(ctl.snapshot());
         syncVisibility();
         return ctl;
