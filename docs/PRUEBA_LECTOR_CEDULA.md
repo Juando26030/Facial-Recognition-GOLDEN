@@ -29,3 +29,19 @@ lee con OCR las **3 líneas de letras, números y «<»** del reverso (zona legi
 - **Dependencia externa:** `tesseract.js@5.1.1` y el idioma `eng` (`@tesseract.js-data/eng`) desde `cdn.jsdelivr.net` (respaldo `unpkg.com`); se descargan la primera vez (~5–10 MB) y quedan en caché del navegador.
   Un trabajador de OCR por línea, cada uno con su lista de caracteres permitidos (línea 2 solo dígitos y `MFCOLX<`; línea 3 solo letras y `<`).
 - **Pruebas:** `node tests/js/mrz_parser_check.js` (parser, datos sintéticos). El OCR en sí se valida con cédulas físicas en el celular (no hay datos reales en el repo).
+
+
+## Quiosco: Registro → «Escanear» (cédula vieja · cédula nueva · QR) — 19-nov-2026
+El botón **Escanear** (junto a «Registrar nuevo» en `/kiosk/<evento>/registro`) abre la MISMA ventana de cámara de siempre (`static/js/qr.js`, `QrScanner.open`), ahora con un selector
+**Cédula vieja · Cédula nueva · QR** (`modes`). El diseño no cambia; se recuerda el último modo elegido (`localStorage`, clave `gw_scan_mode`; por defecto QR).
+
+- **QR:** exactamente lo de antes (QR de escarapela/dinámico, y el PDF417 por `BarcodeDetector` si el navegador lo trae; el botón «Foto del reverso» sigue ahí, solo en este modo).
+- **Cédula vieja / nueva:** al elegirlas se carga `static/js/cedula-readers.js` (los mismos lectores de la página de prueba) con recuadro guía sobre el video. El resultado entra por el mismo camino que el PDF417 de siempre:
+  `directorySearch.submitScannedCedula(cédula, {nombres, apellidos})`. La misma cédula quieta frente a la cámara no se envía dos veces (4 s) y tras cada lectura sigue con la siguiente persona.
+  **Cédula nueva solo entrega lecturas VERIFICADAS** (dígitos de control en regla, incluido el general que cubre la cédula, y nombres confirmados): para acreditar a alguien no se acepta una lectura «aproximada».
+- **Fuente única:** `static/js/cedula-readers.js` está GENERADO desde `app/pruebas/lector_cedula.html` (`python scripts/build_cedula_readers.py`); `tests/js/mrz_parser_check.js` falla si quedó desactualizado.
+  Cualquier ajuste al lector se hace en la página de prueba y se regenera.
+- **Sin CDN / sin internet (pendiente):** hoy zxing-wasm, tesseract.js y el idioma se bajan del CDN la primera vez (y quedan en caché del navegador). `scripts/vendor_cedula_readers.sh` (correr una vez con internet) deja
+  una copia propia en `static/vendor/cedula/` que los lectores usan primero. **Ese script no se ha ejecutado** (el entorno de desarrollo no tiene red). Sin esa copia, el modo cédula necesita internet la primera vez en cada dispositivo;
+  el modo QR sigue funcionando sin red como siempre.
+- **CSP:** la política «Report-Only» del panel ahora lista `cdn.jsdelivr.net`/`unpkg.com` (script/connect) y `'wasm-unsafe-eval'`; no bloquea nada.

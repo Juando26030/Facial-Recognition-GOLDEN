@@ -4,3 +4,8 @@
 .gw-cam .gw-alert { margin-top: var(--gw-sp-3); }
 .gw-cam__status { margin: var(--gw-sp-3) 0 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-cam__status--err { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); }
+/* Escáner con selector «Cédula vieja · Cédula nueva · QR» (qr.js, opción `modes`): el lienzo del recuadro guía va encima del video */
+.gw-cam__modes { margin-bottom: var(--gw-sp-3); }
+.gw-cam__stage { position: relative; }
+.gw-cam__overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: var(--gw-radius-md); }
+.gw-cam__overlay[hidden] { display: none; }
