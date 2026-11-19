@@ -14,8 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import almacen_novelties, audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
-from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any
+from app import almacen_novelties, audit_actions, event_checklist, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
+from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, get_event_for_staff, require_role, require_role_or_any
 from app.database import get_db
 from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, InventoryUnit, StaffUser
 from app.timeutil import to_local, utcnow
@@ -360,6 +360,26 @@ def list_inventory_events(q: str = "", db: Session = Depends(get_db), staff: Sta
         if len(rows) >= 300:
             break
     return {"events": rows}
+
+
+@router.get("/events/{event_id}/inventory-checklist")
+def get_checklist(event_id: int, refresh: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Lo que se alistó para el evento según el checklist de inventario, SOLO PARA CONSULTAR en el quiosco (tarjeta «Inventario»). En la nube sale de la base; en un servidor local, de la
+    foto que se guardó al descargar el evento (con `refresh=1` y conexión se vuelve a pedir a la nube). Sin datos de personas."""
+    event = get_event_for_staff(event_id, db, staff)
+    from app import cloud_client, localmode
+    if not localmode.is_local_server():
+        return {"source": "nube", "available": True, "fetched_at": None, "warning": None, "lines": event_checklist.cloud_lines(db, event.id)}
+    warning = None
+    if refresh and getattr(event, "cloud_event_id", None):
+        try:
+            event_checklist.save_snapshot(db, event.id, cloud_client.inventory_checklist(event.cloud_event_id))
+            db.commit()
+        except cloud_client.CloudError as e:
+            db.rollback()
+            warning = f"No se pudo actualizar desde internet: {e}"
+    snap = event_checklist.load_snapshot(db, event.id)
+    return {"source": "local", "available": snap is not None, "fetched_at": snap.get("fetched_at") if snap else None, "warning": warning, "lines": snap["lines"] if snap else []}
 
 
 @router.get("/events/{event_id}/inventory-plan")

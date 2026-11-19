@@ -188,3 +188,28 @@ def test_modo_local_bloquea_facial_y_paginas_solo_nube():
         assert lm.is_cloud_only_page("GET", ruta)
     assert not lm.is_cloud_only_page("GET", "/eventos") and not lm.is_cloud_only_page("GET", "/kiosk/19/inventario")
     assert not lm.is_cloud_only_page("POST", "/inventario")
+
+
+def test_checklist_de_inventario_foto_local(monkeypatch):
+    """La foto del checklist se serializa y se vuelve a leer tal cual; una foto dañada se ignora."""
+    import json
+    from types import SimpleNamespace as NS
+
+    from app import event_checklist as ec
+
+    guardado = {}
+
+    class FakeDB:
+        def get(self, _model, key):
+            return guardado.get(key)
+
+        def add(self, row):
+            guardado[row.key] = row
+
+    monkeypatch.setattr(ec, "AppSetting", lambda key, value, updated_at: NS(key=key, value=value, updated_at=updated_at))
+    db = FakeDB()
+    ec.save_snapshot(db, 7, [{"name": "Portátil", "assigned": 2}])
+    assert ec.load_snapshot(db, 7)["lines"] == [{"name": "Portátil", "assigned": 2}]
+    guardado["evinv:7"].value = "{no es json"
+    assert ec.load_snapshot(db, 7) is None
+    assert ec.snapshot_key(7) == "evinv:7" and json.loads('{"lines": []}')["lines"] == []

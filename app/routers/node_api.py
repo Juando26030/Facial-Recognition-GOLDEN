@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 
-from app import event_lease, event_transfer
+from app import event_checklist, event_lease, event_transfer
 from app.database import get_db
 from app.models import AuditAction, Event
 from app.models import LocalNode
@@ -62,6 +62,15 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
     log.info("node_package event=%s bytes=%s", event_id, len(data))
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", event.event_code or "evento")
     return Response(content=data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="evento_{name}.zip"', "Cache-Control": "no-store"})
+
+
+@router.get("/node/events/{event_id}/inventory-checklist")
+def node_inventory_checklist(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
+    """El checklist de inventario del evento (lo alistado), para consultarlo en el servidor local. Solo hacia el servidor que TIENE el evento; sin datos de personas."""
+    event = _event(db, event_id)
+    if event.local_node_name != node.name:
+        raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local.")
+    return {"lines": event_checklist.cloud_lines(db, event.id)}
 
 
 @router.post("/node/events/{event_id}/lease")

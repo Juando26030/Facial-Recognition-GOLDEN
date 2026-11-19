@@ -105,6 +105,11 @@ def download_event(cloud_event_id: int) -> bytes:
     return _request("GET", f"/api/node/events/{int(cloud_event_id)}/package", timeout=DOWNLOAD_TIMEOUT, raw=True)
 
 
+def inventory_checklist(cloud_event_id: int) -> list:
+    """Checklist de inventario del evento (lo alistado), solo lectura."""
+    return _request("GET", f"/api/node/events/{int(cloud_event_id)}/inventory-checklist").get("lines", [])
+
+
 def take_lease(cloud_event_id: int) -> dict:
     """Pone el evento en ESTE servidor (la nube lo muestra en solo lectura). Idempotente para el mismo nombre; 409 si ya está en otro."""
     return _request("POST", f"/api/node/events/{int(cloud_event_id)}/lease", {"node_name": node_name()})
