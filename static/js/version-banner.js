@@ -83,8 +83,8 @@
     bar = document.createElement('div');
     bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' || d.status === 'distinta_version' ? 'err' : 'warn');          // sin comprobar = naranja; no está al día = rojo
     bar.setAttribute('role', 'alert');
-    bar.title = d.message || '';
-    bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Versión adelantada' : 'Versión desactualizada'}</strong></span>`;
+    bar.title = (d.status === 'adelantada' ? 'Versión adelantada. ' : 'Versión desactualizada. ') + (d.message || '');
+    bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Adelantada' : 'Desactualizada'}</strong></span>`;
     if (d.status === 'desactualizada' || d.status === 'distinta_version') {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora';
@@ -93,5 +93,25 @@
     }
     place(bar);
     fetch('/api/ops/update-status', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((s) => { if (s && s.enabled && BUSY.includes(s.state)) poll(0); }).catch(() => {});      // si ya hay una en curso, sigue su avance
+  }).catch(() => {});
+
+  /* «Conectar: 192.168.1.20:8443» (azul, junto a la versión): la dirección que otros equipos de la MISMA red escriben en el navegador para usar este servidor local. Clic = copia el enlace.
+     Solo en servidores locales; el instalador ya abre el puerto en el cortafuegos para la red local (install.ps1). */
+  fetch('/api/ops/local-address').then((r) => (r.ok ? r.json() : null)).then((a) => {
+    if (!a || !a.configured || !a.addresses || !a.addresses.length) return;
+    const url = (ip) => 'https://' + ip + ':' + a.port;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'gw-versionbar gw-versionbar--info';
+    chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador (la primera vez acepta el aviso del certificado). Clic para copiar el enlace.';
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong>Conectar:</strong> ' + esc(a.addresses[0] + ':' + a.port) + '</span>';
+    chip.addEventListener('click', () => {
+      const text = url(a.addresses[0]);
+      const done = () => { if (window.showToast) window.showToast('Enlace copiado: ' + text, 'success'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { if (window.showToast) window.showToast(text, 'info'); });
+      else if (window.showToast) window.showToast(text, 'info');
+    });
+    const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+    if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
   }).catch(() => {});
 })();

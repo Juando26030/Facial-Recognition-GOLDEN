@@ -24,7 +24,7 @@ API_ALLOWED_PREFIXES = (
     "/api/email-assets/",
 )
 # Solo lectura (GET): catálogos que las pantallas del evento necesitan y que el coordinador temporal no puede cambiar.
-API_GET_ONLY_PREFIXES = ("/api/colors", "/api/event-states", "/api/event-template", "/api/event-types", "/api/calendar/", "/api/settings/golden-logo-height", "/api/ops/version-check")
+API_GET_ONLY_PREFIXES = ("/api/colors", "/api/event-states", "/api/event-template", "/api/event-types", "/api/calendar/", "/api/settings/golden-logo-height", "/api/ops/version-check", "/api/ops/local-address")
 # Rutas puntuales de /api/staff que usa «Usuarios del evento» (restablecer contraseña y correo de los digitadores del evento; cada una valida a quién puede administrar).
 API_ALLOWED_REGEX = (re.compile(r"^/api/staff/\d+/(password|email)$"),)
 # Excepciones DENTRO de los prefijos permitidos: cosas que cruzan eventos o crean otros.

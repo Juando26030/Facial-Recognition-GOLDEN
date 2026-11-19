@@ -118,6 +118,19 @@ def version_check(request: Request, force: bool = False) -> dict:
     return versioning.check(force=force)
 
 
+@router.get("/api/ops/local-address")
+def local_address(request: Request) -> dict:
+    """Solo servidores locales: la IP y el puerto para conectar OTROS equipos de la misma red a este servidor (se muestra junto al aviso de versión). En la nube: {configured: false}. Pide sesión; sin base de datos."""
+    from app import localmode
+    if not localmode.is_local_server():
+        return {"configured": False}
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    host = (request.headers.get("host") or "").rsplit(":", 1)
+    port = int(host[1]) if len(host) == 2 and host[1].isdigit() else int(os.getenv("LOCAL_APP_PORT", "8443"))
+    return {"configured": True, "port": port, "addresses": localmode.lan_addresses()}
+
+
 @router.get("/api/ops/update-manifest")
 def update_manifest() -> dict:
     """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público y sin base de datos."""

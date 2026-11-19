@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import report_jobs
 from app import node_sync, local_installer
 from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
@@ -102,6 +102,17 @@ async def lifespan(_app: FastAPI):
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    try:          # servidor LOCAL: los eventos que ya estaban descargados con el rostro activado se dejan sin rostro (aquí no corre la biometría)
+        from app import localmode as _lm
+        if _lm.is_local_server():
+            _db = SessionLocal()
+            try:
+                if _lm.enforce_no_face(_db):
+                    log.info("servidor local: rostro apagado en eventos descargados con el reconocimiento facial activo")
+            finally:
+                _db.close()
+    except Exception:  # noqa: BLE001
+        log.warning("no se pudo apagar el rostro de los eventos locales al arrancar", exc_info=True)
     node_sync.start()                     # servidor LOCAL (LOCAL_SERVER=1 con token): sube a la nube cada ~30 min; en la nube no hace nada
     publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
@@ -992,6 +1003,9 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     # effective_roles (Fase 15, 2026-09-17): considera el rol secundario si tiene uno (doble rol
     # coordinador+comercial) — tanto para el mínimo jerárquico como para exclude_roles abajo.
     staff_roles = effective_roles(staff_user)
+    from app import localmode as _lm
+    if _lm.is_local_server():
+        _lm.enforce_no_face(db, event)          # un evento descargado antes con el rostro activo no queda «atrapado» en la pantalla de la cámara
     if min_role and max(ROLE_HIERARCHY[r] for r in staff_roles) < ROLE_HIERARCHY[min_role]:
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     # exclude_roles (2026-09-16): para vistas que NO siguen la jerarquía de min_role — ej.

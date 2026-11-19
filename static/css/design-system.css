@@ -537,6 +537,13 @@
 .gw-workarea__summary { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-4); border-bottom: 1px solid var(--gw-border); background: var(--gw-surface-2); }
 .gw-workarea__summary:empty { display: none; }
 .gw-workarea__list { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+/* Pantalla BAJA (ventana pequeña, portátil con barras del navegador, celular horizontal): reservar «pantalla menos lo de arriba» dejaba la lista en 2-3 filas con desplazamiento interno y la página
+   con huecos. Ahí la zona de trabajo crece con su contenido y desplaza la PÁGINA; la barra de búsqueda se queda pegada arriba mientras se baja. */
+@media (max-height: 860px) {
+  .gw-workarea, .gw-registro .gw-workarea { height: auto; min-height: 0; overflow: visible; }
+  .gw-workarea__list { overflow: visible; }
+  .gw-workarea__bar { position: sticky; top: 3.4rem; z-index: 5; }          /* debajo del encabezado fijo */
+}
 .gw-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-3); }
 .gw-toolbar__grow { flex: 1 1 18rem; min-width: 0; }
 .gw-toolbar__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }

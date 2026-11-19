@@ -49,3 +49,58 @@ def is_cloud_only_page(method: str, path: str) -> bool:
 def mail_disabled() -> bool:
     """En un servidor local no se envían correos ni notificaciones externas (las manda la nube)."""
     return is_local_server()
+
+
+def lan_addresses() -> list:
+    """Direcciones IPv4 de ESTE equipo dentro de la red local (las que otros computadores/celulares usan para abrir el sistema), la de la ruta principal primero. Sin internet también funciona:
+    no se envía nada, solo se pregunta al sistema por qué interfaz saldría. Se descartan 127.x y 169.254.x (sin red)."""
+    import ipaddress
+    import socket
+    found = []
+
+    def add(ip: str) -> None:
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            return
+        if a.version == 4 and a.is_private and not a.is_loopback and not a.is_link_local and ip not in found:
+            found.append(ip)
+
+    for probe in ("10.255.255.255", "192.168.255.255", "172.31.255.255", "8.8.8.8"):          # la interfaz que usaría para salir (UDP: no envía nada)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+                sk.settimeout(0.2)
+                sk.connect((probe, 9))
+                add(sk.getsockname()[0])
+        except OSError:
+            continue
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            add(info[4][0])
+    except OSError:
+        pass
+    return found
+
+
+FACE_FLAGS = ("facial_enabled", "face_door_enabled", "aceptar_enabled", "accept_link_email", "client_photos_before")
+
+
+def enforce_no_face(db, event=None) -> int:
+    """En un servidor local NO hay rostro: apaga las banderas del flujo facial de los eventos que ya estaban descargados con el rostro activado (antes de este cambio quedaban «atrapados»:
+    Parámetros decía «no disponible» pero Registro seguía mostrando la cámara). Con `event` solo toca ese evento. Devuelve cuántos eventos cambió."""
+    if not is_local_server():
+        return 0
+    from app.models import Event
+    q = db.query(Event)
+    if event is not None:
+        q = q.filter(Event.id == event.id)
+    changed = 0
+    for ev in q.all():
+        if any(getattr(ev, f, False) for f in FACE_FLAGS):
+            for f in FACE_FLAGS:
+                if getattr(ev, f, False):
+                    setattr(ev, f, False)
+            changed += 1
+    if changed:
+        db.commit()
+    return changed

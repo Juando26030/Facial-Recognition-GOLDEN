@@ -226,3 +226,20 @@ def test_local_bloquea_el_rostro_en_parametros_y_no_muestra_sin_conexion_por_fal
     assert "navigator.onLine === false && !LOCAL_NODE" in reg
     js = pathlib.Path("static/js/kiosk-alistamiento.js").read_text(encoding="utf-8")
     assert "load(true, true)" in js          # al abrir, el inventario se pone al día solo si hay internet
+
+
+def test_local_muestra_la_ip_para_conectar_y_apaga_el_rostro_de_eventos_ya_descargados():
+    """19-nov-2026: «Conectar: IP:puerto» junto a la versión; el rostro de eventos descargados antes se apaga solo; el checklist de inventario se refresca con internet."""
+    import pathlib
+    ops = pathlib.Path("app/routers/ops.py").read_text(encoding="utf-8")
+    assert '"/api/ops/local-address"' in ops and "localmode.lan_addresses()" in ops
+    js = pathlib.Path("static/js/version-banner.js").read_text(encoding="utf-8")
+    assert "/api/ops/local-address" in js and "Conectar:" in js and "gw-versionbar--info" in js and "gwver" in js
+    main = pathlib.Path("app/main.py").read_text(encoding="utf-8")
+    assert "enforce_no_face" in main
+    lm = pathlib.Path("app/localmode.py").read_text(encoding="utf-8")
+    assert "def enforce_no_face" in lm and "def lan_addresses" in lm
+    ns = pathlib.Path("app/node_sync.py").read_text(encoding="utf-8")
+    assert "_refresh_checklists(db)" in ns
+    inst = pathlib.Path("deploy/windows/install.ps1").read_text(encoding="utf-8")
+    assert "-LocalPort $AppPort" in inst and "LocalSubnet" in inst          # el puerto queda abierto para la red local

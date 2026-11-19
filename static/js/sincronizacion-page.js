@@ -21,13 +21,20 @@
       const v = d.version || {};
       const warn = !d.configured ? '<div class="gw-alert gw-alert--warn" role="status">Este servidor todavía no tiene el código de acceso ni la dirección de producción: no puede subir. Pídele a un administrador que lo configure.</div>' : '';
       const ver = v.configured && v.status && v.status !== 'igual' && v.status !== 'desconocida' ? `<div class="gw-alert gw-alert--warn" role="status">${esc(v.message)}</div>` : '';
-      const rows = d.events.map((e) => `<li class="gw-list__item"><div><strong>${esc(e.name)}</strong> <span class="gw-hint">${esc(e.code)}</span><br>
-        <span class="gw-hint">Bajado: ${esc(when(e.package_at))} · Última subida: ${esc(when(e.last_upload_at))} · Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos)</span>
-        ${e.error ? `<br><span class="gw-text-danger">${esc(e.error)}</span>` : ''}
-        ${e.local_only && Object.keys(e.local_only).length ? `<br><span class="gw-text-danger">Hecho aquí que todavía no sube a la nube: ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Mientras exista, no se puede pasar a internet.</span>` : ''}</div>
-        <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-release="${e.id}">Pasar a internet</button></li>`).join('');
+      // La misma tarjeta de evento que en Eventos (nombre, datos, estado), pero con UNA sola acción: «Pasar a internet» en lugar de «Ingresar».
+      const rows = d.events.map((e) => {
+        const bad = e.local_only && Object.keys(e.local_only).length;
+        const badge = e.pending.total ? `<span class="gw-badge gw-badge--warn">${e.pending.total} por subir</span>` : '<span class="gw-badge gw-badge--ok">Todo subido</span>';
+        return `<div class="gw-card-row gw-event-card sync-card"><div class="sync-card__info">
+          <div class="gw-card-row__head"><span class="gw-card-row__title">${esc(e.name)} ${e.code ? `<span class="gw-event-code">(${esc(e.code)})</span>` : ''}</span>${badge}</div>
+          <p class="gw-card-row__meta">Bajado: ${esc(when(e.package_at))} · Última subida: ${esc(when(e.last_upload_at))}</p>
+          <p class="gw-card-row__meta">Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos)</p>
+          ${e.error ? `<p class="gw-text-danger">${esc(e.error)}</p>` : ''}
+          ${bad ? `<p class="gw-text-danger">Hecho aquí que todavía no sube a la nube: ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Mientras exista, no se puede pasar a internet.</p>` : ''}</div>
+          <div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--primary" data-release="${e.id}">Pasar a internet</button></div></div>`;
+      }).join('');
       box.innerHTML = warn + ver + `<div class="gw-toolbar"><button type="button" class="gw-btn gw-btn--secondary" data-run>Subir ahora</button><span class="gw-hint">Pendientes en total: ${d.pending_total}. Se sube solo cada ${d.interval_minutes} min.</span></div>` +
-        (rows ? `<ul class="gw-list">${rows}</ul>` : '<div class="gw-state" role="status"><p class="gw-state__title">No hay eventos bajados de la nube en este servidor</p></div>');
+        (rows ? `<div class="ev-list sync-list">${rows}</div>` : '<div class="gw-state" role="status"><p class="gw-state__title">No hay eventos bajados de la nube en este servidor</p></div>');
     } catch (err) { box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(err.message)}</p></div>`; }
     finally { box.setAttribute('aria-busy', 'false'); }
   }

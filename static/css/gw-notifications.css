@@ -18,6 +18,14 @@
 /* Dentro del encabezado (junto al logo) la franja no se estira ni flota: es una etiqueta más de la barra superior, que ya es fija. */
 .golden-header .gw-versionbar { position: static; display: inline-flex; align-items: center; gap: var(--gw-sp-2); flex: 0 1 auto; min-width: 0; max-width: 22rem; margin-right: auto; margin-left: var(--gw-sp-3); padding: var(--gw-sp-1) var(--gw-sp-3); border-radius: var(--gw-radius-md); text-align: left; font-size: var(--gw-fs-sm); white-space: nowrap; }
 .golden-header .gw-versionbar__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Con botón («Actualizar ahora»): el texto cede el espacio y el botón conserva su tamaño y su forma (antes se encimaban). */
+.golden-header .gw-versionbar:has(.gw-btn) { max-width: 30rem; padding-right: var(--gw-sp-1); }
+.golden-header .gw-versionbar .gw-btn { flex: 0 0 auto; width: auto; min-height: 0; padding: var(--gw-sp-1) var(--gw-sp-3); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-tight); white-space: nowrap; }
+/* Dirección para conectar otros equipos a este servidor local («Conectar: 192.168.1.20:8443»): azul, informativa. */
+.gw-versionbar--info { background: var(--gw-info-bg, var(--gw-surface-2)); color: var(--gw-info-text, var(--gw-link)); cursor: pointer; border: 1px solid var(--gw-border); }
+.golden-header .gw-versionbar--info { max-width: 24rem; margin-left: var(--gw-sp-2); font-family: inherit; }
+.golden-header .gw-versionbar:has(+ .gw-versionbar--info) { margin-right: 0; }
+@media (max-width: 900px) { .golden-header .gw-versionbar--info { display: none; } }
 .golden-header .golden-nav { flex-shrink: 0; }
 .golden-header .golden-logo { flex: 0 0 auto; }
 .golden-header .golden-logo img { max-width: none; object-fit: contain; }

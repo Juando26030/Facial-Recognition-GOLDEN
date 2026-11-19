@@ -245,6 +245,17 @@ def _refresh_accounts(db: Session) -> None:
         log.warning("no se pudieron actualizar las cuentas desde la nube")
 
 
+def _refresh_checklists(db: Session) -> None:
+    """Mientras hay internet, deja puesta al día la foto del checklist de inventario de cada evento descargado (solo lectura; sin datos de personas). Sin internet o con un fallo, se conserva la anterior."""
+    from app import cloud_client, event_checklist
+    for ev in synced_events(db):
+        try:
+            event_checklist.save_snapshot(db, ev.id, cloud_client.inventory_checklist(ev.cloud_event_id))
+            db.commit()
+        except Exception:                                    # noqa: BLE001  (sin internet: normal)
+            db.rollback()
+
+
 def upload_all(db: Session, *, force: bool = False) -> dict:
     """Un ciclo: todos los eventos bajados de la nube. Un fallo en uno no detiene a los demás."""
     if not configured():
@@ -253,6 +264,7 @@ def upload_all(db: Session, *, force: bool = False) -> dict:
         return {"configured": True, "busy": True, "events": 0}
     try:
         _refresh_accounts(db)                                # al conectarse y en cada ciclo de ~30 min: cuentas y contraseñas de la nube (la nube manda)
+        _refresh_checklists(db)                              # y el checklist de inventario de cada evento (para consultarlo en el quiosco aunque después se pierda internet)
         res = [upload_event(db, ev, force=force) for ev in synced_events(db)]
         return {"configured": True, "events": len(res), "failed": sum(1 for r in res if not r["ok"]), "pending": sum(r["pending"] for r in res)}
     finally:
@@ -304,7 +316,18 @@ def _loop() -> None:
                 log.info("actualización automática solicitada")
         except Exception:
             log.exception("actualización automática falló")
-        stop.wait(interval_minutes() * 60)
+        waited = 0                                        # entre ciclos completos, el checklist de inventario se pone al día cada ~5 min (liviano; sin internet no hace nada)
+        while not stop.is_set() and waited < interval_minutes() * 60:
+            step = min(300, interval_minutes() * 60 - waited)
+            if stop.wait(step):
+                break
+            waited += step
+            if waited < interval_minutes() * 60:
+                try:
+                    with SessionLocal() as db:
+                        _refresh_checklists(db)
+                except Exception:                         # noqa: BLE001
+                    log.debug("refresco del checklist falló", exc_info=True)
 
 
 def start() -> bool:
