@@ -54,12 +54,30 @@
     return { cedula, nombres, apellidos, isQr: true };
   }
 
+  /* Cédula colombiana con código de barras PDF417 (la de la foto, con huella y código al reverso): la cámara entrega el contenido SIN CIFRAR en campos de ancho fijo (los vacíos, con caracteres nulos):
+       0-48 encabezado («PubDSK_1»…) · 48-58 cédula · 58-81 1.er apellido · 81-104 2.º apellido · 104-127 1.er nombre · 127-150 2.º nombre · 151 sexo · 152-160 nacimiento AAAAMMDD.
+     Devuelve { cedula, nombres, apellidos, nacimiento } o null si no tiene esa forma (entonces sigue el camino de siempre: CSV del lector de mano o el primer número de la cédula). */
+  function parsePdf417Cedula(raw) {
+    const t = String(raw == null ? '' : raw);
+    if (t.length < 150) return null;
+    const cut = (a, b) => t.slice(a, b).replace(/[^A-Za-z\u00c0-\u00ff ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const num = t.slice(48, 58).replace(/\D/g, '').replace(/^0+/, '');
+    if (num.length < 4 || num.length > 10 || t.slice(48, 58).replace(/[\d\0 ]/g, '') !== '') return null;
+    const a1 = cut(58, 81), a2 = cut(81, 104), n1 = cut(104, 127), n2 = cut(127, 150);
+    if (!a1 && !n1) return null;
+    const birth = t.slice(152, 160);
+    return { cedula: num, nombres: [n1, n2].filter(Boolean).join(' '), apellidos: [a1, a2].filter(Boolean).join(' '), nacimiento: /^\d{8}$/.test(birth) ? birth : '' };
+  }
+
+
   /* Un solo «Escanear»: la cámara lee QR y, si el navegador lo permite (BarcodeDetector), también el PDF417 de la cédula colombiana. classify() decide qué se leyó:
        { kind: 'qr', cedula, nombres, apellidos }      QR propio (escarapela): trae `|`.
        { kind: 'cedula', cedula, nombres, apellidos }  PDF417 de la cédula (CSV del lector viejo «cédula,nombres,apellidos») o un número suelto de cédula.
        null                                            nada utilizable.
      `format` es el que informa el detector ('qr_code' | 'pdf417'); jsQR (sin detector) solo lee QR. */
   function classify(raw, format, parseOld) {
+    const fixed = format === 'pdf417' || String(raw == null ? '' : raw).length >= 150 ? parsePdf417Cedula(raw) : null;
+    if (fixed) return { kind: 'cedula', cedula: fixed.cedula, nombres: fixed.nombres, apellidos: fixed.apellidos };
     const text = unwrap(raw).trim();
     if (!text) return null;
     const q = parse(text);
@@ -295,6 +313,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL, READERS_URL }; }
-  if (typeof module !== 'undefined') module.exports = { parse, classify, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL, READERS_URL }; }
+  if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();
