@@ -47,6 +47,40 @@ def create_node(data: dict, db: Session = Depends(get_db), staff: StaffUser = De
     return {**_row(node), "token": token, "notice": "Guarda este token ahora: no se vuelve a mostrar."}
 
 
+ENROLL_ROLES = ("coordinador", "comercial", "admin", "super_admin")
+
+
+@router.post("/node/enroll")
+def enroll_node(data: dict, request: Request, db: Session = Depends(get_db)):
+    """Vinculación del servidor local la PRIMERA vez: una cuenta de producción con rol de coordinación en adelante entrega usuario y contraseña y recibe el token del nodo
+    (se devuelve una sola vez; en la nube solo queda el hash). Mismos límites y bloqueo que el login; nunca dice cuál de los dos datos falló."""
+    from app import security
+    from app.auth import effective_roles, verify_password
+    username = str((data or {}).get("username") or "").strip()[:150]
+    password = str((data or {}).get("password") or "")[:200]
+    ip = security.limit_ip(request)
+    if security.login_minutes_locked(db, username, ip):
+        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Espera unos minutos.")
+    staff = db.query(StaffUser).filter(StaffUser.username == username, StaffUser.is_active == True).first() if username else None   # noqa: E712
+    security.record_event(db, "login_fail", username or "-", ip)
+    if staff is None or staff.event_only or not verify_password(password, staff.password_hash) or not (effective_roles(staff) & set(ENROLL_ROLES)):
+        db.commit()
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos, o la cuenta no puede vincular un servidor local")
+    security.clear_events(db, "login_fail", username)
+    base = event_lease.clean_node_name((data or {}).get("name") or "Servidor local")
+    name, n = base, 1
+    while db.query(LocalNode).filter(LocalNode.name == name).first():          # cada instalación es un nodo propio: nunca pisa a otro
+        n += 1
+        name = f"{base[:50]} ({n})"
+    token, digest = node_auth.generate_token()
+    node = LocalNode(name=name, token_hash=digest, created_by_id=staff.id)
+    db.add(node)
+    db.flush()
+    db.add(AuditAction(actor_id=staff.id, actor_role=staff.role, action="node_enroll", entity="local_node", entity_id=str(node.id), entity_name=name, detail="Servidor local vinculado con su cuenta"))
+    db.commit()
+    return {"token": token, "name": name}
+
+
 @router.post("/nodes/{node_id}/revoke")
 def revoke_node(node_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     node = db.get(LocalNode, node_id)

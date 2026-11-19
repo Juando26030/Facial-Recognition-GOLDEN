@@ -86,6 +86,11 @@ def login_submit(
     wait = security.login_minutes_locked(db, username, ip)
     if wait:
         return _login_page(request, f"Demasiados intentos fallidos. Espera {wait} minuto(s) e intenta de nuevo.", 429)
+    if localmode.is_local_server():
+        from app import local_link          # primer ingreso del servidor local: se vincula con producción con las mismas credenciales (ver app/local_link.py)
+        res = local_link.maybe_link_on_login(db, username, password)
+        if res is not None:
+            return _login_page(request, res["message"], res["status"])
     staff = db.query(StaffUser).filter(StaffUser.username == username, StaffUser.is_active == True).first()
     if login_control.applies(staff) and login_control.is_locked(staff):          # S1 (b): digitador bloqueado tras 3 fallos
         return _login_page(request, login_control.LOCKED_MSG, 403, "Solo el coordinador del evento puede desbloquearla desde «Usuarios del evento».")
