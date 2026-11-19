@@ -154,7 +154,7 @@
             });
         }
 
-        const ctl = createController({ onChange: render, reload: () => win.location.reload() });
+        const ctl = createController({ onChange: (s) => { render(s); syncVisibility(); }, reload: () => win.location.reload() });
         btn.addEventListener('click', async () => {
             const r = await ctl.saveAll();
             if (typeof win.showToast !== 'function') return;
@@ -186,7 +186,14 @@
             e.preventDefault(); e.returnValue = '';
             return '';
         });
+        // La barra solo aparece donde hay algo que guardar: sin ningún bloque editable ([data-psave]) en la pantalla y sin cambios pendientes, se oculta (pantallas de consulta).
+        function syncVisibility() {
+            const quiet = ctl.snapshot().state === 'idle' && !rootEl.querySelector('[data-psave]');
+            bar.classList.toggle('gw-savebar--vacia', quiet);
+        }
+        try { new win.MutationObserver(syncVisibility).observe(rootEl, { childList: true, subtree: true }); } catch (e) { /* sin observador: se revisa en cada cambio de estado */ }
         render(ctl.snapshot());
+        syncVisibility();
         return ctl;
     }
 

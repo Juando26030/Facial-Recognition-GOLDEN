@@ -97,7 +97,8 @@ async function networkFirst(event, req, isPage) {
   let res;
   const since = Date.now();
   try {
-    res = await withTimeout(req);
+    // Sin copia guardada no hay a qué recurrir: se espera la red sin tope. Con el tope, un archivo lento (sin copia) se abortaba ("signal is aborted") y la página quedaba en blanco y con errores.
+    res = (await cached()) ? await withTimeout(req) : await fetch(req);
   } catch (e) {
     const timedOut = Date.now() - since >= NETWORK_TIMEOUT_MS - 50;
     const hit = await cached();

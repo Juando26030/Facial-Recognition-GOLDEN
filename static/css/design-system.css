@@ -484,6 +484,7 @@
 .gw-group__pending[hidden], .gw-group [hidden] { display: none !important; }   /* los botones «Guardar» por bloque siguen en el DOM, ocultos y funcionales */
 
 .gw-savebar { position: sticky; bottom: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+.gw-savebar.gw-savebar--vacia { display: none; }
 .gw-savebar[data-state="dirty"] { border-color: var(--gw-warn-line); }
 .gw-savebar[data-state="saved"] { border-color: var(--gw-ok-line); }
 .gw-savebar[data-state="error"] { border-color: var(--gw-err-line); }
