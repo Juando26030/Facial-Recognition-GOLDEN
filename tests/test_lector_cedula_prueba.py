@@ -7,8 +7,8 @@ from tests.conftest import login
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "app" / "pruebas" / "lector_cedula.html"
-# Huella de la página tal como se entregó (cedula-scanner.html, versión 3, 19-nov-2026). Si se cambia a propósito, se actualiza aquí.
-PAGE_SHA256 = "d798626e0c940bfbfe933249f6f8f022c3a9cbc7b061206d919a6c6c4079f993"
+# Huella de la página tal como se entregó (cedula-scanner.html, versión 3.1 con recuadro guía, 19-nov-2026). Si se cambia a propósito, se actualiza aquí.
+PAGE_SHA256 = "99706847d728f7f378bc7bbaf4481bbf2aad4e0258909957210d50d2ddb4f562"
 
 
 def test_the_page_is_the_delivered_file_unchanged():
