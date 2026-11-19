@@ -40,6 +40,12 @@ def assert_editable(event) -> None:
         raise HTTPException(status_code=423, detail=message(event))
 
 
+def assert_writable_by(event, staff) -> None:
+    """423 si el evento está en un servidor local y quien escribe NO es ese servidor (su sincronización entra con el token del nodo: `staff.via_node_name`)."""
+    if is_leased(event) and getattr(staff, "via_node_name", None) != event.local_node_name:
+        assert_editable(event)
+
+
 def serialize(event) -> dict:
     leased = is_leased(event)
     return {

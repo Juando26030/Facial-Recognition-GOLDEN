@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import event_archive, audit_actions, person_history, roster_delete
+from app import event_archive, event_lease, audit_actions, person_history, roster_delete
 import re
 import json
 from typing import List, Optional
@@ -859,6 +859,7 @@ def checkin_cedula(
     event = get_event_for_staff(event_id, db, staff)
     if not testperson.bypasses_gate(event, cedula):
         require_event_in_progress(event)          # la persona de prueba es la ÚNICA excepción: se ensaya el flujo y la impresión aun con el evento en «creado»
+    event_lease.assert_writable_by(event, staff)          # ...pero ni ella escribe en la nube con el evento en un servidor local
     if client_id:
         replay = _replayed_checkin(db, event, client_id)
         if replay:
@@ -933,6 +934,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
     if not (log and testperson.bypasses_gate(event, log.user_id)):
         require_event_in_progress(event)
+    event_lease.assert_writable_by(event, staff)
     if not log:
         raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
     if log.registered_by_staff_id != staff.id:
@@ -995,7 +997,6 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
     if event.archived_at is not None:                # B4: ningún rol (ni coordinador+, que conserva su margen después de finalizar) escribe en un evento archivado
         raise HTTPException(status_code=403, detail="Este evento está archivado: no recibe registros")
-    from app import event_lease
     if event_lease.is_leased(event) and getattr(staff, "via_node_name", None) != event.local_node_name:
         event_lease.assert_editable(event)           # F5-9 A-09 (Fase 6): con el evento en un servidor local, solo ESE servidor sube (un solo escritor); los quioscos de la nube reciben 423
     event_archive.require_data_open(event, staff)    # ni con la base archivada (L7)
@@ -1433,6 +1434,7 @@ def update_user(
     staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     user = _person_of_event(db, event, user_id)
     if user:
@@ -1559,6 +1561,7 @@ def update_user_cedula(
     persona en TODOS los eventos de este cliente, no solo en este — más sensible que un campo
     normal del perfil."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     old_id = user_id
     new_id = str(data.get("new_id", "")).strip()
@@ -1624,6 +1627,7 @@ def delete_user_logs(
     la identificación de la persona. Queda en `audit_actions` (cuántos registros; nunca la cédula). Antes borraba por cliente completo (bug); ahora solo el evento indicado. Lo normal para
     deshacer un ingreso es `PATCH /events/{id}/users/{id}/status` (queda en el historial de cambios)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     if str(confirm or "").strip() != str(user_id).strip():
         raise HTTPException(status_code=400, detail="Para borrar el histórico de accesos escribe (confirm) la identificación de la persona")
@@ -1647,6 +1651,7 @@ def delete_user_from_event(
     eventos, ver CLAUDE.md), se borra también el `User` y su foto física — si sigue en otro
     evento, ese `User` se conserva intacto, no se puede reventar la base de un evento ajeno."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
@@ -1709,6 +1714,7 @@ def roster_loaded_delete(event_id: int, data: dict = Body(...), db: Session = De
     """Borra de este evento a las personas cargadas por «Adjuntar base de datos» (origen base) que no tengan ingresos: sirve para corregir una carga equivocada. Exige escribir BORRAR.
     Queda en `audit_actions` (solo cantidades, nunca cédulas ni nombres). No se puede con la base archivada (L7) ni con el evento finalizado."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     if event.status == "finalizado":
         raise HTTPException(status_code=409, detail="El evento ya finalizó: su base no se puede borrar.")
@@ -1746,6 +1752,7 @@ def update_registration_status(
     if new_status == "no_registrado" and max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["coordinador"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 
+    event_lease.assert_writable_by(event, staff)
     was_registered = _already_checked_in(db, event_id, user_id)
     deleted_logs = 0
     if new_status == "registrado" and not was_registered and not testperson.bypasses_gate(event, user_id):
@@ -2056,6 +2063,7 @@ def bulk_roster_preview(
     """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
     la carga real lo vuelve a usar."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     if blocked := event_rules.roster_block_reason(event, append_only=True):
         raise HTTPException(status_code=400, detail=blocked)
@@ -2083,6 +2091,7 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     case_mode, keep_dups = _text_case_or_400(text_case), _truthy(keep_duplicates)          # Plan 5: «Texto» y «No eliminar repetidos» (app/roster_text.py, app/roster_dups.py)
     append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
@@ -2212,7 +2221,7 @@ def bulk_job_active(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """La carga por pasos de esta persona que quedó a medias en este evento (para retomarla tras cerrar la página)."""
-    get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(get_event_for_staff(event_id, db, staff), staff)
     return {"job": bulk_steps.active_for(db, event_id, staff)}
 
 
@@ -2234,6 +2243,7 @@ def bulk_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Carga no encontrada")
     event_archive.require_data_open(get_event_for_staff(job.event_id, db, staff), staff)
+    event_lease.assert_writable_by(get_event_for_staff(job.event_id, db, staff), staff)
     if bulk_steps._is_steps(job):
         return bulk_steps.serialize_job(job)
     return bulk_jobs.serialize(job, db)
