@@ -228,12 +228,36 @@ class FormBurst(HttpUser):
         gevent.sleep(10 ** 6)
 
 
+_STAFF_COOKIES: dict = {}
+
+
+def _shared_staff_cookies(host: str) -> dict:
+    """UN solo login por proceso generador y la cookie de sesión se COPIA a todos los usuarios virtuales. Motivo (19-nov-2026): 400 estaciones entrando a la vez con la MISMA
+    cuenta chocaban con el bloqueo de ingreso, que anota cada intento ANTES de verificar la clave (tope de 5 simultáneos por cuenta): 1.870 de 1.880 logins daban 429. La estación
+    real inicia sesión una vez y luego solo escanea; esto reproduce eso. Con la sesión viva no se vuelve a pasar por /login."""
+    if _STAFF_COOKIES:
+        return _STAFF_COOKIES
+    import requests
+    last = None
+    for attempt in range(6):
+        r = requests.post(f"{host.rstrip('/')}/login", data={"username": STAFF_USER, "password": PASSWORD}, allow_redirects=False, timeout=30, headers={"X-Forwarded-For": _fake_ip()})
+        last = r.status_code
+        if r.status_code in (302, 303) and r.cookies:
+            _STAFF_COOKIES.update(r.cookies.get_dict())
+            return _STAFF_COOKIES
+        if r.status_code in (401, 403):      # clave mala, cuenta sin evento en proceso o bloqueada: repetir no ayuda y empeora el bloqueo
+            break
+        time.sleep(2 + attempt * 3)
+    raise RuntimeError(f"login falló ({last}): la cuenta de carga no puede entrar (clave distinta del OPS_TOKEN del Job, evento no «en proceso», cuenta sin autorizar o bloqueada): vuelve a sembrar (`run_phase4.sh seed`)")
+
+
 class _Staff(HttpUser):
     abstract = True
 
     def on_start(self):
         self.client.headers["X-Forwarded-For"] = _fake_ip()
-        _login(self.client, STAFF_USER)
+        for k, v in _shared_staff_cookies(self.host).items():
+            self.client.cookies.set(k, v)
 
 
 class CedulaScanner(_Staff):
