@@ -704,10 +704,11 @@ class CedulaScanner {
     let r = null;
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
-    if (!r && this.scanning && !sharp && attempts % 6 === 0) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1200);     // respaldo periódico aunque no se mida enfoque
+    if (!r && this.scanning && !sharp && attempts % 6 === 0) r = await this._tryCandidate(work, best || fallback, PLANS.deep, performance.now() + 1200);     // respaldo periódico aunque no se mida enfoque
     if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 1500) {                 // enfocado: análisis a fondo de ESTE cuadro
-      this._lastDeep = performance.now(); r = await this._tryCandidate(work, fallback, PLANS.deep, this._lastDeep + 1800);
-      if (!r && best && this.scanning) r = await this._tryCandidate(work, best, PLANS.deep, performance.now() + 1000);
+      this._lastDeep = performance.now();
+      if (best) r = await this._tryCandidate(work, best, PLANS.deep, this._lastDeep + 1600);                 // el rectángulo preciso del localizador primero
+      if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1400);
     }
     if (!r && this.scanning && sharp && this.autoStill && now - (this._lastStill || 0) > 3000) {     // enfocado y sin lectura: foto fija de alta resolución, con tope de tiempo
       this._lastStill = performance.now(); const blob = await this.captureStill();
