@@ -198,7 +198,7 @@
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta al QR o al código de barras del reverso de la cédula. En la cédula vieja acerca el celular hasta que el código de barras llene el ancho de la imagen y toca para enfocar.';
+    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta al QR o al código de barras del reverso de la cédula. Para la cédula VIEJA usa «Foto del código de barras»: acerca la cámara hasta que el código llene el ancho de la foto, bien enfocado y sin reflejos.';
     const video = box.querySelector('video');
     const canvas = box.querySelector('canvas');
     const status = box.querySelector('.qr-status');
@@ -258,7 +258,7 @@
     async function start() {
       try {
         // Más resolución: el PDF417 de la cédula vieja son líneas muy finas y con 640×480 no se distinguen.
-        const hi = { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } };
+        const hi = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
         try { stream = await navigator.mediaDevices.getUserMedia({ video: hi }); }
         catch (e1) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
       } catch (e) {
@@ -297,14 +297,19 @@
           status.classList.remove('gw-cam__status--err'); status.textContent = 'Leyendo la foto…'; stillBtn.disabled = true;
           try {
             const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-            const k = Math.min(1, 3200 / Math.max(bmp.width, bmp.height));
-            const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-            const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, c.width, c.height);
-            const img = cx.getImageData(0, 0, c.width, c.height);
+            // El PDF417 de la cédula vieja es MUY fino (cada raya mide ~2 píxeles aunque la foto sea buena): se prueba a varios tamaños, porque el lector acierta más cuando cada módulo mide ~3 a 4 píxeles.
+            const long = Math.max(bmp.width, bmp.height);
             let z = null;
-            for (const v of ZX_VARIANTS) {
-              const found = await zx.readWith({ data: new Uint8ClampedArray(img.data), width: img.width, height: img.height }, Object.assign({}, ZX_BASE_OPTS, v));
-              z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
+            for (const target of [3200, 2000, 1400]) {
+              const k = Math.min(1, target / long);
+              const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+              const cx = c.getContext('2d', { willReadFrequently: true }); cx.imageSmoothingQuality = 'high'; cx.drawImage(bmp, 0, 0, c.width, c.height);
+              const img = cx.getImageData(0, 0, c.width, c.height);
+              for (const v of ZX_VARIANTS) {
+                const found = await zx.readWith({ data: new Uint8ClampedArray(img.data), width: img.width, height: img.height }, Object.assign({}, ZX_BASE_OPTS, v));
+                z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
+                if (z) break;
+              }
               if (z) break;
             }
             if (z) emit(zxText(z), /pdf/i.test(String(z.format)) ? 'pdf417' : 'qr_code');
@@ -324,7 +329,7 @@
               if (codes.length) hit = { text: codes[0].rawValue, format: codes[0].format };
             }
             if (!hit && zx) {
-              const k = Math.min(1, 2048 / Math.max(video.videoWidth, video.videoHeight));          // el código de barras de la cédula necesita resolución: se trabaja casi a tamaño completo
+              const k = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));          // el código de barras de la cédula necesita resolución: se trabaja casi a tamaño completo
               canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const found = await zx.read(ctx.getImageData(0, 0, canvas.width, canvas.height));
@@ -342,7 +347,7 @@
             if (hit) emit(hit.text, hit.format);
           } catch (e) { if (!tick.warned) { tick.warned = true; try { console.warn('[escáner] un cuadro no se pudo leer:', e && e.message); } catch (e2) { /* sin consola */ } } }          // un cuadro que no se pudo leer: sigue con el siguiente
         }
-        setTimeout(tick, 200);
+        setTimeout(tick, zx ? 450 : 200);          // con ZXing un cuadro cada ~0,5 s: así el video de la cámara va fluido
       }
       tick();
     }
