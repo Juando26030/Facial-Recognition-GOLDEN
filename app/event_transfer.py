@@ -695,6 +695,10 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
             d["logo_path"] = d["report_pdf_path"] = None
             d["local_node_name"] = d["local_since"] = d["local_by_id"] = d["local_last_upload_at"] = None          # Fase 6: el arrendamiento es de la nube; la copia importada no nace «en servidor local»
+            from app import localmode
+            if localmode.is_local_server():          # el reconocimiento facial no corre en un servidor local: el evento baja con el escáner apagado
+                d["facial_enabled"] = False
+                d["face_door_enabled"] = False
             _sd = d.get("start_date")
             d["public_slug"] = public_slug.unique_for(db, d.get("name") or ev_src.get("name") or "evento", getattr(_sd, "year", None) or (int(str(_sd)[:4]) if _sd and str(_sd)[:4].isdigit() else utcnow().year))          # D2.5k: el nombre del enlace es único en TODO el sistema: la copia recibe el suyo, no el del origen
             d["final_db_key"] = d["final_db_name"] = d["final_db_uploaded_at"] = None          # la base final (Fase 5) no viaja en el paquete: se vuelve a subir en el destino

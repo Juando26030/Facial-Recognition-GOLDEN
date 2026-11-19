@@ -176,3 +176,15 @@ def test_el_despliegue_publica_el_paquete_y_el_actualizador_verifica_el_commit()
     assert "UPDATE_ONLY=1" in sh and "system/local-update/" in sh and "update-manifest" in sh
     assert "UPDATE_ONLY" in (raiz / "deploy" / "windows" / "build_cross.py").read_text(encoding="utf-8")
     assert "otra versión" in (raiz / "deploy" / "windows" / "run-update.ps1").read_text(encoding="utf-8")
+
+
+def test_modo_local_bloquea_facial_y_paginas_solo_nube():
+    from app import localmode as lm
+
+    assert lm.is_face_call("POST", "/api/recognize") and lm.is_face_call("POST", "/api/recognize/candidates")
+    assert lm.is_face_call("POST", "/api/events/19/enroll-face")
+    assert not lm.is_face_call("GET", "/api/recognize") and not lm.is_face_call("POST", "/api/checkin-cedula")
+    for ruta in ("/inventario", "/inventario/etiquetas", "/gastos", "/cuentas-de-cobro"):
+        assert lm.is_cloud_only_page("GET", ruta)
+    assert not lm.is_cloud_only_page("GET", "/eventos") and not lm.is_cloud_only_page("GET", "/kiosk/19/inventario")
+    assert not lm.is_cloud_only_page("POST", "/inventario")

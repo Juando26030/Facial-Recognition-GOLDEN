@@ -31,6 +31,21 @@ def is_catalog_write(method: str, path: str) -> bool:
     return method.upper() in ("POST", "PUT", "PATCH", "DELETE") and bool(CATALOG_WRITE_RE.match(path))
 
 
+LOCAL_NO_FACE_MSG = "El reconocimiento facial no está disponible en el servidor local: aquí se registra por cédula, QR o búsqueda."
+LOCAL_NO_MODULE_PAGES = ("/inventario", "/cuentas-de-cobro", "/gastos")          # solo existen en internet; el inventario del EVENTO (lo alistado) se consulta desde el quiosco del evento
+
+
+def is_face_call(method: str, path: str) -> bool:
+    """¿Es una llamada de reconocimiento/enrolamiento facial? En un servidor local no se atienden (la biometría solo corre en la nube)."""
+    import re
+    return method.upper() == "POST" and bool(re.match(r"^/api/(recognize(/|$)|events/\d+/enroll-face(/|$))", path))
+
+
+def is_cloud_only_page(method: str, path: str) -> bool:
+    """¿Es una página de módulos que solo existen en internet (inventario global, cuentas de cobro, gastos)?"""
+    return method.upper() == "GET" and any(path == base or path.startswith(base + "/") for base in LOCAL_NO_MODULE_PAGES)
+
+
 def mail_disabled() -> bool:
     """En un servidor local no se envían correos ni notificaciones externas (las manda la nube)."""
     return is_local_server()

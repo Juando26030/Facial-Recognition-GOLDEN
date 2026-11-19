@@ -219,8 +219,13 @@ _CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https
 async def local_catalog_readonly(request, call_next):
     """Servidor local (LOCAL_SERVER=1): el catálogo de inventario no se edita aquí (se cambia en internet y llega solo)."""
     from app import localmode
-    if localmode.is_local_server() and localmode.is_catalog_write(request.method, request.url.path):
-        return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
+    if localmode.is_local_server():
+        if localmode.is_catalog_write(request.method, request.url.path):
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
+        if localmode.is_face_call(request.method, request.url.path):
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_NO_FACE_MSG})
+        if localmode.is_cloud_only_page(request.method, request.url.path):          # inventario global, cuentas de cobro y gastos: solo en internet (ni el menú los ofrece)
+            return RedirectResponse("/clientes", status_code=302)
     return await call_next(request)
 
 
