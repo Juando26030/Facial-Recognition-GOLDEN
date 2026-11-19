@@ -596,7 +596,7 @@ class CedulaScanner {
       catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e; }
     }
     if (!this.stream) throw last || new Error('No se pudo abrir la cámara');
-    this.track = this.stream.getVideoTracks()[0]; this._ic = null; this.stillError = ''; this._hintedPhoto = false; this._sh = []; this._lastDeep = 0; this._lastStill = 0;
+    this.track = this.stream.getVideoTracks()[0]; this._ic = null; this.stillError = ''; this._hintedPhoto = false; this._sh = []; this._lastDeep = 0; this._lastStill = 0; this._lastFocus = 0; this._seen = 0; this._gone = 0;
     try { await this.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
     video.srcObject = this.stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
     this.scanning = true; this.startedAt = performance.now(); this._loop();
@@ -701,21 +701,32 @@ class CedulaScanner {
     const tall = vh > vw;
     this.onStatus(ppm < 3.4 && tall ? 'Gira el celular a horizontal y acércate: así el código sale más nítido.' : ppm < 2.4 ? 'Acércate un poco: el código se ve pequeño.'
       : !present ? 'Encaja el código de barras dentro del recuadro.' : sharp ? 'Enfocado, analizando…' : 'Enfocando… mantén el celular firme.', present ? 'warn' : '');
+    if (present) { if (!this._seen) this._seen = now; this._gone = 0; } else if (this._seen && (this._gone = this._gone || now) && now - this._gone > 1200) { this._seen = 0; }
+    const seenFor = this._seen ? now - this._seen : 0;
+    // enfoque automático sobre el código: sin que toques la pantalla (se repite si sigue borroso)
+    if (present && !sharp && now - (this._lastFocus || 0) > 1600) {
+      this._lastFocus = now; const c = best || fallback;
+      this.refocus(Math.min(1, Math.max(0, (c.cx / k + off.x) / vw)), Math.min(1, Math.max(0, (c.cy / k + off.y) / vh)));
+    }
     let r = null;
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
-    if (!r && this.scanning && !sharp && attempts % 6 === 0) r = await this._tryCandidate(work, best || fallback, PLANS.deep, performance.now() + 1200);     // respaldo periódico aunque no se mida enfoque
-    if (!r && this.scanning && sharp && now - (this._lastDeep || 0) > 1500) {                 // enfocado: análisis a fondo de ESTE cuadro
-      this._lastDeep = performance.now();
-      if (best) r = await this._tryCandidate(work, best, PLANS.deep, this._lastDeep + 1600);                 // el rectángulo preciso del localizador primero
-      if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1400);
+    // enfocado (o con el código a la vista ~1 s): primero la foto fija de alta resolución, que es lo que de verdad decodifica; luego, y solo un momento, el análisis a fondo del cuadro
+    if (!r && this.scanning && present && (sharp || seenFor > 900)) {
+      if (this.autoStill && now - (this._lastStill || 0) > 1500) {
+        this._lastStill = performance.now(); const blob = await this.captureStill();
+        if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 1800 }); if (d) { if (this.lastDebug) { this.lastDebug.how = 'foto fija · ' + this.lastDebug.how; this.lastDebug.ms = Math.round(performance.now() - (this._seen || now)); } this.scanning = false; video.pause(); return true; } }
+      }
+      if (this.scanning && performance.now() - (this._lastDeep || 0) > 1500) {
+        this._lastDeep = performance.now();
+        if (best) r = await this._tryCandidate(work, best, PLANS.deep, this._lastDeep + 700);
+        if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 500);
+      }
     }
-    if (!r && this.scanning && sharp && this.autoStill && now - (this._lastStill || 0) > 3000) {     // enfocado y sin lectura: foto fija de alta resolución, con tope de tiempo
-      this._lastStill = performance.now(); const blob = await this.captureStill();
-      if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 2500 }); if (d) { this.scanning = false; video.pause(); return true; } }
-    }
+    if (!r && this.scanning && !sharp && attempts % 8 === 0) r = await this._tryCandidate(work, best || fallback, PLANS.deep, performance.now() + 800);     // respaldo periódico
     if (!this.scanning) return false;
     if (!r) return false;
+    this.lastDebug = { w: vw, h: vh, cands: [], how: 'cuadro de video · ' + r.how, ms: Math.round(performance.now() - (this._seen || now)), ppm, hint: '', preview: null };
     this.scanning = false; video.pause(); this._drawGuide(g, '#2ee59d', null, off, k); this._handle(CedulaScanner._bytes(r.hit)); return true;
   }
   /** Un intento en modo libre (busca el código en todo el cuadro). Devuelve true si leyó la cédula. */
