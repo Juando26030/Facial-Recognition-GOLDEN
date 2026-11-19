@@ -49,8 +49,9 @@ function Set-EnvKey([string]$Key, [string]$Value) {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     $lines = @(); if (Test-Path $EnvFile) { $lines = @(Get-Content $EnvFile -Encoding UTF8) }
     $found = $false
-    $lines = $lines | ForEach-Object { if ($_ -match "^\s*$Key\s*=") { $found = $true; "$Key=$Value" } else { $_ } }
-    if (-not $found) { $lines += "$Key=$Value" }
+    # @(...) fuerza una lista: con una sola línea PowerShell devuelve un texto suelto y «+=» pegaba las variables en una sola línea
+    $lines = @($lines | ForEach-Object { if ($PSItem -match "^\s*$Key\s*=") { $found = $true; "$Key=$Value" } else { $PSItem } })
+    if (-not $found) { $lines = @($lines) + @("$Key=$Value") }
     Set-Content -Path $EnvFile -Value $lines -Encoding UTF8
 }
 

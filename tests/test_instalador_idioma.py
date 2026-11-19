@@ -34,3 +34,9 @@ def test_database_is_created_directly_and_verified():
     text = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
     assert "Invoke-AsNetworkService" not in text
     assert "PG_VERSION" in text and "No se pudo crear la base de datos" in text
+
+
+def test_set_envkey_always_builds_a_list_so_variables_do_not_glue_into_one_line():
+    text = (WIN / "config.ps1").read_text(encoding="utf-8-sig")
+    assert '$lines = @($lines | ForEach-Object' in text
+    assert '$lines = @($lines) + @("$Key=$Value")' in text
