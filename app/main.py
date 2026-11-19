@@ -701,6 +701,24 @@ def impresion_usb_page(request: Request):
     return templates.TemplateResponse(request=request, name="impresion_usb.html", context={})
 
 
+# PRUEBA (19-nov-2026): lector de cédula por cámara (PDF417), página de un solo archivo y SIN datos de la app. Se sirve TAL CUAL (no es plantilla Jinja) desde app/pruebas/lector_cedula.html,
+# que es copia exacta del entregado en la sesión de desarrollo (lo fija tests/test_lector_cedula_prueba.py). Todo se procesa en el navegador: no llama a ninguna API de la app ni guarda nada.
+# Descarga zxing-wasm desde cdn.jsdelivr.net, por eso la ruta fija su propia política «Report-Only» (la del panel no lo permite; hoy no bloquea, pero así no falla si se vuelve obligatoria).
+_LECTOR_CEDULA_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; "
+                      "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com; worker-src 'self' blob:; "
+                      "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+_LECTOR_CEDULA_HTML = Path(__file__).resolve().parent / "pruebas" / "lector_cedula.html"
+
+
+@app.get("/pruebas/lector-cedula")
+def lector_cedula_prueba_page(request: Request):
+    """Prueba del lector de cédula por cámara (PDF417). Digitador o más (sesión de la app). Sin base de datos y sin enviar nada al servidor."""
+    redirect = _require_page_role(request, "digitador")
+    if redirect:
+        return redirect
+    return HTMLResponse(_LECTOR_CEDULA_HTML.read_text(encoding="utf8"), headers={"Content-Security-Policy-Report-Only": _LECTOR_CEDULA_CSP})
+
+
 def contingency_enabled() -> bool:
     """Modo contingencia del quiosco (copia local de la lista + service worker `/kiosk/sw.js`). APAGADO por defecto; lo prende `CONTINGENCY_ENABLED=1` (staging, desde deploy/gcp/config.sh).
     Encenderlo en producción exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David (docs/15, D2.5d)."""
