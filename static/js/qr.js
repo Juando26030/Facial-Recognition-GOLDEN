@@ -59,24 +59,7 @@
        { kind: 'cedula', cedula, nombres, apellidos }  PDF417 de la cédula (CSV del lector viejo «cédula,nombres,apellidos») o un número suelto de cédula.
        null                                            nada utilizable.
      `format` es el que informa el detector ('qr_code' | 'pdf417'); jsQR (sin detector) solo lee QR. */
-  /* Cédula colombiana con código de barras PDF417 (la de la foto, con huella y código al reverso): la cámara entrega el contenido SIN CIFRAR en campos de ancho fijo (los vacíos, con caracteres nulos):
-       0-48 encabezado («PubDSK_1»…) · 48-58 cédula · 58-81 1.er apellido · 81-104 2.º apellido · 104-127 1.er nombre · 127-150 2.º nombre · 151 sexo · 152-160 nacimiento AAAAMMDD.
-     Devuelve { cedula, nombres, apellidos, nacimiento } o null si no tiene esa forma (entonces sigue el camino de siempre: CSV del lector de mano o el primer número de la cédula). */
-  function parsePdf417Cedula(raw) {
-    const t = String(raw == null ? '' : raw);
-    if (t.length < 150) return null;
-    const cut = (a, b) => t.slice(a, b).replace(/[^A-Za-z\u00c0-\u00ff ]/g, ' ').replace(/\s+/g, ' ').trim();
-    const num = t.slice(48, 58).replace(/\D/g, '').replace(/^0+/, '');
-    if (num.length < 4 || num.length > 10 || t.slice(48, 58).replace(/[\d\0 ]/g, '') !== '') return null;
-    const a1 = cut(58, 81), a2 = cut(81, 104), n1 = cut(104, 127), n2 = cut(127, 150);
-    if (!a1 && !n1) return null;
-    const birth = t.slice(152, 160);
-    return { cedula: num, nombres: [n1, n2].filter(Boolean).join(' '), apellidos: [a1, a2].filter(Boolean).join(' '), nacimiento: /^\d{8}$/.test(birth) ? birth : '' };
-  }
-
   function classify(raw, format, parseOld) {
-    const fixed = format === 'pdf417' || String(raw == null ? '' : raw).length >= 150 ? parsePdf417Cedula(raw) : null;
-    if (fixed) return { kind: 'cedula', cedula: fixed.cedula, nombres: fixed.nombres, apellidos: fixed.apellidos };
     const text = unwrap(raw).trim();
     if (!text) return null;
     const q = parse(text);
@@ -123,57 +106,6 @@
     return jsQrPromise;
   }
 
-  /* Lector universal (ZXing compilado a WebAssembly, copia PROPIA en /static/vendor/zxing/, la deja scripts/vendor_zxing.sh): lee PDF417 de la cédula vieja y QR en CUALQUIER navegador (computador,
-     iPhone, tablet) y SIN internet. Si el archivo no está, se sigue con BarcodeDetector (Chrome en Android) y jsQR (solo QR) como antes. */
-  const ZX_BASE = '/static/vendor/zxing/';
-  const ZX_VARIANTS = [{ binarizer: 'LocalAverage' }, { binarizer: 'GlobalHistogram' }, { binarizer: 'LocalAverage', tryDenoise: true }];          // pantallas con tramas, reflejos, poca luz
-  const ZX_BASE_OPTS = { formats: ['PDF417', 'QRCode'], tryHarder: true, tryRotate: true, tryInvert: true, maxNumberOfSymbols: 1 };
-  let zxPromise = null;
-  function loadZxingMain() {                                    // respaldo: en el hilo de la página (si el navegador no permite Workers)
-    return new Promise((resolve) => {
-      const done = (ok) => resolve(ok && window.ZXingWASM && window.ZXingWASM.readBarcodes ? window.ZXingWASM : null);
-      if (window.ZXingWASM) { done(true); return; }
-      const s = document.createElement('script');
-      s.src = ZX_BASE + 'zxing-reader.js';
-      s.onload = () => {
-        try { if (window.ZXingWASM.setZXingModuleOverrides) window.ZXingWASM.setZXingModuleOverrides({ locateFile: (path, prefix) => (/\.wasm$/.test(path) ? ZX_BASE + 'zxing_reader.wasm' : prefix + path) }); } catch (e) { /* sigue con la ruta por defecto */ }
-        done(true);
-      };
-      s.onerror = () => done(false);
-      document.head.appendChild(s);
-    });
-  }
-  function loadZxing() {
-    if (!zxPromise) {
-      zxPromise = (async () => {
-        let n = 0;
-        const variant = () => Object.assign({}, ZX_BASE_OPTS, ZX_VARIANTS[n++ % ZX_VARIANTS.length]);
-        if (typeof Worker !== 'undefined') {                    // lo normal: en un hilo aparte, el video no se congela
-          try {
-            const w = new Worker('/static/js/zxing-worker.js?v=1');
-            let seq = 0; const waiting = new Map();
-            w.onmessage = (ev) => { const p = waiting.get(ev.data.id); if (p) { waiting.delete(ev.data.id); if (ev.data.error) p.reject(new Error(ev.data.error)); else p.resolve(ev.data.results); } };
-            w.onerror = () => { waiting.forEach((p) => p.reject(new Error('worker'))); waiting.clear(); };
-            const call = (img, options) => new Promise((resolve, reject) => { const id = ++seq; waiting.set(id, { resolve, reject }); w.postMessage({ id, width: img.width, height: img.height, buffer: img.data.buffer.slice(0), options }); });
-            const probe = new ImageData(8, 8);                  // comprueba que el lector carga en el hilo (si no, se usa el respaldo)
-            await call(probe, { formats: ['QRCode'] });
-            return { read: (img) => call(img, variant()), readWith: (img, options) => call(img, options), worker: true };
-          } catch (e) { /* sin Workers o no cargó: respaldo */ }
-        }
-        const z = await loadZxingMain();
-        if (!z) return null;
-        const run = (img, options) => z.readBarcodes(img, options);
-        return { read: (img) => run(img, variant()), readWith: run, worker: false };
-      })();
-    }
-    return zxPromise;
-  }
-  // El PDF417 de la cédula trae bytes: se entregan tal cual (latin1), como los entrega BarcodeDetector, para que las posiciones de cada dato no se muevan.
-  function zxText(r) {
-    if (r.bytes && r.bytes.length && /pdf/i.test(String(r.format))) { let t = ''; for (let i = 0; i < r.bytes.length; i++) t += String.fromCharCode(r.bytes[i]); return t; }
-    return r.text;
-  }
-
   // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
   const READERS_URL = '/static/js/cedula-readers.js?v=1';
   const MODE_KEY = 'gw_scan_mode';
@@ -216,8 +148,6 @@
         <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
       </div>
       <div class="gw-modal__foot">
-        <button type="button" class="gw-btn gw-btn--secondary qr-still" hidden>Foto del código de barras (cédula vieja)</button>
-        <input type="file" class="qr-still-file" accept="image/*" capture="environment" hidden>
         <button type="button" class="gw-btn gw-btn--secondary qr-photo" hidden>Foto del reverso (cédula nueva)</button>
         <button type="button" class="gw-btn gw-btn--secondary qr-close">Cerrar</button>
       </div>`;
@@ -225,7 +155,7 @@
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta al QR o al código de barras del reverso de la cédula. Para la cédula VIEJA usa «Foto del código de barras»: acerca la cámara hasta que el código llene el ancho de la foto, bien enfocado y sin reflejos.';
+    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.';
     const video = box.querySelector('video');
     const canvas = box.querySelector('canvas');
     const status = box.querySelector('.qr-status');
@@ -265,39 +195,11 @@
       });
     }
 
-    /* Enfoque: continuo si la cámara lo permite, y al TOCAR (o hacer clic en) la imagen enfoca ese punto (anillo de confirmación). Donde el navegador no
-       deja controlar el enfoque (muchos computadores), el toque no hace nada más que mostrar el anillo. */
-    function setupFocus() {
-      const track = stream && stream.getVideoTracks()[0];
-      const caps = (track && track.getCapabilities && track.getCapabilities()) || {};
-      const modes = caps.focusMode || [];
-      if (track && modes.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
-      video.style.cursor = 'crosshair';
-      const host = video.parentNode;
-      if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
-      video.addEventListener('click', async (ev) => {
-        const r = video.getBoundingClientRect();
-        const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-        const ring = document.createElement('div');
-        ring.style.cssText = 'position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.5);pointer-events:none;transition:opacity .6s;left:' + (video.offsetLeft + x * r.width) + 'px;top:' + (video.offsetTop + y * r.height) + 'px';
-        host.appendChild(ring); setTimeout(() => { ring.style.opacity = '0'; }, 500); setTimeout(() => ring.remove(), 1200);
-        if (!track || !track.applyConstraints) return;
-        try {
-          const adv = { pointsOfInterest: [{ x, y }] };
-          if (modes.includes('single-shot')) adv.focusMode = 'single-shot'; else if (modes.includes('continuous')) adv.focusMode = 'continuous';
-          await track.applyConstraints({ advanced: [adv] });
-        } catch (e) { /* sin control de enfoque en este dispositivo */ }
-      });
-    }
-
     async function start() {
       const id = ++loopId;
       let s;
       try {
-        // Más resolución: el PDF417 de la cédula vieja son líneas muy finas y con 640×480 no se distinguen.
-        const hi = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
-        try { s = await navigator.mediaDevices.getUserMedia({ video: hi }); }
-        catch (e1) { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
+        s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       } catch (e) {
         status.classList.add('gw-cam__status--err');
         status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
@@ -306,7 +208,6 @@
       if (stopped || id !== loopId) { s.getTracks().forEach((t) => t.stop()); return; }       // se cerró o se cambió de modo mientras se pedía el permiso
       stream = s;
       video.srcObject = stream;
-      setupFocus();
       let detector = null;
       if ('BarcodeDetector' in window) {
         try {
@@ -315,79 +216,28 @@
           detector = formats.length ? new BarcodeDetector({ formats }) : null;
         } catch (e) { detector = null; }
       }
-      const wantsBars = !!(opts.formats && opts.formats.includes('pdf417'));
-      const barsOk = !!detector && (opts.formats || []).includes('pdf417') && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats().catch(() => [])).includes('pdf417'));
-      const zx = wantsBars ? await loadZxing().catch(() => null) : null;          // el universal (si está) trabaja SIEMPRE con el del navegador: el que lea primero gana
-      const jsQR = detector || zx ? null : await loadJsQr().catch(() => null);
+      const jsQR = detector ? null : await loadJsQr().catch(() => null);
       if (stopped || id !== loopId) return;
-      try { console.info('[escáner] motores:', [detector ? 'navegador' : '', zx ? (zx.worker ? 'ZXing (hilo aparte)' : 'ZXing') : '', jsQR ? 'jsQR' : ''].filter(Boolean).join(' + ') || 'ninguno', '| PDF417 del navegador:', barsOk); } catch (e) { /* sin consola */ }
-      if (wantsBars && !barsOk && !zx) box.querySelector('.qr-status').textContent = 'Este equipo aún no tiene el lector del código de barras de la cédula vieja (el QR sí se lee). Usa un lector de mano, Chrome en Android o escribe la cédula; soporte puede activarlo (scripts/vendor_zxing.sh).';
-      if (!detector && !zx && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
+      if (!detector && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      // Foto del código de barras con la cámara NATIVA del equipo (enfoque y resolución muy superiores a los del video en vivo): es el camino más seguro para la cédula vieja,
-      // en Android, iPhone y computador (en el computador abre el selector de archivos).
-      const stillBtn = box.querySelector('.qr-still'), stillFile = box.querySelector('.qr-still-file');
-      if (zx) {
-        stillBtn.hidden = false;
-        stillBtn.addEventListener('click', () => { stillFile.value = ''; stillFile.click(); });
-        stillFile.addEventListener('change', async () => {
-          const f = stillFile.files && stillFile.files[0];
-          if (!f) return;
-          status.classList.remove('gw-cam__status--err'); status.textContent = 'Leyendo la foto…'; stillBtn.disabled = true;
-          try {
-            const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-            // El PDF417 de la cédula vieja es MUY fino (cada raya mide ~2 píxeles aunque la foto sea buena): se prueba a varios tamaños, porque el lector acierta más cuando cada módulo mide ~3 a 4 píxeles.
-            const long = Math.max(bmp.width, bmp.height);
-            let z = null;
-            for (const target of [3200, 2000, 1400]) {
-              const k = Math.min(1, target / long);
-              const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-              const cx = c.getContext('2d', { willReadFrequently: true }); cx.imageSmoothingQuality = 'high'; cx.drawImage(bmp, 0, 0, c.width, c.height);
-              const img = cx.getImageData(0, 0, c.width, c.height);
-              for (const v of ZX_VARIANTS) {
-                const found = await zx.readWith({ data: new Uint8ClampedArray(img.data), width: img.width, height: img.height }, Object.assign({}, ZX_BASE_OPTS, v));
-                z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
-                if (z) break;
-              }
-              if (z) break;
-            }
-            if (z) emit(zxText(z), /pdf/i.test(String(z.format)) ? 'pdf417' : 'qr_code');
-            else { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo leer el código de la foto. Repite la foto: el código de barras debe llenar el ancho de la imagen, bien enfocado y sin reflejos.'; }
-          } catch (e) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo leer la foto. Intenta de nuevo.'; }
-          stillBtn.disabled = false;
-        });
-      }
 
       async function tick() {
         if (stopped || id !== loopId) return;
         if (video.videoWidth) {
           try {
-            let hit = null;
             if (detector) {
               const codes = await detector.detect(video);
-              if (codes.length) hit = { text: codes[0].rawValue, format: codes[0].format };
-            }
-            if (!hit && zx) {
-              const k = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));          // el código de barras de la cédula necesita resolución: se trabaja casi a tamaño completo
-              canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const found = await zx.read(ctx.getImageData(0, 0, canvas.width, canvas.height));
-              const z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
-              if (z) hit = { text: zxText(z), format: /pdf/i.test(String(z.format)) ? 'pdf417' : 'qr_code' };
-            }
-            if (!hit && jsQR) {
-              const k = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
-              canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
+              if (codes.length) emit(codes[0].rawValue, codes[0].format);
+            } else {
+              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
               const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-              if (code && code.data) hit = { text: code.data, format: 'qr_code' };
+              if (code && code.data) emit(code.data, 'qr_code');
             }
-            if (hit) emit(hit.text, hit.format);
-          } catch (e) { if (!tick.warned) { tick.warned = true; try { console.warn('[escáner] un cuadro no se pudo leer:', e && e.message); } catch (e2) { /* sin consola */ } } }          // un cuadro que no se pudo leer: sigue con el siguiente
+          } catch (e) { /* un cuadro que no se pudo leer: sigue con el siguiente */ }
         }
-        setTimeout(tick, zx ? 450 : 200);          // con ZXing un cuadro cada ~0,5 s: así el video de la cámara va fluido
+        setTimeout(tick, 200);
       }
       tick();
     }
@@ -445,6 +295,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, loadZxing, JSQR_URL, READERS_URL }; }
-  if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL, READERS_URL }; }
+  if (typeof module !== 'undefined') module.exports = { parse, classify, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();
