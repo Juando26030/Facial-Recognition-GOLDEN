@@ -21,7 +21,8 @@
   function paintProgress(text, cls) {
     if (!bar) return;
     bar.className = 'gw-versionbar gw-versionbar--' + (cls || 'warn');
-    bar.innerHTML = '<strong>Actualización:</strong> ' + esc(text);
+    bar.title = text;
+    bar.innerHTML = '<span class="gw-versionbar__txt"><strong>Actualización:</strong> ' + esc(text) + '</span>';
   }
 
   function poll(fails) {
@@ -69,17 +70,20 @@
       const ok = d.status === 'igual';
       info.className = 'gw-versionbar gw-versionbar--' + (ok ? 'ok' : 'warn');
       info.setAttribute('role', 'status');
-      info.innerHTML = ok ? '<strong>Versión:</strong> al día con producción' + (d.local && d.local.commit && d.local.commit !== 'desconocida' ? ' (' + esc(d.local.commit) + ')' : '') + '.' : '<strong>Versión:</strong> ' + esc(d.message);
+      const c7 = d.local && d.local.commit && d.local.commit !== 'desconocida' ? String(d.local.commit).slice(0, 7) : '';
+      info.title = ok ? 'Este servidor tiene la misma versión que producción' + (c7 ? ' (' + c7 + ')' : '') + '.' : (d.message || '');
+      info.innerHTML = '<span class="gw-versionbar__txt">' + (ok ? '<strong>Al día</strong>' + (c7 ? ' · ' + esc(c7) : '') : '<strong>Versión sin comprobar</strong>') + '</span>';
       place(info);
       return;
     }
     bar = document.createElement('div');
     bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' ? 'err' : 'warn');
     bar.setAttribute('role', 'alert');
-    bar.innerHTML = `<strong>Versión:</strong> ${esc(d.message)}`;
+    bar.title = d.message || '';
+    bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Versión adelantada' : 'Versión desactualizada'}</strong></span>`;
     if (d.status === 'desactualizada' || d.status === 'distinta_version') {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora'; b.style.marginLeft = '0.75rem';
+      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora';
       b.addEventListener('click', () => start(b));
       bar.appendChild(b);
     }

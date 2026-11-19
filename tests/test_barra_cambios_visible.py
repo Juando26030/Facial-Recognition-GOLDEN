@@ -21,5 +21,5 @@ def test_worker_sin_copia_espera_la_red_sin_tope():
 
 def test_franja_de_version_va_junto_al_logo_en_el_encabezado():
     js = _leer("static/js/version-banner.js")
-    assert ".golden-header-container .golden-logo" in js and "place(info)" in js and "place(bar)" in js
+    assert ".golden-header-container .golden-logo" in js and "place(info)" in js and "place(bar)" in js and "gw-versionbar__txt" in js
     assert ".golden-header .gw-versionbar { position: static;" in _leer("static/css/gw-notifications.css")
