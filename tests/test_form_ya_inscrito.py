@@ -344,3 +344,25 @@ def test_allow_repeats_lets_the_same_cedula_submit_again_but_the_browser_retry_s
     assert again.status_code == 200 and not again.json().get("replayed")
     assert _id_submit(client, ev, f, _person_values(), sid="otra-visita").json().get("replayed") is True
     assert db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).count() == 2
+
+
+def test_report_keeps_the_first_registration_and_lists_what_changed_in_each_resubmission():
+    """Reporte del formulario con reinscripciones: una fila por persona con los datos del PRIMER registro y el historial (campo, antes, después, hora) aparte."""
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from app.routers import forms as forms_router
+
+    design = {"fields": {"c": {"key": "id", "label": "Cédula"}, "n": {"key": "first_name", "label": "Nombres"}, "a": {"key": "last_name", "label": "Apellidos"}, "ci": {"key": None, "label": "Ciudad"}}}
+    cols = [("c", "Cédula", "text_short"), ("n", "Nombres", "text_short"), ("a", "Apellidos", "text_short"), ("ci", "Ciudad", "text_short")]
+
+    def sub(i, ced, city, when, test=False):
+        return SimpleNamespace(id=i, person_id=ced, is_test=test, created_at=when, data_json=json.dumps({"c": ced, "n": "Ana", "a": "Mora", "ci": city}))
+    subs = [sub(1, "1001", "Cali", datetime(2026, 11, 19, 14, 0)), sub(2, "2002", "Pasto", datetime(2026, 11, 19, 14, 5)),
+            sub(3, "1001", "Bogotá", datetime(2026, 11, 19, 15, 0)), sub(4, "1001", "Bogotá", datetime(2026, 11, 19, 16, 0))]
+    rows, changes = forms_router._resubmission_history(subs, design, cols)
+    assert [(s.id, n) for s, n, _ in rows] == [(1, 3), (2, 1)]                         # una fila por persona, con los datos del primer registro
+    assert rows[0][2] is not None and rows[1][2] is None
+    assert [(c[0], c[2], c[3], c[4]) for c in changes] == [("1001", "Ciudad", "Cali", "Bogotá"), ("1001", "(sin cambios en los datos)", "", "")]
+    assert changes[0][1] == "Ana Mora" and changes[0][6] == "Reinscripción"
