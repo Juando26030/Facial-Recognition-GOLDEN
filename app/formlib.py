@@ -64,6 +64,7 @@ DEFAULT_SETTINGS = {
     "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
     "translate": True,                                               # mostrar el botón «Translate» para quien no habla ese idioma
     "send_digital_badge": False,                                     # enviar la escarapela virtual al correo del inscrito cuando entra a la base del evento
+    "allow_repeats": False,                                          # «Permitir que la misma persona vuelva a enviar» (corregir o actualizar un dato); por defecto una cédula = una inscripción. Lo anula «Bloquear inscripciones repetidas»
     "block_repeats": {"enabled": False, "field": ""},                # «Ya inscrito»: bloquear inscripciones repetidas; `field` = id del campo identificador ("" = el campo vinculado a la cédula)
 }
 REPEAT_FIELD_TYPES = ("text_short", "email", "phone", "number")      # campos que pueden servir de identificador para detectar una inscripción repetida
@@ -925,6 +926,7 @@ def sanitize_settings(settings: dict) -> dict:
     out["send_digital_badge"] = bool(s_in.get("send_digital_badge", False))
     br = s_in.get("block_repeats") if isinstance(s_in.get("block_repeats"), dict) else {}
     out["block_repeats"] = {"enabled": bool(br.get("enabled")), "field": _text(br.get("field"), 40)}
+    out["allow_repeats"] = bool(s_in.get("allow_repeats", False)) and not out["block_repeats"]["enabled"]          # bloquear y permitir a la vez no tiene sentido: manda bloquear
     return out
 
 

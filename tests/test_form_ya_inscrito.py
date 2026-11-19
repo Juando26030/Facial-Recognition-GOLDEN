@@ -324,3 +324,23 @@ def test_form_list_rejects_bad_files_and_modes(client, factory):
     assert _list_up(client, ev, f, "Nombre", "Ana").status_code == 400
     assert _list_up(client, ev, f, "Cédula", "1001", mode="borrar").status_code == 400
     assert _list_up(client, ev, f, "Cédula,Registrado en formulario", "1001,no").status_code == 400
+
+
+# ------------------------------- hotfix 19-nov-2026: «Permitir que la misma persona vuelva a enviar»
+def test_allow_repeats_setting_is_sanitized_and_loses_against_block():
+    assert fl.sanitize_settings({})["allow_repeats"] is False
+    assert fl.sanitize_settings({"allow_repeats": True})["allow_repeats"] is True
+    assert fl.sanitize_settings({"allow_repeats": True, "block_repeats": {"enabled": True}})["allow_repeats"] is False
+
+
+def test_allow_repeats_lets_the_same_cedula_submit_again_but_the_browser_retry_stays_idempotent(client, factory, db):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    login(client, "coord1")
+    assert _put(client, ev, f, settings={"allow_repeats": True}).status_code == 200
+    _open(client, ev, f)
+    assert _id_submit(client, ev, f, _person_values()).status_code == 200
+    again = _id_submit(client, ev, f, _person_values(), sid="otra-visita")
+    assert again.status_code == 200 and not again.json().get("replayed")
+    assert _id_submit(client, ev, f, _person_values(), sid="otra-visita").json().get("replayed") is True
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).count() == 2

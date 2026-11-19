@@ -453,7 +453,15 @@ def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id:
     return q.first() is not None
 
 
-def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool, pre: bool = False) -> Tuple[bool, bool]:
+def dedupe_by_person(form: WebForm, settings: dict) -> bool:
+    """¿Este formulario rechaza una segunda inscripción de la MISMA cédula? Por defecto sí (una cédula = una inscripción). Con «Permitir que la misma persona vuelva a enviar» (`allow_repeats`)
+    NO: puede enviar otra vez para corregir o actualizar un dato (hotfix 19-nov-2026). Los compromisos (una firma por persona) y «Bloquear inscripciones repetidas» siempre rechazan."""
+    if form.kind == PLEDGE_KIND or (settings.get("block_repeats") or {}).get("enabled"):
+        return True
+    return not settings.get("allow_repeats")
+
+
+def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool, pre: bool = False, dedupe: bool = True) -> Tuple[bool, bool]:
     """(reintento, duplicado) con UNA lectura SIN bloqueo, ANTES de pedir el `FOR UPDATE` del formulario. Mismas condiciones que `form_reserve_slot` (migración 0049): reintento =
     ya hay una inscripción confirmada con esta `sid` (y esta persona, si viene); duplicado = ya hay una confirmada real con esta cédula (las pruebas nunca cuentan). Es solo un
     adelanto para no hacer fila por algo que ya se sabe: la reserva bajo bloqueo sigue siendo la autoridad y repite todas sus comprobaciones."""
@@ -466,7 +474,7 @@ def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional
             conds.append(fs.person_id == person_id)
         retry_q = select(fs.id).where(*conds).exists()
     dup_q = false()
-    if person_id is not None and not is_test:
+    if person_id is not None and not is_test and dedupe:
         dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status.in_(("confirmed", PREREGISTERED) if pre else ("confirmed",)), fs.person_id == person_id).exists()  # noqa: E712
     if not sid and (person_id is None or is_test):
         return False, False
@@ -647,12 +655,12 @@ FORM_LOCK_TIMEOUT_MS = int(os.getenv("FORM_LOCK_TIMEOUT_MS", "3000"))
 _RESERVE_SQL = text("SELECT set_config('lock_timeout', :lock_timeout, true); SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
 
 
-def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict) -> dict:
+def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict, dedupe: bool = True) -> dict:
     """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
     now = now_local()          # calendario propio de cada cupo: uno cerrado por fecha se manda con máximo 0 (= «cerrado»)
-    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
+    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id if dedupe else None, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
               "matched": json.dumps([{"sig": rule_sig(r), "limit": formlib.rule_limit_now(r, now), "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite

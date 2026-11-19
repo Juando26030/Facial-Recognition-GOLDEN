@@ -239,6 +239,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint" id="sendBadgeHint">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
             </div>
             <div class="gw-group__item">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="allowRep"> Permitir que la misma persona vuelva a enviar el formulario</label>
+              <p class="gw-hint">Por defecto una cédula solo puede inscribirse una vez en este formulario. Con esta casilla puede enviarlo otra vez (por ejemplo, para corregir o actualizar un dato) y se guarda como una inscripción más. No aplica si «Bloquear inscripciones repetidas» está encendido.</p>
+            </div>
+            <div class="gw-group__item">
               <label class="gw-check gw-check--top"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
               <div id="blockRepBox" class="gwe-indent" hidden><div class="gw-field gw-field--inline"><label class="gw-label" for="blockRepField">Campo que identifica a la persona</label><select id="blockRepField" class="gw-select"></select></div></div>
               <p class="gw-hint">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
@@ -1426,6 +1430,7 @@ function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
   paintBlockRep(s.block_repeats || {});
+  $('allowRep').checked = !!s.allow_repeats && !(s.block_repeats || {}).enabled;
   paintRegCount();
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
@@ -1470,7 +1475,7 @@ function paintBlockRep(b) {
   sel.value = (b.field && design.fields[b.field]) ? b.field : '';
   $('blockRep').checked = !!b.enabled; $('blockRepBox').hidden = !(b.enabled);
 }
-$('blockRep').addEventListener('change', () => { $('blockRepBox').hidden = !($('blockRep').checked); if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
+$('blockRep').addEventListener('change', () => { if ($('blockRep').checked) $('allowRep').checked = false; $('blockRepBox').hidden = !($('blockRep').checked); if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
 const QOPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const qFields = () => Object.values(design.fields).filter((f) => !STATIC.includes(f.type) && !NOCOND.includes(f.type) && f.type !== 'file');
 function qValueHtml(c, ri, ci) {
@@ -1596,6 +1601,7 @@ async function saveConfig(opts = {}) {
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
     block_repeats: { enabled: $('blockRep').checked, field: $('blockRep').checked ? $('blockRepField').value : '' },
+    allow_repeats: $('allowRep').checked && !$('blockRep').checked,
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
