@@ -989,9 +989,10 @@ def list_submissions(event_id: int, form_id: int, include_tests: bool = True, pa
         rows = base.filter(FormSubmission.id.in_(ids)).order_by(FormSubmission.id.desc()).all() if ids else []
     paid = _approved_by_submission(db, form, [s.id for s in rows])
     known = formsvc.known_before(db, form, rows)
+    resub = formsvc.resubmission_numbers(db, form, design)
     return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)],
             "total": total, "total_all": total_all, "page": pg["page"], "page_size": pg["page_size"], "pages": pg["pages"], "quotas": quotas, "rows": [
-        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "known": s.id in known, "source": s.source or "",
+        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "known": s.id in known, "source": s.source or "", "resub": resub.get(s.id, 0),
          "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
 
 
