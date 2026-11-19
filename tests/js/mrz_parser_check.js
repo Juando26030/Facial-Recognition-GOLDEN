@@ -50,6 +50,12 @@ p = parseMrz(n); assert.strictEqual(p.cedula, '1013259208'); assert.strictEqual(
 n = make({ ced: '1013259208' }).slice(); n[1] = n[1].replace('1013259208', '1013259209');
 p = parseMrz(n); assert.strictEqual(p.checks.composite, false); assert.strictEqual(mrzStrong(p), false);
 
+// 6b) letras por dígitos también en el dato opcional de la línea 1 (el control general sigue cuadrando)
+n = make({ ced: '1013259208' }).slice(); n[0] = n[0].replace('12345', 'I2345'); p = parseMrz(n); assert.strictEqual(p.checks.composite, true); assert(mrzStrong(p));
+// 6c) si el OCR pierde un «<» de los nombres (sin «<<» entre apellidos y nombres), se separa por suposición pero NUNCA queda «fuerte»
+n = make({ ced: '1013259208', names: 'RAMIREZ<TORRES<<JUAN<DAVID' }).slice(); n[2] = pad('RAMIREZ<TORRES<JUAN<DAVID', 30);
+p = parseMrz(n); assert.strictEqual(p.apellido1, 'RAMIREZ'); assert.strictEqual(p.nombre2, 'DAVID'); assert.strictEqual(p.nombresIncierto, true); assert.strictEqual(mrzStrong(p), false);
+
 // 7) basura o líneas incompletas → null
 assert.strictEqual(parseMrz(['HOLA MUNDO', 'NADA QUE VER']), null);
 assert.strictEqual(parseMrz([]), null);
