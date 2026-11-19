@@ -683,7 +683,7 @@
 
     if (scanQrBtn && canAccredit) {
         scanQrBtn.addEventListener('click', () => {
-            QrScanner.open({
+            const sc = QrScanner.open({
                 title: 'Escanear',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processMrzPhoto,
@@ -695,6 +695,7 @@
                     if (r.kind === 'qr') window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos }, 'qr');
                     else if (r.nombres || r.apellidos) window.directorySearch.submitScannedCedula(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
                     else fillSearchAndSearch(r.cedula);
+                    sc.close();          // como en Áreas e Inventario: al reconocer el código la cámara se cierra sola
                 },
             });
         });
@@ -759,7 +760,7 @@
 
     if (regScanMrzCameraBtn) {
         regScanMrzCameraBtn.addEventListener('click', () => {
-            QrScanner.open({
+            const sc2 = QrScanner.open({
                 title: 'Escanear cédula',
                 formats: ['qr_code', 'pdf417'],
                 onPhoto: processRegScanMrzPhoto,
@@ -767,7 +768,7 @@
                     let text = rawText;
                     try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }
                     const r = QrCode.classify(text, format, GoldenDirectory.parseOldCedulaBarcode);
-                    if (r) fillRegFormFromScan(r.cedula, { nombres: r.nombres, apellidos: r.apellidos });
+                    if (r) { fillRegFormFromScan(r.cedula, { nombres: r.nombres, apellidos: r.apellidos }); sc2.close(); }
                     else showToast('No se reconoció el código: acerca la cámara al reverso de la cédula', 'error');
                 },
             });

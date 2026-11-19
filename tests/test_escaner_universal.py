@@ -15,3 +15,10 @@ def test_vendor_script_and_csp_allow_wasm():
     sh = (ROOT / "scripts/vendor_zxing.sh").read_text(encoding="utf-8")
     assert "npm pack" in sh and "static/vendor/zxing" in sh
     assert "'wasm-unsafe-eval'" in (ROOT / "app/main.py").read_text(encoding="utf-8")
+
+
+def test_registro_closes_the_camera_when_the_code_is_recognised_and_both_engines_run():
+    html = (ROOT / "templates/kiosk_registro.html").read_text(encoding="utf-8")
+    assert "sc.close()" in html and "sc2.close()" in html
+    js = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
+    assert "GlobalHistogram" in js and "[escáner] motores:" in js

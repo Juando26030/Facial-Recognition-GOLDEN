@@ -142,7 +142,10 @@
     return zxPromise.then((z) => {
       if (!z) return null;
       const read = z.readBarcodes || z.readBarcodesFromImageData;
-      return { read: (img) => read(img, { formats: ['PDF417', 'QRCode'], tryHarder: true, maxNumberOfSymbols: 1 }) };
+      // Cada cuadro se prueba con una preparación distinta de la imagen (pantallas con tramas, reflejos, poca luz): normal, histograma global y con reducción de ruido.
+      const VARIANTS = [{ binarizer: 'LocalAverage' }, { binarizer: 'GlobalHistogram' }, { binarizer: 'LocalAverage', tryDenoise: true }];
+      let n = 0;
+      return { read: (img) => read(img, Object.assign({ formats: ['PDF417', 'QRCode'], tryHarder: true, tryRotate: true, tryInvert: true, maxNumberOfSymbols: 1 }, VARIANTS[n++ % VARIANTS.length])) };
     });
   }
   // El PDF417 de la cédula trae bytes: se entregan tal cual (latin1), como los entrega BarcodeDetector, para que las posiciones de cada dato no se muevan.
@@ -256,8 +259,9 @@
       }
       const wantsBars = !!(opts.formats && opts.formats.includes('pdf417'));
       const barsOk = !!detector && (opts.formats || []).includes('pdf417') && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats().catch(() => [])).includes('pdf417'));
-      const zx = wantsBars && !barsOk ? await loadZxing().catch(() => null) : null;          // sin lector de PDF417 en el navegador: el universal (si está)
+      const zx = wantsBars ? await loadZxing().catch(() => null) : null;          // el universal (si está) trabaja SIEMPRE con el del navegador: el que lea primero gana
       const jsQR = detector || zx ? null : await loadJsQr().catch(() => null);
+      try { console.info('[escáner] motores:', [detector ? 'navegador' : '', zx ? 'ZXing' : '', jsQR ? 'jsQR' : ''].filter(Boolean).join(' + ') || 'ninguno', '| PDF417 del navegador:', barsOk); } catch (e) { /* sin consola */ }
       if (wantsBars && !barsOk && !zx) box.querySelector('.qr-status').textContent = 'Este equipo aún no tiene el lector del código de barras de la cédula vieja (el QR sí se lee). Usa un lector de mano, Chrome en Android o escribe la cédula; soporte puede activarlo (scripts/vendor_zxing.sh).';
       if (!detector && !zx && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -266,23 +270,27 @@
         if (stopped) return;
         if (video.videoWidth) {
           try {
-            if (zx) {
+            let hit = null;
+            if (detector) {
+              const codes = await detector.detect(video);
+              if (codes.length) hit = { text: codes[0].rawValue, format: codes[0].format };
+            }
+            if (!hit && zx) {
               canvas.width = video.videoWidth; canvas.height = video.videoHeight;
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const found = await zx.read(ctx.getImageData(0, 0, canvas.width, canvas.height));
-              const hit = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
-              if (hit) emit(zxText(hit), /pdf/i.test(String(hit.format)) ? 'pdf417' : 'qr_code');
-            } else if (detector) {
-              const codes = await detector.detect(video);
-              if (codes.length) emit(codes[0].rawValue, codes[0].format);
-            } else {
+              const z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
+              if (z) hit = { text: zxText(z), format: /pdf/i.test(String(z.format)) ? 'pdf417' : 'qr_code' };
+            }
+            if (!hit && jsQR) {
               canvas.width = video.videoWidth; canvas.height = video.videoHeight;
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
               const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-              if (code && code.data) emit(code.data, 'qr_code');
+              if (code && code.data) hit = { text: code.data, format: 'qr_code' };
             }
-          } catch (e) { /* un cuadro que no se pudo leer: sigue con el siguiente */ }
+            if (hit) emit(hit.text, hit.format);
+          } catch (e) { if (!tick.warned) { tick.warned = true; try { console.warn('[escáner] un cuadro no se pudo leer:', e && e.message); } catch (e2) { /* sin consola */ } } }          // un cuadro que no se pudo leer: sigue con el siguiente
         }
         setTimeout(tick, 200);
       }
