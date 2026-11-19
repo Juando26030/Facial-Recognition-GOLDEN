@@ -76,7 +76,7 @@
       info.setAttribute('role', 'status');
       const c7 = d.local && d.local.commit && d.local.commit !== 'desconocida' ? String(d.local.commit).slice(0, 7) : '';
       info.title = ok ? 'Este servidor tiene la misma versión que producción' + (c7 ? ' (' + c7 + ')' : '') + '.' : (d.message || '');
-      info.innerHTML = '<span class="gw-versionbar__txt">' + (ok ? '<strong>Al día</strong>' + (c7 ? ' · ' + esc(c7) : '') : '<strong>Versión sin comprobar</strong>') + '</span>';
+      info.innerHTML = '<span class="gw-versionbar__txt">' + (ok ? '<strong>Al día</strong>' + (c7 ? '<span class="gw-vb-extra"> · ' + esc(c7) + '</span>' : '') : '<strong>Sin comprobar</strong>') + '</span>';
       place(info);
       return;
     }
@@ -87,7 +87,7 @@
     bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Adelantada' : 'Desactualizada'}</strong></span>`;
     if (d.status === 'desactualizada' || d.status === 'distinta_version') {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora';
+      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.innerHTML = '<span class="gw-vb-long">Actualizar ahora</span><span class="gw-vb-short">Actualizar</span>';
       if (pv) { b.title = 'Vista de prueba: no actualiza'; b.addEventListener('click', () => { if (window.showToast) window.showToast('Vista de prueba: no se actualiza nada', 'info'); }); } else b.addEventListener('click', () => start(b));
       bar.appendChild(b);
     }
@@ -104,7 +104,7 @@
     chip.type = 'button';
     chip.className = 'gw-versionbar gw-versionbar--info';
     chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador (la primera vez acepta el aviso del certificado). Clic para copiar el enlace.';
-    chip.innerHTML = '<span class="gw-versionbar__txt"><strong>Conectar:</strong> ' + esc(a.addresses[0] + ':' + a.port) + '</span>';
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">Conectar: </strong>' + esc(a.addresses[0] + ':' + a.port) + '</span>';
     chip.addEventListener('click', () => {
       const text = url(a.addresses[0]);
       const done = () => { if (window.showToast) window.showToast('Enlace copiado: ' + text, 'success'); };

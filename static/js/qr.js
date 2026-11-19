@@ -177,15 +177,44 @@
       });
     }
 
+    /* Enfoque: continuo si la cámara lo permite, y al TOCAR (o hacer clic en) la imagen enfoca ese punto (anillo de confirmación). Donde el navegador no
+       deja controlar el enfoque (muchos computadores), el toque no hace nada más que mostrar el anillo. */
+    function setupFocus() {
+      const track = stream && stream.getVideoTracks()[0];
+      const caps = (track && track.getCapabilities && track.getCapabilities()) || {};
+      const modes = caps.focusMode || [];
+      if (track && modes.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+      video.style.cursor = 'crosshair';
+      const host = video.parentNode;
+      if (host && getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      video.addEventListener('click', async (ev) => {
+        const r = video.getBoundingClientRect();
+        const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+        const ring = document.createElement('div');
+        ring.style.cssText = 'position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.5);pointer-events:none;transition:opacity .6s;left:' + (video.offsetLeft + x * r.width) + 'px;top:' + (video.offsetTop + y * r.height) + 'px';
+        host.appendChild(ring); setTimeout(() => { ring.style.opacity = '0'; }, 500); setTimeout(() => ring.remove(), 1200);
+        if (!track || !track.applyConstraints) return;
+        try {
+          const adv = { pointsOfInterest: [{ x, y }] };
+          if (modes.includes('single-shot')) adv.focusMode = 'single-shot'; else if (modes.includes('continuous')) adv.focusMode = 'continuous';
+          await track.applyConstraints({ advanced: [adv] });
+        } catch (e) { /* sin control de enfoque en este dispositivo */ }
+      });
+    }
+
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        // Más resolución: el PDF417 de la cédula vieja son líneas muy finas y con 640×480 no se distinguen.
+        const hi = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
+        try { stream = await navigator.mediaDevices.getUserMedia({ video: hi }); }
+        catch (e1) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
       } catch (e) {
         status.classList.add('gw-cam__status--err');
         status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
         return;
       }
       video.srcObject = stream;
+      setupFocus();
       let detector = null;
       if ('BarcodeDetector' in window) {
         try {
@@ -197,7 +226,7 @@
       const wantsBars = !!(opts.formats && opts.formats.includes('pdf417'));
       const barsOk = !!detector && (opts.formats || []).includes('pdf417') && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats().catch(() => [])).includes('pdf417'));
       const jsQR = detector ? null : await loadJsQr().catch(() => null);
-      if (wantsBars && !barsOk) box.querySelector('.qr-status').textContent = 'Este navegador solo lee el QR. El código de barras de la cédula se lee con Chrome en Android o con un lector de mano.';
+      if (wantsBars && !barsOk) box.querySelector('.qr-status').textContent = 'Este navegador no lee el código de barras de la cédula vieja (sí el QR). Úsalo en Chrome en Android, con un lector de mano, o escribe la cédula.';
       if (!detector && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 

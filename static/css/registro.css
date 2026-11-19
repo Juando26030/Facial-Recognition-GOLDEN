@@ -253,3 +253,6 @@ body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-orig
   body.gw-registro:not(.touch-mode) .action-cell .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   body.gw-registro:not(.touch-mode) .action-cell .gw-btn { min-width: var(--gw-tap); padding: 0 var(--gw-sp-2); }
 }
+
+/* Modo oscuro: el formulario de «Registro de nuevo personal» heredaba el fondo BLANCO de style.css (.golden-badge-builder). Dentro del modal, la tarjeta (.gw-card) es la que pone fondo, borde y relleno. */
+.gw-registro__modal > .golden-badge-builder { background: transparent; padding: 0; border: 0; border-radius: 0; box-shadow: none; color: inherit; }

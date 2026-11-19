@@ -245,15 +245,22 @@ def _refresh_accounts(db: Session) -> None:
         log.warning("no se pudieron actualizar las cuentas desde la nube")
 
 
-def _refresh_checklists(db: Session) -> None:
-    """Mientras hay internet, deja puesta al día la foto del checklist de inventario de cada evento descargado (solo lectura; sin datos de personas). Sin internet o con un fallo, se conserva la anterior."""
+def refresh_checklist(db: Session, ev: Event) -> bool:
+    """Pone al día la foto del checklist de inventario de UN evento descargado (solo lectura; sin datos de personas). Sin internet o con un fallo, se conserva la anterior. True si se actualizó."""
     from app import cloud_client, event_checklist
+    try:
+        event_checklist.save_snapshot(db, ev.id, cloud_client.inventory_checklist(ev.cloud_event_id))
+        db.commit()
+        return True
+    except Exception:                                        # noqa: BLE001  (sin internet: normal)
+        db.rollback()
+        return False
+
+
+def _refresh_checklists(db: Session) -> None:
+    """Mientras hay internet, deja puesta al día la foto del checklist de cada evento descargado."""
     for ev in synced_events(db):
-        try:
-            event_checklist.save_snapshot(db, ev.id, cloud_client.inventory_checklist(ev.cloud_event_id))
-            db.commit()
-        except Exception:                                    # noqa: BLE001  (sin internet: normal)
-            db.rollback()
+        refresh_checklist(db, ev)
 
 
 def upload_all(db: Session, *, force: bool = False) -> dict:

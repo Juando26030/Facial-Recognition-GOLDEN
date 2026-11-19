@@ -42,6 +42,22 @@ def run_now(db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
     return node_sync.upload_all(db, force=True)
 
 
+@router.post("/node-sync/events/{event_id}/run")
+def run_event(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """«Sincronizar» un evento: sube ahora lo pendiente de ESE evento (sin esperar los 30 minutos) y pone al día su checklist de inventario. NO libera el evento."""
+    _only_local()
+    event = db.get(Event, event_id)
+    if event is None or event.cloud_event_id is None:
+        raise HTTPException(status_code=404, detail="Evento no encontrado entre los bajados de la nube")
+    if not node_sync.configured():
+        raise HTTPException(status_code=400, detail="Este servidor no tiene configurado el token ni la dirección de producción (NODE_TOKEN y PRODUCTION_URL)")
+    out = node_sync.upload_event(db, event, force=True)
+    node_sync.refresh_checklist(db, event)
+    if not out["ok"]:
+        raise HTTPException(status_code=409, detail=out.get("error") or "No se pudo subir")
+    return {"ok": True, "pending": out["pending"]}
+
+
 @router.post("/node-sync/events/{event_id}/release")
 def release(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
     """«Pasar a internet»: sube todo y, si quedó todo confirmado, la nube libera el evento. Si algo falla no se libera y se explica por qué."""

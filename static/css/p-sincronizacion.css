@@ -3,5 +3,5 @@
 .sync-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); }
 .sync-card .gw-card-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
 .sync-card .gw-card-row__meta { margin: var(--gw-sp-1) 0 0; font-size: var(--gw-fs-sm); }
-.sync-card .gw-card-row__actions { margin: 0; }
-@media (max-width: 640px) { .sync-card { grid-template-columns: minmax(0, 1fr); row-gap: var(--gw-sp-3); } .sync-card .gw-card-row__actions .gw-btn { width: 100%; } }
+.sync-card .gw-card-row__actions { margin: 0; display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); justify-content: flex-end; }
+@media (max-width: 640px) { .sync-card { grid-template-columns: minmax(0, 1fr); row-gap: var(--gw-sp-3); } .sync-card .gw-card-row__actions .gw-btn { flex: 1 1 auto; } }

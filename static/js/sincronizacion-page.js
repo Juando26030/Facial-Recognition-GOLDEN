@@ -30,8 +30,8 @@
           <p class="gw-card-row__meta">Bajado: ${esc(when(e.package_at))} · Última subida: ${esc(when(e.last_upload_at))}</p>
           <p class="gw-card-row__meta">Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos)</p>
           ${e.error ? `<p class="gw-text-danger">${esc(e.error)}</p>` : ''}
-          ${bad ? `<p class="gw-text-danger">Hecho aquí que todavía no sube a la nube: ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Mientras exista, no se puede pasar a internet.</p>` : ''}</div>
-          <div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--primary" data-release="${e.id}">Pasar a internet</button></div></div>`;
+          ${bad ? `<p class="gw-text-danger">Registrado solo en este servidor (la sincronización todavía no lo envía a la nube): ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Por eso «Pasar a internet» está protegido: se perdería. Avisa a soporte antes de liberar.</p>` : ''}</div>
+          <div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary" data-sync="${e.id}" title="Sube ahora lo pendiente de este evento, sin esperar los 30 minutos">Sincronizar</button><button type="button" class="gw-btn gw-btn--primary" data-release="${e.id}">Pasar a internet</button></div></div>`;
       }).join('');
       box.innerHTML = warn + ver + `<div class="gw-toolbar"><button type="button" class="gw-btn gw-btn--secondary" data-run>Subir ahora</button><span class="gw-hint">Pendientes en total: ${d.pending_total}. Se sube solo cada ${d.interval_minutes} min.</span></div>` +
         (rows ? `<div class="ev-list sync-list">${rows}</div>` : '<div class="gw-state" role="status"><p class="gw-state__title">No hay eventos bajados de la nube en este servidor</p></div>');
@@ -60,6 +60,12 @@
         b.disabled = true;
         const r = await post('/api/node-sync/run');
         showToast(r.failed ? 'Algunos eventos no se pudieron subir: revisa el motivo en cada uno' : 'Subida terminada', r.failed ? 'error' : 'success');
+        await loadLocal();
+      } else if (b.dataset.sync) {
+        b.disabled = true;
+        const old = b.textContent; b.textContent = 'Sincronizando…';
+        try { const r = await post(`/api/node-sync/events/${b.dataset.sync}/run`); showToast(r.pending ? `Sincronizado; quedan ${r.pending} por subir` : 'Sincronizado: todo subido', r.pending ? 'warning' : 'success'); }
+        finally { b.disabled = false; b.textContent = old; }
         await loadLocal();
       } else if (b.dataset.release) {
         if (!(await showConfirm('Se sube todo lo pendiente y el evento vuelve a editarse en la nube; este servidor deja de ser el dueño del evento. ¿Pasarlo a internet?', { variant: 'warning', confirmLabel: 'Sí, pasar a internet' }))) return;

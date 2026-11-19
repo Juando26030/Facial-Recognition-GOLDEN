@@ -25,7 +25,28 @@
 .gw-versionbar--info { background: var(--gw-info-bg, var(--gw-surface-2)); color: var(--gw-info-text, var(--gw-link)); cursor: pointer; border: 1px solid var(--gw-border); }
 .golden-header .gw-versionbar--info { max-width: 24rem; margin-left: var(--gw-sp-2); font-family: inherit; }
 .golden-header .gw-versionbar:has(+ .gw-versionbar--info) { margin-right: 0; }
-@media (max-width: 900px) { .golden-header .gw-versionbar--info { display: none; } }
+/* Prioridad en el encabezado cuando falta espacio: 1) la IP para conectar (SIEMPRE completa) y el aviso rojo, 2) el resto. Todo en una línea y sin descuadrar el usuario ni el tema. */
+.golden-header .gw-versionbar--info { flex: 0 0 auto; max-width: none; white-space: nowrap; overflow: visible; }
+.golden-header .gw-versionbar--info .gw-versionbar__txt { overflow: visible; text-overflow: clip; }
+.golden-header .gw-versionbar--err { flex: 0 0 auto; max-width: none; }
+.golden-header .gw-versionbar--err .gw-versionbar__txt { overflow: visible; }
+.gw-vb-short { display: none; }
+@media (max-width: 1199px) {
+  .golden-header .gw-theme-toggle { flex: none; justify-content: center; width: var(--gw-tap); padding: 0; }          /* tema: solo el sol o la luna */
+  .golden-header .gw-theme-toggle [data-gw-theme-label] { display: none; }
+  .golden-header .gw-shell__who { flex: 0 1 auto; min-width: 0; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 1099px) { .gw-vb-extra { display: none; } }
+@media (max-width: 900px) {
+  .gw-vb-long { display: none; } .gw-vb-short { display: inline; }
+  .golden-header .gw-shell__who { display: none; }
+  .golden-header .gw-versionbar { margin-left: var(--gw-sp-2); }
+}
+@media (max-width: 760px) { .golden-header .gw-versionbar--info .gw-vb-lbl { display: none; } }
+@media (max-width: 640px) {
+  .golden-header .gw-versionbar--ok, .golden-header .gw-versionbar--warn { display: none; }
+  .golden-header .gw-versionbar--err .gw-versionbar__txt { display: none; }
+}
 .golden-header .golden-nav { flex-shrink: 0; }
 .golden-header .golden-logo { flex: 0 0 auto; }
 .golden-header .golden-logo img { max-width: none; object-fit: contain; }
