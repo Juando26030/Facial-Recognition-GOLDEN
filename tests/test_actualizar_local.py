@@ -146,3 +146,13 @@ def test_manifest_falls_back_to_the_package_in_storage(monkeypatch):
     monkeypatch.setattr(lu, "storage_package", lambda: None)
     assert lu.published_manifest()["available"] is False
     assert lu.package_bytes("../../etc/passwd") is None
+
+
+def test_franja_de_version_visible_en_pantalla_ancha():
+    """El encabezado fijo tapaba la franja de versión en escritorio: debe pasar a fija sobre él."""
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent / "static" / "css" / "gw-notifications.css").read_text(encoding="utf-8")
+    assert "@media (min-width: 901px)" in css
+    bloque = css.split("@media (min-width: 901px)", 1)[1].split("}", 1)[0]
+    assert "position: fixed" in bloque and "z-index: 1100" in bloque
