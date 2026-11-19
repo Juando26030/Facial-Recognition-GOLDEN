@@ -11,6 +11,9 @@
 #   bash deploy/loadtest/run_phase4.sh scale-up           # sube min/max de instancias de web, publico y biometria; GUARDA los valores originales; scale-down los restaura
 #   bash deploy/loadtest/run_phase4.sh run small          # MODO PEQUEÑO (~5 %): valida toda la cadena en ~3 min antes de la corrida completa
 #   bash deploy/loadtest/run_phase4.sh run                # corrida completa: formularios 10.000/5.000, cédula 200×30 min y facial, AL MISMO TIEMPO
+#   LOAD_PEOPLE=40000 bash deploy/loadtest/run_phase4.sh seed   # (para «rush») evento sintético de 40.000 personas
+#   LOAD_PEOPLE=40000 bash deploy/loadtest/run_phase4.sh run rush   # 40.000 escaneos de cédula SIN pausa (400 estaciones; 20 % sin cédula conocida → búsqueda por nombre)
+#   bash deploy/loadtest/run_phase4.sh report-rush <EJECUCION_rush>
 #   bash deploy/loadtest/run_phase4.sh report <EJECUCION_forms> <EJECUCION_cedula> <EJECUCION_face>   # une los logs y compara con los criterios
 #   bash deploy/loadtest/run_phase4.sh verify             # cupo, duplicados e ingresos en la base (solo cifras)
 #   bash deploy/loadtest/run_phase4.sh cleanup            # borra SOLO los 3 Jobs del generador (no los datos: para eso purge-data)
@@ -94,7 +97,7 @@ case "${1:-}" in
     docker push "$IMAGE" || { echo "FALLÓ el push de la imagen: no sigas con seed/run." >&2; exit 1; } ;;
   seed)
     say "Sembrando (Job existente $APP_IMAGE_JOB, con DEPLOY_ENV=staging)"
-    ops_job "--people,5000,--capacity,4000"
+    ops_job "--people,${LOAD_PEOPLE:-5000},--capacity,4000"
     line="$(log_line LOAD_SEED)" || { echo "El seed terminó bien; solo falta leer event_id. Cuando aparezca la línea, usa LOAD_EVENT_ID=<id> en «run» (o corre «verify», que también lo imprime)." >&2; exit 1; }
     echo "LOAD_SEED (event_id y form_slug): $line" ;;
   reset-data)
@@ -115,7 +118,9 @@ case "${1:-}" in
     if [ "${PREFLIGHT_SKIP:-0}" = 1 ]; then echo "AVISO: PREFLIGHT_SKIP=1, no se comprobaron límites ni instancias." >&2; else preflight; fi
     LOAD_EVENT_ID="${LOAD_EVENT_ID:-$(log_line LOAD_SEED | sed -n 's/.*"event_id": *\([0-9]*\).*/\1/p')}"
     [ -n "$LOAD_EVENT_ID" ] || { echo "Define LOAD_EVENT_ID (de la línea LOAD_SEED de los logs; corre «seed» primero)." >&2; exit 1; }
-    if [ "$MODE" = small ]; then     # ~5 % de la escala: 1 tarea por escenario, 500 aperturas (~250 envíos), 10 estaciones de cédula 2 min, 3 usuarios faciales 1 min
+    if [ "$MODE" = rush ]; then     # 40.000 escaneos de cédula lo más rápido posible: RUSH_STATIONS estaciones sin pausa, repartidas en TASKS_RUSH tareas (ver CedulaRush en tests/load/locustfile.py)
+      ONLY=rush; TR="${TASKS_RUSH:-4}"; RU="${RUSH_STATIONS:-400}"; RR=40; RD="${RUSH_MAX_SECONDS:-1500}"; TF=0; TC=0; TX=0
+    elif [ "$MODE" = small ]; then     # ~5 % de la escala: 1 tarea por escenario, 500 aperturas (~250 envíos), 10 estaciones de cédula 2 min, 3 usuarios faciales 1 min
       TF=1; TC=1; TX=1; FU=500; FR=9; FD=180; CU=10; CR=5; CD=120; XU=3; XR=3; XD=60
     else
       TF="${TASKS_FORMS:-6}"; TC="${TASKS_CEDULA:-4}"; TX="${TASKS_FACE:-4}"; FU=10000; FR=170; FD=360; CU=200; CR=20; CD=$(( CEDULA_MIN * 60 )); XU=60; XR=10; XD=300
@@ -125,7 +130,7 @@ case "${1:-}" in
       # Variables en un ARCHIVO (--env-vars-file), no en --set-env-vars: LOAD_ALLOWED_HOSTS lleva comas y gcloud las tomaría como separador de variables.
       local envfile; envfile="$(mktemp)"
       "${PYTHON3:-python3}" "$(dirname "$0")/job_env.py" "$envfile" "LOAD_SCENARIO=$2" "LOAD_HOST=$WEB_URL" "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" "LOAD_USERS=$3" "LOAD_RATE=$4" \
-        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" "LOAD_QUOTES=$QUOTES" \
+        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=${LOAD_PEOPLE:-5000}" "LOAD_SCANS=${LOAD_SCANS:-40000}" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" "LOAD_QUOTES=$QUOTES" \
         || { rm -f "$envfile"; return 1; }
       gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 \
         --task-timeout "$(( $5 + 240 ))s" --cpu 1 --memory 1Gi \
@@ -138,8 +143,9 @@ case "${1:-}" in
     if has forms;  then mk forms  forms  "$FU" "$FR" "$FD" "$TF" || { echo "FALLÓ el despliegue del Job forms: no se lanzó nada." >&2; exit 1; }; fi
     if has cedula; then mk cedula cedula "$CU" "$CR" "$CD" "$TC" || { echo "FALLÓ el despliegue del Job cedula: no se lanzó nada." >&2; exit 1; }; fi
     if has face;   then mk face   face   "$XU" "$XR" "$XD" "$TX" || { echo "FALLÓ el despliegue del Job face: no se lanzó nada." >&2; exit 1; }; fi
+    if has rush;   then mk rush   rush   "$RU" "$RR" "$RD" "$TR" || { echo "FALLÓ el despliegue del Job rush: no se lanzó nada." >&2; exit 1; }; fi
     say "Lanzando ($ONLY) a la vez, sin --wait; sigue con «report» cuando terminen"
-    for s in forms cedula face; do
+    for s in forms cedula face rush; do
       has "$s" && echo "$s: $(gcloud run jobs execute "$JOB-$s" --project "$PROJECT" --region "$REGION" --async --format='value(metadata.name)')"
     done
     echo "Anota los nombres de ejecución de arriba (se usan en «report»; pon - en el escenario que no corriste)." ;;
@@ -153,6 +159,11 @@ case "${1:-}" in
         --project "$PROJECT" --format=json --limit 1000 > "/tmp/loadgen_$s.json"
     done
     python3 scripts/loadgen_report.py "${files[@]}" ;;
+  report-rush)
+    [ "$#" -eq 2 ] || { echo "Uso: report-rush <exec_rush>"; exit 1; }
+    gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB-rush\" AND labels.\"run.googleapis.com/execution_name\"=\"$2\" AND textPayload:\"LOADGEN_RESULT\"" \
+      --project "$PROJECT" --format=json --limit 1000 > /tmp/loadgen_rush.json
+    python3 scripts/loadgen_report.py /tmp/loadgen_rush.json ;;
   verify)
     ops_job "--verify"; line="$(log_line LOAD_VERIFY)" || exit 1; echo "LOAD_VERIFY: $line"
     echo "Esperado tras la corrida completa: oversold=0, duplicate_persons=0, duplicate_sids=0, confirmed_submissions=capacity (4000: hubo ~5.000 intentos), access_logs_in_event ≥ las respuestas 200 de «POST checkin-cedula» del informe." ;;
@@ -180,7 +191,7 @@ case "${1:-}" in
     done < "$SCALE_FILE"
     rm -f "$SCALE_FILE"; echo "Restaurado." ;;
   cleanup)
-    for s in forms cedula face; do gcloud run jobs delete "$JOB-$s" --project "$PROJECT" --region "$REGION" --quiet || true; done
-    echo "Borrados los 3 Jobs del generador en $REGION. NO se tocó: los datos LOAD-STG (purge-data), la imagen loadgen en Artifact Registry, los logs, ni los límites/instancias (limits-down, scale-down)." ;;
+    for s in forms cedula face rush; do gcloud run jobs delete "$JOB-$s" --project "$PROJECT" --region "$REGION" --quiet || true; done
+    echo "Borrados los Jobs del generador en $REGION. NO se tocó: los datos LOAD-STG (purge-data), la imagen loadgen en Artifact Registry, los logs, ni los límites/instancias (limits-down, scale-down)." ;;
   *) sed -n 2,26p "$0"; exit 1 ;;
 esac

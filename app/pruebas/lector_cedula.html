@@ -455,6 +455,9 @@ const PLANS = {
 
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d', { willReadFrequently: true })]; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* Cede el turno al navegador entre una decodificación y la siguiente: el análisis a fondo encadena decenas de intentos y, sin esto, el hilo de la página quedaba ocupado
+   hasta 1,6 s seguidos (video congelado, botones sin responder). Lo que se analiza y el orden no cambian; solo se deja pintar entre intento e intento. */
+const yieldUI = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
 class CedulaScanner {
   /** opts.legacy = true -> comportamiento de la versión 2 (solo para comparar) */
@@ -537,6 +540,7 @@ class CedulaScanner {
       for (const vn of st.variants) {
         if (performance.now() > deadline) return null;
         const img = VARIANTS[vn](base); if (!img) continue;
+        await yieldUI();
         const hit = CedulaScanner._hit(await this._decode(img, st.opts || 'def'));
         if (hit) return { hit, cand: c, how: `${vn}@${st.mult}${st.flip ? '/180°' : ''}${st.rot ? '/rot' + st.rot : ''}${st.pad ? '/pad' : ''}${st.opts ? '/' + st.opts : ''}` };
       }

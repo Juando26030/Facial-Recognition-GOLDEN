@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PersonChangeLog, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app import testperson, person_code
+from app import testperson, person_code, name_index
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
@@ -871,15 +871,10 @@ def checkin_cedula(
 
     user, _via = person_code.find_user(db, event, cedula)          # 0140: identificación y, si el evento usa código, código
     if not user:
-        full_name = f"{first_name} {last_name}".strip()
-        name_matches = []
-        if full_name:
-            candidates = db.query(User).filter(User.tenant_id == event.tenant_id).all()
-            for candidate in candidates:
-                db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
-                if _identity_name_matches(db_name, full_name):
-                    name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
-        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, **event_flags(event)}
+        full_name = f"{first_name} {last_name}".strip()[:200]
+        # 19-nov-2026: índice por cliente (app/name_index.py) con la MISMA regla de `_identity_name_matches`; antes se cargaban todas las personas del cliente en cada escaneo fallido.
+        name_matches, total = name_index.find(db, event.tenant_id, full_name) if full_name else ([], 0)
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, "name_matches_total": total, **event_flags(event)}
 
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(db, event.id, user)

@@ -143,6 +143,19 @@
     return readersPromise;
   }
 
+  /* Precarga en reposo (19-nov-2026): abrir el escáner trababa la página porque en ESE momento se bajaba y compilaba el lector de la cédula vieja (zxing-wasm). Si el último modo
+     usado fue una cédula, se deja listo cuando la página está quieta (unos segundos después de cargar). Con QR no se precarga nada (no lo necesita). */
+  let warmPromise = null;
+  function warm() {
+    let m = null; try { m = localStorage.getItem(MODE_KEY); } catch (e) { /* sin almacenamiento */ }
+    if ((m !== 'old' && m !== 'new') || warmPromise) return;
+    const run = () => {
+      warmPromise = loadReaders().then((R) => (m === 'old' ? new R.CedulaScanner({}).init() : null)).catch(() => { warmPromise = null; });
+    };
+    const idle = window.requestIdleCallback ? (f) => window.requestIdleCallback(f, { timeout: 8000 }) : (f) => setTimeout(f, 1500);
+    setTimeout(() => idle(run), 3000);
+  }
+
   function open(opts) {
     opts = opts || {};
     const onCode = opts.onCode || function () {};
@@ -275,6 +288,7 @@
     async function startCedula(kind, my) {
       status.classList.remove('gw-cam__status--err'); status.textContent = 'Cargando el lector…';
       let R;
+      if (warmPromise) await warmPromise;                          // si la precarga va a mitad, se espera a ella (no se baja ni compila dos veces)
       try { R = await loadReaders(); } catch (e) { if (my === epoch) failStatus(e.message); return; }
       if (stopped || my !== epoch) return;
       const common = { onStatus: (m, k) => { if (!stopped && my === epoch) { status.textContent = m; status.classList.toggle('gw-cam__status--err', k === 'err'); } } };
@@ -313,6 +327,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL, READERS_URL }; }
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, warm, loadJsQr, JSQR_URL, READERS_URL }; }
   if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();
