@@ -109,6 +109,8 @@ def local_env(monkeypatch):
             return {"results": [{"op_id": o["op_id"], "result": "ok"} for o in body["ops"]]}
         if path.endswith("/access-logs"):
             return {"results": [{"client_id": r["client_id"], "result": "created"} for r in body["records"]]}
+        if path.endswith("/records"):
+            return {"ok": True}
         return {}
     monkeypatch.setattr(node_sync, "_call", fake)
     return calls
@@ -127,7 +129,7 @@ def _local_event(db, factory):
 
 def test_upload_sends_new_people_and_existing_checkins_then_marks_watermarks(db, factory, local_env):
     ev = _local_event(db, factory)
-    assert node_sync.pending_counts(db, ev) == {"persons": 1, "logs": 1, "total": 2}
+    assert node_sync.pending_counts(db, ev) == {"persons": 1, "logs": 1, "prints": 0, "changes": 0, "total": 2}
     out = node_sync.upload_event(db, ev, force=True)
     assert out == {"ok": True, "pending": 0, "error": None}
     paths = [c[1] for c in local_env]
@@ -176,7 +178,8 @@ def test_release_only_when_everything_is_uploaded(db, factory, monkeypatch, loca
 
 
 def test_release_is_blocked_while_local_only_work_exists(db, factory, monkeypatch, local_env):
-    """Revisión 9-nov: la subida solo lleva altas e ingresos; lo demás hecho en el local (aquí una impresión) bloquea «Pasar a internet»."""
+    """Revisión 9-nov: lo hecho en el local que la subida NO lleva bloquea «Pasar a internet». Las impresiones ya suben (19-nov), así que aquí se simula con la lista fija."""
+    monkeypatch.setattr(node_sync, "LOCAL_ONLY", node_sync.LOCAL_ONLY + (("print_logs", "printed_at", "impresiones"),))
     ev = _local_event(db, factory)
     ev.sync_package_at = utcnow() - timedelta(hours=1)
     db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, printed_at=utcnow()))
@@ -191,7 +194,8 @@ def test_release_is_blocked_while_local_only_work_exists(db, factory, monkeypatc
     assert node_sync.release_event(db, db.get(Event, ev.id))["ok"] is True
 
 
-def test_work_from_before_the_download_does_not_block(db, factory, local_env):
+def test_work_from_before_the_download_does_not_block(db, factory, monkeypatch, local_env):
+    monkeypatch.setattr(node_sync, "LOCAL_ONLY", node_sync.LOCAL_ONLY + (("print_logs", "printed_at", "impresiones"),))
     ev = _local_event(db, factory)
     db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, printed_at=utcnow() - timedelta(days=1)))
     ev.sync_package_at = utcnow() - timedelta(hours=1)
@@ -202,3 +206,18 @@ def test_work_from_before_the_download_does_not_block(db, factory, local_env):
 def test_nothing_runs_in_the_cloud(db, factory, monkeypatch):
     monkeypatch.delenv("LOCAL_SERVER", raising=False)
     assert node_sync.configured() is False and node_sync.start() is False and node_sync.upload_all(db) == {"configured": False, "events": 0}
+
+
+def test_prints_and_person_changes_are_uploaded_and_advance_watermarks(db, factory, local_env):
+    from app.models import PersonChange
+    ev = _local_event(db, factory)
+    ev.sync_package_at = utcnow() - timedelta(hours=1)
+    db.add(PrintLog(tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, printed_at=utcnow()))
+    db.add(PersonChange(tenant_id=ev.tenant_id, event_id=ev.id, user_id="1001", kind="registration_status", old_value="Registrado", new_value="No registrado"))
+    db.commit()
+    assert node_sync.pending_counts(db, ev)["prints"] == 1 and node_sync.pending_counts(db, ev)["changes"] == 1
+    assert node_sync.local_only_changes(db, ev) == {}
+    out = node_sync.upload_event(db, ev, force=True)
+    assert out["ok"] is True and out["pending"] == 0
+    rec = [c for c in local_env if c[1].endswith("/records")][0][2]
+    assert len(rec["print_logs"]) == 1 and rec["person_changes"][0]["kind"] == "registration_status"

@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import local_env, versioning
-from app.models import AccessLog, Event, EventAttendee, User
+from app.models import AccessLog, Event, EventAttendee, PersonChange, PrintLog, User
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.node_sync")
@@ -29,7 +29,7 @@ HTTP_TIMEOUT = 20.0
 MIN_GAP = timedelta(seconds=60)                      # dos procesos del mismo servidor no suben el mismo evento a la vez
 PERSON_ORIGINS = ("manual", "autoregistro")
 LOG_TYPE = "Existente"
-BATCH_LOGS, BATCH_OPS = 400, 100                     # por debajo de los topes de la nube (SYNC_MAX_RECORDS 500 / OUTBOX_MAX_OPS)
+BATCH_LOGS, BATCH_OPS, BATCH_REC = 400, 100, 400                     # por debajo de los topes de la nube (SYNC_MAX_RECORDS 500 / OUTBOX_MAX_OPS)
 _run_lock = threading.Lock()
 
 
@@ -107,10 +107,26 @@ def _logs_query(db: Session, event: Event):
     return q
 
 
+def _prints_query(db: Session, event: Event):
+    q = db.query(PrintLog).filter(PrintLog.event_id == event.id)
+    if event.sync_print_id is not None:
+        return q.filter(PrintLog.id > event.sync_print_id)
+    return q.filter(PrintLog.printed_at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)          # sin marca: solo lo hecho DESPUÉS de bajar el evento
+
+
+def _changes_query(db: Session, event: Event):
+    q = db.query(PersonChange).filter(PersonChange.event_id == event.id)
+    if event.sync_change_id is not None:
+        return q.filter(PersonChange.id > event.sync_change_id)
+    return q.filter(PersonChange.at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)
+
+
 def pending_counts(db: Session, event: Event) -> dict:
     persons = _persons_query(db, event).count()
     logs = _logs_query(db, event).filter(AccessLog.record_type == LOG_TYPE).count()
-    return {"persons": persons, "logs": logs, "total": persons + logs}
+    prints = _prints_query(db, event).count()
+    changes = _changes_query(db, event).count()
+    return {"persons": persons, "logs": logs, "prints": prints, "changes": changes, "total": persons + logs + prints + changes}
 
 
 # Lo que se hace en el servidor local y TODAVÍA NO SUBE a la nube (la subida solo lleva personas nuevas e ingresos). Mientras exista algo así,
@@ -119,8 +135,6 @@ LOCAL_ONLY = (
     ("inventory_deliveries", "delivered_at", "entregas de inventario"),
     ("event_inventory_items", "updated_at", "cambios del inventario del evento"),
     ("area_movements", "timestamp", "movimientos de áreas"),
-    ("print_logs", "printed_at", "impresiones"),
-    ("person_changes", "at", "ediciones de personas"),
     ("roulette_draws", "created_at", "sorteos de la ruleta"),
     ("queue_turns", "created_at", "turnos"),
     ("queue_calls", "called_at", "llamados de turnos"),
@@ -207,6 +221,26 @@ def _push_logs(db: Session, event: Event) -> None:
         db.commit()
 
 
+def _push_records(db: Session, event: Event) -> None:
+    """Impresiones y ediciones de personas hechas aquí (historial). Avanzan sus marcas de agua solo con lo que la nube confirmó."""
+    path = f"/api/node/events/{event.cloud_event_id}/records"
+    while True:
+        prints = _prints_query(db, event).order_by(PrintLog.id).limit(BATCH_REC).all()
+        changes = _changes_query(db, event).order_by(PersonChange.id).limit(BATCH_REC).all()
+        if not prints and not changes:
+            return
+        body = {"print_logs": [{"cedula": p.user_id, "printed_at": p.printed_at.isoformat() if p.printed_at else None, "kind": p.kind} for p in prints],
+                "person_changes": [{"cedula": c.user_id, "at": c.at.isoformat() if c.at else None, "kind": c.kind, "old_value": c.old_value, "new_value": c.new_value, "detail": c.detail} for c in changes]}
+        out = _call("POST", path, body)
+        if not out.get("ok"):
+            raise SyncError("La nube no confirmó las impresiones o ediciones del lote: se reintenta")
+        if prints:
+            event.sync_print_id = prints[-1].id
+        if changes:
+            event.sync_change_id = changes[-1].id
+        db.commit()
+
+
 def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
     """Sube lo pendiente de UN evento. Devuelve {"ok", "pending", "error"}. No lanza: guarda el motivo en `sync_error`."""
     if event.cloud_event_id is None:
@@ -220,6 +254,7 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         cloud_ping()
         _push_persons(db, event)             # primero las personas nuevas: los ingresos de esa misma gente ya las encuentran
         _push_logs(db, event)
+        _push_records(db, event)
         counts = pending_counts(db, event)
         if counts["total"] == 0:
             _call("POST", f"/api/node/events/{event.cloud_event_id}/uploaded")

@@ -339,6 +339,8 @@ class Event(Base):
     cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
     sync_log_id = Column(Integer, nullable=True)         # marca de agua: último AccessLog.id local ya CONFIRMADO por la nube
     sync_persons_at = Column(DateTime, nullable=True)    # marca de agua: último alta local (EventAttendee.created_at) ya confirmada por la nube
+    sync_print_id = Column(Integer, nullable=True)       # 0157: marca de agua: último PrintLog.id local ya CONFIRMADO por la nube
+    sync_change_id = Column(Integer, nullable=True)      # 0157: marca de agua: último PersonChange.id local ya CONFIRMADO por la nube
     sync_package_at = Column(DateTime, nullable=True)    # cuándo se bajó el paquete del evento desde la nube
     sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
     sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien

@@ -120,6 +120,37 @@
     return jsQrPromise;
   }
 
+  /* Lector universal (ZXing compilado a WebAssembly, copia PROPIA en /static/vendor/zxing/, la deja scripts/vendor_zxing.sh): lee PDF417 de la cédula vieja y QR en CUALQUIER navegador (computador,
+     iPhone, tablet) y SIN internet. Si el archivo no está, se sigue con BarcodeDetector (Chrome en Android) y jsQR (solo QR) como antes. */
+  const ZX_BASE = '/static/vendor/zxing/';
+  let zxPromise = null;
+  function loadZxing() {
+    if (!zxPromise) {
+      zxPromise = new Promise((resolve) => {
+        const done = (ok) => resolve(ok && window.ZXingWASM && (window.ZXingWASM.readBarcodes || window.ZXingWASM.readBarcodesFromImageData) ? window.ZXingWASM : null);
+        if (window.ZXingWASM) { done(true); return; }
+        const s = document.createElement('script');
+        s.src = ZX_BASE + 'zxing-reader.js';
+        s.onload = () => {
+          try { if (window.ZXingWASM.setZXingModuleOverrides) window.ZXingWASM.setZXingModuleOverrides({ locateFile: (path, prefix) => (/\.wasm$/.test(path) ? ZX_BASE + 'zxing_reader.wasm' : prefix + path) }); } catch (e) { /* sigue con la ruta por defecto */ }
+          done(true);
+        };
+        s.onerror = () => done(false);
+        document.head.appendChild(s);
+      });
+    }
+    return zxPromise.then((z) => {
+      if (!z) return null;
+      const read = z.readBarcodes || z.readBarcodesFromImageData;
+      return { read: (img) => read(img, { formats: ['PDF417', 'QRCode'], tryHarder: true, maxNumberOfSymbols: 1 }) };
+    });
+  }
+  // El PDF417 de la cédula trae bytes: se entregan tal cual (latin1), como los entrega BarcodeDetector, para que las posiciones de cada dato no se muevan.
+  function zxText(r) {
+    if (r.bytes && r.bytes.length && /pdf/i.test(String(r.format))) { let t = ''; for (let i = 0; i < r.bytes.length; i++) t += String.fromCharCode(r.bytes[i]); return t; }
+    return r.text;
+  }
+
   function open(opts) {
     opts = opts || {};
     const onCode = opts.onCode || function () {};
@@ -225,16 +256,23 @@
       }
       const wantsBars = !!(opts.formats && opts.formats.includes('pdf417'));
       const barsOk = !!detector && (opts.formats || []).includes('pdf417') && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats().catch(() => [])).includes('pdf417'));
-      const jsQR = detector ? null : await loadJsQr().catch(() => null);
-      if (wantsBars && !barsOk) box.querySelector('.qr-status').textContent = 'Este navegador no lee el código de barras de la cédula vieja (sí el QR). Úsalo en Chrome en Android, con un lector de mano, o escribe la cédula.';
-      if (!detector && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
+      const zx = wantsBars && !barsOk ? await loadZxing().catch(() => null) : null;          // sin lector de PDF417 en el navegador: el universal (si está)
+      const jsQR = detector || zx ? null : await loadJsQr().catch(() => null);
+      if (wantsBars && !barsOk && !zx) box.querySelector('.qr-status').textContent = 'Este equipo aún no tiene el lector del código de barras de la cédula vieja (el QR sí se lee). Usa un lector de mano, Chrome en Android o escribe la cédula; soporte puede activarlo (scripts/vendor_zxing.sh).';
+      if (!detector && !zx && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       async function tick() {
         if (stopped) return;
         if (video.videoWidth) {
           try {
-            if (detector) {
+            if (zx) {
+              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const found = await zx.read(ctx.getImageData(0, 0, canvas.width, canvas.height));
+              const hit = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
+              if (hit) emit(zxText(hit), /pdf/i.test(String(hit.format)) ? 'pdf417' : 'qr_code');
+            } else if (detector) {
               const codes = await detector.detect(video);
               if (codes.length) emit(codes[0].rawValue, codes[0].format);
             } else {
@@ -254,6 +292,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, loadZxing, JSQR_URL }; }
   if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();

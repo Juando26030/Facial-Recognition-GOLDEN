@@ -28,7 +28,7 @@
         return `<div class="gw-card-row gw-event-card sync-card"><div class="sync-card__info">
           <div class="gw-card-row__head"><span class="gw-card-row__title">${esc(e.name)} ${e.code ? `<span class="gw-event-code">(${esc(e.code)})</span>` : ''}</span>${badge}</div>
           <p class="gw-card-row__meta">Bajado: ${esc(when(e.package_at))} · Última subida: ${esc(when(e.last_upload_at))}</p>
-          <p class="gw-card-row__meta">Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos)</p>
+          <p class="gw-card-row__meta">Pendientes: ${e.pending.total} (${e.pending.persons} altas, ${e.pending.logs} ingresos, ${e.pending.prints || 0} impresiones, ${e.pending.changes || 0} ediciones)</p>
           ${e.error ? `<p class="gw-text-danger">${esc(e.error)}</p>` : ''}
           ${bad ? `<p class="gw-text-danger">Registrado solo en este servidor (la sincronización todavía no lo envía a la nube): ${esc(Object.entries(e.local_only).map(([k, n]) => `${n} ${k}`).join(', '))}. Por eso «Pasar a internet» está protegido: se perdería. Avisa a soporte antes de liberar.</p>` : ''}</div>
           <div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary" data-sync="${e.id}" title="Sube ahora lo pendiente de este evento, sin esperar los 30 minutos">Sincronizar</button><button type="button" class="gw-btn gw-btn--primary" data-release="${e.id}">Pasar a internet</button></div></div>`;

@@ -215,7 +215,7 @@ async def idle_gate(request, call_next):
 # img-src y form-action ya cortan la salida de datos. Cuando la consola salga limpia en staging se pasa a obligatoria. Sin `report-uri` (no hay ruta de reportes; ver docs/FASE_3_SEGURIDAD.md).
 # CSP_REPORT_ONLY=0 apaga la cabecera de prueba.
 _CSP_REPORT_ONLY = os.getenv("CSP_REPORT_ONLY", "1") == "1"
-_CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+_CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
               "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com; font-src 'self' data:; media-src 'self' blob:; "
               "connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com; frame-src 'self' blob:; worker-src 'self' blob:; "
               "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")

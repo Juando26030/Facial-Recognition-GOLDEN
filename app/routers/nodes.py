@@ -4,6 +4,7 @@ Lo que sube un nodo reutiliza la lógica idempotente que ya existe (`access-logs
 solo puede escribir en eventos que la nube tiene ARRENDADOS a su nombre (`Event.local_node_name`). Nada de datos personales en logs.
 """
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app import event_lease, node_auth, versioning
 from app.auth import require_role
 from app.database import get_db
-from app.models import AuditAction, Event, LocalNode, StaffUser
+from app.models import AuditAction, Event, LocalNode, PersonChange, PrintLog, StaffUser, User
 from app.routers import api
 from app.timeutil import utcnow
 
@@ -123,6 +124,57 @@ def node_outbox(event_id: int, body: dict, request: Request, db: Session = Depen
     node_auth.require_compatible(request)
     _leased_event(db, event_id, node)
     return api.outbox_sync(event_id, body, db, node_auth.node_staff(db, node, via=True))
+
+
+def _when(value):
+    try:
+        d = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return d.replace(tzinfo=None) if d.tzinfo is None else d.astimezone(__import__("datetime").timezone.utc).replace(tzinfo=None)
+
+
+@router.post("/node/events/{event_id}/records")
+def node_records(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
+    """Historial hecho en el servidor local: impresiones de escarapela (`print_logs`) y ediciones de personas (`person_changes`: estado de registro y fecha de nacimiento, solo como HISTORIAL; no vuelve a
+    aplicar el cambio). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
+    node_auth.require_compatible(request)
+    event = _leased_event(db, event_id, node)
+    staff = node_auth.node_staff(db, node, via=True)
+    prints, changes = (body or {}).get("print_logs") or [], (body or {}).get("person_changes") or []
+    if len(prints) + len(changes) > 1000:
+        raise HTTPException(status_code=413, detail="Lote demasiado grande")
+    known: dict = {}
+
+    def exists(uid):
+        if uid not in known:
+            known[uid] = db.query(User.id).filter(User.id == uid, User.tenant_id == event.tenant_id).first() is not None
+        return known[uid]
+
+    saved_p = saved_c = 0
+    for r in prints:
+        uid, at = str(r.get("cedula") or ""), _when(r.get("printed_at"))
+        kind = "pre" if r.get("kind") == "pre" else "normal"
+        if not uid or at is None or not exists(uid):
+            continue
+        if db.query(PrintLog.id).filter(PrintLog.event_id == event.id, PrintLog.user_id == uid, PrintLog.printed_at == at, PrintLog.kind == kind).first():
+            continue
+        db.add(PrintLog(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, printed_at=at, printed_by_staff_id=staff.id, kind=kind))
+        saved_p += 1
+    for r in changes:
+        uid, at = (str(r.get("cedula")) if r.get("cedula") else None), _when(r.get("at"))
+        kind = str(r.get("kind") or "")[:24]
+        if not kind or at is None or (uid and not exists(uid)):
+            continue
+        q = db.query(PersonChange.id).filter(PersonChange.event_id == event.id, PersonChange.kind == kind, PersonChange.at == at, PersonChange.new_value == (r.get("new_value") or None))
+        q = q.filter(PersonChange.user_id == uid) if uid else q.filter(PersonChange.user_id.is_(None))
+        if q.first():
+            continue
+        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind=kind, at=at,
+                            old_value=(r.get("old_value") or None), new_value=(r.get("new_value") or None), detail=(str(r.get("detail"))[:200] if r.get("detail") else None)))
+        saved_c += 1
+    db.commit()
+    return {"ok": True, "saved": {"print_logs": saved_p, "person_changes": saved_c}}
 
 
 @router.post("/node/events/{event_id}/uploaded")
