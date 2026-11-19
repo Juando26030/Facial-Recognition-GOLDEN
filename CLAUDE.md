@@ -26,6 +26,7 @@ app/database.py        engine (pool persistente, pre_ping, reintentos); DATABASE
 app/models.py          modelos; app/auth.py roles y permisos (require_role, effective_roles, get_event_for_staff)
 app/routers/           api.py (registro, reconocimiento, directorio, carga masiva), events, forms/forms_public/form_payments,
                        badges, roulette, ops (/health, /ready, /sistema, /internal/jobs/run), …
+app/pruebas/          páginas de prueba sin datos (lector de cédula PDF417 en /pruebas/lector-cedula; docs/PRUEBA_LECTOR_CEDULA.md)
 app/storage.py         archivos: LocalStorage | GcsStorage (STORAGE_BACKEND); claves como acme/known_people/1001.jpg
 app/uploads.py         subida directa de archivos grandes (URLs firmadas / PUT local)
 app/jobs.py            cola en Postgres; la despierta un hilo (JOBS_BACKEND=db) o Cloud Tasks (cloudtasks)
