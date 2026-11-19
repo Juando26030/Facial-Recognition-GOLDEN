@@ -57,7 +57,16 @@
   }
 
   fetch('/api/ops/version-check').then((r) => (r.ok ? r.json() : null)).then((d) => {
-    if (!d || !d.configured || d.status === 'igual' || d.status === 'desconocida') return;
+    if (!d || !d.configured) return;
+    if (d.status === 'igual' || d.status === 'desconocida') {          // siempre se ve en qué estado está: al día o sin poder comprobar
+      const info = document.createElement('div');
+      const ok = d.status === 'igual';
+      info.className = 'gw-versionbar gw-versionbar--' + (ok ? 'ok' : 'warn');
+      info.setAttribute('role', 'status');
+      info.innerHTML = ok ? '<strong>Versión:</strong> al día con producción' + (d.local && d.local.commit && d.local.commit !== 'desconocida' ? ' (' + esc(d.local.commit) + ')' : '') + '.' : '<strong>Versión:</strong> ' + esc(d.message);
+      document.body.insertBefore(info, document.body.firstChild);
+      return;
+    }
     bar = document.createElement('div');
     bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' ? 'err' : 'warn');
     bar.setAttribute('role', 'alert');

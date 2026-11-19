@@ -167,7 +167,8 @@ def fetch(url: str, token: str, since: Optional[str], timeout: float = FETCH_TIM
 
 def run_once(db: Session) -> dict:
     """Un ciclo en el servidor local: pide a la nube, aplica y confirma. Lo llama el ciclo de sincronización (~30 min) y se puede llamar al conectarse. Nunca lanza por falta de red."""
-    from app import versioning          # PRODUCTION_URL ya existe para el aviso de versión
+    from app import local_env, versioning          # PRODUCTION_URL ya existe para el aviso de versión
+    local_env.refresh()
     url, token = versioning.production_url(), (os.getenv("NODE_TOKEN") or "").strip()
     if not url or not token:
         return {"ok": False, "reason": "sin_configurar"}

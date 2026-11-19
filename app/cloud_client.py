@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
+from app import local_env
+
 log = logging.getLogger("golden.cloud_client")
 TIMEOUT = float(os.getenv("CLOUD_TIMEOUT_SECONDS", "30"))
 DOWNLOAD_TIMEOUT = float(os.getenv("CLOUD_DOWNLOAD_TIMEOUT_SECONDS", "900"))
@@ -40,14 +42,17 @@ def open_no_redirect(req, timeout: float):
 
 
 def base_url() -> str:
+    local_env.refresh()
     return os.getenv("CLOUD_BASE_URL", "").strip().rstrip("/")
 
 
 def node_name() -> str:
+    local_env.refresh()
     return " ".join((os.getenv("NODE_NAME") or "Servidor local").split())[:60] or "Servidor local"
 
 
 def configured() -> bool:
+    local_env.refresh()
     return bool(base_url() and os.getenv("NODE_TOKEN", "").strip())
 
 

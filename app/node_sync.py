@@ -20,7 +20,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import versioning
+from app import local_env, versioning
 from app.models import AccessLog, Event, EventAttendee, User
 from app.timeutil import utcnow
 
@@ -43,6 +43,7 @@ def is_local_server() -> bool:
 
 
 def node_token() -> str:
+    local_env.refresh()
     return (os.getenv("NODE_TOKEN") or "").strip()
 
 

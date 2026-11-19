@@ -17,6 +17,7 @@ def test_refresh_reads_token_from_file_for_the_other_worker(tmp_path, monkeypatc
     f = tmp_path / "local.env"
     f.write_text("NODE_TOKEN=gwn_abc\nCLOUD_BASE_URL=https://x.example\n", encoding="utf-8")
     monkeypatch.setenv("LOCAL_ENV_FILE", str(f))
+    monkeypatch.setenv("LOCAL_SERVER", "1")
     monkeypatch.delenv("NODE_TOKEN", raising=False)
     monkeypatch.delenv("CLOUD_BASE_URL", raising=False)
     assert local_link.linked() is True
@@ -56,3 +57,19 @@ def test_login_and_enroll_are_wired():
     nodes = open("app/routers/nodes.py", encoding="utf-8").read()
     assert '"/node/enroll"' in nodes and "login_minutes_locked" in nodes
     assert "LOCAL_ENV_FILE" in open("deploy/windows/run-app.ps1", encoding="utf-8-sig").read()
+
+
+def test_every_process_reads_the_link_from_the_file_when_its_environment_lacks_it(tmp_path, monkeypatch):
+    """El servidor corre con 2 procesos: el que NO vinculó debe ver el token (si no, la pantalla de eventos decía «no está conectado» a ratos)."""
+    from app import cloud_client
+    f = tmp_path / "local.env"
+    f.write_text("NODE_TOKEN=gwn_z\nCLOUD_BASE_URL=https://prod.example\nNODE_NAME=Servidor X\n", encoding="utf-8")
+    monkeypatch.setenv("LOCAL_ENV_FILE", str(f))
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    for k in ("NODE_TOKEN", "CLOUD_BASE_URL", "NODE_NAME"):
+        monkeypatch.delenv(k, raising=False)
+    assert cloud_client.configured() is True and cloud_client.node_name() == "Servidor X"
+    for k in ("NODE_TOKEN", "CLOUD_BASE_URL", "NODE_NAME"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("LOCAL_SERVER", raising=False)
+    assert cloud_client.configured() is False          # en la nube no se lee ningún archivo
