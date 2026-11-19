@@ -56,6 +56,13 @@ try {
     Expand-Archive -Path $pkg -DestinationPath $new -Force
     if (-not (Test-Path (Join-Path $new 'alembic.ini')) -or -not (Test-Path (Join-Path $new 'app\main.py'))) { throw 'El paquete no trae la aplicación completa' }
 
+    $bi = Join-Path $new '.build_info'
+    if ($req.target_commit -and (Test-Path $bi)) {
+        $got = "$((Get-Content $bi -Raw | ConvertFrom-Json).commit)".ToLower(); $want = "$($req.target_commit)".ToLower()
+        $n = [Math]::Min($got.Length, $want.Length)
+        if ($n -lt 7 -or $got.Substring(0, $n) -ne $want.Substring(0, $n)) { throw "El paquete trae otra versión ($got) y no la que anuncia producción ($want); no se instaló nada" }
+    }
+
     # ---- desde aquí se toca el sistema: cualquier falla vuelve atrás
     $touched = $true
     Stop-Service $SvcApp -Force

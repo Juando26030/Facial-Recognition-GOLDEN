@@ -39,3 +39,6 @@ OFFSITE_FOLDER_URL=https://goldenlogisticas.sharepoint.com/sites/RespaldosGolden
 ```
 Para Gastos (costos de infraestructura) el mismo archivo lleva `GCP_BILLING_EXPORT_TABLE=goldenweb-prod.billing_export.gcp_billing_export_v1_01D3FA_9264E8_E8058D` y `NEON_ORG_ID=<id de la organización en Neon>` (no son secretos; la llave de Neon va en el secreto `golden-neon-api-key`).
 `OFFSITE_FOLDER_URL` alimenta Configuración › Copias de seguridad (botón «Abrir carpeta de copias», solo admin y super admin).
+
+## Servidores locales: el paquete de actualización sale solo (18-nov-2026)
+`manual_deploy.sh production` termina con el paso «5. PAQUETE DE ACTUALIZACIÓN»: construye `golden-local-update-<fecha UTC>.zip` (+ `.sha256` + `.commit`) del MISMO commit, lo sube a `system/local-update/` y comprueba que `/api/ops/update-manifest` lo anuncia. Si falla, el script avisa y sale con código 2 (el despliegue ya salió, pero los locales no verán la versión). El manifiesto anuncia el commit del paquete; si producción va adelante del paquete, dice «se está preparando» y no ofrece «Actualizar ahora». El instalador `.exe` sigue siendo manual (`deploy/windows/build_en_cloudshell.sh`) y solo hace falta para instalaciones nuevas.

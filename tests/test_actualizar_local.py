@@ -156,3 +156,33 @@ def test_franja_de_version_visible_en_pantalla_ancha():
     assert "@media (min-width: 901px)" in css
     bloque = css.split("@media (min-width: 901px)", 1)[1].split("}", 1)[0]
     assert "position: fixed" in bloque and "z-index: 1100" in bloque
+
+
+def test_manifest_anuncia_el_commit_del_paquete_y_no_ofrece_uno_viejo(monkeypatch):
+    """Si el paquete publicado es de otro commit que producción, no hay actualización disponible («se está preparando»); si coincide, se anuncia su commit."""
+    monkeypatch.delenv("UPDATE_PACKAGE_URL", raising=False)
+    monkeypatch.delenv("UPDATE_PACKAGE_SHA256", raising=False)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example.com")
+    monkeypatch.setattr(lu.versioning, "local_version", lambda: {"commit": "cb7e66374390", "date": "x", "schema": "0156_x"})
+    monkeypatch.setattr(lu, "storage_package", lambda: ("golden-local-update-2026.11.18.100.zip", "a" * 64, "9f869cbebec2" + "0" * 28))
+    m = lu.published_manifest()
+    assert m["available"] is False and m["pending"] is True and m["package_url"] is None
+    monkeypatch.setattr(lu, "storage_package", lambda: ("golden-local-update-2026.11.19.100.zip", "b" * 64, "cb7e66374390" + "1" * 28))
+    m = lu.published_manifest()
+    assert m["available"] is True and m["sha256"] == "b" * 64 and m["commit"].startswith("cb7e66374390")
+
+
+def test_same_commit_acepta_abreviados_y_rechaza_distintos():
+    assert lu.same_commit("cb7e66374390", "cb7e66374390" + "a" * 28)
+    assert not lu.same_commit("cb7e66374390", "9f869cbebec2")
+    assert not lu.same_commit(None, "cb7e66374390") and not lu.same_commit("abc", "abc")
+
+
+def test_el_despliegue_publica_el_paquete_y_el_actualizador_verifica_el_commit():
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    sh = (raiz / "deploy" / "gcp" / "manual_deploy.sh").read_text(encoding="utf-8")
+    assert "UPDATE_ONLY=1" in sh and "system/local-update/" in sh and "update-manifest" in sh
+    assert "UPDATE_ONLY" in (raiz / "deploy" / "windows" / "build_cross.py").read_text(encoding="utf-8")
+    assert "otra versión" in (raiz / "deploy" / "windows" / "run-update.ps1").read_text(encoding="utf-8")

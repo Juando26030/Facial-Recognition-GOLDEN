@@ -3,6 +3,7 @@ la app, el paquete de actualización, Python embebido de Windows con sus depende
 instalador con Inno Setup) lo hace build_en_cloudshell.sh con Wine. Uso (dentro de python:3.13): python deploy/windows/build_cross.py <versión> <commit>"""
 import hashlib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -56,6 +57,10 @@ def main(version: str, commit: str) -> None:
                 z.write(f, f.relative_to(app).as_posix())
     sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     (OUT / ("golden-local-update-%s.sha256" % version)).write_text("%s  %s\n" % (sha, zip_path.name), encoding="ascii")
+    (OUT / ("golden-local-update-%s.commit" % version)).write_text(commit + "\n", encoding="ascii")          # el commit REAL del paquete: el manifiesto de producción lo anuncia tal cual
+    if os.environ.get("UPDATE_ONLY") == "1":          # el despliegue solo necesita el paquete de actualización (sin Python, PostgreSQL ni instalador)
+        print("Paquete de actualización listo: %s" % zip_path.name, flush=True)
+        return
     # 3. Python embebido de Windows + pip + dependencias (ruedas de Windows)
     py_zip = fetch("https://www.python.org/ftp/python/%s/python-%s-embed-amd64.zip" % (PY_VER, PY_VER), CACHE / ("python-%s-embed-amd64.zip" % PY_VER))
     py = PAYLOAD / "python"

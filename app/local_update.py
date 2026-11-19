@@ -46,7 +46,8 @@ def _vkey(v: str):
 
 
 def storage_package() -> Optional[tuple]:
-    """(nombre, sha256) del paquete de actualización MÁS NUEVO guardado en el almacenamiento (`system/local-update/`: el .zip y su .sha256, que sube el armado del instalador), o None."""
+    """(nombre, sha256, commit) del paquete de actualización MÁS NUEVO guardado en el almacenamiento (`system/local-update/`: el .zip, su .sha256 y su .commit, que sube el armado), o None.
+    `commit` es None en paquetes viejos que no traen el archivo .commit."""
     try:
         st = get_storage()
         found = [(_vkey(m.group(1)), k.rsplit("/", 1)[-1]) for k in st.list(PACKAGE_PREFIX) for m in [PACKAGE_RE.match(k.rsplit("/", 1)[-1])] if m]
@@ -54,9 +55,24 @@ def storage_package() -> Optional[tuple]:
             return None
         name = max(found)[1]
         m = re.match(r"\s*([0-9a-fA-F]{64})", st.get(key_of("system", "local-update", name[:-4] + ".sha256")).decode("utf-8", "ignore"))
-        return (name, m.group(1).lower()) if m else None
+        if not m:
+            return None
+        commit = None
+        try:
+            c = st.get(key_of("system", "local-update", name[:-4] + ".commit")).decode("utf-8", "ignore").strip().lower()
+            commit = c if re.fullmatch(r"[0-9a-f]{7,40}", c) else None
+        except Exception:          # noqa: BLE001 — paquete anterior a este archivo
+            commit = None
+        return (name, m.group(1).lower(), commit)
     except Exception:          # noqa: BLE001 — sin almacenamiento o sin archivo: simplemente no hay paquete publicado
         return None
+
+
+def same_commit(a: Optional[str], b: Optional[str]) -> bool:
+    """Dos commits (completos o abreviados) son el mismo si uno es prefijo del otro."""
+    a, b = (a or "").strip().lower(), (b or "").strip().lower()
+    n = min(len(a), len(b))
+    return n >= 7 and a[:n] == b[:n]
 
 
 def package_bytes(name: str) -> Optional[bytes]:
@@ -73,6 +89,7 @@ def published_manifest() -> dict:
     (si se fijaron a mano); si no, el paquete más nuevo del almacenamiento, que la propia app sirve en /api/ops/update-package/<nombre> (sin variables que tocar en cada versión)."""
     url = (os.getenv("UPDATE_PACKAGE_URL") or "").strip()
     sha = (os.getenv("UPDATE_PACKAGE_SHA256") or "").strip().lower()
+    pkg = None
     if not (url.startswith("https://") and SHA256_RE.match(sha)):
         pkg = storage_package()
         base = publicurl.base()
@@ -80,7 +97,15 @@ def published_manifest() -> dict:
             url, sha = f"{base}/api/ops/update-package/{pkg[0]}", pkg[1]
     v = versioning.local_version()
     ok = url.startswith("https://") and bool(SHA256_RE.match(sha))
-    return {"available": ok, "commit": v["commit"], "schema": v["schema"], "package_url": url if ok else None, "sha256": sha if ok else None}
+    commit = v["commit"]
+    if ok and pkg and len(pkg) > 2 and pkg[2]:
+        # El manifiesto anuncia el commit del paquete que de verdad existe. Si producción ya va más adelante (el armado del paquete falló o no corrió), no se ofrece uno viejo:
+        # antes «Actualizar ahora» reinstalaba el mismo código y decía «Actualizado».
+        commit = pkg[2]
+        if not same_commit(pkg[2], v["commit"]):
+            return {"available": False, "pending": True, "commit": v["commit"], "schema": v["schema"], "package_url": None, "sha256": None,
+                    "message": "La actualización de esta versión todavía se está preparando."}
+    return {"available": ok, "commit": commit, "schema": v["schema"], "package_url": url if ok else None, "sha256": sha if ok else None}
 
 
 def validate_manifest(m: Optional[dict]) -> Optional[str]:
