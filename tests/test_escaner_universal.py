@@ -22,3 +22,10 @@ def test_registro_closes_the_camera_when_the_code_is_recognised_and_both_engines
     assert "sc.close()" in html and "sc2.close()" in html
     js = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
     assert "GlobalHistogram" in js and "[escáner] motores:" in js
+
+
+def test_zxing_runs_in_a_worker_and_has_a_native_photo_fallback():
+    js = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
+    assert "zxing-worker.js" in js and "qr-still" in js and 'capture="environment"' in js
+    wk = (ROOT / "static/js/zxing-worker.js").read_text(encoding="utf-8")
+    assert "importScripts('/static/vendor/zxing/zxing-reader.js')" in wk and "zxing_reader.wasm" in wk
