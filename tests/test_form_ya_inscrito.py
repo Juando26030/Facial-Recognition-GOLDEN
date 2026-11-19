@@ -366,3 +366,24 @@ def test_report_keeps_the_first_registration_and_lists_what_changed_in_each_resu
     assert rows[0][2] is not None and rows[1][2] is None
     assert [(c[0], c[2], c[3], c[4]) for c in changes] == [("1001", "Ciudad", "Cali", "Bogotá"), ("1001", "(sin cambios en los datos)", "", "")]
     assert changes[0][1] == "Ana Mora" and changes[0][6] == "Reinscripción"
+
+
+def test_resubmission_is_marked_in_answers_and_the_registry_keeps_the_latest_version(client, factory, db):
+    """Respuestas: las dos inscripciones salen, la segunda marcada como reinscripción. Registro: una sola persona con la ÚLTIMA versión y el cambio en su historial («Formulario web»)."""
+    from app import formsvc
+    from app.models import WebForm
+
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    login(client, "coord1")
+    assert _put(client, ev, f, settings={"allow_repeats": True, "feed": "realtime"}).status_code == 200
+    _open(client, ev, f)
+    first, again = _person_values(), _person_values()
+    assert _id_submit(client, ev, f, first, sid="v1").status_code == 200
+    assert _id_submit(client, ev, f, again, sid="v2").status_code == 200
+    rows = client.get(f"/api/events/{ev}/forms/{f['id']}/submissions").json()["rows"]
+    assert sorted(r["resub"] for r in rows) == [0, 2]                                   # las dos aparecen; solo la segunda dice «reinscripción»
+    form = db.get(WebForm, f["id"])
+    subs = db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).order_by(FormSubmission.id).all()
+    assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[1], formsvc.sub_person_id(formsvc.get_design(form), subs[1])) is True
+    assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[0], formsvc.sub_person_id(formsvc.get_design(form), subs[0])) is False
