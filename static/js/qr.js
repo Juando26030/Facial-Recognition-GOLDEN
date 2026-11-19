@@ -179,7 +179,7 @@
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.';
+    if (opts.formats && opts.formats.includes('pdf417')) box.querySelector('.qr-status').textContent = 'Apunta al QR o al código de barras del reverso de la cédula. En la cédula vieja acerca el celular hasta que el código de barras llene el ancho de la imagen y toca para enfocar.';
     const video = box.querySelector('video');
     const canvas = box.querySelector('canvas');
     const status = box.querySelector('.qr-status');
@@ -239,7 +239,7 @@
     async function start() {
       try {
         // Más resolución: el PDF417 de la cédula vieja son líneas muy finas y con 640×480 no se distinguen.
-        const hi = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
+        const hi = { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } };
         try { stream = await navigator.mediaDevices.getUserMedia({ video: hi }); }
         catch (e1) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
       } catch (e) {
@@ -276,14 +276,16 @@
               if (codes.length) hit = { text: codes[0].rawValue, format: codes[0].format };
             }
             if (!hit && zx) {
-              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+              const k = Math.min(1, 2560 / Math.max(video.videoWidth, video.videoHeight));          // el código de barras de la cédula necesita resolución: se trabaja casi a tamaño completo
+              canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const found = await zx.read(ctx.getImageData(0, 0, canvas.width, canvas.height));
               const z = (found || []).find((r) => r && (r.isValid !== false) && (r.text || (r.bytes && r.bytes.length)));
               if (z) hit = { text: zxText(z), format: /pdf/i.test(String(z.format)) ? 'pdf417' : 'qr_code' };
             }
             if (!hit && jsQR) {
-              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+              const k = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+              canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
               const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
