@@ -554,7 +554,7 @@ class CedulaScanner {
   }
 
   /* ---------- foto / galería ---------- */
-  async scanImage(file, { budgetMs = 15000 } = {}) {
+  async scanImage(file, { budgetMs = 15000, quiet = false } = {}) {
     const t0 = performance.now(), deadline = t0 + budgetMs;
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const dbg = this.lastDebug = { w: bmp.width, h: bmp.height, cands: [], how: '', ms: 0, ppm: null, hint: '', preview: null };
@@ -581,9 +581,9 @@ class CedulaScanner {
     if (!cands.length) dbg.hint = 'No se distingue ningún código PDF417. Enfoca el reverso de la cédula, con el código ocupando buena parte de la foto.';
     else if (dbg.ppm < 1.8) dbg.hint = `El código se ve muy pequeño o pixelado (≈${dbg.ppm} px por módulo; se necesitan ≥2.5). Acércate para que ocupe casi todo el ancho de la foto.`;
     else dbg.hint = 'El código se encontró pero no se pudo leer. Puede estar borroso o con reflejos, o ser una fotocopia, una impresión o una pantalla: esas copias pierden detalle del código y no se recuperan. Prueba con la cédula de plástico original, bien enfocada.';
-    if (cands.length) { const im = this._cropCandidate(bmp, cands[0], false, 1), cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height; cv.getContext('2d').putImageData(im, 0, 0); dbg.preview = cv.toDataURL('image/jpeg', .85); }
-    { const k = Math.min(1, 720 / Math.max(bmp.width, bmp.height)), t = document.createElement('canvas'); t.width = Math.round(bmp.width * k); t.height = Math.round(bmp.height * k); t.getContext('2d').drawImage(bmp, 0, 0, t.width, t.height); dbg.thumb = t.toDataURL('image/jpeg', .7); }
-    this.onStatus(dbg.hint, 'err');
+    if (cands.length && !quiet) { const im = this._cropCandidate(bmp, cands[0], false, 1), cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height; cv.getContext('2d').putImageData(im, 0, 0); dbg.preview = cv.toDataURL('image/jpeg', .85); }
+    if (!quiet) { const k = Math.min(1, 720 / Math.max(bmp.width, bmp.height)), t = document.createElement('canvas'); t.width = Math.round(bmp.width * k); t.height = Math.round(bmp.height * k); t.getContext('2d').drawImage(bmp, 0, 0, t.width, t.height); dbg.thumb = t.toDataURL('image/jpeg', .7); }
+    if (!quiet) this.onStatus(dbg.hint, 'err');
     return null;
   }
 
@@ -715,7 +715,7 @@ class CedulaScanner {
     if (!r && this.scanning && present && (sharp || seenFor > 700)) {
       if (this.autoStill && now - (this._lastStill || 0) > 1500) {
         this._lastStill = performance.now(); const blob = await this.captureStill();
-        if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 1800 }); if (d) { if (this.lastDebug) { this.lastDebug.how = 'foto fija · ' + this.lastDebug.how; this.lastDebug.ms = Math.round(performance.now() - (this._seen || now)); } this.scanning = false; video.pause(); return true; } }
+        if (blob && this.scanning) { this.onStatus('Analizando foto de alta resolución…', 'warn'); const d = await this.scanImage(blob, { budgetMs: 4500, quiet: true }); this._lastStill = performance.now(); if (d) { if (this.lastDebug) { this.lastDebug.how = 'foto fija · ' + this.lastDebug.how; this.lastDebug.ms = Math.round(performance.now() - (this._seen || now)); } this.scanning = false; video.pause(); return true; } }
       }
       if (this.scanning && performance.now() - (this._lastDeep || 0) > 1500) {
         this._lastDeep = performance.now();
@@ -771,7 +771,7 @@ class CedulaScanner {
           if (this.autoStill && !this.legacy && !this.guideMode && performance.now() - lastStill > 4000) {
             lastStill = performance.now(); this.onStatus('Analizando una foto de alta resolución…', 'warn');
             const blob = await this.captureStill();
-            if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 6000 }); if (d) { this.scanning = false; this.video.pause(); return; } }
+            if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 6000, quiet: true }); if (d) { this.scanning = false; this.video.pause(); return; } }
             if (this.scanning && performance.now() - this.startedAt > 9000 && !this._hintedPhoto) { this._hintedPhoto = true; this.onStatus('Si no lee en vivo, usa «Tomar foto»: abre la cámara del celular, que es mucho más nítida.', 'warn'); }
           }
         }
