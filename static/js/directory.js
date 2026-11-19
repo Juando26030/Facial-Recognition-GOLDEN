@@ -1376,6 +1376,28 @@
       verdict('info', 'Encontrado(a): confirma', `${found.person.n} · pulsa «Acreditar» en su tarjeta`);
     }
 
+    /* Cédula (vieja o nueva) leída con la cámara y sin ninguna coincidencia —ni por cédula ni por nombre—: la banda de siempre (arriba, 15 s) se puede pasar por alto con la cámara
+       recién cerrada. Esto es una ventana roja GRANDE que se queda hasta que el operador la cierre (botón, Esc o clic afuera). Solo texto en pantalla: nada va a logs. */
+    function showNotFoundAlert(cedula, fullName) {
+      const old = document.getElementById('gwNotFoundAlert'); if (old) old.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'gwNotFoundAlert'; overlay.className = 'gw-modal-backdrop gw-modal-backdrop--top'; overlay.setAttribute('data-open', 'true');
+      overlay.setAttribute('role', 'alertdialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-labelledby', 'gwNotFoundTitle');
+      const box = document.createElement('div'); box.className = 'gw-notfound';
+      const title = document.createElement('h2'); title.id = 'gwNotFoundTitle'; title.className = 'gw-notfound__title'; title.textContent = 'No encontramos coincidencias de esta persona en la base de datos';
+      const who = [cedula ? `Cédula ${cedula}` : '', fullName].filter(Boolean).join(' · ');
+      const detail = document.createElement('p'); detail.className = 'gw-notfound__text'; detail.textContent = (who ? who + '. ' : '') + 'Si es una persona nueva, usa «Registrar nuevo».';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--primary gw-btn--xl'; btn.textContent = 'Entendido';
+      box.append(title, detail, btn); overlay.appendChild(box); document.body.appendChild(overlay);
+      const close = () => { document.removeEventListener('keydown', onKey, true); overlay.remove(); };
+      const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
+      btn.addEventListener('click', close);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+      document.addEventListener('keydown', onKey, true);
+      btn.focus();
+    }
+    let bigNotFound = false;          // solo lo prende `scanCedulaCard` (cédula vieja/nueva por cámara); el QR y el lector de mano siguen como siempre
+
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const GC0 = window.GoldenContingency && window.GoldenContingency.instance;
       if (!(GC0 && GC0.active()) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
@@ -1494,10 +1516,11 @@
             found ? 'success' : 'error'
           );
           if (found) verdict('info', 'Cédula no encontrada', `Mostrando coincidencias por nombre para «${fullName}»`);
-          else verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`);
+          else { verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`); if (bigNotFound) showNotFoundAlert(cedula, fullName); }
         } else {
           showToast(data.details || 'Cédula no encontrada', 'error');
           verdict('err', 'No está en la lista', 'Cédula no encontrada. Si es una persona nueva, usa «Registrar nuevo».');
+          if (bigNotFound) showNotFoundAlert(cedula, '');
         }
       } catch (e) {
         showToast('Error de red', 'error');
@@ -1566,6 +1589,12 @@
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
       hashesSettled: async () => { while (inflightHashes.size) await Promise.all([...inflightHashes]); },      // para pruebas y para quien necesite saber que la búsqueda por cédula ya se completó
       submitScannedCedula: (cedula, nameInfo, method) => fastCheckin(cedula, false, nameInfo || null, undefined, method),
+      /* Cédula vieja o nueva leída con la cámara: busca PRIMERO por cédula (acredita si coincide, igual que el lector de mano); si no, por nombre con la misma tolerancia de siempre
+         (errores de escritura, nombres abreviados) y deja las coincidencias a la vista; y si no hay ninguna, avisa con la ventana roja grande. El QR no pasa por aquí. */
+      scanCedulaCard: async (cedula, nameInfo) => {
+        bigNotFound = true;
+        try { return await fastCheckin(cedula, false, nameInfo || null, undefined, undefined); } finally { bigNotFound = false; }
+      },
       /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
          filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
       clearFilters: () => {

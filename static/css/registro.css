@@ -256,3 +256,9 @@ body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-orig
 
 /* Modo oscuro: el formulario de «Registro de nuevo personal» heredaba el fondo BLANCO de style.css (.golden-badge-builder). Dentro del modal, la tarjeta (.gw-card) es la que pone fondo, borde y relleno. */
 .gw-registro__modal > .golden-badge-builder { background: transparent; padding: 0; border: 0; border-radius: 0; box-shadow: none; color: inherit; }
+
+
+/* Cédula vieja/nueva leída con la cámara sin ninguna coincidencia (directory.js · showNotFoundAlert): ventana roja grande que se queda hasta que el operador la cierra */
+.gw-notfound { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-6); width: min(44rem, 100%); padding: var(--gw-sp-8); text-align: center; background: var(--gw-err-bg); color: var(--gw-err-text); border: 0.4rem solid var(--gw-err-line); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-lg); }
+.gw-notfound__title { margin: 0; font-size: var(--gw-fs-3xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
+.gw-notfound__text { margin: 0; font-size: var(--gw-fs-xl); overflow-wrap: anywhere; }
