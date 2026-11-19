@@ -843,21 +843,25 @@ function parseMrz(raw) {
   let comp = null;                                                   // dígito compuesto: cubre el n.º de documento, las fechas y la cédula
   if (l1.length === 30 && s2.length === 30) {
     const fix = (s, from, to) => s.slice(0, from) + mrzDig(s.slice(from, to)) + s.slice(to);
-    const opt = s2.slice(18, 29), ok = opt.indexOf('<'), optF = (ok < 0 ? mrzDig(opt) : mrzDig(opt.slice(0, ok)) + opt.slice(ok));
-    const v = [l1.slice(5, 30) + s2.slice(0, 7) + s2.slice(8, 15) + s2.slice(18, 29),
-               fix(l1, 5, 14).slice(5, 30) + mrzDig(s2.slice(0, 7)) + mrzDig(s2.slice(8, 15)) + optF];
+    const dg = s => { const q = s.indexOf('<'); return q < 0 ? mrzDig(s) : mrzDig(s.slice(0, q)) + s.slice(q); };      // dígitos hasta el primer «<»
+    const opt = dg(s2.slice(18, 29)), l1d = fix(l1, 5, 14), l1o = l1d.slice(0, 15) + dg(l1d.slice(15)), tail = mrzDig(s2.slice(0, 7)) + mrzDig(s2.slice(8, 15)) + opt;
+    const v = [l1.slice(5, 30) + s2.slice(0, 7) + s2.slice(8, 15) + s2.slice(18, 29), l1d.slice(5, 30) + tail, l1o.slice(5, 30) + tail];
     comp = v.some(x => String(mrzCheck(x)) === mrzDig(s2[29]));
   }
   // nombres
   const t = mrzAlf(l3).replace(/[^A-Z<]/g, '').replace(/^<+|<+$/g, ''), j = t.indexOf('<<');
-  const surnames = j > 0 ? t.slice(0, j).split('<').filter(Boolean) : [], given = j > 0 ? t.slice(j + 2).split('<').filter(Boolean) : [];
+  let surnames = j > 0 ? t.slice(0, j).split('<').filter(Boolean) : [], given = j > 0 ? t.slice(j + 2).split('<').filter(Boolean) : [], guess = false;
+  if (j <= 0 && t) {                                                 // sin el «<<» que separa apellidos de nombres: se adivina (2 apellidos + resto) y queda marcado como incierto
+    const tk = t.split('<').filter(Boolean);
+    if (tk.length >= 3) { surnames = tk.slice(0, 2); given = tk.slice(2); guess = true; } else if (tk.length === 2) { surnames = [tk[0]]; given = [tk[1]]; guess = true; }
+  }
   const r = { cedula, apellido1: surnames[0] || '', apellido2: surnames.slice(1).join(' '), nombre1: given[0] || '', nombre2: given.slice(1).join(' '),
-              nacimiento, sexo, vencimiento, documento, checks: { birth: okB, expiry: okE, doc: okD, composite: comp }, lines: [l1, s2, l3] };
+              nacimiento, sexo, vencimiento, documento, nombresIncierto: guess, checks: { birth: okB, expiry: okE, doc: okD, composite: comp }, lines: [l1, s2, l3] };
   r.linea = [r.cedula, r.nombre1, r.nombre2, r.apellido1, r.apellido2, r.nacimiento].join(',');
   return r;
 }
 /** «Fuerte» = los dígitos de control cuadran (incluido el compuesto, que cubre la cédula) y hay nombre y apellido. Los nombres no tienen control: por eso se confirman con otro cuadro. */
-const mrzStrong = p => !!p && p.checks.birth && p.checks.expiry && p.checks.composite === true && !!p.nombre1 && !!p.apellido1;
+const mrzStrong = p => !!p && p.checks.birth && p.checks.expiry && p.checks.composite === true && !!p.nombre1 && !!p.apellido1 && !p.nombresIncierto;
 const mrzKey = p => [p.cedula, p.nombre1, p.nombre2, p.apellido1, p.apellido2, p.nacimiento].join('|');
 
 /* ---------- geometría pura sobre arrays de gris (también se prueba fuera del navegador) ---------- */
@@ -998,14 +1002,15 @@ function mrzLocate(g, w, h) {
 }
 
 /* ---------- del resultado del OCR a una línea de 30 columnas ---------- */
-/** syms: [{c, conf, cx}] en px del recorte. Quita duplicados (dos símbolos en la misma celda) y rellena huecos con «<». */
+/** syms: [{c, conf, cx}] en px del recorte. El paso entre celdas se mide con los propios símbolos; quita duplicados (dos símbolos en la misma celda) y rellena huecos con «<» (el OCR suele «perder» los «<»). */
 function mrzGrid(syms, x0, ext, n = 30) {
-  const p = ext / (n - .3);
-  const S = syms.slice().sort((a, b) => a.cx - b.cx), keep = [];
+  const S = syms.slice().sort((a, b) => a.cx - b.cx), p0 = ext / (n - .3), d = [];
+  for (let i = 1; i < S.length; i++) { const g = S[i].cx - S[i - 1].cx; if (g > .65 * p0 && g < 1.5 * p0) d.push(g); }
+  d.sort((a, b) => a - b); const p = d.length >= 5 ? d[d.length >> 1] : p0, keep = [];
   for (const s of S) { const l = keep[keep.length - 1]; if (l && s.cx - l.cx < .62 * p) { if (s.conf > l.conf) keep[keep.length - 1] = s; } else keep.push(s); }
   let txt = '', conf = [];
   keep.forEach((s, i) => {
-    if (i) { const gap = Math.round((s.cx - keep[i - 1].cx) / p) - 1; for (let q = 0; q < Math.min(gap, 3); q++) { txt += '<'; conf.push(0); } }
+    if (i) { const gap = Math.round((s.cx - keep[i - 1].cx) / p) - 1; for (let q = 0; q < Math.min(gap, 4); q++) { txt += '<'; conf.push(0); } }
     txt += s.c; conf.push(s.conf);
   });
   return { text: txt, conf };
@@ -1021,6 +1026,11 @@ const MRZ_GUIDE_AR = 4.6;                                           // proporci�
 const MRZ_W = 1400;                                                 // ancho máximo del recorte que se analiza
 const MRZ_CAPS = [36, 30, 44];                                      // alto de letra con que se le pasa la línea al OCR; se alterna entre intentos
 const loadScript = url => new Promise((res, rej) => { const s = document.createElement('script'); s.src = url; s.onload = res; s.onerror = () => rej(new Error('no se pudo descargar ' + url)); document.head.appendChild(s); });
+function symbolsOf(d) {                                             // símbolos {c, conf, cx} de la respuesta de tesseract.js (v5: data.symbols; si no, bloques → … → símbolos)
+  let S = Array.isArray(d.symbols) ? d.symbols : null;
+  if (!S && Array.isArray(d.blocks)) { S = []; for (const b of d.blocks) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || []) for (const s of w.symbols || []) S.push(s); }
+  return (S || []).filter(s => s && s.bbox && typeof s.text === 'string' && /^[A-Z0-9<]$/.test(s.text)).map(s => ({ c: s.text, conf: s.confidence || 0, cx: (s.bbox.x0 + s.bbox.x1) / 2 }));
+}
 const grayCanvas = (g, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(fromGray(g, w, h), 0, 0); return c; };
 
 class MrzOcr {
@@ -1048,7 +1058,15 @@ class MrzOcr {
   }
   /** crops: [{g,w,h}] (línea 1, 2 y 3) → [{text, conf}] */
   async read(crops) {
-    return Promise.all(crops.map((c, i) => this.workers[i].recognize(grayCanvas(c.g, c.w, c.h)).then(r => ({ text: String((r.data && r.data.text) || '').replace(/\s+/g, ''), conf: Math.round((r.data && r.data.confidence) || 0) }))));
+    return Promise.all(crops.map((c, i) => this.workers[i].recognize(grayCanvas(c.g, c.w, c.h)).then(r => {
+      const d = r.data || {}, raw = String(d.text || '').replace(/\s+/g, ''), syms = symbolsOf(d);
+      let text = raw;
+      if (syms.length >= 8) {                                        // con la posición de cada letra: se rellenan los «<» perdidos y se quitan duplicados
+        text = mrzGrid(syms, c.x0, c.ext).text;
+        if (i !== 1 && text.length < 30 && text.length >= 20) text += '<'.repeat(30 - text.length);      // líneas 1 y 3 terminan en relleno «<»
+      }
+      return { text, raw, conf: Math.round(d.confidence || 0) };
+    })));
   }
 }
 
@@ -1355,10 +1373,11 @@ function showMrz(d) {
       <div><span>Sexo</span><b>${esc(d.sexo) || '—'}</b></div><div><span>Vence</span><b>${d.vencimiento ? esc(formatBirth(d.vencimiento)) : '—'}</b></div>
     </div>
     <div>${chk(c.birth, 'nacimiento')}${chk(c.expiry, 'vencimiento')}${chk(c.doc === true, 'n.º de documento')}${chk(c.composite === true, 'control general (incluye la cédula)')}</div>
+    ${d.nombresIncierto || !d.nombre1 ? '<p class="note">No se pudieron separar con certeza los apellidos de los nombres (falta el «<<» entre ellos): revisa las líneas leídas.</p>' : ''}
     <p class="note">Los nombres no tienen dígito de control: se confirman leyéndolos en dos cuadros iguales. Revisa que coincidan con la cédula.</p>
     <div class="row"><button class="primary" id="btnCopy">Copiar línea</button><button id="btnAgain"></button></div>
     ${ms}
-    <details><summary>Líneas leídas</summary><pre>${esc((d.lines || []).join('\n'))}</pre></details>
+    <details ${d.aproximado || d.nombresIncierto || !d.nombre1 ? 'open' : ''}><summary>Líneas leídas</summary><pre>${esc((d.lines || []).join('\n'))}</pre></details>
     <p class="note">Todo se procesa en este dispositivo; los datos no se envían a ningún servidor.</p>`, 'Escanear otra', d.linea);
 }
 function showMrzFail(dbg) {
