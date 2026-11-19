@@ -98,7 +98,16 @@
   /* «Conectar: 192.168.1.20:8443» (azul, junto a la versión): la dirección que otros equipos de la MISMA red escriben en el navegador para usar este servidor local. Clic = copia el enlace.
      Solo en servidores locales; el instalador ya abre el puerto en el cortafuegos para la red local (install.ps1). */
   fetch('/api/ops/local-address').then((r) => (r.ok ? r.json() : null)).then((a) => {
-    if (!a || !a.configured || !a.addresses || !a.addresses.length) return;
+    if (!a || !a.configured) return;
+    if (!a.addresses || !a.addresses.length) {                 // sin red local (cable sin DHCP, sin Wi‑Fi…): se avisa en vez de callar
+      const none = document.createElement('div');
+      none.className = 'gw-versionbar gw-versionbar--info gw-versionbar--err';
+      none.title = 'Este equipo no tiene dirección en la red local, así que otros equipos no pueden conectarse. Revisa el cable o el Wi‑Fi (el router debe darle una dirección). Puerto ' + a.port + '.';
+      none.innerHTML = '<span class="gw-versionbar__txt"><strong>Sin red local</strong></span>';
+      const l0 = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+      if (l0 && l0.parentNode) l0.parentNode.insertBefore(none, l0.nextSibling); else place(none);
+      return;
+    }
     const url = (ip) => 'https://' + ip + ':' + a.port;
     const chip = document.createElement('button');
     chip.type = 'button';

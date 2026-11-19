@@ -63,8 +63,8 @@ def lan_addresses() -> list:
             a = ipaddress.ip_address(ip)
         except ValueError:
             return
-        if a.version == 4 and a.is_private and not a.is_loopback and not a.is_link_local and ip not in found:
-            found.append(ip)
+        if a.version == 4 and not a.is_loopback and not a.is_link_local and not a.is_unspecified and not a.is_multicast and ip not in found:
+            found.append(ip)          # privadas y también otras (p. ej. 100.64.x de algunos operadores); 169.254.x = sin DHCP, no sirve
 
     for probe in ("10.255.255.255", "192.168.255.255", "172.31.255.255", "8.8.8.8"):          # la interfaz que usaría para salir (UDP: no envía nada)
         try:
@@ -79,6 +79,7 @@ def lan_addresses() -> list:
             add(info[4][0])
     except OSError:
         pass
+    found.sort(key=lambda i: not ipaddress.ip_address(i).is_private)          # las privadas primero
     return found
 
 
