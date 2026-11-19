@@ -54,4 +54,13 @@ p = parseMrz(n); assert.strictEqual(p.checks.composite, false); assert.strictEqu
 assert.strictEqual(parseMrz(['HOLA MUNDO', 'NADA QUE VER']), null);
 assert.strictEqual(parseMrz([]), null);
 assert.strictEqual(parseMrz([L[0]]), null);
+
+// 8) el archivo del quiosco (static/js/cedula-readers.js) es EXACTAMENTE lo que genera scripts/build_cedula_readers.py desde la página de prueba, y se carga como script clásico
+const { execFileSync } = require('child_process');
+const built = execFileSync('python3', ['-c', "import sys; sys.path.insert(0, 'scripts'); import build_cedula_readers as b; sys.stdout.write(b.build())"], { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' });
+const shipped = fs.readFileSync(path.join(__dirname, '..', '..', 'static', 'js', 'cedula-readers.js'), 'utf8');
+assert.strictEqual(shipped, built, 'static/js/cedula-readers.js quedó desactualizado: corre python scripts/build_cedula_readers.py');
+const win = {}; new Function('window', shipped)(win);
+assert.deepStrictEqual(Object.keys(win.CedulaReaders).sort(), ['CedulaScanner', 'MrzScanner', 'formatBirth', 'mrzStrong', 'parseCedula', 'parseMrz']);
+assert.strictEqual(win.CedulaReaders.parseMrz(L).cedula, '52123456');
 console.log('mrz_parser_check OK');

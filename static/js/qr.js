@@ -8,9 +8,12 @@
      es, el primero. El resto se toma como nombre para la búsqueda por nombre (igual que con la cédula vieja).
      `isQr` = true solo cuando trae `|` (un ID suelto no se distingue de una cédula escrita a mano).
 
-   QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, onPhoto })
+   QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, onPhoto, modes, onCedula })
      `formats` (por defecto solo QR; el Registro pide también 'pdf417'). `onPhoto(blob)`: si se pasa, la ventana ofrece «Foto del reverso (cédula nueva)», que toma un cuadro de la MISMA cámara
      (no se adjunta ningún archivo) y lo entrega para leer la MRZ en el servidor.
+     `modes` (opcional, p. ej. ['old','new','qr']): la ventana muestra un selector «Cédula vieja · Cédula nueva · QR» y se prepara para lo que se elija (el Registro lo usa). 'qr' = el comportamiento de siempre (onCode);
+     'old' = código de barras PDF417 de la cédula vieja y 'new' = las 3 líneas de la cédula nueva: ambos con los lectores de static/js/cedula-readers.js (se cargan al elegirlos) y entregan `onCedula(datos, 'old'|'new')`
+     con { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento, … }. Sin `modes` todo funciona exactamente como antes.
      Abre la cámara del dispositivo (celular, tablet o computador) y lee QR en vivo. Usa BarcodeDetector si el
      navegador lo tiene (Chrome/Edge/Android) y, si no, jsQR (copia propia en /static/vendor/jsqr, se carga bajo demanda). Se queda abierto para
      escanear varias personas seguidas; ignora el mismo código durante `cooldownMs` (3 s por defecto). */
@@ -171,6 +174,25 @@
     return r.text;
   }
 
+  // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
+  const READERS_URL = '/static/js/cedula-readers.js?v=1';
+  const MODE_KEY = 'gw_scan_mode';
+  let readersPromise = null;
+  function loadReaders() {
+    if (window.CedulaReaders) return Promise.resolve(window.CedulaReaders);
+    if (window.CEDULA_VENDOR === undefined) window.CEDULA_VENDOR = '/static/vendor/cedula';        // copia propia de zxing/tesseract si se generó (scripts/vendor_cedula_readers.sh); si no, los lectores usan el CDN
+    if (!readersPromise) {
+      readersPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = READERS_URL;
+        s.onload = () => resolve(window.CedulaReaders);
+        s.onerror = () => { readersPromise = null; reject(new Error('No se pudo cargar el lector de cédulas (sin conexión).')); };
+        document.head.appendChild(s);
+      });
+    }
+    return readersPromise;
+  }
+
   function open(opts) {
     opts = opts || {};
     const onCode = opts.onCode || function () {};
@@ -181,11 +203,16 @@
     overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', opts.title || 'Escanear código QR');
     const box = document.createElement('div');
     box.className = 'gw-modal gw-modal--dialog gw-cam';
+    const MODE_LABEL = { old: 'Cédula vieja', new: 'Cédula nueva', qr: 'QR' };
+    const modes = Array.isArray(opts.modes) ? opts.modes.filter((m) => MODE_LABEL[m]) : [];
+    const modesHtml = modes.length ? `<div class="gw-segment gw-cam__modes" role="group" aria-label="¿Qué vas a escanear?">${modes.map((m) => `<button type="button" class="gw-segment__opt" data-mode="${m}" aria-pressed="false">${MODE_LABEL[m]}</button>`).join('')}</div><canvas hidden></canvas>` : '';
+    const videoHtml = modes.length ? '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas class="gw-cam__overlay" aria-hidden="true"></canvas></div>'
+      : '<video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas hidden></canvas>';
     box.innerHTML = `
       <div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>
       <div class="gw-modal__body">
-        <video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video>
-        <canvas hidden></canvas>
+        ${modesHtml}
+        ${videoHtml}
         <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
       </div>
       <div class="gw-modal__foot">
@@ -202,11 +229,19 @@
     const video = box.querySelector('video');
     const canvas = box.querySelector('canvas');
     const status = box.querySelector('.qr-status');
-    let stream = null, stopped = false, last = { text: '', at: 0 };
+    const overlayCv = box.querySelector('.gw-cam__overlay');
+    let stream = null, stopped = false, last = { text: '', at: 0 }, loopId = 0, epoch = 0, reader = null, mode = null, lastCed = { id: '', at: 0 };
+    const qrMsg = () => (opts.formats && opts.formats.includes('pdf417') ? 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.' : 'Apunta la cámara al código QR.');
+    status.textContent = qrMsg();
 
+    function stopQr() { loopId++; if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
+    function stopReader() {
+      if (reader) { try { reader.stop(); } catch (e) { /* ya detenido */ } reader = null; }
+      if (overlayCv) overlayCv.getContext('2d').clearRect(0, 0, overlayCv.width, overlayCv.height);
+    }
     function close() {
-      stopped = true;
-      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+      stopped = true; epoch++;
+      stopQr(); stopReader();
       overlay.remove();
     }
     box.querySelector('.qr-close').addEventListener('click', close);
@@ -256,16 +291,20 @@
     }
 
     async function start() {
+      const id = ++loopId;
+      let s;
       try {
         // Más resolución: el PDF417 de la cédula vieja son líneas muy finas y con 640×480 no se distinguen.
         const hi = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
-        try { stream = await navigator.mediaDevices.getUserMedia({ video: hi }); }
-        catch (e1) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
+        try { s = await navigator.mediaDevices.getUserMedia({ video: hi }); }
+        catch (e1) { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
       } catch (e) {
         status.classList.add('gw-cam__status--err');
         status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
         return;
       }
+      if (stopped || id !== loopId) { s.getTracks().forEach((t) => t.stop()); return; }       // se cerró o se cambió de modo mientras se pedía el permiso
+      stream = s;
       video.srcObject = stream;
       setupFocus();
       let detector = null;
@@ -280,6 +319,7 @@
       const barsOk = !!detector && (opts.formats || []).includes('pdf417') && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats().catch(() => [])).includes('pdf417'));
       const zx = wantsBars ? await loadZxing().catch(() => null) : null;          // el universal (si está) trabaja SIEMPRE con el del navegador: el que lea primero gana
       const jsQR = detector || zx ? null : await loadJsQr().catch(() => null);
+      if (stopped || id !== loopId) return;
       try { console.info('[escáner] motores:', [detector ? 'navegador' : '', zx ? (zx.worker ? 'ZXing (hilo aparte)' : 'ZXing') : '', jsQR ? 'jsQR' : ''].filter(Boolean).join(' + ') || 'ninguno', '| PDF417 del navegador:', barsOk); } catch (e) { /* sin consola */ }
       if (wantsBars && !barsOk && !zx) box.querySelector('.qr-status').textContent = 'Este equipo aún no tiene el lector del código de barras de la cédula vieja (el QR sí se lee). Usa un lector de mano, Chrome en Android o escribe la cédula; soporte puede activarlo (scripts/vendor_zxing.sh).';
       if (!detector && !zx && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
@@ -320,7 +360,7 @@
       }
 
       async function tick() {
-        if (stopped) return;
+        if (stopped || id !== loopId) return;
         if (video.videoWidth) {
           try {
             let hit = null;
@@ -351,10 +391,60 @@
       }
       tick();
     }
-    start();
+
+    /* ---- Cédula vieja / nueva (solo con `modes`): lectores de static/js/cedula-readers.js ---- */
+    function failStatus(msg) { status.classList.add('gw-cam__status--err'); status.textContent = msg; }
+    function onCedulaRead(d, kind, my) {
+      if (stopped || my !== epoch) return;
+      status.classList.remove('gw-cam__status--err');
+      if (!(d.cedula === lastCed.id && Date.now() - lastCed.at < Math.max(cooldown, 4000))) {      // la misma cédula quieta frente a la cámara no se envía dos veces
+        lastCed = { id: d.cedula, at: Date.now() };
+        status.textContent = 'Cédula leída.';
+        try { if (opts.onCedula) opts.onCedula(d, kind); } catch (e) { console.error(e); }
+      }
+      setTimeout(() => { if (!stopped && my === epoch && reader) reader.resume(); }, 2500);          // sigue con la siguiente persona
+    }
+    async function startCedula(kind, my) {
+      status.classList.remove('gw-cam__status--err'); status.textContent = 'Cargando el lector…';
+      let R;
+      try { R = await loadReaders(); } catch (e) { if (my === epoch) failStatus(e.message); return; }
+      if (stopped || my !== epoch) return;
+      const common = { onStatus: (m, k) => { if (!stopped && my === epoch) { status.textContent = m; status.classList.toggle('gw-cam__status--err', k === 'err'); } } };
+      try {
+        const rd = kind === 'old'
+          ? new R.CedulaScanner({ ...common, onResult: (d) => onCedulaRead(d, 'old', my),
+              onUnknown: () => { if (my !== epoch) return; status.textContent = 'Se leyó un código, pero no tiene el formato de la cédula.'; setTimeout(() => { if (!stopped && my === epoch && reader) reader.resume(); }, 1500); } })
+          : new R.MrzScanner({ ...common, onlyVerified: true, onResult: (d) => onCedulaRead(d, 'new', my) });          // acreditar a alguien exige lectura verificada con los dígitos de control
+        if (kind === 'old') await rd.init();
+        if (stopped || my !== epoch) return;
+        reader = rd;
+        await rd.startCamera(video, overlayCv);
+        if (stopped || my !== epoch) rd.stop();
+      } catch (e) {
+        if (my !== epoch) return;
+        failStatus(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).'
+          : e && e.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo iniciar el lector: ' + ((e && e.message) || 'error desconocido'));
+      }
+    }
+    async function setMode(m) {
+      const my = ++epoch;
+      stopQr(); stopReader(); mode = m;
+      box.querySelectorAll('.gw-cam__modes [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+      try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* sin almacenamiento: no se recuerda */ }
+      const isQr = m === 'qr';
+      if (overlayCv) overlayCv.hidden = isQr;
+      if (opts.onPhoto) photoBtn.hidden = !isQr;                     // «Foto del reverso» (servidor) solo con QR: las cédulas ya tienen su propio lector
+      if (isQr) { status.classList.remove('gw-cam__status--err'); status.textContent = qrMsg(); await start(); } else await startCedula(m, my);
+    }
+
+    if (modes.length) {
+      box.querySelectorAll('.gw-cam__modes [data-mode]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.mode !== mode) setMode(b.dataset.mode); }));
+      let saved = null; try { saved = localStorage.getItem(MODE_KEY); } catch (e) { /* ignorar */ }
+      setMode(modes.includes(saved) ? saved : modes.includes(opts.defaultMode) ? opts.defaultMode : modes.includes('qr') ? 'qr' : modes[0]);
+    } else start();
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, loadZxing, JSQR_URL }; }
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, loadJsQr, loadZxing, JSQR_URL, READERS_URL }; }
   if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();

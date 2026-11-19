@@ -566,7 +566,8 @@
         // primera visita: esta página y sus archivos estáticos ya cargaron antes de que el worker tomara el control; se los manda para guardarlos ya
         // jsQR (escáner de QR por cámara en Safari/iPad) se carga bajo demanda: se guarda desde la primera visita, junto con qr.js, para que funcione sin red
         const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/')),
-                      ...(window.QrScanner && QrScanner.JSQR_URL ? [location.origin + QrScanner.JSQR_URL] : [])];
+                      ...(window.QrScanner && QrScanner.JSQR_URL ? [location.origin + QrScanner.JSQR_URL] : []),
+                      ...(window.QrScanner && QrScanner.READERS_URL ? [location.origin + QrScanner.READERS_URL] : [])];      // lectores de cédula (las librerías de zxing/tesseract vienen del CDN o de /static/vendor/cedula/)
         const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
         send();
         navigator.serviceWorker.addEventListener('controllerchange', send);      // un despliegue nuevo cambia de worker: el nuevo vuelve a guardar el caparazón
@@ -686,6 +687,11 @@
             const sc = QrScanner.open({
                 title: 'Escanear',
                 formats: ['qr_code', 'pdf417'],
+                modes: ['old', 'new', 'qr'],                       // selector dentro de la misma ventana: cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
+                onCedula: (d) => {                                 // lectores de cédula (static/js/cedula-readers.js): mismo camino que el PDF417 de siempre
+                    if (!window.directorySearch) return;
+                    window.directorySearch.submitScannedCedula(d.cedula, { nombres: [d.nombre1, d.nombre2].filter(Boolean).join(' '), apellidos: [d.apellido1, d.apellido2].filter(Boolean).join(' ') });
+                },
                 onPhoto: processMrzPhoto,
                 onCode: async (rawText, format) => {
                     let text = rawText;

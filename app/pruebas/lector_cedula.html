@@ -304,6 +304,7 @@ function analyse(cells,gw,B,o){
 
 const ZX_VERSION = '3.1.3';
 const ZX_URLS = [
+  ...(window.CEDULA_VENDOR ? [`${window.CEDULA_VENDOR}/zxing/iife/reader/index.js`] : []),   // copia propia (scripts/vendor_cedula_readers.sh), si existe; si no, CDN
   `https://cdn.jsdelivr.net/npm/zxing-wasm@${ZX_VERSION}/dist/iife/reader/index.js`,
   `https://unpkg.com/zxing-wasm@${ZX_VERSION}/dist/iife/reader/index.js`,
 ];
@@ -1026,14 +1027,17 @@ class MrzOcr {
   constructor() { this.workers = []; this.ready = false; this._p = null; }
   load() { return this._p || (this._p = this._load().catch(e => { this._p = null; throw e; })); }
   async _load() {
+    const V = window.CEDULA_VENDOR;                                   // copia propia (scripts/vendor_cedula_readers.sh) primero; si no está, CDN
+    const SRC = [...(V ? [`${V}/tesseract/tesseract.min.js`] : []), ...TESS_SRC];
     if (!window.Tesseract) {
-      let err; for (const u of TESS_SRC) { try { await loadScript(u); if (window.Tesseract) break; } catch (e) { err = e; } }
+      let err; for (const u of SRC) { try { await loadScript(u); if (window.Tesseract) break; } catch (e) { err = e; } }
       if (!window.Tesseract) throw err || new Error('No se pudo cargar el lector de texto (revisa la conexión).');
     }
+    const LANGS = [...(V ? [{ workerPath: `${V}/tesseract/worker.min.js`, corePath: `${V}/tesseract-core`, langPath: `${V}/tesseract-lang` }] : []), ...TESS_LANG.map(langPath => ({ langPath }))];
     let last;
-    for (const lp of TESS_LANG) {
+    for (const lp of LANGS) {
       try {
-        const mkw = async wl => { const w = await window.Tesseract.createWorker('eng', 1, { langPath: lp, gzip: true, logger: () => {} });
+        const mkw = async wl => { const w = await window.Tesseract.createWorker('eng', 1, { ...lp, gzip: true, logger: () => {} });
           await w.setParameters({ tessedit_char_whitelist: wl, tessedit_pageseg_mode: '7', user_defined_dpi: '300' }); return w; };
         const first = await mkw(MRZ_WL[0]);                           // el primero baja y guarda el idioma; los otros ya lo encuentran en caché
         const rest = await Promise.all(MRZ_WL.slice(1).map(mkw));
@@ -1049,8 +1053,9 @@ class MrzOcr {
 }
 
 class MrzScanner {
-  constructor({ onResult = () => {}, onStatus = () => {} } = {}) {
-    this.onResult = onResult; this.onStatus = onStatus; this.ocr = new MrzOcr(); [this.work, this.wctx] = mk(); [this.rot, this.rctx] = mk();
+  /** onlyVerified: solo entrega lecturas con los dígitos de control en regla (para acreditar personas); sin eso también entrega «aproximadas». */
+  constructor({ onResult = () => {}, onStatus = () => {}, onlyVerified = false } = {}) {
+    this.onResult = onResult; this.onStatus = onStatus; this.onlyVerified = onlyVerified; this.ocr = new MrzOcr(); [this.work, this.wctx] = mk(); [this.rot, this.rctx] = mk();
     this.scanning = false; this.lastDebug = null; this._reset();
   }
   _reset() { this.votes = new Map(); this.fails = 0; this.flip = false; this.attempt = 0; this.sh = []; this.lastOcr = 0; }
@@ -1120,7 +1125,7 @@ class MrzScanner {
     const key = mrzKey(parsed), n = (this.votes.get(key) || 0) + 1; this.votes.set(key, n);
     if (mrzStrong(parsed)) {
       if (n >= 2 || Math.min(...conf) >= 80) return { ...parsed, verificada: true };                   // controles OK + dos cuadros iguales (o letras muy seguras)
-    } else if (parsed.checks.birth && parsed.checks.expiry && n >= 3) return { ...parsed, verificada: false, aproximado: true };
+    } else if (!this.onlyVerified && parsed.checks.birth && parsed.checks.expiry && n >= 3) return { ...parsed, verificada: false, aproximado: true };
     return null;
   }
   async _step() {
