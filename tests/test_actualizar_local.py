@@ -132,3 +132,17 @@ def test_catalog_write_blocked_only_in_local():
     assert lm.is_catalog_write("PATCH", "/api/inventory/products/3/manage")
     assert not lm.is_catalog_write("GET", "/api/inventory/products")
     assert not lm.is_catalog_write("POST", "/api/events/1/inventory-deliver")
+
+
+def test_manifest_falls_back_to_the_package_in_storage(monkeypatch):
+    """Sin variables fijas a mano, producción publica el paquete más nuevo del almacenamiento y lo sirve ella misma (no hay que tocar variables en cada versión)."""
+    monkeypatch.delenv("UPDATE_PACKAGE_URL", raising=False)
+    monkeypatch.delenv("UPDATE_PACKAGE_SHA256", raising=False)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example.com")
+    monkeypatch.setattr(lu, "storage_package", lambda: ("golden-local-update-2026.11.18c.zip", "c" * 64))
+    m = lu.published_manifest()
+    assert m["available"] is True and m["sha256"] == "c" * 64
+    assert m["package_url"] == "https://app.example.com/api/ops/update-package/golden-local-update-2026.11.18c.zip"
+    monkeypatch.setattr(lu, "storage_package", lambda: None)
+    assert lu.published_manifest()["available"] is False
+    assert lu.package_bytes("../../etc/passwd") is None

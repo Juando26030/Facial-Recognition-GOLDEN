@@ -16,7 +16,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from app import versioning
+from app import publicurl, versioning
+from app.storage import get_storage, key_of
 from app.timeutil import utcnow
 
 REQUEST_FILE = "update-request.json"
@@ -36,10 +37,47 @@ def update_dir() -> Path:
 
 
 # ------------------------------------------------------------------ lo que PUBLICA producción
+PACKAGE_PREFIX = key_of("system", "local-update")
+PACKAGE_RE = re.compile(r"^golden-local-update-([0-9][0-9A-Za-z._-]*)\.zip$")
+
+
+def _vkey(v: str):
+    return [int(x) if x.isdigit() else -1 for x in re.split(r"[._-]", v)]
+
+
+def storage_package() -> Optional[tuple]:
+    """(nombre, sha256) del paquete de actualización MÁS NUEVO guardado en el almacenamiento (`system/local-update/`: el .zip y su .sha256, que sube el armado del instalador), o None."""
+    try:
+        st = get_storage()
+        found = [(_vkey(m.group(1)), k.rsplit("/", 1)[-1]) for k in st.list(PACKAGE_PREFIX) for m in [PACKAGE_RE.match(k.rsplit("/", 1)[-1])] if m]
+        if not found:
+            return None
+        name = max(found)[1]
+        m = re.match(r"\s*([0-9a-fA-F]{64})", st.get(key_of("system", "local-update", name[:-4] + ".sha256")).decode("utf-8", "ignore"))
+        return (name, m.group(1).lower()) if m else None
+    except Exception:          # noqa: BLE001 — sin almacenamiento o sin archivo: simplemente no hay paquete publicado
+        return None
+
+
+def package_bytes(name: str) -> Optional[bytes]:
+    if not PACKAGE_RE.match(name or ""):
+        return None
+    try:
+        return get_storage().get(key_of("system", "local-update", name))
+    except Exception:          # noqa: BLE001
+        return None
+
+
 def published_manifest() -> dict:
-    """Lo que la nube dice de su versión publicada para que los locales se actualicen. `available` es falso si la nube no tiene paquete configurado."""
+    """Lo que la nube dice de su versión publicada para que los locales se actualicen. `available` es falso si la nube no tiene paquete. Primero lo que diga UPDATE_PACKAGE_URL/SHA256
+    (si se fijaron a mano); si no, el paquete más nuevo del almacenamiento, que la propia app sirve en /api/ops/update-package/<nombre> (sin variables que tocar en cada versión)."""
     url = (os.getenv("UPDATE_PACKAGE_URL") or "").strip()
     sha = (os.getenv("UPDATE_PACKAGE_SHA256") or "").strip().lower()
+    if not (url.startswith("https://") and SHA256_RE.match(sha)):
+        pkg = storage_package()
+        base = publicurl.base()
+        if pkg and base.startswith("https://"):
+            url, sha = f"{base}/api/ops/update-package/{pkg[0]}", pkg[1]
     v = versioning.local_version()
     ok = url.startswith("https://") and bool(SHA256_RE.match(sha))
     return {"available": ok, "commit": v["commit"], "schema": v["schema"], "package_url": url if ok else None, "sha256": sha if ok else None}

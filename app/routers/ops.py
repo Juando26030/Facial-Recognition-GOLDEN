@@ -125,6 +125,17 @@ def update_manifest() -> dict:
     return local_update.published_manifest()
 
 
+@router.get("/api/ops/update-package/{name}")
+def update_package(name: str):
+    """El paquete de actualización del servidor local (código de la app, sin datos ni secretos; el servidor local verifica su huella SHA-256 antes de aplicarlo). Público como el manifiesto."""
+    from fastapi.responses import Response
+    from app import local_update
+    data = local_update.package_bytes(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Paquete no encontrado")
+    return Response(content=data, media_type="application/zip", headers={"Cache-Control": "no-store", "Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.get("/api/ops/update-status")
 def update_status(request: Request) -> dict:
     """Avance de «Actualizar ahora» (lo escribe el servicio de actualización del servidor local). Sin base de datos; pide sesión."""
