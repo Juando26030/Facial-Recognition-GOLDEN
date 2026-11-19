@@ -584,10 +584,13 @@ class CedulaScanner {
   /* ---------- cámara en vivo ---------- */
   async startCamera(video, overlay) {
     this.video = video; this.overlay = overlay; this.octx = overlay ? overlay.getContext('2d') : null;
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
-    });
-    this.track = this.stream.getVideoTracks()[0];
+    let last = null; this.stream = null;
+    for (const size of [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, {}]) {   // la mayor resolución que dé el celular
+      try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, ...size } }); break; }
+      catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e; }
+    }
+    if (!this.stream) throw last || new Error('No se pudo abrir la cámara');
+    this.track = this.stream.getVideoTracks()[0]; this._ic = null; this.stillError = ''; this._hintedPhoto = false;
     try { await this.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
     video.srcObject = this.stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
     this.scanning = true; this.startedAt = performance.now(); this._loop();
@@ -600,16 +603,29 @@ class CedulaScanner {
     this.stream = this.track = null; if (this.video) this.video.srcObject = null;
     if (this.octx) this.octx.clearRect(0, 0, this.overlay.width, this.overlay.height);
   }
-  /** Foto fija de alta resolución (ImageCapture) del sensor, mucho más detalle que un cuadro de video. */
+  /** Foto fija de alta resolución (ImageCapture) del sensor: muchísimo más detalle que un cuadro de video. Si falla, `stillError` dice por qué. */
   async captureStill() {
-    if (!this.track || typeof ImageCapture === 'undefined') return null;
-    try { const blob = await new ImageCapture(this.track).takePhoto(); return blob; } catch (e) { return null; }
+    this.stillError = '';
+    if (!this.track || typeof ImageCapture === 'undefined') { this.stillError = 'este navegador no ofrece ImageCapture'; return null; }
+    try {
+      const ic = this._ic || (this._ic = new ImageCapture(this.track)); let opts = {};
+      try {                                                                // pedir la resolución máxima (hasta ~4600 px de ancho)
+        const cap = await ic.getPhotoCapabilities(), W = cap.imageWidth, H = cap.imageHeight;
+        if (W && H && W.max) {
+          const k = Math.min(1, 4600 / W.max), fit = (r, v) => Math.min(r.max, Math.max(r.min || 1, Math.round(v / (r.step || 1)) * (r.step || 1)));
+          opts = { imageWidth: fit(W, W.max * k), imageHeight: fit(H, H.max * k) };
+        }
+      } catch (e) {}
+      try { return await ic.takePhoto(opts); }
+      catch (e1) { this.stillError = (e1.name || 'Error') + ': ' + (e1.message || ''); return await ic.takePhoto(); }
+    } catch (e) { this.stillError = (e.name || 'Error') + ': ' + (e.message || ''); return null; }
   }
   /** Foto fija del sensor si el navegador la da; si no, el cuadro de video actual. */
   async snapshot() {
     const still = await this.captureStill(); if (still) return { blob: still, source: 'foto fija del sensor' };
+    const why = this.stillError ? ` — la foto fija no estuvo disponible (${this.stillError})` : '';
     const { video } = this, c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight; c.getContext('2d').drawImage(video, 0, 0);
-    return { blob: await new Promise(r => c.toBlob(r, 'image/jpeg', .92)), source: 'cuadro de video' };
+    return { blob: await new Promise(r => c.toBlob(r, 'image/jpeg', .92)), source: 'cuadro de video' + why };
   }
   _rect(c, color) {
     if (!this.octx) return; const { overlay, octx, video } = this, vw = video.videoWidth, vh = video.videoHeight;
@@ -660,15 +676,17 @@ class CedulaScanner {
     work.width = ww; work.height = wh; wctx.drawImage(video, rx, ry, rw, rh, 0, 0, ww, wh);
     const gx = (g.x - rx) * k, gy = (g.y - ry) * k, gw = g.w * k, gh = g.h * k;
     const fallback = { cx: gx + gw / 2, cy: gy + gh / 2, angle: 0, L: gw * 1.08, W: gh * 1.22 };          // el recuadro tal cual, con un poco de margen
-    const found = this.findCandidates(work, ww, wh).filter(c => c.L > gw * .5 && c.L < gw * 1.5 && Math.hypot(c.cx - fallback.cx, c.cy - fallback.cy) < gh * 1.2);
+    const found = this.findCandidates(work, ww, wh).filter(c => c.L > gw * .75 && c.L < gw * 1.5 && Math.hypot(c.cx - fallback.cx, c.cy - fallback.cy) < gh * 1.2);
     const best = found[0] || null, ppm = +((best ? best.L / k : g.w * 1.08) / 1.28 / MODULES_EST).toFixed(1);
     this._drawGuide(g, best ? '#ffc857' : 'rgba(255,255,255,.9)', best, off, k);
     this.guideInfo = { ppm, found: !!best };
-    this.onStatus(!best ? 'Encaja el código de barras dentro del recuadro.' : ppm < 2.2 ? 'Acércate un poco: el código se ve pequeño.' : 'Código detectado, mantén el celular firme…', best ? 'warn' : '');
+    const tall = vh > vw;
+    this.onStatus(ppm < 3.4 && tall ? 'Gira el celular a horizontal y acércate: así el código sale más nítido.' : ppm < 2.4 ? 'Acércate un poco: el código se ve pequeño.' : !best ? 'Encaja el código de barras dentro del recuadro.' : 'Código detectado, mantén el celular firme…', best || ppm < 3.4 ? 'warn' : '');
     let r = null;
     if (best) r = await this._tryCandidate(work, best, PLANS.fast);
     if (!r && this.scanning) r = await this._tryCandidate(work, fallback, PLANS.fast);
-    if (!r && this.scanning && attempts % 4 === 0) r = await this._tryCandidate(work, best || fallback, PLANS.deep, performance.now() + 1500);
+    if (!r && this.scanning && attempts % 4 === 0) r = await this._tryCandidate(work, fallback, PLANS.deep, performance.now() + 1500);
+    if (!r && best && this.scanning && attempts % 4 === 2) r = await this._tryCandidate(work, best, PLANS.deep, performance.now() + 1200);
     if (!this.scanning) return false;
     if (!r) return false;
     this.scanning = false; video.pause(); this._drawGuide(g, '#2ee59d', null, off, k); this._handle(CedulaScanner._bytes(r.hit)); return true;
@@ -704,7 +722,7 @@ class CedulaScanner {
     catch (e) { try { await t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (_) {} return false; }
   }
   async _loop() {
-    let lastStill = performance.now(), attempts = 0; const { video } = this;
+    let lastStill = performance.now() - 1500, attempts = 0; const { video } = this;
     while (this.scanning) {
       try {
         if (video.readyState >= 2 && video.videoWidth) {
@@ -712,10 +730,11 @@ class CedulaScanner {
           const finished = this.guideMode && !this.legacy ? await this._guideStep(attempts) : await this._freeStep(attempts);
           if (finished || !this.scanning) { if (finished) return; break; }
           // si pasan ~7 s sin leer, se pide una foto fija de alta resolución al sensor y se analiza a fondo
-          if (this.autoStill && !this.legacy && performance.now() - lastStill > 7000) {
+          if (this.autoStill && !this.legacy && performance.now() - lastStill > 4000) {
             lastStill = performance.now(); this.onStatus('Analizando una foto de alta resolución…', 'warn');
             const blob = await this.captureStill();
             if (blob && this.scanning) { const d = await this.scanImage(blob, { budgetMs: 6000 }); if (d) { this.scanning = false; this.video.pause(); return; } }
+            if (this.scanning && performance.now() - this.startedAt > 9000 && !this._hintedPhoto) { this._hintedPhoto = true; this.onStatus('Si no lee en vivo, usa «Tomar foto»: abre la cámara del celular, que es mucho más nítida.', 'warn'); }
           }
         }
       } catch (e) { console.error(e); this.onStatus('Error: ' + e.message, 'err'); }
@@ -760,7 +779,7 @@ async function startCamera() {
               : e.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo abrir la cámara (' + (e.name || e.message) + ').';
     setHint(msg + ' Puedes usar «Tomar foto».', 'err'); return;
   }
-  cameraOn = true; placeholder.hidden = true; btnStart.textContent = '⏹ Detener'; setStatus('Escaneando'); btnGuide.hidden = false; btnDiag.hidden = false; syncGuideUI();
+  cameraOn = true; placeholder.hidden = true; btnStart.textContent = '⏹ Detener'; setStatus('Escaneando ' + ((scanner.track.getSettings && scanner.track.getSettings().height) ? scanner.track.getSettings().width + '×' + scanner.track.getSettings().height : '')); btnGuide.hidden = false; btnDiag.hidden = false; syncGuideUI();
   setHint(scanner.guideMode ? 'Encaja el código de barras dentro del recuadro.' : 'Muestra la parte de atrás de la cédula (la del código de barras).');
   const caps = scanner.track.getCapabilities ? scanner.track.getCapabilities() : {}; btnTorch.hidden = !caps.torch;
 }
