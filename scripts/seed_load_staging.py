@@ -72,6 +72,13 @@ def seed(db, people: int, capacity: int) -> dict:
                    start_date=date.today(), end_date=date.today() + timedelta(days=30), coordinator_staff_id=staff.id, created_by_id=staff.id)
         db.add(ev)
         db.flush()
+    # Re-sembrar deja la cuenta y el evento listos aunque una corrida anterior los dejara mal: sin desbloqueo, sin fallos acumulados, evento «en proceso» (el digitador
+    # solo entra con un evento en proceso asignado) y sin los intentos de login anotados (rate_limit_events), que bloquean al par usuario+IP por 15 minutos.
+    staff.is_active = True
+    staff.locked_at = None
+    staff.failed_logins = 0
+    ev.status = "en_proceso"
+    db.execute(text("DELETE FROM rate_limit_events WHERE key = :u AND kind IN ('login_fail', 'login_ok')"), {"u": USERNAME})
     if not db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=staff.id).first():
         db.add(EventStaffAuthorization(event_id=ev.id, staff_user_id=staff.id))
     have = db.query(User).filter(User.tenant_id == TENANT).count()
