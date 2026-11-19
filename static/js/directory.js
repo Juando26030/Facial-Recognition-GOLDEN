@@ -1419,11 +1419,17 @@
         if (data.result === 'MISSING_REQUIRED') {
           // A3 (26-oct-2026): falta un campo OBLIGATORIO (p. ej. se marcó obligatorio después de cargar la base): NO se acredita. Se dice cuál y se abre «Editar persona» con el foco en el
           // primer campo vacío; al guardar queda acreditado(a) en el mismo paso y la autoimpresión imprime después, con el dato ya lleno.
-          showToast(data.details || `Falta el campo obligatorio: ${(data.missing || []).map((m) => m.label).join(', ')}`, 'warning');
-          verdict('warn', 'Falta un dato obligatorio', (data.missing || []).map((m) => m.label).join(', '));
+          const faltan = (data.missing || []).map((m) => m.label).join(', ');
+          verdict('warn', 'Falta un dato obligatorio', faltan);
           await reload();
           const person = allUsers.find((u) => u.id === data.data.id) || Object.assign({ status: 'No registrado' }, data.data);
-          buildEditModal(person, { missing: data.missing || [], method });
+          const nombre = `${data.data.first_name || ''} ${data.data.last_name || ''}`.trim();
+          // Se AVISA y se ofrece abrir «Editar persona» (antes se abría sola o solo salía un aviso que se iba): no se acredita hasta completar el dato.
+          const abrir = window.showConfirm
+            ? await window.showConfirm(`<strong>${window.escapeHtml ? window.escapeHtml(nombre) : nombre}</strong> no se puede acreditar todavía.<br>${window.escapeHtml ? window.escapeHtml(data.details || ('Falta: ' + faltan)) : (data.details || faltan)}.<br><br>¿Abrir «Editar persona» para completarlo? Al guardar queda acreditado(a) en el mismo paso.`, { variant: 'warning', title: 'Falta un dato obligatorio', confirmLabel: 'Abrir «Editar persona»' })
+            : true;
+          if (abrir) buildEditModal(person, { missing: data.missing || [], method });
+          else showToast(`${nombre || 'La persona'} no se acreditó: falta ${faltan}`, 'warning');
           return;
         }
         if (data.result === 'SÍ') {
