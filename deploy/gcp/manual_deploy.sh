@@ -68,17 +68,17 @@ if [ "$ENV_NAME" = production ]; then
   PKG_OK=0
   VER="$(date -u +%Y.%m.%d.%H%M%S)"; PKG_DIR="$(mktemp -d)"
   if git archive HEAD | tar -x -C "$PKG_DIR" \
-     && docker run --rm -v "$PKG_DIR:/repo" -w /repo -e UPDATE_ONLY=1 python:3.13-slim python deploy/windows/build_cross.py "$VER" "$SHA" \
+     && docker run --rm -v "$PKG_DIR:/repo" -w /repo -e UPDATE_ONLY=1 -e PYTHONDONTWRITEBYTECODE=1 python:3.13-slim python deploy/windows/build_cross.py "$VER" "$SHA" \
      && DEST="gs://${APP_BUCKET}/${APP_PREFIX:+$APP_PREFIX/}system/local-update/" \
      && gsutil -q cp "$PKG_DIR/build/windows/out/golden-local-update-$VER.zip" "$PKG_DIR/build/windows/out/golden-local-update-$VER.sha256" "$PKG_DIR/build/windows/out/golden-local-update-$VER.commit" "$DEST"; then
     for i in 1 2 3 4 5 6; do   # el manifiesto debe anunciar ESTE paquete y ESTE commit
       M="$(curl -s "$PUBLIC_BASE_URL/api/ops/update-manifest")"
-      if echo "$M" | grep -q "golden-local-update-$VER.zip" && echo "$M" | grep -q "\"commit\":\"${SHA:0:12}\""; then PKG_OK=1; break; fi
+      if echo "$M" | grep -q "golden-local-update-$VER.zip" && echo "$M" | grep -q "\"commit\":\"${SHA:0:12}"; then PKG_OK=1; break; fi
       sleep 10
     done
     echo "$M"
   fi
-  docker run --rm -v "$PKG_DIR:/repo" python:3.13-slim rm -rf /repo/build >/dev/null 2>&1; rm -rf "$PKG_DIR"
+  docker run --rm -v "$PKG_DIR:/repo" python:3.13-slim rm -rf /repo/build /repo/deploy >/dev/null 2>&1; rm -rf "$PKG_DIR" 2>/dev/null || true
   if [ "$PKG_OK" = 1 ]; then echo "Paquete $VER publicado: los servidores locales ya pueden actualizarse."; else echo "ATENCIÓN: el despliegue salió pero el paquete de los servidores locales NO quedó publicado (los locales no verán la versión nueva hasta repetirlo)." >&2; fi
 fi
 say "LISTO ($ENV_NAME, commit ${SHA:0:7})"
