@@ -47,6 +47,10 @@ def main(version: str, commit: str) -> None:
     sys.path.insert(0, str(REPO / "deploy" / "windows"))
     from make_requirements import filter_lines
     req = filter_lines((REPO / "requirements.txt").read_text(encoding="utf-8").splitlines(True))
+    # pandas pide tzdata solo en Windows (marcador sys_platform == 'win32'); pip, corriendo en Linux, lo omite y el Python empacado quedaba sin él
+    # (el instalador abortaba al reintentar la instalación con pip). Se pide explícito para que viaje dentro del Python empacado.
+    if not any(l.strip().lower().startswith("tzdata") for l in req):
+        req.append("tzdata")
     (app / "requirements-local.txt").write_text("\n".join(req) + "\n", encoding="utf-8", newline="\n")
     (app / ".build_info").write_text(json.dumps({"commit": commit, "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}, separators=(",", ":")), encoding="utf-8")
     # 2. Paquete de actualización = la carpeta app\ comprimida

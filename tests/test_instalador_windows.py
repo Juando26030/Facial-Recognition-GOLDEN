@@ -82,3 +82,9 @@ def test_instalador_avisa_si_pisa_una_version_mas_nueva():
     assert "Inst > Mine" in iss and "WizardSilent" in iss and "MB_DEFBUTTON2" in iss
     sh = (WIN / "build_en_cloudshell.sh").read_text(encoding="utf-8")
     assert "GOLDEN_BUILD_STAMP" in sh and "date -u +%Y%m%d%H%M%S" in sh
+
+
+def test_build_cross_pide_tzdata_explicito():
+    """pandas necesita tzdata en Windows; instalado desde Linux el marcador lo omite: debe pedirse a mano o el instalador falla en pip."""
+    txt = (SRC / "deploy" / "windows" / "build_cross.py").read_text(encoding="utf-8")
+    assert 'req.append("tzdata")' in txt
