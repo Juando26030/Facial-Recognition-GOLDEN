@@ -202,7 +202,7 @@ def reset_runs(db) -> dict:
 
 
 def _delete_event(db, ev, counts) -> None:
-    """Borra un evento con sus filas dependientes (cualquier tabla con `event_id` o `form_id`) y su formulario. Las tablas `audit_*` son inmutables: no se tocan y, si el evento tiene filas ahí, se detiene sin borrar nada."""
+    """Borra un evento con sus filas dependientes (cualquier tabla con `event_id` o `form_id`) y su formulario. Las tablas `audit_*` son inmutables (sin llaves foráneas): no se tocan; las filas que el evento tenga ahí se conservan y se informan como `<tabla>_kept`."""
     from app.models import Base
     form_ids = [f.id for f in db.query(WebForm).filter_by(event_id=ev.id)]
     for table in reversed(Base.metadata.sorted_tables):
@@ -211,9 +211,8 @@ def _delete_event(db, ev, counts) -> None:
         if table.name.startswith("audit_"):
             if "event_id" in table.c:
                 n = db.execute(text(f'SELECT count(*) FROM "{table.name}" WHERE event_id = :e'), {"e": ev.id}).scalar()
-                if n:
-                    db.rollback()
-                    sys.exit(f"El evento de carga tiene {n} fila(s) en {table.name} (inmutable): no se borra nada.")
+                if n:   # sin llaves foráneas: no bloquean nada; se conservan (prueba inmutable) y se informan
+                    counts[table.name + "_kept"] = counts.get(table.name + "_kept", 0) + n
             continue
         conds = []
         if "form_id" in table.c and form_ids:
