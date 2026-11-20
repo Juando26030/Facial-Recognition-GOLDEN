@@ -51,7 +51,10 @@ def main() -> int:
     if scenario not in CLASSES:
         sys.exit(f"LOAD_SCENARIO debe ser uno de {list(CLASSES)}")
     from scripts.load_cfg import check_host              # doble candado (ver load_cfg.check_host): host de staging Y, si viene LOAD_ALLOWED_HOSTS, uno de los EXACTOS de staging
-    problem = check_host(host, os.getenv("LOAD_ALLOWED_HOSTS", "").split(","))
+    production = os.getenv("LOAD_TARGET") == "production"        # prueba autorizada en producción (19-nov-2026): solo «rush», solo la URL de Cloud Run del servicio web
+    if production and scenario != "rush":
+        sys.exit("En producción solo se permite el escenario «rush» (40.000 escaneos de cédula en un evento sintético).")
+    problem = check_host(host, os.getenv("LOAD_ALLOWED_HOSTS", "").split(","), production=production)
     if problem:
         sys.exit(f"Por seguridad no se genera carga contra este destino: {problem}")
     if not os.getenv("LOAD_ALLOWED_HOSTS"):

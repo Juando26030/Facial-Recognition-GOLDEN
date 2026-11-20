@@ -101,7 +101,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - Un commit + push por pieza terminada (con sus pruebas pasando) y la lista de progreso de `docs/15_MIGRACION.md` al día.
 - **Secretos nunca en el repo ni en el chat** (solo nombres de variables): van a `.env`/`.env.staging` (ignorados) o a Secret Manager
   (el bootstrap los pide a ciegas). Nada de fotos, encodings ni datos reales en el repo, logs o commits; resultados solo agregados.
-- Pruebas de carga nunca contra producción. Ante una ambigüedad: decidir, documentar el porqué y seguir (salvo que Juan David pida que
+- Pruebas de carga nunca contra producción, salvo la prueba «rush» que Juan David autorizó el 19-nov-2026 en un evento sintético (solo por [`docs/PRUEBA_CARGA_PRODUCCION.md`](docs/PRUEBA_CARGA_PRODUCCION.md), con sus candados en `deploy/loadtest/run_phase4.sh`). Ante una ambigüedad: decidir, documentar el porqué y seguir (salvo que Juan David pida que
   se le pregunte).
 - El `.env` de la VM se edita o se le agregan líneas; nunca se reemplaza con el local (incidente real, ver historial).
 - Windows: `.gitattributes` fuerza LF en `*.sh`/`*.yml`; con PowerShell/bash cuidado con `\f`, `\n` y comillas al generar archivos.

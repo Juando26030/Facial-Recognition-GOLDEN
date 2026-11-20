@@ -20,11 +20,31 @@ from urllib.parse import urlsplit
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def guard() -> None:
-    """Solo staging en Neon (se llama al ejecutar el script; las pruebas usan las funciones directamente sobre su base de pruebas)."""
+def guard(production_ok: str = "", allow_live: bool = False) -> None:
+    """Solo la base de STAGING en Neon (se llama al ejecutar el script; las pruebas usan las funciones directamente sobre su base de pruebas).
+
+    PRODUCCIÓN (19-nov-2026, orden expresa de Juan David: probar 40.000 escaneos en un evento sintético y borrarlo después) solo si se cumplen TODAS: DEPLOY_ENV=production,
+    el Job es el `golden-ops` de producción (Cloud Run pone CLOUD_RUN_JOB) y `--production-ok <proyecto>` lo pone run_phase4.sh después de que la persona escribió el ID del proyecto."""
     host = (urlsplit(os.environ.get("DATABASE_URL", "")).hostname or "")
-    if not host.endswith(".neon.tech") or os.environ.get("DEPLOY_ENV") != "staging":
-        sys.exit(f"Solo para la base de staging en Neon con DEPLOY_ENV=staging (host={host!r}, DEPLOY_ENV={os.environ.get('DEPLOY_ENV')!r}).")
+    env = os.environ.get("DEPLOY_ENV")
+    if not host.endswith(".neon.tech"):
+        sys.exit(f"Solo para una base en Neon (host={host!r}).")
+    if env == "staging":
+        return
+    if env == "production" and production_ok and os.environ.get("CLOUD_RUN_JOB") == "golden-ops":
+        print(f"AVISO: PRODUCCIÓN (proyecto {production_ok}). Solo toca el cliente y el evento sintéticos de la prueba de carga.", flush=True)
+        return
+    sys.exit(f"Solo para staging con DEPLOY_ENV=staging (o producción con la confirmación de run_phase4.sh): host={host!r}, DEPLOY_ENV={env!r}.")
+
+
+def refuse_if_live_events(db, allow_live: bool) -> None:
+    """En producción NO se siembra ni se reinicia mientras haya un evento REAL en proceso: la prueba compite por CPU y base con la puerta de un evento de verdad.
+    `--allow-live-events` (LOAD_ALLOW_LIVE=1 en run_phase4.sh) lo salta, a propósito y sabiendo qué evento hay."""
+    if os.environ.get("DEPLOY_ENV") != "production" or allow_live:
+        return
+    live = db.execute(text("SELECT count(*) FROM events WHERE status = 'en_proceso' AND event_code <> :c"), {"c": EVENT_CODE}).scalar()
+    if live:
+        sys.exit(f"HAY {live} EVENTO(S) REAL(ES) EN PROCESO en producción: no se siembra. Espera a que no haya ninguno (o, sabiéndolo, LOAD_ALLOW_LIVE=1).")
 
 
 from sqlalchemy import func, insert, text  # noqa: E402
@@ -180,16 +200,20 @@ def delete_all(db) -> dict:
 
 
 def main() -> None:
-    guard()
     ap = argparse.ArgumentParser()
     ap.add_argument("--people", type=int, default=5000)
     ap.add_argument("--capacity", type=int, default=4000)
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--reset-runs", action="store_true", help="borra inscripciones, ingresos y límites de una corrida; deja evento, formulario y personas")
     ap.add_argument("--delete-all", action="store_true", help="borra TODO lo de la prueba (evento LOAD-STG, formulario, personas sintéticas, cuenta carga_dig, cliente)")
+    ap.add_argument("--production-ok", default="", help="solo producción: el ID del proyecto, que run_phase4.sh pone tras la confirmación escrita")
+    ap.add_argument("--allow-live-events", action="store_true", help="solo producción: sembrar aunque haya un evento real en proceso (a propósito)")
     args = ap.parse_args()
+    guard(args.production_ok, args.allow_live_events)
     db = SessionLocal()
     try:
+        if not (args.verify or args.delete_all):
+            refuse_if_live_events(db, args.allow_live_events)
         if args.verify:
             print("LOAD_VERIFY " + json.dumps(verify(db)))
         elif args.reset_runs:

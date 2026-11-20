@@ -11,20 +11,31 @@ FORM_SLUG = "carga"
 PAY_FORM_SLUG = "carga-pago"        # segundo formulario con campo «Pago»: SOLO para cotizar (`quote`); nunca se envía (sin llaves de Wompi en staging el envío daría 503)
 
 
-def check_host(url: str, allowed=()):
+def check_host(url: str, allowed=(), production: bool = False):
     """None si `url` es un destino permitido para la prueba de carga; si no, el motivo. Doble candado: (1) el host debe ser de staging (contener «staging») y NO ser el
-    dominio de producción; (2) si se dan `allowed` (LOAD_ALLOWED_HOSTS: los hosts EXACTOS de staging que calcula deploy/gcp/config.sh), debe coincidir con uno.
-    Así una URL mal escrita (o la de producción) nunca recibe carga, aunque contenga la palabra «staging» en otro sitio."""
+    dominio de producción; (2) si se dan `allowed` (LOAD_ALLOWED_HOSTS: los hosts EXACTOS que calcula deploy/gcp/config.sh), debe coincidir con uno.
+    Así una URL mal escrita (o la de producción) nunca recibe carga, aunque contenga la palabra «staging» en otro sitio.
+
+    `production=True` (19-nov-2026, orden expresa de Juan David: prueba de 40.000 escaneos en un evento sintético de producción) cambia SOLO el punto (1): ya no exige «staging»,
+    pero entonces la lista exacta `allowed` es OBLIGATORIA (la URL de Cloud Run del servicio web, que calcula run_phase4.sh) y el dominio real (golden-eventos) sigue prohibido siempre:
+    la carga nunca pasa por Cloudflare ni por app.golden-eventos.com."""
     from urllib.parse import urlsplit
     parts = urlsplit(url.strip())
     host = (parts.hostname or "").lower()
     if parts.scheme != "https" or not host:
         return f"la URL debe ser https://… (recibí {url!r})"
-    if "golden-eventos" in host or "staging" not in host:
-        return f"{host!r} no es de staging"
+    if "golden-eventos" in host:
+        return f"{host!r} es el dominio real de Golden: nunca recibe carga"
     allowed_hosts = [urlsplit(a if "//" in a else "https://" + a).hostname.lower() for a in allowed if a]
+    if production:
+        if not allowed_hosts:
+            return "en producción la lista exacta de destinos (LOAD_ALLOWED_HOSTS) es obligatoria"
+        if not host.endswith(".run.app"):
+            return f"en producción solo se permite una URL de Cloud Run (*.run.app), no {host!r}"
+    elif "staging" not in host:
+        return f"{host!r} no es de staging"
     if allowed_hosts and host not in allowed_hosts:
-        return f"{host!r} no está entre los hosts permitidos de staging ({', '.join(allowed_hosts)})"
+        return f"{host!r} no está entre los hosts permitidos ({', '.join(allowed_hosts)})"
     return None
 
 
