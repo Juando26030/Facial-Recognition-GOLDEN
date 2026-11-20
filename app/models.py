@@ -1223,6 +1223,28 @@ class LocalNode(Base):
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
 
 
+class LocalServerKey(Base):
+    """Llave de producto de un servidor local (0158, 20-nov-2026; lógica en app/server_keys.py). La crea un administrador; es de UN solo uso: la reclama el instalador (queda atada a esa instalación,
+    `installation_id`), se activa al vincular el servidor (`node_id`) y desde entonces es su identificador (serial). Una sin usar vence a los 7 días (`expires_at`). Deshabilitarla (`disabled_at`) revoca
+    el nodo asociado. El código se guarda tal cual (el administrador necesita verlo en la lista; una vez usada deja de ser un secreto). Sin datos personales."""
+    __tablename__ = 'local_server_keys'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), nullable=False, unique=True)
+    label = Column(String(60), nullable=True)                       # para quién o para qué equipo es (opcional)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    claimed_at = Column(DateTime, nullable=True)
+    installation_id = Column(String(64), nullable=True)
+    activated_at = Column(DateTime, nullable=True)
+    node_id = Column(Integer, ForeignKey('local_nodes.id', ondelete='SET NULL'), nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
+    disabled_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+
+    created_by = relationship("StaffUser", foreign_keys=[created_by_id])
+    node = relationship("LocalNode", foreign_keys=[node_id])
+
+
 class Notification(Base):
     """Notificación dentro de la aplicación para UNA cuenta del personal (Fase 5, 0110): se ve en la campana y, además, sale por correo (app/notifications.py). `dedupe_key` evita repetir el mismo aviso a la
     misma cuenta. No lleva datos personales de asistentes: solo texto del aviso, el evento y un enlace."""

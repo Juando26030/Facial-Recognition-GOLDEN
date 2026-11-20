@@ -42,9 +42,26 @@ def find_node(db: Session, token: Optional[str]) -> Optional[LocalNode]:
     return node if node is not None and node.revoked_at is None else None
 
 
+DISABLED_DETAIL = "Servidor deshabilitado: su llave de producto fue deshabilitada por un administrador."          # el servidor local reconoce ESTE texto exacto (403) y se bloquea
+
+
+def is_disabled(db: Session, token: Optional[str]) -> bool:
+    """¿El token es de un servidor que un administrador DESHABILITÓ (su llave está deshabilitada)? Sin esto un token revocado por otro motivo y uno deshabilitado se verían igual."""
+    token = (token or "").strip()
+    if not token.startswith(TOKEN_PREFIX) or len(token) > 200:
+        return False
+    node = db.query(LocalNode).filter(LocalNode.token_hash == hash_token(token)).first()
+    if node is None or node.revoked_at is None:
+        return False
+    from app.models import LocalServerKey
+    return db.query(LocalServerKey.id).filter(LocalServerKey.node_id == node.id, LocalServerKey.disabled_at.isnot(None)).first() is not None
+
+
 def require_node(request: Request, db: Session = Depends(get_db)) -> LocalNode:
     node = find_node(db, request.headers.get("X-Node-Token"))
     if node is None:
+        if is_disabled(db, request.headers.get("X-Node-Token")):
+            raise HTTPException(status_code=403, detail=DISABLED_DETAIL)
         raise HTTPException(status_code=401, detail="Servidor local no autorizado (token ausente, no válido o revocado)")
     now = utcnow()
     version = (request.headers.get("X-Node-Version") or "")[:80] or None

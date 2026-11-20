@@ -132,17 +132,26 @@ def local_address(request: Request) -> dict:
 
 
 @router.get("/api/ops/update-manifest")
-def update_manifest() -> dict:
-    """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público y sin base de datos."""
+def update_manifest(request: Request) -> dict:
+    """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público: commit y esquema los ve cualquiera
+    (la franja «Al día» los compara); la dirección del paquete solo la ve quien tenga un token de servidor o el permiso de un instalador cuando `UPDATE_PACKAGE_AUTH=1` (app/routers/server_keys.py)."""
     from app import local_update
-    return local_update.published_manifest()
+    from app.routers import server_keys as keys_router
+    m = local_update.published_manifest()
+    if m.get("available") and not keys_router.package_allowed(request):
+        return {**m, "package_url": None, "sha256": None, "locked": True}
+    return m
 
 
 @router.get("/api/ops/update-package/{name}")
-def update_package(name: str):
-    """El paquete de actualización del servidor local (código de la app, sin datos ni secretos; el servidor local verifica su huella SHA-256 antes de aplicarlo). Público como el manifiesto."""
+def update_package(name: str, request: Request):
+    """El paquete de actualización del servidor local (código de la app, sin datos ni secretos; el servidor local verifica su huella SHA-256 antes de aplicarlo). Con `UPDATE_PACKAGE_AUTH=1` exige un
+    token de servidor (`X-Node-Token`) o el permiso de un instalador (`X-Install-Ticket` + `X-Install-Id`); sin esa variable sigue público."""
     from fastapi.responses import Response
     from app import local_update
+    from app.routers import server_keys as keys_router
+    if not keys_router.package_allowed(request):
+        raise HTTPException(status_code=401, detail="Para bajar el paquete hace falta un servidor autorizado o una llave de producto válida")
     data = local_update.package_bytes(name)
     if data is None:
         raise HTTPException(status_code=404, detail="Paquete no encontrado")

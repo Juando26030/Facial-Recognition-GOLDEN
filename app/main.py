@@ -35,6 +35,7 @@ from app.routers import selfreg as selfreg_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
+from app.routers import server_keys as server_keys_router      # 20-nov-2026: llaves de producto del servidor local
 from app.routers import local_installer as local_installer_router      # Fase 10 E: descarga del instalador del servidor local (tarjeta de Configuración)
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
@@ -471,6 +472,7 @@ _include(selfreg_router.router, prefix="/api")          # Fase 8: autorregistro 
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
 _include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
+_include(server_keys_router.router, prefix="/api")      # 20-nov-2026: llaves de producto (crear, ver, deshabilitar; el instalador las reclama)
 _include(local_server_router.router, prefix="/api")
 _include(local_installer_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")

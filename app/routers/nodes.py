@@ -9,10 +9,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import event_lease, node_auth, versioning
+from app import event_lease, node_auth, server_keys, versioning
 from app.auth import require_role
 from app.database import get_db
-from app.models import AuditAction, Event, LocalNode, PersonChange, PrintLog, StaffUser, User
+from app.models import AuditAction, Event, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
 from app.routers import api
 from app.timeutil import utcnow
 
@@ -68,7 +68,21 @@ def enroll_node(data: dict, request: Request, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos, o la cuenta no puede vincular un servidor local")
     security.clear_events(db, "login_fail", username)
-    base = event_lease.clean_node_name((data or {}).get("name") or "Servidor local")
+    # Llave de producto (20-nov-2026): sin una llave reclamada por el instalador de ESTA instalación no se vincula ningún servidor.
+    code = server_keys.normalize((data or {}).get("key"))
+    inst = server_keys.clean_install_id((data or {}).get("installation_id"))
+    if not code:
+        db.commit()
+        raise HTTPException(status_code=400, detail="Falta la llave de producto del servidor. Instálalo con el instalador y su llave (te la da un administrador).")
+    key = db.query(LocalServerKey).filter(LocalServerKey.code == code).with_for_update().first()
+    if key is None:
+        db.commit()
+        raise HTTPException(status_code=404, detail=server_keys.MSG["unknown"])
+    ok, _why, msg = server_keys.check_activate(key, inst or "", utcnow())
+    if not ok:
+        db.commit()
+        raise HTTPException(status_code=403, detail=msg)
+    base = event_lease.clean_node_name((data or {}).get("name") or key.label or "Servidor local")
     name, n = base, 1
     while db.query(LocalNode).filter(LocalNode.name == name).first():          # cada instalación es un nodo propio: nunca pisa a otro
         n += 1
@@ -77,9 +91,10 @@ def enroll_node(data: dict, request: Request, db: Session = Depends(get_db)):
     node = LocalNode(name=name, token_hash=digest, created_by_id=staff.id)
     db.add(node)
     db.flush()
-    db.add(AuditAction(actor_id=staff.id, actor_role=staff.role, action="node_enroll", entity="local_node", entity_id=str(node.id), entity_name=name, detail="Servidor local vinculado con su cuenta"))
+    key.activated_at, key.node_id = utcnow(), node.id
+    db.add(AuditAction(actor_id=staff.id, actor_role=staff.role, action="node_enroll", entity="local_node", entity_id=str(node.id), entity_name=name, detail=f"Servidor local vinculado con su cuenta (llave {key.code})"))
     db.commit()
-    return {"token": token, "name": name}
+    return {"token": token, "name": name, "server_id": key.code}
 
 
 @router.post("/nodes/{node_id}/revoke")
