@@ -161,7 +161,7 @@ def info(db) -> dict:
     since = utcnow() - timedelta(hours=1)
     live = [{"id": r[0], "tenant_id": r[1], "start": str(r[2]), "end": str(r[3]), "accesses_last_hour": r[4]}
             for r in db.execute(text("SELECT e.id, e.tenant_id, e.start_date, e.end_date, "
-                                     "(SELECT count(*) FROM access_logs a WHERE a.event_id = e.id AND a.at >= :s) "
+                                     "(SELECT count(*) FROM access_logs a WHERE a.event_id = e.id AND a.timestamp >= :s) "
                                      "FROM events e WHERE e.status = 'en_proceso' AND e.event_code <> :c ORDER BY e.id"), {"s": since, "c": EVENT_CODE})]
     return {"tenants_named_prueba": tenants, "live_events": live}
 
