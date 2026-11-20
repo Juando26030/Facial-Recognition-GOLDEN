@@ -18,6 +18,7 @@
     <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}" defer></script>
     {% if inv_manager %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}" defer></script>{% endif %}
     {% if almacen_on %}<link rel="stylesheet" href="{{ url_for('static', path='css/gw-almacen.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-captura.css') }}">   {# ventana de la cámara (qr.js): sin esto el video sale a tamaño natural y el botón Cerrar queda fuera de la pantalla en el celular #}
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/vcard.js') }}"></script>
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
