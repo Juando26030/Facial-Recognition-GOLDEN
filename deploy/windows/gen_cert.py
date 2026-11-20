@@ -2,7 +2,7 @@
 
 Uso:  python gen_cert.py <carpeta_destino> <nombre_equipo> [ip ...]
 Escribe: ca.pem / GoldenLocal-CA.cer (la autoridad: se instala en Windows y se entrega a los celulares), server.pem y server.key (los usa la app).
-El certificado cubre el nombre del equipo, «golden.local», localhost y las IP que se pasen. Dura 825 días (límite que aceptan los celulares); el instalador lo renueva si vence en < 60 días.
+El certificado cubre el nombre del equipo, «golden.local», localhost y las IP que se pasen. Dura 825 días (límite que aceptan los celulares); el instalador lo renueva si vence en < 60 días o si el equipo cambió de dirección IP (`--missing`).
 Usa `cryptography` (ya es dependencia de la app: cifrado del rostro).
 """
 import datetime
@@ -38,17 +38,42 @@ def _pem_key(key) -> bytes:
     return key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption())
 
 
+def _private(ip: str) -> bool:
+    """Solo direcciones privadas: la autoridad tiene «restricciones de nombre» y un certificado con una IP pública o de otro rango queda INVÁLIDO entero."""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return a.version == 4 and any(a in ipaddress.ip_network(c) for c in PRIVATE_NETS)
+
+
+def cert_ips(server_pem: Path) -> list:
+    """Direcciones IP que el certificado actual ya cubre (vacío si no existe o no se puede leer)."""
+    try:
+        cert = x509.load_pem_x509_certificate(server_pem.read_bytes())
+        return [str(i) for i in cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.IPAddress)]
+    except (OSError, ValueError, x509.ExtensionNotFound):
+        return []
+
+
+def missing_ips(server_pem: Path, ips: list) -> list:
+    """IP privadas de las `ips` que el certificado todavía NO cubre (si cambias de fija a automática o el router asigna otra, el navegador de los otros equipos mostraría una advertencia)."""
+    have = set(cert_ips(server_pem))
+    return [ip for ip in dict.fromkeys(ips) if _private(ip) and ip not in have]
+
+
 def san_entries(host: str, ips: list) -> list:
     names = []
     for n in (host, "golden.local", "localhost"):
         if n and n not in names:
             names.append(n)
     out = [x509.DNSName(n) for n in names]
+    seen = []
     for ip in ["127.0.0.1", *ips]:
-        try:
-            out.append(x509.IPAddress(ipaddress.ip_address(ip)))
-        except ValueError:
+        if ip in seen or (ip != "127.0.0.1" and not _private(ip)):
             continue
+        seen.append(ip)
+        out.append(x509.IPAddress(ipaddress.ip_address(ip)))
     return out
 
 
@@ -71,6 +96,8 @@ def make(folder: Path, host: str, ips: list) -> dict:
         ca_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
         (folder / "ca.key").write_bytes(_pem_key(ca_key))
         (folder / "GoldenLocal-CA.cer").write_bytes(ca_cert.public_bytes(serialization.Encoding.DER))
+    old = [i for i in cert_ips(folder / "server.pem") if i != "127.0.0.1"]          # las direcciones que ya cubría se conservan (hasta 10): si el router alterna entre dos, no se regenera una y otra vez
+    ips = list(dict.fromkeys([*ips, *old]))[:10]
     key = _key()
     cert = (x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host or "golden.local")])).issuer_name(ca_cert.subject)
             .public_key(key.public_key()).serial_number(x509.random_serial_number())
@@ -90,6 +117,9 @@ def days_left(server_pem: Path) -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--missing":          # python gen_cert.py --missing <server.pem> [ip ...]  → imprime las IP privadas que el certificado no cubre (nada = está al día)
+        print(" ".join(missing_ips(Path(sys.argv[2]), sys.argv[3:])))
+        sys.exit(0)
     if len(sys.argv) < 3:
         sys.exit("Uso: python gen_cert.py <carpeta> <nombre_equipo> [ip ...]")
     print(make(Path(sys.argv[1]), sys.argv[2], sys.argv[3:]))

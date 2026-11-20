@@ -72,7 +72,7 @@ $host_ = $env:COMPUTERNAME
 # ---- 3. Certificados HTTPS (autoridad propia + certificado del servidor)
 $serverPem = Join-Path $CertDir 'server.pem'
 $needCert = -not (Test-Path $serverPem)
-if (-not $needCert) { $left = & $Python -c "import sys; sys.path.insert(0, r'$ScriptsDir'); import gen_cert, pathlib; print(gen_cert.days_left(pathlib.Path(r'$serverPem')))"; if ([int]$left -lt 60) { $needCert = $true } }
+if (-not $needCert) { $left = & $Python -c "import sys; sys.path.insert(0, r'$ScriptsDir'); import gen_cert, pathlib; print(gen_cert.days_left(pathlib.Path(r'$serverPem')))"; if ([int]$left -lt 60) { $needCert = $true }; if ("$(& $Python (Join-Path $ScriptsDir 'gen_cert.py') --missing $serverPem @ips)".Trim()) { $needCert = $true } }
 if ($needCert) {
     & $Python (Join-Path $ScriptsDir 'gen_cert.py') $CertDir $host_ @ips
     if ($LASTEXITCODE -ne 0) { throw 'No se pudieron crear los certificados' }

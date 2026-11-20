@@ -89,6 +89,23 @@ function Get-LanAddresses {
         ForEach-Object { $_.IPAddress }
 }
 
+function Update-ServerCert {
+    # Si este equipo cambió de dirección IP (de fija a automática o al revés, otro router), el certificado HTTPS ya no cubre la nueva y el navegador de los otros equipos avisaría.
+    # Se vuelve a firmar con la MISMA autoridad (los celulares que ya la instalaron no repiten nada) y conserva las direcciones anteriores. Devuelve $true si regeneró (hay que reiniciar la app para que lo lea).
+    $serverPem = Join-Path $CertDir 'server.pem'
+    if (-not (Test-Path $serverPem)) { return $false }
+    $ips = @(Get-LanAddresses)
+    if ($ips.Count -eq 0) { return $false }
+    try {
+        $missing = "$(& $Python (Join-Path $ScriptsDir 'gen_cert.py') --missing $serverPem @ips)".Trim()
+        if (-not $missing) { return $false }
+        Write-Log "Certificado HTTPS: falta cubrir la(s) dirección(es) $missing; se vuelve a firmar" 'actualizador.log'
+        & $Python (Join-Path $ScriptsDir 'gen_cert.py') $CertDir $env:COMPUTERNAME @ips | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Log 'Certificado HTTPS: no se pudo volver a firmar' 'actualizador.log'; return $false }
+        return $true
+    } catch { Write-Log "Certificado HTTPS: $_" 'actualizador.log'; return $false }
+}
+
 function Invoke-Pg([string]$Tool, [string[]]$Arguments) {
     # Herramientas cliente de PostgreSQL (psql, pg_dump, pg_restore) con la clave del archivo de configuración.
     $e = Read-EnvFile
