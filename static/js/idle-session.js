@@ -80,7 +80,9 @@
       box.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px 28px;max-width:440px;text-align:center;font:600 1.05rem system-ui,sans-serif;color:#0a0e2e"><div style="font-size:2rem">🔒</div><p style="margin:8px 0">Tu sesión se cerró por inactividad.</p><p style="margin:8px 0;font-weight:400;font-size:.95rem">Los ingresos hechos sin conexión siguen guardados en este dispositivo. Te llevamos al inicio de sesión…</p></div>';
       (document.body || document.documentElement).appendChild(box);
       original("/logout", { method: "POST", credentials: "same-origin", redirect: "manual", headers: { "X-Gw-Passive": "1" } }).catch(function () { /* el servidor ya la cerró */ });
-      setTimeout(function () { root.location.href = "/login?expirada=1"; }, 2500);
+      var here = (root.location.pathname || "/") + (root.location.search || "") + (root.location.hash || "");          // el servidor revalida la dirección (app/nextpage.py): solo vuelve a páginas del mismo sitio
+      var back = here.charAt(0) === "/" && here.indexOf("/login") !== 0 ? "&next=" + encodeURIComponent(here) : "";
+      setTimeout(function () { root.location.href = "/login?expirada=1" + back; }, 2500);
     }
     root.fetch = function () {
       return original.apply(null, arguments).then(function (res) {

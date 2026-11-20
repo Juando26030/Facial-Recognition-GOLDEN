@@ -323,3 +323,64 @@ def test_session_ping_is_passive_and_answers_session_expired_without_touching_st
     clock.advance(minutes=3)
     r = client.get("/api/session/ping")
     assert r.status_code == 401 and r.json()["detail"] == "session_expired"
+
+
+# ---------------------------------------------------------------------------------------------------- 20-nov-2026: tiempo general elegido en Apariencia y volver a la misma página
+def test_admin_sets_the_general_minutes_and_everybody_follows(client, factory, clock):
+    factory.staff("admin", "adm")
+    assert login(client, "adm").status_code == 302
+    d = client.get("/api/settings/session-minutes").json()
+    assert d["minutes"] == 10 and d["min"] == 5 and d["max"] == 480 and d["forced_by_env"] is False
+    for bad in (4, 481, "x", None):
+        assert client.put("/api/settings/session-minutes", json={"minutes": bad}).status_code == 400
+    assert client.put("/api/settings/session-minutes", json={"minutes": 30}).json()["minutes"] == 30
+    assert idle.general_minutes() == 30
+    clock.advance(minutes=20)
+    assert client.get("/api/ping-auth").status_code == 200           # con 10 ya habría vencido; con 30 sigue
+    clock.advance(minutes=11)
+    assert client.get("/api/ping-auth").status_code == 401
+
+
+def test_only_admins_change_the_general_minutes_and_the_env_var_wins(client, factory, monkeypatch):
+    factory.staff("coordinador", "coord")
+    assert login(client, "coord").status_code == 302
+    assert client.get("/api/settings/session-minutes").status_code == 403
+    assert client.put("/api/settings/session-minutes", json={"minutes": 30}).status_code == 403
+    client.cookies.clear()
+    factory.staff("admin", "adm")
+    login(client, "adm")
+    monkeypatch.setenv("SESSION_IDLE_MINUTES", "7")
+    d = client.get("/api/settings/session-minutes").json()
+    assert d["minutes"] == 7 and d["forced_by_env"] is True
+
+
+def test_event_minutes_still_win_over_the_general_one(client, factory, db, clock):
+    ev, _ = _staff(client, factory)
+    ev.idle_minutes = 20
+    db.commit()
+    idle._general_cache.set("m", 5)                                    # general = 5 min
+    assert idle.general_minutes() == 5 and idle.event_minutes(ev) == 20          # el tiempo propio del evento en proceso sigue siendo suyo (no se tocó)
+
+
+def test_expired_page_comes_back_to_the_same_page_after_login(client, factory, clock):
+    from tests.conftest import PASSWORD
+    factory.staff("admin", "adm")
+    assert login(client, "adm").status_code == 302
+    clock.advance(minutes=11)
+    r = client.get("/configuracion?x=1", headers=HTML)
+    assert r.status_code == 302 and r.headers["location"] == "/login?expirada=1&next=%2Fconfiguracion%3Fx%3D1"
+    page = client.get(r.headers["location"])
+    assert 'name="next" value="/configuracion?x=1"' in page.text and "seguirás en la misma página" in page.text
+    wrong = client.post("/login", data={"username": "adm", "password": "mala", "next": "/configuracion?x=1"})
+    assert wrong.status_code == 401 and 'name="next" value="/configuracion?x=1"' in wrong.text          # si se equivoca, no pierde adónde volver
+    back = client.post("/login", data={"username": "adm", "password": PASSWORD, "next": "/configuracion?x=1"})
+    assert back.status_code == 302 and back.headers["location"] == "/configuracion?x=1"
+
+
+def test_login_never_goes_to_another_site_or_to_login_or_api(client, factory):
+    from tests.conftest import PASSWORD
+    factory.staff("admin", "adm")
+    for evil in ("https://evil.com", "//evil.com/x", "/\\evil.com", "/logout", "/api/x", "javascript:alert(1)"):
+        client.cookies.clear()
+        r = client.post("/login", data={"username": "adm", "password": PASSWORD, "next": evil})
+        assert r.status_code == 302 and r.headers["location"] == "/"

@@ -105,6 +105,8 @@ def _clean_tables(_database):
     from app import faces, formsvc
     faces.clear_cache()
     formsvc.invalidate_public_cache()
+    from app import idle as _idle
+    _idle._general_cache.clear()          # el tiempo general de sesión elegido en Apariencia se guarda 30 s en memoria: cada prueba empieza sin él
     from app.routers import forms_public
     forms_public._limiter.reset()          # el limite por IP es en memoria: cada prueba empieza de cero
     forms_public._code_fails.reset()

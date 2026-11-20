@@ -115,6 +115,17 @@
             </div>
           </div>
           {% endif %}
+          {% if is_admin_plus %}
+          <div class="gw-group__item" data-psave="sessionmin" id="sessionMinCard">
+            <div class="gw-item-head"><h4>Tiempo de sesión por defecto</h4>{% call ayuda('ay_sessionmin', 'Tiempo de sesión por defecto') %}Minutos sin usar el sistema tras los que se cierra la sesión de TODOS los usuarios (de 5 a 480). Los eventos «en proceso» que tienen su propio tiempo (Parámetros → Cierre de sesión por inactividad) siguen usando el suyo. Si la sesión se cierra por tiempo, al volver a entrar la persona regresa a la misma página.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="sessionMinutes">Minutos sin uso antes de cerrar la sesión <span class="gw-badge gw-badge--info">Para todos</span></label>
+              <input class="gw-input gw-input--short" type="number" id="sessionMinutes" min="5" max="480" step="1" value="10" inputmode="numeric">
+              <p class="gw-hint">De 5 a 480 minutos. Hoy: <strong id="sessionMinutesNow">10</strong> minutos. Rige para todos en menos de un minuto.</p>
+              <p class="gw-hint" id="sessionMinEnvNote" hidden>Este valor lo fija la configuración del servidor (SESSION_IDLE_MINUTES) y manda sobre lo que se elija aquí.</p>
+            </div>
+          </div>
+          {% endif %}
           <div class="gw-actions">
             <button type="button" id="resetThemeBtn" class="gw-btn gw-btn--secondary">{{ ic('undo', 'gw-icon--sm') }} Restablecer</button>
           </div>
@@ -135,8 +146,8 @@
               <input type="text" class="gw-input" id="skLabel" maxlength="60" placeholder="Para quién o qué equipo es (opcional)" aria-label="Nombre de la llave">
               <button type="button" class="gw-btn gw-btn--primary" id="skCreate">Crear llave</button>
             </div>
-            <p class="gw-hint" id="skSummary" aria-live="polite"></p>
-            <div class="gw-table-wrap"><table class="gw-table"><thead><tr><th>Llave</th><th>Nombre</th><th>Estado</th><th>Servidor</th><th>Creada</th><th></th></tr></thead><tbody id="skRows"><tr><td colspan="6">Cargando…</td></tr></tbody></table></div>
+            <div class="gw-chips" id="skSummary" aria-live="polite"></div>
+            <div class="gw-table-wrap"><table class="gw-table gw-table-cards"><thead><tr><th>Llave</th><th>Nombre</th><th>Estado</th><th>Servidor</th><th>Creada</th><th></th></tr></thead><tbody id="skRows"><tr><td colspan="6">Cargando…</td></tr></tbody></table></div>
           </div>
           {% endif %}
           {% if is_admin_plus %}

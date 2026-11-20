@@ -15,7 +15,7 @@
     const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
     return isNaN(d) ? '—' : d.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
   };
-  const cell = (tr, node) => { const td = document.createElement('td'); if (typeof node === 'string') td.textContent = node; else if (node) td.appendChild(node); tr.appendChild(td); return td; };
+  const cell = (tr, node, label) => { const td = document.createElement('td'); if (label) td.dataset.label = label; if (typeof node === 'string') td.textContent = node; else if (node) td.appendChild(node); tr.appendChild(td); return td; };          // data-label: en pantallas chicas cada fila pasa a ser una tarjeta con «Estado: …», «Servidor: …» (.gw-table-cards)
 
   async function api(url, method, body) {
     const res = await fetch(url, { method: method || 'GET', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -30,7 +30,14 @@
     document.getElementById('skDays').textContent = d.valid_days;
     const c = d.counts;
     const late = d.keys.filter((k) => k.node && !k.node.revoked && k.node.freshness && ['desactualizada', 'distinta_version'].includes(k.node.freshness.status)).length;
-    summary.textContent = `Producción: ${d.cloud && d.cloud.commit || '—'} · ${late} servidores por actualizar · ${c.active} servidores activos · ${c.unused + c.claimed} llaves sin usar · ${c.disabled} deshabilitadas · ${c.expired} vencidas`;
+    summary.textContent = '';
+    const chip = (text, kind) => { const b = document.createElement('span'); b.className = 'gw-badge gw-badge--' + kind; b.textContent = text; summary.appendChild(b); };          // un chip por dato: se lee de un vistazo y se acomoda solo en el celular
+    chip('Producción: ' + (((d.cloud && d.cloud.commit) || '—').slice(0, 7)), 'info');
+    chip(`${late} por actualizar`, late ? 'warn' : 'ok');
+    chip(`${c.active} activos`, 'ok');
+    chip(`${c.unused + c.claimed} sin usar`, 'info');
+    chip(`${c.disabled} deshabilitadas`, 'info');
+    chip(`${c.expired} vencidas`, c.expired ? 'warn' : 'info');
     if (!d.keys.length) {
       const tr = document.createElement('tr');
       const td = cell(tr, 'Todavía no hay llaves. Crea la primera para instalar un servidor.');
@@ -41,10 +48,10 @@
     d.keys.forEach((k) => {
       const tr = document.createElement('tr');
       const code = document.createElement('code'); code.textContent = k.code;
-      cell(tr, code);
-      cell(tr, k.label || '—');
+      cell(tr, code, 'Llave').classList.add('gw-table-cards__title');
+      cell(tr, k.label || '—', 'Nombre');
       const b = document.createElement('span'); b.className = 'gw-badge gw-badge--' + (BADGE[k.status] || 'info'); b.textContent = k.status_label;
-      cell(tr, b);
+      cell(tr, b, 'Estado');
       const n = k.node;
       const srv = document.createElement('div');
       if (n) {
@@ -58,9 +65,10 @@
         info.textContent = ` ${n.name}${f.commit ? ' · ' + f.commit : ''} · visto ${fmt(n.last_seen_at)}`;
         srv.appendChild(info);
       } else srv.textContent = (k.status === 'unused' || k.status === 'claimed') ? 'Vence ' + fmt(k.expires_at) : '—';
-      cell(tr, srv);
-      cell(tr, `${fmt(k.created_at)}${k.created_by_name ? ' · ' + k.created_by_name : ''}`);
+      cell(tr, srv, 'Servidor');
+      cell(tr, `${fmt(k.created_at)}${k.created_by_name ? ' · ' + k.created_by_name : ''}`, 'Creada');
       const act = cell(tr, '');
+      act.classList.add('gw-table-cards__actions');
       if (k.status !== 'disabled') {
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'gw-btn gw-btn--danger gw-btn--sm'; btn.dataset.disable = k.id; btn.dataset.code = k.code;

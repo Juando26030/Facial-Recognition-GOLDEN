@@ -98,6 +98,29 @@
     });
   }
 
+  /* ---------------------------------------------------------------- Tiempo de sesión por defecto (20-nov-2026, admin y super admin): vale para todos → PUT /api/settings/session-minutes */
+  const sessMin = document.getElementById('sessionMinutes');
+  if (sessMin) {
+    const now = document.getElementById('sessionMinutesNow');
+    fetch('/api/settings/session-minutes', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      sessMin.value = d.minutes; sessMin.min = d.min; sessMin.max = d.max; now.textContent = d.minutes;
+      document.getElementById('sessionMinEnvNote').hidden = !d.forced_by_env;
+      sessMin.disabled = !!d.forced_by_env;
+      GWParams.markClean('sessionmin');
+    }).catch(() => {});
+    GWParams.register({
+      key: 'sessionmin', label: 'Tiempo de sesión por defecto', order: 16,
+      save: async () => {
+        const n = Number(sessMin.value);
+        if (!Number.isInteger(n) || n < Number(sessMin.min) || n > Number(sessMin.max)) throw new Error('Los minutos deben ser un número entero de ' + sessMin.min + ' a ' + sessMin.max);
+        const res = await fetch('/api/settings/session-minutes', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: n }) });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'No se pudo guardar el tiempo de sesión'); }
+        now.textContent = n;
+      },
+    });
+  }
+
   /* ---------------------------------------------------------------- Sesión única (26-oct-2026, solo admin): app/routers/print_stations.py → app/sessions.py */
   const chk = document.getElementById('singleSessionChk');
   if (!chk) return;

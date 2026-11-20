@@ -66,7 +66,7 @@ def session_ping(staff: StaffUser = Depends(get_current_staff)):
 def my_station(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """Lo que necesita el Registro al cargar: ¿es administrador (ve la configuración)?, ¿es cuenta de puesto? y su configuración guardada en el servidor (None = lo de siempre)."""
     event = get_event_for_staff(event_id, db, staff)
-    return {"admin": staff.role in sessions.MULTI_ROLES, "station": bool(staff.print_station), "settings": read_station(db, event.id, staff.id)}
+    return {"admin": staff.role in sessions.ADMIN_ROLES, "station": bool(staff.print_station), "settings": read_station(db, event.id, staff.id)}
 
 
 @router.put("/events/{event_id}/print-stations/{staff_id}")
@@ -78,7 +78,7 @@ def put_station(event_id: int, staff_id: int, data: dict, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
     get_event_for_staff(event.id, db, target)                 # la cuenta debe tener acceso a ESTE evento
     if "print_station" in data:
-        if staff.role not in sessions.MULTI_ROLES:
+        if staff.role not in sessions.ADMIN_ROLES:
             raise HTTPException(status_code=403, detail="Solo un administrador marca una cuenta como puesto de impresión.")
         target.print_station = bool(data["print_station"])
     if "settings" in data:
@@ -124,6 +124,29 @@ def put_single_session(data: dict, db: Session = Depends(get_db), staff: StaffUs
     sessions.set_single_session(db, bool(data.get("enabled")))
     log.info("«Sesión única» %s por el usuario %s", "activada" if data.get("enabled") else "desactivada", staff.id)
     return get_single_session(db, staff)
+
+
+@router.get("/settings/session-minutes")
+def get_session_minutes(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Tiempo general de inactividad para TODOS los usuarios (20-nov-2026). Los eventos «en proceso» con tiempo propio (Parámetros) siguen usando el suyo; esa lógica no se toca."""
+    from app import idle
+    env = idle.env_minutes()
+    return {"minutes": env if env is not None else idle.configured_minutes(db), "min": idle.GENERAL_MIN, "max": idle.GENERAL_MAX, "default": idle.DEFAULT_MINUTES, "forced_by_env": env is not None}
+
+
+@router.put("/settings/session-minutes")
+def put_session_minutes(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Fija el tiempo general de inactividad (admin o super_admin). Rige para todos desde la siguiente petición (cada proceso lo relee en ≤ 30 s)."""
+    from app import idle
+    try:
+        wanted = int(data.get("minutes"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Los minutos deben ser un número entero de {idle.GENERAL_MIN} a {idle.GENERAL_MAX}")
+    if not idle.GENERAL_MIN <= wanted <= idle.GENERAL_MAX:
+        raise HTTPException(status_code=400, detail=f"Los minutos deben ser un número entero de {idle.GENERAL_MIN} a {idle.GENERAL_MAX}")
+    minutes = idle.set_configured_minutes(db, wanted)
+    log.info("tiempo general de sesión fijado en %s minutos por el usuario %s", minutes, staff.id)
+    return get_session_minutes(db, staff)
 
 
 @router.get("/settings/golden-logo-height")

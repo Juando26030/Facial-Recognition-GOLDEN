@@ -7,6 +7,7 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-acceso.css') }}">
+    <script src="{{ url_for('static', path='js/login-next.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -54,6 +55,7 @@
             </div>
             {% endif %}
             <form method="post" action="/login" class="gw-stack">
+                {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
                 <div class="gw-field">
                     <label class="gw-label" for="usuario">Usuario</label>
                     <input class="gw-input" type="text" id="usuario" name="username" required autofocus autocomplete="username" autocapitalize="none" spellcheck="false">

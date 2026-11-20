@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
 from app import node_sync, local_installer
-from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import SessionLocal, get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -191,10 +191,13 @@ async def idle_gate(request, call_next):
     if not session or not session.get("staff_user_id") or idle.exempt_path(path):
         return await call_next(request)
     nav = idle.is_navigation(request.method, request.headers)
-    if idle.absolute_expired(session) or idle.expired(session):          # tope absoluto de admin/super_admin (B7) o inactividad
+    if idle.general_is_stale():          # el tiempo general (Configuración → Apariencia) se relee cada 30 s, en un hilo: este middleware no toca la base en el bucle de eventos
+        await anyio.to_thread.run_sync(idle.configured_minutes)
+    if idle.absolute_expired(session) or idle.expired(session):          # tope absoluto de los roles sin `sid` (B7) o inactividad
         session.clear()
         if nav:
-            return RedirectResponse("/login?expirada=1", status_code=302)
+            back = nextpage.login_url_back(request.url.path, request.url.query) if request.method == "GET" else "/login?expirada=1"          # tras volver a entrar, la persona sigue en la página donde estaba
+            return RedirectResponse(back, status_code=302)
         return JSONResponse({"detail": "session_expired"}, status_code=401, headers={"Cache-Control": "no-store"})
     if (nav or path == idle.TOUCH_PATH) and request.headers.get(idle.PASSIVE_HEADER) != "1":
         idle.renew(session, reset_event=nav)

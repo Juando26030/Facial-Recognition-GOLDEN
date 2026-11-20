@@ -679,6 +679,8 @@
 .gw-cards > .gw-card-row > .gw-card-row__head { align-items: flex-start; }    /* título y estado arriba, siempre en la misma posición */
 .gw-cards > .gw-card-row > .gw-card-row__actions { margin-top: auto; }       /* el botón queda al pie de todas */
 .gw-card-row__actions .gw-btn { flex: 1 1 auto; }
+.gw-chips { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: var(--gw-sp-2) 0; }          /* fila de etiquetas con cifras (se acomodan en varias líneas en el celular) */
+.gw-table-cards .gw-badge { white-space: nowrap; }          /* «Deshabilitada» no se parte letra por letra en una celda angosta */
 @media (max-width: 768px) {
   .gw-table-cards thead { display: none; }
   .gw-table-cards, .gw-table-cards tbody, .gw-table-cards tr, .gw-table-cards td { display: block; width: 100%; }
@@ -686,6 +688,12 @@
   .gw-table-cards td { padding: var(--gw-sp-1) 0; border: 0; }
   .gw-table-cards td[data-label]::before { content: attr(data-label) ": "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
   .gw-table-cards td.gw-table-cards__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); padding-top: var(--gw-sp-3); }
+  .gw-table-cards td.gw-table-cards__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); padding-bottom: var(--gw-sp-2); }       /* la primera celda (la llave, el nombre…) hace de título de la tarjeta */
+  .gw-table-cards td.gw-table-cards__title::before { content: none; }
+  .gw-table-cards code, .gw-table-cards td { overflow-wrap: anywhere; }
+  .gw-table-cards td .gw-hint { display: block; margin-top: var(--gw-sp-1); }          /* el detalle va debajo de la etiqueta de estado, no pegado */
+  .gw-table-cards td.gw-table-cards__actions .gw-btn { flex: 1 1 auto; }
+  .gw-table-cards td.gw-table-cards__actions:empty { display: none; }          /* fila sin acciones (p. ej. llave ya deshabilitada): no deja un hueco vacío */
   .gw-page-head__actions { width: 100%; }
   .gw-page-head__actions .gw-btn { flex: 1 1 auto; }
   .gw-savebar { padding-bottom: calc(var(--gw-sp-3) + env(safe-area-inset-bottom, 0px)); }

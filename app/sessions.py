@@ -1,11 +1,14 @@
 """Política de sesiones por rol (26-oct-2026). La sesión sigue siendo la cookie firmada de siempre; lo nuevo es un identificador (`sid`) dentro de ella que se compara con `staff_users.session_token`.
 
-  - admin y super_admin: SESIONES MÚLTIPLES SIN LÍMITE. Entrar desde otro dispositivo nunca cierra otra sesión.
-  - cuenta marcada «Puesto de impresión» (`print_station`): PROTEGIDA. Si está en uso (un equipo suyo dio señal en el último minuto), un inicio de sesión desde otro dispositivo se RECHAZA;
+  - SESIÓN ÚNICA solo para las cuentas TEMPORALES: digitador (incluye al «cliente temporal», que es un digitador) y cliente (acceso a las estadísticas de un formulario). Al iniciar sesión se invalida la anterior de esa cuenta;
+    sus peticiones reciben 401 `session_replaced`.
+  - TODOS LOS DEMÁS (admin, super_admin, coordinador —también el temporal—, comercial): SESIONES MÚLTIPLES SIN LÍMITE (20-nov-2026, pedido de Juan David). Entrar desde otro dispositivo nunca cierra otra sesión
+    y no se aplica la protección de «puesto en uso». Como no llevan `sid`, la cookie de uno no se puede invalidar de a una: tienen el tope absoluto de app/idle.py (`ABSOLUTE_ROLES`); cerrar sesión revoca todas las del
+    admin/super_admin (`ADMIN_ROLES`), no las del coordinador ni el comercial.
+  - (solo para las cuentas de sesión única) cuenta marcada «Puesto de impresión» (`print_station`): PROTEGIDA. Si está en uso (un equipo suyo dio señal en el último minuto), un inicio de sesión desde otro dispositivo se RECHAZA;
     solo un admin puede liberarla (`force_release`, queda en auditoría).
-  - cuenta que ATIENDE a otros equipos (alguien tiene su ruta de impresión apuntando a ella, `PrintRoute.printer_staff_id`) y cuyo equipo dio señal en el último minuto: también PROTEGIDA
+  - (solo para las cuentas de sesión única) cuenta que ATIENDE a otros equipos (alguien tiene su ruta de impresión apuntando a ella, `PrintRoute.printer_staff_id`) y cuyo equipo dio señal en el último minuto: también PROTEGIDA
     (29-oct-2026): un segundo inicio de sesión en OTRO dispositivo se RECHAZA con un mensaje claro; el mismo navegador (mismo `sid`) puede volver a entrar, sin señal en 60 s se libera sola y un admin puede liberarla.
-  - los demás roles (digitador, coordinador, comercial, cliente): SESIÓN ÚNICA. Al iniciar sesión se invalida la anterior de esa cuenta; sus peticiones reciben 401 `session_replaced`.
   - Una sesión SIN `sid` (creada antes del cambio) o una cuenta sin `session_token` sigue válida: desplegar no expulsa a nadie.
   - Interruptor «Sesión única» (Configuración → `app_settings.single_session`; la variable de entorno SINGLE_SESSION=0/1 manda sobre él). Apagado = comportamiento anterior: no se guarda ni se compara nada.
   - Varias pestañas del mismo navegador comparten la cookie, y por tanto el `sid`: no se expulsan entre sí.
@@ -26,7 +29,9 @@ log = logging.getLogger("golden.sessions")
 SETTING_KEY = "single_session"
 AUDIT_DAYS = 90
 STATION_ACTIVE_WINDOW = timedelta(seconds=60)
-MULTI_ROLES = ("admin", "super_admin")
+SINGLE_ROLES = ("digitador", "cliente")          # cuentas temporales: una sola sesión a la vez (el «cliente temporal» tiene rol digitador)
+ADMIN_ROLES = ("admin", "super_admin")
+MULTI_ROLES = ADMIN_ROLES + ("coordinador", "comercial")          # varias sesiones y varios dispositivos a la vez
 FREE_PREFIX = "free:"                      # token de una cuenta liberada por un admin: ya no coincide con ninguna sesión y no cuenta como «en uso»
 STATION_BUSY_MSG = "Esta cuenta es un puesto de impresión y ya está en uso. Pídele a un administrador que la libere."
 HOST_BUSY_MSG = "Esta cuenta está imprimiendo para otros equipos en otro dispositivo; ciérrala allí o pide a un administrador que la libere."
@@ -53,7 +58,7 @@ def set_single_session(db: Session, on: bool) -> None:
 
 
 def policy(staff: StaffUser) -> str:
-    if staff.role in MULTI_ROLES:
+    if staff.role not in SINGLE_ROLES:
         return "multi"
     return "station" if staff.print_station else "single"
 
