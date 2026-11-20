@@ -171,11 +171,12 @@ case "${1:-}" in
     if [ "$1" = limits-up ]; then
       gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --update-env-vars PUBLIC_LIMIT_FACTOR=$LIMITS_FACTOR --quiet
       # La cuenta de carga es «digitador»: con el evento en proceso, el ingreso queda esperando que un coordinador lo apruebe (app/login_control.py) y nunca hay sesión (401 «No autenticado»).
+      # También SINGLE_SESSION=0: las 4 tareas del generador entran con la misma cuenta y cada login expulsaría al anterior (401 «session_replaced»).
       # Se apaga SOLO en el servicio web de staging mientras dura la prueba (limits-down lo devuelve; un despliegue también lo borra).
-      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars DIGITADOR_LOGIN_CONTROL=0 --quiet
+      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars DIGITADOR_LOGIN_CONTROL=0,SINGLE_SESSION=0 --quiet
     else
       gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --remove-env-vars PUBLIC_LIMIT_FACTOR --quiet   # vuelve al valor de common.yaml (1)
-      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --remove-env-vars DIGITADOR_LOGIN_CONTROL --quiet   # vuelve al ingreso controlado
+      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --remove-env-vars DIGITADOR_LOGIN_CONTROL,SINGLE_SESSION --quiet   # vuelve al ingreso controlado
     fi ;;
   scale-up)
     [ ! -e "$SCALE_FILE" ] || { echo "scale-up SE NIEGA: ya hay valores ORIGINALES guardados en $SCALE_FILE. Si se repitiera, reescribiría los originales con los valores YA subidos y scale-down restauraría lo equivocado. Corre primero: bash deploy/loadtest/run_phase4.sh scale-down (si ya restauraste a mano, borra ese archivo)." >&2; exit 1; }
