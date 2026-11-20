@@ -648,28 +648,10 @@
        - QR de la escarapela -> el mismo flujo de siempre (submitScannedCedula, método «qr»).
        - Código de barras PDF417 de la cédula (si el navegador lo lee: BarcodeDetector) -> se llena el buscador con la cédula y se busca,
          igual que con el lector físico (el Enter del campo; el lector de teclado/pistola sigue funcionando en ese mismo campo).
-       - Cédula nueva sin lectura de barras: «Foto del reverso» en la MISMA ventana de la cámara (se lee la MRZ en el servidor). Ya no se adjuntan imágenes.
+       - Cédula nueva: modo «Cédula nueva» del mismo escáner (lectura en vivo de las 3 líneas). El botón «Foto del reverso» se retiró (19-nov-2026): no funcionó.
        Funciona sin conexión: BarcodeDetector es del navegador y jsQR queda guardado por el service worker. */
     const busyWork = (btn, work) => (window.GW && window.GW.busy && btn ? window.GW.busy(btn, work) : Promise.resolve().then(work));
     const scanQrBtn = document.getElementById('scanQrBtn');
-
-    async function processMrzPhoto(blob) {
-        await busyWork(scanQrBtn, async () => {
-        try {
-            const formData = new FormData();
-            formData.append('file', blob, 'cedula.jpg');
-            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
-            const data = await res.json();
-            if (!res.ok) {
-                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
-            } else if (window.directorySearch) {
-                window.directorySearch.submitScannedCedula(data.id, { nombres: data.first_name, apellidos: data.last_name });
-            }
-        } catch (e) {
-            showToast('Error de red', 'error');
-        }
-        });
-    }
 
     function fillSearchAndSearch(cedula) {
         const box = document.getElementById('searchCedula');
@@ -691,7 +673,6 @@
                     window.directorySearch.scanCedulaCard(d.cedula, { nombres: [d.nombre1, d.nombre2].filter(Boolean).join(' '), apellidos: [d.apellido1, d.apellido2].filter(Boolean).join(' ') });
                     sc.close();                                    // al reconocer la cédula la cámara se cierra sola
                 },
-                onPhoto: processMrzPhoto,
                 onCode: async (rawText, format) => {
                     let text = rawText;
                     try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }          // QR dinámico: lo valida el servidor
@@ -743,24 +724,6 @@
         });
     }
 
-    async function processRegScanMrzPhoto(blob) {
-        await busyWork(regScanMrzCameraBtn, async () => {
-        try {
-            const formData = new FormData();
-            formData.append('file', blob, 'cedula.jpg');
-            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
-            const data = await res.json();
-            if (!res.ok) {
-                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
-            } else {
-                fillRegFormFromScan(data.id, { nombres: data.first_name, apellidos: data.last_name });
-            }
-        } catch (e) {
-            showToast('Error de red', 'error');
-        }
-        });
-    }
-
     if (regScanMrzCameraBtn) {
         if (window.QrScanner && QrScanner.warm) QrScanner.warm();                    // lector de cédula listo en reposo: abrir la cámara no traba
         regScanMrzCameraBtn.addEventListener('click', () => {
@@ -772,7 +735,6 @@
                     fillRegFormFromScan(d.cedula, { nombres: [d.nombre1, d.nombre2].filter(Boolean).join(' '), apellidos: [d.apellido1, d.apellido2].filter(Boolean).join(' ') });
                     sc2.close();
                 },
-                onPhoto: processRegScanMrzPhoto,
                 onCode: async (rawText, format) => {
                     let text = rawText;
                     try { text = await QrCode.resolveDynamic(rawText, window.EVENT_ID); } catch (err) { showToast(err.message || 'No se pudo validar el código', 'error'); return; }

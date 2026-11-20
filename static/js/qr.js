@@ -8,9 +8,8 @@
      es, el primero. El resto se toma como nombre para la búsqueda por nombre (igual que con la cédula vieja).
      `isQr` = true solo cuando trae `|` (un ID suelto no se distingue de una cédula escrita a mano).
 
-   QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, onPhoto, modes, onCedula })
-     `formats` (por defecto solo QR; el Registro pide también 'pdf417'). `onPhoto(blob)`: si se pasa, la ventana ofrece «Foto del reverso (cédula nueva)», que toma un cuadro de la MISMA cámara
-     (no se adjunta ningún archivo) y lo entrega para leer la MRZ en el servidor.
+   QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, modes, onCedula })
+     `formats` (por defecto solo QR; el Registro pide también 'pdf417'). (19-nov-2026: se retiró «Foto del reverso (cédula nueva)»: no funcionó; la cédula nueva se lee en vivo con el modo 'new'.)
      `modes` (opcional, p. ej. ['old','new','qr']): la ventana muestra un selector «Cédula vieja · Cédula nueva · QR» y se prepara para lo que se elija (el Registro lo usa). 'qr' = el comportamiento de siempre (onCode);
      'old' = código de barras PDF417 de la cédula vieja y 'new' = las 3 líneas de la cédula nueva: ambos con los lectores de static/js/cedula-readers.js (se cargan al elegirlos) y entregan `onCedula(datos, 'old'|'new')`
      con { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento, … }. Sin `modes` todo funciona exactamente como antes.
@@ -179,7 +178,6 @@
         <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
       </div>
       <div class="gw-modal__foot">
-        <button type="button" class="gw-btn gw-btn--secondary qr-photo" hidden>Foto del reverso (cédula nueva)</button>
         <button type="button" class="gw-btn gw-btn--secondary qr-close">Cerrar</button>
       </div>`;
     box.querySelector('.gw-modal__title').textContent = opts.title || 'Escanear código QR';
@@ -215,17 +213,6 @@
       status.textContent = 'Código leído.';                      // sin eco del contenido: puede traer una cédula
       onCode(unwrap(text), format);                              // una vCard de Golden entrega el código de adentro; todo lo demás, igual
     }
-    const photoBtn = box.querySelector('.qr-photo');
-    if (opts.onPhoto) {
-      photoBtn.hidden = false;
-      photoBtn.addEventListener('click', () => {
-        if (!video.videoWidth) { status.textContent = 'Espera a que la cámara muestre la imagen.'; return; }
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => { if (blob) { close(); opts.onPhoto(blob); } }, 'image/jpeg', 0.92);
-      });
-    }
-
     async function start() {
       const id = ++loopId;
       let s;
@@ -315,7 +302,6 @@
       try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* sin almacenamiento: no se recuerda */ }
       const isQr = m === 'qr';
       if (overlayCv) overlayCv.hidden = isQr;
-      if (opts.onPhoto) photoBtn.hidden = !isQr;                     // «Foto del reverso» (servidor) solo con QR: las cédulas ya tienen su propio lector
       if (isQr) { status.classList.remove('gw-cam__status--err'); status.textContent = qrMsg(); await start(); } else await startCedula(m, my);
     }
 
