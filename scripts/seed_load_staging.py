@@ -78,6 +78,10 @@ def seed(db, people: int, capacity: int) -> dict:
     staff.locked_at = None
     staff.failed_logins = 0
     ev.status = "en_proceso"
+    ev.state_id = None            # sin estado configurable: manda el estado base «en proceso» (un estado viejo como «Finalizado» deja registration=False aunque status diga en_proceso)
+    ev.archived_at = None          # un evento archivado queda de solo lectura (event_rules.ARCHIVED_OFF)
+    ev.data_archived_at = None
+    ev.finalized_at = None
     db.execute(text("DELETE FROM rate_limit_events WHERE key = :u AND kind IN ('login_fail', 'login_ok')"), {"u": USERNAME})
     if not db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=staff.id).first():
         db.add(EventStaffAuthorization(event_id=ev.id, staff_user_id=staff.id))
