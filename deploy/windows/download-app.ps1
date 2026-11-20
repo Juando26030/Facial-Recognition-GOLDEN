@@ -9,6 +9,10 @@ $reqFile = Join-Path $ConfigDir 'install-request.json'
 if (-not (Test-Path $reqFile)) { throw 'Falta la llave de producto (config\install-request.json). Vuelve a ejecutar el instalador y escríbela.' }
 $req = Get-Content $reqFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $key = "$($req.key)".Trim().ToUpper(); $inst = "$($req.installation_id)".Trim()
+if (-not $inst) {          # el asistente solo deja la llave: la identificación de ESTA instalación (la llave queda atada a ella) se genera aquí y se guarda para install.ps1
+    $inst = [guid]::NewGuid().ToString('N')
+    Write-Utf8NoBom $reqFile (@{ key = $key; installation_id = $inst } | ConvertTo-Json -Compress)
+}
 if ($key -notmatch '^GLD-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$') { throw 'La llave de producto no tiene el formato correcto (GLD-XXXX-XXXX-XXXX).' }
 if ($inst -notmatch '^[0-9a-f]{32}$') { throw 'La identificación de esta instalación no es válida; vuelve a ejecutar el instalador.' }
 

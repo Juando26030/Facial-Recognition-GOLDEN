@@ -57,3 +57,10 @@ def test_local_side_wiring():
     assert "/api/ops/server-id" in js and "gw-versionbar--id" in js
     css = (SRC / "static" / "css" / "gw-notifications.css").read_text(encoding="utf-8")
     assert "gw-versionbar--id" in css
+
+
+def test_installer_script_uses_only_valid_inno_functions():
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8-sig")
+    assert "CreateGuid" not in iss                                          # no existe en Inno Setup Pascal Script (rompió la compilación el 20-nov)
+    dl = (WIN / "download-app.ps1").read_text(encoding="utf-8-sig")
+    assert "[guid]::NewGuid()" in dl and "installation_id" in dl

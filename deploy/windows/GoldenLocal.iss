@@ -121,16 +121,6 @@ end;
 // ---------------------------------------------------------------------------------------------- llave de producto
 var
   KeyPage: TInputQueryWizardPage;
-  InstallId: String;
-
-function NewInstallId(): String;
-var
-  G: String;
-begin
-  G := CreateGuid() + CreateGuid();                    // 2 GUID -> 64 caracteres hexadecimales con llaves y guiones
-  StringChangeEx(G, '{', '', True); StringChangeEx(G, '}', '', True); StringChangeEx(G, '-', '', True);
-  Result := Lowercase(Copy(G, 1, 32));
-end;
 
 function EnvFlagOn(const Name: String): Boolean;
 var
@@ -172,7 +162,6 @@ begin
   KeyPage := CreateInputQueryPage(wpWelcome, 'Llave de producto', 'Escribe la llave de este servidor', 'Te la da un administrador de Golden (Configuración › Servidor local). Es de un solo uso y se ata a este computador. Necesitas internet solo ahora, para bajar la aplicación.');
   KeyPage.Add('Llave (GLD-XXXX-XXXX-XXXX):', False);
   KeyPage.Edits[0].Text := ExpandConstant('{param:KEY|}');
-  KeyPage.Edits[0].CharCase := ecUpperCase;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
@@ -201,8 +190,7 @@ begin
   begin
     Dir := ExpandConstant('{app}\config');
     ForceDirectories(Dir);
-    InstallId := NewInstallId();
-    Body := '{"key":"' + Uppercase(Trim(KeyPage.Edits[0].Text)) + '","installation_id":"' + InstallId + '"}';
+    Body := '{"key":"' + Uppercase(Trim(KeyPage.Edits[0].Text)) + '"}';          // la identificación de la instalación la genera download-app.ps1
     SaveStringToFile(Dir + '\install-request.json', Body, False);
   end;
   if (CurStep = ssDone) and (not WizardSilent) and (not FileExists(ExpandConstant('{app}\app\app\main.py'))) then
