@@ -40,6 +40,16 @@ if (-not $appSvc -or $appSvc.Status -ne 'Running') {
     if ($busy) { throw "El puerto $AppPort ya lo usa otro programa. Ciérralo y vuelve a intentar." }
 }
 
+# 4b) Dos redes a la vez: por defecto Windows desconecta/descarta el Wi-Fi al enchufar un cable («minimizar conexiones simultáneas») y manda el tráfico por el cable aunque no tenga internet. El servidor necesita las dos:
+#     el cable al router del evento (los demás equipos) y otra red con internet (sincronización). Se apaga esa política y se ordenan las prioridades (el servicio actualizador lo repite cada minuto).
+try {
+    $k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WcmSvc\GroupPolicy'
+    if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    if ((Get-ItemProperty $k -ErrorAction SilentlyContinue).fMinimizeConnections -ne 0) { Set-ItemProperty -Path $k -Name fMinimizeConnections -Value 0 -Type DWord; Note 'Windows ya no apaga el Wi-Fi al conectar el cable (puede requerir reiniciar para aplicarse)' }
+} catch { Note "No se pudo ajustar «minimizar conexiones»: $_" }
+$n = Update-RouteMetrics
+if ($n -gt 0) { Note "Prioridad de redes ajustada ($n cambio(s)): el internet sale por la red que lo tiene y la red local sigue igual" }
+
 # 5) Reloj
 try { Start-Service W32Time -ErrorAction SilentlyContinue; & w32tm /resync /nowait 2>$null | Out-Null } catch {}
 

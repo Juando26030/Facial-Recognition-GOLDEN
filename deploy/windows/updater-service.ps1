@@ -12,6 +12,7 @@ while ($true) {
         $now = Get-Date
         if (($now - $lastCertCheck).TotalSeconds -ge 60) {          # cada minuto: ¿cambió la IP del equipo? (no toca la base; solo lee los adaptadores y el certificado)
             $lastCertCheck = $now
+            Update-RouteMetrics | Out-Null          # el cable al router sin internet no debe quitarle la salida a la sincronización
             if (Update-ServerCert) {
                 Restart-Service $SvcApp -Force -ErrorAction SilentlyContinue
                 Write-Log 'Certificado HTTPS renovado por cambio de dirección IP; se reinició la aplicación' 'actualizador.log'

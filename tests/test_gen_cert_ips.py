@@ -37,3 +37,10 @@ def test_scripts_wire_the_check_in_all_three_places():
     ps = lambda n: (ROOT / "deploy/windows" / n).read_text(encoding="utf-8-sig")
     assert "function Update-ServerCert" in ps("config.ps1") and "--missing" in ps("config.ps1")
     assert "Update-ServerCert" in ps("run-app.ps1") and "Update-ServerCert" in ps("updater-service.ps1") and "--missing" in ps("install.ps1")
+
+
+def test_route_metrics_is_wired_so_the_router_cable_does_not_cut_internet():
+    ps = lambda n: (ROOT / "deploy/windows" / n).read_text(encoding="utf-8-sig")
+    cfg = ps("config.ps1")
+    assert "function Update-RouteMetrics" in cfg and "IPv4Connectivity" in cfg and "-InterfaceMetric $mark" in cfg and "-AutomaticMetric Enabled" in cfg          # baja solo la red SIN internet y la devuelve a automático
+    assert "Update-RouteMetrics" in ps("updater-service.ps1") and "Update-RouteMetrics" in ps("prereq.ps1") and "fMinimizeConnections" in ps("prereq.ps1")
