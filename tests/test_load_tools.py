@@ -505,3 +505,16 @@ print("QUOTES", json.dumps([p for p in paths if p.endswith("/quote")]))
     assert r.returncode == 0, r.stdout + r.stderr
     sent = json.loads(r.stdout.split("QUOTES ", 1)[1].splitlines()[0])
     assert sent == ["/f/1/carga-pago/quote"] * expected                                              # al formulario CON pago, no al de los envíos
+
+
+def test_check_host_produccion_solo_run_app_del_web_en_la_lista_exacta():
+    """Prueba de carga autorizada en producción (19-nov-2026): sin `production=True` nada cambia; con él solo vale una URL *.run.app que esté en la lista exacta, y el dominio real nunca."""
+    web = ["golden-web-123.us-east4.run.app"]
+    assert check_host("https://golden-web-123.us-east4.run.app", web, production=True) is None
+    assert check_host("https://golden-web-123.us-east4.run.app", web) is not None            # sin production sigue exigiendo «staging»
+    assert check_host("https://golden-web-123.us-east4.run.app", [], production=True) is not None      # la lista exacta es obligatoria
+    assert check_host("https://golden-publico-123.us-east4.run.app", web, production=True) is not None
+    assert check_host("https://golden-app-123.web.app", ["golden-app-123.web.app"], production=True) is not None   # solo Cloud Run
+    for real in ("https://app.golden-eventos.com", "https://golden-eventos.com"):
+        assert check_host(real, [real.split("//")[1]], production=True) is not None, real
+    assert check_host("http://golden-web-123.us-east4.run.app", web, production=True) is not None
