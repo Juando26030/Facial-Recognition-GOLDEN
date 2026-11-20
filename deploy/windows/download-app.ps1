@@ -55,7 +55,11 @@ Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue
 $reqTxt = Join-Path $AppDir 'requirements-local.txt'
 if ((Test-Path $reqTxt) -and (Test-Path $Python)) {
     Write-Log 'Instalando las piezas de Python que falten…'
-    & $Python -m pip install -r $reqTxt --no-warn-script-location --disable-pip-version-check --only-binary=:all:
-    if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las piezas de Python de la aplicación.' }
+    $ErrorActionPreference = 'Continue'          # pip escribe avisos por stderr; con «Stop» PowerShell los trataría como error
+    $pipOut = & $Python -m pip install -r $reqTxt --no-warn-script-location --disable-pip-version-check --only-binary=:all: 2>&1 | ForEach-Object { "$_" }
+    $pipCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    ($pipOut | Select-Object -Last 25) | ForEach-Object { Write-Log "pip: $_" }          # lo que dijo pip queda en el registro, para ver QUÉ pieza falló
+    if ($pipCode -ne 0) { throw "No se pudieron instalar las piezas de Python de la aplicación (pip código $pipCode). Sin internet, pip no puede bajar las que falten; el detalle de pip está en logs\instalador.log." }
 }
 Write-Log 'Aplicación descargada y verificada'

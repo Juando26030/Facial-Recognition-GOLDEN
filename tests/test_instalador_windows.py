@@ -88,3 +88,19 @@ def test_build_cross_pide_tzdata_explicito():
     """pandas necesita tzdata en Windows; instalado desde Linux el marcador lo omite: debe pedirse a mano o el instalador falla en pip."""
     txt = (SRC / "deploy" / "windows" / "build_cross.py").read_text(encoding="utf-8")
     assert 'req.append("tzdata")' in txt
+
+
+def test_instalador_no_da_por_buena_una_instalacion_fallida():
+    """Si algo falla, el instalador lo dice (paso y motivo) y NO ofrece abrir el programa como si todo hubiera salido bien."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8-sig")
+    dl = (WIN / "download-app.ps1").read_text(encoding="utf-8-sig")
+    assert "resultado-instalacion.txt" in inst and "$script:Step" in inst and "exit 1" in inst
+    for chk in ("Servicio $svc en marcha", "/health", "(migraciones)", "Piezas de Python completas", "cortafuegos"):
+        assert chk in inst
+    assert inst.index("Instalación CON FALLOS") < inst.index("Instalación terminada: todas las comprobaciones OK")
+    # el asistente corre install.ps1 él mismo, lee el código de salida y solo ofrece abrir la app si salió bien
+    assert "Check: InstallOk" in iss and "LA INSTALACIÓN NO QUEDÓ BIEN" in iss and "InstallResultCode" in iss
+    assert 'install.ps1"""; StatusMsg' not in iss
+    # lo que dijo pip queda en el registro y el error trae su código
+    assert "pip: " in dl and "pip código" in dl

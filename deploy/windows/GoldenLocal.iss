@@ -54,8 +54,7 @@ Name: "{commondesktop}\Golden Local - certificado para celulares"; Filename: "{a
 Name: "{commondesktop}\Golden Local - verificar y reparar"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\prereq.ps1"""; Comment: "Comprueba Windows, la red y el cortafuegos (pide permisos de administrador)"
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install.ps1"""; StatusMsg: "Instalando la base de datos, los servicios y los certificados (puede tardar unos minutos)..."; Flags: runhidden waituntilterminated
-Filename: "https://localhost:8443"; Description: "Abrir Golden Local ahora"; Flags: postinstall shellexec skipifsilent nowait
+Filename: "https://localhost:8443"; Description: "Abrir Golden Local ahora"; Flags: postinstall shellexec skipifsilent nowait; Check: InstallOk
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "GoldenLocalUninstall"
@@ -182,9 +181,19 @@ begin
   end;
 end;
 
+var
+  InstallResultCode: Integer;
+  InstallRan: Boolean;
+
+function InstallOk(): Boolean;
+begin
+  Result := InstallRan and (InstallResultCode = 0);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Dir, Body: String;
+  Dir, Body, ResFile: String;
+  Res: AnsiString;
 begin
   if (CurStep = ssInstall) and (KeyPage <> nil) and (not ShouldSkipPage(KeyPage.ID)) then
   begin
@@ -193,6 +202,20 @@ begin
     Body := '{"key":"' + Uppercase(Trim(KeyPage.Edits[0].Text)) + '"}';          // la identificación de la instalación la genera download-app.ps1
     SaveStringToFile(Dir + '\install-request.json', Body, False);
   end;
-  if (CurStep = ssDone) and (not WizardSilent) and (not FileExists(ExpandConstant('{app}\app\app\main.py'))) then
-    MsgBox('La instalación no se completó: la aplicación no se pudo descargar (llave no válida, ya usada o vencida, o sin internet). El detalle quedó en C:\GoldenLocal\logs\instalador.log. Pide una llave nueva a un administrador y vuelve a ejecutar el instalador.', mbError, MB_OK);
+  if CurStep = ssPostInstall then
+  begin
+    // La instalación de verdad (base, servicios, certificados) la hace install.ps1. Se espera su resultado: si falla, se DICE (qué paso y por qué) y no se ofrece abrir el programa como si todo hubiera salido bien.
+    WizardForm.StatusLabel.Caption := 'Instalando la base de datos, los servicios y los certificados (puede tardar unos minutos)...';
+    InstallRan := Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\install.ps1') + '"', '', SW_HIDE, ewWaitUntilTerminated, InstallResultCode);
+    if not InstallRan then InstallResultCode := -1;
+    if InstallResultCode <> 0 then
+    begin
+      ResFile := ExpandConstant('{app}\logs\resultado-instalacion.txt');
+      Res := '';
+      if not LoadStringFromFile(ResFile, Res) then Res := 'No se pudo ejecutar la instalación (código ' + IntToStr(InstallResultCode) + '). Revisa C:\GoldenLocal\logs\instalador.log.';
+      Log('install.ps1 terminó con código ' + IntToStr(InstallResultCode));
+      if not WizardSilent then
+        MsgBox('LA INSTALACIÓN NO QUEDÓ BIEN.' + #13#10#13#10 + Copy(String(Res), 1, 1800) + #13#10#13#10 + 'Pásale esta ventana (o el archivo C:\GoldenLocal\logs\resultado-instalacion.txt) al equipo de Golden. Puedes volver a ejecutar el instalador: es repetible.', mbError, MB_OK);
+    end;
+  end;
 end;
