@@ -106,7 +106,8 @@ def test_instalador_no_da_por_buena_una_instalacion_fallida():
     assert "pip: " in dl and "pip código" in dl
 
 
-def test_verificacion_final_usa_tls12():
-    """Windows PowerShell 5.1 no negocia TLS 1.2 por defecto: sin esto /health daba «error inesperado de envío» aunque la app estuviera bien."""
+def test_verificacion_final_usa_python_y_la_autoridad_propia():
+    """Windows PowerShell 5.1 daba «error inesperado de envío» contra uvicorn aunque la app estaba bien: /health se comprueba con el Python de la app y ca.pem."""
     inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
-    assert inst.index("SecurityProtocol") < inst.index("/health")
+    assert "Invoke-WebRequest -Uri" not in inst.split("VERIFICACIÓN FINAL")[1]          # .NET Framework fallaba el TLS con uvicorn; se comprueba con el Python de la app
+    assert "cafile=" in inst and "https://localhost:$AppPort/health" in inst

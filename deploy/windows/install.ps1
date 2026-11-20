@@ -175,17 +175,20 @@ foreach ($svc in @($SvcPg, $SvcApp, $SvcUpd)) {
     Add-Check "Servicio $svc en marcha" ([bool]($sv -and $sv.Status -eq 'Running')) $(if ($sv) { "estado: $($sv.Status)" } else { 'no existe' })
 }
 $listening = $false; $healthy = $false; $healthDetail = 'sin respuesta'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13          # PowerShell 5.1 no negocia TLS 1.2 por sí solo (daba «error inesperado de envío»)
-[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }          # solo para esta comprobación contra el propio equipo
+# La comprobación se hace con el Python de la app (OpenSSL), igual que un navegador: valida el certificado contra NUESTRA autoridad (ca.pem) con el nombre «localhost».
+# No se usa Invoke-WebRequest: Windows PowerShell 5.1 (.NET Framework) fallaba la negociación TLS con uvicorn («error inesperado de envío») aunque la app estaba bien.
+$probe = "import ssl,urllib.request as u; c=ssl.create_default_context(cafile=r'$(Join-Path $CertDir 'ca.pem')'); print(u.urlopen('https://localhost:$AppPort/health',context=c,timeout=10).status)"
 foreach ($i in 1..45) {
-    try {
-        $tc = New-Object Net.Sockets.TcpClient; $tc.Connect('127.0.0.1', $AppPort); $tc.Close(); $listening = $true
-        $r = Invoke-WebRequest -Uri "https://127.0.0.1:$AppPort/health" -UseBasicParsing -TimeoutSec 10
-        if ($r.StatusCode -eq 200) { $healthy = $true; break } else { $healthDetail = "código $($r.StatusCode)" }
-    } catch { $healthDetail = "$($_.Exception.Message)" }
+    try { $tc = New-Object Net.Sockets.TcpClient; $tc.Connect('127.0.0.1', $AppPort); $tc.Close(); $listening = $true } catch { $healthDetail = 'el puerto aún no responde' }
+    if ($listening) {
+        $ErrorActionPreference = 'Continue'
+        $out = @(& $Python -c $probe 2>&1 | ForEach-Object { "$_" })
+        $ErrorActionPreference = 'Stop'
+        if (($out -join ' ').Trim() -eq '200') { $healthy = $true; break }
+        $healthDetail = (($out | Select-Object -Last 1) -join ' ').Trim()
+    }
     Start-Sleep -Seconds 2
 }
-[Net.ServicePointManager]::ServerCertificateValidationCallback = $null
 Add-Check "La aplicación escucha en el puerto $AppPort" $listening 'nadie respondió en 90 s; mira logs\GoldenLocalApp*.log'
 Add-Check 'La aplicación responde (/health)' $healthy $healthDetail
 Add-Check 'Certificado HTTPS presente y vigente' ((Test-Path $serverPem) -and -not ("$(& $Python (Join-Path $ScriptsDir 'gen_cert.py') --missing $serverPem @ips 2>&1)".Trim())) 'falta el certificado o no cubre la IP actual'
