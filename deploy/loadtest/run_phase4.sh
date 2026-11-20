@@ -45,8 +45,8 @@ if [ "$TARGET" = production ]; then
   case "$PROJECT" in *staging*) echo "LOAD_TARGET=production pero el proyecto activo es '$PROJECT' (de staging). export CLOUDSDK_CORE_PROJECT=<proyecto de producción> y repite." >&2; exit 2;; esac
   [ "${LOAD_PROD_CONFIRM:-}" = "$PROJECT" ] || { echo "PRODUCCIÓN ($PROJECT): para continuar escribe el ID exacto del proyecto: LOAD_PROD_CONFIRM=$PROJECT (junto al comando). No se hizo nada." >&2; exit 2; }
   case "${1:-}" in
-    build|seed|reset-data|purge-data|verify|limits-up|limits-down|scale-up|scale-down|run|report-rush|cleanup) ;;
-    *) echo "En producción solo existen: build seed run rush report-rush verify reset-data purge-data limits-up limits-down scale-up scale-down cleanup (no '${1:-}')." >&2; exit 2;;
+    build|seed|info|reset-data|purge-data|verify|limits-up|limits-down|scale-up|scale-down|run|report-rush|cleanup) ;;
+    *) echo "En producción solo existen: build seed info run rush report-rush verify reset-data purge-data limits-up limits-down scale-up scale-down cleanup (no '${1:-}')." >&2; exit 2;;
   esac
   [ "${1:-}" != run ] || [ "${2:-}" = rush ] || { echo "En producción «run» solo admite «rush»." >&2; exit 2; }
 fi
@@ -60,6 +60,10 @@ ops_job() {   # ejecuta el Job de ops con un paso de scripts.seed_load_staging y
   LAST_T0="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)"
   local extra=""
   if [ "$TARGET" = production ]; then extra=",--production-ok,$PROJECT"; [ "${LOAD_ALLOW_LIVE:-0}" != 1 ] || extra="$extra,--allow-live-events"; fi
+  if [ -n "${LOAD_TENANT:-}" ]; then   # la prueba vive en un cliente EXISTENTE (id del cliente; mira `info`): no se crea ni se borra el cliente, solo lo sintético
+    [[ "$LOAD_TENANT" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "LOAD_TENANT='$LOAD_TENANT' no es un id válido." >&2; return 1; }
+    extra="$extra,--tenant,$LOAD_TENANT"
+  fi
   gcloud run jobs execute "$APP_IMAGE_JOB" --project "$PROJECT" --region "$REGION" --args="-m,scripts.seed_load_staging,$1$extra" --wait
 }
 # Lee una línea marcada (LOAD_SEED, LOAD_VERIFY…) de Cloud Logging. Los logs tardan en aparecer: reintenta cada 10 s hasta 2 minutos; si no sale, dice cómo leerla a mano y falla.
@@ -131,6 +135,8 @@ case "${1:-}" in
     ops_job "--people,${LOAD_PEOPLE:-5000},--capacity,4000"
     line="$(log_line LOAD_SEED)" || { echo "El seed terminó bien; solo falta leer event_id. Cuando aparezca la línea, usa LOAD_EVENT_ID=<id> en «run» (o corre «verify», que también lo imprime)." >&2; exit 1; }
     echo "LOAD_SEED (event_id y form_slug): $line" ;;
+  info)   # SOLO LECTURA: clientes llamados «prueba» y eventos reales en proceso (ver scripts/seed_load_staging.py --info)
+    say "Consultando (solo lectura) clientes «prueba» y eventos en proceso"; ops_job "--info"; log_line LOAD_INFO ;;
   reset-data)
     say "Dejando en cero inscripciones e ingresos de LOAD-STG"; ops_job "--reset-runs"; log_line LOAD_RESET ;;
   purge-data)

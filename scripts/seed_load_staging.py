@@ -56,6 +56,22 @@ from app.models import AccessLog, Event, EventAttendee, EventStaffAuthorization,
 from app.timeutil import utcnow  # noqa: E402
 from scripts.load_cfg import EVENT_CODE, FORM_SLUG, PAY_FORM_SLUG, TENANT, USERNAME, derived_password  # noqa: E402
 
+# Cliente donde vive la prueba. Por defecto el sintético `carga-staging` (se crea y se borra entero). Con `--tenant <id>` (LOAD_TENANT en run_phase4.sh) la prueba vive en un cliente
+# YA EXISTENTE (p. ej. el cliente «prueba» de producción): no se crea y NUNCA se borra, y el borrado solo quita lo sintético (evento LOAD-STG, personas «Sintética» con cédula 9xxxxxxxxx, cuenta de carga).
+ACTIVE = {"tenant": TENANT}
+
+
+def custom_tenant() -> bool:
+    return ACTIVE["tenant"] != TENANT
+
+
+def synthetic_users(db):
+    """Personas SINTÉTICAS del cliente activo: nombre «Persona», entidad «Sintética» y cédula de 10 dígitos que empieza por 9 (las que crea `seed`). En el cliente sintético son todas las del cliente."""
+    q = db.query(User).filter(User.tenant_id == ACTIVE["tenant"])
+    if custom_tenant():
+        q = q.filter(User.first_name == "Persona", User.entity == "Sintética", User.id.op("~")("^9[0-9]{9}$"))
+    return q
+
 
 def payment_form_design() -> dict:
     """Diseño del formulario de pago de la prueba: los mismos campos y UN campo «Pago» fijo de $50.000. Solo se cotiza (`quote`): en staging no hay llaves de Wompi y un envío con cobro daría 503."""
@@ -77,7 +93,10 @@ def ensure_payment_form(db, ev) -> WebForm:
 
 def seed(db, people: int, capacity: int) -> dict:
     import numpy as np
-    if not db.get(Tenant, TENANT):
+    if custom_tenant():
+        if not db.get(Tenant, ACTIVE["tenant"]):
+            sys.exit(f"El cliente {ACTIVE['tenant']!r} no existe: no se crea (usa `--info` para ver los ids).")
+    elif not db.get(Tenant, TENANT):
         db.add(Tenant(id=TENANT, client_code="CARGA-STG", name="Carga staging (datos sintéticos)"))
     staff = db.query(StaffUser).filter_by(username=USERNAME).first()
     if staff:
@@ -88,7 +107,7 @@ def seed(db, people: int, capacity: int) -> dict:
     db.flush()
     ev = db.query(Event).filter_by(event_code=EVENT_CODE).first()
     if not ev:
-        ev = Event(tenant_id=TENANT, event_code=EVENT_CODE, name="Evento de carga (staging)", status="en_proceso", facial_enabled=True, auto_register=False,
+        ev = Event(tenant_id=ACTIVE["tenant"], event_code=EVENT_CODE, name="Evento de carga (staging)", status="en_proceso", facial_enabled=True, auto_register=False,
                    start_date=date.today(), end_date=date.today() + timedelta(days=30), coordinator_staff_id=staff.id, created_by_id=staff.id)
         db.add(ev)
         db.flush()
@@ -105,14 +124,14 @@ def seed(db, people: int, capacity: int) -> dict:
     db.execute(text("DELETE FROM rate_limit_events WHERE key = :u AND kind IN ('login_fail', 'login_ok')"), {"u": USERNAME})
     if not db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=staff.id).first():
         db.add(EventStaffAuthorization(event_id=ev.id, staff_user_id=staff.id))
-    have = db.query(User).filter(User.tenant_id == TENANT).count()
+    have = synthetic_users(db).count()
     rng = np.random.default_rng(42)
     now = utcnow()
     rows_u, rows_a = [], []
     for i in range(have, max(have, people)):
         uid = f"9{i:09d}"
-        rows_u.append({"id": uid, "tenant_id": TENANT, "first_name": "Persona", "last_name": uid[-5:], "entity": "Sintética", "face_encoding": json.dumps(rng.normal(0, 0.1, 128).round(6).tolist())})
-        rows_a.append({"event_id": ev.id, "user_id": uid, "tenant_id": TENANT, "created_at": now})
+        rows_u.append({"id": uid, "tenant_id": ACTIVE["tenant"], "first_name": "Persona", "last_name": uid[-5:], "entity": "Sintética", "face_encoding": json.dumps(rng.normal(0, 0.1, 128).round(6).tolist())})
+        rows_a.append({"event_id": ev.id, "user_id": uid, "tenant_id": ACTIVE["tenant"], "created_at": now})
     for i in range(0, len(rows_u), 1000):
         db.execute(insert(User), rows_u[i:i + 1000])
         db.execute(insert(EventAttendee), rows_a[i:i + 1000])
@@ -132,7 +151,19 @@ def seed(db, people: int, capacity: int) -> dict:
         form.capacity = capacity
     ensure_payment_form(db, ev)
     db.commit()
-    return {"event_id": ev.id, "form_slug": form.slug, "pay_form_slug": PAY_FORM_SLUG, "people": db.query(User).filter(User.tenant_id == TENANT).count(), "capacity": capacity}
+    return {"event_id": ev.id, "form_slug": form.slug, "pay_form_slug": PAY_FORM_SLUG, "people": synthetic_users(db).count(), "capacity": capacity}
+
+
+def info(db) -> dict:
+    """SOLO LECTURA (producción): los clientes cuyo nombre contiene «prueba» y los eventos REALES en proceso (id, cliente, fechas e ingresos de la última hora). Sin datos de personas."""
+    tenants = [{"id": r[0], "client_code": r[1], "name": r[2], "archived": r[3] is not None}
+               for r in db.execute(text("SELECT id, client_code, name, archived_at FROM tenants WHERE name ILIKE :p ORDER BY name"), {"p": "%prueba%"})]
+    since = utcnow() - timedelta(hours=1)
+    live = [{"id": r[0], "tenant_id": r[1], "start": str(r[2]), "end": str(r[3]), "accesses_last_hour": r[4]}
+            for r in db.execute(text("SELECT e.id, e.tenant_id, e.start_date, e.end_date, "
+                                     "(SELECT count(*) FROM access_logs a WHERE a.event_id = e.id AND a.at >= :s) "
+                                     "FROM events e WHERE e.status = 'en_proceso' AND e.event_code <> :c ORDER BY e.id"), {"s": since, "c": EVENT_CODE})]
+    return {"tenants_named_prueba": tenants, "live_events": live}
 
 
 def verify(db) -> dict:
@@ -151,7 +182,7 @@ def verify(db) -> dict:
 
 
 def _load_event(db):
-    return db.query(Event).filter_by(event_code=EVENT_CODE, tenant_id=TENANT).first()
+    return db.query(Event).filter_by(event_code=EVENT_CODE, tenant_id=ACTIVE["tenant"]).first()
 
 
 def reset_runs(db) -> dict:
@@ -192,9 +223,13 @@ def delete_all(db) -> dict:
                     counts[table.name] = counts.get(table.name, 0) + n
         db.execute(text("DELETE FROM web_forms WHERE event_id = :e"), {"e": ev.id})
         db.execute(text("DELETE FROM events WHERE id = :e"), {"e": ev.id})
-    counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": TENANT}).rowcount
+    if custom_tenant():          # cliente existente: SOLO lo sintético; el cliente y todo lo demás de él se quedan
+        counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t AND first_name = 'Persona' AND entity = 'Sintética' AND id ~ '^9[0-9]{9}$'"), {"t": ACTIVE["tenant"]}).rowcount
+    else:
+        counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": TENANT}).rowcount
     counts["staff_users"] = db.execute(text("DELETE FROM staff_users WHERE username = :u"), {"u": USERNAME}).rowcount
-    db.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": TENANT})
+    if not custom_tenant():
+        db.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": TENANT})
     db.commit()
     return counts
 
@@ -207,14 +242,20 @@ def main() -> None:
     ap.add_argument("--reset-runs", action="store_true", help="borra inscripciones, ingresos y límites de una corrida; deja evento, formulario y personas")
     ap.add_argument("--delete-all", action="store_true", help="borra TODO lo de la prueba (evento LOAD-STG, formulario, personas sintéticas, cuenta carga_dig, cliente)")
     ap.add_argument("--production-ok", default="", help="solo producción: el ID del proyecto, que run_phase4.sh pone tras la confirmación escrita")
+    ap.add_argument("--info", action="store_true", help="solo lectura: clientes llamados «prueba» y eventos reales en proceso")
+    ap.add_argument("--tenant", default="", help="id de un cliente EXISTENTE donde vive la prueba (por defecto el sintético carga-staging)")
     ap.add_argument("--allow-live-events", action="store_true", help="solo producción: sembrar aunque haya un evento real en proceso (a propósito)")
     args = ap.parse_args()
     guard(args.production_ok, args.allow_live_events)
+    if args.tenant:
+        ACTIVE["tenant"] = args.tenant
     db = SessionLocal()
     try:
-        if not (args.verify or args.delete_all):
+        if not (args.verify or args.delete_all or args.info):
             refuse_if_live_events(db, args.allow_live_events)
-        if args.verify:
+        if args.info:
+            print("LOAD_INFO " + json.dumps(info(db)))
+        elif args.verify:
             print("LOAD_VERIFY " + json.dumps(verify(db)))
         elif args.reset_runs:
             print("LOAD_RESET " + json.dumps(reset_runs(db)))
