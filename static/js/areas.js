@@ -162,11 +162,17 @@
     onMessage: (text) => show('warn', 'Búsqueda', esc(text)),
   });
 
-  // Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
+  // Cámara del dispositivo: el MISMO escáner del Registro (selector «Cédula vieja · Cédula nueva · QR» en la misma ventana) y escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
+  // Si la cámara lee el código y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
+  if (window.QrScanner && QrScanner.warm && $('scanQrBtn')) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara no traba)
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
-    title: 'Escanear QR — Control de Áreas',
-    // Si la cámara lee el QR y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
-    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => { const qr = QrCode.parse(raw); return qr ? register(qr.cedula, false, undefined, 'qr') : false; })
+    title: 'Escanear cédula o QR — Control de Áreas',
+    formats: ['qr_code', 'pdf417'],
+    modes: ['old', 'new', 'qr'],                       // cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
+    onCedula: (d) => { register(d.cedula, false, undefined, 'cedula').then((found) => { if (found && scanner) scanner.close(); }); },
+    onCode: (text, format) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => {
+        const r = QrCode.classify(raw, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
+        return r ? register(r.cedula, false, undefined, r.kind === 'qr' ? 'qr' : 'cedula') : (show('warn', 'No se reconoció el código', 'Acerca la cámara al QR o al reverso de la cédula'), false); })
       .then((found) => { if (found && scanner) scanner.close(); })
       .catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
   }); });
