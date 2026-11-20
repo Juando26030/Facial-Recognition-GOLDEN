@@ -141,13 +141,19 @@
     onPick: (u) => { setPerson(u); if (AUTOSCAN) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
     onRaw: () => showToast('Esa persona no está en la base de este evento', 'error'),
   });
-  // Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
+  // Cámara del dispositivo: el MISMO escáner del Registro y de Control de áreas (selector «Cédula vieja · Cédula nueva · QR»); cada lectura elige a la persona a la que se le entrega.
+  // Si la cámara lee el código y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
   let scanner = null;
+  if (window.QrScanner && QrScanner.warm && $('scanQrBtn')) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara no traba)
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
-    title: 'Escanear QR — Control de Inventario',
-    modes: ['qr'],                                     // el MISMO escáner nuevo del Registro (solo QR, sin selector)
-    // Si la cámara lee el QR y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
-    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => { const qr = QrCode.parse(raw); return qr ? byId(qr.cedula, true) : false; })
+    title: 'Escanear cédula o QR — Control de Inventario',
+    formats: ['qr_code', 'pdf417'],
+    modes: ['old', 'new', 'qr'],                       // cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
+    onCedula: (d) => { if (byId(d.cedula, true) && scanner) scanner.close(); },
+    onCode: (text, format) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => {
+        const r = QrCode.classify(raw, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
+        if (!r) { showToast('No se reconoció el código: acerca la cámara al QR o al reverso de la cédula', 'error'); return false; }
+        return byId(r.cedula, true); })
       .then((found) => { if (found && scanner) scanner.close(); })
       .catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
   }); });
