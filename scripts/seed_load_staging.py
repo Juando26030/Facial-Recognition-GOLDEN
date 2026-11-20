@@ -230,6 +230,11 @@ def delete_all(db) -> dict:
                     counts[table.name] = counts.get(table.name, 0) + n
         db.execute(text("DELETE FROM web_forms WHERE event_id = :e"), {"e": ev.id})
         db.execute(text("DELETE FROM events WHERE id = :e"), {"e": ev.id})
+    # Ingresos de las personas sintéticas que NO son del evento de carga (corridas anteriores): bloquean el borrado de las personas por la llave foránea.
+    if custom_tenant():
+        counts["access_logs_orphan"] = db.execute(text("DELETE FROM access_logs WHERE tenant_id = :t AND user_id ~ '^9[0-9]{9}$'"), {"t": ACTIVE["tenant"]}).rowcount
+    else:
+        counts["access_logs_orphan"] = db.execute(text("DELETE FROM access_logs WHERE tenant_id = :t"), {"t": TENANT}).rowcount
     if custom_tenant():          # cliente existente: SOLO lo sintético; el cliente y todo lo demás de él se quedan
         counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t AND first_name = 'Persona' AND entity = 'Sintética' AND id ~ '^9[0-9]{9}$'"), {"t": ACTIVE["tenant"]}).rowcount
     else:
