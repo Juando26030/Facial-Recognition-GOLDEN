@@ -20,3 +20,8 @@ Prefijo de cada comando: `LOAD_TARGET=production LOAD_PROD_CONFIRM=<proyecto>`.
 `build` → `SCALE_WEB='<mín> <máx>' scale-up` → `limits-up` → `LOAD_PEOPLE=40000 seed` → `LOAD_PEOPLE=40000 run rush` → `report-rush <ejecución completa>`.
 Al terminar, SIEMPRE: `limits-down` → `scale-down` → `purge-data` (escribir `LOAD-STG`) → `cleanup`.
 Si algo sale mal a medias: `limits-down` y `scale-down` primero (devuelven producción), después `purge-data`.
+
+## Evento de prueba en un cliente existente (19-nov-2026)
+- `... run_phase4.sh info` (solo lectura): lista los clientes cuyo nombre contiene «prueba» y los eventos reales en proceso (id, cliente, fechas, ingresos de la última hora; sin datos de personas).
+- `LOAD_TENANT=<id del cliente> ... run_phase4.sh seed|verify|reset-data|purge-data`: la prueba vive en ese cliente. El cliente NUNCA se crea ni se borra; el borrado solo quita el evento `LOAD-STG`, las personas sintéticas (nombre «Persona», entidad «Sintética», cédula 9xxxxxxxxx) y la cuenta `carga_dig`.
+- Con eventos reales en proceso la siembra se niega; `LOAD_ALLOW_LIVE=1` solo con OK explícito de Juan David.
