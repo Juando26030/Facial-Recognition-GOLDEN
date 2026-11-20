@@ -104,3 +104,9 @@ def test_instalador_no_da_por_buena_una_instalacion_fallida():
     assert 'install.ps1"""; StatusMsg' not in iss
     # lo que dijo pip queda en el registro y el error trae su código
     assert "pip: " in dl and "pip código" in dl
+
+
+def test_verificacion_final_usa_tls12():
+    """Windows PowerShell 5.1 no negocia TLS 1.2 por defecto: sin esto /health daba «error inesperado de envío» aunque la app estuviera bien."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert inst.index("SecurityProtocol") < inst.index("/health")

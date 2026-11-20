@@ -175,6 +175,7 @@ foreach ($svc in @($SvcPg, $SvcApp, $SvcUpd)) {
     Add-Check "Servicio $svc en marcha" ([bool]($sv -and $sv.Status -eq 'Running')) $(if ($sv) { "estado: $($sv.Status)" } else { 'no existe' })
 }
 $listening = $false; $healthy = $false; $healthDetail = 'sin respuesta'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13          # PowerShell 5.1 no negocia TLS 1.2 por sí solo (daba «error inesperado de envío»)
 [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }          # solo para esta comprobación contra el propio equipo
 foreach ($i in 1..45) {
     try {
