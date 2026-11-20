@@ -212,6 +212,13 @@ def delete_all(db) -> dict:
         for table in reversed(Base.metadata.sorted_tables):
             if table.name in ("events", "web_forms", "users", "tenants", "staff_users"):
                 continue
+            if table.name.startswith("audit_"):   # registros inmutables (solo INSERT; el rol de la app no puede borrarlos): no se tocan; si el evento tiene filas ahí, se detiene sin borrar nada
+                if "event_id" in table.c:
+                    n = db.execute(text(f'SELECT count(*) FROM "{table.name}" WHERE event_id = :e'), {"e": ev.id}).scalar()
+                    if n:
+                        db.rollback()
+                        sys.exit(f"El evento de carga tiene {n} fila(s) en {table.name} (inmutable): no se borra nada.")
+                continue
             conds = []
             if "form_id" in table.c and form_ids:
                 conds.append(table.c.form_id.in_(form_ids))
