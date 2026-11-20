@@ -169,7 +169,8 @@ case "${1:-}" in
       "${PYTHON3:-python3}" "$(dirname "$0")/job_env.py" "$envfile" "LOAD_SCENARIO=$2" "LOAD_TARGET=$TARGET" "LOAD_HOST=$WEB_URL" "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" "LOAD_USERS=$3" "LOAD_RATE=$4" \
         "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=${LOAD_PEOPLE:-5000}" "LOAD_SCANS=${LOAD_SCANS:-40000}" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" "LOAD_QUOTES=$QUOTES" \
         || { rm -f "$envfile"; return 1; }
-      gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 \
+      local sa=(); [ "$TARGET" != production ] || sa=(--service-account "$SA_APP@$PROJECT.iam.gserviceaccount.com")   # en producción la cuenta por defecto no lee el secreto del token: se usa la de la app (la misma de los servicios)
+      gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 "${sa[@]}" \
         --task-timeout "$(( $5 + 240 ))s" --cpu 1 --memory 1Gi \
         --set-secrets "OPS_TOKEN=$(secret_name ops-token):latest" \
         --env-vars-file "$envfile" --quiet || { rm -f "$envfile"; return 1; }
