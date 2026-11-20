@@ -6,6 +6,7 @@ Scheduler (cabe en las 3 gratuitas): cada hora al minuto 05, hora de Bogotá, co
                  respaldo de la base (cada hora) · a las OPS_DAILY_HOUR (3) también el diario · a las OPS_PURGE_HOUR (4) la purga biométrica
                  · revisión de respaldos · cola de trabajos pendiente · precalentamiento · y SOLO los domingos a las OPS_WEEKLY_HOUR (5) el archivado de la base de los eventos a los 90 días (L7). Cada paso va aislado: si uno falla los demás
                  corren igual, y el Job termina con código 1 (la alerta de Cloud Monitoring avisa de ejecuciones fallidas).
+  db-health      chequeo de salud de la base de Neon (domingos 6 a. m.): avisa y reinicia el cómputo si ve riesgo de colapso, sin borrar datos (app/db_health.py)
   backup | backup-daily | purge | archive-events | check-backups | sweep | warmup      cada paso suelto, para correrlo a mano:
                  gcloud run jobs execute golden-ops-<entorno> --region <región> --args=-m,app.ops_runner,backup
 
@@ -245,6 +246,12 @@ def import_infra_costs() -> str:
     return f"Google: {r['imported']} gasto(s) nuevo(s), {r['updated']} actualizado(s), {len(r['warnings'])} aviso(s)"
 
 
+def db_health() -> str:
+    """20-nov-2026: chequeo semanal de salud de la base de Neon; si ve riesgo de colapso avisa y reinicia el cómputo (nunca borra datos). Ver app/db_health.py."""
+    from app import db_health as h
+    return h.run()
+
+
 def hourly(now=None) -> dict:
     now = now or _local_now()
     steps = [("backup", lambda: backup_db("hourly", now=now))]
@@ -339,12 +346,15 @@ def economic(now=None, now_utc=None, steps=None, probe_fn=None) -> dict:
     if S.due_daily(steps, "purge", now, int(os.getenv("OPS_PURGE_HOUR", "4"))):
         run("purge", purge, "purge")                    # retención biométrica: una vez al día; con errores NO se anota y el próximo aviso la repite
         awake.append("purge")
-    if S.due_weekly(steps, "archive-events", now, int(os.getenv("OPS_WEEKLY_DAY", "6")), int(os.getenv("OPS_WEEKLY_HOUR", "5"))):
+    if S.due_weekly(steps, "archive-events", now, int(os.getenv("OPS_WEEKLY_DAY", "6")), int(os.getenv("OPS_WEEKLY_HOUR", "5")), now_utc):
         run("archive-events", archive_events, "archive-events")
         awake.append("archive-events")
-    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and S.due_weekly(steps, "infra-costs", now, int(os.getenv("OPS_INFRA_WEEKDAY", "6")), int(os.getenv("OPS_INFRA_HOUR", "12"))):
+    if os.getenv("GCP_BILLING_EXPORT_TABLE", "").strip() and S.due_weekly(steps, "infra-costs", now, int(os.getenv("OPS_INFRA_WEEKDAY", "6")), int(os.getenv("OPS_INFRA_HOUR", "12")), now_utc):
         run("infra-costs", import_infra_costs, "infra-costs")
         awake.append("infra-costs")
+    if S.due_weekly(steps, "db-health", now, int(os.getenv("OPS_HEALTH_WEEKDAY", "6")), int(os.getenv("OPS_HEALTH_HOUR", "6")), now_utc):
+        run("db-health", db_health, "db-health")                                  # UNA vez por semana (domingo 6 a. m.): salud de la base y, si hace falta, reinicio del cómputo
+        awake.append("db-health")
     if ran_backup or S.due_every(steps, "check-backups", 6, now_utc):          # solo lee el bucket: no despierta la base
         run("check-backups", check_backups, "check-backups")
     if S.due_every(steps, "offsite-copy", 6, now_utc):                         # OneDrive + bucket; la copia semanal decide sola si toca
@@ -490,7 +500,7 @@ def retry_face_jobs() -> str:
 
 
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "archive-events": archive_events, "check-backups": check_backups, "offsite-copy": offsite_copy, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs, "infra-costs-import": import_infra_costs}
+         "archive-events": archive_events, "check-backups": check_backups, "offsite-copy": offsite_copy, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs, "infra-costs-import": import_infra_costs, "db-health": db_health}
 
 
 def main(task: str) -> int:
