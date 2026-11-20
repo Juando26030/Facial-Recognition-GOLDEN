@@ -384,3 +384,16 @@ def test_login_never_goes_to_another_site_or_to_login_or_api(client, factory):
         client.cookies.clear()
         r = client.post("/login", data={"username": "adm", "password": PASSWORD, "next": evil})
         assert r.status_code == 302 and r.headers["location"] == "/"
+
+
+def test_general_minutes_are_read_from_the_database_when_the_memory_is_empty(db):
+    from app.models import AppSetting
+    db.add(AppSetting(key=idle.SETTING_KEY, value="45"))
+    db.commit()
+    idle._general_cache.clear()
+    assert idle.general_is_stale() is True
+    assert idle.configured_minutes() == 45 and idle.general_is_stale() is False
+    idle._general_cache.clear()
+    db.get(AppSetting, idle.SETTING_KEY).value = "basura"
+    db.commit()
+    assert idle.configured_minutes() == 10          # un valor ilegible vuelve al de siempre
