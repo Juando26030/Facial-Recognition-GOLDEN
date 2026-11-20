@@ -201,41 +201,55 @@ def reset_runs(db) -> dict:
     return out
 
 
-def delete_all(db) -> dict:
-    """Borra TODO lo de la prueba de carga: el evento LOAD-STG con sus filas dependientes (cualquier tabla con `event_id` o `form_id`), el formulario, las personas
-    sintéticas del cliente `carga-staging`, la cuenta `carga_dig` y el cliente. Nada más (todo se busca por el evento y el cliente de la prueba)."""
+def _delete_event(db, ev, counts) -> None:
+    """Borra un evento con sus filas dependientes (cualquier tabla con `event_id` o `form_id`) y su formulario. Las tablas `audit_*` son inmutables: no se tocan y, si el evento tiene filas ahí, se detiene sin borrar nada."""
     from app.models import Base
-    ev = _load_event(db)
-    counts = {}
-    if ev:
-        form_ids = [f.id for f in db.query(WebForm).filter_by(event_id=ev.id)]
-        for table in reversed(Base.metadata.sorted_tables):
-            if table.name in ("events", "web_forms", "users", "tenants", "staff_users"):
-                continue
-            if table.name.startswith("audit_"):   # registros inmutables (solo INSERT; el rol de la app no puede borrarlos): no se tocan; si el evento tiene filas ahí, se detiene sin borrar nada
-                if "event_id" in table.c:
-                    n = db.execute(text(f'SELECT count(*) FROM "{table.name}" WHERE event_id = :e'), {"e": ev.id}).scalar()
-                    if n:
-                        db.rollback()
-                        sys.exit(f"El evento de carga tiene {n} fila(s) en {table.name} (inmutable): no se borra nada.")
-                continue
-            conds = []
-            if "form_id" in table.c and form_ids:
-                conds.append(table.c.form_id.in_(form_ids))
+    form_ids = [f.id for f in db.query(WebForm).filter_by(event_id=ev.id)]
+    for table in reversed(Base.metadata.sorted_tables):
+        if table.name in ("events", "web_forms", "users", "tenants", "staff_users"):
+            continue
+        if table.name.startswith("audit_"):
             if "event_id" in table.c:
-                conds.append(table.c.event_id == ev.id)
-            for cond in conds:
-                n = db.execute(table.delete().where(cond)).rowcount
+                n = db.execute(text(f'SELECT count(*) FROM "{table.name}" WHERE event_id = :e'), {"e": ev.id}).scalar()
                 if n:
-                    counts[table.name] = counts.get(table.name, 0) + n
-        db.execute(text("DELETE FROM web_forms WHERE event_id = :e"), {"e": ev.id})
-        db.execute(text("DELETE FROM events WHERE id = :e"), {"e": ev.id})
-    # Ingresos de las personas sintéticas que NO son del evento de carga (corridas anteriores): bloquean el borrado de las personas por la llave foránea.
+                    db.rollback()
+                    sys.exit(f"El evento de carga tiene {n} fila(s) en {table.name} (inmutable): no se borra nada.")
+            continue
+        conds = []
+        if "form_id" in table.c and form_ids:
+            conds.append(table.c.form_id.in_(form_ids))
+        if "event_id" in table.c:
+            conds.append(table.c.event_id == ev.id)
+        for cond in conds:
+            n = db.execute(table.delete().where(cond)).rowcount
+            if n:
+                counts[table.name] = counts.get(table.name, 0) + n
+    db.execute(text("DELETE FROM web_forms WHERE event_id = :e"), {"e": ev.id})
+    db.execute(text("DELETE FROM events WHERE id = :e"), {"e": ev.id})
+
+
+def delete_all(db) -> dict:
+    """Borra lo de la prueba de carga. Cliente sintético `carga-staging` (100 % de pruebas): TODOS sus eventos con dependientes, sus personas, la cuenta `carga_dig` y el cliente. Cliente existente (`--tenant`): SOLO el evento LOAD-STG,
+    las personas sintéticas («Persona», entidad «Sintética», cédula 9xxxxxxxxx) y la cuenta `carga_dig`; el cliente y todo lo demás de él se quedan."""
+    from app.models import Base
+    counts = {}
     if custom_tenant():
-        counts["access_logs_orphan"] = db.execute(text("DELETE FROM access_logs WHERE tenant_id = :t AND user_id ~ '^9[0-9]{9}$'"), {"t": ACTIVE["tenant"]}).rowcount
+        ev = _load_event(db)
+        events = [ev] if ev else []
     else:
-        counts["access_logs_orphan"] = db.execute(text("DELETE FROM access_logs WHERE tenant_id = :t"), {"t": TENANT}).rowcount
-    if custom_tenant():          # cliente existente: SOLO lo sintético; el cliente y todo lo demás de él se quedan
+        events = db.query(Event).filter_by(tenant_id=TENANT).all()
+    for ev in events:
+        _delete_event(db, ev, counts)
+    # Filas que cuelgan de las personas sintéticas sin pertenecer a un evento (corridas anteriores): bloquean el borrado de las personas por la llave foránea.
+    synthetic = "tenant_id = :t" if not custom_tenant() else "tenant_id = :t AND user_id ~ '^9[0-9]{9}$'"
+    for table in reversed(Base.metadata.sorted_tables):
+        if table.name in ("users", "tenants", "staff_users") or table.name.startswith("audit_"):
+            continue
+        if "user_id" in table.c and "tenant_id" in table.c:
+            n = db.execute(text(f'DELETE FROM "{table.name}" WHERE {synthetic}'), {"t": ACTIVE["tenant"]}).rowcount
+            if n:
+                counts[table.name] = counts.get(table.name, 0) + n
+    if custom_tenant():
         counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t AND first_name = 'Persona' AND entity = 'Sintética' AND id ~ '^9[0-9]{9}$'"), {"t": ACTIVE["tenant"]}).rowcount
     else:
         counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": TENANT}).rowcount
