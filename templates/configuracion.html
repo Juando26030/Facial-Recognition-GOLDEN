@@ -141,12 +141,13 @@
           {% if is_admin_plus %}
           <div class="gw-group__item" data-pnodirty id="serverKeysCard">
             <div class="gw-item-head"><h4>Llaves de producto</h4></div>
-            <p class="gw-hint">Cada servidor local necesita su propia llave: el instalador la pide al instalar. Es de un solo uso y vence a los <span id="skDays">7</span> días si no se usa. Al deshabilitarla, el servidor asociado deja de funcionar apenas vuelva a tener internet, y no se puede reutilizar.</p>
+            <p class="gw-hint">Cada servidor local necesita su propia llave: el instalador la pide al instalar. Es de un solo uso y vence a los <span id="skDays">7</span> días si no se usa. Al deshabilitarla, el servidor asociado deja de funcionar apenas vuelva a tener internet, y no se puede reutilizar. Las deshabilitadas se pueden eliminar de la lista.</p>
             <div class="gw-form-row">
               <input type="text" class="gw-input" id="skLabel" maxlength="60" placeholder="Para quién o qué equipo es (opcional)" aria-label="Nombre de la llave">
               <button type="button" class="gw-btn gw-btn--primary" id="skCreate">Crear llave</button>
             </div>
             <div class="gw-chips" id="skSummary" aria-live="polite"></div>
+            <div class="gw-form-row"><button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" id="skPurge" hidden>Eliminar las deshabilitadas</button></div>
             <div class="gw-table-wrap"><table class="gw-table gw-table-cards"><thead><tr><th>Llave</th><th>Nombre</th><th>Estado</th><th>Servidor</th><th>Creada</th><th></th></tr></thead><tbody id="skRows"><tr><td colspan="6">Cargando…</td></tr></tbody></table></div>
           </div>
           {% endif %}

@@ -100,9 +100,45 @@ def disable_key(key_id: int, db: Session = Depends(get_db), staff: StaffUser = D
         node = db.get(LocalNode, k.node_id) if k.node_id else None
         if node is not None and node.revoked_at is None:
             node.revoked_at = now
+        if node is not None and node.disabled_at is None:
+            node.disabled_at = now                    # queda en el nodo: si después se elimina la llave, el servidor sigue recibiendo «deshabilitado»
         _audit(db, staff, "server_key_disable", k, "Llave deshabilitada" + (f"; servidor «{node.name}» revocado" if node is not None else " (no tenía servidor)"))
         db.commit()
     return _row(k)
+
+
+def _delete_disabled(db: Session, staff, k: LocalServerKey) -> None:
+    node = db.get(LocalNode, k.node_id) if k.node_id else None
+    if node is not None:                              # por si la llave se deshabilitó antes de 0159: el apagado del servidor no depende de que la llave exista
+        now = utcnow()
+        node.revoked_at = node.revoked_at or now
+        node.disabled_at = node.disabled_at or k.disabled_at or now
+    _audit(db, staff, "server_key_delete", k, "Llave deshabilitada eliminada de la lista" + (f" (servidor «{node.name}» sigue deshabilitado)" if node is not None else ""))
+    db.delete(k)
+
+
+@router.delete("/server-keys/{key_id}")
+def delete_key(key_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Elimina de la lista una llave YA deshabilitada (no ocupa espacio ni estorba). Solo deshabilitadas: una activa o sin usar primero se deshabilita. El servidor que la usaba sigue
+    deshabilitado (queda marcado en el propio nodo) y la auditoría conserva el registro."""
+    k = db.query(LocalServerKey).filter(LocalServerKey.id == key_id).with_for_update().first()
+    if k is None:
+        raise HTTPException(status_code=404, detail="Llave no encontrada")
+    if k.disabled_at is None:
+        raise HTTPException(status_code=409, detail="Solo se pueden eliminar llaves deshabilitadas. Deshabilítala primero.")
+    _delete_disabled(db, staff, k)
+    db.commit()
+    return {"ok": True, "deleted": 1}
+
+
+@router.post("/server-keys/delete-disabled")
+def delete_all_disabled(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Elimina de una vez TODAS las llaves deshabilitadas (mismas reglas que eliminar una)."""
+    rows = db.query(LocalServerKey).filter(LocalServerKey.disabled_at.isnot(None)).with_for_update().all()
+    for k in rows:
+        _delete_disabled(db, staff, k)
+    db.commit()
+    return {"ok": True, "deleted": len(rows)}
 
 
 # ------------------------------------------------------------------------------------------------ instalador (sin sesión)

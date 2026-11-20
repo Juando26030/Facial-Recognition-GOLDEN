@@ -54,6 +54,8 @@ def is_disabled(db: Session, token: Optional[str]) -> bool:
     node = db.query(LocalNode).filter(LocalNode.token_hash == hash_token(token)).first()
     if node is None or node.revoked_at is None:
         return False
+    if node.disabled_at is not None:                  # 0159: queda en el nodo aunque la llave deshabilitada se haya eliminado de la lista
+        return True
     from app.models import LocalServerKey
     return db.query(LocalServerKey.id).filter(LocalServerKey.node_id == node.id, LocalServerKey.disabled_at.isnot(None)).first() is not None
 

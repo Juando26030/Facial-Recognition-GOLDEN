@@ -1,11 +1,13 @@
 /* Tarjeta «Llaves de producto» de Configuración › Servidor local (solo administradores): crear, ver y deshabilitar las llaves que pide el instalador del servidor local.
-   Sin atributos de evento en línea: delegación sobre el cuerpo de la tabla. La llave es de un solo uso; deshabilitar es definitivo. */
+   Sin atributos de evento en línea: delegación sobre el cuerpo de la tabla. La llave es de un solo uso; deshabilitar es definitivo. Las deshabilitadas se pueden ELIMINAR de la lista (una o todas):
+   el servidor que la usaba sigue deshabilitado (queda marcado en la nube) y la auditoría conserva el registro. */
 (function () {
   const rows = document.getElementById('skRows');
   if (!rows) return;
   const labelIn = document.getElementById('skLabel');
   const createBtn = document.getElementById('skCreate');
   const summary = document.getElementById('skSummary');
+  const purgeBtn = document.getElementById('skPurge');
   const BADGE = { active: 'ok', unused: 'info', claimed: 'info', expired: 'warn', disabled: 'err' };
   const FRESH = { igual: 'Al día', desactualizada: 'Desactualizado', distinta_version: 'Versión distinta', adelantada: 'Más nuevo que producción', desconocida: 'Sin dato' };
   let started = false;
@@ -38,6 +40,7 @@
     chip(`${c.unused + c.claimed} sin usar`, 'info');
     chip(`${c.disabled} deshabilitadas`, 'info');
     chip(`${c.expired} vencidas`, c.expired ? 'warn' : 'info');
+    if (purgeBtn) { purgeBtn.hidden = !c.disabled; purgeBtn.textContent = `Eliminar las ${c.disabled} deshabilitadas`; }
     if (!d.keys.length) {
       const tr = document.createElement('tr');
       const td = cell(tr, 'Todavía no hay llaves. Crea la primera para instalar un servidor.');
@@ -74,6 +77,11 @@
         btn.type = 'button'; btn.className = 'gw-btn gw-btn--danger gw-btn--sm'; btn.dataset.disable = k.id; btn.dataset.code = k.code;
         btn.textContent = 'Deshabilitar';
         act.appendChild(btn);
+      } else {
+        const del = document.createElement('button');
+        del.type = 'button'; del.className = 'gw-btn gw-btn--ghost gw-btn--sm'; del.dataset.delete = k.id; del.dataset.code = k.code;
+        del.textContent = 'Eliminar';
+        act.appendChild(del);
       }
       rows.appendChild(tr);
     });
@@ -96,6 +104,15 @@
   });
 
   rows.addEventListener('click', async (e) => {
+    const del = e.target.closest('button[data-delete]');
+    if (del) {
+      const ok = await showConfirm(`¿Eliminar de la lista la llave ${del.dataset.code}? Ya está deshabilitada: el servidor que la usaba sigue sin funcionar y queda el registro en la auditoría.`, { confirmLabel: 'Eliminar' });
+      if (!ok) return;
+      del.disabled = true;
+      try { await api(`/api/server-keys/${encodeURIComponent(del.dataset.delete)}`, 'DELETE'); if (window.showToast) showToast('Llave eliminada', 'success'); await load(); }
+      catch (err) { del.disabled = false; if (window.showToast) showToast(err.message, 'error'); }
+      return;
+    }
     const btn = e.target.closest('button[data-disable]');
     if (!btn) return;
     const ok = await showConfirm(`¿Deshabilitar la llave ${btn.dataset.code}? El servidor que la usa dejará de funcionar apenas vuelva a tener internet y la llave no se podrá reutilizar. Para instalar de nuevo habrá que crear otra.`, { confirmLabel: 'Deshabilitar' });
@@ -103,6 +120,15 @@
     btn.disabled = true;
     try { await api(`/api/server-keys/${encodeURIComponent(btn.dataset.disable)}/disable`, 'POST', {}); if (window.showToast) showToast('Llave deshabilitada', 'success'); await load(); }
     catch (err) { btn.disabled = false; if (window.showToast) showToast(err.message, 'error'); }
+  });
+
+  if (purgeBtn) purgeBtn.addEventListener('click', async () => {
+    const ok = await showConfirm('¿Eliminar de la lista TODAS las llaves deshabilitadas? Los servidores que las usaban siguen sin funcionar y queda el registro en la auditoría.', { confirmLabel: 'Eliminar todas' });
+    if (!ok) return;
+    purgeBtn.disabled = true;
+    try { const r = await api('/api/server-keys/delete-disabled', 'POST', {}); if (window.showToast) showToast(`${r.deleted} llave(s) eliminada(s)`, 'success'); await load(); }
+    catch (err) { if (window.showToast) showToast(err.message, 'error'); }
+    finally { purgeBtn.disabled = false; }
   });
 
   const tab = document.getElementById('tab_servidor');

@@ -1219,6 +1219,7 @@ class LocalNode(Base):
     revoked_at = Column(DateTime, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
     last_version = Column(String(80), nullable=True)      # commit/esquema que reportó la última vez
+    disabled_at = Column(DateTime, nullable=True)          # 0159: su llave fue DESHABILITADA (queda aquí aunque la llave se elimine de la lista: el servidor sigue recibiendo «deshabilitado»)
 
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
 
