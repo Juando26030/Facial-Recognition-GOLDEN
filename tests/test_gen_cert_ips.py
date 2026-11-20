@@ -44,3 +44,47 @@ def test_route_metrics_is_wired_so_the_router_cable_does_not_cut_internet():
     cfg = ps("config.ps1")
     assert "function Update-RouteMetrics" in cfg and "IPv4Connectivity" in cfg and "-InterfaceMetric $mark" in cfg and "-AutomaticMetric Enabled" in cfg          # baja solo la red SIN internet y la devuelve a automático
     assert "Update-RouteMetrics" in ps("updater-service.ps1") and "Update-RouteMetrics" in ps("prereq.ps1") and "fMinimizeConnections" in ps("prereq.ps1")
+
+
+def test_tls_real_con_verificacion_estricta_de_python(tmp_path):
+    """Python 3.13 verifica en modo estricto y rechazaba el certificado («Missing Authority Key Identifier»): un cliente con la autoridad propia debe conectar."""
+    import socket
+    import ssl
+    import threading
+    gen_cert.make(tmp_path, "SERVIDOR", ["192.168.1.45"])
+    srv = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    srv.load_cert_chain(tmp_path / "server.pem", tmp_path / "server.key")
+    lsock = socket.socket()
+    lsock.bind(("127.0.0.1", 0))
+    lsock.listen(1)
+    port = lsock.getsockname()[1]
+
+    def serve():
+        conn, _ = lsock.accept()
+        try:
+            with srv.wrap_socket(conn, server_side=True) as s:
+                s.recv(10)
+        except ssl.SSLError:
+            pass
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    cli = ssl.create_default_context(cafile=str(tmp_path / "ca.pem"))
+    assert cli.verify_flags & ssl.VERIFY_X509_STRICT
+    with socket.create_connection(("127.0.0.1", port)) as raw, cli.wrap_socket(raw, server_hostname="localhost") as s:
+        s.sendall(b"hola")
+    t.join(5)
+    lsock.close()
+    assert not gen_cert.lacks_key_ids(tmp_path / "server.pem")
+
+
+def test_certificado_viejo_sin_aki_se_marca_para_volver_a_firmar(tmp_path):
+    from cryptography import x509 as _x
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import datetime
+    k = ec.generate_private_key(ec.SECP256R1())
+    n = _x.Name([_x.NameAttribute(_x.oid.NameOID.COMMON_NAME, "viejo")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    c = _x.CertificateBuilder().subject_name(n).issuer_name(n).public_key(k.public_key()).serial_number(1).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=5)).sign(k, hashes.SHA256())
+    (tmp_path / "server.pem").write_bytes(c.public_bytes(serialization.Encoding.PEM))
+    assert gen_cert.lacks_key_ids(tmp_path / "server.pem")

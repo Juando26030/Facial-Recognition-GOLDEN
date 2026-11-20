@@ -186,8 +186,9 @@ foreach ($svc in @($SvcPg, $SvcApp, $SvcUpd)) {
 }
 $listening = $false; $healthy = $false; $healthDetail = 'sin respuesta'
 # La comprobación se hace con el Python de la app (OpenSSL), igual que un navegador: valida el certificado contra NUESTRA autoridad (ca.pem) con el nombre «localhost».
+# Sin el modo «estricto» de Python 3.13 (los navegadores y celulares no lo usan): las autoridades creadas antes del 20-nov-2026 no traen «Subject Key Identifier» y se rechazarían; la cadena y el nombre SÍ se verifican.
 # No se usa Invoke-WebRequest: Windows PowerShell 5.1 (.NET Framework) fallaba la negociación TLS con uvicorn («error inesperado de envío») aunque la app estaba bien.
-$probe = "import ssl,urllib.request as u; c=ssl.create_default_context(cafile=r'$(Join-Path $CertDir 'ca.pem')'); print(u.urlopen('https://localhost:$AppPort/health',context=c,timeout=10).status)"
+$probe = "import ssl,urllib.request as u; c=ssl.create_default_context(cafile=r'$(Join-Path $CertDir 'ca.pem')'); c.verify_flags &= ~ssl.VERIFY_X509_STRICT; print(u.urlopen('https://localhost:$AppPort/health',context=c,timeout=10).status)"
 foreach ($i in 1..45) {
     try { $tc = New-Object Net.Sockets.TcpClient; $tc.Connect('127.0.0.1', $AppPort); $tc.Close(); $listening = $true } catch { $healthDetail = 'el puerto aún no responde' }
     if ($listening) {

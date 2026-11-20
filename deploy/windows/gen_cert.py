@@ -91,6 +91,7 @@ def make(folder: Path, host: str, ips: list) -> dict:
                    .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=3650))
                    .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
                    .add_extension(name_constraints(host), critical=True)
+                   .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), critical=False)
                    .add_extension(x509.KeyUsage(digital_signature=True, key_cert_sign=True, crl_sign=True, content_commitment=False, key_encipherment=False, data_encipherment=False, key_agreement=False, encipher_only=False, decipher_only=False), critical=True)
                    .sign(ca_key, hashes.SHA256()))
         ca_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
@@ -105,10 +106,26 @@ def make(folder: Path, host: str, ips: list) -> dict:
             .add_extension(x509.SubjectAlternativeName(san_entries(host, ips)), critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            # Identificadores de llave: Python 3.13+/OpenSSL en modo estricto rechaza un certificado sin «Authority Key Identifier» (la verificación del instalador fallaba así).
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False)
             .sign(ca_key, hashes.SHA256()))
     (folder / "server.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM) + ca_cert.public_bytes(serialization.Encoding.PEM))
     (folder / "server.key").write_bytes(_pem_key(key))
     return {"not_after": cert.not_valid_after_utc.isoformat(), "names": [str(e.value) for e in cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value]}
+
+
+def lacks_key_ids(server_pem: Path) -> bool:
+    """True si el certificado del servidor es de los viejos, sin «Authority Key Identifier» (hay que volver a firmarlo; la autoridad se conserva)."""
+    try:
+        cert = x509.load_pem_x509_certificate(server_pem.read_bytes())
+    except Exception:
+        return False
+    try:
+        cert.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier)
+        return False
+    except x509.ExtensionNotFound:
+        return True
 
 
 def days_left(server_pem: Path) -> int:
@@ -118,7 +135,10 @@ def days_left(server_pem: Path) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--missing":          # python gen_cert.py --missing <server.pem> [ip ...]  → imprime las IP privadas que el certificado no cubre (nada = está al día)
-        print(" ".join(missing_ips(Path(sys.argv[2]), sys.argv[3:])))
+        out = missing_ips(Path(sys.argv[2]), sys.argv[3:])
+        if lacks_key_ids(Path(sys.argv[2])):          # certificado viejo sin identificadores de llave: también hay que volver a firmarlo
+            out.append("(certificado-sin-identificador-de-autoridad)")
+        print(" ".join(out))
         sys.exit(0)
     if len(sys.argv) < 3:
         sys.exit("Uso: python gen_cert.py <carpeta> <nombre_equipo> [ip ...]")

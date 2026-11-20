@@ -121,3 +121,9 @@ def test_la_llave_siempre_se_pide_y_se_reutiliza_la_vinculada():
     assert "ShouldSkipPage" not in iss and "KeyTyped()" in iss and "YA tiene una llave vinculada" in iss
     assert "if (CurStep = ssInstall) and KeyTyped() then" in iss
     assert "$prev['INSTALLATION_ID']" in inst and inst.index("$prev['SERVER_KEY']") < inst.index("& (Join-Path $ScriptsDir 'download-app.ps1')")
+
+
+def test_verificacion_no_usa_el_modo_estricto_de_python():
+    """Las autoridades creadas antes del 20-nov-2026 no traen Subject Key Identifier: el modo estricto de Python 3.13 las rechaza (navegadores y celulares no)."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "c.verify_flags &= ~ssl.VERIFY_X509_STRICT" in inst
