@@ -28,8 +28,18 @@ $env:GOLDEN_SILENT = '1'
 # Sin llave y sin app instalada no hay nada que instalar: se detiene con un mensaje claro.
 $script:Step = 'Descarga de la aplicación'
 $installRequest = Join-Path $ConfigDir 'install-request.json'
+# Sin llave nueva y sin la app (p. ej. se borró la carpeta app\ o una instalación quedó a medias), pero el equipo YA tiene su llave vinculada en local.env: se vuelve a bajar la app con ESA llave
+# y la MISMA identificación de instalación (producción acepta que la misma instalación reclame de nuevo su llave). Así no se pide otra llave ni se falla por «falta la llave».
+$appMain = Join-Path $AppDir 'app\main.py'
+if (-not (Test-Path $installRequest) -and -not (Test-Path $appMain)) {
+    $prev = Read-EnvFile
+    if ("$($prev['SERVER_KEY'])" -match '^GLD-' -and "$($prev['INSTALLATION_ID'])" -match '^[0-9a-f]{32}$') {
+        Write-Utf8NoBom $installRequest (@{ key = "$($prev['SERVER_KEY'])"; installation_id = "$($prev['INSTALLATION_ID'])" } | ConvertTo-Json -Compress)
+        Write-Log 'La aplicación no está en el equipo: se vuelve a bajar con la llave ya vinculada a este servidor'
+    }
+}
 if (Test-Path $installRequest) { & (Join-Path $ScriptsDir 'download-app.ps1'); if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw 'No se pudo descargar la aplicación (ver logs\instalador.log)' } }
-elseif (-not (Test-Path (Join-Path $AppDir 'app\main.py'))) { throw 'Este instalador necesita una llave de producto. Vuelve a ejecutarlo y escríbela cuando la pida (te la da un administrador de Golden).' }
+elseif (-not (Test-Path $appMain)) { throw 'Falta la llave de producto: este equipo no tiene la aplicación ni una llave vinculada. Vuelve a ejecutar el instalador y escribe la llave en la pantalla «Llave de producto» (te la da un administrador de Golden en Configuración › Servidor local).' }
 
 # ---- 0. Permisos de la carpeta (F5-9 A-03). Una carpeta nueva en C:\ hereda «Modificar» para Usuarios autenticados: cualquier cuenta de Windows del equipo podría cambiar
 # los scripts o la app que corren como SYSTEM, o dejar una petición de actualización. Se corta la herencia: SYSTEM y Administradores, control total; Usuarios solo leen y

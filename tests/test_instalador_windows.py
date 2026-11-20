@@ -111,3 +111,13 @@ def test_verificacion_final_usa_python_y_la_autoridad_propia():
     inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
     assert "Invoke-WebRequest -Uri" not in inst.split("VERIFICACIÓN FINAL")[1]          # .NET Framework fallaba el TLS con uvicorn; se comprueba con el Python de la app
     assert "cafile=" in inst and "https://localhost:$AppPort/health" in inst
+
+
+def test_la_llave_siempre_se_pide_y_se_reutiliza_la_vinculada():
+    """Tras varias instalaciones/borrados a medias la página de la llave se saltaba y luego fallaba por «falta la llave»: ahora se muestra siempre
+    (vacía = conservar la vinculada) y, si falta la app pero local.env tiene llave e instalación, se vuelve a bajar con ellas."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8-sig")
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "ShouldSkipPage" not in iss and "KeyTyped()" in iss and "YA tiene una llave vinculada" in iss
+    assert "if (CurStep = ssInstall) and KeyTyped() then" in iss
+    assert "$prev['INSTALLATION_ID']" in inst and inst.index("$prev['SERVER_KEY']") < inst.index("& (Join-Path $ScriptsDir 'download-app.ps1')")

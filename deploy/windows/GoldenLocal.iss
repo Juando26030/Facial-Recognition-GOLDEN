@@ -156,16 +156,28 @@ begin
   Result := True;
 end;
 
+// La página de la llave SIEMPRE se muestra (antes se saltaba si el equipo ya tenía llave y, tras varias instalaciones/borrados a medias, nunca se pedía y luego fallaba por «falta la llave»).
+// Si el equipo ya tiene una llave vinculada, el campo puede quedar vacío y se reutiliza esa; si se escribe una, se usa la nueva.
+var
+  HasKey: Boolean;
+
 procedure InitializeWizard();
+var
+  Sub: String;
 begin
-  KeyPage := CreateInputQueryPage(wpWelcome, 'Llave de producto', 'Escribe la llave de este servidor', 'Te la da un administrador de Golden (Configuración › Servidor local). Es de un solo uso y se ata a este computador. Necesitas internet solo ahora, para bajar la aplicación.');
+  HasKey := AlreadyHasKey();
+  if HasKey then
+    Sub := 'Este equipo YA tiene una llave vinculada: puedes dejar el campo vacío para conservarla, o escribir una llave nueva. Te la da un administrador de Golden (Configuración › Servidor local).'
+  else
+    Sub := 'Te la da un administrador de Golden (Configuración › Servidor local). Es de un solo uso y se ata a este computador. Necesitas internet solo ahora, para bajar la aplicación.';
+  KeyPage := CreateInputQueryPage(wpWelcome, 'Llave de producto', 'Escribe la llave de este servidor', Sub);
   KeyPage.Add('Llave (GLD-XXXX-XXXX-XXXX):', False);
   KeyPage.Edits[0].Text := ExpandConstant('{param:KEY|}');
 end;
 
-function ShouldSkipPage(PageID: Integer): Boolean;
+function KeyTyped(): Boolean;
 begin
-  Result := (KeyPage <> nil) and (PageID = KeyPage.ID) and AlreadyHasKey() and (ExpandConstant('{param:KEY|}') = '');
+  Result := (KeyPage <> nil) and (Trim(KeyPage.Edits[0].Text) <> '');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -173,7 +185,13 @@ begin
   Result := True;
   if (KeyPage <> nil) and (CurPageID = KeyPage.ID) then
   begin
-    if not ValidKey(KeyPage.Edits[0].Text) then
+    if (not KeyTyped()) and HasKey then Exit;          // conserva la llave ya vinculada a este equipo
+    if not KeyTyped() then
+    begin
+      MsgBox('Escribe la llave de producto. Te la da un administrador de Golden en Configuración › Servidor local › Llaves de producto.', mbError, MB_OK);
+      Result := False;
+    end
+    else if not ValidKey(KeyPage.Edits[0].Text) then
     begin
       MsgBox('La llave no tiene el formato correcto. Se ve así: GLD-XXXX-XXXX-XXXX (sin letras O, I ni números 0, 1).', mbError, MB_OK);
       Result := False;
@@ -195,7 +213,7 @@ var
   Dir, Body, ResFile: String;
   Res: AnsiString;
 begin
-  if (CurStep = ssInstall) and (KeyPage <> nil) and (not ShouldSkipPage(KeyPage.ID)) then
+  if (CurStep = ssInstall) and KeyTyped() then
   begin
     Dir := ExpandConstant('{app}\config');
     ForceDirectories(Dir);
