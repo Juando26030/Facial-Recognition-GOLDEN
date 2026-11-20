@@ -52,7 +52,7 @@
 
   $('scanBtn').addEventListener('click', () => {
     if (!window.QrScanner) { toast('El lector no está disponible.', 'error'); return; }
-    QrScanner.open({ title: 'Escanear asistente', cooldownMs: 2500, onCode: (text) => { const x = document.querySelector('.qr-close'); if (x) x.click(); send(text); } });
+    QrScanner.open({ title: 'Escanear asistente', modes: ['qr'], cooldownMs: 2500, onCode: (text) => { const x = document.querySelector('.qr-close'); if (x) x.click(); send(text); } });
   });
   $('cedulaBtn').addEventListener('click', () => {
     const v = $('cedulaIn').value.trim();

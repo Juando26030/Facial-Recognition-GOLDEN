@@ -107,6 +107,7 @@
     if (!window.QrScanner) { showToast('El lector de cámara no está disponible en esta página', 'error'); return; }
     scanner = QrScanner.open({
       title: 'Escanear QR — Almacén',
+      modes: ['qr'],                                   // el MISMO escáner nuevo del Registro (solo QR, sin selector)
       onCode: (text) => { onScan(text); },          // qr.js ya entrega el código limpio (una vCard de Golden se desenvuelve sola)
     });
   }

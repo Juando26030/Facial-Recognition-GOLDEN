@@ -145,6 +145,7 @@
   let scanner = null;
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear QR — Control de Inventario',
+    modes: ['qr'],                                     // el MISMO escáner nuevo del Registro (solo QR, sin selector)
     // Si la cámara lee el QR y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
     onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => { const qr = QrCode.parse(raw); return qr ? byId(qr.cedula, true) : false; })
       .then((found) => { if (found && scanner) scanner.close(); })

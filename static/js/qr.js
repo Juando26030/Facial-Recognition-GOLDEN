@@ -10,7 +10,7 @@
 
    QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, modes, onCedula })
      `formats` (por defecto solo QR; el Registro pide también 'pdf417'). (19-nov-2026: se retiró «Foto del reverso (cédula nueva)»: no funcionó; la cédula nueva se lee en vivo con el modo 'new'.)
-     `modes` (opcional, p. ej. ['old','new','qr']): la ventana muestra un selector «Cédula vieja · Cédula nueva · QR» y se prepara para lo que se elija (el Registro lo usa). 'qr' = el comportamiento de siempre (onCode);
+     `modes` (opcional, p. ej. ['old','new','qr']; con UN solo modo, ['qr'], es la misma ventana nueva sin selector: Inventario, Almacén y Expositores): la ventana muestra un selector «Cédula vieja · Cédula nueva · QR» y se prepara para lo que se elija (el Registro lo usa). 'qr' = el comportamiento de siempre (onCode);
      'old' = código de barras PDF417 de la cédula vieja y 'new' = las 3 líneas de la cédula nueva: ambos con los lectores de static/js/cedula-readers.js (se cargan al elegirlos) y entregan `onCedula(datos, 'old'|'new')`
      con { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento, … }. Sin `modes` todo funciona exactamente como antes.
      Abre la cámara del dispositivo (celular, tablet o computador) y lee QR en vivo. Usa BarcodeDetector si el
@@ -167,7 +167,7 @@
     box.className = 'gw-modal gw-modal--dialog gw-cam';
     const MODE_LABEL = { old: 'Cédula vieja', new: 'Cédula nueva', qr: 'QR' };
     const modes = Array.isArray(opts.modes) ? opts.modes.filter((m) => MODE_LABEL[m]) : [];
-    const modesHtml = modes.length ? `<div class="gw-segment gw-cam__modes" role="group" aria-label="¿Qué vas a escanear?">${modes.map((m) => `<button type="button" class="gw-segment__opt" data-mode="${m}" aria-pressed="false">${MODE_LABEL[m]}</button>`).join('')}</div><canvas hidden></canvas>` : '';
+    const modesHtml = modes.length > 1 ? `<div class="gw-segment gw-cam__modes" role="group" aria-label="¿Qué vas a escanear?">${modes.map((m) => `<button type="button" class="gw-segment__opt" data-mode="${m}" aria-pressed="false">${MODE_LABEL[m]}</button>`).join('')}</div><canvas hidden></canvas>` : (modes.length ? '<canvas hidden></canvas>' : '');
     const videoHtml = modes.length ? '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas class="gw-cam__overlay" aria-hidden="true"></canvas></div>'
       : '<video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas hidden></canvas>';
     box.innerHTML = `
@@ -299,7 +299,7 @@
       const my = ++epoch;
       stopQr(); stopReader(); mode = m;
       box.querySelectorAll('.gw-cam__modes [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
-      try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* sin almacenamiento: no se recuerda */ }
+      if (modes.length > 1) { try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* sin almacenamiento: no se recuerda */ } }      // con un solo modo (Inventario, Almacén, Expositor) no se toca lo recordado por el Registro
       const isQr = m === 'qr';
       if (overlayCv) overlayCv.hidden = isQr;
       if (isQr) { status.classList.remove('gw-cam__status--err'); status.textContent = qrMsg(); await start(); } else await startCedula(m, my);
