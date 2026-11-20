@@ -3,7 +3,7 @@ El servidor corre con varios procesos: solo el que vinculó tiene esas claves en
 import os
 import re
 
-KEYS = ("NODE_TOKEN", "CLOUD_BASE_URL", "NODE_NAME")
+KEYS = ("NODE_TOKEN", "CLOUD_BASE_URL", "NODE_NAME", "SERVER_KEY", "INSTALLATION_ID")
 
 
 def env_file() -> str:

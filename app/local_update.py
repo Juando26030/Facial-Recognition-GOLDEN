@@ -127,7 +127,7 @@ def fetch_manifest(timeout: float = versioning.FETCH_TIMEOUT) -> Optional[dict]:
         return None
     try:
         from app.cloud_client import open_no_redirect
-        with open_no_redirect(urllib.request.Request(base + "/api/ops/update-manifest", headers={"Accept": "application/json"}), timeout=timeout) as resp:      # F5-9 A-10: sin redirecciones
+        with open_no_redirect(urllib.request.Request(base + "/api/ops/update-manifest", headers={"Accept": "application/json", "X-Node-Token": os.getenv("NODE_TOKEN", "").strip()}), timeout=timeout) as resp:      # F5-9 A-10: sin redirecciones
             data = json.loads(resp.read(20000).decode("utf-8"))
         return data if isinstance(data, dict) else None
     except (urllib.error.URLError, OSError, ValueError):

@@ -58,6 +58,9 @@ def status(key, now) -> str:
     return "expired" if now > key.expires_at else "unused"
 
 
+DISABLED_DETAIL = "Servidor deshabilitado: su llave de producto fue deshabilitada por un administrador."          # el servidor local reconoce ESTE texto exacto (403) y se bloquea
+
+
 MSG = {
     "format": "La llave no tiene el formato correcto. Se ve así: GLD-XXXX-XXXX-XXXX.",
     "unknown": "Esa llave no existe. Revisa que esté bien escrita.",

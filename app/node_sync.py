@@ -79,6 +79,8 @@ def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
             detail = json.loads(e.read(5000).decode("utf-8")).get("detail")
         except (ValueError, OSError):
             detail = None
+        from app import server_lock
+        server_lock.note_cloud_error(e.code, detail)
         raise SyncError(str(detail)[:200] if isinstance(detail, str) else f"La nube respondió {e.code}")
     except (urllib.error.URLError, OSError, ValueError):
         raise SyncError("Sin conexión con la nube")
@@ -345,6 +347,10 @@ def _loop() -> None:
     stop = _thread["stop"]
     stop.wait(60)                                         # deja arrancar la aplicación
     while not stop.is_set():
+        try:
+            cloud_ping()                                  # llave de producto: si la deshabilitaron, la nube responde 403 y este servidor se cierra (app/server_lock.py)
+        except Exception:                                 # noqa: BLE001 — sin internet no pasa nada: sigue trabajando
+            log.debug("ping a la nube falló", exc_info=True)
         try:
             with SessionLocal() as db:
                 upload_all(db)

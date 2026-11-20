@@ -16,6 +16,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app import server_keys
 from app.database import get_db
 from app.models import LocalNode, StaffUser
 from app.timeutil import utcnow
@@ -42,7 +43,7 @@ def find_node(db: Session, token: Optional[str]) -> Optional[LocalNode]:
     return node if node is not None and node.revoked_at is None else None
 
 
-DISABLED_DETAIL = "Servidor deshabilitado: su llave de producto fue deshabilitada por un administrador."          # el servidor local reconoce ESTE texto exacto (403) y se bloquea
+DISABLED_DETAIL = server_keys.DISABLED_DETAIL
 
 
 def is_disabled(db: Session, token: Optional[str]) -> bool:

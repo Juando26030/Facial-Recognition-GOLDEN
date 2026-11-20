@@ -230,8 +230,12 @@ _CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https
 @app.middleware("http")
 async def local_catalog_readonly(request, call_next):
     """Servidor local (LOCAL_SERVER=1): el catálogo de inventario no se edita aquí (se cambia en internet y llega solo)."""
-    from app import localmode
+    from app import localmode, server_lock
     if localmode.is_local_server():
+        if server_lock.is_locked() and not request.url.path.startswith(("/static", "/health")):          # llave de producto deshabilitada: la aplicación queda cerrada
+            if request.url.path.startswith("/api/") or "application/json" in request.headers.get("accept", ""):
+                return JSONResponse(status_code=403, content={"detail": server_lock.LOCKED_MSG})
+            return HTMLResponse(f"<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Servidor deshabilitado</title><body style='font-family:system-ui;max-width:34rem;margin:15vh auto;padding:0 1rem'><h1>Servidor deshabilitado</h1><p>{server_lock.LOCKED_MSG}</p></body></html>", status_code=403)
         if localmode.is_catalog_write(request.method, request.url.path):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
         if localmode.is_face_call(request.method, request.url.path):

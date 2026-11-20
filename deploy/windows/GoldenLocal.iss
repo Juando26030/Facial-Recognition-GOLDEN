@@ -1,4 +1,5 @@
-; Instalador del servidor local (Fase 6): UN solo archivo, doble clic, sin comandos. Se compila con Inno Setup 6 (build_installer.ps1). Lleva TODO: la app, Python, PostgreSQL y las herramientas.
+; Instalador del servidor local (Fase 6): UN solo archivo, doble clic, sin comandos. Se compila con Inno Setup 6 (build_installer.ps1). Lleva Python, PostgreSQL y las herramientas, pero NO el código de la app:
+; (20-nov-2026) pide una LLAVE DE PRODUCTO (GLD-XXXX-XXXX-XXXX, de un solo uso, la crea un administrador en Configuración > Servidor local) y con ella baja la app de producción (scripts\download-app.ps1).
 ; Instala en C:\GoldenLocal y corre scripts\install.ps1 (servicios, base, certificados, energía). Pide permisos de administrador una sola vez.
 #define AppVersion GetEnv("GOLDEN_LOCAL_VERSION")
 #if AppVersion == ""
@@ -39,7 +40,6 @@ Name: "{app}\backups"; Flags: uninsneveruninstall
 Name: "{app}\config"; Flags: uninsneveruninstall
 
 [Files]
-Source: "..\..\build\windows\payload\app\*"; DestDir: "{app}\app"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\..\build\windows\payload\python\*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\..\build\windows\payload\pgsql\*"; DestDir: "{app}\pgsql"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\..\build\windows\payload\tools\*"; DestDir: "{app}\tools"; Flags: recursesubdirs createallsubdirs ignoreversion
@@ -116,4 +116,95 @@ begin
       'Lo recomendable es CANCELAR y descargar el instalador más reciente (o dejar que Golden Local se actualice solo desde «Actualizar ahora»).' + #13#10#13#10 + '¿Instalar de todos modos?',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   end;
+end;
+
+// ---------------------------------------------------------------------------------------------- llave de producto
+var
+  KeyPage: TInputQueryWizardPage;
+  InstallId: String;
+
+function NewInstallId(): String;
+var
+  G: String;
+begin
+  G := CreateGuid() + CreateGuid();                    // 2 GUID -> 64 caracteres hexadecimales con llaves y guiones
+  StringChangeEx(G, '{', '', True); StringChangeEx(G, '}', '', True); StringChangeEx(G, '-', '', True);
+  Result := Lowercase(Copy(G, 1, 32));
+end;
+
+function EnvFlagOn(const Name: String): Boolean;
+var
+  S: AnsiString;
+begin
+  Result := False;
+  if LoadStringFromFile('C:\GoldenLocal\config\local.env', S) then Result := (Pos(#10 + Name + '=1', #10 + String(S)) > 0);
+end;
+
+function AlreadyHasKey(): Boolean;
+var
+  S: AnsiString;
+begin
+  Result := False;
+  if (not FileExists('C:\GoldenLocal\app\app\main.py')) then Exit;
+  if LoadStringFromFile('C:\GoldenLocal\config\local.env', S) then
+    Result := (Pos(#10 + 'SERVER_KEY=GLD-', #10 + String(S)) > 0) and (not EnvFlagOn('SERVER_DISABLED'));
+end;
+
+function ValidKey(K: String): Boolean;
+var
+  I: Integer;
+  C: String;
+begin
+  Result := False;
+  K := Uppercase(Trim(K));
+  if (Length(K) <> 18) or (Copy(K, 1, 4) <> 'GLD-') or (K[9] <> '-') or (K[14] <> '-') then Exit;
+  for I := 5 to 18 do
+  begin
+    if (I = 9) or (I = 14) then Continue;
+    C := Copy(K, I, 1);
+    if Pos(C, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789') = 0 then Exit;
+  end;
+  Result := True;
+end;
+
+procedure InitializeWizard();
+begin
+  KeyPage := CreateInputQueryPage(wpWelcome, 'Llave de producto', 'Escribe la llave de este servidor', 'Te la da un administrador de Golden (Configuración › Servidor local). Es de un solo uso y se ata a este computador. Necesitas internet solo ahora, para bajar la aplicación.');
+  KeyPage.Add('Llave (GLD-XXXX-XXXX-XXXX):', False);
+  KeyPage.Edits[0].Text := ExpandConstant('{param:KEY|}');
+  KeyPage.Edits[0].CharCase := ecUpperCase;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (KeyPage <> nil) and (PageID = KeyPage.ID) and AlreadyHasKey() and (ExpandConstant('{param:KEY|}') = '');
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (KeyPage <> nil) and (CurPageID = KeyPage.ID) then
+  begin
+    if not ValidKey(KeyPage.Edits[0].Text) then
+    begin
+      MsgBox('La llave no tiene el formato correcto. Se ve así: GLD-XXXX-XXXX-XXXX (sin letras O, I ni números 0, 1).', mbError, MB_OK);
+      Result := False;
+    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Dir, Body: String;
+begin
+  if (CurStep = ssInstall) and (KeyPage <> nil) and (not ShouldSkipPage(KeyPage.ID)) then
+  begin
+    Dir := ExpandConstant('{app}\config');
+    ForceDirectories(Dir);
+    InstallId := NewInstallId();
+    Body := '{"key":"' + Uppercase(Trim(KeyPage.Edits[0].Text)) + '","installation_id":"' + InstallId + '"}';
+    SaveStringToFile(Dir + '\install-request.json', Body, False);
+  end;
+  if (CurStep = ssDone) and (not WizardSilent) and (not FileExists(ExpandConstant('{app}\app\app\main.py'))) then
+    MsgBox('La instalación no se completó: la aplicación no se pudo descargar (llave no válida, ya usada o vencida, o sin internet). El detalle quedó en C:\GoldenLocal\logs\instalador.log. Pide una llave nueva a un administrador y vuelve a ejecutar el instalador.', mbError, MB_OK);
 end;

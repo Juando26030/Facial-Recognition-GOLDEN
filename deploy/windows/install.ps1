@@ -14,6 +14,12 @@ foreach ($d in @($ConfigDir, $DataDir, $FilesDir, $UpdateDir, $BackupDir, $LogDi
 $env:GOLDEN_SILENT = '1'
 & (Join-Path $ScriptsDir 'prereq.ps1'); if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw 'Los requisitos de Windows no se cumplieron (ver logs\instalador.log)' }
 
+# ---- 0a. Instalador liviano (20-nov-2026): el .exe no trae el código de la app; si el asistente dejó una llave de producto, se reclama y se baja la aplicación (scripts\download-app.ps1).
+# Sin llave y sin app instalada no hay nada que instalar: se detiene con un mensaje claro.
+$installRequest = Join-Path $ConfigDir 'install-request.json'
+if (Test-Path $installRequest) { & (Join-Path $ScriptsDir 'download-app.ps1'); if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw 'No se pudo descargar la aplicación (ver logs\instalador.log)' } }
+elseif (-not (Test-Path (Join-Path $AppDir 'app\main.py'))) { throw 'Este instalador necesita una llave de producto. Vuelve a ejecutarlo y escríbela cuando la pida (te la da un administrador de Golden).' }
+
 # ---- 0. Permisos de la carpeta (F5-9 A-03). Una carpeta nueva en C:\ hereda «Modificar» para Usuarios autenticados: cualquier cuenta de Windows del equipo podría cambiar
 # los scripts o la app que corren como SYSTEM, o dejar una petición de actualización. Se corta la herencia: SYSTEM y Administradores, control total; Usuarios solo leen y
 # ejecutan los programas (app, python, pgsql, tools, scripts) y la carpeta de certificados (el .cer para los celulares; las llaves tienen sus propios permisos).
@@ -45,6 +51,16 @@ if (-not (Test-Path $EnvFile)) {
     $dbpw = (Read-EnvFile)['LOCAL_DB_PASSWORD']
     Set-EnvKey 'DATABASE_URL' "postgresql://golden:$dbpw@127.0.0.1:$PgPort/golden"
     Write-Log 'Configuración creada (config\local.env)'
+}
+# Llave de producto: queda en local.env como SERVER_KEY (es el ID del servidor) junto con la identificación de esta instalación. Una llave DISTINTA a la anterior (reinstalar en un equipo deshabilitado) limpia el bloqueo
+# y el vínculo viejo para que se vuelva a vincular con la llave nueva.
+if (Test-Path $installRequest) {
+    $rq = Get-Content $installRequest -Raw -Encoding UTF8 | ConvertFrom-Json
+    $before = Read-EnvFile
+    if ("$($before['SERVER_KEY'])" -ne "$($rq.key)") { Set-EnvKey 'NODE_TOKEN' ''; Set-EnvKey 'SERVER_DISABLED' '' }
+    Set-EnvKey 'SERVER_KEY' "$($rq.key)"
+    Set-EnvKey 'INSTALLATION_ID' "$($rq.installation_id)"
+    Remove-Item $installRequest -Force
 }
 Protect-File $EnvFile
 $cfg = Read-EnvFile

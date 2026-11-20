@@ -35,7 +35,8 @@ try {
     # (HTTPS, sin redirecciones) y solo se sigue si coincide EXACTAMENTE con lo publicado; se instala lo que dice producción, no lo que dice el archivo.
     $prod = "$env:PRODUCTION_URL".Trim().TrimEnd('/')
     if (-not $prod.StartsWith('https://')) { throw 'PRODUCTION_URL no es HTTPS' }
-    $manifest = Invoke-RestMethod -Uri "$prod/api/ops/update-manifest" -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0
+    $nodeHdr = @{ 'X-Node-Token' = "$env:NODE_TOKEN" }          # llave de producto: con UPDATE_PACKAGE_AUTH=1 producción solo da el paquete a un servidor autorizado
+    $manifest = Invoke-RestMethod -Uri "$prod/api/ops/update-manifest" -Headers $nodeHdr -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0
     if (-not $manifest.available -or "$($manifest.package_url)" -ne "$($req.package_url)" -or "$($manifest.sha256)".ToLower() -ne "$($req.sha256)") {
         throw 'La petición no coincide con el paquete que publica producción'
     }
@@ -47,7 +48,8 @@ try {
 
     Write-UpdateStatus 'download' 'Descargando la versión nueva'
     Remove-Quietly $pkg
-    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -UseBasicParsing -TimeoutSec 1800
+    $dlHdr = @{}; if ($pkgUrl.StartsWith($prod + '/')) { $dlHdr = $nodeHdr }          # el token solo viaja a producción
+    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -Headers $dlHdr -UseBasicParsing -TimeoutSec 1800
     $hash = (Get-FileHash $pkg -Algorithm SHA256).Hash.ToLower()
     if ($hash -ne $pkgSha) { Remove-Quietly $pkg; throw 'La descarga no coincide con la huella de producción; no se instaló nada' }
 

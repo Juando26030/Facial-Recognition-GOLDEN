@@ -123,4 +123,24 @@
     const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
     if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
   }).catch(() => {});
+
+  /* ID del servidor (morado claro, a la derecha de «Al día» y de la IP): es la llave de producto con la que se instaló; la ven los administradores en Configuración › Servidor local. Clic = copia. */
+  fetch('/api/ops/server-id').then((r) => (r.ok ? r.json() : null)).then((s) => {
+    if (!s || !s.configured || !s.id) return;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'gw-versionbar gw-versionbar--id';
+    chip.title = 'ID de este servidor (su llave de producto). Clic para copiarlo.';
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">ID: </strong>' + esc(s.id) + '</span>';
+    chip.addEventListener('click', () => {
+      const done = () => { if (window.showToast) window.showToast('ID copiado: ' + s.id, 'success'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s.id).then(done, () => { if (window.showToast) window.showToast(s.id, 'info'); });
+      else if (window.showToast) window.showToast(s.id, 'info');
+    });
+    // va al final de las etiquetas del encabezado, pero esperando a que la de la IP (que llega por otra consulta) ya esté puesta
+    setTimeout(() => {
+      const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+      if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
+    }, 900);
+  }).catch(() => {});
 })();

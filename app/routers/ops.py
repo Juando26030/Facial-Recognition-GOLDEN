@@ -131,6 +131,19 @@ def local_address(request: Request) -> dict:
     return {"configured": True, "port": port, "addresses": localmode.lan_addresses()}
 
 
+@router.get("/api/ops/server-id")
+def server_id(request: Request) -> dict:
+    """Solo servidores locales: el ID del servidor (= su llave de producto), que se ve como etiqueta morada junto a la versión. En la nube: {configured: false}. Pide sesión; sin base de datos."""
+    from app import local_env, localmode, server_lock
+    if not localmode.is_local_server():
+        return {"configured": False}
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    local_env.refresh()
+    code = (os.getenv("SERVER_KEY") or "").strip()
+    return {"configured": bool(code), "id": code, "disabled": server_lock.is_locked()}
+
+
 @router.get("/api/ops/update-manifest")
 def update_manifest(request: Request) -> dict:
     """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público: commit y esquema los ve cualquiera

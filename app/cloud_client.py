@@ -83,6 +83,8 @@ def _request(method: str, path: str, body: Optional[dict] = None, timeout: float
             detail = json.loads(e.read(20000).decode("utf-8")).get("detail", "")
         except (ValueError, OSError, AttributeError):
             pass
+        from app import server_lock
+        server_lock.note_cloud_error(e.code, detail)
         raise CloudError(detail if isinstance(detail, str) and detail else f"La nube respondió con un error ({e.code}).", e.code)
     except (urllib.error.URLError, OSError):
         log.info("cloud %s %s -> sin conexión", method, path.split("?")[0])

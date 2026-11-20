@@ -30,6 +30,11 @@
 .golden-header .gw-versionbar--info .gw-versionbar__txt { overflow: visible; text-overflow: clip; }
 .golden-header .gw-versionbar--err { flex: 0 0 auto; max-width: none; }
 .golden-header .gw-versionbar--err .gw-versionbar__txt { overflow: visible; }
+/* ID del servidor local (su llave de producto): morado claro, a la derecha de «Al día» y de la IP. */
+.gw-versionbar--id { background: var(--gw-id-bg); color: var(--gw-id-text); cursor: pointer; border: 1px solid var(--gw-id-line); }
+.golden-header .gw-versionbar--id { flex: 0 0 auto; max-width: none; white-space: nowrap; overflow: visible; margin-left: var(--gw-sp-2); font-family: inherit; }
+.golden-header .gw-versionbar--id .gw-versionbar__txt { overflow: visible; text-overflow: clip; }
+.golden-header .gw-versionbar:has(+ .gw-versionbar--id) { margin-right: 0; }
 .gw-vb-short { display: none; }
 @media (max-width: 1199px) {
   .golden-header .gw-theme-toggle { flex: none; justify-content: center; width: var(--gw-tap); padding: 0; }          /* tema: solo el sol o la luna */
@@ -42,7 +47,7 @@
   .golden-header .gw-shell__who { display: none; }
   .golden-header .gw-versionbar { margin-left: var(--gw-sp-2); }
 }
-@media (max-width: 760px) { .golden-header .gw-versionbar--info .gw-vb-lbl { display: none; } }
+@media (max-width: 760px) { .golden-header .gw-versionbar--info .gw-vb-lbl, .golden-header .gw-versionbar--id .gw-vb-lbl { display: none; } }
 @media (max-width: 640px) {
   .golden-header .gw-versionbar--ok, .golden-header .gw-versionbar--warn { display: none; }
   .golden-header .gw-versionbar--err .gw-versionbar__txt { display: none; }

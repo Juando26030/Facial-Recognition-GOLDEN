@@ -67,3 +67,21 @@ El servidor local **no se construye todavía**, pero el formato del paquete de `
 
 ## 8. Instalación nativa en Windows y actualización (Fase 6, 9-nov-2026)
 Decisión de Juan David: instalación directa en Windows, de doble clic, sin Docker ni comandos (Docker queda solo como plan B: `deploy/local/`). El detalle, los pasos para construir el instalador, la publicación del paquete de actualización y lo que NO se pudo probar están en [`FASE_6_SERVIDOR_LOCAL.md`](FASE_6_SERVIDOR_LOCAL.md) («Actualizar e instalar»). Scripts en `deploy/windows/`. HTTPS local (§2): `gen_cert.py` crea la autoridad «Golden Local CA» y el certificado del servidor con el nombre del equipo y sus IP; la autoridad se instala en Windows con el instalador y en los celulares a mano.
+
+
+## Llaves de producto (20-nov-2026)
+Nadie instala ni vincula un servidor local sin una **llave de producto** (`GLD-XXXX-XXXX-XXXX`, alfabeto sin 0/O/1/I), de un solo uso y que vence a los 7 días si no se usa.
+- **Crear / ver / deshabilitar:** Configuración › Servidor local › «Llaves de producto» (solo admin y super_admin; `app/routers/server_keys.py`, tabla `local_server_keys`, migración 0158). La lista muestra estado
+  (sin usar / reclamada / activa / vencida / deshabilitada), el servidor asociado, cuándo lo vimos por última vez y si está **al día con producción** (compara el «commit|esquema» que reportó contra el de la nube).
+- **Instalador liviano:** el `.exe` NO lleva el código de la app (sí Python, PostgreSQL y herramientas). El asistente pide la llave, genera la identificación de la instalación y `install.ps1` →
+  `download-app.ps1` reclama la llave (`POST /api/node/key/claim`: queda atada a esa instalación) y baja el paquete con un permiso temporal de 2 h (`X-Install-Ticket` + `X-Install-Id`), verificando su SHA-256.
+  Sin llave válida no hay app. Reinstalar sobre un equipo que ya tiene llave y no está deshabilitado no la vuelve a pedir; con `/KEY=GLD-…` se instala en silencio.
+- **Vincular:** `local_link` envía llave + identificación al `/api/node/enroll`; la llave se «quema» (guarda `node_id` y `activated_at`). Los servidores ya vinculados (sin llave) siguen funcionando con su token.
+- **ID del servidor:** la llave es el ID; se ve como etiqueta morada clara junto a «Al día» y la IP (`/api/ops/server-id`, clic = copiar).
+- **Deshabilitar:** la nube revoca el token del nodo. Sin internet el servidor sigue trabajando; cuando vuelve a conectarse recibe 403 «Servidor deshabilitado…» (`server_keys.DISABLED_DETAIL`), escribe
+  `SERVER_DISABLED=1` en `config\local.env` y TODA la app queda cerrada (`app/server_lock.py` + middleware). No se reabre: hace falta una llave nueva (reinstalar con otra llave limpia el bloqueo y el vínculo viejo).
+  Si el servidor tenía un evento arrendado, queda solo lectura en la nube: recuperarlo desde Sincronización.
+- **Descarga del paquete:** con `UPDATE_PACKAGE_AUTH=1` el manifiesto no entrega la URL/huella y `/api/ops/update-package/*` exige `X-Node-Token` o el permiso del instalador. **Viene apagado**; se enciende cuando
+  todos los servidores ya instalados corran una versión que envía su token (`fetch_manifest` y `run-update.ps1` ya lo envían).
+- **Límites conocidos:** el instalador/PowerShell no se puede construir ni probar fuera de Windows; una vez instalada, el código está en el portátil; quien edite `local.env` a mano puede quitar el bloqueo local
+  (la nube igual rechaza su token). Pruebas: `tests/test_server_keys*.py`.

@@ -29,7 +29,11 @@ def _post(url: str, body: dict, timeout: float = 20.0):
         with cloud_client.open_no_redirect(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read(100_000).decode("utf-8"))
     except urllib.error.HTTPError as e:
-        return e.code, {}
+        try:
+            body = json.loads(e.read(20000).decode("utf-8"))
+        except (ValueError, OSError):
+            body = {}
+        return e.code, body if isinstance(body, dict) else {}
     except (urllib.error.URLError, OSError, ValueError):
         return 0, {}
 
@@ -40,15 +44,22 @@ def link(db: Session, username: str, password: str) -> dict:
     if not base or not (base.startswith("https://") or base.startswith("http://localhost") or base.startswith("http://127.0.0.1")):
         return {"ok": False, "status": 503, "message": "Este servidor no tiene la dirección de producción configurada."}
     name = (os.getenv("NODE_NAME") or "").strip() or f"Servidor local {socket.gethostname()}"[:60]
-    status, body = _post(base + "/api/node/enroll", {"username": username, "password": password, "name": name})
+    local_env.refresh()                                                  # SERVER_KEY e INSTALLATION_ID los dejó el instalador en config\\local.env
+    key = (os.getenv("SERVER_KEY") or "").strip()
+    if not key:
+        return {"ok": False, "status": 403, "message": "Este servidor no tiene llave de producto. Instálalo con el instalador de Golden y la llave que te da un administrador."}
+    status, body = _post(base + "/api/node/enroll", {"username": username, "password": password, "name": name, "key": key, "installation_id": (os.getenv("INSTALLATION_ID") or "").strip()})
     if status == 0:
         return {"ok": False, "status": 503, "message": "Primer ingreso: este servidor necesita internet UNA vez para vincularse con producción. Conéctalo e intenta de nuevo."}
     if status == 429:
         return {"ok": False, "status": 429, "message": "Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo."}
     token = body.get("token") if status == 200 else None
+    detail = body.get("detail") if isinstance(body.get("detail"), str) else ""
+    if not token and status in (400, 403, 404) and detail:          # problema con la LLAVE (usada, vencida, deshabilitada…): se muestra tal cual
+        return {"ok": False, "status": status, "message": detail}
     if not token:
         return {"ok": False, "status": 401, "message": "Usuario o contraseña incorrectos, o la cuenta no puede vincular un servidor local (coordinador en adelante)."}
-    values = {"NODE_TOKEN": token, "CLOUD_BASE_URL": base, "NODE_NAME": body.get("name") or name}
+    values = {"NODE_TOKEN": token, "CLOUD_BASE_URL": base, "NODE_NAME": body.get("name") or name, "SERVER_KEY": body.get("server_id") or key}
     try:
         _save(values)
     except OSError:

@@ -86,6 +86,7 @@
   --gw-ic-red: #c62828;
   --gw-ic-amber: #a85a00;
   --gw-ic-violet: #6d28d9;
+  --gw-id-bg: #ede9fe;       --gw-id-text: #4c1d95;       --gw-id-line: #a78bfa;
   --gw-ic-teal: #0f766e;
   --gw-ic-orange: #c2410c;
   --gw-ic-pink: #be185d;
@@ -129,6 +130,7 @@
   --gw-ic-red: #ff8a80;
   --gw-ic-amber: #f5b84a;
   --gw-ic-violet: #b79cff;
+  --gw-id-bg: #2c1f5c;       --gw-id-text: #d9ccff;       --gw-id-line: #8b6cf0;
   --gw-ic-teal: #4fd1c5;
   --gw-ic-orange: #ff9d5c;
   --gw-ic-pink: #ff7eb6;
@@ -141,6 +143,7 @@
   --gw-ic-red: #ff8a80;
   --gw-ic-amber: #f5b84a;
   --gw-ic-violet: #b79cff;
+  --gw-id-bg: #2c1f5c;       --gw-id-text: #d9ccff;       --gw-id-line: #8b6cf0;
   --gw-ic-teal: #4fd1c5;
   --gw-ic-orange: #ff9d5c;
   --gw-ic-pink: #ff7eb6;
