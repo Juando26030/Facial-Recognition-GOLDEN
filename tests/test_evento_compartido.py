@@ -307,3 +307,77 @@ def test_peer_pull_applies_extra_and_undo(db, factory):
     assert db.query(User).filter_by(id="1001").one().phone == "3001234567"
     e = db.get(Event, ev.id)
     assert node_sync.pending_counts(db, e)["extra"] == 0          # lo bajado no vuelve a subir
+
+
+# ------------------------------------------------------------------ 0160: ruleta, expositores, aceptaciones, autorizaciones y COPIA COMPLETA
+def test_cloud_applies_roulette_leads_acceptances_and_consents(client, factory, db):
+    from app.models import AuditConsentLog, EventExhibitor, ExhibitorLead, RouletteDraw, WebAcceptance
+    (a,) = _nodes(db, factory, "Puerta A")
+    ev = factory.event("en_proceso")
+    factory.person(ev, "1001")
+    ev.local_node_name = "Puerta A"
+    db.commit()
+    t0 = utcnow().replace(microsecond=0)
+    body = {"roulette": [{"label": "Rifa 1", "mode": "attendees", "is_random": True, "candidates": 30, "winners_json": '["1001"]', "at": t0.isoformat()}],
+            "leads": [{"cedula": "1001", "at": t0.isoformat(), "exhibitor": {"name": "Stand Café", "contact_name": "Luis", "email": "l@x.co"}}],
+            "acceptances": [{"cedula": "1001", "created_at": t0.isoformat(), "verified_at": t0.isoformat(), "verified_via": "staff"}],
+            "consents": [{"id": "6f1c2b9e-0000-4000-8000-000000000001", "cedula": "1001", "at": t0.isoformat(), "version": "v1", "legal_text_hash": "ab" * 32,
+                          "accepted": True, "adult": True, "reason": "consent"}]}
+    saved = client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a)).json()["saved"]
+    assert (saved["roulette"], saved["leads"], saved["acceptances"], saved["consents"]) == (1, 1, 1, 1)
+    again = client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a)).json()["saved"]
+    assert (again["roulette"], again["leads"], again["acceptances"], again["consents"]) == (0, 0, 0, 0)
+    db.expire_all()
+    assert db.query(RouletteDraw).count() == 1 and db.query(EventExhibitor).one().name == "Stand Café" and db.query(ExhibitorLead).count() == 1
+    assert db.query(WebAcceptance).one().verified_via == "staff"
+    c = db.query(AuditConsentLog).one()
+    assert c.reason == "consent" and len(c.cedula_hash) == 64
+
+
+def test_full_backup_includes_every_event_table_and_is_sent_only_when_it_changes(db, factory, monkeypatch):
+    import gzip
+    from app import local_backup
+    from app.models import RouletteDraw
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    ev = factory.event("en_proceso", cloud_event_id=77)
+    factory.person(ev, "1001")
+    db.add(RouletteDraw(event_id=ev.id, mode="attendees", winners_json="[]", created_at=utcnow()))
+    db.commit()
+    dump = local_backup.dump_event(db, ev)
+    names = {t.name for t in local_backup.event_tables()}
+    assert {"access_logs", "event_attendees", "roulette_draws", "queue_turns", "exhibitor_leads", "audit_consent_logs", "area_movements"} <= names
+    assert dump["tables"]["roulette_draws"] and dump["tables"]["users"][0]["id"] == "1001" and "face_encoding" not in dump["tables"]["users"][0]
+    sent = []
+    monkeypatch.setattr(node_sync, "_call_bytes", lambda path, data, ctype: sent.append((path, data)) or {"ok": True})
+    assert node_sync.push_backup(db, ev)["copy"] is True
+    assert sent[0][0] == "/api/node/events/77/backup" and gzip.decompress(sent[0][1])
+    assert node_sync.push_backup(db, ev)["copy"] is False          # nada cambió: no se repite
+    db.add(RouletteDraw(event_id=ev.id, mode="attendees", winners_json="[1]", created_at=utcnow()))
+    db.commit()
+    assert node_sync.push_backup(db, ev)["copy"] is True
+
+
+def test_cloud_stores_the_full_backup_and_only_super_admin_downloads_it(client, factory, db, monkeypatch, tmp_path):
+    import gzip
+    from app import storage as storage_mod
+    monkeypatch.setattr(storage_mod, "get_storage", lambda: storage_mod.LocalStorage(str(tmp_path)))
+    (a,) = _nodes(db, factory, "Puerta A")
+    ev = factory.event("en_proceso")
+    ev.local_node_name = "Puerta A"
+    db.commit()
+    blob = gzip.compress(b'{"format": "golden-local-backup"}')
+    hdr = {**_hdr(a), "Content-Type": "application/gzip"}
+    assert client.post(f"/api/node/events/{ev.id}/backup", content=b"no-gzip", headers=hdr).status_code == 400
+    assert client.post(f"/api/node/events/{ev.id}/backup", content=blob, headers=hdr).json()["ok"]
+    assert client.post(f"/api/node/events/{ev.id}/backup-file", params={"key": "acme/docs/a.pdf"}, content=b"%PDF", headers=hdr).json()["ok"]
+    factory.staff("admin", "adm_bk")
+    login(client, "adm_bk")
+    assert client.get(f"/api/events/{ev.id}/local-backups").status_code == 403
+    client.get("/logout")
+    factory.staff("super_admin", "sa_bk")
+    login(client, "sa_bk")
+    rows = client.get(f"/api/events/{ev.id}/local-backups").json()["backups"]
+    assert len(rows) == 1 and rows[0]["node"] == "Puerta_A"
+    r = client.get(f"/api/events/{ev.id}/local-backups/download", params={"key": rows[0]["key"]})
+    assert r.status_code == 200 and gzip.decompress(r.content).startswith(b'{"format"')
+    assert client.get(f"/api/events/{ev.id}/local-backups/download", params={"key": "otra/empresa/x.json.gz"}).status_code == 404

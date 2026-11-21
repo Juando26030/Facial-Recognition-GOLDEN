@@ -208,6 +208,58 @@ def node_extra_upload(event_id: int, body: dict, request: Request, db: Session =
     return {"ok": True, "saved": saved}
 
 
+def _store_backup(event_id: int, node_name: str, data: bytes, file_key: str = "") -> dict:
+    from app import local_backup
+    from app.database import SessionLocal
+    from app.storage import get_storage, normalize_key
+    with SessionLocal() as db:
+        event = db.get(Event, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+        if not event_lease.is_writer(event, node_name):
+            raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
+        folder = local_backup.prefix(event.tenant_id, event.id, node_name)
+        st = get_storage()
+        if file_key:
+            key = folder + "files/" + normalize_key(file_key)
+            st.put(key, data)
+            return {"ok": True}
+        key = folder + utcnow().strftime("%Y%m%dT%H%M%SZ") + ".json.gz"
+        st.put(key, data)
+        local_backup.prune(st, folder)
+        db.add(AuditAction(actor_role="nodo", action="local_backup", entity="event", entity_id=str(event.id), entity_name=event.name, detail=f"Copia completa desde «{node_name}» ({len(data)} bytes)"))
+        db.commit()
+    log.info("local_backup event=%s bytes=%s", event_id, len(data))
+    return {"ok": True}
+
+
+@router.post("/node/events/{event_id}/backup")
+async def node_backup(event_id: int, request: Request, node: LocalNode = Depends(node_auth.require_node)):
+    """0160: COPIA COMPLETA del evento tal como está en el servidor local (gzip de JSON, app/local_backup.py). Se guarda en el almacenamiento privado (últimas 20 por servidor).
+    Async solo para leer el cuerpo crudo (como el webhook de pagos); el trabajo va en un hilo."""
+    from starlette.concurrency import run_in_threadpool
+    from app import local_backup
+    node_auth.require_compatible(request)
+    data = await request.body()
+    if not data or len(data) > local_backup.MAX_BACKUP_BYTES or data[:2] != b"\x1f\x8b":
+        raise HTTPException(status_code=413 if data else 400, detail="Copia vacía, dañada o demasiado grande")
+    return await run_in_threadpool(_store_backup, event_id, node.name, data)
+
+
+@router.post("/node/events/{event_id}/backup-file")
+async def node_backup_file(event_id: int, request: Request, key: str, node: LocalNode = Depends(node_auth.require_node)):
+    """0160: un ARCHIVO del evento (documento, evidencia, foto…) que nombra la copia completa. Se guarda junto a ella, una vez."""
+    from starlette.concurrency import run_in_threadpool
+    from app import local_backup
+    node_auth.require_compatible(request)
+    if not key or ".." in key or len(key) > 500:
+        raise HTTPException(status_code=400, detail="Archivo no válido")
+    data = await request.body()
+    if len(data) > local_backup.MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+    return await run_in_threadpool(_store_backup, event_id, node.name, data, key)
+
+
 @router.post("/node/events/{event_id}/uploaded")
 def node_uploaded(event_id: int, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
     """El nodo avisa que terminó una subida completa: solo actualiza «última subida» (la que ve el equipo en la nube)."""

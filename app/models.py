@@ -353,6 +353,10 @@ class Event(Base):
     sync_turn_id = Column(Integer, nullable=True)        # 0160: último QueueTurn.id local ya confirmado
     sync_call_id = Column(Integer, nullable=True)        # 0160: último QueueCall.id local ya confirmado
     sync_turn_at = Column(DateTime, nullable=True)       # 0160: hasta cuándo subió el ESTADO (llamado/atendido) de los turnos ya enviados
+    sync_roulette_id = Column(Integer, nullable=True)    # 0160: último RouletteDraw.id local ya confirmado
+    sync_lead_id = Column(Integer, nullable=True)        # 0160: último ExhibitorLead.id local ya confirmado
+    sync_accept_at = Column(DateTime, nullable=True)     # 0160: hasta cuándo subieron las aceptaciones/firmas (creadas o verificadas)
+    sync_consent_at = Column(DateTime, nullable=True)    # 0160: hasta cuándo subieron las autorizaciones de datos (audit_consent_logs)
     sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
     sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien
 
@@ -844,6 +848,7 @@ class RouletteDraw(Base):
     candidates_count = Column(Integer, nullable=False, default=0)
     filter_json = Column(Text, nullable=True)
     winners_json = Column(Text, nullable=False)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
@@ -1427,6 +1432,7 @@ class WebAcceptance(Base):
     user_id = Column(String, primary_key=True)
     event_id = Column(Integer, primary_key=True)
     created_at = Column(DateTime, nullable=False, default=utcnow)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     verified_at = Column(DateTime, nullable=True)
     verified_by_staff_id = Column(Integer, nullable=True)
     verified_via = Column(String(12), nullable=True)      # 'staff' (en la puerta) | 'link' (abrió su enlace personal: dueño del correo)
@@ -1447,6 +1453,7 @@ class AuditConsentLog(Base):
     accepted_biometric = Column(Boolean, nullable=False)
     confirmed_adult = Column(Boolean, nullable=False)
     ip_or_device_id = Column(String, nullable=True)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     reason = Column(String(20), nullable=False)
     __table_args__ = (CheckConstraint("reason IN ('consent', 'rejection', 'revocation')", name="ck_audit_consent_reason"),)
 
@@ -1956,6 +1963,7 @@ class ExhibitorLead(Base):
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
     tenant_id = Column(String, nullable=False)
     user_id = Column(String, nullable=False)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     scanned_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (UniqueConstraint('exhibitor_id', 'tenant_id', 'user_id', name='uq_exhibitor_lead'),)
 

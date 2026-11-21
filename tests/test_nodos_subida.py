@@ -113,6 +113,7 @@ def local_env(monkeypatch):
             return {"ok": True}
         return {}
     monkeypatch.setattr(node_sync, "_call", fake)
+    monkeypatch.setattr(node_sync, "push_backup", lambda db, ev: {"copy": False, "files": 0})          # la copia completa (0160) se prueba en test_evento_compartido.py
     return calls
 
 

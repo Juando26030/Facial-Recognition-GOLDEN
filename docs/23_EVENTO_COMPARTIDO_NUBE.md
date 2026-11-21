@@ -44,17 +44,30 @@ Pedido de Juan David el 20-nov-2026: «eso también debería subirse a la nube»
 | Movimientos de áreas | `/extra` › `areas` (el área por su nombre) | se guardan | igual |
 | Entregas de inventario | `/extra` › `deliveries` (ítem y categoría madre por nombre) | se guardan | igual |
 | Turnos y llamados | `/extra` › `turns`, `calls`, `turn_status` | se guardan; el estado solo avanza | turnos nuevos y llamados |
+| Sorteos de la ruleta | `/extra` › `roulette` | se guardan | igual |
+| Contactos de expositores | `/extra` › `leads` (el expositor por su nombre; si no existe en la nube se crea) | se guardan | igual |
+| Aceptaciones / firmas | `/extra` › `acceptances` | se crean o se verifican (la verificación más antigua vale) | no (van a la nube) |
+| Autorizaciones de datos (Ley 1581) | `/extra` › `consents` (por id; la huella de la cédula se recalcula en la nube) | solo INSERT, como exige la tabla | no (van a la nube) |
 
 Cada tipo tiene su marca de agua en el evento local (`sync_edit_id`, `sync_area_id`, `sync_delivery_id`, `sync_turn_id`, `sync_call_id`, `sync_turn_at`) y cuenta en «pendientes»: «Pasar a internet»
-no libera mientras falte algo. Áreas, entregas y turnos salieron de la lista de «solo local» que bloqueaba la liberación. Quedan en esa lista (no suben todavía): cambios del inventario de
-ALMACÉN del evento (en el servidor local es de solo consulta), sorteos de la ruleta, contactos de expositores, aceptaciones/firmas y autorizaciones de datos.
+no libera mientras falte algo. Todo eso salió de la lista de «solo local» que bloqueaba la liberación; en ella queda únicamente el inventario de ALMACÉN del evento (en el servidor local es de
+solo consulta: no hay catálogo de productos), que de todas formas va en la copia completa.
+
+## 3c. Copia completa del evento en la nube (seguro contra la pérdida del servidor)
+Pedido de Juan David: «nada debe quedar en el local». Además de la fusión fila por fila, en cada ciclo largo (30 min), en «Sincronizar» y antes de «Pasar a internet» el servidor sube una
+**copia completa** del evento (`app/local_backup.py`): TODAS las tablas con `event_id` (se descubren solas: una tabla nueva entra sin tocar código), las de los formularios del evento y las
+personas (sin rostro), más los **archivos** que esas filas nombran (documentos, evidencias…), cada uno una vez. Solo sube si cambió (huella SHA-256). La nube guarda las últimas 20 copias por
+servidor en el almacenamiento privado y solo un **super_admin** las ve y descarga (Editar evento › Servidor local › «Copias completas…»). No se fusionan solas: son el respaldo para recuperar
+cualquier cosa que la fusión no cubra (por ejemplo cambios de configuración del evento hechos en el servidor local).
 
 ## 4. Conflictos y límites (primera versión)
 - **Misma persona en las dos entradas durante un corte:** quedan los dos registros (como en el modo sin red de los quioscos); la nube los conserva y se ven en el historial. La regla de negocio de cada evento decide qué hacer.
 - **Misma persona dada de alta en las dos entradas:** gana la primera alta que llegó a la nube; la segunda queda como registro de una persona existente.
 - **Turnos en eventos compartidos:** cada entrada debe usar **sus propias filas (letras)**; si dos servidores dan el mismo número de la misma fila a personas distintas, el segundo se omite
   (queda contado como conflicto). Los otros servidores reciben los turnos nuevos y los llamados; «atendido/saltado» sube a la nube pero no se reparte a los demás servidores.
-- **No viaja todavía:** rostros/biometría (el servidor local no hace reconocimiento facial), ruleta, contactos de expositores, aceptaciones/firmas y autorizaciones de datos.
+- **Configuración del evento hecha en el servidor local** (parámetros, campos, plantilla de escarapela, áreas o ítems nuevos): queda en la copia completa, pero NO se fusiona sola en la nube.
+  Un movimiento de un área o una entrega de un ítem que solo existe en el servidor se omite en la fusión (queda en la copia). Recomendación: configurar el evento en la nube antes de bajarlo.
+- **Rostros/biometría:** el servidor local no hace reconocimiento facial; no hay nada que subir.
 - **Estado del evento:** cada servidor pone su copia «En proceso» como siempre; la sincronización rápida solo corre en ese estado.
 
 ## 5. Costo

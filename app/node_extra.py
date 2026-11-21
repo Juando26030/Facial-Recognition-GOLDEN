@@ -5,6 +5,10 @@
   deliveries  entregas de inventario (`inventory_deliveries`; el ítem viaja por su nombre y el de su categoría madre)
   turns       turnos (`queue_turns`) y su estado (llamado / atendido / saltado)
   calls       llamados de turnos (`queue_calls`)
+  roulette    sorteos de la ruleta (`roulette_draws`)
+  leads       contactos escaneados por expositores (`exhibitor_leads`; el expositor viaja por su nombre y, si no existe en la nube, se crea con sus datos)
+  acceptances aceptaciones/firmas de la persona (`web_acceptances`: creada y verificada)
+  consents    autorizaciones de datos (`audit_consent_logs`: SOLO INSERT; la huella de la cédula se recalcula con la llave de quien la recibe)
 y los EFECTOS de `person_changes` que antes solo se guardaban como historial: «No registrado» (deshacer registro: borra los registros de la persona hechos HASTA ese momento) y la fecha
 de nacimiento.
 
@@ -21,12 +25,13 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import (AccessLog, AreaMovement, Event, EventArea, InventoryDelivery, InventoryItem, PersonChangeLog, QueueCall, QueueTurn, User)
+from app.models import (AccessLog, AreaMovement, AuditConsentLog, Event, EventArea, EventExhibitor, ExhibitorLead, InventoryDelivery, InventoryItem, PersonChangeLog, QueueCall,
+                        QueueTurn, RouletteDraw, User, WebAcceptance)
 
 USER_FIELDS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
 EXTRA_RE = re.compile(r"^opcional_\d+$")
 TURN_STATUS = ("waiting", "called", "done", "skipped")
-SECTIONS = ("edits", "areas", "deliveries", "turns", "calls", "turn_status")
+SECTIONS = ("edits", "areas", "deliveries", "turns", "calls", "turn_status", "roulette", "leads", "acceptances", "consents")
 
 
 def _iso(dt) -> Optional[str]:
@@ -78,6 +83,35 @@ def turn_row(r: QueueTurn) -> dict:
 
 def call_row(r: QueueCall) -> dict:
     return {"lane": r.lane, "number": r.number, "desk": r.desk, "at": _iso(r.called_at)}
+
+
+def roulette_row(r: RouletteDraw) -> dict:
+    return {"label": r.label, "mode": r.mode, "is_random": bool(r.is_random), "candidates": r.candidates_count, "filter_json": r.filter_json, "winners_json": r.winners_json,
+            "at": _iso(r.created_at)}
+
+
+def lead_row(r: ExhibitorLead, exhibitors: dict) -> Optional[dict]:
+    ex = exhibitors.get(r.exhibitor_id)
+    if ex is None:
+        return None
+    return {"cedula": r.user_id, "at": _iso(r.scanned_at), "exhibitor": {"name": ex.name, "contact_name": ex.contact_name, "title": ex.title, "email": ex.email, "phone": ex.phone,
+                                                                          "active": bool(ex.active)}}
+
+
+def acceptance_row(r: WebAcceptance) -> dict:
+    return {"cedula": r.user_id, "created_at": _iso(r.created_at), "verified_at": _iso(r.verified_at), "verified_via": r.verified_via}
+
+
+def consent_row(r: AuditConsentLog) -> dict:
+    ts = r.consent_timestamp_utc
+    if ts is not None and ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return {"id": r.id, "cedula": r.user_id, "at": _iso(ts), "version": r.consent_version, "legal_text_hash": r.legal_text_hash, "accepted": bool(r.accepted_biometric),
+            "adult": bool(r.confirmed_adult), "device": r.ip_or_device_id, "reason": r.reason}
+
+
+def exhibitor_map(db: Session, event_id: int) -> dict:
+    return {e.id: e for e in db.query(EventExhibitor).filter(EventExhibitor.event_id == event_id)}
 
 
 def area_names(db: Session, event_id: int) -> dict:
@@ -269,12 +303,98 @@ def apply_person_change_effect(db: Session, event: Event, kind: str, uid: Option
     return 0
 
 
+def apply_roulette(db: Session, event: Event, items: list, from_peer=None) -> int:
+    n = 0
+    for r in items or []:
+        at, mode = _when((r or {}).get("at")), _s((r or {}).get("mode"), 40)
+        if at is None or not mode or not r.get("winners_json"):
+            continue
+        label = _s(r.get("label"), 200)
+        q = db.query(RouletteDraw.id).filter(RouletteDraw.event_id == event.id, RouletteDraw.created_at == at, RouletteDraw.mode == mode)
+        q = q.filter(RouletteDraw.label == label) if label else q.filter(RouletteDraw.label.is_(None))
+        if q.first():
+            continue
+        try:
+            cands = int(r.get("candidates") or 0)
+        except (TypeError, ValueError):
+            cands = 0
+        db.add(RouletteDraw(event_id=event.id, label=label, mode=mode, is_random=bool(r.get("is_random")), candidates_count=cands, filter_json=r.get("filter_json"),
+                            winners_json=str(r.get("winners_json")), created_at=at, from_peer=from_peer))
+        n += 1
+    return n
+
+
+def apply_leads(db: Session, event: Event, items: list, from_peer=None) -> int:
+    by_name = {e.name.strip().lower(): e for e in db.query(EventExhibitor).filter(EventExhibitor.event_id == event.id)}
+    users, n = _Users(db, event.tenant_id), 0
+    for r in items or []:
+        uid, at, ex_data = str((r or {}).get("cedula") or ""), _when((r or {}).get("at")), (r or {}).get("exhibitor") or {}
+        name = str(ex_data.get("name") or "").strip()
+        if not uid or at is None or not name or users.get(uid) is None:
+            continue
+        ex = by_name.get(name.lower())
+        if ex is None:                                       # el expositor se creó en el servidor local: se crea igual aquí (con enlaces nuevos)
+            ex = EventExhibitor(tenant_id=event.tenant_id, event_id=event.id, name=name[:200], contact_name=_s(ex_data.get("contact_name"), 200), title=_s(ex_data.get("title"), 200),
+                                email=_s(ex_data.get("email"), 200), phone=_s(ex_data.get("phone"), 60), token=secrets.token_urlsafe(18), card_token=secrets.token_urlsafe(18),
+                                active=bool(ex_data.get("active", True)))
+            db.add(ex)
+            db.flush()
+            by_name[name.lower()] = ex
+        if db.query(ExhibitorLead.id).filter(ExhibitorLead.exhibitor_id == ex.id, ExhibitorLead.tenant_id == event.tenant_id, ExhibitorLead.user_id == uid).first():
+            continue
+        db.add(ExhibitorLead(exhibitor_id=ex.id, event_id=event.id, tenant_id=event.tenant_id, user_id=uid, scanned_at=at, from_peer=from_peer))
+        db.flush()
+        n += 1
+    return n
+
+
+def apply_acceptances(db: Session, event: Event, items: list, from_peer=None) -> int:
+    users, n = _Users(db, event.tenant_id), 0
+    for r in items or []:
+        uid, created = str((r or {}).get("cedula") or ""), _when((r or {}).get("created_at"))
+        if not uid or created is None or users.get(uid) is None:
+            continue
+        verified = _when(r.get("verified_at"))
+        wa = db.get(WebAcceptance, (event.tenant_id, uid, event.id))
+        if wa is None:
+            db.add(WebAcceptance(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, created_at=created, verified_at=verified, verified_via=_s(r.get("verified_via"), 12),
+                                 from_peer=from_peer))
+            db.flush()
+            n += 1
+        elif verified and (wa.verified_at is None or verified < wa.verified_at):          # la verificación más antigua es la que vale; nunca se «des-verifica»
+            wa.verified_at, wa.verified_via = verified, (_s(r.get("verified_via"), 12) or wa.verified_via)
+            n += 1
+    return n
+
+
+def apply_consents(db: Session, event: Event, items: list, from_peer=None) -> int:
+    """Autorizaciones de datos: solo se INSERTAN (la tabla no admite cambios ni borrados). La huella de la cédula se calcula aquí, con la llave de este entorno."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app import consent, faces_version
+    users, n = _Users(db, event.tenant_id), 0
+    for r in items or []:
+        cid, uid, at = _s((r or {}).get("id"), 36), str((r or {}).get("cedula") or ""), _when((r or {}).get("at"))
+        reason = (r or {}).get("reason")
+        if not cid or not uid or at is None or reason not in ("consent", "rejection", "revocation") or users.get(uid) is None:
+            continue
+        row = dict(id=cid, tenant_id=event.tenant_id, user_id=uid, cedula_hash=consent.cedula_hash(uid), event_id=event.id, consent_timestamp_utc=at.replace(tzinfo=timezone.utc),
+                   consent_version=(_s(r.get("version"), 40) or "desconocida"), legal_text_hash=(_s(r.get("legal_text_hash"), 64) or ""), accepted_biometric=bool(r.get("accepted")),
+                   confirmed_adult=bool(r.get("adult")), ip_or_device_id=_s(r.get("device"), 200), reason=reason, from_peer=from_peer)
+        if db.execute(pg_insert(AuditConsentLog).values(**row).on_conflict_do_nothing(index_elements=["id"])).rowcount == 1:
+            n += 1
+    if n:
+        faces_version.bump(db, event_ids=[event.id])          # quién puede ser reconocido cambió (igual que consent.record)
+    return n
+
+
 def apply_all(db: Session, event: Event, body: dict, from_peer=None) -> dict:
     body = body or {}
     turns = apply_turns(db, event, body.get("turns"), from_peer)
     return {"edits": apply_edits(db, event, body.get("edits"), from_peer), "areas": apply_areas(db, event, body.get("areas"), from_peer),
             "deliveries": apply_deliveries(db, event, body.get("deliveries"), from_peer), "turns": turns["saved"], "turn_conflicts": turns["conflicts"],
-            "calls": apply_calls(db, event, body.get("calls"), from_peer), "turn_status": apply_turn_status(db, event, body.get("turn_status"))}
+            "calls": apply_calls(db, event, body.get("calls"), from_peer), "turn_status": apply_turn_status(db, event, body.get("turn_status")),
+            "roulette": apply_roulette(db, event, body.get("roulette"), from_peer), "leads": apply_leads(db, event, body.get("leads"), from_peer),
+            "acceptances": apply_acceptances(db, event, body.get("acceptances"), from_peer), "consents": apply_consents(db, event, body.get("consents"), from_peer)}
 
 
 def count(body: dict) -> int:

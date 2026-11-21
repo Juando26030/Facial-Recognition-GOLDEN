@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import event_lease
-from app.auth import assert_event_tenant, require_role_or_any
+from app.auth import assert_event_tenant, require_role, require_role_or_any
 from app.database import get_db
 from app.models import AuditAction, Event, StaffUser
 
@@ -85,3 +85,27 @@ def set_shared(event_id: int, data: dict, db: Session = Depends(get_db), staff: 
     _audit(db, staff, "lease_shared", event, "Evento compartido entre varios servidores locales" if want else "El evento dejó de ser compartido entre servidores locales")
     db.commit()
     return event_lease.serialize(event)
+
+
+@router.get("/events/{event_id}/local-backups")
+def list_local_backups(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """0160: copias completas que subieron los servidores locales de este evento (app/local_backup.py). Solo super_admin (llevan datos personales)."""
+    from app import local_backup
+    from app.storage import get_storage
+    event = _event(db, event_id, staff)
+    return {"backups": local_backup.listing(get_storage(), event.tenant_id, event.id)}
+
+
+@router.get("/events/{event_id}/local-backups/download")
+def download_local_backup(event_id: int, key: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    from app import audit_actions, local_backup
+    from app.storage import get_storage
+    event = _event(db, event_id, staff)
+    if not key.startswith(local_backup.prefix(event.tenant_id, event.id)) or ".." in key or not key.endswith(".json.gz"):
+        raise HTTPException(status_code=404, detail="Copia no encontrada")
+    st = get_storage()
+    if not st.exists(key):
+        raise HTTPException(status_code=404, detail="Copia no encontrada")
+    audit_actions.record(db, staff, "download", "local_backup", event.id, event.name, "Descargó una copia completa de un servidor local")
+    db.commit()
+    return st.response(key, filename=f"copia-local-{event.event_code or event.id}-{key.rsplit('/', 1)[-1]}", media_type="application/gzip")

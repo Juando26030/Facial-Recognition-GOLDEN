@@ -19,14 +19,15 @@ import os
 import threading
 import urllib.error
 import urllib.request
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app import local_env, peer_changes, versioning
-from app.models import AccessLog, AreaMovement, Event, EventAttendee, InventoryDelivery, PersonChange, PersonChangeLog, PrintLog, QueueCall, QueueTurn, User
+from app.models import (AccessLog, AreaMovement, AuditConsentLog, Event, EventAttendee, ExhibitorLead, InventoryDelivery, PersonChange, PersonChangeLog, PrintLog, QueueCall, QueueTurn,
+                        RouletteDraw, User, WebAcceptance)
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.node_sync")
@@ -98,6 +99,78 @@ def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
         raise SyncError("Sin conexión con la nube")
 
 
+def _call_bytes(path: str, data: bytes, content_type: str) -> dict:
+    """Como `_call` pero con un cuerpo crudo (la copia completa y sus archivos, app/local_backup.py)."""
+    url = versioning.production_url()
+    if not (url.startswith("https://") or url.startswith("http://localhost") or url.startswith("http://127.0.0.1")):
+        raise SyncError("PRODUCTION_URL debe ser https")
+    headers = {**_headers(), "Content-Type": content_type}
+    req = urllib.request.Request(url + path, data=data, method="POST", headers=headers)
+    from app.cloud_client import open_no_redirect
+    try:
+        with open_no_redirect(req, timeout=120) as resp:
+            return json.loads(resp.read(200_000).decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        raise SyncError(f"La nube no recibió la copia completa ({e.code})")
+    except (urllib.error.URLError, OSError, ValueError):
+        raise SyncError("Sin conexión con la nube")
+
+
+def _setting(db: Session, key: str):
+    from app.models import AppSetting
+    row = db.get(AppSetting, key)
+    return row.value if row else None
+
+
+def _set_setting(db: Session, key: str, value: str) -> None:
+    from app.models import AppSetting
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=value, updated_at=utcnow()))
+    else:
+        row.value, row.updated_at = value, utcnow()
+
+
+def push_backup(db: Session, event: Event) -> dict:
+    """0160: sube la COPIA COMPLETA del evento (si cambió desde la última) y los archivos nuevos que nombra. Seguro contra la pérdida del servidor: lo que la fusión fila por fila no
+    cubra queda igual en la nube (app/local_backup.py). Lanza SyncError si no hay red."""
+    from urllib.parse import quote
+    from app import local_backup
+    from app.storage import get_storage
+    gz, digest = local_backup.build(db, event)
+    hash_key, files_key = f"local_backup_hash:{event.id}", f"local_backup_files:{event.id}"
+    sent_copy = False
+    if _setting(db, hash_key) != digest:
+        if len(gz) > local_backup.MAX_BACKUP_BYTES:
+            raise SyncError("La copia completa del evento es demasiado grande para subirla de una vez")
+        _call_bytes(f"/api/node/events/{event.cloud_event_id}/backup", gz, "application/gzip")
+        _set_setting(db, hash_key, digest)
+        db.commit()
+        sent_copy = True
+    try:
+        done = set(json.loads(_setting(db, files_key) or "[]"))
+    except ValueError:
+        done = set()
+    import gzip as _gz
+    keys = local_backup.file_keys(json.loads(_gz.decompress(gz).decode("utf-8")))
+    st, sent_files = get_storage(), 0
+    for k in local_backup.iter_new(keys, done):
+        try:
+            if not st.exists(k):
+                done.add(k)
+                continue
+            data = st.get(k)
+        except Exception:                                   # noqa: BLE001 — un archivo ilegible no frena la copia
+            continue
+        if len(data) <= local_backup.MAX_FILE_BYTES:
+            _call_bytes(f"/api/node/events/{event.cloud_event_id}/backup-file?key={quote(k)}", data, "application/octet-stream")
+            sent_files += 1
+        done.add(k)
+        _set_setting(db, files_key, json.dumps(sorted(done)))
+        db.commit()
+    return {"copy": sent_copy, "files": sent_files}
+
+
 def cloud_ping() -> dict:
     """Pregunta a la nube si nos acepta (token válido y versión compatible)."""
     out = _call("GET", "/api/node/ping")
@@ -142,7 +215,51 @@ EXTRA = (
     ("deliveries", InventoryDelivery, "sync_delivery_id", "delivered_at"),
     ("turns", QueueTurn, "sync_turn_id", "created_at"),
     ("calls", QueueCall, "sync_call_id", "called_at"),
+    ("roulette", RouletteDraw, "sync_roulette_id", "created_at"),
+    ("leads", ExhibitorLead, "sync_lead_id", "scanned_at"),
 )
+
+
+def _accept_query(db: Session, event: Event):
+    """Aceptaciones/firmas creadas o verificadas aquí después de la última subida (la hora la pone este servidor)."""
+    since = event.sync_accept_at or event.sync_package_at
+    if since is None:
+        return db.query(WebAcceptance).filter(False)
+    return db.query(WebAcceptance).filter(WebAcceptance.event_id == event.id, WebAcceptance.from_peer.isnot(True),
+                                          or_(WebAcceptance.created_at > since, WebAcceptance.verified_at > since))
+
+
+CONSENT_SENT = "sync_consent_ids:{}"          # AppSetting: ids de autorizaciones ya confirmadas por la nube (la tabla no admite marcar filas: es solo INSERT)
+
+
+def _consent_sent(db: Session, event: Event) -> set:
+    from app.models import AppSetting
+    row = db.get(AppSetting, CONSENT_SENT.format(event.id))
+    try:
+        return set(json.loads(row.value)) if row and row.value else set()
+    except ValueError:
+        return set()
+
+
+def _consent_pending(db: Session, event: Event) -> list:
+    """Autorizaciones hechas aquí que la nube aún no confirmó. Por id (no por hora: una autorización de un quiosco sin red llega tarde con su hora original)."""
+    if event.sync_package_at is None:
+        return []
+    since = event.sync_package_at.replace(tzinfo=timezone.utc)
+    sent = _consent_sent(db, event)
+    rows = db.query(AuditConsentLog).filter(AuditConsentLog.event_id == event.id, AuditConsentLog.from_peer.isnot(True), AuditConsentLog.consent_timestamp_utc > since)
+    return [r for r in rows.order_by(AuditConsentLog.consent_timestamp_utc) if r.id not in sent]
+
+
+def _mark_consents_sent(db: Session, event: Event, ids: list) -> None:
+    from app.models import AppSetting
+    key = CONSENT_SENT.format(event.id)
+    sent = _consent_sent(db, event) | set(ids)
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=json.dumps(sorted(sent)), updated_at=utcnow()))
+    else:
+        row.value, row.updated_at = json.dumps(sorted(sent)), utcnow()
 
 
 def _extra_query(db: Session, event: Event, model, mark: str, when_col: str):
@@ -167,18 +284,14 @@ def pending_counts(db: Session, event: Event) -> dict:
     logs = _logs_query(db, event).filter(AccessLog.record_type == LOG_TYPE).count()
     prints = _prints_query(db, event).count()
     changes = _changes_query(db, event).count()
-    extra = sum(_extra_query(db, event, model, mark, col).count() for _, model, mark, col in EXTRA)
+    extra = sum(_extra_query(db, event, model, mark, col).count() for _, model, mark, col in EXTRA) + _accept_query(db, event).count() + len(_consent_pending(db, event))
     return {"persons": persons, "logs": logs, "prints": prints, "changes": changes, "extra": extra, "total": persons + logs + prints + changes + extra}
 
 
 # Lo que se hace en el servidor local y TODAVÍA NO SUBE a la nube (la subida solo lleva personas nuevas e ingresos). Mientras exista algo así,
 # «Pasar a internet» NO libera el evento: se perdería sin aviso (revisión 9-nov-2026, docs/FASE_6_SERVIDOR_LOCAL.md). Nombres fijos (no vienen del usuario).
-LOCAL_ONLY = (          # 0160: áreas, entregas de inventario, turnos y llamados ya SUBEN (app/node_extra.py) y salieron de esta lista
-    ("event_inventory_items", "updated_at", "cambios del inventario del evento"),
-    ("roulette_draws", "created_at", "sorteos de la ruleta"),
-    ("exhibitor_leads", "scanned_at", "contactos de expositores"),
-    ("web_acceptances", "created_at", "aceptaciones y firmas"),
-    ("audit_consent_logs", "consent_timestamp_utc", "autorizaciones de datos"),
+LOCAL_ONLY = (          # 0160: áreas, entregas de inventario, turnos, llamados, ruleta, expositores, aceptaciones y autorizaciones ya SUBEN (app/node_extra.py) y salieron de esta lista
+    ("event_inventory_items", "updated_at", "cambios del inventario del evento"),          # almacén: en el servidor local es de solo consulta (no hay catálogo); si algo cambiara, igual queda en la copia completa
 )
 
 
@@ -290,29 +403,37 @@ def _push_extra(db: Session, event: Event) -> None:
     """0160: ediciones de datos, áreas, entregas de inventario, turnos (y su estado) y llamados. Cada marca de agua avanza solo con lo que la nube confirmó."""
     from app import node_extra
     path = f"/api/node/events/{event.cloud_event_id}/extra"
-    areas, items = node_extra.area_names(db, event.id), node_extra.item_names(db, event.id)
+    areas, items, exhibitors = node_extra.area_names(db, event.id), node_extra.item_names(db, event.id), node_extra.exhibitor_map(db, event.id)
     ser = {"edits": node_extra.edit_row, "areas": lambda r: node_extra.area_row(r, areas), "deliveries": lambda r: node_extra.delivery_row(r, items),
-           "turns": node_extra.turn_row, "calls": node_extra.call_row}
+           "turns": node_extra.turn_row, "calls": node_extra.call_row, "roulette": node_extra.roulette_row, "leads": lambda r: node_extra.lead_row(r, exhibitors)}
     while True:
         rows = {key: _extra_query(db, event, model, mark, col).order_by(model.id).limit(BATCH_REC).all() for key, model, mark, col in EXTRA}
         status_q = _turn_status_query(db, event)
         status_rows = status_q.limit(BATCH_REC).all() if status_q is not None else []
-        if not any(rows.values()) and not status_rows:
+        accepts = _accept_query(db, event).limit(BATCH_REC).all()
+        consents = _consent_pending(db, event)[:BATCH_REC]
+        if not any(rows.values()) and not status_rows and not accepts and not consents:
             return
         body = {key: [x for x in (ser[key](r) for r in batch) if x] for key, batch in rows.items()}
         body["turn_status"] = [node_extra.turn_row(t) for t in status_rows]
+        body["acceptances"] = [node_extra.acceptance_row(a) for a in accepts]
+        body["consents"] = [node_extra.consent_row(c) for c in consents]
         started = utcnow()
         out = _call("POST", path, body)
         if not out.get("ok"):
-            raise SyncError("La nube no confirmó áreas, inventario, turnos o ediciones del lote: se reintenta")
+            raise SyncError("La nube no confirmó lo subido del lote (áreas, inventario, turnos, ediciones, ruleta, expositores, aceptaciones o autorizaciones): se reintenta")
         for key, model, mark, _col in EXTRA:
             if rows[key]:
                 setattr(event, mark, rows[key][-1].id)
         if rows["turns"] or status_rows or event.sync_turn_at is None:
             event.sync_turn_at = started
+        if accepts or event.sync_accept_at is None:
+            event.sync_accept_at = started
+        if consents:
+            _mark_consents_sent(db, event, [c.id for c in consents])
         db.commit()
-        if not any(rows.values()):
-            return                                             # solo estados de turnos: una pasada basta
+        if not any(rows.values()) and len(consents) < BATCH_REC:
+            return                                             # solo estados de turnos / aceptaciones: una pasada basta
 
 
 def pull_event(db: Session, event: Event, max_pages: int = 20) -> dict:
@@ -388,6 +509,7 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         _push_extra(db, event)
         if event.local_shared:
             pull_event(db, event)                # compartido: de paso baja lo de los demás servidores
+        push_backup(db, event)                   # 0160: y la copia completa (si cambió): nada queda solo en este servidor
         counts = pending_counts(db, event)
         if counts["total"] == 0:
             _call("POST", f"/api/node/events/{event.cloud_event_id}/uploaded")

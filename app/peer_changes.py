@@ -6,6 +6,7 @@ hicieron los demás, cada ~15 s. Así, quien se registró en la entrada A aparec
 Lado NUBE (`current_cursor`, `changes_since`): lo que hay en el evento después de un cursor = últimos ids que el servidor ya tiene de cada tabla:
     l = access_logs.id      a = event_attendees.id      p = print_logs.id      c = person_changes.id
     e = person_change_log.id (ediciones)   m = area_movements.id   d = inventory_deliveries.id   t = queue_turns.id   q = queue_calls.id
+    r = roulette_draws.id   x = exhibitor_leads.id
 Lado SERVIDOR LOCAL (`apply_changes`): aplica lo bajado SIN duplicar y marca cada fila `from_peer` (la subida no la devuelve a la nube):
   - personas: si no está en el evento, se crea (y la persona, si no existía); si ya estaba, NO se pisan sus datos.
   - registros: por `client_id` (los propios vuelven con el prefijo de este servidor y se saltan); un «Nuevo» de alguien que aquí ya tiene registro no se repite.
@@ -26,12 +27,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import node_extra
-from app.models import AccessLog, AreaMovement, Event, EventAttendee, InventoryDelivery, PersonChange, PersonChangeLog, PrintLog, QueueCall, QueueTurn, User
+from app.models import (AccessLog, AreaMovement, Event, EventAttendee, ExhibitorLead, InventoryDelivery, PersonChange, PersonChangeLog, PrintLog, QueueCall, QueueTurn, RouletteDraw,
+                        User)
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.peer_changes")
 PAGE = 500
-KEYS = ("l", "a", "p", "c", "e", "m", "d", "t", "q")
+KEYS = ("l", "a", "p", "c", "e", "m", "d", "t", "q", "r", "x")
 PERSON_FIELDS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
 
 
@@ -70,7 +72,7 @@ def current_cursor(db: Session, event_id: int) -> dict:
     def top(model):
         return int(db.query(func.coalesce(func.max(model.id), 0)).filter(model.event_id == event_id).scalar() or 0)
     return {"l": top(AccessLog), "a": top(EventAttendee), "p": top(PrintLog), "c": top(PersonChange), "e": top(PersonChangeLog), "m": top(AreaMovement),
-            "d": top(InventoryDelivery), "t": top(QueueTurn), "q": top(QueueCall)}
+            "d": top(InventoryDelivery), "t": top(QueueTurn), "q": top(QueueCall), "r": top(RouletteDraw), "x": top(ExhibitorLead)}
 
 
 def changes_since(db: Session, event: Event, cursor: dict) -> dict:
@@ -103,10 +105,11 @@ def changes_since(db: Session, event: Event, cursor: dict) -> dict:
         out_cursor["c"] = r.id
         changes.append({"cedula": r.user_id, "at": _iso(r.at), "kind": r.kind, "old_value": r.old_value, "new_value": r.new_value, "detail": r.detail})
     extra, more_extra = {}, False
-    areas, items = node_extra.area_names(db, event.id), node_extra.item_names(db, event.id)
+    areas, items, exhibitors = node_extra.area_names(db, event.id), node_extra.item_names(db, event.id), node_extra.exhibitor_map(db, event.id)
     for key, k, model, ser in (("edits", "e", PersonChangeLog, node_extra.edit_row), ("areas", "m", AreaMovement, lambda r: node_extra.area_row(r, areas)),
                                ("deliveries", "d", InventoryDelivery, lambda r: node_extra.delivery_row(r, items)), ("turns", "t", QueueTurn, node_extra.turn_row),
-                               ("calls", "q", QueueCall, node_extra.call_row)):
+                               ("calls", "q", QueueCall, node_extra.call_row), ("roulette", "r", RouletteDraw, node_extra.roulette_row),
+                               ("leads", "x", ExhibitorLead, lambda r: node_extra.lead_row(r, exhibitors))):
         rows = db.query(model).filter(model.event_id == event.id, model.id > cur[k]).order_by(model.id).limit(PAGE).all()
         if rows:
             out_cursor[k] = rows[-1].id
