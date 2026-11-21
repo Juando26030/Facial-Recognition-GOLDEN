@@ -381,7 +381,8 @@ def test_resubmission_is_marked_in_answers_and_the_registry_keeps_the_latest_ver
     first, again = _person_values(), _person_values()
     assert _id_submit(client, ev, f, first, sid="v1").status_code == 200
     assert _id_submit(client, ev, f, again, sid="v2").status_code == 200
-    rows = client.get(f"/api/events/{ev}/forms/{f['id']}/submissions").json()["rows"]
+    login(client, "coord1")
+    rows = client.get(f"/api/events/{ev.id}/forms/{f['id']}/submissions").json()["rows"]
     assert sorted(r["resub"] for r in rows) == [0, 2]                                   # las dos aparecen; solo la segunda dice «reinscripción»
     form = db.get(WebForm, f["id"])
     subs = db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).order_by(FormSubmission.id).all()

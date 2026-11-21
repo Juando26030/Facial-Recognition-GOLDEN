@@ -13,6 +13,14 @@ DATA_ONLY_NOOP_DOWNGRADE = {"0109_inventory_unify.py", "0141_merge_crm_subcat.py
 VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 
 
+def _is_merge(tree):
+    """Una migración que solo une dos ramas (down_revision = tupla) no cambia el esquema: su downgrade vacío es correcto."""
+    for n in tree.body:
+        if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "down_revision" for t in n.targets):
+            return isinstance(n.value, ast.Tuple)
+    return False
+
+
 def _read_revisions():
     revs = {}
     for path in sorted(VERSIONS.glob("*.py")):
@@ -66,7 +74,7 @@ def test_new_migrations_are_neon_pooler_safe_and_reversible():
         funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
         assert "upgrade" in funcs and "downgrade" in funcs, f"{path.name} sin upgrade/downgrade"
         body = funcs["downgrade"].body
-        if path.name in DATA_ONLY_NOOP_DOWNGRADE:
+        if path.name in DATA_ONLY_NOOP_DOWNGRADE or _is_merge(tree):
             continue
         assert not (len(body) == 1 and isinstance(body[0], ast.Pass)), f"{path.name}: downgrade vacío"
 

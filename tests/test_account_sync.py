@@ -100,6 +100,7 @@ def test_local_server_blocks_every_password_path_but_login_still_works(client, f
     victim = factory.staff("coordinador", "coord", must_change_password=True)
     vid = victim.id
     monkeypatch.setenv("LOCAL_SERVER", "1")
+    monkeypatch.setenv("NODE_TOKEN", "gwn_test")          # servidor ya vinculado (sin vincular, el primer ingreso intenta vincularse con producción)
     r = client.post("/login", data={"username": "coord", "password": PASSWORD}, follow_redirects=False)
     assert r.status_code in (302, 303) and "/cambiar-contrasena" not in r.headers["location"]          # no se obliga a cambiarla
     assert client.post("/cambiar-contrasena", data={"current": PASSWORD, "password": "Otra#2026xyz", "confirm": "Otra#2026xyz"}).status_code == 403
@@ -136,6 +137,7 @@ def test_f5_9_local_server_never_creates_accounts(client, factory, db, monkeypat
     ev = factory.event("en_proceso")
     ev_id = ev.id
     monkeypatch.setenv("LOCAL_SERVER", "1")
+    monkeypatch.setenv("NODE_TOKEN", "gwn_test")          # servidor ya vinculado
     login(client, "root")
     r = client.post(f"/api/events/{ev_id}/staff-users", json={"username": "99887766", "full_name": "Digi", "role": "digitador"})
     assert r.status_code == 403 and "nube" in r.json()["detail"]

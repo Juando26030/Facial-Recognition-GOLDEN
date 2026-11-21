@@ -69,7 +69,8 @@ def test_clean_extra_fields_keeps_only_optional_text():
 
 def test_revoke_excludes_pure_commercial_and_patch_validates_coordinator():
     from app.routers import events
-    assert "_can_manage_temp(staff)" in _body(events, "revoke_event_staff")
+    assert "_assert_can_manage_target(staff, target)" in _body(events, "revoke_event_staff")          # 16-nov-2026: envuelve _can_manage_temp y agrega la regla del coordinador temporal
+    assert "_can_manage_temp(staff)" in _body(events, "_assert_can_manage_target")
     body = _body(events, "update_event")
     assert "data.coordinator_staff_id" in body and "El coordinador asignado no es válido" in body
 

@@ -48,7 +48,7 @@ def test_client_temp_screen():
     html = _t("templates/kiosk_usuarios.html")
     assert 'value="cliente_temp"' in html and 'id="clientCreds"' in html and 'id="uUsernameField"' in html
     js = _t("static/js/usuarios.js")
-    assert "payload.client = true" in js and "showCredentials(d.credentials.username, d.credentials.password)" in js
+    assert "payload.client = true" in js and "showCredentials(d.credentials.username, d.credentials.password" in js
     assert "u.client_temp" in js and "resetClientPassword" in js
     assert "Cliente (temporal)" in js
     assert "loginBtns = !canManage || u.role !== 'digitador' || u.client_temp" in js     # sin «Permitir/No permitir» para el cliente temporal

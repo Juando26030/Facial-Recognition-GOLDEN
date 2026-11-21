@@ -33,7 +33,7 @@ def test_run_task_needs_the_exact_allowed_list(monkeypatch):
     src = open("deploy/loadtest/run_task.py", encoding="utf8").read()
     assert "LOAD_ALLOWED_HOSTS" in src and "Falta LOAD_ALLOWED_HOSTS" in src and "check_host" in src
     sh = open("deploy/loadtest/run_phase4.sh", encoding="utf8").read()
-    assert "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" in sh and "NO es un destino de staging permitido" in sh
+    assert "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" in sh and "NO es un destino permitido ($TARGET)" in sh
 
 
 @pytest.fixture()

@@ -161,7 +161,7 @@ def test_only_selects_scenarios_and_a_wrong_web_url_deploys_nothing(tmp_path):
     assert r.returncode == 0 and sorted(e["LOAD_SCENARIO"] for e in envs) == ["cedula", "forms"] and len(deploys) == 2
     for wrong in ("https://app.golden-eventos.com", "https://golden-staging-999.web.app", "https://golden-staging-298291650070.web.app.evil.example"):
         r, lines = _run(tmp_path, "run", "small", web=wrong)
-        assert r.returncode != 0 and "NO es un destino de staging permitido" in r.stderr and not [ln for ln in lines if ln.startswith(("DEPLOY", "EXECUTE"))], wrong
+        assert r.returncode != 0 and "NO es un destino permitido (staging)" in r.stderr and not [ln for ln in lines if ln.startswith(("DEPLOY", "EXECUTE"))], wrong
 
 
 # ------------------------------------------------------------------ comprobación previa de `run` y protección de los originales de scale-up

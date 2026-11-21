@@ -119,6 +119,7 @@ ALLOW = {
     "qr_resolve.py": {"resolve_qr"},          # ya rechaza por su cuenta los eventos archivados o con la base archivada
     "queue.py": {"get_queue_config", "put_queue_config", "assign_turns", "upload_manual", "manual_template", "queue_tv_state", "_operate"},          # turnos: configuración, plantilla y pantalla (solo números); asignar/subir/llamar exigen evento en proceso. La lista con nombres (queue_state) lleva el guard
     "selfreg.py": {"selfreg_form", "selfreg_submit", "get_config", "set_config"},          # autorregistro: exige evento en proceso y el interruptor encendido
+    "inventory.py": {"get_checklist"},          # inventario alistado para el evento: sin datos de personas
     "api.py": {"email_check", "recognize", "_recognition_from_token", "checkin_cedula", "bulk_job_active"},          # reconocimiento/registro exigen evento «en proceso» (nunca uno archivado)
     "areas_inventory.py": {"set_modules", "list_areas", "create_area", "update_area", "archive_area", "restore_area", "delete_area", "list_inventory", "create_item", "update_item",
                            "archive_item", "restore_item", "delete_item"},          # configuración de zonas y catálogo
