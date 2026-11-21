@@ -23,7 +23,7 @@ Las opciones sin internet (enlace de radio punto a punto, un servidor con varios
 - `event_lease.is_writer` reemplaza la comparación «¿es el servidor que lo tiene?» en todos los puntos donde un servidor escribe o baja datos (paquete, checklist, subidas, liberar).
 - **Pasar a internet** desde un servidor: sale solo ese servidor; el evento vuelve a la nube cuando sale el último. Si salió el principal, el siguiente pasa a serlo.
 - `/api/node/ping` devuelve `shared_events`: un servidor que ya tenía el evento se entera en su ciclo normal (≤ 30 min, o «Sincronizar») de que ahora es compartido. **Lo recomendado es marcarlo antes de descargarlo.**
-- `/api/node/events/{id}/changes?l=&a=&p=&c=`: registros, personas del evento, impresiones y cambios con id mayor al cursor, en páginas de 500. Solo para servidores del grupo.
+- `/api/node/events/{id}/changes`: un cursor por sección (`peer_changes.KEYS`: `l` registros, `a` personas, `p` impresiones, `c` cambios, `e` ediciones, `m` áreas, `d` entregas, `t` turnos, `q` llamados, `r` ruleta, `x` contactos); devuelve lo que tiene id mayor, en páginas de 500. Solo para servidores del grupo.
 
 ### Servidor local
 - Al descargar (o sumarse), guarda el cursor que le dio la nube **antes** de exportar el paquete: lo que caiga entre medio se repite y no duplica.
