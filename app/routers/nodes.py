@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app import event_lease, node_auth, server_keys, versioning
 from app.auth import require_role
 from app.database import get_db
-from app.models import AuditAction, Event, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
+from app.models import AuditAction, Event, EventLocalNode, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
 from app.routers import api
 from app.timeutil import utcnow
 
@@ -115,16 +115,18 @@ def _leased_event(db: Session, event_id: int, node: LocalNode, lock: bool = Fals
     event = (q.with_for_update() if lock else q).first()          # F5-9 A-06: liberar con la fila bloqueada
     if event is None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
-    if event.local_node_name != node.name:
+    if not event_lease.is_writer(event, node.name):          # el que lo tiene (o uno del grupo, si el evento es compartido: 0160)
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
     return event
 
 
 @router.get("/node/ping")
-def node_ping(request: Request, node: LocalNode = Depends(node_auth.require_node)):
-    """El servidor local pregunta si la nube lo acepta: versión de la nube y si la suya es compatible. Una sola lectura (el token)."""
+def node_ping(request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
+    """El servidor local pregunta si la nube lo acepta: versión de la nube y si la suya es compatible. Además (0160) los eventos COMPARTIDOS que tiene: así un servidor que ya tenía el
+    evento se entera (en su siguiente ciclo) de que ahora es compartido y empieza a bajar lo de los demás. Una lectura liviana más (índice por evento)."""
     ok, msg = node_auth.schema_compatible(request.headers.get("X-Node-Schema"))
-    return {"ok": True, "node": node.name, "cloud": versioning.local_version(), "compatible": ok, "message": msg}
+    shared = [eid for (eid,) in db.query(Event.id).join(EventLocalNode, EventLocalNode.event_id == Event.id).filter(Event.local_shared.is_(True), EventLocalNode.node_name == node.name)]
+    return {"ok": True, "node": node.name, "cloud": versioning.local_version(), "compatible": ok, "message": msg, "shared_events": shared}
 
 
 @router.post("/node/events/{event_id}/access-logs")
@@ -211,9 +213,10 @@ def node_release(event_id: int, body: dict, request: Request, db: Session = Depe
     if not isinstance(pending, int) or pending != 0:
         raise HTTPException(status_code=409, detail="Todavía hay datos pendientes de subir: no se puede pasar a internet")
     event_lease.mark_uploaded(event)
-    name = event.local_node_name
-    event_lease.release(event)
-    db.add(AuditAction(actor_id=node.created_by_id, actor_role="nodo", action="lease_release", entity="event", entity_id=str(event.id), entity_name=event.name, detail=f"Volvió a internet desde el servidor local «{name}» (sincronizado)"))
+    released = event_lease.leave(event, node.name)          # compartido: solo sale ESTE servidor; el evento vuelve a internet cuando sale el último (0160)
+    detail = (f"Volvió a internet desde el servidor local «{node.name}» (sincronizado)" if released
+              else f"El servidor local «{node.name}» devolvió su parte (sincronizado); el evento sigue en: {', '.join(event_lease.writers(event))}")
+    db.add(AuditAction(actor_id=node.created_by_id, actor_role="nodo", action="lease_release", entity="event", entity_id=str(event.id), entity_name=event.name, detail=detail[:500]))
     db.commit()
     log.info("node_release event=%s node=%s", event.id, node.id)
     return event_lease.serialize(event)

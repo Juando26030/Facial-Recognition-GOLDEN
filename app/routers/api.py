@@ -996,8 +996,8 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
     if event.archived_at is not None:                # B4: ningún rol (ni coordinador+, que conserva su margen después de finalizar) escribe en un evento archivado
         raise HTTPException(status_code=403, detail="Este evento está archivado: no recibe registros")
-    if event_lease.is_leased(event) and getattr(staff, "via_node_name", None) != event.local_node_name:
-        event_lease.assert_editable(event)           # F5-9 A-09 (Fase 6): con el evento en un servidor local, solo ESE servidor sube (un solo escritor); los quioscos de la nube reciben 423
+    if event_lease.is_leased(event) and not event_lease.is_writer(event, getattr(staff, "via_node_name", None)):
+        event_lease.assert_editable(event)           # F5-9 A-09 (Fase 6): con el evento en un servidor local, solo ESE servidor sube (o los del grupo, si es compartido: 0160); los quioscos de la nube reciben 423
     event_archive.require_data_open(event, staff)    # ni con la base archivada (L7)
     event.sync_revert = status_changes.revert_info(db, event)     # (momento, ventana abierta) o None; atributo de paso, no se guarda
     return event

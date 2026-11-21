@@ -696,6 +696,9 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             d["logo_path"] = d["report_pdf_path"] = None
             d["local_node_name"] = d["local_since"] = d["local_by_id"] = d["local_last_upload_at"] = None          # Fase 6: el arrendamiento es de la nube; la copia importada no nace «en servidor local»
             from app import localmode
+            d["peer_cursor"] = None
+            if "local_shared" in d and not localmode.is_local_server():          # 0160: en un servidor local se conserva (la copia nace «compartida»); entre entornos de la nube, no
+                d["local_shared"] = False
             if localmode.is_local_server():          # el reconocimiento facial no corre en un servidor local: el evento baja con el escáner apagado
                 d["facial_enabled"] = False
                 d["face_door_enabled"] = False
@@ -895,7 +898,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
 # ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
 # Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
 _VOLATILE = {
-    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "event_type_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug"},
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id", "event_type_id", "final_db_key", "final_db_name", "final_db_uploaded_at", "local_node_name", "local_since", "local_by_id", "local_last_upload_at", "public_slug", "local_shared", "peer_cursor"},
     "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
     "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
     "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},

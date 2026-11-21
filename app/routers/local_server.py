@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import cloud_client, event_checklist, event_lease, event_transfer
+from app import cloud_client, event_checklist, event_lease, event_transfer, peer_changes
 from app.auth import require_role_or_any
 from app.database import get_db
 from app.models import Event, StaffUser
@@ -58,9 +58,11 @@ def cloud_events(db: Session = Depends(get_db), staff: StaffUser = Depends(_who)
     out = []
     for ev in events:
         lease = ev.get("local") or {}
-        mine = bool(lease.get("leased")) and lease.get("node_name") == node
+        mine = bool(lease.get("leased")) and (lease.get("node_name") == node or node in (lease.get("nodes") or []))
+        elsewhere = bool(lease.get("leased")) and not mine
         out.append({**ev, "downloaded": (ev.get("event_code") or "").strip().lower() in here, "local_event_id": here.get((ev.get("event_code") or "").strip().lower()),
-                    "leased_here": mine, "leased_elsewhere": bool(lease.get("leased")) and not mine})
+                    "leased_here": mine, "leased_elsewhere": elsewhere,
+                    "can_join": elsewhere and bool(lease.get("shared"))})          # 0160: evento COMPARTIDO que ya está en otro servidor: este puede sumarse
     return {"configured": True, "offline": False, "node_name": node, "events": out}
 
 
@@ -94,6 +96,9 @@ def download_event(cloud_event_id: int, db: Session = Depends(get_db), staff: St
     if local_event is not None:          # la subida (app/node_sync.py) solo sube eventos que sepan cuál es su evento en la nube
         local_event.cloud_event_id = cloud_event_id
         local_event.sync_package_at = utcnow()
+        local_event.local_shared = bool(lease.get("shared"))          # 0160: compartido entre varios servidores: desde aquí baja lo de los demás (desde lo que ya traía el paquete)
+        if local_event.local_shared and lease.get("peer_cursor"):
+            peer_changes.save_cursor(local_event, lease["peer_cursor"])
         db.commit()
         try:          # el checklist de inventario viaja aparte (solo para consultarlo en el quiosco); si falla, el evento queda igual y se puede refrescar después
             event_checklist.save_snapshot(db, local_event.id, cloud_client.inventory_checklist(cloud_event_id))
@@ -103,7 +108,9 @@ def download_event(cloud_event_id: int, db: Session = Depends(get_db), staff: St
             log.warning("no se pudo guardar el checklist de inventario del evento %s", cloud_event_id)
     log.info("descarga a local ok (evento de la nube %s)", cloud_event_id)
     return {"ok": True, "event_id": report.get("event_id"), "event_code": report.get("event_code"), "name": report.get("name"), "warnings": report.get("warnings", []),
-            "message": "El evento quedó en este servidor. En la nube ahora se ve en solo lectura."}
+            "shared": bool(lease.get("shared")),
+            "message": ("El evento quedó en este servidor y es COMPARTIDO: mientras haya internet, verás lo que registren los otros servidores." if lease.get("shared")
+                        else "El evento quedó en este servidor. En la nube ahora se ve en solo lectura.")}
 
 
 def _give_back(cloud_event_id: int, newly_taken: bool) -> None:

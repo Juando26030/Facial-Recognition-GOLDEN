@@ -129,6 +129,8 @@
               <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalRelease" hidden>Pasar a internet</button>
             </div>
             <p class="gw-hint">Mientras el evento esté en un servidor local, aquí solo se puede ver. «Pasar a internet» deja el evento editable otra vez en la nube; el servidor local sube antes todo lo que tenga pendiente.</p>
+            <div class="gw-field"><label class="gw-check" for="eeLocalShared"><input type="checkbox" id="eeLocalShared"> <span class="gw-choice__text">Compartido entre varios servidores locales</span></label>
+              <p class="gw-hint">Para eventos con entradas lejos entre sí: cada entrada lleva su servidor local y todos se ven entre sí cada pocos segundos <strong>mientras tengan internet</strong> (por ejemplo con Starlink). Márcalo antes de descargar el evento en los servidores.</p></div>
           </div>
         </details>
 
@@ -541,7 +543,18 @@
       : 'El evento está en la nube (se edita aquí).';
     document.getElementById('eeLocalTake').hidden = !!l.leased;
     document.getElementById('eeLocalRelease').hidden = !l.leased;
+    const sh = document.getElementById('eeLocalShared');
+    sh.checked = !!l.shared;
+    if (l.leased && l.shared && (l.nodes || []).length) info.textContent += ` Compartido entre: ${(l.nodes || []).join(', ')}.`;
   }
+  document.getElementById('eeLocalShared').addEventListener('change', async (e) => {
+    const box = e.currentTarget;
+    const want = box.checked;
+    const data = await leaseCall('/shared', { enabled: want });
+    if (!data) { box.checked = !want; return; }
+    current.local = data; paintLocal(current);
+    showToast(want ? 'El evento quedó compartido: varios servidores locales podrán tenerlo a la vez.' : 'El evento ya no es compartido.', 'success');
+  });
   async function leaseCall(path, body) {
     const res = await fetch(`/api/events/${current.id}/lease${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
     const data = await res.json().catch(() => ({}));

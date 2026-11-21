@@ -63,3 +63,25 @@ def release_lease(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     _audit(db, staff, "lease_release", event, f"Volvió a internet desde el servidor local «{node}»")
     db.commit()
     return event_lease.serialize(event)
+
+
+@router.post("/events/{event_id}/lease/shared")
+def set_shared(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """0160: el evento acepta (o deja de aceptar) VARIOS servidores locales a la vez, con la nube como puente (docs/23_EVENTO_COMPARTIDO_NUBE.md). Se puede encender aunque el evento ya
+    esté en un servidor (ese pasa a ser el primero del grupo). Apagarlo solo con uno o ningún servidor: si hay varios, cada uno debe «Pasar a internet» antes."""
+    event = _event(db, event_id, staff, lock=True)
+    want = bool((data or {}).get("enabled"))
+    if want == bool(event.local_shared):
+        return event_lease.serialize(event)
+    if want:
+        event.local_shared = True
+        if event_lease.is_leased(event):
+            event_lease._join(event, event.local_node_name)
+    else:
+        if len(event_lease.writers(event)) > 1:
+            raise HTTPException(status_code=409, detail="El evento está en varios servidores locales: cada uno debe «Pasar a internet» antes de dejar de compartirlo.")
+        event.shared_nodes.clear()
+        event.local_shared = False
+    _audit(db, staff, "lease_shared", event, "Evento compartido entre varios servidores locales" if want else "El evento dejó de ser compartido entre servidores locales")
+    db.commit()
+    return event_lease.serialize(event)

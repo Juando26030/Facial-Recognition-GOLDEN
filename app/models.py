@@ -93,6 +93,7 @@ class EventAttendee(Base):
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
     code = Column(String(64), nullable=True)  # 0140: código de la persona EN este evento (serial del QR, aparte de la cédula); único por evento sin distinguir mayúsculas; app/person_code.py
+    from_peer = Column(Boolean, nullable=True)  # 0160 (servidor local, evento compartido): la persona la dio de alta OTRO servidor; la subida no la devuelve
     last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
     archived_at = Column(DateTime, nullable=True)  # sin uso: reservado (0091). Las personas se BORRAN del evento (decisión 7-nov-2026); lo que se archiva es la base del evento (events.data_archived_at). Nada la lee ni la escribe
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -121,6 +122,7 @@ class AccessLog(Base):
     record_type = Column(String)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    from_peer = Column(Boolean, nullable=True)  # 0160 (servidor local, evento compartido): llegó de OTRO servidor vía la nube; la subida no la devuelve
     client_id = Column(String, nullable=True)  # identificador generado por el kiosco/navegador: un reintento o una sincronización nunca duplica el ingreso (único por evento, ver 0047)
     doubtful_reason = Column(String(24), nullable=True)  # 0077: ingreso sincronizado tras devolver el evento a «Creado» SIN hora válida del dispositivo (`sin_hora_valida`): consultable para revisarlo
     registration_method = Column(String, nullable=True)  # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): 'tradicional' | 'autoregistro' | 'biometrico' | 'qr' — para el reporte, que siempre debe decir CÓMO se registró cada persona (ver reports.py y routers/api.py)
@@ -153,6 +155,7 @@ class PrintLog(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     printed_at = Column(DateTime, default=utcnow)
     printed_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     kind = Column(String(10), nullable=False, default='normal', server_default='normal')          # 0150: 'normal' | 'pre' (escarapela PREIMPRESA antes de que la persona llegue; módulo Preimpresiones)
 
     __table_args__ = (
@@ -335,6 +338,8 @@ class Event(Base):
     queue_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0116 (Fase 8): «Turnos y filas» activado desde Parámetros (app/queue_turns.py)
     queue_config_json = Column(Text, nullable=True)      # configuración de los turnos: orden, filas (letras), mostrar nombre… (queue_turns.clean_config); NULL = la de fábrica
     local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
+    local_shared = Column(Boolean, default=False, server_default='false', nullable=False)      # 0160: el evento acepta VARIOS servidores locales a la vez (nube como puente; docs/23_EVENTO_COMPARTIDO_NUBE.md). En el servidor local: esta copia es compartida
+    peer_cursor = Column(Text, nullable=True)      # 0160 (servidor local): hasta dónde bajó los cambios de los otros servidores (JSON {a, l, p, c, at}: últimos ids de la nube)
     # --- Lado del SERVIDOR LOCAL (0112, Fase 6): solo se usan cuando este evento es una copia bajada de la nube (LOCAL_SERVER=1); en la nube quedan NULL ---
     cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
     sync_log_id = Column(Integer, nullable=True)         # marca de agua: último AccessLog.id local ya CONFIRMADO por la nube
@@ -355,6 +360,7 @@ class Event(Base):
     super_event = relationship("SuperEvent", back_populates="events")
     state = relationship("EventState")
     event_type = relationship("EventType")
+    shared_nodes = relationship("EventLocalNode", cascade="all, delete-orphan", order_by="EventLocalNode.joined_at")          # 0160: servidores locales de un evento compartido (solo se lee si local_shared)
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -1207,6 +1213,17 @@ class EventChecklistRow(Base):
     __table_args__ = (UniqueConstraint('event_id', 'row_key', name='uq_event_checklist_row'),)
 
 
+class EventLocalNode(Base):
+    """0160: servidores locales que tienen un evento COMPARTIDO (docs/23_EVENTO_COMPARTIDO_NUBE.md). El primero también queda en `events.local_node_name` (principal) para todo lo que ya lo lee."""
+    __tablename__ = 'event_local_nodes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    node_name = Column(String(60), nullable=False)
+    joined_at = Column(DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'node_name', name='uq_event_local_node'),)
+
+
 class LocalNode(Base):
     """Servidor local autorizado a subir datos a la nube (0112, Fase 6). El token (`gwn_…`) se muestra UNA sola vez al crearlo y aquí solo queda su hash SHA-256; revocar = poner `revoked_at`.
     `created_by_id` es la cuenta de admin/super_admin que lo creó: con su alcance (cliente/empresa) se aplican los lotes que sube el nodo. Sin datos personales."""
@@ -1440,6 +1457,7 @@ class PersonChange(Base):
     old_value = Column(String, nullable=True)
     new_value = Column(String, nullable=True)
     detail = Column(String, nullable=True)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
 
 
 class PersonChangeLog(Base):

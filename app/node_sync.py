@@ -5,7 +5,10 @@ Cada ~NODE_UPLOAD_MINUTES (30) y cuando alguien lo pide, el servidor local sube 
   2. ingresos de personas que ya estaban (AccessLog «Existente») -> POST /api/node/events/{id}/access-logs (idempotente por client_id)
 Las marcas de agua (`sync_persons_at`, `sync_log_id`) solo avanzan con lo que la nube CONFIRMÓ: un corte a mitad de camino repite el lote y la nube responde «replayed».
 Cuando todo lo pendiente quedó confirmado se avisa `/uploaded` (la nube muestra «última subida a las 3:30 p. m.»). «Pasar a internet» = subir lo pendiente y, solo si quedó en cero, `/release`.
-Configuración (variables de entorno): PRODUCTION_URL (https), NODE_TOKEN (el token que mostró la nube al crear el servidor), NODE_UPLOAD_MINUTES.
+Evento COMPARTIDO (0160, docs/23_EVENTO_COMPARTIDO_NUBE.md): si varios servidores tienen el mismo evento, mientras esté «En proceso» cada NODE_SHARED_SECONDS (15) este servidor sube lo
+suyo y BAJA lo de los demás (`pull_event`, app/peer_changes.py). Lo bajado queda marcado `from_peer` y nunca se vuelve a subir. Los identificadores que sube llevan el prefijo propio del
+servidor (peer_changes.node_tag) para que dos servidores no choquen.
+Configuración (variables de entorno): PRODUCTION_URL (https), NODE_TOKEN (el token que mostró la nube al crear el servidor), NODE_UPLOAD_MINUTES, NODE_SHARED_SECONDS.
 Nada de datos personales en los logs; los errores guardados (`sync_error`) son texto corto sin cédulas ni nombres.
 """
 import json
@@ -20,7 +23,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import local_env, versioning
+from app import local_env, peer_changes, versioning
 from app.models import AccessLog, Event, EventAttendee, PersonChange, PrintLog, User
 from app.timeutil import utcnow
 
@@ -52,6 +55,13 @@ def interval_minutes() -> int:
         return max(1, int(os.getenv("NODE_UPLOAD_MINUTES", "30")))
     except ValueError:
         return 30
+
+
+def shared_seconds() -> int:
+    try:
+        return max(5, int(os.getenv("NODE_SHARED_SECONDS", "15")))
+    except ValueError:
+        return 15
 
 
 def configured() -> bool:
@@ -96,28 +106,28 @@ def cloud_ping() -> dict:
 
 # ------------------------------------------------------------------------------------------------ lo pendiente
 def _persons_query(db: Session, event: Event):
-    q = db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.origin.in_(PERSON_ORIGINS))
+    q = db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.origin.in_(PERSON_ORIGINS), EventAttendee.from_peer.isnot(True))          # lo bajado de otro servidor no se devuelve
     if event.sync_persons_at is not None:
         q = q.filter(EventAttendee.created_at > event.sync_persons_at)
     return q
 
 
 def _logs_query(db: Session, event: Event):
-    q = db.query(AccessLog).filter(AccessLog.event_id == event.id)
+    q = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.from_peer.isnot(True))
     if event.sync_log_id is not None:
         q = q.filter(AccessLog.id > event.sync_log_id)
     return q
 
 
 def _prints_query(db: Session, event: Event):
-    q = db.query(PrintLog).filter(PrintLog.event_id == event.id)
+    q = db.query(PrintLog).filter(PrintLog.event_id == event.id, PrintLog.from_peer.isnot(True))
     if event.sync_print_id is not None:
         return q.filter(PrintLog.id > event.sync_print_id)
     return q.filter(PrintLog.printed_at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)          # sin marca: solo lo hecho DESPUÉS de bajar el evento
 
 
 def _changes_query(db: Session, event: Event):
-    q = db.query(PersonChange).filter(PersonChange.event_id == event.id)
+    q = db.query(PersonChange).filter(PersonChange.event_id == event.id, PersonChange.from_peer.isnot(True))
     if event.sync_change_id is not None:
         return q.filter(PersonChange.id > event.sync_change_id)
     return q.filter(PersonChange.at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)
@@ -179,7 +189,8 @@ def _person_op(db: Session, event: Event, att: EventAttendee) -> Optional[dict]:
         return None
     fields = {"id": u.id, "first_name": u.first_name, "last_name": u.last_name, "role": u.role, "entity": u.entity, "phone": u.phone, "email": u.email, "opt_1": u.opt_1,
               "extra_fields": u.get_extras(), "categories": att.get_categories(), "field_labels": event.get_optional_labels()}
-    return {"op_id": f"n{event.id}-p{att.id}"[:64], "type": "create_person", "timestamp": (att.created_at or utcnow()).isoformat(), "fields": fields}
+    op_id = f"{peer_changes.node_tag()}-{event.id}-p{att.id}" if event.local_shared else f"n{event.id}-p{att.id}"          # compartido: con el prefijo de este servidor (no choca con otro)
+    return {"op_id": op_id[:64], "type": "create_person", "timestamp": (att.created_at or utcnow()).isoformat(), "fields": fields}
 
 
 def _push_persons(db: Session, event: Event) -> None:
@@ -214,6 +225,12 @@ def _push_logs(db: Session, event: Event) -> None:
         if not batch:
             return
         send = [r for r in batch if r.record_type == LOG_TYPE]
+        if event.local_shared:                          # compartido: el identificador se fija AQUÍ con el prefijo de este servidor, para reconocerlo cuando vuelva de la nube
+            tag = peer_changes.node_tag()
+            for r in send:
+                if not r.client_id:
+                    r.client_id = f"{tag}-{event.id}-l{r.id}"[:64]
+            db.flush()
         if send:
             out = _call("POST", path, {"records": [_log_record(event, r) for r in send]})
             bad = [r for r in out.get("results", []) if r.get("result") == "invalid"]
@@ -243,6 +260,61 @@ def _push_records(db: Session, event: Event) -> None:
         db.commit()
 
 
+def pull_event(db: Session, event: Event, max_pages: int = 20) -> dict:
+    """Evento compartido: baja de la nube lo que hicieron los OTROS servidores desde el cursor y lo aplica aquí (sin duplicar). Lanza SyncError si no hay red."""
+    total = {"persons": 0, "access_logs": 0, "print_logs": 0, "person_changes": 0}
+    cur = peer_changes.clean_cursor(event.peer_cursor)
+    for _ in range(max_pages):
+        q = "&".join(f"{k}={cur[k]}" for k in peer_changes.KEYS)
+        data = _call("GET", f"/api/node/events/{event.cloud_event_id}/changes?{q}")
+        added = peer_changes.apply_changes(db, event, data)
+        for k, v in added.items():
+            total[k] += v
+        cur = peer_changes.clean_cursor(data.get("cursor") or cur)
+        peer_changes.save_cursor(event, cur)
+        db.commit()
+        if not data.get("more"):
+            break
+    if any(total.values()):
+        log.info("evento compartido %s: bajado de otros servidores %s", event.id, total)
+    return total
+
+
+def sync_shared(db: Session, event: Event) -> dict:
+    """Ciclo corto de un evento compartido: subir lo propio y bajar lo de los demás. Sin ping (cada llamada ya lleva la versión y la nube la revisa). No lanza."""
+    try:
+        _push_persons(db, event)
+        _push_logs(db, event)
+        _push_records(db, event)
+        pulled = pull_event(db, event)
+        if event.sync_error:
+            event.sync_error = None
+            db.commit()
+        return {"ok": True, "pulled": pulled}
+    except SyncError as e:
+        db.rollback()
+        ev = db.get(Event, event.id)
+        ev.sync_error = str(e)[:300]
+        db.commit()
+        return {"ok": False, "error": str(e)}
+
+
+def _refresh_shared_flags(db: Session, ping: dict) -> None:
+    """La nube dice (en el ping) qué eventos de este servidor son compartidos: así se entera un servidor que ya tenía el evento cuando lo marcan como compartido después."""
+    shared = ping.get("shared_events")
+    if not isinstance(shared, list):
+        return
+    ids = {int(x) for x in shared if isinstance(x, int)}
+    changed = False
+    for ev in synced_events(db):
+        want = ev.cloud_event_id in ids
+        if bool(ev.local_shared) != want:
+            ev.local_shared = want
+            changed = True
+    if changed:
+        db.commit()
+
+
 def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
     """Sube lo pendiente de UN evento. Devuelve {"ok", "pending", "error"}. No lanza: guarda el motivo en `sync_error`."""
     if event.cloud_event_id is None:
@@ -257,6 +329,8 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         _push_persons(db, event)             # primero las personas nuevas: los ingresos de esa misma gente ya las encuentran
         _push_logs(db, event)
         _push_records(db, event)
+        if event.local_shared:
+            pull_event(db, event)                # compartido: de paso baja lo de los demás servidores
         counts = pending_counts(db, event)
         if counts["total"] == 0:
             _call("POST", f"/api/node/events/{event.cloud_event_id}/uploaded")
@@ -307,6 +381,10 @@ def upload_all(db: Session, *, force: bool = False) -> dict:
     if not _run_lock.acquire(blocking=False):
         return {"configured": True, "busy": True, "events": 0}
     try:
+        try:
+            _refresh_shared_flags(db, cloud_ping())
+        except SyncError:
+            pass                                             # sin red: cada evento lo reintenta abajo y guarda su motivo
         _refresh_accounts(db)                                # al conectarse y en cada ciclo de ~30 min: cuentas y contraseñas de la nube (la nube manda)
         _refresh_checklists(db)                              # y el checklist de inventario de cada evento (para consultarlo en el quiosco aunque después se pierda internet)
         res = [upload_event(db, ev, force=force) for ev in synced_events(db)]
@@ -378,6 +456,33 @@ def _loop() -> None:
                     log.debug("refresco del checklist falló", exc_info=True)
 
 
+_shared = {"t": None, "backoff": {}}
+
+
+def shared_events_now(db: Session) -> list:
+    """Eventos compartidos que hay que mantener al día AHORA: bajados de la nube, compartidos y «En proceso» (fuera de eso no se consulta la nube: la base de la nube puede dormir)."""
+    return db.query(Event).filter(Event.cloud_event_id.isnot(None), Event.local_shared.is_(True), Event.status == "en_proceso").order_by(Event.id).all()
+
+
+def _shared_loop() -> None:
+    from app.database import SessionLocal
+    stop = _thread["stop"]
+    stop.wait(30)
+    while not stop.is_set():
+        try:
+            with SessionLocal() as db:
+                now = utcnow()
+                for ev in shared_events_now(db):
+                    until = _shared["backoff"].get(ev.id)
+                    if until and now < until:
+                        continue
+                    out = sync_shared(db, ev)
+                    _shared["backoff"][ev.id] = None if out["ok"] else now + timedelta(seconds=60)          # sin red: reintenta en un minuto, no cada 15 s
+        except Exception:                                 # noqa: BLE001 — el reloj nunca se cae
+            log.exception("ciclo de evento compartido falló")
+        stop.wait(shared_seconds())
+
+
 def start() -> bool:
     """Arranca el reloj si este servidor es local y está configurado (token y PRODUCTION_URL). En la nube: no hace nada."""
     if not configured() or _thread["t"] is not None:
@@ -386,10 +491,14 @@ def start() -> bool:
     t = threading.Thread(target=_loop, name="node-upload", daemon=True)
     _thread["t"] = t
     t.start()
-    log.info("subida automática al servidor de producción cada %s min", interval_minutes())
+    s2 = threading.Thread(target=_shared_loop, name="node-shared", daemon=True)
+    _shared["t"] = s2
+    s2.start()
+    log.info("subida automática al servidor de producción cada %s min (eventos compartidos: cada %s s)", interval_minutes(), shared_seconds())
     return True
 
 
 def stop() -> None:
     _thread["stop"].set()
     _thread["t"] = None
+    _shared["t"] = None

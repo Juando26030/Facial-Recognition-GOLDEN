@@ -4,11 +4,11 @@ import logging
 import re
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 
-from app import event_checklist, event_lease, event_transfer
+from app import event_checklist, event_lease, event_transfer, peer_changes
 from app.database import get_db
 from app.models import AuditAction, Event
 from app.models import LocalNode
@@ -56,7 +56,7 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
     event = _event(db, event_id)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado")
-    if event.local_node_name != node.name:          # F5-9 A-05: el paquete (datos de personas) solo sale hacia el servidor que TIENE el evento arrendado (se toma antes con /lease, queda auditado)
+    if not event_lease.is_writer(event, node.name):          # F5-9 A-05: el paquete (datos de personas) solo sale hacia el servidor que TIENE el evento arrendado (se toma antes con /lease, queda auditado)
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local: tómalo primero.")
     data, _ = event_transfer.export_event(db, event, staff_username=f"nodo:{node.name}"[:60])
     log.info("node_package event=%s bytes=%s", event_id, len(data))
@@ -68,7 +68,7 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
 def node_inventory_checklist(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """El checklist de inventario del evento (lo alistado), para consultarlo en el servidor local. Solo hacia el servidor que TIENE el evento; sin datos de personas."""
     event = _event(db, event_id)
-    if event.local_node_name != node.name:
+    if not event_lease.is_writer(event, node.name):
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local.")
     return {"lines": event_checklist.cloud_lines(db, event.id)}
 
@@ -78,12 +78,15 @@ def node_take_lease(event_id: int, db: Session = Depends(get_db), node: LocalNod
     event = _event(db, event_id, lock=True)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo antes de llevarlo a un servidor local")
-    already = event_lease.is_leased(event) and event.local_node_name == node.name
+    already = event_lease.is_writer(event, node.name)
+    joined = event_lease.is_leased(event) and not already          # evento compartido que ya estaba en otro servidor (0160)
     event_lease.take(event, node.name, None)
     if not already:
-        _audit(db, node, "lease_local", event, f"Pasó a servidor local «{node.name}» (descarga desde el servidor)")
+        _audit(db, node, "lease_local", event, (f"El servidor local «{node.name}» se sumó al evento compartido" if joined else f"Pasó a servidor local «{node.name}» (descarga desde el servidor)"))
     db.commit()
-    return {**event_lease.serialize(event), "already_mine": already}
+    # Compartido: hasta dónde llega HOY la nube (antes de exportar el paquete). El servidor baja después solo lo que llegue desde aquí (lo que caiga en medio se repite y no duplica).
+    cursor = peer_changes.current_cursor(db, event.id) if event_lease.is_shared(event) else None
+    return {**event_lease.serialize(event), "already_mine": already, "joined": joined, "peer_cursor": cursor}
 
 
 def abort_allowed(event, now=None) -> bool:
@@ -97,11 +100,30 @@ def node_abort(event_id: int, db: Session = Depends(get_db), node: LocalNode = D
     """Deshace el arrendamiento si la descarga falló a medias (NO es «pasar a internet»: eso es /release de nodes.py, que exige 0 pendientes): solo el servidor que lo tiene puede soltarlo (p. ej. si la descarga falló a medias)."""
     event = _event(db, event_id, lock=True)
     if event_lease.is_leased(event):
-        if event.local_node_name != node.name:
+        if not event_lease.is_writer(event, node.name):
             raise HTTPException(status_code=409, detail=f"El evento está en el servidor local «{event.local_node_name}», no en este.")
+        if event_lease.is_shared(event) and event.local_node_name != node.name:
+            event_lease.leave(event, node.name)          # compartido: este servidor se sumó y su descarga falló; los demás siguen (0160)
+            _audit(db, node, "lease_release", event, f"El servidor local «{node.name}» se retiró del evento compartido (descarga fallida)")
+            db.commit()
+            return event_lease.serialize(event)
         if not abort_allowed(event):
             raise HTTPException(status_code=409, detail="El evento ya está trabajando en este servidor local: para devolverlo usa «Pasar a internet» (sube todo antes de soltarlo).")
-        event_lease.release(event)
-        _audit(db, node, "lease_release", event, f"Volvió a internet desde el servidor local «{node.name}»")
+        if event_lease.leave(event, node.name):
+            _audit(db, node, "lease_release", event, f"Volvió a internet desde el servidor local «{node.name}»")
         db.commit()
     return event_lease.serialize(event)
+
+
+@router.get("/node/events/{event_id}/changes")
+def node_changes(event_id: int, request: Request, l: int = 0, a: int = 0, p: int = 0, c: int = 0, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):  # noqa: E741
+    """Evento COMPARTIDO (0160): lo que hay en la nube DESPUÉS del cursor del servidor (`l` registros, `a` personas del evento, `p` impresiones, `c` cambios), para que cada
+    servidor vea lo que hicieron los demás. Solo para servidores del grupo y con el evento compartido. Páginas de hasta `peer_changes.PAGE`; `more` = hay más."""
+    from app import node_auth
+    node_auth.require_compatible(request)
+    event = _event(db, event_id)
+    if not event_lease.is_shared(event) or not event_lease.is_writer(event, node.name):
+        raise HTTPException(status_code=409, detail="Este evento no es compartido o no está en este servidor local")
+    out = peer_changes.changes_since(db, event, {"l": l, "a": a, "p": p, "c": c})
+    out["nodes"] = event_lease.writers(event)
+    return out
