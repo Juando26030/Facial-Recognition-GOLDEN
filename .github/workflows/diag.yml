@@ -60,7 +60,7 @@ jobs:
           PY
       - name: Pruebas que se están limpiando
         run: |
-          F=$(for f in account_sync actualizar_local ajustes_nov12 almacen_api base_archivada_guard bootstrap_iam_retry cadena_migraciones carga_por_pasos cobros_gastos_f10b_texto codigo_protegido coordinador_temporal crm_oportunidades csp_trinquete design_system event_contacts event_template fase_1_8_pedidos fase_1_9_ajustes favicon form_ya_inscrito gcloud_env_vars load_tools persona_prueba pertenencia_persona_evento publico_congelado rendimiento seguridad_cierre_permisos servidor_local_descarga vincular_local; do echo tests/test_$f.py; done)
+          F=$(for f in servidor_local_descarga evento_compartido server_keys server_keys_local preprint account_sync actualizar_local ajustes_nov12 almacen_api base_archivada_guard bootstrap_iam_retry cadena_migraciones carga_por_pasos cobros_gastos_f10b_texto codigo_protegido coordinador_temporal crm_oportunidades csp_trinquete design_system event_contacts event_template fase_1_8_pedidos fase_1_9_ajustes favicon form_ya_inscrito gcloud_env_vars load_tools persona_prueba pertenencia_persona_evento publico_congelado rendimiento seguridad_cierre_permisos servidor_local_descarga vincular_local; do echo tests/test_$f.py; done)
           PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=long $F
       - name: Dependencias de las pruebas de JS
         if: always()          # aunque las pruebas de Python hayan fallado
