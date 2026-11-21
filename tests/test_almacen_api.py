@@ -99,7 +99,7 @@ def test_serial_rules_and_batch_limits(client, factory, on):
     assert client.patch(f"/api/almacen/units/{other['id']}", json={"serial": "SN-001"}).status_code == 409
     done = client.patch(f"/api/almacen/units/{other['id']}", json={"serial": "sn-777"}).json()
     assert done["serial"] == "SN-777" and done["code"] == "SN-777"          # un solo dato: el serial es el valor del QR
-    assert client.get("/api/almacen/lookup?code=SN-777").status_code == 200          # y se lee con el lector
+    assert client.get("/api/almacen/scan?code=SN-777").json()["unit"]["serial"] == "SN-777"          # y se lee con el lector
     assert client.patch(f"/api/almacen/units/{other['id']}", json={"serial": ""}).status_code == 400          # no puede quedar vacío
     assert ok.json()["units"][0]["code"] == "SN-001"
 
@@ -140,7 +140,7 @@ def test_scan_finds_units_and_products_and_explains_what_it_cannot_find(client, 
     assert got["kind"] == "product" and got["product"]["name"] == "Cable USB"
     r = client.get("/api/almacen/scan?code=GWZZZZZZ")
     assert r.status_code == 404 and "no existe" in r.json()["detail"]
-    r = client.get("/api/almacen/scan?code=GW-X")
+    r = client.get("/api/almacen/scan?code=GW%23X")          # «#» no puede ir en un código (el serial admite letras, números, punto, guion y guion bajo)
     assert r.status_code == 404 and "lector" in r.json()["detail"]
 
 
@@ -162,14 +162,15 @@ def test_labels_carry_only_the_code_and_cover_units_and_non_serial_products(clie
     assert client.post("/api/almacen/labels", json={"unit_ids": [999999]}).status_code == 404
 
 
-def test_a_product_with_units_cannot_be_deleted_only_archived(client, factory, on):
+def test_a_product_with_units_is_deleted_only_archived_and_confirmed(client, factory, on):
     factory.staff("admin", "adm")
     login(client, "adm")
     p = _product(client)
     client.post(f"/api/almacen/products/{p['id']}/units", json={"count": 1})
     assert client.post(f"/api/inventory/products/{p['id']}/archive").status_code == 200
-    r = client.delete(f"/api/inventory/products/{p['id']}")
-    assert r.status_code == 400 and "unidades con serial" in r.json()["detail"]
+    r = client.delete(f"/api/inventory/products/{p['id']}")          # 18-nov-2026: sin historial se puede eliminar, pero solo confirmando (force) lo que se lleva
+    assert r.status_code == 409 and r.json()["detail"] == "El producto tiene 1 objeto(s) con serial. Confirma para quitarlo de ahí y eliminarlo."
+    assert client.delete(f"/api/inventory/products/{p['id']}?force=true").json() == {"deleted": True}
 
 
 # ---------------------------------------------------------------- Pieza 2: salidas, entradas, alistado y fotos
@@ -424,7 +425,7 @@ def test_reporting_a_novelty_needs_files_blocks_the_unit_until_almacen_resolves_
     u = _units(client, p["id"], 1)[0]
     _assign(client, ev.id, p["id"], 1)
     assert _report(client, u["code"], "ab").status_code == 400          # el texto es obligatorio
-    sin = _report(client, u["code"], files=[("files", ("", b"", "application/octet-stream"))])
+    sin = _report(client, u["code"], files=[])          # sin archivos (la pantalla solo manda los que se eligieron: static/js/almacen-novedades.js)
     assert sin.status_code == 400 and "al menos un archivo" in sin.json()["detail"]          # el archivo es obligatorio
     assert _report(client, u["code"], files=[("files", ("virus.exe", b"MZ", "application/octet-stream"))]).status_code == 400
     r = _report(client, u["code"], files=[("files", ("a.png", _png(), "image/png")), ("files", ("b.png", _png(), "image/png")), ("files", ("acta.pdf", b"%PDF-1.4 x", "application/pdf"))])
@@ -440,7 +441,7 @@ def test_reporting_a_novelty_needs_files_blocks_the_unit_until_almacen_resolves_
     assert blocked.status_code == 400 and "novedad" in blocked.text and "Pantalla rota" in blocked.text
     nid = nov["id"]
     assert _resolve(client, nid, note="").status_code == 400          # la nota es obligatoria
-    assert _resolve(client, nid, files=[("files", ("", b"", "application/octet-stream"))]).status_code == 400          # y los archivos también
+    assert _resolve(client, nid, files=[]).status_code == 400          # y los archivos también
     ok = _resolve(client, nid)
     assert ok.status_code == 200 and ok.json()["novelty"]["resolved"]
     assert [f["kind"] for f in ok.json()["novelty"]["files"]] == ["reporte"] * 3 + ["resolucion"]
@@ -470,7 +471,7 @@ def test_a_unit_with_an_open_novelty_stays_blocked_when_it_comes_back_and_void_s
 def test_consumables_carry_no_novelties_and_quantity_ones_reserve_pieces(client, factory, on):
     factory.staff("admin", "adm")
     login(client, "admin" if False else "adm")
-    cons = _product(client, "Cinta", "cantidad", "cinta")
+    cons = _product(client, "Cinta", "cantidad", "cintas")
     client.patch(f"/api/almacen/products/{cons['id']}", json={"is_consumable": True, "checklist_row": ""})
     assert _report(client, cons["qr_code"], "Se mojó").status_code == 400
 
@@ -492,7 +493,7 @@ def test_novelties_follow_the_permissions_and_the_flag(client, factory, on, monk
 def test_the_checklist_downloads_as_the_geyl_xlsx_with_the_event_data(client, factory, on):
     import io
     from openpyxl import load_workbook
-    factory.staff("admin", "adm")
+    factory.staff("admin", "adm", full_name="Ana Admin")
     ev = factory.event(status="en_proceso")
     login(client, "adm")
     p = _product(client)
@@ -506,22 +507,22 @@ def test_the_checklist_downloads_as_the_geyl_xlsx_with_the_event_data(client, fa
     ws = wb["Checklist"]
     assert wb.sheetnames[:2] == ["Checklist", "Instrucciones Básicas"] and ws["B2"].value == ev.event_code and ws["B54"].value
     assert (ws["B14"].value, ws["C14"].value, ws["D14"].value) == (2, 1, "SÍ") and "Revisados" in ws["E14"].value
-    assert ws["B54"].value == "adm"          # «Responsable checklist» = quien llenó el checklist (aquí solo adm), no quien lo descarga ni quien creó el evento
+    assert ws["B54"].value == "Ana Admin"          # «Responsable checklist» (su nombre) = quien llenó el checklist (aquí solo adm), no quien lo descarga ni quien creó el evento
 
 
 def test_the_checklist_lists_every_user_who_filled_it_not_the_downloader(client, factory, on):
     import io
     from openpyxl import load_workbook
-    factory.staff("admin", "adm")
-    factory.staff("coordinador", "alm", extra_roles="almacen")
+    factory.staff("admin", "adm", full_name="Ana Admin")
+    factory.staff("coordinador", "alm", extra_roles="almacen", full_name="Luis Almacén")
     ev = factory.event(status="en_proceso")
     login(client, "alm")
     assert client.put(f"/api/almacen/events/{ev.id}/checklist/portatiles", json={"done": True, "notes": "es plan B"}).status_code == 200
     client.post("/logout")
     login(client, "adm")
-    assert client.put(f"/api/almacen/events/{ev.id}/checklist/impresoras", json={"done": True}).status_code == 200
+    assert client.put(f"/api/almacen/events/{ev.id}/checklist/impresora_termica", json={"done": True}).status_code == 200
     ws = load_workbook(io.BytesIO(client.get(f"/api/almacen/events/{ev.id}/checklist.xlsx").content))["Checklist"]
-    assert ws["B54"].value == "alm y adm"          # los dos que intervinieron, en orden de intervención
+    assert ws["B54"].value == "Luis Almacén y Ana Admin"          # los dos que intervinieron, en orden de intervención
     assert "Es plan B" in ws["E14"].value          # mayúscula al inicio de la frase
 
 

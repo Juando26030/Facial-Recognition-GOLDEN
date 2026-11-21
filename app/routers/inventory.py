@@ -290,7 +290,8 @@ def delete_product(product_id: int, force: bool = False, db: Session = Depends(g
         _err("El producto ya tiene salidas, entradas o novedades de almacén registradas: por su historial no se puede eliminar (queda archivado)", 409)
     if (u["events"] or u["units"]) and not force:
         names = ", ".join(f"{e['name']} ({e['status']})" for e in u["events"][:5]) + (f" y {len(u['events']) - 5} más" if len(u["events"]) > 5 else "")
-        _err("El producto está asignado a: " + (names or "ningún evento") + (f" y tiene {u['units']} objeto(s) con serial" if u["units"] else "") + ". Confirma para quitarlo de ahí y eliminarlo.", 409)
+        parts = ([f"está asignado a: {names}"] if names else []) + ([f"tiene {u['units']} objeto(s) con serial"] if u["units"] else [])
+        _err("El producto " + " y ".join(parts) + ". Confirma para quitarlo de ahí y eliminarlo.", 409)
     db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).delete(synchronize_session=False)
     db.query(InventoryUnit).filter(InventoryUnit.product_id == p.id).delete(synchronize_session=False)
     audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name, f"Quitado de {len(u['events'])} evento(s) y {u['units']} objeto(s)" if (u["events"] or u["units"]) else None)

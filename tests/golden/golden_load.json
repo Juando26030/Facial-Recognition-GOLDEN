@@ -7,8 +7,7 @@
   },
   {
    "categories": [
-    "General",
-    "Zona A"
+    "General"
    ],
    "certificate": true,
    "user_id": "1001"
@@ -143,8 +142,7 @@
    },
    {
     "categories": [
-     "General",
-     "Zona A"
+     "General"
     ],
     "certificate": true,
     "user_id": "1001"
@@ -260,7 +258,7 @@
     "❌ Fila 6 (A6): sin ID/cédula, se omitió esta fila.",
     "⚠️ Fila 7: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).",
     "⚠️ Fila 8 (B8): falta el nombre.",
-     "⚠️ Fila 8 (G8): el correo 'no-es-correo' no parece válido — se guardó igual, revísalo.",
+    "⚠️ Fila 8 (G8): el correo 'no-es-correo' no parece válido — se guardó igual, revísalo.",
     "⚠️ Fila 8 (F8): el teléfono 'tel-raro' tiene caracteres raros — se guardó igual, revísalo."
    ],
    "message": "Carga completa: 8 perfiles cargados. 6 observación(es) — revisa el detalle. Campos reconocidos: 12 · campos nuevos creados: 0 · columnas no usadas: 0.",

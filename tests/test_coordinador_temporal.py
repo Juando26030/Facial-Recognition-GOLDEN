@@ -119,8 +119,9 @@ def test_global_areas_are_closed(client, factory):
     assert client.post("/api/events", json={"tenant_id": "acme", "event_code": "X1", "name": "Otro"}).status_code == 403
     assert client.post(f"/api/events/{ev.id}/duplicate", json={}).status_code == 403
     for page in ("/clientes", "/crm", "/configuracion", "/inventario", "/gastos", "/sistema", "/eventos/nuevo", "/cuentas-de-cobro"):
-        r = client.get(page)
+        r = client.get(page, headers={"accept": "text/html"})          # como un navegador (sin pedir HTML, una página cerrada responde 403 en JSON)
         assert r.status_code == 302 and r.headers["location"] == "/", page
+        assert client.get(page).status_code == 403, page
     assert client.get("/calendario").status_code == 200 and client.get("/eventos").status_code == 200
     assert client.get("/").headers["location"] == f"/kiosk/{ev.id}"                       # un solo evento: entra derecho a él
     menu = client.get("/eventos").text

@@ -55,7 +55,7 @@ assert.ok(R.textHeightMm(el, 90, { entity: "ANA" }) < R.textHeightMm(el, 90, dat
 
 // ---- un elemento GIRADO no recorta (html2canvas aplica el overflow:hidden de un elemento con transform con la caja SIN girar: la QL-800 imprimía «DRÍGL», «LAMIZ»)
 {
-  const fake = () => ({ style: {}, dataset: {}, children: [], appendChild(c) { this.children.push(c); return c; }, getContext: () => null });
+  const fake = () => ({ style: {}, dataset: {}, children: [], attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.children.push(c); return c; }, getContext: () => null });          // setAttribute: el QR se marca para volver a dibujarse (18-nov-2026)
   global.document = { createElement: fake };
   const txt = (rotation) => ({ id: "t", type: "text_variable", variable: "last_name", x: 4, y: 30, width: 50, height: 12, font_size: 16, font_family: "Roboto", rotation });
   const data = { last_name: "RODRÍGUEZ VILLAMIZAR" };
@@ -97,7 +97,7 @@ assert.ok(R.textHeightMm(el, 90, { entity: "ANA" }) < R.textHeightMm(el, 90, dat
   assert.strictEqual(R.roomBelow({ ...els[0], rotation: 30 }, els, 100), 0, "girado: no crece");
   assert.strictEqual(R.roomBelow({ id: "z", x: 5, y: 20, width: 50, height: 30 }, els, 100), 0, "caja que ya llega al siguiente elemento: sin espacio");
 
-  const fake = () => ({ style: {}, dataset: {}, children: [], appendChild(c) { this.children.push(c); return c; }, getContext: () => null });
+  const fake = () => ({ style: {}, dataset: {}, children: [], attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, appendChild(c) { this.children.push(c); return c; }, getContext: () => null });          // setAttribute: el QR se marca para volver a dibujarse (18-nov-2026)
   global.document = { createElement: fake };
   const data = { entity: "INSTITUCIÓN EDUCATIVA TÉCNICA AGROPECUARIA DEL MUNICIPIO DE SAN JOSÉ" };
   const solo = R.renderElement(els[0], data, {}), conEspacio = R.renderElement(els[0], data, { room: R.roomBelow(els[0], els, 100) });

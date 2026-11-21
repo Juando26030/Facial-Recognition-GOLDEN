@@ -54,6 +54,7 @@ const ALLOWED = {
   'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health (sin base) y contador, que solo consulta tras un intento reciente (5 min)',
   'static/js/queue-tv.js': 'pantalla de exhibición de turnos (TV): se pausa con la pestaña oculta y el estado sale de la memoria del proceso (queue_svc.snapshot, ≤1 consulta cada 3 s por proceso)',
   'static/js/sistema.js': 'solo la línea del reloj local «Actualizado hace»; el refresco va por GW.poll',
+  'static/js/preprint.js': 'solo mira si se cerró la ventana de impresión (win.closed), sin red ni base; se apaga al terminar',
 };
 const files = [];
 for (const dir of ['static/js', 'templates']) for (const n of fs.readdirSync(dir)) if (/\.(js|html)$/.test(n)) files.push(path.join(dir, n));
