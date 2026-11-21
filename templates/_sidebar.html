@@ -48,7 +48,7 @@
     if (open && side) { const first = side.querySelector('a'); if (first) first.focus(); }
     if (!open && back && toggle) toggle.focus();
   }
-  // Ocultar el menú en escritorio (18-nov-2026): se recuerda en este navegador; con el menú oculto, el botón ☰ lo abre encima del contenido y «Ocultar menú» lo cierra de nuevo.
+  // Ocultar el menú en escritorio (18-nov-2026): se recuerda en este navegador; con el menú oculto, el botón de menú lo abre encima del contenido y «Ocultar menú» lo cierra de nuevo.
   const KEY = 'gw_sidebar_collapsed', hideBtn = document.getElementById('sidebarHideBtn');
   const collapsed = (on) => { document.body.classList.toggle('sidebar-collapsed', on); if (!on) document.body.classList.remove('sidebar-open'); if (toggle) toggle.setAttribute('aria-label', on ? 'Mostrar el menú lateral' : 'Abrir menú'); };
   try { if (localStorage.getItem(KEY) === '1') collapsed(true); } catch (e) { /* sin almacenamiento: el menú queda visible */ }

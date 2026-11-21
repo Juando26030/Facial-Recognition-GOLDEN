@@ -594,6 +594,7 @@ def person_flags(db: Session, event: Event, user_id) -> dict:
 def person_print_flow(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
     """¿La categoría de esta persona tiene apagada la impresión automática? (el escáner facial no recibe las banderas con su respuesta)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)          # lee la categoría de una persona: con la base archivada, solo super_admin
     return {"auto_print_skip": bool(personform.user_flow(db, event, user_id).get("autoprint_off"))}
 
 

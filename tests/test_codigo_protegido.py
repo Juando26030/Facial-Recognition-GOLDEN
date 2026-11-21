@@ -54,11 +54,17 @@ def test_the_event_code_cannot_be_changed_through_the_api_once_created(client, f
 
 
 # ---------------------------------------------------------------------------------------------------------------- 3) códigos nuevos seguros para URL
-@pytest.mark.parametrize("bad", ["FERIA 2026", "Feria-Ñandú", "a/b", "evento#1", " X1", "café"])
+@pytest.mark.parametrize("bad", ["FERIA 2026", "Feria-Ñandú", "a/b", "evento#1", "X 1", "café"])          # espacios por dentro: no (los de los bordes se quitan solos, ver abajo)
 def test_new_events_need_a_url_safe_code_with_a_friendly_message(client, factory, db, bad):
     r = _create(client, factory, bad)
     assert r.status_code == 400 and r.json()["detail"] == events_router.EVENT_CODE_HELP and "Ejemplo: FERIA-2026" in r.json()["detail"]
     assert db.query(Event).filter(Event.name == "Nuevo").count() == 0
+
+
+def test_spaces_around_the_code_are_trimmed(client, factory, db):
+    """16-nov-2026: el código se limpia de espacios en los bordes (y vacío se propone el siguiente); « X1 » queda «X1»."""
+    assert _create(client, factory, " X1 ").status_code == 200
+    assert db.query(Event).filter(Event.name == "Nuevo").one().event_code == "X1"
 
 
 @pytest.mark.parametrize("good", ["FERIA-2026", "8", "001", "congreso_oct.v2"])

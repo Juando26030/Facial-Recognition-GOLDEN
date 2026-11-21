@@ -373,8 +373,8 @@ def get_badge_print_data(
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
+    user = require_person_of_event(db, event, user_id)          # primero si es de ESTE evento (404 igual que si no existiera); después si se le puede imprimir
     _require_printable(db, event, user_id, bool(preprint), staff, bool(certificate))
-    user = require_person_of_event(db, event, user_id)
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     card_url = ""                                                  # 18-nov-2026: enlace público de la tarjeta de la persona (modo «enlace» del QR); vacío si no hay URL pública configurada
@@ -448,8 +448,8 @@ def log_print(
     impresión, tras cualquier confirmación necesaria."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
+    require_person_of_event(db, event, user_id)          # primero si es de ESTE evento (404 igual que si no existiera); después si se le puede imprimir
     _require_printable(db, event, user_id)
-    require_person_of_event(db, event, user_id)
     # Fase 1B: con la reimpresión deshabilitada, registrar la impresión de alguien ya impreso exige haber gastado un permiso hace un momento (la impresión local la hace el navegador:
     # esto es lo que el servidor puede hacer cumplir; ver docs/1B_reimpresion_permisos.md «control de pantalla»).
     if reprint.is_locked_for(event, staff) and reprint.already_printed(db, event, user_id) and not reprint.recently_used(db, event, staff, user_id):

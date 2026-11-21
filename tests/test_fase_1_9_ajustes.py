@@ -89,7 +89,9 @@ def test_celular_y_computador_muestran_lo_mismo_en_eventos_y_formularios():
     css = read("static/css/p-clientes.css")
     # «Ingresar» dorado fuera de cualquier @media
     assert "\n.gw-event-card .p-cli__acts > a.p-cli__act { background: var(--gw-gold-grad)" in css          # sin sangría = fuera de cualquier @media
-    assert ".p-cli__rep--full { display: none" not in css and ".p-cli__morelbl { display: none" not in css      # el aviso del informe y «Más acciones» se leen completos también en computador
+    assert ".p-cli__morelbl { display: none" not in css                     # «Más acciones» se lee completo también en computador
+    # el aviso del informe completo solo se acorta al ícono entre 1200 y 1759 px (18-nov-2026: el nombre del evento necesita el lugar); fuera de ese rango se lee completo
+    assert css.count(".p-cli__rep--full { display: none") == 1 and "@media (min-width: 1200px) and (max-width: 1759px) {\n  .gw-event-card .p-cli__acts .p-cli__act { gap: var(--gw-sp-1); }\n  .gw-event-card .p-cli__rep--full { display: none; }" in css
     assert re.search(r"\.gw-event-card \.p-cli__rep--dot \{ display: none; \}", css)
     forms = read("static/css/p-formularios.css")
     assert ".gw-stat__hint { display: none; }" not in forms and "gw-forms-lbl { position: absolute" not in forms

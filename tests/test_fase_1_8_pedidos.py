@@ -53,7 +53,8 @@ def test_usuarios_del_evento_excel_borrado_en_bloque_y_clave_cedula():
     assert "use_username" in read("app/routers/staff.py")
     page, js = read("templates/kiosk_usuarios.html"), read("static/js/usuarios.js")
     assert 'id="purgeTempBtn"' in page and "gw-btn--danger" in page and 'id="importStaffForm"' in page and "Descargar la plantilla" in page
-    assert 'id="uPassword"' not in page and "data-gw-pwcheck" not in page
+    # la contraseña la genera el servidor; el campo solo existe (oculto) para el coordinador temporal, al que se la pone quien lo crea (16-nov-2026, docs/COORDINADOR_TEMPORAL.md)
+    assert '<div class="gw-field" id="uPasswordField" hidden>' in page and "data-gw-pwcheck" not in page
     assert "purge-temporary" in js and "staff-users/import" in js and "tempUsersPager" in js and "use_username" in js
 
 
