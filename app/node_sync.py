@@ -469,6 +469,9 @@ def _shared_loop() -> None:
     stop = _thread["stop"]
     stop.wait(30)
     while not stop.is_set():
+        if not _run_lock.acquire(blocking=False):          # el ciclo largo (30 min) está subiendo: no se pisan las marcas de agua
+            stop.wait(shared_seconds())
+            continue
         try:
             with SessionLocal() as db:
                 now = utcnow()
@@ -480,6 +483,8 @@ def _shared_loop() -> None:
                     _shared["backoff"][ev.id] = None if out["ok"] else now + timedelta(seconds=60)          # sin red: reintenta en un minuto, no cada 15 s
         except Exception:                                 # noqa: BLE001 — el reloj nunca se cae
             log.exception("ciclo de evento compartido falló")
+        finally:
+            _run_lock.release()
         stop.wait(shared_seconds())
 
 
