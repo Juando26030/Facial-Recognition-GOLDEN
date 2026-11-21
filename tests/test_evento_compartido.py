@@ -35,7 +35,7 @@ def _nodes(db, factory, *names):
 # ------------------------------------------------------------------ puro
 def test_cursor_is_cleaned_and_tag_is_unique_per_installation(monkeypatch):
     assert peer_changes.clean_cursor('{"l": "5", "a": -3, "p": "x"}') == {k: (5 if k == "l" else 0) for k in peer_changes.KEYS}
-    assert peer_changes.clean_cursor(None) == {"l": 0, "a": 0, "p": 0, "c": 0}
+    assert peer_changes.clean_cursor(None) == dict.fromkeys(peer_changes.KEYS, 0)
     monkeypatch.setattr("app.local_env.refresh", lambda: None)
     monkeypatch.setenv("INSTALLATION_ID", "ab" * 16)
     assert peer_changes.node_tag() == "s" + ("ab" * 5)
