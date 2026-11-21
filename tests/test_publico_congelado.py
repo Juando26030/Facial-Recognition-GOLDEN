@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # 10-nov-2026 (tras probar staging), orden de Juan David: roulette-render.js gana tamaño propio y alineación por logo/banner y escala del texto del nombre y de los demás datos del ganador (variables CSS --rr-top-h, --rr-name-scale, --rr-fields-scale). Hash renovado.
 # 11-nov-2026, orden expresa de Juan David (ajustes de la ruleta): roulette_display.html gana los sorteos en fila (cada paso con su forma de girar y arranque automático
 # opcional, una sola autorización) y gw-ruleta-display.css deja de anular el tamaño de «más datos» del ganador. Huella renovada.
+# 21-nov-2026, HOTFIX con orden expresa de Juan David (formulario del evento 14 en curso: «Error de red al subir el archivo» en celulares): direct-upload.js copia el archivo a memoria
+# al elegirlo y reintenta la subida con una URL nueva si la conexión se corta. Mismo flujo y mismos textos del formulario. Huella renovada.
 FROZEN = {
     "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
     "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
@@ -35,7 +37,7 @@ FROZEN = {
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
     "static/js/form-render.js": "87efcadfa55b3a73e363fcc293fd476112e108fbb4f0b183fcd34626f3036951",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
-    "static/js/direct-upload.js": "9b22353dca8650e6b924aca2114aeba2eec713b875c8a996631affd5e3f500f3",
+    "static/js/direct-upload.js": "a20c385146b9bc4acf209975e05c21ca2175e9a6952770461c48d910d9004e5a",
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",
     "static/css/fonts-propias.css": "ac7d385e4523d16f1e096040af3ec024beb81e283f04805597cd945821ec93f0",
     "static/js/cookie-notice.js": "3ba161fa3e997046272fdba4dbcab23582579669995ebc3a64bdd281cab33990",
