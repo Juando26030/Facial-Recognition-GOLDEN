@@ -347,6 +347,12 @@ class Event(Base):
     sync_print_id = Column(Integer, nullable=True)       # 0157: marca de agua: último PrintLog.id local ya CONFIRMADO por la nube
     sync_change_id = Column(Integer, nullable=True)      # 0157: marca de agua: último PersonChange.id local ya CONFIRMADO por la nube
     sync_package_at = Column(DateTime, nullable=True)    # cuándo se bajó el paquete del evento desde la nube
+    sync_edit_id = Column(Integer, nullable=True)        # 0160: último PersonChangeLog.id local (ediciones de datos) ya CONFIRMADO por la nube
+    sync_area_id = Column(Integer, nullable=True)        # 0160: último AreaMovement.id local ya confirmado
+    sync_delivery_id = Column(Integer, nullable=True)    # 0160: último InventoryDelivery.id local ya confirmado
+    sync_turn_id = Column(Integer, nullable=True)        # 0160: último QueueTurn.id local ya confirmado
+    sync_call_id = Column(Integer, nullable=True)        # 0160: último QueueCall.id local ya confirmado
+    sync_turn_at = Column(DateTime, nullable=True)       # 0160: hasta cuándo subió el ESTADO (llamado/atendido) de los turnos ya enviados
     sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
     sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien
 
@@ -1039,6 +1045,7 @@ class AreaMovement(Base):
     tenant_id = Column(String, nullable=False)
     direction = Column(String, nullable=False)  # 'in' | 'out'
     method = Column(String, nullable=True)  # 'cedula' | 'qr' | 'facial' | 'manual'
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     timestamp = Column(DateTime, default=utcnow)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
@@ -1073,6 +1080,7 @@ class InventoryDelivery(Base):
     user_id = Column(String, nullable=False)
     tenant_id = Column(String, nullable=False)
     qty = Column(Integer, nullable=False, default=1)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     delivered_at = Column(DateTime, default=utcnow)
     delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
@@ -1474,6 +1482,7 @@ class PersonChangeLog(Base):
     new_value = Column(String(500), nullable=True)
     changed_by_id = Column(Integer, nullable=True)
     source = Column(String(16), nullable=False, default='edit')
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     changed_at = Column(DateTime, nullable=False, default=utcnow)
     __table_args__ = (Index('ix_person_change_log_person', 'tenant_id', 'user_id'), Index('ix_person_change_log_event', 'event_id'))
 
@@ -1866,6 +1875,7 @@ class QueueTurn(Base):
     called_at = Column(DateTime, nullable=True)
     done_at = Column(DateTime, nullable=True)
     source = Column(String(10), nullable=False, default='arrival', server_default='arrival')      # arrival | form | alpha | manual
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     created_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (UniqueConstraint('event_id', 'lane', 'number', name='uq_queue_turn_number'), UniqueConstraint('event_id', 'user_id', name='uq_queue_turn_user'),
                       Index('ix_queue_turn_event_status', 'event_id', 'status'))
@@ -1881,6 +1891,7 @@ class QueueCall(Base):
     number = Column(Integer, nullable=False)
     desk = Column(String(40), nullable=True)
     called_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     called_at = Column(DateTime, default=utcnow, nullable=False)
     __table_args__ = (Index('ix_queue_call_event', 'event_id', 'id'),)
 

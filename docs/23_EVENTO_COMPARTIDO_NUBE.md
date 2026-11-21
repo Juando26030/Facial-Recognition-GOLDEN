@@ -34,11 +34,27 @@ Las opciones sin internet (enlace de radio punto a punto, un servidor con varios
   impresiones y cambios → por llave natural (persona + momento + tipo).
 - Pantallas: en «Eventos de la nube» del servidor, un evento compartido que ya está en otro servidor muestra **«Sumarse (compartido)»**; en Sincronización se ve «Compartido» y la hora de la última bajada.
 
+## 3b. Lo que antes se quedaba en el servidor local y ahora SUBE (modo normal y compartido)
+Pedido de Juan David el 20-nov-2026: «eso también debería subirse a la nube». Desde 0160, en **todo** servidor local (compartido o no):
+| Qué | Cómo sube | En la nube | En los otros servidores (compartido) |
+|---|---|---|---|
+| Ediciones de datos de la persona (`person_change_log`) | `/extra` › `edits` | se aplica el valor; gana el cambio más reciente de cada campo | igual |
+| Deshacer registro («No registrado») | `/records` (como antes) | **ahora se aplica**: borra los registros de la persona hechos hasta ese momento | igual |
+| Fecha de nacimiento | `/records` | **ahora se aplica** (y con ella si puede tener biometría) | igual |
+| Movimientos de áreas | `/extra` › `areas` (el área por su nombre) | se guardan | igual |
+| Entregas de inventario | `/extra` › `deliveries` (ítem y categoría madre por nombre) | se guardan | igual |
+| Turnos y llamados | `/extra` › `turns`, `calls`, `turn_status` | se guardan; el estado solo avanza | turnos nuevos y llamados |
+
+Cada tipo tiene su marca de agua en el evento local (`sync_edit_id`, `sync_area_id`, `sync_delivery_id`, `sync_turn_id`, `sync_call_id`, `sync_turn_at`) y cuenta en «pendientes»: «Pasar a internet»
+no libera mientras falte algo. Áreas, entregas y turnos salieron de la lista de «solo local» que bloqueaba la liberación. Quedan en esa lista (no suben todavía): cambios del inventario de
+ALMACÉN del evento (en el servidor local es de solo consulta), sorteos de la ruleta, contactos de expositores, aceptaciones/firmas y autorizaciones de datos.
+
 ## 4. Conflictos y límites (primera versión)
 - **Misma persona en las dos entradas durante un corte:** quedan los dos registros (como en el modo sin red de los quioscos); la nube los conserva y se ven en el historial. La regla de negocio de cada evento decide qué hacer.
 - **Misma persona dada de alta en las dos entradas:** gana la primera alta que llegó a la nube; la segunda queda como registro de una persona existente.
-- **No viaja todavía entre servidores:** ediciones de datos de la persona, «deshacer registro» (No registrado), rostros/biometría (el servidor local no hace reconocimiento facial), áreas, inventario, turnos, ruleta,
-  contactos de expositores (lo mismo que hoy tampoco sube a la nube). Si se necesitan, se agregan con el mismo esquema de cursor.
+- **Turnos en eventos compartidos:** cada entrada debe usar **sus propias filas (letras)**; si dos servidores dan el mismo número de la misma fila a personas distintas, el segundo se omite
+  (queda contado como conflicto). Los otros servidores reciben los turnos nuevos y los llamados; «atendido/saltado» sube a la nube pero no se reparte a los demás servidores.
+- **No viaja todavía:** rostros/biometría (el servidor local no hace reconocimiento facial), ruleta, contactos de expositores, aceptaciones/firmas y autorizaciones de datos.
 - **Estado del evento:** cada servidor pone su copia «En proceso» como siempre; la sincronización rápida solo corre en ese estado.
 
 ## 5. Costo

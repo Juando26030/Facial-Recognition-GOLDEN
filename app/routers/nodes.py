@@ -9,7 +9,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import event_lease, node_auth, server_keys, versioning
+from app import event_lease, node_auth, node_extra, server_keys, versioning
 from app.auth import require_role
 from app.database import get_db
 from app.models import AuditAction, Event, EventLocalNode, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
@@ -153,8 +153,8 @@ def _when(value):
 
 @router.post("/node/events/{event_id}/records")
 def node_records(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
-    """Historial hecho en el servidor local: impresiones de escarapela (`print_logs`) y ediciones de personas (`person_changes`: estado de registro y fecha de nacimiento, solo como HISTORIAL; no vuelve a
-    aplicar el cambio). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
+    """Historial hecho en el servidor local: impresiones de escarapela (`print_logs`) y cambios de personas (`person_changes`). Desde 0160 el cambio también se APLICA: «No registrado» borra los
+    registros de la persona hechos hasta ese momento y la fecha de nacimiento se pone (app/node_extra.py). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
     node_auth.require_compatible(request)
     event = _leased_event(db, event_id, node)
     staff = node_auth.node_staff(db, node, via=True)
@@ -189,9 +189,23 @@ def node_records(event_id: int, body: dict, request: Request, db: Session = Depe
             continue
         db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind=kind, at=at,
                             old_value=(r.get("old_value") or None), new_value=(r.get("new_value") or None), detail=(str(r.get("detail"))[:200] if r.get("detail") else None)))
+        node_extra.apply_person_change_effect(db, event, kind, uid, at, r.get("new_value") or None)          # 0160: «deshacer registro» y fecha de nacimiento también se APLICAN (antes solo historial)
         saved_c += 1
     db.commit()
     return {"ok": True, "saved": {"print_logs": saved_p, "person_changes": saved_c}}
+
+
+@router.post("/node/events/{event_id}/extra")
+def node_extra_upload(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
+    """0160: lo que antes se quedaba en el servidor local: ediciones de datos de personas, movimientos de áreas, entregas de inventario, turnos (y su estado) y llamados.
+    Idempotente por llave natural (repetir un lote no duplica). Ver app/node_extra.py."""
+    node_auth.require_compatible(request)
+    event = _leased_event(db, event_id, node)
+    if node_extra.count(body) > 2000:
+        raise HTTPException(status_code=413, detail="Lote demasiado grande")
+    saved = node_extra.apply_all(db, event, body)
+    db.commit()
+    return {"ok": True, "saved": saved}
 
 
 @router.post("/node/events/{event_id}/uploaded")

@@ -3,6 +3,8 @@
 Cada ~NODE_UPLOAD_MINUTES (30) y cuando alguien lo pide, el servidor local sube lo que tenga de cada evento que bajó de la nube (`Event.cloud_event_id`):
   1. personas dadas de alta aquí (origen manual / autoregistro)  -> POST /api/node/events/{id}/outbox      (`create_person`, idempotente por op_id)
   2. ingresos de personas que ya estaban (AccessLog «Existente») -> POST /api/node/events/{id}/access-logs (idempotente por client_id)
+  3. impresiones y cambios de personas (deshacer registro, fecha de nacimiento) -> POST /api/node/events/{id}/records (la nube también APLICA el cambio desde 0160)
+  4. (0160) ediciones de datos, movimientos de áreas, entregas de inventario, turnos (y su estado) y llamados -> POST /api/node/events/{id}/extra (app/node_extra.py)
 Las marcas de agua (`sync_persons_at`, `sync_log_id`) solo avanzan con lo que la nube CONFIRMÓ: un corte a mitad de camino repite el lote y la nube responde «replayed».
 Cuando todo lo pendiente quedó confirmado se avisa `/uploaded` (la nube muestra «última subida a las 3:30 p. m.»). «Pasar a internet» = subir lo pendiente y, solo si quedó en cero, `/release`.
 Evento COMPARTIDO (0160, docs/23_EVENTO_COMPARTIDO_NUBE.md): si varios servidores tienen el mismo evento, mientras esté «En proceso» cada NODE_SHARED_SECONDS (15) este servidor sube lo
@@ -20,11 +22,11 @@ import urllib.request
 from datetime import timedelta
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app import local_env, peer_changes, versioning
-from app.models import AccessLog, Event, EventAttendee, PersonChange, PrintLog, User
+from app.models import AccessLog, AreaMovement, Event, EventAttendee, InventoryDelivery, PersonChange, PersonChangeLog, PrintLog, QueueCall, QueueTurn, User
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.node_sync")
@@ -133,23 +135,47 @@ def _changes_query(db: Session, event: Event):
     return q.filter(PersonChange.at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)
 
 
+# 0160: lo que antes se quedaba aquí y ahora también sube (app/node_extra.py). (modelo, columna de id, marca de agua del evento, columna de fecha para «después de bajar el paquete»)
+EXTRA = (
+    ("edits", PersonChangeLog, "sync_edit_id", "changed_at"),
+    ("areas", AreaMovement, "sync_area_id", "timestamp"),
+    ("deliveries", InventoryDelivery, "sync_delivery_id", "delivered_at"),
+    ("turns", QueueTurn, "sync_turn_id", "created_at"),
+    ("calls", QueueCall, "sync_call_id", "called_at"),
+)
+
+
+def _extra_query(db: Session, event: Event, model, mark: str, when_col: str):
+    q = db.query(model).filter(model.event_id == event.id, model.from_peer.isnot(True))
+    last = getattr(event, mark)
+    if last is not None:
+        return q.filter(model.id > last)
+    return q.filter(getattr(model, when_col) > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)
+
+
+def _turn_status_query(db: Session, event: Event):
+    """Turnos YA enviados cuyo estado cambió después de la última subida (llamado, atendido, saltado)."""
+    if event.sync_turn_id is None or event.sync_turn_at is None:
+        return None
+    since = event.sync_turn_at
+    return db.query(QueueTurn).filter(QueueTurn.event_id == event.id, QueueTurn.id <= event.sync_turn_id, QueueTurn.from_peer.isnot(True),
+                                      or_(QueueTurn.called_at > since, QueueTurn.done_at > since))
+
+
 def pending_counts(db: Session, event: Event) -> dict:
     persons = _persons_query(db, event).count()
     logs = _logs_query(db, event).filter(AccessLog.record_type == LOG_TYPE).count()
     prints = _prints_query(db, event).count()
     changes = _changes_query(db, event).count()
-    return {"persons": persons, "logs": logs, "prints": prints, "changes": changes, "total": persons + logs + prints + changes}
+    extra = sum(_extra_query(db, event, model, mark, col).count() for _, model, mark, col in EXTRA)
+    return {"persons": persons, "logs": logs, "prints": prints, "changes": changes, "extra": extra, "total": persons + logs + prints + changes + extra}
 
 
 # Lo que se hace en el servidor local y TODAVÍA NO SUBE a la nube (la subida solo lleva personas nuevas e ingresos). Mientras exista algo así,
 # «Pasar a internet» NO libera el evento: se perdería sin aviso (revisión 9-nov-2026, docs/FASE_6_SERVIDOR_LOCAL.md). Nombres fijos (no vienen del usuario).
-LOCAL_ONLY = (
-    ("inventory_deliveries", "delivered_at", "entregas de inventario"),
+LOCAL_ONLY = (          # 0160: áreas, entregas de inventario, turnos y llamados ya SUBEN (app/node_extra.py) y salieron de esta lista
     ("event_inventory_items", "updated_at", "cambios del inventario del evento"),
-    ("area_movements", "timestamp", "movimientos de áreas"),
     ("roulette_draws", "created_at", "sorteos de la ruleta"),
-    ("queue_turns", "created_at", "turnos"),
-    ("queue_calls", "called_at", "llamados de turnos"),
     ("exhibitor_leads", "scanned_at", "contactos de expositores"),
     ("web_acceptances", "created_at", "aceptaciones y firmas"),
     ("audit_consent_logs", "consent_timestamp_utc", "autorizaciones de datos"),
@@ -260,6 +286,35 @@ def _push_records(db: Session, event: Event) -> None:
         db.commit()
 
 
+def _push_extra(db: Session, event: Event) -> None:
+    """0160: ediciones de datos, áreas, entregas de inventario, turnos (y su estado) y llamados. Cada marca de agua avanza solo con lo que la nube confirmó."""
+    from app import node_extra
+    path = f"/api/node/events/{event.cloud_event_id}/extra"
+    areas, items = node_extra.area_names(db, event.id), node_extra.item_names(db, event.id)
+    ser = {"edits": node_extra.edit_row, "areas": lambda r: node_extra.area_row(r, areas), "deliveries": lambda r: node_extra.delivery_row(r, items),
+           "turns": node_extra.turn_row, "calls": node_extra.call_row}
+    while True:
+        rows = {key: _extra_query(db, event, model, mark, col).order_by(model.id).limit(BATCH_REC).all() for key, model, mark, col in EXTRA}
+        status_q = _turn_status_query(db, event)
+        status_rows = status_q.limit(BATCH_REC).all() if status_q is not None else []
+        if not any(rows.values()) and not status_rows:
+            return
+        body = {key: [x for x in (ser[key](r) for r in batch) if x] for key, batch in rows.items()}
+        body["turn_status"] = [node_extra.turn_row(t) for t in status_rows]
+        started = utcnow()
+        out = _call("POST", path, body)
+        if not out.get("ok"):
+            raise SyncError("La nube no confirmó áreas, inventario, turnos o ediciones del lote: se reintenta")
+        for key, model, mark, _col in EXTRA:
+            if rows[key]:
+                setattr(event, mark, rows[key][-1].id)
+        if rows["turns"] or status_rows or event.sync_turn_at is None:
+            event.sync_turn_at = started
+        db.commit()
+        if not any(rows.values()):
+            return                                             # solo estados de turnos: una pasada basta
+
+
 def pull_event(db: Session, event: Event, max_pages: int = 20) -> dict:
     """Evento compartido: baja de la nube lo que hicieron los OTROS servidores desde el cursor y lo aplica aquí (sin duplicar). Lanza SyncError si no hay red."""
     total = {"persons": 0, "access_logs": 0, "print_logs": 0, "person_changes": 0}
@@ -286,6 +341,7 @@ def sync_shared(db: Session, event: Event) -> dict:
         _push_persons(db, event)
         _push_logs(db, event)
         _push_records(db, event)
+        _push_extra(db, event)
         pulled = pull_event(db, event)
         if event.sync_error:
             event.sync_error = None
@@ -329,6 +385,7 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         _push_persons(db, event)             # primero las personas nuevas: los ingresos de esa misma gente ya las encuentran
         _push_logs(db, event)
         _push_records(db, event)
+        _push_extra(db, event)
         if event.local_shared:
             pull_event(db, event)                # compartido: de paso baja lo de los demás servidores
         counts = pending_counts(db, event)

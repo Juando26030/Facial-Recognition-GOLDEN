@@ -186,3 +186,124 @@ def test_ping_turns_on_sharing_for_a_server_that_already_had_the_event(db, facto
     node_sync._refresh_shared_flags(db, {"shared_events": []})
     db.expire_all()
     assert db.get(Event, ev.id).local_shared is False
+
+
+# ------------------------------------------------------------------ 0160: lo que antes no subía (ediciones, deshacer registro, áreas, inventario, turnos)
+def _door_setup(db, factory, **ev_extra):
+    from app.models import EventArea, InventoryItem
+    ev = factory.event("en_proceso", **ev_extra)
+    factory.person(ev, "1001")
+    db.add(EventArea(event_id=ev.id, name="Auditorio"))
+    parent = InventoryItem(event_id=ev.id, name="Comida", initial_qty=0)
+    db.add(parent)
+    db.flush()
+    db.add(InventoryItem(event_id=ev.id, name="Perro", initial_qty=10, parent_id=parent.id))
+    db.commit()
+    return ev
+
+
+def test_cloud_applies_edits_areas_deliveries_turns_calls_idempotently(client, factory, db):
+    from app.models import AreaMovement, InventoryDelivery, PersonChangeLog, QueueCall, QueueTurn
+    (a,) = _nodes(db, factory, "Puerta A")
+    ev = _door_setup(db, factory)
+    ev.local_node_name = "Puerta A"
+    db.commit()
+    t0 = utcnow().replace(microsecond=0)
+    body = {"edits": [{"cedula": "1001", "field": "email", "old": None, "new": "ana@x.co", "at": t0.isoformat(), "source": "edit"},
+                      {"cedula": "1001", "field": "opcional_2", "old": None, "new": "Bogotá", "at": t0.isoformat(), "source": "edit"}],
+            "areas": [{"cedula": "1001", "area": "auditorio", "direction": "in", "method": "qr", "at": t0.isoformat()}],
+            "deliveries": [{"cedula": "1001", "item": "Perro", "parent": "Comida", "batch": "b1", "qty": 2, "at": t0.isoformat()}],
+            "turns": [{"cedula": "1001", "lane": "A", "number": 5, "rank": 5, "status": "waiting", "created_at": t0.isoformat()}],
+            "calls": [{"lane": "A", "number": 5, "desk": "Caja 1", "at": t0.isoformat()}], "turn_status": []}
+    r = client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a))
+    assert r.status_code == 200, r.text
+    assert r.json()["saved"] == {"edits": 2, "areas": 1, "deliveries": 1, "turns": 1, "turn_conflicts": 0, "calls": 1, "turn_status": 0}
+    assert client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a)).json()["saved"]["areas"] == 0          # repetir no duplica
+    db.expire_all()
+    u = db.query(User).filter_by(id="1001").one()
+    assert u.email == "ana@x.co" and u.get_extras().get("opcional_2") == "Bogotá"
+    assert db.query(AreaMovement).count() == 1 and db.query(InventoryDelivery).one().qty == 2 and db.query(PersonChangeLog).count() == 2
+    turn = db.query(QueueTurn).one()
+    assert turn.status == "called" and turn.desk == "Caja 1" and db.query(QueueCall).count() == 1
+    # una edición más VIEJA del mismo campo queda en el historial pero no pisa el valor; el estado del turno solo avanza
+    old = {"edits": [{"cedula": "1001", "field": "email", "new": "viejo@x.co", "at": "2020-01-01T00:00:00"}],
+           "turn_status": [{"cedula": "1001", "status": "done", "done_at": utcnow().isoformat()}], "turns": [{"cedula": "9999", "lane": "A", "number": 5}]}
+    out = client.post(f"/api/node/events/{ev.id}/extra", json=old, headers=_hdr(a)).json()["saved"]
+    assert out["edits"] == 1 and out["turn_status"] == 1
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").one().email == "ana@x.co" and db.query(QueueTurn).one().status == "done"
+
+
+def test_undo_registration_and_birth_date_are_applied_in_the_cloud(client, factory, db):
+    (a,) = _nodes(db, factory, "Puerta A")
+    ev = factory.event("en_proceso")
+    factory.person(ev, "1001")
+    ev.local_node_name = "Puerta A"
+    db.commit()
+    when = utcnow().replace(microsecond=0)
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id, client_id="x1", timestamp=when))
+    db.commit()
+    later = when.replace(year=when.year) + __import__("datetime").timedelta(seconds=30)
+    body = {"print_logs": [], "person_changes": [{"cedula": "1001", "at": later.isoformat(), "kind": "registration_status", "old_value": "Registrado", "new_value": "No registrado"},
+                                                 {"cedula": "1001", "at": later.isoformat(), "kind": "birth_date", "old_value": None, "new_value": "2012-05-01"}]}
+    assert client.post(f"/api/node/events/{ev.id}/records", json=body, headers=_hdr(a)).json()["ok"]
+    db.expire_all()
+    assert db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 0          # deshecho
+    u = db.query(User).filter_by(id="1001").one()
+    assert str(u.birth_date) == "2012-05-01" and u.is_biometric_enabled is False
+
+
+def test_local_uploads_extra_after_package_and_counts_it_pending(db, factory, monkeypatch):
+    from datetime import timedelta
+    from app.models import AreaMovement, EventArea, QueueTurn
+    monkeypatch.setenv("LOCAL_SERVER", "1")
+    sent = []
+
+    def fake(method, path, body=None):
+        sent.append((path, body))
+        return {"ok": True, "saved": {}}
+    monkeypatch.setattr(node_sync, "_call", fake)
+    ev = _door_setup(db, factory, cloud_event_id=77)
+    ev.sync_package_at = utcnow() - timedelta(minutes=5)
+    area = db.query(EventArea).filter_by(event_id=ev.id).one()
+    db.add(AreaMovement(event_id=ev.id, area_id=area.id, user_id="1001", tenant_id=ev.tenant_id, direction="in", timestamp=utcnow() - timedelta(hours=1)))          # viene del paquete: no sube
+    db.add(AreaMovement(event_id=ev.id, area_id=area.id, user_id="1001", tenant_id=ev.tenant_id, direction="in", timestamp=utcnow()))
+    db.add(QueueTurn(event_id=ev.id, user_id="1001", lane="B", number=1, rank=1, token="tok-1", created_at=utcnow()))
+    db.commit()
+    assert node_sync.pending_counts(db, ev)["extra"] == 2
+    node_sync._push_extra(db, ev)
+    body = [b for p, b in sent if p.endswith("/extra")][0]
+    assert [x["area"] for x in body["areas"]] == ["Auditorio"] and body["turns"][0]["lane"] == "B"
+    db.expire_all()
+    e = db.get(Event, ev.id)
+    assert node_sync.pending_counts(db, e)["extra"] == 0 and e.sync_turn_at is not None
+    # el turno ya enviado cambia de estado: sube solo su estado
+    t = db.query(QueueTurn).one()
+    t.status, t.called_at, t.desk = "called", utcnow() + timedelta(seconds=1), "Caja 3"
+    db.commit()
+    sent.clear()
+    node_sync._push_extra(db, db.get(Event, ev.id))
+    assert [b["turn_status"][0]["status"] for p, b in sent] == ["called"]
+    assert "area_movements" not in [t for t, _c, _l in node_sync.LOCAL_ONLY]
+
+
+def test_peer_pull_applies_extra_and_undo(db, factory):
+    from app.models import AreaMovement, QueueTurn
+    ev = _door_setup(db, factory, cloud_event_id=77, local_shared=True)
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id, client_id="local-1", timestamp=utcnow()))
+    db.commit()
+    t0 = utcnow().replace(microsecond=0)
+    from datetime import timedelta
+    data = {"areas": [{"cedula": "1001", "area": "Auditorio", "direction": "in", "at": t0.isoformat()}],
+            "turns": [{"cedula": "1001", "lane": "C", "number": 2, "rank": 2, "status": "waiting"}],
+            "edits": [{"cedula": "1001", "field": "phone", "new": "3001234567", "at": t0.isoformat()}],
+            "person_changes": [{"cedula": "1001", "at": (t0 + timedelta(minutes=1)).isoformat(), "kind": "registration_status", "new_value": "No registrado"}]}
+    added = peer_changes.apply_changes(db, ev, data, tag="smio")
+    db.commit()
+    assert added["areas"] == 1 and added["turns"] == 1 and added["edits"] == 1 and added["person_changes"] == 1
+    db.expire_all()
+    assert db.query(AccessLog).filter_by(event_id=ev.id).count() == 0
+    assert db.query(AreaMovement).one().from_peer is True and db.query(QueueTurn).one().from_peer is True
+    assert db.query(User).filter_by(id="1001").one().phone == "3001234567"
+    e = db.get(Event, ev.id)
+    assert node_sync.pending_counts(db, e)["extra"] == 0          # lo bajado no vuelve a subir

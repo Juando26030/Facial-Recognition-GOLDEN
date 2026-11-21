@@ -5,7 +5,10 @@ Nube:
   event_local_nodes          qué servidores locales tienen el evento (además de events.local_node_name, que sigue siendo el «principal» para pantallas viejas)
 Servidor local:
   events.peer_cursor         hasta dónde bajó los cambios de los OTROS servidores (JSON con los últimos ids de la nube)
-  access_logs / print_logs / person_changes / event_attendees .from_peer
+  events.sync_edit_id / sync_area_id / sync_delivery_id / sync_turn_id / sync_call_id / sync_turn_at
+                             marcas de agua de lo que ANTES no subía a la nube y ahora sí (modo normal y compartido): ediciones de datos, movimientos de áreas, entregas de
+                             inventario, turnos y llamados (sync_turn_at: última vez que subió el estado de los turnos ya enviados)
+  access_logs / print_logs / person_changes / event_attendees / person_change_log / area_movements / inventory_deliveries / queue_turns / queue_calls .from_peer
                              la fila llegó de otro servidor (vía nube): la subida NO la devuelve a la nube. NULL/false = hecha aquí.
 Columnas nuevas sin valor por defecto (en PostgreSQL agregar una columna NULL es instantáneo, aunque la tabla sea grande).
 Escrita a mano; sin SET de sesión (pooler de Neon). Id ≤ 32 caracteres.
@@ -21,7 +24,8 @@ down_revision = "0159_node_disabled_at"
 branch_labels = None
 depends_on = None
 
-PEER_TABLES = ("access_logs", "print_logs", "person_changes", "event_attendees")
+PEER_TABLES = ("access_logs", "print_logs", "person_changes", "event_attendees", "person_change_log", "area_movements", "inventory_deliveries", "queue_turns", "queue_calls")
+SYNC_INT = ("sync_edit_id", "sync_area_id", "sync_delivery_id", "sync_turn_id", "sync_call_id")
 
 
 def _cols(table):
@@ -34,6 +38,11 @@ def upgrade():
         op.add_column("events", sa.Column("local_shared", sa.Boolean(), nullable=False, server_default=sa.false()))
     if "peer_cursor" not in ev:
         op.add_column("events", sa.Column("peer_cursor", sa.Text(), nullable=True))
+    for c in SYNC_INT:
+        if c not in ev:
+            op.add_column("events", sa.Column(c, sa.Integer(), nullable=True))
+    if "sync_turn_at" not in ev:
+        op.add_column("events", sa.Column("sync_turn_at", sa.DateTime(), nullable=True))
     for t in PEER_TABLES:
         if "from_peer" not in _cols(t):
             op.add_column(t, sa.Column("from_peer", sa.Boolean(), nullable=True))
@@ -52,5 +61,8 @@ def downgrade():
     op.drop_table("event_local_nodes")
     for t in PEER_TABLES:
         op.drop_column(t, "from_peer")
+    op.drop_column("events", "sync_turn_at")
+    for c in SYNC_INT:
+        op.drop_column("events", c)
     op.drop_column("events", "peer_cursor")
     op.drop_column("events", "local_shared")
