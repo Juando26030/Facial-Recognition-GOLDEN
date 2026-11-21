@@ -16,6 +16,11 @@ from app.timeutil import to_local, utcnow
 def fmt_local(dt) -> str:
     return to_local(dt).strftime("%d/%m/%Y %I:%M %p")
 
+# «Usará servidores locales» (21-nov-2026, pedido de Juan David): cómo se conectan los servidores del evento (2 o más en los tres casos). Solo `cloud` está construido;
+# los otros dos (sin internet) se muestran como «Próximamente» y la nube los rechaza.
+MODES = {"cloud": "Conectados con puente por la nube", "peer": "Un servidor se conecta a otro", "hub": "Un tercer servidor hace de puente"}
+READY_MODES = ("cloud",)
+
 LEASE_ROLES = ("coordinador", "comercial")      # además de admin/super_admin (jerarquía). F5-9 D5: almacén y contabilidad NO (no ven datos de asistentes); una cuenta coordinador+almacén sí, por ser coordinador (effective_roles)
 NODE_NAME_MAX = 60
 
@@ -83,6 +88,7 @@ def serialize(event) -> dict:
         "by_name": ((event.local_by.full_name or event.local_by.username) if getattr(event, "local_by", None) else None) if leased else None,
         "message": message(event) if leased else None,
         "shared": is_shared(event),
+        "mode": getattr(event, "local_mode", None) or ("cloud" if is_shared(event) else None),
         "nodes": writers(event) if leased else [],
     }
 

@@ -338,6 +338,7 @@ class Event(Base):
     queue_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0116 (Fase 8): «Turnos y filas» activado desde Parámetros (app/queue_turns.py)
     queue_config_json = Column(Text, nullable=True)      # configuración de los turnos: orden, filas (letras), mostrar nombre… (queue_turns.clean_config); NULL = la de fábrica
     local_last_upload_at = Column(DateTime, nullable=True)      # última vez que el servidor local subió lo suyo a la nube
+    local_mode = Column(String(10), nullable=True)      # 0160: «Usará servidores locales» — cloud | peer | hub (app/event_lease.MODES); solo cloud funciona hoy y enciende local_shared
     local_shared = Column(Boolean, default=False, server_default='false', nullable=False)      # 0160: el evento acepta VARIOS servidores locales a la vez (nube como puente; docs/23_EVENTO_COMPARTIDO_NUBE.md). En el servidor local: esta copia es compartida
     peer_cursor = Column(Text, nullable=True)      # 0160 (servidor local): hasta dónde bajó los cambios de los otros servidores (JSON {a, l, p, c, at}: últimos ids de la nube)
     # --- Lado del SERVIDOR LOCAL (0112, Fase 6): solo se usan cuando este evento es una copia bajada de la nube (LOCAL_SERVER=1); en la nube quedan NULL ---

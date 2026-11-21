@@ -129,8 +129,15 @@
               <button type="button" class="gw-btn gw-btn--secondary" id="eeLocalRelease" hidden>Pasar a internet</button>
             </div>
             <p class="gw-hint">Mientras el evento esté en un servidor local, aquí solo se puede ver. «Pasar a internet» deja el evento editable otra vez en la nube; el servidor local sube antes todo lo que tenga pendiente.</p>
-            <div class="gw-field"><label class="gw-check" for="eeLocalShared"><input type="checkbox" id="eeLocalShared"> <span class="gw-choice__text">Compartido entre varios servidores locales</span></label>
-              <p class="gw-hint">Para eventos con entradas lejos entre sí: cada entrada lleva su servidor local y todos se ven entre sí cada pocos segundos <strong>mientras tengan internet</strong> (por ejemplo con Starlink). Márcalo antes de descargar el evento en los servidores.</p></div>
+            {# «Usará servidores locales» (21-nov-2026, pedido de Juan David): al encenderlo se elige UNA forma de conectar los servidores (2 o más en los tres casos). #}
+            <div class="gw-field"><label class="gw-check" for="eeLocalUses"><input type="checkbox" id="eeLocalUses"> <span class="gw-choice__text">Usará servidores locales</span></label>
+              <p class="gw-hint">Para eventos con varias entradas, cada una con su servidor local (2 o más). Elige cómo se conectan entre sí; márcalo antes de descargar el evento en los servidores.</p></div>
+            <fieldset class="gw-field" id="eeLocalModes" hidden>
+              <legend class="gw-label">¿Cómo se conectan los servidores? (elige una)</legend>
+              <label class="gw-choice"><input type="radio" name="eeLocalMode" value="cloud"> <span class="gw-choice__text">Conectados con puente por la nube<span>Cada servidor tiene internet (red del lugar, celular o Starlink) y todos se ven entre sí cada pocos segundos. Sin internet, cada uno sigue solo y se pone al día al volver la conexión.</span></span></label>
+              <label class="gw-choice"><input type="radio" name="eeLocalMode" value="peer" disabled> <span class="gw-choice__text">Un servidor se conecta a otro <strong>(próximamente)</strong><span>Sin internet: los servidores se enlazan directamente por la red del lugar.</span></span></label>
+              <label class="gw-choice"><input type="radio" name="eeLocalMode" value="hub" disabled> <span class="gw-choice__text">Un tercer servidor hace de puente <strong>(próximamente)</strong><span>Sin internet: un servidor central reúne lo de las entradas.</span></span></label>
+            </fieldset>
             {% if staff_role == "super_admin" %}
             <div class="gw-field">
               <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="eeLocalBackups">Copias completas de los servidores locales</button>
@@ -550,8 +557,10 @@
       : 'El evento está en la nube (se edita aquí).';
     document.getElementById('eeLocalTake').hidden = !!l.leased;
     document.getElementById('eeLocalRelease').hidden = !l.leased;
-    const sh = document.getElementById('eeLocalShared');
-    sh.checked = !!l.shared;
+    const mode = l.mode || (l.shared ? 'cloud' : '');
+    document.getElementById('eeLocalUses').checked = !!mode;
+    document.getElementById('eeLocalModes').hidden = !mode;
+    document.querySelectorAll('input[name="eeLocalMode"]').forEach((r) => { r.checked = r.value === mode; });
     if (l.leased && l.shared && (l.nodes || []).length) info.textContent += ` Compartido entre: ${(l.nodes || []).join(', ')}.`;
   }
   const bkBtn = document.getElementById('eeLocalBackups');
@@ -572,13 +581,20 @@
       list.appendChild(li);
     });
   });
-  document.getElementById('eeLocalShared').addEventListener('change', async (e) => {
-    const box = e.currentTarget;
-    const want = box.checked;
-    const data = await leaseCall('/shared', { enabled: want });
-    if (!data) { box.checked = !want; return; }
-    current.local = data; paintLocal(current);
-    showToast(want ? 'El evento quedó compartido: varios servidores locales podrán tenerlo a la vez.' : 'El evento ya no es compartido.', 'success');
+  const MODE_OK = { cloud: 'El evento usará servidores locales conectados con puente por la nube: varios servidores podrán tenerlo a la vez.' };
+  async function setLocalMode(mode) {
+    const data = await leaseCall('/mode', { mode });
+    if (data) { current.local = data; showToast(mode ? MODE_OK[mode] : 'El evento ya no usará varios servidores locales.', 'success'); }
+    paintLocal(current);          // si falló, vuelve a lo que había
+  }
+  document.getElementById('eeLocalUses').addEventListener('change', (e) => {
+    if (e.currentTarget.checked) {          // al encenderlo se elige la única forma disponible hoy (las otras dos dicen «próximamente»)
+      document.getElementById('eeLocalModes').hidden = false;
+      setLocalMode('cloud');
+    } else setLocalMode('');
+  });
+  document.getElementById('eeLocalModes').addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'eeLocalMode' && e.target.checked) setLocalMode(e.target.value);
   });
   async function leaseCall(path, body) {
     const res = await fetch(`/api/events/${current.id}/lease${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });

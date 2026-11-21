@@ -2,6 +2,8 @@
 
 Nube:
   events.local_shared        el evento acepta VARIOS servidores locales a la vez (lo enciende un administrador antes de descargarlo)
+  events.local_mode          «Usará servidores locales» (21-nov-2026): cómo se conectan — cloud (puente por la nube), peer (un servidor se conecta a otro), hub (un tercer
+                             servidor hace de puente); NULL = no se marcó. Solo `cloud` existe hoy y enciende local_shared.
   event_local_nodes          qué servidores locales tienen el evento (además de events.local_node_name, que sigue siendo el «principal» para pantallas viejas)
 Servidor local:
   events.peer_cursor         hasta dónde bajó los cambios de los OTROS servidores (JSON con los últimos ids de la nube)
@@ -39,6 +41,8 @@ def upgrade():
     ev = _cols("events")
     if "local_shared" not in ev:
         op.add_column("events", sa.Column("local_shared", sa.Boolean(), nullable=False, server_default=sa.false()))
+    if "local_mode" not in ev:
+        op.add_column("events", sa.Column("local_mode", sa.String(10), nullable=True))
     if "peer_cursor" not in ev:
         op.add_column("events", sa.Column("peer_cursor", sa.Text(), nullable=True))
     for c in SYNC_INT:
@@ -70,4 +74,5 @@ def downgrade():
     for c in SYNC_INT:
         op.drop_column("events", c)
     op.drop_column("events", "peer_cursor")
+    op.drop_column("events", "local_mode")
     op.drop_column("events", "local_shared")

@@ -65,26 +65,45 @@ def release_lease(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     return event_lease.serialize(event)
 
 
-@router.post("/events/{event_id}/lease/shared")
-def set_shared(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
-    """0160: el evento acepta (o deja de aceptar) VARIOS servidores locales a la vez, con la nube como puente (docs/23_EVENTO_COMPARTIDO_NUBE.md). Se puede encender aunque el evento ya
-    esté en un servidor (ese pasa a ser el primero del grupo). Apagarlo solo con uno o ningún servidor: si hay varios, cada uno debe «Pasar a internet» antes."""
-    event = _event(db, event_id, staff, lock=True)
-    want = bool((data or {}).get("enabled"))
-    if want == bool(event.local_shared):
+def _apply_mode(db: Session, event, staff: StaffUser, mode: str):
+    """Fija «Usará servidores locales» y cómo se conectan. `""` = apagado (un solo servidor local, como siempre); `cloud` = compartido con la nube como puente
+    (docs/23_EVENTO_COMPARTIDO_NUBE.md). Se puede encender aunque el evento ya esté en un servidor (ese pasa a ser el primero del grupo). Apagarlo solo con uno o ningún
+    servidor: si hay varios, cada uno debe «Pasar a internet» antes."""
+    mode = (mode or "").strip().lower()
+    if mode and mode not in event_lease.MODES:
+        raise HTTPException(status_code=400, detail="Forma de conexión desconocida")
+    if mode and mode not in event_lease.READY_MODES:
+        raise HTTPException(status_code=409, detail=f"«{event_lease.MODES[mode]}» todavía no está disponible. Por ahora usa «{event_lease.MODES['cloud']}».")
+    want = mode == "cloud"
+    if (event.local_mode or "") == mode and bool(event.local_shared) == want:
         return event_lease.serialize(event)
-    if want:
+    if want and not event.local_shared:
         event.local_shared = True
         if event_lease.is_leased(event):
             event_lease._join(event, event.local_node_name)
-    else:
+    elif not want and event.local_shared:
         if len(event_lease.writers(event)) > 1:
-            raise HTTPException(status_code=409, detail="El evento está en varios servidores locales: cada uno debe «Pasar a internet» antes de dejar de compartirlo.")
+            raise HTTPException(status_code=409, detail="El evento está en varios servidores locales: cada uno debe «Pasar a internet» antes de cambiar cómo se conectan.")
         event.shared_nodes.clear()
         event.local_shared = False
-    _audit(db, staff, "lease_shared", event, "Evento compartido entre varios servidores locales" if want else "El evento dejó de ser compartido entre servidores locales")
+    event.local_mode = mode or None
+    _audit(db, staff, "lease_shared", event, f"Usará servidores locales: {event_lease.MODES[mode]}" if mode else "Ya no usará varios servidores locales")
     db.commit()
     return event_lease.serialize(event)
+
+
+@router.post("/events/{event_id}/lease/mode")
+def set_mode(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """«Usará servidores locales» (Editar evento › Servidor local): {"mode": "" | "cloud" | "peer" | "hub"}."""
+    event = _event(db, event_id, staff, lock=True)
+    return _apply_mode(db, event, staff, str((data or {}).get("mode") or ""))
+
+
+@router.post("/events/{event_id}/lease/shared")
+def set_shared(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """Compatibilidad (0160, primera versión): {"enabled": true} = puente por la nube; false = apagado."""
+    event = _event(db, event_id, staff, lock=True)
+    return _apply_mode(db, event, staff, "cloud" if (data or {}).get("enabled") else "")
 
 
 @router.get("/events/{event_id}/local-backups")

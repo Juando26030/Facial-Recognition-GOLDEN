@@ -18,7 +18,10 @@ Las opciones sin internet (enlace de radio punto a punto, un servidor con varios
 
 ## 3. Cómo funciona
 ### Nube
-- `events.local_shared`: el evento acepta varios servidores. Lo enciende o apaga cualquiera que pueda llevar eventos a local (Editar evento › Servidor local). Apagarlo solo con uno o ningún servidor.
+- **«Usará servidores locales»** (21-nov-2026): en Editar evento › Servidor local se enciende esa opción y se elige UNA forma de conectarlos (2 o más servidores en los tres casos):
+  «Conectados con puente por la nube» (`cloud`, lo de este documento), «Un servidor se conecta a otro» (`peer`) y «Un tercer servidor hace de puente» (`hub`). Las dos últimas (sin internet)
+  aparecen como «próximamente» y la nube las rechaza (409). Queda en `events.local_mode`; `POST /api/events/{id}/lease/mode {"mode": ""|"cloud"|"peer"|"hub"}` (el viejo `/lease/shared` sigue).
+- `events.local_shared`: el evento acepta varios servidores (lo enciende el modo `cloud`). Lo cambia cualquiera que pueda llevar eventos a local. Apagarlo solo con uno o ningún servidor.
 - `event_local_nodes`: qué servidores tienen el evento. El primero sigue en `events.local_node_name` (el «principal»), así todo lo que ya leía esa columna sigue igual.
 - `event_lease.is_writer` reemplaza la comparación «¿es el servidor que lo tiene?» en todos los puntos donde un servidor escribe o baja datos (paquete, checklist, subidas, liberar).
 - **Pasar a internet** desde un servidor: sale solo ese servidor; el evento vuelve a la nube cuando sale el último. Si salió el principal, el siguiente pasa a serlo.

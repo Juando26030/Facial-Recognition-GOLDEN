@@ -96,7 +96,8 @@ def download_event(cloud_event_id: int, db: Session = Depends(get_db), staff: St
     if local_event is not None:          # la subida (app/node_sync.py) solo sube eventos que sepan cuál es su evento en la nube
         local_event.cloud_event_id = cloud_event_id
         local_event.sync_package_at = utcnow()
-        local_event.local_shared = bool(lease.get("shared"))          # 0160: compartido entre varios servidores: desde aquí baja lo de los demás (desde lo que ya traía el paquete)
+        local_event.local_shared = bool(lease.get("shared"))
+        local_event.local_mode = lease.get("mode") or ("cloud" if local_event.local_shared else None)          # 0160: compartido entre varios servidores: desde aquí baja lo de los demás (desde lo que ya traía el paquete)
         if local_event.local_shared and lease.get("peer_cursor"):
             peer_changes.save_cursor(local_event, lease["peer_cursor"])
         db.commit()

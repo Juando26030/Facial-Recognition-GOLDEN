@@ -47,7 +47,7 @@ def test_cursor_is_cleaned_and_tag_is_unique_per_installation(monkeypatch):
 def test_migration_0160_shape():
     src = (SRC / "alembic" / "versions" / "0160_shared_local_events.py").read_text(encoding="utf-8")
     assert 'revision = "0160_shared_local_events"' in src and len("0160_shared_local_events") <= 32 and 'down_revision = "0159_node_disabled_at"' in src
-    for col in ("local_shared", "peer_cursor", "from_peer", "event_local_nodes"):
+    for col in ("local_shared", "local_mode", "peer_cursor", "from_peer", "event_local_nodes"):
         assert col in src
 
 
@@ -69,8 +69,8 @@ def test_shared_event_two_servers_see_each_other_and_leave_one_by_one(client, fa
     ev_id = ev.id
     factory.staff("coordinador", "coord_comp")
     login(client, "coord_comp")
-    r = client.post(f"/api/events/{ev_id}/lease/shared", json={"enabled": True})
-    assert r.status_code == 200 and r.json()["shared"] is True
+    r = client.post(f"/api/events/{ev_id}/lease/mode", json={"mode": "cloud"})          # «Usará servidores locales» › puente por la nube
+    assert r.status_code == 200 and r.json()["shared"] is True and r.json()["mode"] == "cloud"
     client.get("/logout")
     la = client.post(f"/api/node/events/{ev_id}/lease", headers=_hdr(a)).json()
     lb = client.post(f"/api/node/events/{ev_id}/lease", headers=_hdr(b)).json()
@@ -188,6 +188,26 @@ def test_ping_turns_on_sharing_for_a_server_that_already_had_the_event(db, facto
     node_sync._refresh_shared_flags(db, {"shared_events": []})
     db.expire_all()
     assert db.get(Event, ev.id).local_shared is False
+
+
+def test_uses_local_servers_offers_three_modes_and_only_the_cloud_bridge_works(client, factory, db):
+    ev = factory.event("en_proceso")
+    factory.staff("coordinador", "coord_modo")
+    login(client, "coord_modo")
+    for mode in ("peer", "hub"):          # sin internet: en pausa, la nube lo dice claro y no cambia nada
+        r = client.post(f"/api/events/{ev.id}/lease/mode", json={"mode": mode})
+        assert r.status_code == 409 and "todavía no está disponible" in r.json()["detail"]
+    assert client.post(f"/api/events/{ev.id}/lease/mode", json={"mode": "radio"}).status_code == 400
+    db.expire_all()
+    assert db.get(Event, ev.id).local_mode is None and db.get(Event, ev.id).local_shared is False
+    assert client.post(f"/api/events/{ev.id}/lease/mode", json={"mode": "cloud"}).json()["mode"] == "cloud"
+    db.expire_all()
+    assert db.get(Event, ev.id).local_shared is True
+    off = client.post(f"/api/events/{ev.id}/lease/mode", json={"mode": ""}).json()
+    assert off["mode"] is None and off["shared"] is False
+    page = (SRC / "templates" / "_event_edit_modal.html").read_text(encoding="utf-8")
+    assert "Usará servidores locales" in page and page.count('name="eeLocalMode"') == 3 and page.count("(próximamente)") == 2
+    assert "Conectados con puente por la nube" in page and 'id="eeLocalShared"' not in page
 
 
 # ------------------------------------------------------------------ 0160: lo que antes no subía (ediciones, deshacer registro, áreas, inventario, turnos)
