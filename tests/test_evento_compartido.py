@@ -206,7 +206,7 @@ def test_uses_local_servers_offers_three_modes_and_only_the_cloud_bridge_works(c
     off = client.post(f"/api/events/{ev.id}/lease/mode", json={"mode": ""}).json()
     assert off["mode"] is None and off["shared"] is False
     page = (SRC / "templates" / "_event_edit_modal.html").read_text(encoding="utf-8")
-    assert "Usará servidores locales" in page and page.count('name="eeLocalMode"') == 3 and page.count("(próximamente)") == 2
+    assert "Usará servidores locales" in page and page.count('type="radio" name="eeLocalMode"') == 3 and page.count("(próximamente)") == 2
     assert "Conectados con puente por la nube" in page and 'id="eeLocalShared"' not in page
 
 
