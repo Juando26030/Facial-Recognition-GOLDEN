@@ -116,14 +116,14 @@ def node_abort(event_id: int, db: Session = Depends(get_db), node: LocalNode = D
 
 
 @router.get("/node/events/{event_id}/changes")
-def node_changes(event_id: int, request: Request, l: int = 0, a: int = 0, p: int = 0, c: int = 0, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):  # noqa: E741
-    """Evento COMPARTIDO (0160): lo que hay en la nube DESPUÉS del cursor del servidor (`l` registros, `a` personas del evento, `p` impresiones, `c` cambios), para que cada
+def node_changes(event_id: int, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
+    """Evento COMPARTIDO (0160): lo que hay en la nube DESPUÉS del cursor del servidor (un número por sección, claves `peer_changes.KEYS`: `l` registros, `a` personas, `p` impresiones, `c` cambios, `e` ediciones, `m` áreas, `d` entregas, `t` turnos, `q` llamados, `r` ruleta, `x` contactos), para que cada
     servidor vea lo que hicieron los demás. Solo para servidores del grupo y con el evento compartido. Páginas de hasta `peer_changes.PAGE`; `more` = hay más."""
     from app import node_auth
     node_auth.require_compatible(request)
     event = _event(db, event_id)
     if not event_lease.is_shared(event) or not event_lease.is_writer(event, node.name):
         raise HTTPException(status_code=409, detail="Este evento no es compartido o no está en este servidor local")
-    out = peer_changes.changes_since(db, event, {"l": l, "a": a, "p": p, "c": c})
+    out = peer_changes.changes_since(db, event, peer_changes.clean_cursor(dict(request.query_params)))
     out["nodes"] = event_lease.writers(event)
     return out

@@ -34,7 +34,7 @@ def _nodes(db, factory, *names):
 
 # ------------------------------------------------------------------ puro
 def test_cursor_is_cleaned_and_tag_is_unique_per_installation(monkeypatch):
-    assert peer_changes.clean_cursor('{"l": "5", "a": -3, "p": "x"}') == {"l": 5, "a": 0, "p": 0, "c": 0}
+    assert peer_changes.clean_cursor('{"l": "5", "a": -3, "p": "x"}') == {k: (5 if k == "l" else 0) for k in peer_changes.KEYS}
     assert peer_changes.clean_cursor(None) == {"l": 0, "a": 0, "p": 0, "c": 0}
     monkeypatch.setattr("app.local_env.refresh", lambda: None)
     monkeypatch.setenv("INSTALLATION_ID", "ab" * 16)
@@ -87,6 +87,8 @@ def test_shared_event_two_servers_see_each_other_and_leave_one_by_one(client, fa
     assert ch["more"] is False and ch["cursor"]["l"] > cur_b["l"]
     again = client.get(f"/api/node/events/{ev_id}/changes", params=ch["cursor"], headers=_hdr(b)).json()
     assert again["persons"] == [] and again["access_logs"] == []
+    far = {k: 10**9 for k in peer_changes.KEYS}                       # la nube lee TODOS los cursores (no solo l/a/p/c): ninguno vuelve a 0
+    assert client.get(f"/api/node/events/{ev_id}/changes", params=far, headers=_hdr(b)).json()["cursor"] == far
     # la nube sigue en solo lectura; B sale primero y el evento sigue en A
     assert client.post(f"/api/node/events/{ev_id}/release", json={"pending": 0}, headers=_hdr(b)).json()["leased"] is True
     db.expire_all()
@@ -217,7 +219,7 @@ def test_cloud_applies_edits_areas_deliveries_turns_calls_idempotently(client, f
             "calls": [{"lane": "A", "number": 5, "desk": "Caja 1", "at": t0.isoformat()}], "turn_status": []}
     r = client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a))
     assert r.status_code == 200, r.text
-    assert r.json()["saved"] == {"edits": 2, "areas": 1, "deliveries": 1, "turns": 1, "turn_conflicts": 0, "calls": 1, "turn_status": 0}
+    assert {k: v for k, v in r.json()["saved"].items() if v} == {"edits": 2, "areas": 1, "deliveries": 1, "turns": 1, "calls": 1}
     assert client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(a)).json()["saved"]["areas"] == 0          # repetir no duplica
     db.expire_all()
     u = db.query(User).filter_by(id="1001").one()

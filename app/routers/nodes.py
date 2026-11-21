@@ -241,8 +241,10 @@ async def node_backup(event_id: int, request: Request, node: LocalNode = Depends
     from app import local_backup
     node_auth.require_compatible(request)
     data = await request.body()
-    if not data or len(data) > local_backup.MAX_BACKUP_BYTES or data[:2] != b"\x1f\x8b":
-        raise HTTPException(status_code=413 if data else 400, detail="Copia vacía, dañada o demasiado grande")
+    if len(data) > local_backup.MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Copia demasiado grande")
+    if data[:2] != b"\x1f\x8b":
+        raise HTTPException(status_code=400, detail="Copia vacía o dañada")
     return await run_in_threadpool(_store_backup, event_id, node.name, data)
 
 
