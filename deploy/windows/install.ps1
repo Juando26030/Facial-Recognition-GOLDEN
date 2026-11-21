@@ -85,6 +85,7 @@ if (Test-Path $installRequest) {
     Set-EnvKey 'INSTALLATION_ID' "$($rq.installation_id)"
     Remove-Item $installRequest -Force
 }
+Set-EnvKey 'LOCAL_CERT_DIR' $CertDir          # la app entrega la autoridad en /certificado (quitar el aviso «No seguro» en los equipos que se conectan)
 Protect-File $EnvFile
 $cfg = Read-EnvFile
 

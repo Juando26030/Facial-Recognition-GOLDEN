@@ -112,7 +112,7 @@
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'gw-versionbar gw-versionbar--info';
-    chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador (la primera vez acepta el aviso del certificado). Clic para copiar el enlace.';
+    chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador Para que no salga «No seguro», cada equipo instala una vez el certificado desde ' + url(a.addresses[0]) + '/certificado. Clic para copiar el enlace.';
     chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">Conectar: </strong>' + esc(a.addresses[0] + ':' + a.port) + '</span>';
     chip.addEventListener('click', () => {
       const text = url(a.addresses[0]);
@@ -122,6 +122,14 @@
     });
     const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
     if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
+    const cert = document.createElement('a');          // instrucciones para quitar el aviso «No seguro» en los demás equipos (instalar la autoridad del servidor una vez)
+    cert.className = 'gw-versionbar gw-versionbar--info';
+    cert.href = '/certificado';
+    cert.target = '_blank';
+    cert.rel = 'noopener';
+    cert.title = 'Cómo quitar el aviso «No seguro» en los computadores y celulares que se conectan a este servidor (se instala el certificado una sola vez).';
+    cert.innerHTML = '<span class="gw-versionbar__txt">Certificado</span>';
+    chip.parentNode ? chip.parentNode.insertBefore(cert, chip.nextSibling) : place(cert);
   }).catch(() => {});
 
   /* ID del servidor (morado claro, a la derecha de «Al día» y de la IP): es la llave de producto con la que se instaló; la ven los administradores en Configuración › Servidor local. Clic = copia. */

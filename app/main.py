@@ -481,6 +481,8 @@ _include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas d
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
 _include(server_keys_router.router, prefix="/api")      # 20-nov-2026: llaves de producto (crear, ver, deshabilitar; el instalador las reclama)
 _include(local_server_router.router, prefix="/api")
+from app.routers import local_cert as local_cert_router          # servidor local: /certificado (quitar el aviso «No seguro» en los equipos que se conectan)
+_include(local_cert_router.router)
 _include(local_installer_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
 
