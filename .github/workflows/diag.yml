@@ -60,8 +60,8 @@ jobs:
           PY
       - name: Pruebas que se están limpiando
         run: |
-          F=$(for f in turnos cuentas_cobro cobros_gastos_f10b event_acts analitica_eventos gastos_infra tipos_evento seguridad_f5_9_c rendimiento parametros_visual impresion_compartida design_system alertas_borrado trabajos_huerfanos ruleta_fase10 roulette roster_visual roles_almacen_contabilidad registro_visual observability instalador_local_descarga historial_personas forms fase10_a_texto event_transfer evento_desde_eventos entrega_encuesta base_archivada_guard autorregistro_kiosco; do echo tests/test_$f.py; done)
-          PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=short $F
+          F=$(for f in account_sync actualizar_local ajustes_nov12 almacen_api base_archivada_guard bootstrap_iam_retry cadena_migraciones carga_por_pasos cobros_gastos_f10b_texto codigo_protegido coordinador_temporal crm_oportunidades csp_trinquete design_system event_contacts event_template fase_1_8_pedidos fase_1_9_ajustes favicon form_ya_inscrito gcloud_env_vars load_tools persona_prueba pertenencia_persona_evento publico_congelado rendimiento seguridad_cierre_permisos servidor_local_descarga vincular_local; do echo tests/test_$f.py; done)
+          PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=long $F
       - name: Dependencias de las pruebas de JS
         if: always()          # aunque las pruebas de Python hayan fallado
         run: npm ci
