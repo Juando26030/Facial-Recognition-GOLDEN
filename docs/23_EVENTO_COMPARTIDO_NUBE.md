@@ -1,6 +1,8 @@
 # Evento compartido entre varios servidores locales, con la nube como puente (20-nov-2026)
 
-**Estado:** desarrollado en la rama `feat/evento-compartido-nube` (migración `0160_shared_local_events`). **No desplegado.** Pedido de Juan David el 20-nov-2026.
+**Estado: EN PRODUCCIÓN desde el 21-nov-2026** (commit `4615fb4`, migración `0160_shared_local_events`, paquete de actualización de los servidores locales `2026.11.21.222212`). Rama de trabajo: `feat/evento-compartido-nube`. Se probó antes en staging (mismo commit). Pedido de Juan David el 20-nov-2026.
+
+**Lo que ya funciona hoy:** «Usará servidores locales» → «Conectados con puente por la nube». **Lo que NO existe todavía:** «Un servidor se conecta a otro» y «Un tercer servidor hace de puente» (sin internet): salen en pantalla como «(próximamente)» y no se pueden elegir. Para usar la forma por la nube, cada servidor local debe actualizarse a la versión nueva.
 
 ## 1. El problema
 Eventos grandes con dos (o más) entradas lejos entre sí: un solo servidor local no alcanza (los routers se ponen lentos con más de ~6 equipos y no se puede tender cable entre
@@ -82,7 +84,13 @@ Lo que más pesa es que la base (Neon) no se duerme mientras el evento compartid
 `tests/test_evento_compartido.py`: un solo escritor si no es compartido; dos servidores en un evento compartido se ven por `/changes`; salen uno a uno; no se deja de compartir con dos dentro;
 el ping avisa; aplicar lo bajado es idempotente, salta el eco propio y no pisa datos; el ciclo corto sube con prefijo propio, baja y nunca devuelve lo bajado.
 
-## 7. Pendiente antes de producción
+## 7. Pendiente (ya está en producción; esto es lo que falta comprobar y construir)
+0. Construir las dos formas sin internet (`peer` y `hub`); la pantalla y `events.local_mode` ya las tienen reservadas.
 1. Ensayo real con dos servidores locales y dos redes distintas (por ejemplo una con Starlink), registrando a la vez en las dos entradas, cortando internet en una y volviendo.
 2. Medir la demora real entre entradas y el consumo de datos (para el plan de Starlink).
 3. Decidir si en eventos compartidos se avisa en el quiosco «registrado en la otra entrada a las …» (hoy se ve como un registro más).
+
+## 8. Lo que salió a producción el 21-nov-2026 junto con esto
+- **Hotfix del formulario público del evento 14 («Error de red al subir el archivo» en celulares):** `static/js/direct-upload.js` copia el archivo a memoria al elegirlo (en Android un PDF de Drive/WhatsApp puede dejar de poderse leer) y reintenta 4 veces con una URL firmada nueva. Mismo flujo y mismos textos; su huella está renovada en `tests/test_publico_congelado.py`.
+- **Pruebas automáticas en verde por primera vez en semanas** (4.570 pasan, 0 fallan): 47 pruebas viejas se pusieron al día; las que mostraron errores reales se arreglaron en la app (imprimir a alguien de otro evento ya no revela su nombre; la consulta de categoría respeta la base archivada; preimpresiones sin script en línea; ícono en las etiquetas QR; mensaje al eliminar un producto con objetos con serial).
+- La CI sale en verde cuando todo está bien: una ✗ roja ahora SÍ significa que algo se dañó.
