@@ -41,6 +41,7 @@ app/formlib.py         lógica pura de formularios; app/formsvc.py lo que toca l
 app/ops.py             estado del sistema; app/ops_runner.py Job horario (respaldos, purga, cola, precalentamiento: app/warmup.py)
 app/appmode.py         APP_MODE all|publico|web|biometria (app/entrypoints/); qué rutas sirve cada servicio
 app/crypto.py, privacy.py   cifrado del rostro (FACE_ENCRYPTION_KEY) y retención/purga biométrica
+app/orgs.py, routers/platform.py   capa «empresa» del SaaS (0162, docs/27_SAAS_EMPRESAS.md): `organizations` (Golden = 1), planes y límites (`check_limit`), pantalla /plataforma (solo super_admin) y primer arranque /instalar
 app/server_keys.py, server_lock.py, routers/server_keys.py   llaves de producto del servidor local (docs/17_SERVIDOR_LOCAL.md § Llaves): crear/ver/deshabilitar, instalador liviano, bloqueo al deshabilitar
 app/event_transfer.py, event_transfer_jobs.py   exportar/importar un evento completo entre entornos (docs/18_EXPORTAR_EVENTOS.md); solo super_admin
 static/js/             app.js (kiosco), directory.js, toast.js, form-render.js, badge-render.js, …

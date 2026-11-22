@@ -380,7 +380,7 @@
     const defaultStatus = 'registrado';
     // Usabilidad 22-nov-2026 (hallazgo 1): lo que el guardado hace solo se DICE dentro de la ventana y en el botón: una persona que aún
     // no llegó queda Registrada (y, con la autoimpresión activa, se imprime su escarapela). El digitador tiene además «Guardar sin registrar».
-    const registerNoteText = () => 'Esta persona aún no está registrada. Al guardar, esta persona queda Registrada en este evento'
+    const registerNoteText = () => 'Al guardar, esta persona queda Registrada en este evento'
       + (window.EVENT_AUTO_PRINT ? ' y se imprime su escarapela' : '') + '.'
       + (canManageStatus ? ' Si solo vas a corregir un dato, cambia «Estado de registro» a «No registrado» antes de guardar.' : ' Si solo vas a corregir un dato, usa «Guardar sin registrar».');
     let skipRegister = false;                                           // «Guardar sin registrar» (digitador): guarda los datos y NO llama al cambio de estado

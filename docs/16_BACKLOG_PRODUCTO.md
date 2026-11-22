@@ -127,3 +127,14 @@ Fuera del piloto (después): paridad de búsqueda sin red y el error de recarga 
 
 ## Aprobados por J (2026-10-05), AL FINAL de la cola
 **7a** «✅ Acreditar» en todas las filas con «Deshacer»: la regla propuesta (solo quien acreditó, hace menos de ~15 s verificado en el servidor; interfaz ~8 s) queda **aprobada**. **7b** logo por defecto editable desde Configuración: **aprobado**. Orden de trabajo: A y B (nube) → 1 (recarga) → 2 a 5 → 7a y 7b al final.
+
+## SaaS (22-nov-2026): capa «empresa», planes y primer arranque
+**Decisión de Juan David (22-nov-2026):** la plataforma debe poder venderse como servicio a otras empresas y nada (cuentas, empresas, planes, asistencia) se maneja desde código: todo dentro de la app. El CRM es interno de Golden y no entra.
+**Hecho (22-nov-2026, primera pieza, rama `saas/revision-integral`, sin desplegar):** tabla `organizations` (Golden = 1), `org_id` en `tenants` y `staff_users`, planes y límites (`app/orgs.py`), pantalla «Empresas (SaaS)» (`/plataforma`, solo Super Admin), primer administrador con contraseña temporal de un solo uso, tope de eventos por mes al crear un evento y primer arranque `/instalar`. Detalle, alta paso a paso y tabla de planes: [`docs/27_SAAS_EMPRESAS.md`](27_SAAS_EMPRESAS.md).
+**Falta, en este orden** (Anexo A.3 de `docs/revision_2026-11-22/01_arquitectura_devops.md`; horas en `docs/27` §5):
+1. Filtro por `org_id` en `app/auth.py` + cerrar el ingreso de una empresa suspendida + prueba de dos empresas; encender `ENFORCE_STAFF_TENANT=1` en staging. **Hasta entonces la app no deja crear cuentas para otra empresa.**
+2. `org_id` en `events` y en los catálogos globales; `SET LOCAL app.org_id`; RLS tabla por tabla.
+3. Aplicar los demás límites (usuarios, asistentes por evento, facial, servidor local, formularios con pago) y ocultar lo interno de Golden (CRM, legalizaciones, almacén, gastos) a las demás empresas.
+4. Identidad, marca, remitente de correo y textos legales por empresa (contrato de encargo con la auditora: no es código).
+5. Estado de cuenta y cobro; exportar/borrar todo lo de una empresa; «Pedir ayuda» dentro de la app; «entrar como» con auditoría; rol `platform_admin`.
+6. Llaves y nodos locales, cola de trabajos y archivos por empresa.

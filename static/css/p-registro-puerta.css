@@ -521,3 +521,6 @@ html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { 
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { overflow: visible; text-overflow: clip; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row { padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); }
 }
+
+/* Usabilidad 22-nov-2026 (hallazgo 1): el aviso «Al guardar, esta persona queda Registrada» de Editar persona no se pega al primer campo. */
+.gw-registro #editModalRegNote { margin-bottom: var(--gw-sp-3); }
