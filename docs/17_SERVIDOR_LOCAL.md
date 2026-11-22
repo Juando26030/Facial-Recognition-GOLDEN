@@ -85,4 +85,27 @@ Nadie instala ni vincula un servidor local sin una **llave de producto** (`GLD-X
 - **Descarga del paquete:** con `UPDATE_PACKAGE_AUTH=1` el manifiesto no entrega la URL/huella y `/api/ops/update-package/*` exige `X-Node-Token` o el permiso del instalador. **Viene apagado**; se enciende cuando
   todos los servidores ya instalados corran una versión que envía su token (`fetch_manifest` y `run-update.ps1` ya lo envían).
 - **Límites conocidos:** el instalador/PowerShell no se puede construir ni probar fuera de Windows; una vez instalada, el código está en el portátil; quien edite `local.env` a mano puede quitar el bloqueo local
-  (la nube igual rechaza su token). Pruebas: `tests/test_server_keys*.py`.
+  (la nube igual rechaza su token). Mientras `UPDATE_PACKAGE_AUTH` siga apagado, el paquete de la app (código, sin datos ni secretos) se puede descargar sin llave: la llave protege la VINCULACIÓN con la
+  nube (token del servidor), no el código, que de todas formas es público en GitHub. Pruebas: `tests/test_server_keys*.py`.
+
+## Seguridad del portátil: qué hay en el disco, pérdida o robo, y devolución del equipo (revisión 22-nov-2026)
+Detalle y hallazgos en [`revision_2026-11-22/04_seguridad_servidor_local.md`](revision_2026-11-22/04_seguridad_servidor_local.md).
+- **Qué queda en el disco de un servidor local:** la base PostgreSQL (`C:\GoldenLocal\data\pgdata`: personas de los eventos bajados con cédula, nombre, teléfono, correo y campos extra; TODAS las
+  cuentas del personal con el hash de su contraseña, que la nube manda para poder entrar sin internet), los archivos de los eventos (`data\files`), hasta 14 copias diarias de la base (`backups\*.dump`,
+  sin cifrar), los secretos y la vinculación (`config\local.env`: `SECRET_KEY`, `LOCAL_DB_PASSWORD`, `NODE_TOKEN`, `SERVER_KEY`) y la llave de la autoridad HTTPS (`certs\ca.key`). **No hay rostros**: el
+  paquete que baja un servidor local nunca trae biometría y el servidor no tiene `FACE_ENCRYPTION_KEY`.
+- **Los permisos de carpeta (solo SYSTEM y Administradores) protegen frente a otras cuentas de Windows, NO frente a quien se lleve el portátil** (se saca el disco o se arranca desde un USB y se lee
+  todo). Por eso el portátil servidor DEBE llevar **BitLocker** encendido (Windows 10/11 Pro: Panel de control › Cifrado de unidad BitLocker; la clave de recuperación se guarda en la cuenta de la
+  empresa, nunca en el portátil) y una cuenta de Windows con contraseña. El instalador todavía no lo comprueba (propuesto: aviso en la verificación final).
+- **Protocolo de pérdida o robo (lo primero, antes de cualquier otra cosa):** en la nube, Configuración › Servidor local › Llaves de producto › **Deshabilitar** la llave de ese equipo. Con eso el
+  token del servidor deja de servir en el momento (la nube responde 403 a todo) y el equipo se cierra en cuanto vuelva a tener internet. Mientras no se deshabilite, ese token puede: listar todos los
+  eventos de la nube, tomar cualquier evento y bajar su base de personas, subir datos al evento que tenga, y bajar la lista de cuentas (con hashes). Sin internet el equipo robado sigue abriendo la
+  app con cualquier cuenta cuya contraseña conozca el ladrón (por eso las contraseñas del personal deben ser fuertes y cambiarse en la nube tras un robo: al vincular otro servidor llegan las nuevas).
+- **Devolver, prestar o dar de baja el portátil (`scripts\borrar-datos.ps1`, sin probar en Windows real):** 1) en Sincronización, «Pasar a internet» en cada evento (0 pendientes); 2) deshabilitar la
+  llave en la nube si el equipo no seguirá siendo servidor; 3) PowerShell como administrador:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File C:\GoldenLocal\scripts\borrar-datos.ps1 -Overwrite` (pide escribir `BORRAR`; detiene los servicios; elimina base, archivos, copias,
+  registros, secretos, vinculación y llaves de certificados; retira la autoridad «Golden Local CA» de Windows; con `-Overwrite` sobrescribe el espacio libre para que no se recupere nada);
+  4) desinstalar «Golden Local» desde Programas y borrar `C:\GoldenLocal`. Si el equipo pasa a otra persona de Golden, basta con reinstalar con una llave nueva (los secretos se generan de nuevo).
+- **Lo que NO se borra solo:** un evento devuelto a internet («Pasar a internet») queda en la base local como copia inerte, con sus personas, y en las copias diarias; la supresión de una persona hecha
+  en la nube (Ley 1581) no llega a esa copia. Hasta que exista la purga automática (propuesta en el reporte), la regla es: terminado el evento y devuelto a internet, borrar los datos del portátil con
+  el script de arriba (o reinstalar) antes de guardarlo.

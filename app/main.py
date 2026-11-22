@@ -264,7 +264,7 @@ async def security_headers(request, call_next):
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     h.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self), payment=(self)")      # la cámara y la ubicación (widget de mapa) solo las usa la propia app
     if IS_PRODUCTION:
-        h.setdefault("Strict-Transport-Security", "max-age=31536000")
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")      # revisión 22-nov-2026: también los subdominios del host de la app (nunca se sirve nada por http debajo de él)
     if h.get("content-type", "").startswith("image/svg"):
         h["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     else:
@@ -1082,7 +1082,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "sidebar_active": "eventos",
         "contingency_enabled": contingency_enabled(),
         "registro_gear": registro_gear.can_see_gear(db, event.id, staff_roles),        # Plan 7: engranaje «Configuración del registro» (solo visual)
-        "config_lock_json": json.dumps(config_lock.state_for(db, event, staff_roles)),        # 0161: qué pantallas tiene bloqueadas este digitador (app/config_lock.py)
+        "config_lock_json": json.dumps(config_lock.state_for(db, event, staff_roles)).replace("</", "<\\/"),        # 0161: qué pantallas tiene bloqueadas este digitador (app/config_lock.py)
         "dependents_cfg_json": json.dumps(dependents_cfg).replace("</", "<\\/") if dependents_cfg else "null",        # 0161: campo «Dependientes» en «Editar persona»
         "reg_card_fields_json": json.dumps([{"key": c["key"], "label": c["label"], "type": c.get("field_type")} for c in field_configs_all if c.get("show_in_card")]).replace("</", "<\\/"),        # 0161: lo que se ve en la tarjeta de la persona en Registro
         "inventory_assigned": inv_assign.is_assigned(event),

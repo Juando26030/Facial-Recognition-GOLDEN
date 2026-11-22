@@ -1,4 +1,4 @@
-# Borrado de los DATOS del servidor local antes de devolver, prestar o dar de baja el portátil (revisión de seguridad 22-nov-2026).
+﻿# Borrado de los DATOS del servidor local antes de devolver, prestar o dar de baja el portátil (revisión de seguridad 22-nov-2026).
 # El desinstalador (uninstall.ps1) NO borra la base, las copias ni la configuración a propósito (si el evento no se subió a la nube, se perdería). Este script sí:
 # detiene los servicios y elimina la base de datos (data\pgdata), los archivos del evento (data\files), las copias (backups\), los registros (logs\), los secretos y la
 # vinculación (config\local.env: SECRET_KEY, LOCAL_DB_PASSWORD, NODE_TOKEN, SERVER_KEY) y las llaves de los certificados (certs\). Además quita la autoridad «Golden Local CA»

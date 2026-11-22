@@ -151,7 +151,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               </div>
               <p class="gw-hint" id="capInfo"></p>
               <p class="gw-hint" id="statusLocked" role="status" hidden>{{ ic('info', 'gw-icon--sm') }} <b>Bloqueado: el estado lo controla el calendario.</b> Ahora mismo el formulario está <b id="statusLockedNow"></b> según el tramo que está en curso. Para volver a elegir el estado a mano, desactiva «Programar el estado por fechas».</p>
-              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar cambios» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
+              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar cambios» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora. <b>Ojo:</b> al guardar con «Activo» el enlace público abre de verdad y, si el formulario tiene campo de pago, los cobros son reales; prueba antes con el enlace de pruebas.</p>
             </div>
             <div class="gw-group__item">
               <label class="gw-check" data-own-pending><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
