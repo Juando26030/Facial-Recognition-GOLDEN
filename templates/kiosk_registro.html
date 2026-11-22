@@ -133,7 +133,7 @@
       </div>
 
       {% if event.selfreg_enabled and event.status == "en_proceso" and staff_role != "cliente" %}
-      <p class="gw-hint"><a href="/kiosk/{{ event.id }}/autoregistro">Abrir la pantalla de autorregistro</a> (la persona se registra sola, sin base de datos).</p>
+      <p class="gw-hint"><a href="/kiosk/{{ event.id }}/autoregistro">Abrir la pantalla de autorregistro</a> (para una tableta aparte donde la persona escribe sus datos sola; al abrirla, este equipo deja de ser el puesto de registro).</p>
       {% endif %}
       {% set ns = namespace(n=0) %}
       {% if staff_role == "cliente" or event.facial_enabled %}
@@ -325,15 +325,15 @@
                             {% endif %}
                         </div>
 {% endmacro %}
-        <div id="registerModal" class="gw-registro__overlay" role="dialog" aria-modal="true" aria-label="Registro de nuevo personal">
+        <div id="registerModal" class="gw-registro__overlay" role="dialog" aria-modal="true" aria-label="Registrar a una persona nueva">
             <div class="gw-card gw-registro__modal">
                 <form id="regForm" class="golden-badge-builder">
                     <fieldset class="gw-registro__fieldset" {% if event.status != "en_proceso" %}disabled{% endif %}>
                     <!-- A4 (26-oct-2026): título, Cancelar y Guardar en un encabezado FIJO: visibles aunque el formulario sea largo (computador, tablet y celular). -->
                     <div class="gw-modal-head gw-registro__modalhead">
-                        <h2 class="badge-form-title gw-registro__modaltitle">Registro de nuevo personal</h2>
+                        <h2 class="badge-form-title gw-registro__modaltitle">Registrar a una persona nueva</h2>
                         <button type="button" id="closeRegisterModalBtn" class="gw-btn gw-btn--secondary">Cancelar</button>
-                        <button type="submit" class="gw-btn gw-btn--primary gw-btn--xl">Guardar{{ " Perfil Biométrico" if event.facial_enabled else "" }}</button>
+                        <button type="submit" class="gw-btn gw-btn--primary gw-btn--xl">Guardar y acreditar</button>
                     </div>
                     {% if event.status != "en_proceso" %}<p class="gw-alert gw-alert--err gw-text-sm" role="status">Deshabilitado: el evento no está en proceso.</p>{% endif %}
 

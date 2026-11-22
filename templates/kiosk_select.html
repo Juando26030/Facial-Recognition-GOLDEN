@@ -96,7 +96,7 @@
       <h2 class="gw-tile-group__title" id="gwTitMain">Lo de todos los días</h2>
       <div class="gw-tiles">
         {{ tile("/kiosk/%s/registro" % event.id, "face" if event.facial_enabled else "badge", "Registro",
-                "Escáner facial, cédula y directorio en vivo" if event.facial_enabled else "Cédula (lector o manual) y directorio en vivo", false, true) }}
+                "Buscar a la persona (cédula, QR o rostro), acreditarla e imprimir su escarapela" if event.facial_enabled else "Buscar a la persona (cédula, nombre o QR), acreditarla e imprimir su escarapela", false, true) }}
         {% if event.areas_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/areas" % event.id, "lock", "Control de áreas", "Entradas y salidas por zona (cédula, QR o facial)") }}
         {% endif %}
@@ -104,10 +104,10 @@
         {{ tile("/kiosk/%s/turnos" % event.id, "clock", "Turnos y filas", "Llama al siguiente; la gente ve su turno en el celular") }}
         {% endif %}
         {% if event.inventory_enabled and staff_role != "comercial" %}
-        {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
+        {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entregar a cada persona lo que le toca (kits, regalos, combos), con lo que queda disponible") }}
         {% endif %}
         {% if staff_role != "comercial" %}
-        {{ tile("/kiosk/%s/alistamiento" % event.id, "inbox", "Inventario", "Equipos y materiales de Golden alistados para este evento (no es lo que se reparte a los asistentes)") }}
+        {{ tile("/kiosk/%s/alistamiento" % event.id, "inbox", "Material de Golden", "Solo consulta: equipos y materiales de Golden alistados para este evento (no es lo que se reparte a los asistentes)") }}
         {% endif %}
         {% if staff_role != "digitador" %}{# el digitador no tiene acceso a /estadisticas (main.py: exclude_roles): no se le dibuja una puerta cerrada #}
         {{ tile("/kiosk/%s/estadisticas" % event.id, "chart", "Estadísticas", "Exporta el reporte y consulta gráficos del evento") }}
