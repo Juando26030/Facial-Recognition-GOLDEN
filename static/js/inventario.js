@@ -39,7 +39,6 @@
     if (window.CAN_REPORT) $('reportBtn').hidden = false;
     try { users = await getJson(`/api/users?event_id=${window.EVENT_ID}`); }
     catch (e) { showToast('No se pudo cargar la base de personas. Recarga la página.', 'error'); }
-    if (!ASSIGNED) restore(readSel());
     await loadItems(); loadDeliveries();
     $('scanInput').focus();
   }
@@ -54,7 +53,9 @@
       return;
     }
     $('itemsLoading').hidden = true;
-    const keep = document.querySelector('.item-row') ? selection() : readSel();          // lo marcado se conserva entre personas y entre recargas (0161)
+    // Lo marcado se conserva entre personas con entrega automática o con la configuración bloqueada (0161: también entre recargas); si no, como siempre, la lista vuelve en blanco.
+    const sticky = AUTOSCAN || !!(LOCK.state && LOCK.state.inventory);
+    const keep = !sticky ? {} : (document.querySelector('.item-row') ? selection() : readSel());
     const real = items.filter(i => !i.is_group);
     $('statStock').textContent = real.filter(i => i.available > 0).length;
     $('statOut').textContent = real.filter(i => i.available <= 0).length;

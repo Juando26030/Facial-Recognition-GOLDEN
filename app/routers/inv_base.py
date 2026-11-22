@@ -213,18 +213,6 @@ def delete_dependents(event_id: int, data: dict, db: Session = Depends(get_db), 
     return {**out, "message": f"Se borraron {out['deleted']} filas de dependientes" + (f"; se conservaron {out['kept_delivered']} que ya tienen entregas." if out["kept_delivered"] else ".")}
 
 
-@router.put("/events/{event_id}/dependents-badge")
-def set_dependents_badge(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
-    """«Imprimir escarapela también a los dependientes» (apagada por defecto)."""
-    event = _event(db, event_id, staff, write=True)
-    value = (data or {}).get("enabled")
-    if not isinstance(value, bool):
-        raise HTTPException(status_code=400, detail="enabled debe ser verdadero o falso")
-    event.dependents_badge = value
-    db.commit()
-    return {"enabled": value}
-
-
 # ------------------------------------------------------------------------------------------------ bloqueo de la configuración del digitador
 @router.get("/events/{event_id}/config-lock")
 def get_config_lock(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
