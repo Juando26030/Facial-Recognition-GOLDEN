@@ -23,6 +23,7 @@
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
+    <script src="{{ url_for('static', path='js/gw-confirm-typed.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
@@ -150,6 +151,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <div class="gw-field gw-field--inline" data-own-pending><label class="gw-label" for="cfgCap">Cupo de inscripciones (vacío = sin límite)</label><input type="number" class="gw-input" id="cfgCap" min="1"></div>
               </div>
               <p class="gw-hint" id="capInfo"></p>
+              <p class="gw-hint" id="payAccountLine" role="status" hidden></p>
               <p class="gw-hint" id="statusLocked" role="status" hidden>{{ ic('info', 'gw-icon--sm') }} <b>Bloqueado: el estado lo controla el calendario.</b> Ahora mismo el formulario está <b id="statusLockedNow"></b> según el tramo que está en curso. Para volver a elegir el estado a mano, desactiva «Programar el estado por fechas».</p>
               <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar cambios» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora. <b>Ojo:</b> al guardar con «Activo» el enlace público abre de verdad y, si el formulario tiene campo de pago, los cobros son reales; prueba antes con el enlace de pruebas.</p>
             </div>
@@ -417,6 +419,14 @@ const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 
 const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
 
 let ID_DOCS = [];
+let payAccounts = [];      // cuentas de cobro (solo las puede leer un administrador): para decir el NOMBRE de la que cobra este formulario
+function paintPayAccount() {      // «Cobra con: …» bajo el estado, solo lectura: la asignación sigue en Cuentas de cobro
+  const el = $('payAccountLine'); if (!el || !form) return;
+  const has = !!(form.payments && form.payments.has_field) || (design && Object.values(design.fields || {}).some((x) => x.type === 'payment'));
+  el.hidden = !has;
+  if (has) el.innerHTML = GWConfirm.accountLine(form.payments, { admin: ['admin', 'super_admin'].includes(window.STAFF_ROLE), accounts: payAccounts });
+}
+if (['admin', 'super_admin'].includes(window.STAFF_ROLE)) fetch('/api/payment-accounts').then((r) => (r.ok ? r.json() : null)).then((d) => { payAccounts = (d && (d.accounts || d)) || []; if (!Array.isArray(payAccounts)) payAccounts = []; paintPayAccount(); }).catch(() => {});
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
 let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
 const markDirty = () => { dirty = true; namesCache = null; paintSaveBar(); };
@@ -1237,6 +1247,9 @@ const busy = (btn, fn) => (window.GW && GW.busy ? GW.busy(btn, fn) : Promise.res
 async function saveAll() {   // un solo botón: el diseño (si es la pestaña Diseño o hay cambios), la configuración (si es la pestaña Configuración o hay cambios) y, al final, el estado, el cupo y el calendario pendientes
   const onConfig = activeTabName() === 'config';
   const stBody = (pendingStatusChange() || pendingCapChange()) ? { manual_status: $('cfgStatus').value, capacity: capOf() } : null;   // lo mismo que enviaba «Aplicar estado y cupo»
+  // Publicar («Activo») un formulario que cobra: confirmación explícita con la cuenta que cobra (22-nov-2026). Antes de guardar nada: si cancela, no cambia nada.
+  if (pendingStatusChange() && $('cfgStatus').value === 'activo' && Object.values(design.fields).some((x) => x.type === 'payment')
+      && !(await GWConfirm.activatePaidForm({ account: GWConfirm.accountName(form.payments, payAccounts) }))) return false;
   const scBody = pendingSchedule() ? ($('cfgUseSched').checked ? { schedule: schedule.map((x) => ({ ...x })), use_schedule: true } : { use_schedule: false }) : null;   // lo mismo que «Guardar calendario» / quitar la marca
   if (dirty || !onConfig) { if (!(await saveDesign())) return false; }
   if (cfgDirty || onConfig) { if (!(await saveConfig({ keepStatus: !!(stBody || scBody) }))) return false; }   // el estado se activa al final: si el diseño o la configuración fallan, no cambia
@@ -1352,6 +1365,7 @@ $('tplBtn').addEventListener('click', async () => {
 });
 
 function paintHeader() {
+  paintPayAccount();
   $('fname').value = form.name; $('fslug').value = form.slug;
   $('statusPill').innerHTML = `Estado: <b>${STATUS_LABEL[form.public_state] || form.public_state}</b> · ${form.submissions} inscripción(es)`;
   $('testBtn').href = form.public_state === 'pruebas' ? form.test_url : form.public_url;
@@ -1742,7 +1756,7 @@ $('rfAmount').addEventListener('input', () => { $('rfCancel').checked = Number($
 $('rfClose').addEventListener('click', () => { $('refundOverlay').hidden = true; });
 $('rfGo').addEventListener('click', async () => {
   const auto = $('rfAuto').checked;
-  const ok = await showConfirm(auto ? `Se pedirá a Wompi devolver ${cop($('rfAmount').value)} por su API. Esto no se puede deshacer. ¿Continuar?` : `Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });
+  const ok = auto ? await GWConfirm.typed(GWConfirm.fill(GWConfirm.TEXT.refund, { amount: cop($('rfAmount').value), reference: refunding.reference }), 'REEMBOLSAR', { title: 'Reembolsar por Wompi', confirmLabel: 'Reembolsar' }) : await showConfirm(`Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });;
   if (!ok) return;
   try {
     const d = await jpost(`${api}/payments/${refunding.id}/refund`, { reason: $('rfReason').value, manual: !auto, note: $('rfNote2').value, amount: $('rfAmount').value, cancel_registration: $('rfCancel').checked });

@@ -1269,3 +1269,17 @@
 @media (max-width: 600px) {
   .gw-page .gw-page-head__title, .gw-page h1.gw-title, .gw-page .golden-section-title h2 { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 }
+
+/* ============================================================ Revisión 22-nov-2026 (docs/revision_2026-11-22/13): ayudas ⓘ por rol y por sección, y bloques «Avanzado».
+   - `.gw-rolehelp` / `__item`: fila de nombres de rol, cada uno con su ⓘ (Staff y Usuarios del evento).
+   - ⓘ dentro del título de un `.gw-form-group` (Editar evento): a la derecha; el cuadro de ayuda no hereda la negrita ni la mano del título.
+   - `.gw-advanced`: desplegable «Avanzado» (cerrado por defecto) para lo que solo toca soporte o un técnico. Solo tokens. */
+.gw-rolehelp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-1) var(--gw-sp-3); margin-top: var(--gw-sp-2); }
+.gw-rolehelp__item { display: inline-flex; align-items: center; gap: var(--gw-sp-1); font-size: var(--gw-fs-sm); color: var(--gw-text); }
+.gw-form-group__summary > .gw-help { margin-left: auto; }
+.gw-form-group__summary .gw-popover { cursor: default; }
+span.gw-popover__title, span.gw-popover__text { display: block; }
+.gw-advanced { margin-top: var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-advanced > summary { display: flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-4); cursor: pointer; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); color: var(--gw-text); }
+.gw-advanced > summary .gw-hint { margin: 0; font-weight: var(--gw-fw-normal); }
+.gw-advanced__body { padding: 0 var(--gw-sp-4) var(--gw-sp-4); }

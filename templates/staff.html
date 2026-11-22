@@ -92,6 +92,15 @@
                 <option value="almacen">Almacén</option>
                 <option value="contabilidad">Contabilidad</option>
               </select>
+              {# ⓘ por rol (22-nov-2026): qué puede y qué no, con la escalera de app/auth.py (cliente < digitador < coordinador < comercial < admin < super_admin) #}
+              <div class="gw-rolehelp" aria-label="Qué puede cada rol">
+                <span class="gw-hint">Qué puede cada rol:</span>
+                <span class="gw-rolehelp__item">Coordinador{% call ayuda('ay_rol_coordinador', 'Rol: Coordinador') %}Puede: crear y ejecutar sus eventos (base, escarapela, parámetros, usuarios temporales, registro y reportes). No puede: manejar clientes, crear cuentas del personal ni cambiar la Configuración. En la escalera va debajo de Comercial.{% endcall %}</span>
+                <span class="gw-rolehelp__item">Director de coordinadores{% call ayuda('ay_rol_dir_coordinadores', 'Rol: Director de coordinadores') %}Puede: todo lo de un coordinador y, además, asignar coordinadores a los eventos y revisar las legalizaciones. No puede: nada de administrador (cuentas del personal, Configuración).{% endcall %}</span>
+                <span class="gw-rolehelp__item">Comercial{% call ayuda('ay_rol_comercial', 'Rol: Comercial') %}Puede: manejar los clientes y sus eventos (crear, editar, adjuntar la base final y el informe). No puede: cargar la base, diseñar la escarapela ni cambiar Parámetros de un evento, ni crear cuentas del personal. En la escalera va encima de Coordinador y debajo de Admin.{% endcall %}</span>
+                <span class="gw-rolehelp__item">Almacén{% call ayuda('ay_rol_almacen', 'Rol: Almacén') %}Puede: solo el inventario de Golden (equipos y materiales). No puede: entrar a eventos, clientes ni datos de asistentes, salvo que además se le sume otro rol.{% endcall %}</span>
+                <span class="gw-rolehelp__item">Contabilidad{% call ayuda('ay_rol_contabilidad', 'Rol: Contabilidad') %}Puede: ver el inventario y registrar los gastos de infraestructura. No puede: entrar a eventos, clientes ni datos de asistentes, salvo que además se le sume otro rol.{% endcall %}</span>
+              </div>
             </div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">

@@ -25,6 +25,7 @@
     <script src="{{ url_for('static', path='js/gw-pager.js') }}"></script>
 <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
 <script src="{{ url_for('static', path='js/usuarios-compromiso.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/gw-confirm-typed.js') }}"></script>
 <script src="{{ url_for('static', path='js/usuarios.js') }}" defer></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -120,6 +121,12 @@
                 {% if can_temp_coordinator %}<option value="coordinador_temp">Coordinador (temporal, solo este evento)</option>{% endif %}
               </select>
               <p class="gw-hint" id="uRoleHint">La contraseña de la cuenta es la misma cédula: no hay que escribirla.</p>
+              <div class="gw-rolehelp" aria-label="Qué puede cada rol">
+                <span class="gw-hint">Qué puede cada rol:</span>
+                <span class="gw-rolehelp__item">Digitador{% call ayuda('ay_rol_digitador', 'Rol: Digitador') %}Puede: registrar, acreditar e imprimir en este evento, solo mientras está «En proceso» y después de que le permitas el ingreso. No puede: ver otros eventos, cambiar Parámetros ni descargar reportes. Es el escalón más bajo del personal.{% endcall %}</span>
+                <span class="gw-rolehelp__item">Cliente{% call ayuda('ay_rol_cliente', 'Rol: Cliente') %}Puede: consultar este evento (estadísticas y lo que se le comparta) con su propio usuario. No puede: registrar personas, cambiar nada ni ver otros eventos.{% endcall %}</span>
+                <span class="gw-rolehelp__item">Coordinador temporal{% call ayuda('ay_rol_coordinador_temp', 'Rol: Coordinador temporal') %}Puede: coordinar SOLO este evento (base, escarapela, parámetros, usuarios y reportes). No puede: ver clientes, otros eventos ni la Configuración; su acceso se acaba cuando el evento se finaliza.{% endcall %}</span>
+              </div>
             </div>
           </div>
           <div class="gw-fields-row gw-fields-row--2">
@@ -204,8 +211,7 @@
       <div class="gw-usr__listhead">
         <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
         {% if staff_role != "comercial" %}<button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="approveAllBtn" hidden aria-describedby="approveAllHint">{{ ic('check', 'gw-icon--sm') }} <span id="approveAllLabel">Autorizar a todos los pendientes</span></button>
-        <span class="gw-sr-only" id="approveAllHint">Autoriza el ingreso de todos los digitadores de este evento que están esperando en la fila.</span>
-        <button type="button" class="gw-btn gw-btn--danger" id="purgeTempBtn" hidden>{{ ic('trash', 'gw-icon--sm') }} Eliminar los usuarios temporales de este evento</button>{% endif %}
+        <span class="gw-sr-only" id="approveAllHint">Autoriza el ingreso de todos los digitadores de este evento que están esperando en la fila.</span>{% endif %}
       </div>
       <div id="tempUsersStatus" role="status" aria-live="polite" class="gw-msg"></div>
       <div class="gw-rowsbox">
@@ -214,6 +220,12 @@
       </div>
       </div>
       <div id="tempUsersPager"></div>
+      {% if staff_role != "comercial" %}{# 22-nov-2026: lejos de «Autorizar a todos», al final de la lista, pequeño y con borde; pide escribir ELIMINAR (static/js/gw-confirm-typed.js) #}
+      <div class="gw-danger-zone" id="purgeTempZone" hidden>
+        <h4>{{ ic('alert') }} Al terminar el evento</h4>
+        <p class="gw-hint">Borra de una vez todas las cuentas de digitador de este evento. No se pueden recuperar; hazlo solo cuando el evento ya terminó.</p>
+        <div class="gw-actions"><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" id="purgeTempBtn">{{ ic('trash', 'gw-icon--sm') }} Eliminar los usuarios temporales de este evento</button></div>
+      </div>{% endif %}
     </section>
     {% if staff_role != "comercial" %}{% include "_gw_savebar.html" %}{% endif %}
   </div>

@@ -135,12 +135,14 @@
     const PAGER_KEY = 'usuarios';
     const pagerEl = document.getElementById('tempUsersPager');
     const purgeBtn = document.getElementById('purgeTempBtn');
+    const purgeZone = document.getElementById('purgeTempZone');      // zona de peligro al final de la lista (22-nov-2026): se muestra y se oculta junto con el botón
+    const showPurge = (on) => { if (purgeBtn) purgeBtn.hidden = !on; if (purgeZone) purgeZone.hidden = !on; };
 
     function drawUsers() {
         if (!allUsers.length) {
             listEl.innerHTML = '<div class="gw-empty" role="note"><p>Todavía no hay cuentas asignadas a este evento.</p><p class="gw-hint">Crea la primera con «Nueva cuenta para este evento» o sube un Excel.</p></div>';
             if (pagerEl) pagerEl.replaceChildren();
-            if (purgeBtn) purgeBtn.hidden = true;
+            showPurge(false);
             return;
         }
         const pg = window.GW && window.GW.pageSlice ? window.GW.pageSlice(PAGER_KEY, allUsers, pageIdx) : { items: allUsers, page: 0 };
@@ -149,7 +151,7 @@
         if (pagerEl && window.GW && window.GW.pagerBar) {
             pagerEl.replaceChildren(window.GW.pagerBar({ key: PAGER_KEY, total: allUsers.length, page: pageIdx, onPage: (i) => { pageIdx = i; drawUsers(); }, onSize: () => { pageIdx = 0; drawUsers(); } }));
         }
-        if (purgeBtn) purgeBtn.hidden = !allUsers.some((u) => u.role === 'digitador');
+        showPurge(allUsers.some((u) => u.role === 'digitador'));
     }
 
     async function loadTempUsers() {
@@ -432,7 +434,7 @@
         purgeBtn.addEventListener('click', () => {
             const n = allUsers.filter((u) => u.role === 'digitador').length;
             return busy(purgeBtn, async () => {
-                const ok = await showConfirm(`Se van a ELIMINAR las ${n} cuentas de digitador de este evento. <strong>No se pueden recuperar.</strong> Si alguna también está en otro evento, a esa solo se le quita este evento; y el compromiso firmado de cada una queda guardado como evidencia del evento, sin la cuenta. ¿Seguro?`, { confirmLabel: `Eliminar ${n} cuenta(s)` });
+                const ok = await GWConfirm.typed(GWConfirm.fill(GWConfirm.TEXT.purgeTemp, { n }), 'ELIMINAR', { title: 'Eliminar los usuarios temporales', confirmLabel: `Eliminar ${n} cuenta(s)` });      // confirmación FUERTE (22-nov-2026): escribir ELIMINAR
                 if (!ok) return;
                 const res = await fetch(`/api/events/${eventId}/staff-users/purge-temporary`, { method: 'POST' });
                 const d = await res.json().catch(() => ({}));

@@ -4,6 +4,11 @@
    Requiere staff_role (contexto) y toast.js / clockpicker.js cargados en la página que la incluye. Usa .gw-modal (hoja de pantalla completa en celular), grupos plegables y UN solo «Guardar cambios»
    dentro de la ventana, con el aviso «Hay cambios sin guardar» (también al cerrar) y Ctrl/Cmd+S. Solo tokens --gw-* (static/css/gw-eventos.css). /clientes todavía no usa gw-page: la ventana no depende de eso. #}
 {% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{# Ayuda ⓘ por sección (22-nov-2026): el mismo patrón .gw-help/.gw-popover de kiosk_parametros.html. Va dentro del <summary>; static/js/gw-summary-help.js evita que pulsarla pliegue el grupo. #}
+{% macro ee_ayuda(id, titulo) %}<span class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <span class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><span class="gw-popover__title" id="{{ id }}t">{{ titulo }}</span><span class="gw-popover__text">{{ caller() }}</span>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></span></span>{% endmacro %}
+<script src="{{ url_for('static', path='js/gw-summary-help.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-event-fields.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-map.css') }}">
@@ -21,7 +26,7 @@
         <input type="hidden" name="event_id">
 
         <details class="gw-form-group" open>
-          <summary class="gw-form-group__summary">Datos del evento</summary>
+          <summary class="gw-form-group__summary">Datos del evento{% call ee_ayuda('ee_ay_1', 'Datos del evento') %}Nombre, código, tipo y estado del evento. El código identifica al evento en enlaces y reportes; el estado decide si se puede registrar («En proceso») o no.{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeName">Nombre del evento</label><input class="gw-input" type="text" id="eeName" name="name" required></div>
             {# Categoría (tipo de evento) — Fase 10 (C): la lista se ve SIEMPRE en «Datos del evento», también en eventos viejos; vacío = «Sin categoría». La lista sale del mismo catálogo que las opciones del diseñador de plantilla. El calendario filtra por ella. #}
@@ -43,7 +48,7 @@
         </details>
 
         <details class="gw-form-group" open>
-          <summary class="gw-form-group__summary">Fechas y horarios</summary>
+          <summary class="gw-form-group__summary">Fechas y horarios{% call ee_ayuda('ee_ay_2', 'Fechas y horarios') %}Cuándo empieza y termina el evento y sus jornadas. Una «jornada» es cada día u horario de atención; con esas horas se arman el calendario y los avisos.{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-fields-row gw-fields-row--3">
               <div class="gw-field"><label class="gw-label" for="eeStart">Fecha inicio</label><input class="gw-input" type="date" id="eeStart" name="start_date" required></div>
@@ -62,7 +67,7 @@
         </details>
 
         <details class="gw-form-group" open>
-          <summary class="gw-form-group__summary">Lugar y responsables</summary>
+          <summary class="gw-form-group__summary">Lugar y responsables{% call ee_ayuda('ee_ay_3', 'Lugar y responsables') %}Dónde se hace el evento y quién responde por él: el coordinador que lo ejecuta y la comercial que atiende al cliente.{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-fields-row gw-fields-row--2">
               <div class="gw-field"><label class="gw-label" for="modalCountryField">País</label><input class="gw-input" type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
@@ -80,7 +85,7 @@
         </details>
 
         <details class="gw-form-group">
-          <summary class="gw-form-group__summary">Superevento y pañoleta</summary>
+          <summary class="gw-form-group__summary">Superevento y pañoleta{% call ee_ayuda('ee_ay_4', 'Superevento y pañoleta') %}Un «superevento» agrupa varios eventos del mismo cliente (por ejemplo, las ciudades de una gira). La pañoleta es el color que distingue a este evento en el calendario.{% endcall %}</summary>
           <div class="gw-form-group__body">
             {# Superevento (ítem 19): agrupa eventos independientes del mismo cliente; solo cruza el aviso de asistencia entre hermanos. #}
             <div class="gw-field"><label class="gw-label" for="eeSuperEvent">Superevento (agrupa eventos hermanos del mismo cliente)</label>
@@ -99,7 +104,7 @@
 
         {# Campos PERSONALIZADOS de la plantilla de evento (Fase 2): se pintan con event-field-render.js a partir de GET /api/event-template y se guardan en `extra` (solo los que cambian). Los campos base siguen arriba. #}
         <details class="gw-form-group" id="eeExtraGroup" open hidden>
-          <summary class="gw-form-group__summary">Información adicional del evento</summary>
+          <summary class="gw-form-group__summary">Información adicional del evento{% call ee_ayuda('ee_ay_5', 'Información adicional del evento') %}Los datos propios que Golden pide en cada evento según la plantilla (se define en Configuración › Plantilla de eventos).{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-fields-row gw-fields-row--2" id="eeExtraBody"></div>
           </div>
@@ -108,7 +113,7 @@
         {# Enlace limpio de inscripciones (D2.5k): nombre del evento en la dirección pública y formulario principal. Solo comercial, admin y super_admin. #}
         {% if staff_role in ("comercial", "admin", "super_admin") %}
         <details class="gw-form-group" open id="eeLinkGroup">
-          <summary class="gw-form-group__summary">Enlace de inscripciones</summary>
+          <summary class="gw-form-group__summary">Enlace de inscripciones{% call ee_ayuda('ee_ay_6', 'Enlace de inscripciones') %}La dirección web corta que se le comparte a la gente para inscribirse. Si la cambias, el enlace anterior deja de servir.{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeLinkSlug">Nombre del evento en el enlace</label><input class="gw-input" type="text" id="eeLinkSlug" autocomplete="off" maxlength="60" spellcheck="false"><small class="gw-hint" id="eeLinkHint"></small></div>
             <div class="gw-field"><label class="gw-label" for="eeLinkPrimary">Formulario principal</label><select class="gw-select" id="eeLinkPrimary"><option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option></select></div>
@@ -121,7 +126,7 @@
 
         {# Servidor local (Fase 6): el evento puede vivir en un servidor local sin internet; mientras tanto la nube lo muestra en solo lectura. #}
         <details class="gw-form-group" open id="eeLocalGroup">
-          <summary class="gw-form-group__summary">Servidor local (sin internet)</summary>
+          <summary class="gw-form-group__summary">Servidor local (sin internet){% call ee_ayuda('ee_ay_7', 'Servidor local (sin internet)') %}Para eventos sin internet confiable: el evento se trabaja en un computador del sitio y después se sube a la nube. Mientras está en el servidor local, en la nube queda solo para consulta.{% endcall %}</summary>
           <div class="gw-form-group__body ee-report">
             <div class="ee-report__head"><span class="gw-hint" id="eeLocalInfo"></span></div>
             <div class="ee-report__row">
@@ -150,7 +155,7 @@
 
         {# Historial de cambios del evento por campo (Fase 5, solo lectura; static/js/event-history-panel.js). Lo ve quien edita el evento: coordinador, comercial, admin y super_admin. #}
         <details class="gw-form-group" id="eeHistoryGroup" hidden>
-          <summary class="gw-form-group__summary">Historial de cambios</summary>
+          <summary class="gw-form-group__summary">Historial de cambios{% call ee_ayuda('ee_ay_8', 'Historial de cambios') %}Quién cambió qué y cuándo en los datos clave del evento. Solo lectura.{% endcall %}</summary>
           <div class="gw-form-group__body">
             <div class="gw-field"><label class="gw-label" for="eeHistoryField">Filtrar por campo</label><select class="gw-select" id="eeHistoryField" data-eh="field"><option value="">Todos los campos</option></select></div>
             <div class="gw-table-wrap">
@@ -169,19 +174,19 @@
 
         {# Contactos del cliente en el evento (16-nov-2026): varios, uno principal (recibe el informe final y la encuesta). Se guardan con «Guardar cambios». #}
         <details class="gw-form-group" id="eeContactsGroup" open>
-          <summary class="gw-form-group__summary">Contactos del cliente</summary>
+          <summary class="gw-form-group__summary">Contactos del cliente{% call ee_ayuda('ee_ay_9', 'Contactos del cliente') %}Las personas del cliente para este evento (a quién llamar, a quién se le envía el informe).{% endcall %}</summary>
           <div class="gw-form-group__body"><p class="gw-hint">El contacto principal recibe el informe final y la encuesta. Elígelos del CRM o agrégalos a mano, con una nota de quién es en este evento.</p><div id="eeContactsBox"></div></div>
         </details>
 
         {# Inventario del evento (Fase 5): productos del catálogo con cantidades y estado del cuadre; lo que cada rol puede editar lo decide el servidor. Se guarda con «Guardar cambios» o con su propio botón. #}
         <details class="gw-form-group" id="eeInvGroup" open hidden>
-          <summary class="gw-form-group__summary">Inventario</summary>
+          <summary class="gw-form-group__summary">Inventario{% call ee_ayuda('ee_ay_10', 'Inventario') %}Equipos y materiales de Golden que se piden para este evento. Almacén los alista con esta lista.{% endcall %}</summary>
           <div class="gw-form-group__body"><div id="eeInvBox"></div></div>
         </details>
 
         {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
         <details class="gw-form-group" open id="eeFinalDbGroup">
-          <summary class="gw-form-group__summary">Base de datos final</summary>
+          <summary class="gw-form-group__summary">Base de datos final{% call ee_ayuda('ee_ay_11', 'Base de datos final') %}El archivo con el resultado del evento que se le entrega al cliente. Es obligatorio para pasar el evento a «Facturado». No es la descarga de Estadísticas: este archivo lo adjuntas tú.{% endcall %}</summary>
           <div class="gw-form-group__body ee-report">
             <div class="ee-report__head">
               <span class="gw-hint" id="eeFinalDbInfo"></span>
@@ -198,7 +203,7 @@
 
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
         <details class="gw-form-group" open>
-          <summary class="gw-form-group__summary">Informe final</summary>
+          <summary class="gw-form-group__summary">Informe final{% call ee_ayuda('ee_ay_12', 'Informe final') %}El informe del evento (PDF o Excel). Al adjuntarlo queda la marca «Informe enviado» y se le avisa por correo a la comercial.{% endcall %}</summary>
           <div class="gw-form-group__body ee-report">
             <div class="ee-report__head">
               <span id="eeReportBulb"></span>
@@ -217,7 +222,7 @@
         {# Entrega al cliente (Fase 5): solo comercial/admin/super_admin y solo con el evento Facturado. Se muestra tras consultar /api/events/{id}/delivery; son acciones aparte de «Guardar cambios». #}
         {% if staff_role in ("comercial", "admin", "super_admin") %}
         <details class="gw-form-group" id="eeDeliveryGroup" open hidden>
-          <summary class="gw-form-group__summary">Entrega al cliente</summary>
+          <summary class="gw-form-group__summary">Entrega al cliente{% call ee_ayuda('ee_ay_13', 'Entrega al cliente') %}El enlace con el que el cliente descarga su base final y responde la encuesta. Vence; si hace falta, se genera uno nuevo.{% endcall %}</summary>
           <div class="gw-form-group__body ee-delivery">
             <p class="gw-hint">El evento está Facturado. Comparta este enlace con el cliente: primero diligencia una encuesta de satisfacción y luego puede descargar la base de datos final.</p>
             <div class="ee-delivery__row">

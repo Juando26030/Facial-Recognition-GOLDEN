@@ -264,6 +264,29 @@
     return payload;
   }
 
+  // ---- «¿Qué sigue?» (22-nov-2026, docs/revision_2026-11-22/13): al crear el evento ya no se vuelve a la lista sin más; se muestran los tres pasos que faltan para poder registrar, con su enlace.
+  // El guardado no cambia: esto solo se abre DESPUÉS de que el servidor respondió bien. Cerrar (botón o Escape) lleva a donde se iba antes (AFTER_URL).
+  const NEXT_STEPS = [
+    { path: 'roster', title: 'Cargar la base', text: 'Sube el Excel o CSV con las personas invitadas. Siempre verás una vista previa antes de guardar.' },
+    { path: 'escarapela', title: 'Diseñar la escarapela', text: 'Arma lo que se imprime al registrar y haz una prueba con la persona PRUEBA.' },
+    { path: 'usuarios', title: 'Dar acceso a los digitadores', text: 'Crea las cuentas temporales de quienes van a registrar en la puerta.' },
+  ];
+  function showNextSteps(created) {
+    const go = () => { window.location.href = AFTER_URL; };
+    if (!created || !created.id || typeof window.openGwDialog !== 'function') { go(); return; }
+    const esc = window.escapeHtml;
+    const items = NEXT_STEPS.map((s, i) => `<li class="gw-list__item"><div><strong>${i + 1}. ${esc(s.title)}</strong><br><span class="gw-hint">${esc(s.text)}</span></div><a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${encodeURIComponent(created.id)}/${s.path}">${esc(s.title)}</a></li>`).join('');
+    const d = window.openGwDialog({
+      title: 'Evento creado. ¿Qué sigue?',
+      bodyHtml: `<p class="gw-modal__text">El evento${created.name ? ` <b>${esc(created.name)}</b>` : ''} quedó en estado «Creado». Para poder registrar personas faltan estos tres pasos (en este orden):</p><ul class="gw-list">${items}</ul>` +
+        '<p class="gw-hint">Lo demás (rostro, zonas, inventario, turnos) se activa en «Parámetros del evento». El día del evento, pásalo a «En proceso» desde la lista de eventos.</p>',
+      buttons: [{ id: 'neNextList', cls: 'gw-btn--primary', label: 'Ir a la lista de eventos' }],
+      onEscape: go,
+    });
+    d.dlg.querySelector('#neNextList').addEventListener('click', go);
+    const first = d.dlg.querySelector('a.gw-btn'); if (first) first.focus();
+  }
+
   // ---- Crear el evento (el último «Continuar» emite gw:wizard-finish).
   async function submitEvent() {
     if (!validateUpTo(panels().length - 1)) return;
@@ -285,7 +308,7 @@
           }
         }
         showToast('Evento creado', 'success');
-        window.location.href = AFTER_URL;
+        showNextSteps(created);
         return;
       }
       const err = await res.json().catch(() => ({}));

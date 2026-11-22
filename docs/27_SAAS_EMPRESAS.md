@@ -83,6 +83,8 @@ if not ok:
 - Recomendado en un despliegue nuevo expuesto a internet: definir el secreto `INSTALL_TOKEN` (Secret Manager o `.env`; nunca en el repo). Con él, la pantalla pide además ese código, para que nadie se adelante.
 - `scripts/create_staff_user.py` **ya no hace falta** para arrancar; se deja igual por compatibilidad (recuperación por consola si alguna vez se pierde el acceso).
 - Producción y staging ya tienen cuentas: ahí `/instalar` responde 404 desde el primer momento.
+- **Pendiente de decisión:** la prueba de seguridad `tests/test_seguridad_2026-11-22.py` (`test_rutas_sin_autenticacion_son_solo_las_publicas_conocidas`) lleva la lista de rutas que se abren sin sesión y
+  **falla a propósito** con `/instalar` (GET y POST) hasta que alguien las agregue a esa lista de forma consciente. No se agregaron en esta entrega: es una decisión de seguridad de Juan David.
 
 ## 5. Qué falta y en qué orden
 

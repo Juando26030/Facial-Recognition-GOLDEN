@@ -23,6 +23,7 @@
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
+    <script src="{{ url_for('static', path='js/gw-confirm-typed.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/queue-params.js') }}" defer></script>
@@ -923,18 +924,18 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             const r = await fetch(`${base}/users/${encodeURIComponent(id)}/biometrics`, { method: 'DELETE' }); const d = await r.json().catch(() => ({}));
             r.ok ? (say(d.message), load()) : say(d.detail || 'No se pudo borrar', true);
         });
-        const purgeData = async (scope, msg) => {
+        const purgeData = async (scope, text, word, title, label) => {      // confirmación FUERTE (22-nov-2026): hay que escribir la palabra; textos en static/js/gw-confirm-typed.js
             const id = document.getElementById('privCedula').value.trim();
             if (!id) return say('Escribe la cédula', true);
-            if (!(await showConfirm(msg.replace('{id}', window.escapeHtml(id))))) return;
+            if (!(await GWConfirm.typed(GWConfirm.fill(text, { id }), word, { title, confirmLabel: label }))) return;
             const r = await fetch(`/api/attendees/${encodeURIComponent(id)}/purge-data?event_id=${window.EVENT_ID}&scope=${scope}&confirm=true`, { method: 'DELETE' });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) return say(d.detail || 'No se pudo suprimir', true);
             say(`Listo. No se borra al instante: ${(d.not_immediate || []).join('; ')}.${d.versions_not_deleted ? ` ATENCIÓN: ${d.versions_not_deleted} versión(es) de archivos no se pudieron borrar; avisa a soporte.` : ''}`); load();
         };
         const pr = document.getElementById('privRevoke'), pa = document.getElementById('privAll');
-        if (pr) pr.addEventListener('click', () => purgeData('biometric', '¿Revocar la autorización de la persona con cédula {id}? Se borran su foto y su vector (no se puede deshacer) y queda constancia. Sigue entrando por cédula o QR.'));
-        if (pa) pa.addEventListener('click', () => purgeData('all', '¿Suprimir TODOS los datos de la persona con cédula {id}? Se borran sus datos personales, su rostro y se anonimiza su historial de ingresos. NO se puede deshacer.'));
+        if (pr) pr.addEventListener('click', () => purgeData('biometric', GWConfirm.TEXT.revoke, 'REVOCAR', 'Revocar la autorización del rostro', 'Revocar'));
+        if (pa) pa.addEventListener('click', () => purgeData('all', GWConfirm.TEXT.suppressAll, 'SUPRIMIR', 'Suprimir todos los datos de una persona', 'Suprimir todo'));
         const ev = document.getElementById('privEvent');
         if (ev) ev.addEventListener('click', async () => {
             const res = await purgeEventBiometrics(window.EVENT_ID);

@@ -19,6 +19,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
+    <script src="{{ url_for('static', path='js/gw-confirm-typed.js') }}"></script>
     {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
@@ -320,7 +321,8 @@ eventsList.addEventListener("change", async (e) => {
     if (await revertEventToCreated(select.dataset.eventId)) runSearch();
     return;
   }
-  const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
+  const reopening = previousStatus === "finalizado" && newStatus === "en_proceso";      // reabrir un evento finalizado: texto propio (qué se reactiva y qué pasa con los 7 días de los rostros) y escribir REABRIR
+  const confirmed = reopening ? await GWConfirm.reopenEvent(STATUS_LABELS[newStatus]) : await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
   select.disabled = true;
   select.setAttribute("aria-busy", "true");
