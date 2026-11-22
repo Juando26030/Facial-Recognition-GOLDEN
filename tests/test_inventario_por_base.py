@@ -261,3 +261,12 @@ def test_registration_card_and_text_case_for_all_are_in_the_screens():
     assert "td[data-card-hidden]" in css and "td[data-field=cardx]" in css
     pf = open("static/js/person-form-designer.js", encoding="utf-8").read()
     assert "Aplicar a todos los campos de texto" in pf
+
+
+def test_directory_etag_changes_when_the_dependents_base_changes(client, ev):
+    """Staging 21-nov-2026: cargar dependientes no cambiaba la huella del directorio y el navegador seguía mostrando «Dependientes» viejo (304)."""
+    before = client.get(f"/api/users?event_id={ev.id}")
+    _upload(client, ev, what="load")
+    after = client.get(f"/api/users?event_id={ev.id}", headers={"If-None-Match": before.headers["etag"]})
+    assert after.status_code == 200 and after.headers["etag"] != before.headers["etag"]
+    assert {u["id"]: u["dependents"] for u in after.json()}["1001"] == 2

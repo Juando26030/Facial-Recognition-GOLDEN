@@ -586,7 +586,8 @@ def get_all_users(
         raise HTTPException(status_code=403, detail=event_archive.DATA_ARCHIVED_MSG)
     headers = {"Cache-Control": "private, no-cache"}
     masked = staff.role == "cliente"          # E4: el cliente recibe otra versión del directorio: no comparte la huella (ni la caché del navegador) con el personal
-    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}")}"'
+    dep_sig = db.execute(text("SELECT count(*), coalesce(max(id), 0) FROM event_dependents WHERE event_id = :e"), {"e": event.id}).one()          # 0161: el conteo «Dependientes» viaja en cada fila: si cambia la base de dependientes, cambia la huella
+    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}|dep{tuple(dep_sig)}")}"'
     headers["ETag"] = etag
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
