@@ -19,6 +19,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 120         # revisión 22-nov-2026: construcción de dlib sin caché (hasta 60 min) + migraciones (15 min) + servicios; un despliegue colgado no queda 6 h «en curso» bloqueando el siguiente
     environment: ${{ inputs.env }}
     permissions:
       contents: read

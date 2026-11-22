@@ -49,7 +49,8 @@ try {
     Write-UpdateStatus 'download' 'Descargando la versión nueva'
     Remove-Quietly $pkg
     $dlHdr = @{}; if ($pkgUrl.StartsWith($prod + '/')) { $dlHdr = $nodeHdr }          # el token solo viaja a producción
-    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -Headers $dlHdr -UseBasicParsing -TimeoutSec 1800
+    # Revisión 22-nov-2026: sin redirecciones también en la DESCARGA (igual que download-app.ps1 y que el manifiesto): el token del servidor no viaja a otra dirección si producción redirigiera
+    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -Headers $dlHdr -UseBasicParsing -TimeoutSec 1800 -MaximumRedirection 0
     $hash = (Get-FileHash $pkg -Algorithm SHA256).Hash.ToLower()
     if ($hash -ne $pkgSha) { Remove-Quietly $pkg; throw 'La descarga no coincide con la huella de producción; no se instaló nada' }
 

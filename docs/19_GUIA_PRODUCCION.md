@@ -274,3 +274,23 @@ Si Actions no está disponible (el 5-nov-2026 estuvo bloqueado por facturación 
 registros por clic y se pulsó varias veces. Mira tamaño de la base, conexiones usadas frente al máximo, conexiones colgadas, consultas largas y bloqueos. `warn` = aviso por correo (destinatarios de Configuración › Alertas del sistema) y campana;
 `critical` (o la base no responde) = aviso y **reinicio del cómputo de Neon por su API** (`POST …/endpoints/{id}/restart`, usa NEON_API_KEY/NEON_PROJECT_ID/NEON_ENDPOINT_ID del Job). No borra datos. Con un evento «en proceso» NO reinicia a ciegas: solo avisa.
 `DB_HEALTH_RESTART=0` apaga el reinicio. A mano (también reinicia si ve algo crítico): `gcloud run jobs execute golden-ops --region us-east4 --args=-m,app.ops_runner,db-health`. Pruebas: `tests/test_db_health.py`.
+
+## Recuperación ante desastre en Cloud Run + Neon (revisión 22-nov-2026)
+`docs/recuperacion_desastre.md` describe la **VM** (snapshots, `~/backups`, cron): sirve solo si se vuelve a la VM. Para la producción actual, las copias y el camino de vuelta son estos (detalle y porqués en `docs/15_MIGRACION.md`, D2.5j, y `docs/24_COPIA_SEMANAL_ONEDRIVE.md`):
+
+| Copia | Dónde | Cada cuánto / cuánto dura | Sirve si… |
+|---|---|---|---|
+| Historial de Neon (PITR) | Neon, proyecto de producción | continuo, **1 día** | se dañó o borró algo en las últimas 24 h: rama nueva «a un minuto antes» |
+| Volcado horario (`pg_dump`, verificado) | `gs://<proyecto>-golden-backups-us-east4/db/hourly/` | cada hora (modo tranquilo: cada 8 h sin actividad), 3 días | error de hace 1-3 días |
+| Volcado diario | `…/db/daily/` | 3:00 Bogotá, 30 días | error de hace hasta un mes |
+| Copia semanal cifrada FUERA de Google | SharePoint «Respaldos GoldenWeb» (`ONEDRIVE_DRIVE_ID`) | semanal | se pierde la cuenta o el proyecto de Google |
+| Archivos (fotos, firmas, documentos) | bucket de la app con **versiones** | 30 días (biométrico 1 día) | un archivo borrado o sobrescrito por error |
+| Secretos | Secret Manager (versionado) + `FACE_ENCRYPTION_KEY` en el gestor de contraseñas de la empresa | — | perder la llave = perder los rostros |
+
+**Camino de vuelta (lo corre Juan David; un comando por mensaje, con Claude):**
+1. **Error dentro de 24 h:** Neon → Branches → *Create branch* → «Point in time» un minuto antes del problema → comprobar en su consola SQL → copiar la cadena **directa** del dueño a una versión nueva del secreto `golden-direct-database-url` y correr `python scripts/neon_app_role.py --owner-secret golden-direct-database-url --app-secret golden-database-url --rotate` (crea `golden_app` en la rama y escribe `golden-database-url`) → desplegar de nuevo (los servicios leen los secretos al arrancar) → `/sistema` en verde. RPO ≈ segundos; RTO estimado 10-30 min.
+2. **Error de más de 24 h:** restaurar el volcado en una rama **nueva** de Neon con `scripts/migrate_db_to_neon.py --source-dump <archivo> --target-env-file .env.restore --wipe --migrate` (el mismo camino que `scripts/restore_test.sh`), y seguir desde el paso 1 (secretos → despliegue). RPO ≤ 1 h (hasta 3 días) o ≤ 24 h (hasta 30).
+3. **Neon caído o cuenta suspendida:** no hay base de reserva. Crear otro proyecto de Neon (u otro Postgres), restaurar el último volcado (paso 2) y apuntar los secretos. RTO: **horas**.
+4. **Pérdida del proyecto de Google:** descifrar la copia semanal de SharePoint (`scripts/open_backup_copy.py`, llave `BACKUP_COPY_ENCRYPTION_KEY` del gestor de contraseñas), volver a crear el entorno con `bootstrap.sh` y restaurar (paso 2). Los archivos del bucket **no** tienen copia fuera de Google (hueco conocido; docs/15 D2.5j(c)).
+
+**Ensayo:** `scripts/restore_test.sh` (último diario → rama temporal de Neon → conteos por tabla → tiempos). Hasta el 22-nov-2026 **no consta** una corrida con un respaldo real de producción: hacerla una vez al mes y anotar la fecha aquí. Una copia que nunca se restauró no es una copia.

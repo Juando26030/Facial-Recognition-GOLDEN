@@ -113,7 +113,12 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
 
 # ---------------------------------------------------------------- 1) migraciones ANTES de cambiar los servicios
 say "Job de migraciones ($JOB_MIGRATE)"
-env_file "$TMP/migrate.yaml"
+# Revisión 22-nov-2026 (DevOps): una migración que se queda ESPERANDO un bloqueo (una exportación larga, una sesión colgada) no debe retener la base hasta
+# el tope del Job (900 s) con producción a medio desplegar. PGOPTIONS lo lee libpq en la conexión DIRECTA de Alembic: espera de bloqueo máxima
+# MIGRATE_LOCK_TIMEOUT (10 s) y tope por sentencia MIGRATE_STATEMENT_TIMEOUT (840 s, menor que el task-timeout). Si vence, el Job falla ANTES de
+# tocar los servicios (siguen con la versión anterior) y se repite el despliegue cuando la base esté libre. Vacíos = sin límite (comportamiento anterior).
+MIGRATE_PGOPTIONS="-c lock_timeout=${MIGRATE_LOCK_TIMEOUT:-10s} -c statement_timeout=${MIGRATE_STATEMENT_TIMEOUT:-840s}"
+env_file "$TMP/migrate.yaml" "PGOPTIONS=$MIGRATE_PGOPTIONS"
 gcloud run jobs deploy "$JOB_MIGRATE" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_OPS")" \
   --command alembic --args upgrade,head --tasks 1 --max-retries 0 --task-timeout 900 --cpu 1 --memory 512Mi \
   --env-vars-file "$TMP/migrate.yaml" ${MIGRATE_SECRET_FLAGS:+--set-secrets "$MIGRATE_SECRET_FLAGS"} --quiet
