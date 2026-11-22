@@ -63,4 +63,8 @@ body:has(.gw-savebar) .gw-bell { bottom: calc(var(--gw-sp-4) + 4.75rem); }
 body.gw-registro .gw-reg__list { padding-bottom: calc(var(--gw-tap) + var(--gw-sp-5)); }
 @media (max-width: 640px) {
   body:has(.gw-savebar) .gw-bell { bottom: calc(var(--gw-sp-4) + 8rem); }
+  /* Usabilidad 22-nov-2026 (hallazgo 5): en celular la campana medía 76 px y tapaba la esquina de «Registrar» (Áreas) y de las tarjetas. Queda como un círculo del mínimo táctil
+     pegado a la esquina (sigue visible y se puede tocar); el aire de abajo de la página (regla de arriba) deja ver y tocar lo último. */
+  .gw-bell { right: var(--gw-sp-2); bottom: var(--gw-sp-2); }
+  .gw-bell__btn { width: var(--gw-tap); height: var(--gw-tap); padding: 0; }
 }
