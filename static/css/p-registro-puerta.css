@@ -323,7 +323,7 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table tbody tr.row-noregistrado:has(td[data-field=reason] .gw-reason) { flex-wrap: wrap; }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 10; flex: 1 1 100%; white-space: normal; }
   /* acciones a la derecha, en línea; ancho fijo para que el encabezado y todas las filas queden alineados */
-  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 9; flex: 0 0 18.5rem; display: flex; justify-content: flex-end; margin: 0 0 0 auto; gap: var(--gw-sp-2); overflow: visible; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 9; flex: 0 0 19.25rem; display: flex; justify-content: flex-end; margin: 0 0 0 auto; gap: var(--gw-sp-2); overflow: visible; }
   /* una casilla vacía (sin empresa, sin tipo, sin origen) CONSERVA su lugar: así no se corre el resto de la fila */
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=opt_1]:empty,
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=entity]:empty,
@@ -341,15 +341,15 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=origin] { order: 7; flex: 0 0 8.5rem; }
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=recent] { order: 8; display: none; }
   html body.gw-registro .gw-reg__list .golden-table:has(tbody tr[data-recent]) thead th[data-col=recent] { display: block; flex: 0 0 8.75rem; }
-  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { order: 9; flex: 0 0 18.5rem; text-align: right; margin-left: auto; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=action] { order: 9; flex: 0 0 19.25rem; text-align: right; margin-left: auto; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn,
-  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn { min-height: 2.5rem !important; height: 2.5rem; min-width: 2.5rem; padding: 0 var(--gw-sp-3) !important; font-size: var(--gw-fs-md) !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn { min-height: var(--gw-tap) !important; height: var(--gw-tap); min-width: var(--gw-tap); padding: 0 var(--gw-sp-3) !important; font-size: var(--gw-fs-md) !important; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row,
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-pending { flex: 0 0 9rem; }
-  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] { width: 2.5rem; padding: 0 !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] { width: var(--gw-tap); padding: 0 !important; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'],
-  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab { width: 2.5rem; padding: 0 !important; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab { width: var(--gw-tap); padding: 0 !important; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn .gw-icon { width: 1.25rem; height: 1.25rem; }
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-menu__btn--kebab .gw-icon { width: 1.5rem; height: 1.5rem; }
   html body.gw-registro .gw-reg__list .golden-table tbody tr.directory-more td,
@@ -399,7 +399,7 @@ html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accr
 html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'] .gw-icon { color: var(--gw-gold-text); }
 html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Editar persona'] .gw-icon { color: var(--gw-info-line); }
 
-/* Columna de acciones del ancho EXACTO de sus botones (revisión visual F5-9): de 901 a 1499 px son Acreditar (9rem) + 3 íconos de 2,5rem + 3 separaciones = 18,5rem;
+/* Columna de acciones del ancho EXACTO de sus botones (revisión visual F5-9): de 901 a 1499 px son Acreditar (9rem) + 3 íconos de 44 px (--gw-tap; usabilidad 22-nov-2026: antes 40 px, bajo el mínimo táctil) + 3 separaciones = 19,25rem;
    desde 1500 px Imprimir y Editar dicen su nombre y la columna crece. Así el espacio sobrante va a nombre, apellido y empresa en vez de quedar vacío antes de los botones. */
 @media (min-width: 1500px) {
   html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell,

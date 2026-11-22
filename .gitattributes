@@ -7,3 +7,4 @@ static/vendor/** -text
 
 docs/legal/*.md text eol=lf
 docs/legal/*.sha256 text eol=lf
+deploy/sitio/parche/*.patch -text

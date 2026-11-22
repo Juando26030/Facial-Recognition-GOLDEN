@@ -490,6 +490,9 @@ _include(node_api_router.router, prefix="/api")
 
 _include(node_accounts_router.router, prefix="/api")
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
+from app.routers import platform as platform_router          # SaaS, pieza 1: empresas, planes y primer arranque (/instalar); docs/27_SAAS_EMPRESAS.md
+_include(platform_router.router)          # /api/platform/* (solo super_admin)
+_include(platform_router.pages)           # /instalar (solo mientras no exista ninguna cuenta activa)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
 
@@ -905,6 +908,18 @@ def cuentas_de_cobro_page(request: Request):
     role = request.session.get("staff_role")
     return templates.TemplateResponse(request=request, name="cuentas_cobro.html", context={
         "staff_name": request.session.get("staff_name"), "staff_role": _display_role(role, request.session.get("staff_secondary_role")), "sidebar_active": "cuentas_cobro"})
+
+
+@app.get("/plataforma")
+def plataforma_page(request: Request):
+    """SaaS, pieza 1: empresas, planes y límites. Solo super_admin (cualquier otro rol vuelve al inicio); en un servidor local no existe."""
+    redirect = _require_page_role(request, "super_admin")
+    if redirect:
+        return redirect
+    if request.session.get("staff_role") != "super_admin" or __import__("app.localmode", fromlist=["is_local_server"]).is_local_server():
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request=request, name="plataforma.html", context={
+        "staff_name": request.session.get("staff_name"), "staff_role": "super_admin", "sidebar_active": "plataforma"})
 
 
 @app.get("/sincronizacion")

@@ -48,7 +48,7 @@ def create_node(data: dict, db: Session = Depends(get_db), staff: StaffUser = De
     return {**_row(node), "token": token, "notice": "Guarda este token ahora: no se vuelve a mostrar."}
 
 
-ENROLL_ROLES = ("coordinador", "comercial", "admin", "super_admin")
+ENROLL_ROLES = node_auth.ENROLL_ROLES          # una sola lista: quien puede vincular es quien puede subir (app/node_auth.py)
 
 
 @router.post("/node/enroll")
@@ -123,6 +123,16 @@ def _leased_event(db: Session, event_id: int, node: LocalNode, lock: bool = Fals
     return event
 
 
+def _upload_staff(db: Session, node: LocalNode, event: Event) -> StaffUser:
+    """La cuenta con la que sube este servidor. Si NO es de administración (coordinador/comercial, 04 #5), solo sube datos de un evento que esa cuenta puede ver
+    (`get_event_for_staff`: cliente + pertenencia). Admin/super_admin, como siempre."""
+    staff = node_auth.node_staff(db, node, via=True)
+    if staff.role not in ("admin", "super_admin"):
+        from app.auth import get_event_for_staff
+        get_event_for_staff(event.id, db, staff)
+    return staff
+
+
 @router.get("/node/ping")
 def node_ping(request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
     """El servidor local pregunta si la nube lo acepta: versión de la nube y si la suya es compatible. Además (0160) los eventos COMPARTIDOS que tiene: así un servidor que ya tenía el
@@ -160,7 +170,7 @@ def node_records(event_id: int, body: dict, request: Request, db: Session = Depe
     registros de la persona hechos hasta ese momento y la fecha de nacimiento se pone (app/node_extra.py). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
     node_auth.require_compatible(request)
     event = _leased_event(db, event_id, node)
-    staff = node_auth.node_staff(db, node, via=True)
+    staff = _upload_staff(db, node, event)
     prints, changes = (body or {}).get("print_logs") or [], (body or {}).get("person_changes") or []
     if len(prints) + len(changes) > 1000:
         raise HTTPException(status_code=413, detail="Lote demasiado grande")
@@ -172,6 +182,7 @@ def node_records(event_id: int, body: dict, request: Request, db: Session = Depe
         return known[uid]
 
     saved_p = saved_c = 0
+    stats = {"rejected": 0}
     for r in prints:
         uid, at = str(r.get("cedula") or ""), _when(r.get("printed_at"))
         kind = "pre" if r.get("kind") == "pre" else "normal"
@@ -192,10 +203,10 @@ def node_records(event_id: int, body: dict, request: Request, db: Session = Depe
             continue
         db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind=kind, at=at,
                             old_value=(r.get("old_value") or None), new_value=(r.get("new_value") or None), detail=(str(r.get("detail"))[:200] if r.get("detail") else None)))
-        node_extra.apply_person_change_effect(db, event, kind, uid, at, r.get("new_value") or None)          # 0160: «deshacer registro» y fecha de nacimiento también se APLICAN (antes solo historial)
+        node_extra.apply_person_change_effect(db, event, kind, uid, at, r.get("new_value") or None, attendee_only=True, stats=stats)          # 0160: «deshacer registro» y fecha de nacimiento también se APLICAN (antes solo historial)
         saved_c += 1
     db.commit()
-    return {"ok": True, "saved": {"print_logs": saved_p, "person_changes": saved_c}}
+    return {"ok": True, "saved": {"print_logs": saved_p, "person_changes": saved_c}, "rejected": stats["rejected"]}
 
 
 @router.post("/node/events/{event_id}/extra")
@@ -204,11 +215,14 @@ def node_extra_upload(event_id: int, body: dict, request: Request, db: Session =
     Idempotente por llave natural (repetir un lote no duplica). Ver app/node_extra.py."""
     node_auth.require_compatible(request)
     event = _leased_event(db, event_id, node)
+    _upload_staff(db, node, event)
     if node_extra.count(body) > 2000:
         raise HTTPException(status_code=413, detail="Lote demasiado grande")
     saved = node_extra.apply_all(db, event, body)
     db.commit()
-    return {"ok": True, "saved": saved}
+    if saved.get("rejected"):
+        log.warning("node_extra event=%s node=%s rejected=%s (personas que no son asistentes del evento)", event.id, node.id, saved["rejected"])
+    return {"ok": True, "saved": saved, "rejected": saved.get("rejected", 0)}
 
 
 def _store_backup(event_id: int, node_name: str, data: bytes, file_key: str = "", node_tenant=None) -> dict:

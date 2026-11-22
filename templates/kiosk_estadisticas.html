@@ -76,7 +76,7 @@
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">{{ company_name|upper }}</p>
         <h1 class="gw-page-head__title">Estadísticas</h1>
-        <p class="gw-page-head__sub">Cifras y gráficos del evento{% if not public_view %}, con el reporte completo para descargar{% endif %}.</p>
+        <p class="gw-page-head__sub">Cifras y gráficos del evento{% if not public_view and staff_role != "cliente" %}, con el reporte completo para descargar{% endif %}.</p>
       </div>
       <div class="gw-page-head__actions">
         {% if tour_on %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="estadisticas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>{% endif %}
@@ -95,6 +95,11 @@
       {% else %}<li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Cambia el tipo de gráfico</span>
         {% call ayuda('ay_est3', 'Cambia el tipo de gráfico') %}Cada gráfico tiene su selector arriba a la derecha: barras, circular o líneas, según el tipo de dato.{% endcall %}</li>{% endif %}
     </ol>
+    {% endif %}
+
+    {# Usabilidad 22-nov-2026 (hallazgo 7): el cliente no descarga el reporte (decisión del 17-sep-2026); la pantalla le dice quién se lo entrega. Va fuera del encabezado porque el cliente la ve incrustada (embed). #}
+    {% if staff_role == "cliente" and not public_view %}
+    <div class="gw-alert gw-alert--info" role="note" id="clientReportNote">{{ ic('info') }}<div>Desde esta cuenta no se descarga el reporte. El reporte completo y la base final se los entrega su asesor comercial de Golden al cerrar el evento.</div></div>
     {% endif %}
 
     {% if staff_role != "cliente" %}

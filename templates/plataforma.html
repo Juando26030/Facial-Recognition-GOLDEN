@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Empresas (SaaS) | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-notifications.css') }}">
+    <script src="{{ url_for('static', path='js/notifications.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/plataforma.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page gw-shell has-sidebar">
+<a class="gw-skip" href="#contenido">Ir al contenido</a>
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística" {{ golden_logo_attrs() }}>
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<main class="golden-main" id="contenido">
+  <div class="gw-container gw-stack-lg" id="platformRoot">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Plataforma</p>
+        <h1 class="gw-page-head__title">Empresas (SaaS)</h1>
+        <p class="gw-page-head__sub">Aquí se dan de alta las empresas que usan GoldenWeb, se elige su plan, se crea su primer administrador y se ve cuánto han usado. Nada de esto se hace ya desde código.</p>
+      </div>
+      <div class="gw-row">
+        <button type="button" class="gw-btn gw-btn--primary" data-action="new-org">{{ ic('plus') }} Nueva empresa</button>
+        {% call ayuda('ayNueva', '¿Qué es una empresa?') %}Es quien usa la plataforma: una empresa de eventos con SU personal, SUS clientes y SUS eventos. Golden es la primera y es la cuenta interna (sin límites). Ejemplo: «Eventos del Caribe S.A.S.» contrata el plan Pro. Crear la empresa no le da acceso a nadie: el acceso nace cuando creas su administrador.{% endcall %}
+      </div>
+    </div>
+
+    <div class="gw-alert gw-alert--warn" id="isolationAlert" role="status" hidden>
+      {{ ic('alert') }}
+      <div>
+        <strong>Todavía no se pueden dar cuentas a otra empresa.</strong>
+        El aislamiento entre empresas está apagado, así que una cuenta ajena vería los eventos de Golden. Puedes crear empresas y elegir su plan, pero el botón «Crear administrador» de una empresa distinta de Golden queda bloqueado hasta encenderlo (lo explica el documento <code>docs/27_SAAS_EMPRESAS.md</code>, «Antes del primer cliente»).
+      </div>
+    </div>
+
+    <section class="gw-card" aria-labelledby="orgsTitle">
+      <div class="gw-card__head"><h2 class="gw-card__title" id="orgsTitle">Empresas</h2>
+        {% call ayuda('ayUso', '¿Qué significan los números?') %}Cada empresa muestra lo que ha usado frente a lo que su plan permite. Ejemplo: «Eventos este mes: 3 de 4» quiere decir que le queda un evento por crear este mes. «Sin límite» significa que el plan no pone tope. La persona de prueba no cuenta.{% endcall %}
+      </div>
+      <div id="orgs" class="gw-stack" aria-busy="true">{{ skeleton('list', rows=3, label='Cargando empresas…') }}</div>
+    </section>
+  </div>
+</main>
+
+{# ---------- Crear / editar empresa (no se cierra al hacer clic afuera) ---------- #}
+<div class="gw-modal-backdrop" id="orgModal" data-open="false">
+  <div class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="orgModalTitle">
+    <div class="gw-modal__head"><h2 class="gw-modal__title" id="orgModalTitle">Nueva empresa</h2>
+      <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-action="close-modal" aria-label="Cerrar">{{ ic('close') }}</button></div>
+    <form id="orgForm" novalidate>
+      <div class="gw-modal__body gw-stack">
+        <div class="gw-field">
+          <div class="gw-row"><label class="gw-label" for="orgName">Nombre de la empresa</label>
+            {% call ayuda('ayNombre', 'Nombre de la empresa') %}El nombre con el que la vas a reconocer en esta lista. Ejemplo: «Eventos del Caribe». Se puede cambiar después.{% endcall %}</div>
+          <input class="gw-input" id="orgName" name="name" maxlength="200" required autocomplete="off">
+        </div>
+        <div class="gw-form-grid">
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="orgLegal">Razón social</label>
+              {% call ayuda('ayLegal', 'Razón social') %}El nombre legal completo, como aparece en la cámara de comercio. Sirve para el contrato y la factura. Ejemplo: «Eventos del Caribe S.A.S.». Opcional.{% endcall %}</div>
+            <input class="gw-input" id="orgLegal" name="legal_name" maxlength="200" autocomplete="off">
+          </div>
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="orgNit">NIT</label>
+              {% call ayuda('ayNit', 'NIT') %}El número de identificación tributaria de la empresa. Ejemplo: «900.123.456-7». Opcional; se usa para facturar.{% endcall %}</div>
+            <input class="gw-input" id="orgNit" name="nit" maxlength="40" autocomplete="off">
+          </div>
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="orgEmail">Correo de contacto</label>
+              {% call ayuda('ayCorreo', 'Correo de contacto') %}A quién escribirle sobre la cuenta (avisos, cobro). NO es el usuario para ingresar. Ejemplo: «gerencia@empresa.com». Opcional.{% endcall %}</div>
+            <input class="gw-input" id="orgEmail" name="contact_email" type="email" maxlength="200" autocomplete="off">
+          </div>
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="orgPhone">Teléfono de contacto</label>
+              {% call ayuda('ayTel', 'Teléfono de contacto') %}Un número para llamar a la empresa. Ejemplo: «+57 300 123 4567». Opcional.{% endcall %}</div>
+            <input class="gw-input" id="orgPhone" name="contact_phone" maxlength="40" autocomplete="off">
+          </div>
+        </div>
+        <div data-not-internal>
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="orgPlan">Plan</label>
+              {% call ayuda('ayPlan', 'Plan') %}El plan pone los límites de fábrica: cuántos eventos al mes, cuántos asistentes por evento, cuántos usuarios y qué funciones incluye. Ejemplo: «Pro» permite 4 eventos al mes. Si cambias de plan, los límites cambian de inmediato; lo ya creado no se borra.{% endcall %}</div>
+            <select class="gw-select" id="orgPlan" name="plan"></select>
+            <p class="gw-hint" id="planSummary"></p>
+          </div>
+          <fieldset class="gw-stack" id="limitsBox">
+            <legend class="gw-row"><span class="gw-label">Límites propios de esta empresa</span>
+              {% call ayuda('ayLimites', 'Límites propios') %}Sirven para hacer una excepción sin cambiar de plan. «Lo del plan» deja el valor de fábrica. «Valor propio» pone el número que escribas. «Sin límite» quita el tope. Ejemplo: un cliente Básico al que le regalas 2 eventos este mes: en «Eventos por mes» eliges «Valor propio» y escribes 2.{% endcall %}</legend>
+            <div class="gw-form-grid" id="limitFields"></div>
+          </fieldset>
+        </div>
+        <div class="gw-field">
+          <div class="gw-row"><label class="gw-label" for="orgNotes">Notas internas</label>
+            {% call ayuda('ayNotas', 'Notas internas') %}Apuntes solo para Golden: qué se acordó, hasta cuándo va la prueba, quién es el contacto. La empresa nunca las ve. No escribas contraseñas aquí.{% endcall %}</div>
+          <textarea class="gw-textarea" id="orgNotes" name="notes" rows="3" maxlength="4000"></textarea>
+        </div>
+      </div>
+      <div class="gw-modal__foot">
+        <button type="button" class="gw-btn gw-btn--secondary" data-action="close-modal">Cancelar</button>
+        <button type="submit" class="gw-btn gw-btn--primary" id="orgSave">Guardar empresa</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ---------- Crear el administrador de una empresa ---------- #}
+<div class="gw-modal-backdrop" id="adminModal" data-open="false">
+  <div class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+    <div class="gw-modal__head"><h2 class="gw-modal__title" id="adminModalTitle">Crear administrador</h2>
+      <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-action="close-modal" aria-label="Cerrar">{{ ic('close') }}</button></div>
+    <form id="adminForm" novalidate>
+      <div class="gw-modal__body gw-stack">
+        <p class="gw-modal__text">Es la primera persona de <strong id="adminOrgName"></strong> que podrá ingresar. Después, ella misma crea al resto de su equipo desde Configuración. La contraseña la genera el sistema y se muestra <strong>una sola vez</strong>; la persona la cambia en su primer ingreso.</p>
+        <div class="gw-field">
+          <div class="gw-row"><label class="gw-label" for="admUser">Usuario</label>
+            {% call ayuda('ayAdmUser', 'Usuario') %}Lo que la persona escribe para ingresar. Entre 3 y 64 caracteres: letras, números y . _ @ -. Ejemplo: su correo o su cédula. No se puede repetir en toda la plataforma.{% endcall %}</div>
+          <input class="gw-input" id="admUser" name="username" maxlength="64" required autocomplete="off">
+        </div>
+        <div class="gw-field">
+          <div class="gw-row"><label class="gw-label" for="admName">Nombre completo</label>
+            {% call ayuda('ayAdmName', 'Nombre completo') %}Nombre y apellido de la persona, para saber quién hizo cada cosa. Ejemplo: «Laura Gómez».{% endcall %}</div>
+          <input class="gw-input" id="admName" name="full_name" maxlength="120" required autocomplete="off">
+        </div>
+        <div class="gw-form-grid">
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="admEmail">Correo</label>
+              {% call ayuda('ayAdmEmail', 'Correo') %}El correo personal de trabajo de esa persona. Sirve para que recupere su contraseña sola con «Olvidé mi contraseña». Ejemplo: «laura@empresa.com».{% endcall %}</div>
+            <input class="gw-input" id="admEmail" name="email" type="email" maxlength="200" required autocomplete="off">
+          </div>
+          <div class="gw-field">
+            <div class="gw-row"><label class="gw-label" for="admPhone">Teléfono (WhatsApp)</label>
+              {% call ayuda('ayAdmPhone', 'Teléfono') %}El celular de la persona. Es obligatorio y no se puede repetir entre cuentas. Ejemplo: «+57 300 123 4567».{% endcall %}</div>
+            <input class="gw-input" id="admPhone" name="phone" maxlength="40" required autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="gw-modal__foot">
+        <button type="button" class="gw-btn gw-btn--secondary" data-action="close-modal">Cancelar</button>
+        <button type="submit" class="gw-btn gw-btn--primary" id="adminSave">Crear administrador</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ---------- Contraseña temporal: se muestra UNA vez ---------- #}
+<div class="gw-modal-backdrop" id="passModal" data-open="false">
+  <div class="gw-modal gw-modal--warn" role="dialog" aria-modal="true" aria-labelledby="passModalTitle">
+    <div class="gw-modal__head"><h2 class="gw-modal__title" id="passModalTitle">Copia la contraseña temporal</h2></div>
+    <div class="gw-modal__body gw-stack">
+      <p class="gw-modal__text">Esta contraseña <strong>no se vuelve a mostrar</strong>. Entrégasela a la persona por un medio seguro (en persona o por llamada). Al ingresar, el sistema le pide cambiarla por una propia.</p>
+      <p class="gw-modal__text">Usuario: <strong id="passUser"></strong></p>
+      <pre class="gw-code"><code id="passValue"></code></pre>
+    </div>
+    <div class="gw-modal__foot">
+      <button type="button" class="gw-btn gw-btn--secondary" data-action="copy-pass">Copiar</button>
+      <button type="button" class="gw-btn gw-btn--primary" data-action="close-pass">Ya la copié</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

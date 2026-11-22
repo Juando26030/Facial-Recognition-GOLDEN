@@ -86,7 +86,10 @@ def _call(method: str, path: str, body: Optional[dict] = None, timeout: Optional
     from app.cloud_client import open_no_redirect
     try:
         with open_no_redirect(req, timeout=timeout or HTTP_TIMEOUT) as resp:      # F5-9 A-10: sin redirecciones (el token no viaja a otra dirección)
-            return json.loads(resp.read(2_000_000).decode("utf-8") or "{}")
+            out = json.loads(resp.read(2_000_000).decode("utf-8") or "{}")
+        from app import server_lock
+        server_lock.note_cloud_ok()                              # la nube reconoció a este servidor: reinicia el plazo de gracia (app/server_lock.py)
+        return out
     except urllib.error.HTTPError as e:
         try:
             detail = json.loads(e.read(5000).decode("utf-8")).get("detail")

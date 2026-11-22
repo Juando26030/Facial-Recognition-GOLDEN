@@ -34,6 +34,7 @@
     {% if not eo %}<a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>{% endif %}
     {% if not eo %}{% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}{% endif %}
     {% if not eo and not local_server %}{% if staff_role in ["admin", "super_admin", "contabilidad"] %}<a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}{% endif %}
+    {% if not eo and not local_server %}{% if staff_role == "super_admin" %}<a href="/plataforma"{% if sidebar_active == "plataforma" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Empresas (SaaS)</a>{% endif %}{% endif %}
   </nav>
 </aside>
 <script>

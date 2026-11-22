@@ -309,11 +309,14 @@ def _require_page_fetch(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Esta acción solo se puede hacer desde la pantalla de impresión")
 
 
-@router.get("/events/{event_id}/print-jobs-next")
+@router.post("/events/{event_id}/print-jobs-next")          # seguridad 22-nov-2026 (03 #12): «tomar» un trabajo cambia estado → POST (lo cubre la comprobación de Origin de todo POST)
+@router.get("/events/{event_id}/print-jobs-next")           # TRANSICIÓN: pestañas abiertas y servidores locales con el JS anterior siguen llamando por GET. Quitar esta línea cuando
 def next_job(event_id: int, request: Request, device_id: Optional[str] = None, manual: bool = False, batch: int = 0, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """El siguiente trabajo para el equipo de este usuario: se RESERVA de forma atómica (queued → sent). Un trabajo reservado no se vuelve a entregar.
     `batch` (solo con `manual`, el toque de «Imprimir pendientes»): reserva hasta BATCH_MAX trabajos de una vez, con el mismo arrendamiento largo, para imprimirlos en UNA ventana.
-    S9: es un GET que cambia estado, así que solo lo atiende un `fetch` de la propia página: una navegación (enlace desde otro sitio: la cookie Lax sí viaja) o una petición
+    El JS (static/js/shared-print.js) ya llama por POST. El GET se retira cuando (1) producción lleve al menos un despliegue con este cambio y (2) en Configuración › Servidor local
+    todos los servidores figuren «Al día» (su paquete trae el JS nuevo); entonces también se actualizan las pruebas que aún usan GET.
+    S9 (se conserva mientras exista el GET): es un GET que cambia estado, así que solo lo atiende un `fetch` de la propia página: una navegación (enlace desde otro sitio: la cookie Lax sí viaja) o una petición
     de otro sitio se rechazan con 403 (cabeceras Sec-Fetch-* que pone el navegador; la página manda además `X-Gw-Fetch: 1`)."""
     _require_page_fetch(request)
     event = _enabled_event(event_id, db, staff)

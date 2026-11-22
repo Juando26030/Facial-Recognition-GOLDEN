@@ -76,12 +76,25 @@ def require_node(request: Request, db: Session = Depends(get_db)) -> LocalNode:
     return node
 
 
+ENROLL_ROLES = ("coordinador", "comercial", "admin", "super_admin")          # quién puede vincular un servidor local (`nodes.enroll_node`) y, por lo mismo, con qué cuentas sube
+
+
+def staff_can_upload(role, secondary_roles=(), is_active=True, archived=False, event_only=False) -> bool:
+    """¿Con esta cuenta puede subir un servidor local? (regla pura). Las mismas que pueden vincularlo: coordinador, comercial, admin y super_admin (también como rol secundario),
+    activas y sin archivar. Un coordinador temporal (`event_only`) no vincula servidores, así que tampoco sube."""
+    return bool(({role} | set(secondary_roles or ())) & set(ENROLL_ROLES)) and bool(is_active) and not archived and not event_only
+
+
 def node_staff(db: Session, node: LocalNode, via: bool = False) -> StaffUser:
-    """La cuenta (admin/super_admin) que creó el token: con su alcance se aplican los lotes del nodo. Con `via`, la marca (atributo de paso, no se guarda) como «llega por el
-    servidor local `node.name`»: así `api._event_for_sync` deja subir a ESE servidor en un evento arrendado y a nadie más (F5-9 A-09)."""
+    """La cuenta que vinculó el servidor (ENROLL_ROLES): con su alcance se aplican los lotes del nodo. Con `via`, la marca (atributo de paso, no se guarda) como «llega por el
+    servidor local `node.name`»: así `api._event_for_sync` deja subir a ESE servidor en un evento arrendado y a nadie más (F5-9 A-09).
+    Seguridad 22-nov-2026 (04 #5): antes solo admin/super_admin; un servidor vinculado por un coordinador o comercial recibía 403 en cada subida y sus datos se quedaban en el portátil.
+    El alcance de una cuenta que NO es de administración lo pone quien llama (`api._event_for_sync` / `auth.get_event_for_staff`: cliente + pertenencia al evento)."""
+    from app.auth import effective_roles
     staff = db.get(StaffUser, node.created_by_id) if node.created_by_id else None
-    if staff is None or staff.role not in ("admin", "super_admin") or not getattr(staff, "is_active", True) or getattr(staff, "archived_at", None) is not None:
-        raise HTTPException(status_code=403, detail="La cuenta que creó este servidor local ya no existe o no es de administración: crea el servidor de nuevo")
+    if staff is None or not staff_can_upload(staff.role, effective_roles(staff), getattr(staff, "is_active", True),
+                                             getattr(staff, "archived_at", None) is not None, bool(getattr(staff, "event_only", False))):
+        raise HTTPException(status_code=403, detail="La cuenta que vinculó este servidor local ya no existe, está inactiva o no puede vincular servidores: vincúlalo de nuevo con una cuenta de coordinación o administración")
     if via:
         staff.via_node_name = node.name
     return staff

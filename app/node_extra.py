@@ -25,7 +25,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import (AccessLog, AreaMovement, AuditConsentLog, Event, EventArea, EventExhibitor, ExhibitorLead, InventoryDelivery, InventoryItem, PersonChangeLog, QueueCall,
+from app.models import (AccessLog, AreaMovement, AuditConsentLog, Event, EventArea, EventAttendee, EventExhibitor, ExhibitorLead, InventoryDelivery, InventoryItem, PersonChangeLog, QueueCall,
                         QueueTurn, RouletteDraw, User, WebAcceptance)
 
 USER_FIELDS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
@@ -50,15 +50,36 @@ def _s(v, n: int) -> Optional[str]:
     return str(v)[:n] if v not in (None, "") else None
 
 
+def is_attendee(db: Session, event: Event, uid: str) -> bool:
+    return db.query(EventAttendee.id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id == uid, EventAttendee.tenant_id == event.tenant_id).first() is not None
+
+
+def _reject(stats: Optional[dict], n: int = 1) -> None:
+    if stats is not None:
+        stats["rejected"] = stats.get("rejected", 0) + n
+
+
 class _Users:
-    """Cache de «¿existe esta persona en este evento/empresa?» para no consultar fila por fila."""
-    def __init__(self, db: Session, tenant: str):
-        self.db, self.tenant, self.seen = db, tenant, {}
+    """Cache de «¿existe esta persona en este evento/empresa?» para no consultar fila por fila.
+    Con `event` (seguridad 22-nov-2026, 04 #4): además la persona debe ser ASISTENTE de ese evento (`event_attendees`). Así lo que sube un servidor local no puede editar ni «autorizar»
+    a alguien de otro evento del mismo cliente. Lo que no pasa se cuenta en `stats["rejected"]` y el lote sigue."""
+    def __init__(self, db: Session, tenant: str, event: Optional[Event] = None, stats: Optional[dict] = None):
+        self.db, self.tenant, self.seen, self.event, self.stats = db, tenant, {}, event, stats
 
     def get(self, uid: str) -> Optional[User]:
         if uid not in self.seen:
-            self.seen[uid] = self.db.query(User).filter(User.id == uid, User.tenant_id == self.tenant).first()
+            user = self.db.query(User).filter(User.id == uid, User.tenant_id == self.tenant).first()
+            if user is not None and self.event is not None and not is_attendee(self.db, self.event, uid):
+                user = None
+            self.seen[uid] = user
+        if self.seen[uid] is None and self.event is not None:
+            _reject(self.stats)
         return self.seen[uid]
+
+
+def _strict(event: Event, from_peer) -> Optional[Event]:
+    """Solo la NUBE al recibir de un servidor (`from_peer=None`) exige «asistente del evento». Al BAJAR lo de los demás servidores (`from_peer=True`) la fuente es la nube, que ya filtró."""
+    return event if from_peer is None else None
 
 
 # ------------------------------------------------------------------------------------------------ serializar (lo que se envía)
@@ -130,9 +151,9 @@ def item_names(db: Session, event_id: int) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------ aplicar (lo que se recibe)
-def apply_edits(db: Session, event: Event, items: list, from_peer=None) -> int:
-    """Ediciones de datos: gana la más reciente de cada campo. Siempre queda el historial."""
-    users, n = _Users(db, event.tenant_id), 0
+def apply_edits(db: Session, event: Event, items: list, from_peer=None, stats: Optional[dict] = None) -> int:
+    """Ediciones de datos: gana la más reciente de cada campo. Siempre queda el historial. En la nube, solo de asistentes del evento (lo demás: `stats["rejected"]`)."""
+    users, n = _Users(db, event.tenant_id, _strict(event, from_peer), stats), 0
     for r in items or []:
         uid, field, at = str((r or {}).get("cedula") or ""), str((r or {}).get("field") or "")[:64], _when((r or {}).get("at"))
         if not uid or at is None or not (field in USER_FIELDS or EXTRA_RE.match(field)):
@@ -287,7 +308,8 @@ def apply_calls(db: Session, event: Event, items: list, from_peer=None) -> int:
     return n
 
 
-def apply_person_change_effect(db: Session, event: Event, kind: str, uid: Optional[str], at: Optional[datetime], new_value) -> int:
+def apply_person_change_effect(db: Session, event: Event, kind: str, uid: Optional[str], at: Optional[datetime], new_value, attendee_only: bool = False,
+                               stats: Optional[dict] = None) -> int:
     """El EFECTO de un cambio de persona que llega de otro lado (antes solo se guardaba el historial):
     - «No registrado»: borra los registros de la persona en el evento hechos HASTA ese momento (uno posterior, de una nueva llegada, se conserva).
     - fecha de nacimiento: la pone (y con ella si la persona puede tener biometría).
@@ -300,6 +322,9 @@ def apply_person_change_effect(db: Session, event: Event, kind: str, uid: Option
         from app import minors
         user = db.query(User).filter(User.id == uid, User.tenant_id == event.tenant_id).first()
         if user is None:
+            return 0
+        if attendee_only and not is_attendee(db, event, uid):          # 04 #4: la fecha de nacimiento (y con ella la biometría) solo de quien está en ESTE evento
+            _reject(stats)
             return 0
         birth = minors.parse_birth(new_value) if new_value else None
         user.birth_date = birth
@@ -354,8 +379,8 @@ def apply_leads(db: Session, event: Event, items: list, from_peer=None) -> int:
     return n
 
 
-def apply_acceptances(db: Session, event: Event, items: list, from_peer=None) -> int:
-    users, n = _Users(db, event.tenant_id), 0
+def apply_acceptances(db: Session, event: Event, items: list, from_peer=None, stats: Optional[dict] = None) -> int:
+    users, n = _Users(db, event.tenant_id, _strict(event, from_peer), stats), 0
     for r in items or []:
         uid, created = str((r or {}).get("cedula") or ""), _when((r or {}).get("created_at"))
         if not uid or created is None or users.get(uid) is None:
@@ -373,11 +398,15 @@ def apply_acceptances(db: Session, event: Event, items: list, from_peer=None) ->
     return n
 
 
-def apply_consents(db: Session, event: Event, items: list, from_peer=None) -> int:
-    """Autorizaciones de datos: solo se INSERTAN (la tabla no admite cambios ni borrados). La huella de la cédula se calcula aquí, con la llave de este entorno."""
+def apply_consents(db: Session, event: Event, items: list, from_peer=None, stats: Optional[dict] = None) -> int:
+    """Autorizaciones de datos: solo se INSERTAN (la tabla no admite cambios ni borrados). La huella de la cédula se calcula aquí, con la llave de este entorno.
+    En la NUBE (04 #4): solo de asistentes del evento, y una aceptación BIOMÉTRICA que llega de un servidor local queda «sin verificar» con la MISMA marca de /aceptar
+    (`web_acceptances` sin `verified_at`, la que `consent.accepted_user_ids` ya excluye del reconocimiento) hasta que el personal confirme la identidad
+    (`POST /api/events/{id}/web-acceptance/{cédula}/verify`). No se marca si la persona ya tenía una aceptación vigente, ni si el mismo servidor subió su verificación
+    (`acceptances` se aplica antes en `apply_all`)."""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app import consent, faces_version
-    users, n = _Users(db, event.tenant_id), 0
+    users, n = _Users(db, event.tenant_id, _strict(event, from_peer), stats), 0
     for r in items or []:
         cid, uid, at = _s((r or {}).get("id"), 36), str((r or {}).get("cedula") or ""), _when((r or {}).get("at"))
         reason = (r or {}).get("reason")
@@ -386,21 +415,29 @@ def apply_consents(db: Session, event: Event, items: list, from_peer=None) -> in
         row = dict(id=cid, tenant_id=event.tenant_id, user_id=uid, cedula_hash=consent.cedula_hash(uid), event_id=event.id, consent_timestamp_utc=at.replace(tzinfo=timezone.utc),
                    consent_version=(_s(r.get("version"), 40) or "desconocida"), legal_text_hash=(_s(r.get("legal_text_hash"), 64) or ""), accepted_biometric=bool(r.get("accepted")),
                    confirmed_adult=bool(r.get("adult")), ip_or_device_id=_s(r.get("device"), 200), reason=reason, from_peer=from_peer)
+        hold = (from_peer is None and reason == "consent" and row["accepted_biometric"] and not consent.has_acceptance(db, event.tenant_id, uid, event.id)
+                and db.get(WebAcceptance, (event.tenant_id, uid, event.id)) is None)
         if db.execute(pg_insert(AuditConsentLog).values(**row).on_conflict_do_nothing(index_elements=["id"])).rowcount == 1:
             n += 1
+            if hold:                                         # llegó de un servidor local y nadie de la nube vio a la persona: por verificar
+                db.add(WebAcceptance(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, created_at=at, verified_at=None))
+                db.flush()
     if n:
         faces_version.bump(db, event_ids=[event.id])          # quién puede ser reconocido cambió (igual que consent.record)
     return n
 
 
 def apply_all(db: Session, event: Event, body: dict, from_peer=None) -> dict:
+    """`rejected`: filas de ediciones, aceptaciones o autorizaciones que NO se aplicaron porque la persona no es asistente de este evento (solo cuenta en la nube; el lote sigue)."""
     body = body or {}
+    stats = {"rejected": 0}
     turns = apply_turns(db, event, body.get("turns"), from_peer)
-    return {"edits": apply_edits(db, event, body.get("edits"), from_peer), "areas": apply_areas(db, event, body.get("areas"), from_peer),
+    return {"edits": apply_edits(db, event, body.get("edits"), from_peer, stats), "areas": apply_areas(db, event, body.get("areas"), from_peer),
             "deliveries": apply_deliveries(db, event, body.get("deliveries"), from_peer), "turns": turns["saved"], "turn_conflicts": turns["conflicts"],
             "calls": apply_calls(db, event, body.get("calls"), from_peer), "turn_status": apply_turn_status(db, event, body.get("turn_status")),
             "roulette": apply_roulette(db, event, body.get("roulette"), from_peer), "leads": apply_leads(db, event, body.get("leads"), from_peer),
-            "acceptances": apply_acceptances(db, event, body.get("acceptances"), from_peer), "consents": apply_consents(db, event, body.get("consents"), from_peer)}
+            "acceptances": apply_acceptances(db, event, body.get("acceptances"), from_peer, stats), "consents": apply_consents(db, event, body.get("consents"), from_peer, stats),
+            "rejected": stats["rejected"]}
 
 
 def count(body: dict) -> int:

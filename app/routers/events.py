@@ -434,6 +434,10 @@ def create_event(
     if tenant_row.archived_at is not None:
         raise HTTPException(status_code=400, detail="El cliente está archivado: restáuralo para crearle eventos")
     assert_same_tenant(staff, data.tenant_id, "Cliente (tenant) no encontrado")          # P5: limitado a su cliente, solo crea eventos de su cliente
+    from app import orgs          # SaaS, pieza 1 (0162): tope de eventos del mes según el plan de la EMPRESA dueña del cliente. Golden (empresa 1) nunca se limita y no cuesta ninguna consulta
+    limit_ok, limit_message = orgs.check_limit(db, orgs.org_for_tenant(db, tenant_row), "events_per_month")
+    if not limit_ok:
+        raise HTTPException(status_code=403, detail=limit_message)
     pure_coordinator = not ({"comercial", "admin", "super_admin"} & effective_roles(staff))
     if pure_coordinator and data.coordinator_staff_id is None:
         data.coordinator_staff_id = staff.id          # el coordinador «puro» siempre queda como coordinador de lo que crea (aunque la plantilla no le muestre ese campo)
