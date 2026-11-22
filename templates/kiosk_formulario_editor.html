@@ -9,6 +9,7 @@
 {# Control de archivo propio: el <input type=file> queda oculto (mismos id/accept para el JS) y se ve un botón .gw-btn + el nombre, que se recorta con «…» sin desbordar la caja. #}
 {% macro archivo(id, accept, label='Seleccionar archivo') %}<label class="gwe-file"><input type="file" class="gwe-file__input" id="{{ id }}" accept="{{ accept }}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">{{ ic('upload', 'gw-icon--sm') }} {{ label }}</span><span class="gwe-file__name" data-gwe-file-name>Ningún archivo seleccionado</span></label>{% endmacro %}
 <!DOCTYPE html>
+{% from "_gw_role_name.html" import role_name %}
 {% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
@@ -50,7 +51,7 @@
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
-      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ role_name(staff_role) }})">{{ staff_name }} ({{ role_name(staff_role) }})</span>
       <form action="/logout" method="post">
         <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>

@@ -24,7 +24,11 @@
   function typed(html, word, opts) {
     opts = opts || {};
     if (typeof root.showPrompt !== 'function') return Promise.resolve(false);
-    return root.showPrompt(html, { title: opts.title || 'Confirma escribiendo', placeholder: word, confirmLabel: opts.confirmLabel || 'Confirmar' }).then(function (v) {
+    var pending = root.showPrompt(html, { title: opts.title || 'Confirma escribiendo', placeholder: word, confirmLabel: opts.confirmLabel || 'Confirmar' });
+    // showPrompt arma el cuadro en el acto: el botón de confirmar de una acción que no se deshace va en ROJO (regla de oro 3), no en dorado.
+    var okBtn = typeof document !== 'undefined' && document.getElementById ? document.getElementById('toastPromptOk') : null;
+    if (okBtn && okBtn.classList) { okBtn.classList.remove('gw-btn--primary'); okBtn.classList.add('gw-btn--danger'); }
+    return pending.then(function (v) {
       if (v === null) return false;
       if (matches(v, word)) return true;
       if (root.showToast) root.showToast('No se hizo nada: hay que escribir ' + word + '.', 'error');

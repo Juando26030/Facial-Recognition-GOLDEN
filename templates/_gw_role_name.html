@@ -1,0 +1,5 @@
+{# Nombre legible del rol para las cabeceras (22-nov-2026): en vez del identificador crudo («super_admin») se muestra el nombre que usa la gente.
+   Mismos nombres que la cabecera del Registro (templates/kiosk_registro.html) y que la pantalla de Staff (ROLE_LABELS de static/js/gw-staff.js).
+   Uso: {% from "_gw_role_name.html" import role_name %} … {{ role_name(staff_role) }}. Solo cambia lo que se LEE: las comparaciones siguen usando staff_role. #}
+{% macro role_name(role) %}{{ {"cliente": "Cliente", "digitador": "Digitador", "coordinador": "Coordinador", "comercial": "Comercial", "admin": "Administrador", "super_admin": "Administrador general",
+  "almacen": "Almacén", "contabilidad": "Contabilidad", "dir_coordinadores": "Director de coordinadores"}.get(role, "Equipo") }}{% endmacro %}

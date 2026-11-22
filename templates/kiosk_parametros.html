@@ -10,6 +10,7 @@
 {% set can_archive = staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
 {% set n_categories = ((event.categories | fromjson) | length) if event.categories else 0 %}
 <!DOCTYPE html>
+{% from "_gw_role_name.html" import role_name %}
 {% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
 <head>
@@ -43,7 +44,7 @@
     </a>
     <nav class="golden-nav" aria-label="Sesión">
       {% include "_gw_theme_toggle.html" %}
-      <span class="gw-parametros__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <span class="gw-parametros__who" title="{{ staff_name }} ({{ role_name(staff_role) }})">{{ staff_name }} ({{ role_name(staff_role) }})</span>
       <form action="/logout" method="post" class="gw-parametros__logout">
         <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
@@ -329,7 +330,12 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel de impresión del Registro. app/routers/print_settings.py -->
           <div id="printSettingsCard" class="gw-group__item">
             <div class="gw-item-head"><h4>Impresión de escarapelas en la QL-800 (valores del evento)</h4>{% call ayuda('ay_qlvalores', 'Valores de la impresora') %}Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la continua de 62 mm (DK-22205). Cada equipo puede cambiarlos solo para sí en el botón de impresión del Registro, y «Restablecer» lo devuelve a estos valores.{% endcall %}</div>
-            <p class="gw-hint">Cinta continua de 62 mm (DK-22205). Cada equipo puede ajustarlos solo para sí.</p>
+            <p class="gw-hint">Cinta continua de 62 mm (DK-22205). Cada equipo puede ajustarlos solo para sí. Así como están ya imprimen bien: no hace falta tocarlos.</p>
+            {# 22-nov-2026: plegado como «Avanzado». NO cambia ningún valor, id ni control (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md): solo dejan de estar a la vista de un clic curioso. #}
+            <details class="gw-advanced" id="psAdvanced">
+            <summary>Avanzado <span class="gw-hint">(no cambiar salvo indicación de soporte)</span></summary>
+            <div class="gw-advanced__body">
+            <p class="gw-alert gw-alert--warn" role="note">{{ ic('alert') }}<span class="gw-alert__body">Estos valores se probaron en la impresora y valen para TODOS los equipos del evento. Un cambio aquí puede dañar la impresión de todas las escarapelas.</span></p>
             <div id="psForm" data-psave="ps" class="gw-form-grid">
               <div class="gw-field"><label class="gw-label" for="ps_tapeWidth">Ancho de la cinta</label><select class="gw-select" id="ps_tapeWidth"></select></div>
               <div class="gw-field"><label class="gw-label" for="ps_tapeType">Tipo de cinta</label><select class="gw-select" id="ps_tapeType"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></div>
@@ -345,6 +351,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <button type="button" class="gw-btn gw-btn--secondary" id="psSave" hidden>Guardar valores del evento</button>
               <button type="button" class="gw-btn gw-btn--secondary" id="psReset">{{ ic('undo', 'gw-icon--sm') }} Volver a los de fábrica</button>
             </div>
+            </div>
+            </details>
           </div>
         </section>
 

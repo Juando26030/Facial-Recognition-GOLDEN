@@ -1278,8 +1278,15 @@
 .gw-rolehelp__item { display: inline-flex; align-items: center; gap: var(--gw-sp-1); font-size: var(--gw-fs-sm); color: var(--gw-text); }
 .gw-form-group__summary > .gw-help { margin-left: auto; }
 .gw-form-group__summary .gw-popover { cursor: default; }
-span.gw-popover__title, span.gw-popover__text { display: block; }
+.gw-popover__title, .gw-popover__text { display: block; }
 .gw-advanced { margin-top: var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
 .gw-advanced > summary { display: flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-4); cursor: pointer; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); color: var(--gw-text); }
 .gw-advanced > summary .gw-hint { margin: 0; font-weight: var(--gw-fw-normal); }
 .gw-advanced__body { padding: 0 var(--gw-sp-4) var(--gw-sp-4); }
+.gw-rolehelp { position: relative; }
+.gw-rolehelp .gw-help { position: static; }
+.gw-rolehelp .gw-popover { left: 0; right: auto; }
+.gw-advanced > summary { list-style: none; }
+.gw-advanced > summary::-webkit-details-marker { display: none; }
+.gw-advanced > summary::before { content: ""; width: 0.5rem; height: 0.5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--gw-dur); }
+.gw-advanced[open] > summary::before { transform: rotate(45deg); }

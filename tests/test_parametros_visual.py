@@ -138,7 +138,7 @@ def test_privacy_actions_are_red_and_ask_for_confirmation():
     for ident, cls in (("privPerson", "gw-btn--danger-outline"), ("privRevoke", "gw-btn--danger-outline"), ("privAll", "gw-btn gw-btn--danger"), ("privEvent", "gw-btn gw-btn--danger")):
         assert re.search(rf'<button type="button" id="{ident}" class="[^"]*{cls}', TEMPLATE), ident
     assert 'class="gw-danger-zone"' in TEMPLATE and "--gw-err-line" in re.search(r"\.gw-danger-zone \{[^}]*\}", DS_CSS).group(0)
-    assert "showConfirm(`¿Borrar el rostro" in TEMPLATE and "purgeData('all'," in TEMPLATE and "await showConfirm(msg.replace" in TEMPLATE and "purgeEventBiometrics" in TEMPLATE
+    assert "showConfirm(`¿Borrar el rostro" in TEMPLATE and "purgeData('all'," in TEMPLATE and "await GWConfirm.typed(GWConfirm.fill(text, { id }), word" in TEMPLATE and "purgeEventBiometrics" in TEMPLATE
     assert re.search(r"\.gw-btn--danger \{[^}]*var\(--gw-danger\)", DS_CSS)
 
 
