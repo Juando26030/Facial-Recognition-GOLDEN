@@ -88,7 +88,12 @@ def _configurable_fields(event: Event):
 CARD_DEFAULT_KEYS = ("id", "first_name", "last_name")          # 21-nov-2026: lo que la tarjeta de Registro muestra de fábrica (la entidad ya no)
 
 
+ALWAYS_IN_CARD = CARD_DEFAULT_KEYS          # 22-nov-2026 (Juan David): cédula, nombres y apellidos SIEMPRE se ven en Registro; la casilla solo elige los demás campos
+
+
 def _show_in_card(key: str, row) -> bool:
+    if key in ALWAYS_IN_CARD:
+        return True
     if row is not None and row.show_in_card is not None:
         return bool(row.show_in_card)
     return key in CARD_DEFAULT_KEYS
@@ -551,7 +556,7 @@ def upsert_field_config(
     if "show_in_card" in data:          # 0161: mostrarlo en la tarjeta de la persona en Registro (cualquier campo, también los de identidad)
         if not isinstance(data["show_in_card"], bool):
             raise HTTPException(status_code=400, detail="show_in_card debe ser verdadero o falso")
-        row.show_in_card = data["show_in_card"]
+        row.show_in_card = True if field_key in ALWAYS_IN_CARD else data["show_in_card"]
 
     if field_key == DEPENDENTS_KEY:          # 0161: nombre, posición y estadística; nunca obligatorio ni de otro tipo (no se escribe: sale de la base de dependientes)
         stat = bool(data.get("default_stat_enabled", False))

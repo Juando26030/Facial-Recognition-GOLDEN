@@ -241,10 +241,10 @@ def test_show_in_card_defaults_to_id_and_names_and_can_be_chosen(client, ev):
     assert cfgs["id"]["show_in_card"] and cfgs["first_name"]["show_in_card"] and cfgs["last_name"]["show_in_card"]
     assert cfgs["entity"]["show_in_card"] is False                                                     # la entidad ya no sale de fábrica
     assert client.put(f"/api/events/{ev.id}/field-configs/entity", json={"label": "", "field_type": "text_short", "show_in_card": True}).json()["show_in_card"] is True
-    assert client.put(f"/api/events/{ev.id}/field-configs/last_name", json={"label": "", "show_in_card": False}).json()["show_in_card"] is False
+    assert client.put(f"/api/events/{ev.id}/field-configs/last_name", json={"label": "", "show_in_card": False}).json()["show_in_card"] is True          # cédula, nombres y apellidos: siempre
     page = client.get(f"/kiosk/{ev.id}/registro").text
     card = json.loads(page.split("window.REG_CARD_FIELDS = ")[1].split(";")[0])
-    assert [c["key"] for c in card] == ["id", "first_name", "entity"] or {c["key"] for c in card} == {"id", "first_name", "entity"}
+    assert {c["key"] for c in card} == {"id", "first_name", "last_name", "entity"}
     assert client.put(f"/api/events/{ev.id}/field-configs/entity", json={"show_in_card": "si"}).status_code == 400
 
 

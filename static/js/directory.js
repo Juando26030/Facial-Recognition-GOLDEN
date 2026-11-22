@@ -772,7 +772,8 @@
     /* 0161 (21-nov-2026): la tarjeta de Registro muestra SOLO los campos marcados «Mostrar en el registro» (Parámetros › Campos; de fábrica cédula, nombres y apellidos). Los que no se marcan
        quedan en la fila pero ocultos en la tarjeta (data-card-hidden); los demás marcados van debajo, con su nombre, y la tarjeta crece hacia abajo. Sin la lista (otras pantallas) nada cambia. */
     const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
-    const inCard = (key) => !CARD || CARD.some((c) => c.key === key);
+    const ALWAYS = ['id', 'first_name', 'last_name'];          // cédula, nombres y apellidos: siempre (22-nov-2026)
+    const inCard = (key) => !CARD || ALWAYS.includes(key) || (key !== 'opt_1' && key !== 'entity' && CARD.some((c) => c.key === key));          // con la lista, tipo y empresa van como columna elegida (cardx)
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
@@ -793,7 +794,7 @@
     if (!inCard('entity')) entityTd.dataset.cardHidden = '1';
     tr.appendChild(entityTd);
     if (CARD) {
-      const SHOWN = ['id', 'first_name', 'last_name', 'opt_1', 'entity'];
+      const SHOWN = ALWAYS;
       const extras = user.extra_fields || {};
       const valueOf = (c) => {
         if (c.key === 'categories') return (user.categories || []).join(', ');
@@ -805,14 +806,17 @@
         if (c.type === 'boolean' || c.type === 'consent') return t.toLowerCase() === 'true' ? 'Sí' : (t.toLowerCase() === 'false' ? 'No' : '');
         return t;
       };
+      /* Cada campo elegido es UNA columna (en escritorio, alineada con su título en el encabezado: syncCardHeader); vacía conserva su lugar. En la tarjeta del celular lleva su nombre delante. */
       CARD.filter((c) => !SHOWN.includes(c.key)).forEach((c) => {
         const v = valueOf(c);
-        if (!v) return;
         const td = document.createElement('td');
         td.dataset.field = 'cardx'; td.className = 'touch-only'; td.dataset.cardKey = c.key;
-        const l = document.createElement('span'); l.className = 'gw-reg-cardx__l'; l.textContent = c.label + ': ';
-        const val = document.createElement('span'); val.textContent = v;
-        td.append(l, val);
+        if (v) {
+          const l = document.createElement('span'); l.className = 'gw-reg-cardx__l'; l.textContent = c.label + ': ';
+          const val = document.createElement('span'); val.className = 'gw-reg-cardx__v'; val.textContent = v;
+          td.title = c.label + ': ' + v;
+          td.append(l, val);
+        }
         tr.appendChild(td);
       });
     }
@@ -838,7 +842,27 @@
     return q || Array.prototype.find.call(tr.children || [], (c) => c.dataset && c.dataset.field === name) || null;
   }
 
+  /* 0161 (22-nov-2026): el encabezado de la tabla de Registro (escritorio) lleva UNA columna por cada campo marcado «Mostrar en el registro», con el nombre del campo, en el mismo orden que
+     las filas. Tipo y Empresa fijos se ocultan (si se eligieron, salen como columna elegida). Orden: Nombres | Apellidos | Cédula | campos elegidos | Estado | Origen | Recién | Acción. */
+  function syncCardHeader() {
+    const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
+    if (!CARD || !document.querySelectorAll) return;
+    document.querySelectorAll('.golden-table thead tr').forEach((tr) => {
+      const idTh = tr.querySelector('th[data-col="id"]');
+      if (!idTh || tr.dataset.cardSynced) return;
+      tr.dataset.cardSynced = '1';
+      tr.querySelectorAll('th[data-col="opt_1"], th[data-col="entity"]').forEach((th) => { th.dataset.cardHidden = '1'; });
+      let after = idTh;
+      CARD.filter((c) => ['id', 'first_name', 'last_name'].indexOf(c.key) < 0).forEach((c) => {
+        const th = document.createElement('th');
+        th.scope = 'col'; th.dataset.col = 'cardx'; th.dataset.cardKey = c.key; th.textContent = c.label; th.title = c.label;
+        after.after(th); after = th;
+      });
+    });
+  }
+
   function renderRows(tbodyId, users) {
+    syncCardHeader();
     const tbody = document.getElementById(tbodyId);
     tbody.innerHTML = '';
     if (users.length === 0) {

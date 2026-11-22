@@ -61,7 +61,8 @@ html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { o
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 8; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 9; flex: 1 1 100%; }
 /* 0161: campos elegidos en Parámetros › Campos «Mostrar en el registro»: los no elegidos se ocultan; los demás van debajo, cada uno en su línea, sin cortarse (la tarjeta crece hacia abajo) */
-html body.gw-registro .gw-reg__list .golden-table tbody td[data-card-hidden] { display: none; }
+html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden],
+html body.gw-registro .gw-reg__list .golden-table tbody tr td.touch-only[data-card-hidden] { display: none; }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] { order: 8; flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); color: var(--gw-text); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] .gw-reason { margin-top: 0; }
@@ -368,6 +369,17 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   body.gw-registro #editModalForm > .gw-field:has(textarea, canvas, .gw-alert, .gw-check, fieldset),
   body.gw-registro #editModalForm > .gw-alert { grid-column: 1 / -1; }
   body.gw-registro #regExtras .gw-form-group__body { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 var(--gw-sp-4); }
+}
+/* 0161 (22-nov-2026): columnas elegidas en Parámetros › Campos «Mostrar en el registro»: en escritorio cada una es una columna con su título en el encabezado (directory.js, syncCardHeader),
+   entre la cédula y el estado; el origen y «Recién registrado» quedan al final, junto a las acciones. Vacía conserva su lugar; el nombre del campo solo va en la tarjeta del celular. */
+@media (min-width: 901px) {
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-card-hidden] { display: none; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=cardx] { order: 4; flex: 1 1 0; min-width: 0; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: block; order: 4; flex: 1 1 0; min-width: 0; font-size: var(--gw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { display: none; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden]:empty { display: none; }
 }
 /* con pantalla de 1500 px o más sobra lugar: Imprimir y Editar vuelven a decir su nombre */
 @media (min-width: 1500px) {
