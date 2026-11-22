@@ -848,6 +848,7 @@
   function syncCardHeader() {
     const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
     if (!CARD || !document.querySelectorAll) return;
+    bindFit();
     document.querySelectorAll('.golden-table thead tr').forEach((tr) => {
       const idTh = tr.querySelector('th[data-col="id"]');
       if (!idTh || tr.dataset.cardSynced) return;
@@ -860,6 +861,32 @@
         after.after(th); after = th;
       });
     });
+  }
+
+  /* 22-nov-2026: lo elegido para verse se ve COMPLETO. En escritorio la tabla de columnas necesita un ancho mínimo por columna; si la lista no lo tiene (laptop angosta, muchos campos
+     elegidos, ventana achicada), la pantalla pasa a «dos renglones por persona» (.gw-reg--stack, static/css/p-registro-puerta.css). Se recalcula al cambiar el tamaño de la ventana. */
+  function fitRegLayout() {
+    try {
+      const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : [];
+      const lists = document.querySelectorAll('.gw-reg__list');
+      let width = 0;
+      lists.forEach((l) => { width = Math.max(width, l.clientWidth || 0); });
+      if (!width) return;
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const vw = window.innerWidth || width;
+      const extra = CARD.filter((c) => ['id', 'first_name', 'last_name'].indexOf(c.key) < 0).length;
+      const fixed = 7.5 + 7.75 + (vw >= 1600 ? 8.5 : 0) + 8.75 + (vw >= 1500 ? 27.5 : 18.5) + 6;          // cédula, estado, origen, «recién», acciones, separaciones y relleno (rem)
+      const need = (fixed + 2 * 9 + extra * 10) * rem;          // nombres y apellidos: 9rem cada uno; cada campo elegido: 10rem
+      document.body.classList.toggle('gw-reg--stack', width < need);
+    } catch (e) { /* DOM de pruebas sin medidas: se queda la tabla */ }
+  }
+  let fitBound = false;
+  function bindFit() {
+    if (fitBound || typeof window === 'undefined' || !window.addEventListener) return;
+    fitBound = true;
+    let t = null;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fitRegLayout, 80); });
+    fitRegLayout();
   }
 
   function renderRows(tbodyId, users) {

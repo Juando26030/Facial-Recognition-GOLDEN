@@ -83,3 +83,6 @@
 .gw-cred { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-3); margin: var(--gw-sp-2) 0; }
 .gw-cred__label { min-width: 6.5rem; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .gw-cred__value { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); letter-spacing: .04em; color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); padding: var(--gw-sp-1) var(--gw-sp-3); overflow-wrap: anywhere; user-select: all; }
+/* 22-nov-2026 (barrido ancho por ancho): el usuario, el nombre y el correo se ven completos; si no caben en su columna bajan de línea (la fila crece) en vez de terminar en «…» */
+.gw-usr__c-user, .gw-usr__c-name, .gw-staff__c-user, .gw-staff__c-name, .gw-staff__c-mail > .gw-staff__who { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.gw-rows__head > span { white-space: normal; }

@@ -474,3 +474,50 @@ html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-tabl
   .gw-registro .gw-steps--compact { display: none; }
   .gw-registro .golden-event-strip { font-size: var(--gw-fs-sm); }
 }
+
+/* ================= 22-nov-2026 · Nada de lo que se eligió ver se corta (pedido de Juan David) =================
+   Lo que la persona marcó para verse en Registro se ve COMPLETO en cualquier ancho: nombres, apellidos, cédula y campos elegidos bajan a 2 o 3 líneas (la fila crece hacia abajo) en vez de
+   terminar en «…». El detalle sigue estando en «Editar». Reglas al final del archivo a propósito: corrigen a las de arriba sin tocarlas. */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name],
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name],
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { max-width: 100%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  /* contadores del celular: completos, en las líneas que hagan falta (antes «Total: 0 registrados de 4…») */
+  .gw-registro .gw-workarea__summary { flex-wrap: wrap; }
+  .gw-registro .gw-workarea__summary .gw-chip { white-space: normal; overflow: visible; text-overflow: clip; }
+}
+/* Escritorio SIN ancho para todas las columnas (directory.js, fitRegLayout, pone .gw-reg--stack): la persona pasa a dos renglones. Renglón 1: nombre, cédula, estado, origen y los botones a la
+   derecha. Renglón 2: los campos elegidos, cada uno con su nombre delante. Así una laptop angosta nunca deja columnas de 40 px. Con ancho de sobra sigue la tabla de columnas con encabezado. */
+@media (min-width: 901px) {
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table thead { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-registrado,
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-noregistrado { flex-wrap: wrap; row-gap: var(--gw-sp-1); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-2); }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=first_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=last_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { order: 1; flex: 0 1 auto; font-size: var(--gw-fs-lg); }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=id] { order: 2; flex: 0 1 auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=id]::before { content: "C.C. "; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=status] { order: 2; flex: 0 0 auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=origin] { order: 2; flex: 0 0 auto; display: block; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=origin]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=recent] { order: 2; flex: 0 0 auto; width: auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=recent]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td.action-cell { order: 3; flex: 0 0 auto; margin-left: auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-registrado::after,
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-noregistrado::after { display: block; content: ''; order: 4; flex: 1 0 100%; height: 0; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx] { order: 5; flex: 0 1 auto; max-width: 100%; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx] .gw-reg-cardx__l { display: inline; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=reason] { order: 6; }
+}
+/* celular muy angosto (320 px): los pasos y «Acreditado» se ven completos */
+@media (max-width: 359px) {
+  .gw-registro .gw-steps--compact .gw-steps__text { white-space: normal; overflow: visible; text-overflow: clip; -webkit-line-clamp: none; line-clamp: none; font-size: calc(var(--gw-fs-sm) * 0.9); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { overflow: visible; text-overflow: clip; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row { padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); }
+}

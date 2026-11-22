@@ -1265,3 +1265,7 @@
 .gw-preview__old { color: var(--gw-text-muted); text-decoration: line-through; }
 .gw-deps { display: grid; gap: var(--gw-sp-2); }
 .gw-deps__person { border-left: 4px solid var(--gw-info-line); padding-left: var(--gw-sp-3); }
+/* 22-nov-2026 (barrido ancho por ancho): en celular el TÍTULO de la página se ve completo (baja de línea) en vez de terminar en «…» */
+@media (max-width: 600px) {
+  .gw-page .gw-page-head__title, .gw-page h1.gw-title, .gw-page .golden-section-title h2 { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+}

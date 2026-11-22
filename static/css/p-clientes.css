@@ -136,3 +136,5 @@
 
 /* Eventos (menú lateral) usa esta misma fila: en la columna de personas, comercial y coordinador van cada uno en su línea. */
 .p-cli__coord .ev-who { display: block; }
+/* 22-nov-2026 (barrido ancho por ancho): el título de columna largo («Comercial / coordinador») baja de línea en vez de cortarse */
+.p-cli__cols > span { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: break-word; }
