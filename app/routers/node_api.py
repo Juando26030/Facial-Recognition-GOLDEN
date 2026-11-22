@@ -40,20 +40,37 @@ def _event(db: Session, event_id: int, lock: bool = False) -> Event:
     return event
 
 
+def node_tenant_allows(node_tenant, event_tenant) -> bool:
+    """0163 (seguridad 22-nov-2026): un servidor con cliente fijo solo toca eventos de ESE cliente. Sin cliente (None o vacío) = sin restricción, como todo lo instalado antes."""
+    return not node_tenant or node_tenant == event_tenant
+
+
+def _event_for_node(db: Session, node: LocalNode, event_id: int, lock: bool = False) -> Event:
+    """El evento, SOLO si este servidor puede tocarlo: si la llave del servidor se creó para un cliente, el evento debe ser de ese cliente. Si no, 404 (igual que un evento que no
+    existe: no revela que hay eventos de otros clientes)."""
+    event = _event(db, event_id, lock=lock)
+    if not node_tenant_allows(getattr(node, "tenant_id", None), event.tenant_id):
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return event
+
+
 def _audit(db: Session, node: LocalNode, action: str, event: Event, detail: str) -> None:
     db.add(AuditAction(actor_id=node.created_by_id, actor_role="nodo", action=action, entity="event", entity_id=str(event.id), entity_name=event.name, detail=detail[:500]))
 
 
 @router.get("/node/events")
 def node_events(db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
-    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state), joinedload(Event.commercial), joinedload(Event.coordinator)).filter(Event.archived_at.is_(None)).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
+    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state), joinedload(Event.commercial), joinedload(Event.coordinator)).filter(Event.archived_at.is_(None))
+    if getattr(node, "tenant_id", None):          # 0163: servidor con cliente fijo: su lista solo trae los eventos de ese cliente
+        rows = rows.filter(Event.tenant_id == node.tenant_id)
+    rows = rows.order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
     return {"events": [_meta(e) for e in rows]}
 
 
 @router.get("/node/events/{event_id}/package")
 def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """El paquete del evento (sin biometría: en un servidor local no hay reconocimiento facial)."""
-    event = _event(db, event_id)
+    event = _event_for_node(db, node, event_id)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado")
     if not event_lease.is_writer(event, node.name):          # F5-9 A-05: el paquete (datos de personas) solo sale hacia el servidor que TIENE el evento arrendado (se toma antes con /lease, queda auditado)
@@ -67,7 +84,7 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
 @router.get("/node/events/{event_id}/inventory-checklist")
 def node_inventory_checklist(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """El checklist de inventario del evento (lo alistado), para consultarlo en el servidor local. Solo hacia el servidor que TIENE el evento; sin datos de personas."""
-    event = _event(db, event_id)
+    event = _event_for_node(db, node, event_id)
     if not event_lease.is_writer(event, node.name):
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local.")
     return {"lines": event_checklist.cloud_lines(db, event.id)}
@@ -75,7 +92,7 @@ def node_inventory_checklist(event_id: int, db: Session = Depends(get_db), node:
 
 @router.post("/node/events/{event_id}/lease")
 def node_take_lease(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
-    event = _event(db, event_id, lock=True)
+    event = _event_for_node(db, node, event_id, lock=True)
     if event.archived_at is not None:
         raise HTTPException(status_code=400, detail="El evento está archivado: restáuralo antes de llevarlo a un servidor local")
     already = event_lease.is_writer(event, node.name)
@@ -98,7 +115,7 @@ def abort_allowed(event, now=None) -> bool:
 @router.post("/node/events/{event_id}/abort")
 def node_abort(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """Deshace el arrendamiento si la descarga falló a medias (NO es «pasar a internet»: eso es /release de nodes.py, que exige 0 pendientes): solo el servidor que lo tiene puede soltarlo (p. ej. si la descarga falló a medias)."""
-    event = _event(db, event_id, lock=True)
+    event = _event_for_node(db, node, event_id, lock=True)
     if event_lease.is_leased(event):
         if not event_lease.is_writer(event, node.name):
             raise HTTPException(status_code=409, detail=f"El evento está en el servidor local «{event.local_node_name}», no en este.")
@@ -120,7 +137,7 @@ def node_precheck(event_id: int, body: dict, db: Session = Depends(get_db), node
     """Evento COMPARTIDO (0161): antes de entregar o de dejar entrar a una zona sin reingreso, el servidor local pregunta qué tiene ya la nube de esa persona (lo suyo y lo que
     subieron los demás). Solo conteos de esa persona; solo para servidores del grupo."""
     from app import node_precheck as precheck
-    event = _event(db, event_id)
+    event = _event_for_node(db, node, event_id)
     if not event_lease.is_shared(event) or not event_lease.is_writer(event, node.name):
         raise HTTPException(status_code=409, detail="Este evento no es compartido o no está en este servidor local")
     return precheck.cloud_answer(db, event, body or {})
@@ -132,7 +149,7 @@ def node_changes(event_id: int, request: Request, db: Session = Depends(get_db),
     servidor vea lo que hicieron los demás. Solo para servidores del grupo y con el evento compartido. Páginas de hasta `peer_changes.PAGE`; `more` = hay más."""
     from app import node_auth
     node_auth.require_compatible(request)
-    event = _event(db, event_id)
+    event = _event_for_node(db, node, event_id)
     if not event_lease.is_shared(event) or not event_lease.is_writer(event, node.name):
         raise HTTPException(status_code=409, detail="Este evento no es compartido o no está en este servidor local")
     out = peer_changes.changes_since(db, event, peer_changes.clean_cursor(dict(request.query_params)))

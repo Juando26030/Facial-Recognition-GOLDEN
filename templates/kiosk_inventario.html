@@ -28,8 +28,9 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
-<body class="gw-page gw-shell has-sidebar">
-{% include "_sidebar.html" %}
+{# Usabilidad 22-nov-2026: el digitador y el cliente no ven el menú lateral de administrador (mismo patrón que kiosk_registro.html y kiosk_select.html); vuelven con «Elegir tarea». #}
+<body class="gw-page gw-shell{% if staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/kiosk/{{ event.id }}" class="golden-logo">
@@ -64,6 +65,7 @@
         <p class="gw-page-head__sub">Entrega de kits, regalos y combos a cada persona, con lo que queda disponible.</p>
       </div>
       <div class="gw-page-head__actions">
+        {% if staff_role in ["digitador", "cliente"] %}<a class="gw-btn gw-btn--secondary gw-btn--sm" id="kioskBackLink" href="/kiosk/{{ event.id }}">{{ ic('home', 'gw-icon--sm') }} Elegir tarea</a>{% endif %}
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="inventario">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>

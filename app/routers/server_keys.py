@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app import local_update, security, server_keys, versioning
 from app.auth import require_platform_role
 from app.database import get_db
-from app.models import AuditAction, LocalNode, LocalServerKey, StaffUser
+from app.models import AuditAction, LocalNode, LocalServerKey, StaffUser, Tenant
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.server_keys")
@@ -39,11 +39,13 @@ def _freshness(node, cloud: dict) -> dict:
     return {"status": r["status"], "message": r["message"], "commit": commit, "schema": schema}
 
 
-def _row(k: LocalServerKey, now=None, cloud: Optional[dict] = None) -> dict:
+def _row(k: LocalServerKey, now=None, cloud: Optional[dict] = None, tenants: Optional[dict] = None) -> dict:
     now = now or utcnow()
     st = server_keys.status(k, now)
     node = k.node
+    tid = k.tenant_id or (node.tenant_id if node is not None else None)          # 0163: «solo eventos del cliente…» (None = todos)
     return {"id": k.id, "code": k.code, "label": k.label, "status": st, "status_label": server_keys.STATUS_LABEL[st],
+            "tenant_id": tid, "tenant_name": ((tenants or {}).get(tid) or tid) if tid else None,
             "created_at": _iso(k.created_at), "expires_at": _iso(k.expires_at), "claimed_at": _iso(k.claimed_at), "activated_at": _iso(k.activated_at), "disabled_at": _iso(k.disabled_at),
             "created_by_name": (k.created_by.full_name or k.created_by.username) if k.created_by else None,
             "node": ({"id": node.id, "name": node.name, "last_seen_at": _iso(node.last_seen_at), "last_version": node.last_version, "revoked": node.revoked_at is not None,
@@ -61,7 +63,9 @@ def list_keys(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     now = utcnow()
     rows = db.query(LocalServerKey).order_by(LocalServerKey.created_at.desc(), LocalServerKey.id.desc()).limit(500).all()
     cloud = versioning.local_version()
-    items = [_row(k, now, cloud) for k in rows]
+    wanted = {k.tenant_id for k in rows if k.tenant_id}
+    names = {t.id: t.name for t in db.query(Tenant).filter(Tenant.id.in_(wanted))} if wanted else {}
+    items = [_row(k, now, cloud, names) for k in rows]
     counts = {"active": 0, "unused": 0, "claimed": 0, "expired": 0, "disabled": 0}
     for it in items:
         counts[it["status"]] += 1
@@ -70,8 +74,13 @@ def list_keys(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
 
 @router.post("/server-keys")
 def create_key(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
-    """Crea una llave nueva (de un solo uso, vence a los 7 días si no se usa). `label` (opcional): para quién o para qué equipo es."""
+    """Crea una llave nueva (de un solo uso, vence a los 7 días si no se usa). `label` (opcional): para quién o para qué equipo es. `tenant_id` (opcional, 0163): «solo eventos de este
+    cliente»: el servidor que se instale con esta llave solo podrá ver, tomar y sincronizar eventos de ese cliente. Sin elegir, como siempre (todos)."""
     label = " ".join(str((data or {}).get("label") or "").split())[:60] or None
+    tenant_id = str((data or {}).get("tenant_id") or "").strip()[:200] or None
+    tenant = db.get(Tenant, tenant_id) if tenant_id else None
+    if tenant_id and (tenant is None or tenant.archived_at is not None):
+        raise HTTPException(status_code=400, detail="Ese cliente no existe o está archivado. Elige otro, o deja «Todos los clientes».")
     now = utcnow()
     for _ in range(5):                                # el choque de dos llaves iguales es astronómico; se reintenta por si acaso
         code = server_keys.generate()
@@ -79,12 +88,12 @@ def create_key(data: dict, db: Session = Depends(get_db), staff: StaffUser = Dep
             break
     else:
         raise HTTPException(status_code=500, detail="No se pudo generar la llave. Inténtalo de nuevo.")
-    k = LocalServerKey(code=code, label=label, created_by_id=staff.id, created_at=now, expires_at=server_keys.expires_at(now))
+    k = LocalServerKey(code=code, label=label, created_by_id=staff.id, created_at=now, expires_at=server_keys.expires_at(now), tenant_id=tenant_id)
     db.add(k)
     db.flush()
-    _audit(db, staff, "server_key_create", k, "Llave de servidor local creada" + (f" ({label})" if label else ""))
+    _audit(db, staff, "server_key_create", k, "Llave de servidor local creada" + (f" ({label})" if label else "") + (f"; solo eventos del cliente «{tenant.name}»" if tenant else ""))
     db.commit()
-    return _row(k, now)
+    return _row(k, now, tenants=({tenant.id: tenant.name} if tenant else None))
 
 
 @router.post("/server-keys/{key_id}/disable")

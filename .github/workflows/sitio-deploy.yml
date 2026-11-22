@@ -1,0 +1,77 @@
+name: Sitio web (golden-eventos.com)
+
+# Publica el SITIO WEB CORPORATIVO en su propio sitio de Firebase Hosting. SOLO a mano: Actions → «Sitio web (golden-eventos.com)» → Run workflow →
+# rama main → escribir PUBLICAR. No toca la plataforma (Cloud Run, base, migraciones, Hosting de app.golden-eventos.com): por eso no hay FORCE ni congelamiento.
+# Hace lo mismo que deploy/sitio/deploy_sitio.sh en Cloud Shell: trae golden-sitio-web en el commit de deploy/sitio/VERSION, aplica deploy/sitio/parche/,
+# compila, comprueba dist/ y publica. Paso a paso y cómo deshacer: docs/26_SITIO_WEB_MONTAJE.md.
+# Usa las variables del Environment «production» que ya existen (GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOYER: la cuenta golden-deployer ya tiene
+# Firebase Hosting a nivel de proyecto y solo acepta la rama main) más UNA nueva, no secreta: FIREBASE_SITE_SITIO (nombre del sitio de Hosting del sitio web).
+# Si el repositorio del sitio es privado: secreto SITIO_REPO_TOKEN (token de solo lectura de ese repositorio).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe PUBLICAR (en mayúsculas) para publicar el sitio web en producción"
+        type: string
+        default: ""
+      solo_compilar:
+        description: "Ensayo: compilar y comprobar, SIN publicar"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: sitio-deploy
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    if: inputs.confirm == 'PUBLICAR' && (github.ref == 'refs/heads/main' || inputs.solo_compilar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.solo_compilar && 'staging' || 'production' }}
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      FIREBASE_SITE_SITIO: ${{ vars.FIREBASE_SITE_SITIO }}
+      SOLO_COMPILAR: ${{ inputs.solo_compilar && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: ver
+        name: Commit del sitio (deploy/sitio/VERSION)
+        run: echo "sha=$(tr -d ' \r\n' < deploy/sitio/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - id: cfg
+        name: ¿Está configurado?
+        run: |
+          if [ "$SOLO_COMPILAR" = 1 ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "${{ vars.GCP_PROJECT_ID }}" ] || [ -z "${{ vars.GCP_WIF_PROVIDER }}" ] || [ -z "${{ vars.GCP_DEPLOYER }}" ] || [ -z "${{ vars.FIREBASE_SITE_SITIO }}" ]; then
+            echo "::error::Faltan variables en el Environment «production» (GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOYER, FIREBASE_SITE_SITIO). Ver docs/26_SITIO_WEB_MONTAJE.md."
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Código del sitio en ese commit
+        uses: actions/checkout@v7
+        with:
+          repository: Juando26030/golden-sitio-web
+          ref: ${{ steps.ver.outputs.sha }}
+          path: build/sitio/src
+          token: ${{ secrets.SITIO_REPO_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - if: env.SOLO_COMPILAR != '1'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER }}
+
+      - name: Parche → compilar → comprobar dist/ → publicar
+        run: SITIO_DIR=build/sitio/src bash deploy/sitio/deploy_sitio.sh "${PROJECT_ID:-ensayo}"

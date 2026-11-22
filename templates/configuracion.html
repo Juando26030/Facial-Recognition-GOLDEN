@@ -146,9 +146,13 @@
               <input type="text" class="gw-input" id="skLabel" maxlength="60" placeholder="Para quién o qué equipo es (opcional)" aria-label="Nombre de la llave">
               <button type="button" class="gw-btn gw-btn--primary" id="skCreate">Crear llave</button>
             </div>
+            <div class="gw-form-row">
+              <select class="gw-select" id="skTenant" aria-label="Solo eventos del cliente (opcional)"><option value="">Todos los clientes (como siempre)</option></select>
+              {% call ayuda('ay_sk_tenant', 'Solo eventos del cliente…') %}<strong>Qué es:</strong> un candado opcional para la llave que vas a crear. <strong>Para qué sirve:</strong> si el computador se pierde o lo maneja un tercero, solo alcanza los eventos de UN cliente. <strong>Si eliges un cliente:</strong> el servidor que se instale con esta llave solo verá, descargará y sincronizará eventos de ese cliente; los demás ni aparecen en su lista. <strong>Si lo dejas en «Todos los clientes»:</strong> funciona como siempre y ve todos los eventos. <strong>Ejemplo:</strong> un portátil que se queda una semana en la feria del cliente «Acme» → elige «Acme». <strong>Qué NO hace:</strong> no cambia las llaves ni los servidores ya instalados, y no se puede cambiar después: para otro cliente se crea otra llave.{% endcall %}
+            </div>
             <div class="gw-chips" id="skSummary" aria-live="polite"></div>
             <div class="gw-form-row"><button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" id="skPurge" hidden>Eliminar las deshabilitadas</button></div>
-            <div class="gw-table-wrap"><table class="gw-table gw-table-cards"><thead><tr><th>Llave</th><th>Nombre</th><th>Estado</th><th>Servidor</th><th>Creada</th><th></th></tr></thead><tbody id="skRows"><tr><td colspan="6">Cargando…</td></tr></tbody></table></div>
+            <div class="gw-table-wrap"><table class="gw-table gw-table-cards"><thead><tr><th>Llave</th><th>Nombre</th><th>Cliente</th><th>Estado</th><th>Servidor</th><th>Creada</th><th></th></tr></thead><tbody id="skRows"><tr><td colspan="7">Cargando…</td></tr></tbody></table></div>
           </div>
           {% endif %}
           {% if is_admin_plus %}

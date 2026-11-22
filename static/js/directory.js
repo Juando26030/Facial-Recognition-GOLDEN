@@ -378,6 +378,12 @@
     // 2026-09-23, pedido explícito: al darle Editar a alguien que aún no llegó, "Registrado" queda
     // preseleccionado — guardar sin tocar nada ya lo deja acreditado (en verde).
     const defaultStatus = 'registrado';
+    // Usabilidad 22-nov-2026 (hallazgo 1): lo que el guardado hace solo se DICE dentro de la ventana y en el botón: una persona que aún
+    // no llegó queda Registrada (y, con la autoimpresión activa, se imprime su escarapela). El digitador tiene además «Guardar sin registrar».
+    const registerNoteText = () => 'Esta persona aún no está registrada. Al guardar, esta persona queda Registrada en este evento'
+      + (window.EVENT_AUTO_PRINT ? ' y se imprime su escarapela' : '') + '.'
+      + (canManageStatus ? ' Si solo vas a corregir un dato, cambia «Estado de registro» a «No registrado» antes de guardar.' : ' Si solo vas a corregir un dato, usa «Guardar sin registrar».');
+    let skipRegister = false;                                           // «Guardar sin registrar» (digitador): guarda los datos y NO llama al cambio de estado
 
     const overlay = document.createElement('div');
     overlay.className = 'gw-modal-backdrop gw-registro__edit'; overlay.setAttribute('data-open', 'true');
@@ -389,9 +395,11 @@
       <div class="gw-modal__head gw-registro__edithead">
         <h4 class="gw-modal__title gw-registro__edittitle">Editar persona</h4>
         <button type="button" id="editModalCancel" class="gw-btn gw-btn--secondary">Cancelar</button>
-        <button type="button" id="editModalSave" class="gw-btn gw-btn--primary">Guardar cambios</button>
+        ${!canManageStatus && !isRegistered ? '<button type="button" id="editModalSaveOnly" class="gw-btn gw-btn--secondary">Guardar sin registrar</button>' : ''}
+        <button type="button" id="editModalSave" class="gw-btn gw-btn--primary">${isRegistered ? 'Guardar cambios' : 'Guardar y registrar'}</button>
       </div>
       <div class="gw-modal__body">
+      <div id="editModalRegNote" role="status" class="gw-alert gw-alert--warn"${isRegistered ? ' hidden' : ''}>${isRegistered ? '' : esc(registerNoteText())}</div>
       <div id="editModalNotice" role="alert" class="gw-alert gw-alert--warn" hidden></div>
       <form id="editModalForm">
         ${configuredHtml}
@@ -405,7 +413,7 @@
           <option value="no_registrado" ${defaultStatus === 'no_registrado' ? 'selected' : ''}>No registrado</option>
           <option value="registrado" ${defaultStatus === 'registrado' ? 'selected' : ''}>Registrado</option>
         </select>
-        <p class="gw-hint">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
+        <p class="gw-hint">Se aplica junto con el resto de cambios al guardar: no hace falta un botón aparte.</p>
       </div>
       <details id="editModalHistory" class="gw-form-group">
         <summary class="gw-form-group__summary">Historial de cambios de esta persona</summary>
@@ -633,7 +641,7 @@
           catch (e) { showToast(e.message, 'error'); }
           // Digitador (sin selector de estado): guardar la edición de alguien que aún no llegó lo deja
           // "Registrado", igual que el valor por defecto que ven coordinador+.
-          if (!canManageStatus && !isRegistered) {
+          if (!canManageStatus && !isRegistered && !skipRegister) {
             try {
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
@@ -657,6 +665,21 @@
         saveBtn.disabled = false;
       }
     };
+    if (canManageStatus && !isRegistered) {                              // coordinador o superior: el aviso y el nombre del botón siguen al selector de estado
+      const stSel = box.querySelector('#editModalStatus'), regNote = box.querySelector('#editModalRegNote'), svBtn = box.querySelector('#editModalSave');
+      if (stSel && regNote && svBtn) stSel.addEventListener('change', () => {
+        const will = stSel.value === 'registrado';
+        regNote.hidden = !will;
+        svBtn.textContent = will ? 'Guardar y registrar' : 'Guardar cambios';
+      });
+    }
+    if (!canManageStatus && !isRegistered) {                             // digitador: corregir un dato sin registrar (no abre impresión ni cambia el estado)
+      const onlyBtn = box.querySelector('#editModalSaveOnly');
+      if (onlyBtn) onlyBtn.addEventListener('click', async () => {
+        skipRegister = true;
+        try { await busyBtn(onlyBtn, saveHandler); } finally { skipRegister = false; }
+      });
+    }
     box.querySelector('#editModalSave').addEventListener('click', async () => {
       // La ventana de impresión se abre AQUÍ, dentro del clic, solo si este guardado va a dejar a la persona «Registrada» (si no, no se abre nada).
       const GCw = window.GoldenContingency && window.GoldenContingency.instance;

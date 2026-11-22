@@ -8,6 +8,7 @@
   const createBtn = document.getElementById('skCreate');
   const summary = document.getElementById('skSummary');
   const purgeBtn = document.getElementById('skPurge');
+  const tenantSel = document.getElementById('skTenant');          // 0163: «Solo eventos del cliente…» (opcional; vacío = todos, como siempre)
   const BADGE = { active: 'ok', unused: 'info', claimed: 'info', expired: 'warn', disabled: 'err' };
   const FRESH = { igual: 'Al día', desactualizada: 'Desactualizado', distinta_version: 'Versión distinta', adelantada: 'Más nuevo que producción', desconocida: 'Sin dato' };
   let started = false;
@@ -44,7 +45,7 @@
     if (!d.keys.length) {
       const tr = document.createElement('tr');
       const td = cell(tr, 'Todavía no hay llaves. Crea la primera para instalar un servidor.');
-      td.colSpan = 6;
+      td.colSpan = 7;
       rows.appendChild(tr);
       return;
     }
@@ -53,6 +54,7 @@
       const code = document.createElement('code'); code.textContent = k.code;
       cell(tr, code, 'Llave').classList.add('gw-table-cards__title');
       cell(tr, k.label || '—', 'Nombre');
+      cell(tr, k.tenant_name || 'Todos', 'Cliente');
       const b = document.createElement('span'); b.className = 'gw-badge gw-badge--' + (BADGE[k.status] || 'info'); b.textContent = k.status_label;
       cell(tr, b, 'Estado');
       const n = k.node;
@@ -87,17 +89,26 @@
     });
   }
 
+  async function loadTenants() {
+    if (!tenantSel || tenantSel.options.length > 1) return;
+    try {
+      (await api('/api/tenants')).forEach((t) => { const o = document.createElement('option'); o.value = t.id; o.textContent = 'Solo eventos de: ' + t.name; tenantSel.appendChild(o); });
+    } catch (e) { /* sin la lista de clientes la llave se crea como siempre (todos) */ }
+  }
+
   async function load() {
+    loadTenants();
     try { render(await api('/api/server-keys')); started = true; }
-    catch (e) { started = false; rows.textContent = ''; const tr = document.createElement('tr'); cell(tr, 'No se pudieron cargar las llaves.').colSpan = 6; rows.appendChild(tr); if (window.showToast) showToast(e.message, 'error'); }
+    catch (e) { started = false; rows.textContent = ''; const tr = document.createElement('tr'); cell(tr, 'No se pudieron cargar las llaves.').colSpan = 7; rows.appendChild(tr); if (window.showToast) showToast(e.message, 'error'); }
   }
 
   createBtn.addEventListener('click', async () => {
     createBtn.disabled = true;
     try {
-      const k = await api('/api/server-keys', 'POST', { label: labelIn.value });
+      const k = await api('/api/server-keys', 'POST', { label: labelIn.value, tenant_id: tenantSel ? tenantSel.value : '' });
       labelIn.value = '';
-      if (window.showToast) showToast(`Llave creada: ${k.code}. Cópiala y entrégala a quien instalará el servidor.`, 'success');
+      if (tenantSel) tenantSel.value = '';
+      if (window.showToast) showToast(`Llave creada: ${k.code}${k.tenant_name ? ' (solo eventos de ' + k.tenant_name + ')' : ''}. Cópiala y entrégala a quien instalará el servidor.`, 'success');
       await load();
     } catch (e) { if (window.showToast) showToast(e.message, 'error'); }
     finally { createBtn.disabled = false; }

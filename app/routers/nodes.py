@@ -25,7 +25,7 @@ ADMIN = require_role("admin")
 def _row(n: LocalNode) -> dict:
     return {"id": n.id, "name": n.name, "created_at": n.created_at.isoformat() if n.created_at else None, "revoked": n.revoked_at is not None,
             "last_seen_at": n.last_seen_at.isoformat() if n.last_seen_at else None, "last_version": n.last_version,
-            "created_by_name": (n.created_by.full_name or n.created_by.username) if n.created_by else None}
+            "created_by_name": (n.created_by.full_name or n.created_by.username) if n.created_by else None, "tenant_id": n.tenant_id}
 
 
 @router.get("/nodes")
@@ -88,7 +88,7 @@ def enroll_node(data: dict, request: Request, db: Session = Depends(get_db)):
         n += 1
         name = f"{base[:50]} ({n})"
     token, digest = node_auth.generate_token()
-    node = LocalNode(name=name, token_hash=digest, created_by_id=staff.id)
+    node = LocalNode(name=name, token_hash=digest, created_by_id=staff.id, tenant_id=key.tenant_id)          # 0163: hereda el cliente de su llave (None = sin restricción)
     db.add(node)
     db.flush()
     key.activated_at, key.node_id = utcnow(), node.id
@@ -114,6 +114,9 @@ def _leased_event(db: Session, event_id: int, node: LocalNode, lock: bool = Fals
     q = db.query(Event).filter(Event.id == event_id)
     event = (q.with_for_update() if lock else q).first()          # F5-9 A-06: liberar con la fila bloqueada
     if event is None:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    from app.routers.node_api import node_tenant_allows
+    if not node_tenant_allows(getattr(node, "tenant_id", None), event.tenant_id):          # 0163: servidor con cliente fijo: nada de eventos de otro cliente (aunque un arriendo viejo lo nombre)
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if not event_lease.is_writer(event, node.name):          # el que lo tiene (o uno del grupo, si el evento es compartido: 0160)
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
@@ -208,13 +211,13 @@ def node_extra_upload(event_id: int, body: dict, request: Request, db: Session =
     return {"ok": True, "saved": saved}
 
 
-def _store_backup(event_id: int, node_name: str, data: bytes, file_key: str = "") -> dict:
+def _store_backup(event_id: int, node_name: str, data: bytes, file_key: str = "", node_tenant=None) -> dict:
     from app import local_backup
     from app.database import SessionLocal
     from app.storage import get_storage, normalize_key
     with SessionLocal() as db:
         event = db.get(Event, event_id)
-        if event is None:
+        if event is None or (node_tenant and event.tenant_id != node_tenant):          # 0163: servidor con cliente fijo
             raise HTTPException(status_code=404, detail="Evento no encontrado")
         if not event_lease.is_writer(event, node_name):
             raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
@@ -245,7 +248,7 @@ async def node_backup(event_id: int, request: Request, node: LocalNode = Depends
         raise HTTPException(status_code=413, detail="Copia demasiado grande")
     if data[:2] != b"\x1f\x8b":
         raise HTTPException(status_code=400, detail="Copia vacía o dañada")
-    return await run_in_threadpool(_store_backup, event_id, node.name, data)
+    return await run_in_threadpool(_store_backup, event_id, node.name, data, "", node.tenant_id)
 
 
 @router.post("/node/events/{event_id}/backup-file")
@@ -259,7 +262,7 @@ async def node_backup_file(event_id: int, request: Request, key: str, node: Loca
     data = await request.body()
     if len(data) > local_backup.MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="Archivo demasiado grande")
-    return await run_in_threadpool(_store_backup, event_id, node.name, data, key)
+    return await run_in_threadpool(_store_backup, event_id, node.name, data, key, node.tenant_id)
 
 
 @router.post("/node/events/{event_id}/uploaded")

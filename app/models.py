@@ -25,6 +25,23 @@ STAFF_ROLES = ("cliente", "digitador", "coordinador", "comercial", "admin", "sup
 # "finalizado" es después de cerrar.
 EVENT_STATUSES = ("creado", "en_proceso", "finalizado")
 
+class Organization(Base):
+    """0162 (SaaS, pieza 1): la EMPRESA que usa la plataforma (Golden = fila 1). Un nivel por encima de `Tenant` (los clientes de esa empresa). Reglas y planes: app/orgs.py; pantalla: /plataforma."""
+    __tablename__ = 'organizations'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(60), unique=True, nullable=False)
+    name = Column(String(200), nullable=False)
+    legal_name = Column(String(200), nullable=True)
+    nit = Column(String(40), nullable=True)
+    contact_email = Column(String(200), nullable=True)
+    contact_phone = Column(String(40), nullable=True)
+    plan = Column(String(20), default='basico', server_default='basico', nullable=False)  # 'interno' | 'basico' | 'pro' | 'empresa' (app/orgs.PLANS)
+    entitlements_json = Column(Text, nullable=True)  # límites propios que pisan los del plan (JSON; clave en null = sin límite). NULL = solo lo del plan
+    status = Column(String(12), default='active', server_default='active', nullable=False)  # 'active' | 'suspended'
+    created_at = Column(DateTime, default=utcnow)
+    notes = Column(Text, nullable=True)
+
+
 class Tenant(Base):
     """Un cliente de Golden (la empresa para la que se hacen los eventos), no un usuario de staff."""
     __tablename__ = 'tenants'
@@ -37,6 +54,7 @@ class Tenant(Base):
     archived_at = Column(DateTime, nullable=True)  # 0088 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas, se restaura; nada se borra). Ver app/routers/tenants.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     legacy_client_code = Column(String, unique=True, nullable=True)  # 0130 (CRM C1a): el código hexadecimal de antes cuando el cliente pasó al número consecutivo del CRM; alias para paquetes de eventos viejos (app/event_transfer.py). NULL = nunca cambió
+    org_id = Column(Integer, nullable=True, default=1, server_default='1', index=True)  # 0162 (SaaS, pieza 1): empresa a la que pertenece el cliente (NULL o 1 = Golden). Sin llave foránea todavía; ver app/orgs.py
 
     users = relationship("User", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
@@ -228,6 +246,7 @@ class StaffUser(Base):
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
+    org_id = Column(Integer, nullable=True, default=1, server_default='1', index=True)  # 0162 (SaaS, pieza 1): empresa a la que pertenece la cuenta (NULL o 1 = Golden). Sin llave foránea todavía; ver app/orgs.py
 
     tenant = relationship("Tenant", foreign_keys=[tenant_id])          # explícitas desde 0088/0089: hay más de una llave entre staff_users y tenants / staff_users y sí misma
     created_by = relationship("StaffUser", remote_side=[id], foreign_keys=[created_by_id])
@@ -1284,6 +1303,7 @@ class LocalNode(Base):
     last_seen_at = Column(DateTime, nullable=True)
     last_version = Column(String(80), nullable=True)      # commit/esquema que reportó la última vez
     disabled_at = Column(DateTime, nullable=True)          # 0159: su llave fue DESHABILITADA (queda aquí aunque la llave se elimine de la lista: el servidor sigue recibiendo «deshabilitado»)
+    tenant_id = Column(String, nullable=True)              # 0163: «solo eventos de este cliente». NULL = sin restricción (todo lo instalado antes de 0163). Lo hereda de su llave al vincularse
 
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
 
@@ -1305,6 +1325,7 @@ class LocalServerKey(Base):
     node_id = Column(Integer, ForeignKey('local_nodes.id', ondelete='SET NULL'), nullable=True)
     disabled_at = Column(DateTime, nullable=True)
     disabled_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    tenant_id = Column(String, nullable=True)                       # 0163: cliente elegido al crear la llave (opcional); pasa al servidor (`local_nodes.tenant_id`) al vincularse
 
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     node = relationship("LocalNode", foreign_keys=[node_id])
