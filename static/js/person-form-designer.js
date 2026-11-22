@@ -334,6 +334,17 @@
         [['', 'Como lo escriban'], ['upper', 'MAYÚSCULAS'], ['lower', 'minúsculas']].forEach(([v, t]) => { const o = el('option', null, t, { value: v }); if (v === it.text_case) o.selected = true; cs.appendChild(o); });
         cs.addEventListener('change', () => { it.text_case = cs.value; changed(); });
         fc.appendChild(cs);
+        // 21-nov-2026: aplicar el mismo «Texto al escribir» a TODOS los campos de texto del formulario de una vez (antes había que hacerlo uno por uno)
+        const all = el('button', 'gw-btn gw-btn--secondary gw-btn--sm', 'Aplicar a todos los campos de texto', { type: 'button', id: 'pfCaseAll' });
+        all.addEventListener('click', () => {
+          const value = cs.value;
+          let n = 0;
+          (state.model.items || []).forEach((x) => { if (x.canCase && x.text_case !== value) { x.text_case = value; n++; } });
+          toast(n ? `«${cs.options[cs.selectedIndex].text}» quedó en ${n} campo(s) más. Pulsa «Guardar cambios» para guardarlo.` : 'Todos los campos de texto ya tenían ese formato.', n ? 'success' : 'info');
+          changed();
+        });
+        fc.appendChild(el('p', 'gw-hint', 'Cédula, correo, teléfono, listas y fechas no cambian (no aplica a ellos).'));
+        fc.appendChild(all);
       } else fc.appendChild(el('span', 'gw-hint', it.key === 'email' ? 'Siempre minúsculas.' : 'No aplica a este campo.'));
       host.appendChild(fc);
 

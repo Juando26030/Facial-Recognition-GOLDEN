@@ -221,3 +221,43 @@ def test_screens_carry_the_new_pieces():
     assert 'name="invMode" value="assigned"' in par and 'id="cfgLockBox"' in par and 'id="invWizard"' in par and "js/inventory-assign-admin.js" in par
     ros = open("templates/kiosk_roster.html", encoding="utf-8").read()
     assert 'id="depForm"' in ros and "js/roster-preview.js" in ros and "RosterPreview.confirmLoad(pdata" in ros and "plantilla_carga_dependientes.xlsx" in ros
+
+
+# ------------------------------------------------------------------------------------------------ 21-nov-2026: tipo «Número», «Mostrar en el registro» y «Texto al escribir» para todos
+def test_number_field_type_only_accepts_numbers(client, ev, db):
+    ev.optional_field_labels = json.dumps({"opcional_1": "Edad"})
+    db.commit()
+    r = client.put(f"/api/events/{ev.id}/field-configs/opcional_1", json={"label": "Edad", "field_type": "number", "required": False})
+    assert r.status_code == 200 and r.json()["field_type"] == "number"
+    bad = client.patch(f"/api/users/1001?event_id={ev.id}", json={"extra_fields": {"opcional_1": "doce"}})
+    assert bad.status_code == 400 and bad.json()["detail"].startswith("Número no válido")
+    assert client.patch(f"/api/users/1001?event_id={ev.id}", json={"extra_fields": {"opcional_1": "12,5"}}).status_code == 200
+    assert "value: 'number'" in open("templates/kiosk_parametros.html", encoding="utf-8").read()
+    assert "data-gw-number" in open("static/js/field-render.js", encoding="utf-8").read()
+
+
+def test_show_in_card_defaults_to_id_and_names_and_can_be_chosen(client, ev):
+    cfgs = {c["key"]: c for c in client.get(f"/api/events/{ev.id}/field-configs").json()}
+    assert cfgs["id"]["show_in_card"] and cfgs["first_name"]["show_in_card"] and cfgs["last_name"]["show_in_card"]
+    assert cfgs["entity"]["show_in_card"] is False                                                     # la entidad ya no sale de fábrica
+    assert client.put(f"/api/events/{ev.id}/field-configs/entity", json={"label": "", "field_type": "text_short", "show_in_card": True}).json()["show_in_card"] is True
+    assert client.put(f"/api/events/{ev.id}/field-configs/last_name", json={"label": "", "show_in_card": False}).json()["show_in_card"] is False
+    page = client.get(f"/kiosk/{ev.id}/registro").text
+    card = json.loads(page.split("window.REG_CARD_FIELDS = ")[1].split(";")[0])
+    assert [c["key"] for c in card] == ["id", "first_name", "entity"] or {c["key"] for c in card} == {"id", "first_name", "entity"}
+    assert client.put(f"/api/events/{ev.id}/field-configs/entity", json={"show_in_card": "si"}).status_code == 400
+
+
+def test_users_carry_their_dependents_count(client, ev):
+    _upload(client, ev, what="load")
+    rows = {u["id"]: u for u in client.get(f"/api/users?event_id={ev.id}").json()}
+    assert rows["1001"]["dependents"] == 2 and rows["1002"]["dependents"] == 1
+
+
+def test_registration_card_and_text_case_for_all_are_in_the_screens():
+    d = open("static/js/directory.js", encoding="utf-8").read()
+    assert "window.REG_CARD_FIELDS" in d and "dataset.cardHidden" in d and "data-field" in d
+    css = open("static/css/p-registro-puerta.css", encoding="utf-8").read()
+    assert "td[data-card-hidden]" in css and "td[data-field=cardx]" in css
+    pf = open("static/js/person-form-designer.js", encoding="utf-8").read()
+    assert "Aplicar a todos los campos de texto" in pf

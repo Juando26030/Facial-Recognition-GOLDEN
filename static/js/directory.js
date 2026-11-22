@@ -769,10 +769,15 @@
 
     tr.appendChild(actionTd);
 
+    /* 0161 (21-nov-2026): la tarjeta de Registro muestra SOLO los campos marcados «Mostrar en el registro» (Parámetros › Campos; de fábrica cédula, nombres y apellidos). Los que no se marcan
+       quedan en la fila pero ocultos en la tarjeta (data-card-hidden); los demás marcados van debajo, con su nombre, y la tarjeta crece hacia abajo. Sin la lista (otras pantallas) nada cambia. */
+    const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
+    const inCard = (key) => !CARD || CARD.some((c) => c.key === key);
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
       td.innerText = field === 'id' ? shownId(user[field]) : (user[field] || '');
+      if (!inCard(field)) td.dataset.cardHidden = '1';
       tr.appendChild(td);
     });
 
@@ -785,7 +790,32 @@
     entityTd.dataset.field = 'entity';
     entityTd.className = 'touch-only';
     entityTd.innerText = user.entity || '';
+    if (!inCard('entity')) entityTd.dataset.cardHidden = '1';
     tr.appendChild(entityTd);
+    if (CARD) {
+      const SHOWN = ['id', 'first_name', 'last_name', 'opt_1', 'entity'];
+      const extras = user.extra_fields || {};
+      const valueOf = (c) => {
+        if (c.key === 'categories') return (user.categories || []).join(', ');
+        if (c.key === 'certificate') return user.certificate ? 'Sí' : 'No';
+        if (c.key === 'dependents') return user.dependents != null ? String(user.dependents) : '';
+        if (c.type === 'signature') return '';
+        const raw = Object.prototype.hasOwnProperty.call(user, c.key) && c.key.indexOf('opcional_') !== 0 ? user[c.key] : extras[c.key];
+        const t = String(raw == null ? '' : raw).trim();
+        if (c.type === 'boolean' || c.type === 'consent') return t.toLowerCase() === 'true' ? 'Sí' : (t.toLowerCase() === 'false' ? 'No' : '');
+        return t;
+      };
+      CARD.filter((c) => !SHOWN.includes(c.key)).forEach((c) => {
+        const v = valueOf(c);
+        if (!v) return;
+        const td = document.createElement('td');
+        td.dataset.field = 'cardx'; td.className = 'touch-only'; td.dataset.cardKey = c.key;
+        const l = document.createElement('span'); l.className = 'gw-reg-cardx__l'; l.textContent = c.label + ': ';
+        const val = document.createElement('span'); val.textContent = v;
+        td.append(l, val);
+        tr.appendChild(td);
+      });
+    }
 
     /* Casillas propias de la tarjeta (cada una es una pieza suelta, sin insignias anidadas dentro de otra): origen de carga (B1: aparte del estado, no cambia al registrar o quitar el registro),
        «Recién registrado/creado» (la pone drawRows junto al nombre) y el motivo de la búsqueda unificada (drawRows). Vacías no se ven. */

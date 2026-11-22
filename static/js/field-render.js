@@ -85,6 +85,10 @@
         <option value="false" ${sel('false')}>No</option>
       </select>`;
     }
+    if (config.field_type === 'number') {
+      // Número (21-nov-2026): solo cifras (con signo y decimales opcionales). Lo que no es número se quita al escribir (ver el listener de abajo); el servidor lo vuelve a comprobar al guardar.
+      return `<input type="text" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]+)?" title="Solo números" data-gw-number="1" name="${key}" value="${esc(val)}" ${requiredAttr} autocomplete="off" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
+    }
     // text_short (default)
     return `<input type="text" name="${key}" value="${esc(val)}" ${requiredAttr} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
   }
@@ -203,6 +207,22 @@
       input.addEventListener('blur', check);
       input.addEventListener('input', () => { input.setCustomValidity(''); note.style.display = 'none'; });
     });
+  }
+
+  /* Campos de tipo «Número» (data-gw-number): al escribir o pegar solo quedan cifras, un signo «-» al inicio y un separador decimal (punto o coma). */
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el || !el.matches || !el.matches('input[data-gw-number]')) return;
+    const clean = cleanNumber(el.value);
+    if (clean !== el.value) el.value = clean;
+  });
+  function cleanNumber(raw) {
+    let s = String(raw || '').replace(/[^0-9.,-]/g, '');
+    const neg = s.startsWith('-');
+    s = s.replace(/-/g, '');
+    const m = s.match(/^([0-9]*)([.,]?)([0-9.,]*)$/);
+    if (m) s = m[1] + m[2] + m[3].replace(/[.,]/g, '');
+    return (neg ? '-' : '') + s;
   }
 
   window.FieldRender = { renderControl, initSignatures, saveSignatures, watchEmail, watchEmailDeliverable };

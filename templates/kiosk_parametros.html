@@ -615,6 +615,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                     <th scope="col"><span class="gw-sr-only">Mover</span></th>
                     <th scope="col">Campo (nombre en este evento)</th>
                     <th scope="col">Obligatorio</th>
+                    <th scope="col">Mostrar en el registro {% call ayuda('ay_showcard', 'Mostrar en el registro') %}<b>Qué es:</b> qué datos se ven en la tarjeta de cada persona en la pantalla de Registro, sin abrir «Editar». <b>De fábrica:</b> cédula, nombres y apellidos. <b>Si marcas más:</b> aparecen debajo, cada uno con su nombre; la tarjeta crece hacia abajo y nada se corta. <b>Qué NO hace:</b> no cambia lo que se guarda ni lo que se pide al registrar.{% endcall %}</th>
                     <th scope="col">Tipo de campo</th>
                     <th scope="col">Opciones</th>
                     <th scope="col">Estadística</th>
@@ -702,6 +703,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         { value: 'select', label: 'Lista desplegable' },
         { value: 'boolean', label: 'Booleano (Sí/No/sin elegir)' },
         { value: 'email', label: 'Correo (se verifica que exista)' },
+        { value: 'number', label: 'Número (solo acepta números)' },
     ];
     const CHART_TYPE_OPTIONS = [
         { value: 'bar', label: 'Barras' },
@@ -1247,6 +1249,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
             <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
             <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name', 'code'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-show-card" ${cfg.show_in_card ? 'checked' : ''} ${cfg.field_type === 'signature' ? 'disabled' : ''} aria-label="Mostrar ${esc(defaultLabel)} en la tarjeta de Registro"></label></td>
             <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>
@@ -1353,6 +1356,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                     help_text: tr.querySelector('.cfg-help').value.trim(),
                     default_stat_enabled: statEnabled,
                     default_chart_type: statEnabled ? tr.querySelector('.cfg-chart-type').value : null,
+                    show_in_card: !!(tr.querySelector('.cfg-show-card') && tr.querySelector('.cfg-show-card').checked),
                 };
                 const res = await fetch(`/api/events/${window.EVENT_ID}/field-configs/${encodeURIComponent(key)}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

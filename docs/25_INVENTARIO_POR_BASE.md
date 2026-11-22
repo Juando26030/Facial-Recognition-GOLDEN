@@ -115,3 +115,8 @@ En los tres casos, lo elegido se recuerda en la tableta (localStorage). La contr
 - Imprimir escarapela a los dependientes. La columna `events.dependents_badge` quedó reservada; se arma cuando un evento lo pida, para no ofrecer una casilla que no haga nada.
 - Columna «Dependientes» en la tabla del directorio en vivo. Hoy se ve en «Editar persona» y en el reporte.
 - Modos «un servidor se conecta a otro» y «servidor intermedio» (docs/23). La consulta previa ya está lista para ellos.
+
+## 10. Agregado el 21-nov-2026 (mismo paquete, antes de staging)
+- **Tipo de campo «Número»** (Parámetros › Campos): solo acepta números (signo y decimales con punto o coma). Mientras se escribe, lo que no es número se quita (`data-gw-number` en `static/js/field-render.js`) y el servidor lo vuelve a comprobar («Número no válido — …», `api._invalid_email_fields`/`_bad_value_prefix`). También en el autorregistro.
+- **«Mostrar en el registro»** (`event_field_configs.show_in_card`, columna nueva en Parámetros › Campos): define qué datos se ven en la tarjeta de cada persona en la pantalla de Registro sin abrir «Editar». De fábrica salen la cédula, los nombres y los apellidos; la entidad ya no. Los campos marcados van debajo, cada uno con su nombre, y la tarjeta crece hacia abajo sin cortar nada (`static/js/directory.js`, `p-registro-puerta.css`). Se puede marcar también «Dependientes»: `/api/users` trae `dependents` cuando el evento tiene esa base.
+- **«Aplicar a todos los campos de texto»** en el diseñador del formulario de persona: copia el «Texto al escribir» (MAYÚSCULAS / minúsculas / como lo escriban) del campo elegido a todos los campos de texto. Cédula, correo, teléfono, listas y fechas no cambian.

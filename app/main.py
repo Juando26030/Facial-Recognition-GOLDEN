@@ -1084,6 +1084,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "registro_gear": registro_gear.can_see_gear(db, event.id, staff_roles),        # Plan 7: engranaje «Configuración del registro» (solo visual)
         "config_lock_json": json.dumps(config_lock.state_for(db, event, staff_roles)),        # 0161: qué pantallas tiene bloqueadas este digitador (app/config_lock.py)
         "dependents_cfg_json": json.dumps(dependents_cfg).replace("</", "<\\/") if dependents_cfg else "null",        # 0161: campo «Dependientes» en «Editar persona»
+        "reg_card_fields_json": json.dumps([{"key": c["key"], "label": c["label"], "type": c.get("field_type")} for c in field_configs_all if c.get("show_in_card")]).replace("</", "<\\/"),        # 0161: lo que se ve en la tarjeta de la persona en Registro
         "inventory_assigned": inv_assign.is_assigned(event),
         "search_unified": os.getenv("SEARCH_UNIFIED", "1") != "0",       # Fase 1A: buscador único en el directorio; SEARCH_UNIFIED=0 vuelve a las 3 cajas
     }

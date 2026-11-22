@@ -60,6 +60,10 @@ html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] .g
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 7; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); white-space: nowrap; }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 8; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 9; flex: 1 1 100%; }
+/* 0161: campos elegidos en Parámetros › Campos «Mostrar en el registro»: los no elegidos se ocultan; los demás van debajo, cada uno en su línea, sin cortarse (la tarjeta crece hacia abajo) */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-card-hidden] { display: none; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] { order: 8; flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); color: var(--gw-text); }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] .gw-reason { margin-top: 0; }
 /* última fila: acciones. Una sola línea, nada se sale: Acreditar toma el espacio sobrante; Imprimir, Editar y «⋯» al tamaño del contenido */
 html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 10; flex: 1 1 100%; display: flex; flex-wrap: nowrap; align-items: stretch; gap: var(--gw-sp-2); margin-top: var(--gw-sp-1); min-width: 0; width: auto; white-space: nowrap; }

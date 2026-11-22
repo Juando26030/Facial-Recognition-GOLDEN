@@ -41,6 +41,7 @@
                     el.type = f.type === 'email' ? 'email' : (f.type === 'date' ? 'date' : 'text');
                     if (f.key === 'id') { el.inputMode = 'numeric'; el.maxLength = 20; }
                     if (f.key === 'phone') el.inputMode = 'tel';
+                    if (f.type === 'number') { el.inputMode = 'decimal'; el.pattern = '-?[0-9]+([.,][0-9]+)?'; el.title = 'Solo números'; }
                 }
                 el.id = id; el.dataset.key = f.key; el.autocomplete = 'off';
                 wrap.appendChild(l); wrap.appendChild(el);

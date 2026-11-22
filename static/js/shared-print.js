@@ -112,6 +112,8 @@
     "body.touch-mode .golden-table tbody td[data-field=id]::before{content:'C.C. ';font-weight:700}",
     'body.touch-mode .golden-table tbody td[data-field=opt_1]{order:5;font-size:0.95rem;color:#555}',
     'body.touch-mode .golden-table tbody td[data-field=opt_1]:empty,body.touch-mode .golden-table tbody td[data-field=entity]:empty{display:none}',
+    'body.touch-mode .golden-table tbody td[data-card-hidden]{display:none}',
+    'body.touch-mode .golden-table tbody td[data-field=cardx]{order:6;flex-basis:100%;white-space:normal;overflow-wrap:anywhere;font-size:0.95rem}',
     'body.touch-mode .golden-table tbody td.action-cell{order:10;flex-basis:100%;display:flex;gap:10px;margin-top:8px}',
     'body.touch-mode .golden-table tbody td.action-cell .btn-table-action{flex:1 1 0;min-width:0;min-height:56px;font-size:1.05rem !important;margin:0;border-radius:12px;padding-left:8px !important;padding-right:8px !important;overflow-wrap:normal;word-break:keep-all;white-space:normal;line-height:1.15}',
     'body.touch-mode .golden-table tbody td.action-cell .btn-accredit-row{flex-grow:1.7}',                                    /* «✅ Acreditar» con más espacio: nunca se parte una palabra */

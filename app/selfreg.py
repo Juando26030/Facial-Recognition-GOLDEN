@@ -22,7 +22,7 @@ from typing import Optional
 
 MAX_PER_WINDOW = int(os.getenv("SELFREG_MAX_PER_10MIN", "40"))
 WINDOW_S = 600
-SUPPORTED_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "email", "date", "categories", "certificate", "digital_contact")
+SUPPORTED_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "email", "number", "date", "categories", "certificate", "digital_contact")
 ALWAYS = ("id", "first_name")                     # siempre se piden
 DIRECT = ("role", "entity", "phone", "email", "opt_1", "birth_date", "certificate", "digital_contact", "categories")      # parámetros propios del alta; lo demás (opcional_N) viaja en extra_fields
 

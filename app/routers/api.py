@@ -106,6 +106,11 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
     "obligatorio" (`_missing_required_fields`)."""
     problems = []
     for cfg in field_configs:
+        if cfg["field_type"] == "number":          # 21-nov-2026: tipo «Número» (Parámetros › Campos): solo cifras, con signo y decimales opcionales
+            value = str(values.get(cfg["key"]) or "").strip()
+            if value and not NUMBER_RE.match(value):
+                problems.append(f"{cfg['label']}: «{value}» {NUMBER_ONLY}")
+            continue
         if cfg["field_type"] != "email":
             continue
         value = str(values.get(cfg["key"]) or "").strip()
@@ -115,6 +120,18 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
         if not ok:
             problems.append(f"{cfg['label']}: «{value}» {reason}")
     return problems
+
+
+NUMBER_RE = re.compile(r"^-?\d+([.,]\d+)?$")
+NUMBER_ONLY = "no es un número (este campo solo acepta números)"
+
+
+def _bad_value_prefix(problems: list) -> str:
+    """«Correo no válido — » de siempre; si TODO lo que falla son campos de número, «Número no válido — »; si se mezclan, «Dato no válido — »."""
+    nums = [p for p in problems if p.endswith(NUMBER_ONLY)]
+    if not nums:
+        return "Correo no válido — "
+    return "Número no válido — " if len(nums) == len(problems) else "Dato no válido — "
 
 
 def _cell_text(cell) -> str:
@@ -515,6 +532,8 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         att_q, log_q = att_q.filter(EventAttendee.user_id.in_(ids)), log_q.filter(AccessLog.user_id.in_(ids))
     attendees = {a.user_id: a for a in att_q}
     counts = {uid: (real, new) for uid, real, new in log_q.group_by(AccessLog.user_id)}
+    from app import dependents as deps_mod          # 0161: cuántos dependientes trae cada persona (campo «Dependientes»; solo si el evento tiene esa base)
+    dep_counts = deps_mod.counts_by_holder(db, event) if deps_mod.has_dependents(db, event.id) else None
 
     result = []
     for u in users:
@@ -538,6 +557,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "birth_date": u.birth_date.isoformat() if (u.birth_date and event.facial_enabled) else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
+            **({"dependents": dep_counts.get(u.id, 0)} if dep_counts is not None else {}),
             "categories": att.get_categories() if att else [],
             "certificate": bool(att.certificate) if att else False,
             "digital_contact": (att.digital_contact or "") if att else "",
@@ -1164,7 +1184,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
             return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
         bad = _invalid_email_fields(field_configs, values)
         if bad:
-            return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+            return {"op_id": op_id, "result": "error", "detail": _bad_value_prefix(bad) + "; ".join(bad)}
         kind = "Nuevo"
     try:
         with db.begin_nested():
@@ -1241,7 +1261,7 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     touched = set(changes) | set(extras)
     bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
     if bad:
-        return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+        return {"op_id": op_id, "result": "error", "detail": _bad_value_prefix(bad) + "; ".join(bad)}
     missing = _missing_required_fields(field_configs, final)
     if _last_name_error(field_configs, changes.get("last_name") or user.last_name):
         missing = missing + [_last_name_label(field_configs)]
@@ -1526,7 +1546,7 @@ def update_user(
             raise HTTPException(status_code=400, detail=last_error)
         bad_emails = [] if testperson.is_test(user.id) else _invalid_email_fields(field_configs, final_values)
         if bad_emails:
-            raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
+            raise HTTPException(status_code=400, detail=_bad_value_prefix(bad_emails) + "; ".join(bad_emails))
 
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado",
@@ -1912,7 +1932,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         raise HTTPException(status_code=400, detail=last_error)
     bad_emails = _invalid_email_fields(field_configs, final_values)
     if bad_emails:
-        raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
+        raise HTTPException(status_code=400, detail=_bad_value_prefix(bad_emails) + "; ".join(bad_emails))
 
     face_enc_json = None
     img_array = None

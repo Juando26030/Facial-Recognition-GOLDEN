@@ -5,7 +5,8 @@ events.inventory_assign_json    columnas que mandan en el modo 'assigned': {"hol
 events.areas_config_locked      la tableta del digitador queda fija en la zona y el movimiento elegidos (se desbloquea con la contraseña)
 events.inventory_config_locked  la tableta del digitador queda fija en lo marcado para entregar
 events.config_unlock_hash       contraseña de desbloqueo del evento (hash; nunca el texto)
-events.dependents_badge         imprimir escarapela también a los dependientes (apagado por defecto)
+events.dependents_badge         imprimir escarapela también a los dependientes (reservado: aún no se usa)
+event_field_configs.show_in_card  mostrar el campo en la tarjeta de la persona de la pantalla de Registro sin abrir «Editar» (NULL = lo de fábrica: cédula, nombres y apellidos sí; lo demás no)
 inventory_items.source_value    valor de la base (normalizado) que creó el producto en el modo 'assigned'; se puede cambiar el nombre visible sin romper el enlace
 inventory_deliveries.assignment_key  qué asignación se entregó: 'h' (la del titular) o 'd<uid>' (la fila de un dependiente); NULL = entrega elegida (modo de siempre)
 event_dependents                una fila por fila del archivo de dependientes (persona asociada a un titular, con sus columnas); `uid` no cambia al copiar el evento a un servidor local
@@ -41,6 +42,8 @@ def upgrade():
         op.add_column("events", sa.Column("config_unlock_hash", sa.String(), nullable=True))
     if "dependents_badge" not in ev:
         op.add_column("events", sa.Column("dependents_badge", sa.Boolean(), nullable=False, server_default=sa.false()))
+    if "show_in_card" not in _cols("event_field_configs"):
+        op.add_column("event_field_configs", sa.Column("show_in_card", sa.Boolean(), nullable=True))
     if "source_value" not in _cols("inventory_items"):
         op.add_column("inventory_items", sa.Column("source_value", sa.String(), nullable=True))
     if "assignment_key" not in _cols("inventory_deliveries"):
@@ -70,6 +73,7 @@ def downgrade():
     op.drop_index("ix_event_dependents_doc", table_name="event_dependents")
     op.drop_index("ix_event_dependents_holder", table_name="event_dependents")
     op.drop_table("event_dependents")
+    op.drop_column("event_field_configs", "show_in_card")
     op.drop_column("inventory_deliveries", "assignment_key")
     op.drop_column("inventory_items", "source_value")
     for c in ("dependents_badge", "config_unlock_hash", "inventory_config_locked", "areas_config_locked", "inventory_assign_json", "inventory_mode"):

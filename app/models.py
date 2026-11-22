@@ -536,7 +536,7 @@ class BadgeTemplate(Base):
 
 # consent = casilla con texto de política debajo (ítem 16); signature = lienzo de firma (ítem 10).
 # Ambos solo aplican a campos opcionales (opcional_N).
-FIELD_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "signature", "email")
+FIELD_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "signature", "email", "number")          # "number" (21-nov-2026): solo acepta números
 CHART_TYPES = ("bar", "pie", "histogram", "line")
 
 
@@ -562,6 +562,7 @@ class EventFieldConfig(Base):
     label = Column(String, nullable=True)  # nombre a mostrar SOLO en este evento (NULL = el de por defecto) — reunión 2026-09-21, ítem 3a
     sort_order = Column(Integer, nullable=True)  # posición en Registrar/Editar (NULL = orden por defecto) — ítem 4
     help_text = Column(Text, nullable=True)  # texto de política/consentimiento (solo consent/signature) — ítems 16 y 10
+    show_in_card = Column(Boolean, nullable=True)  # 0161: se ve en la tarjeta de la persona en Registro sin abrir «Editar»; NULL = de fábrica (cédula, nombres y apellidos sí; lo demás no)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

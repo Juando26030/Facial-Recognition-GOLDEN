@@ -53,7 +53,7 @@
 </div>
 {% include "_config_lock.html" %}
 <script type="application/json" id="gwDependentsCfg">{{ dependents_cfg_json | safe }}</script>
-<script>window.GW_ICON_URL = "{{ url_for('static', path='img/icons.svg') }}"; window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.EVENT_AUTOPRINT_RULES = {{ "true" if autoprint_rules else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
+<script>window.GW_ICON_URL = "{{ url_for('static', path='img/icons.svg') }}"; window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.EVENT_AUTOPRINT_RULES = {{ "true" if autoprint_rules else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }}; window.REG_CARD_FIELDS = {{ reg_card_fields_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
 <script>window.EVENT_REPRINT_DISABLED = {{ "true" if event.reprint_disabled else "false" }};</script>{# Fase 1B: reimpresión con permisos (static/js/reprint.js) #}
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
@@ -305,6 +305,8 @@
                             <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.key == "id" %}inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key == "code" %}maxlength="64" autocomplete="off" placeholder="Serial impreso en el QR"{% endif %}{% if cfg.key not in ("last_name", "code") or cfg.required %} required{% endif %}>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
+                            {% elif cfg.field_type == "number" %}
+                            <input type="text" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]+)?" title="Solo números" data-gw-number="1" autocomplete="off" {% if cfg.required %}required{% endif %}>
                             {% elif cfg.field_type == "text_long" %}
                             <textarea name="{{ cfg.key }}" id="{{ fid }}" class="gw-textarea" rows="3" {% if cfg.required %}required{% endif %}></textarea>
                             {% elif cfg.field_type == "select" %}

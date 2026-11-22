@@ -85,10 +85,24 @@ def _configurable_fields(event: Event):
     return fields
 
 
+CARD_DEFAULT_KEYS = ("id", "first_name", "last_name")          # 21-nov-2026: lo que la tarjeta de Registro muestra de fábrica (la entidad ya no)
+
+
+def _show_in_card(key: str, row) -> bool:
+    if row is not None and row.show_in_card is not None:
+        return bool(row.show_in_card)
+    return key in CARD_DEFAULT_KEYS
+
+
+def _with_card(cfg: dict, row) -> dict:
+    cfg["show_in_card"] = _show_in_card(cfg["key"], row)
+    return cfg
+
+
 DEPENDENTS_KEY = "dependents"          # 0161: campo «Dependientes» (cuántos y quiénes, de la base de dependientes): solo existe con esa base cargada; nombre, posición y estadística
 
 
-def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
+def _serialize_base(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
     """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
     defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
     if key == DEPENDENTS_KEY:
@@ -122,6 +136,11 @@ def _fields_with_virtual(db: Session, event: Event, include_virtual: bool):
         if dependents.has_dependents(db, event.id):
             fields = fields + [(DEPENDENTS_KEY, "Dependientes")]
     return fields
+
+
+def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
+    """La configuración de un campo + `show_in_card` (0161: se ve en la tarjeta de la persona en Registro)."""
+    return _with_card(_serialize_base(key, default_label, row, categories), row)
 
 
 def field_configs_for_event(db: Session, event: Event, include_virtual: bool = False) -> list:
@@ -529,6 +548,10 @@ def upsert_field_config(
         db.add(row)
     row.label = None if field_key == "certificate" else label  # "Certificado": ni nombre ni tipo editables
     row.sort_order = sort_order
+    if "show_in_card" in data:          # 0161: mostrarlo en la tarjeta de la persona en Registro (cualquier campo, también los de identidad)
+        if not isinstance(data["show_in_card"], bool):
+            raise HTTPException(status_code=400, detail="show_in_card debe ser verdadero o falso")
+        row.show_in_card = data["show_in_card"]
 
     if field_key == DEPENDENTS_KEY:          # 0161: nombre, posición y estadística; nunca obligatorio ni de otro tipo (no se escribe: sale de la base de dependientes)
         stat = bool(data.get("default_stat_enabled", False))
