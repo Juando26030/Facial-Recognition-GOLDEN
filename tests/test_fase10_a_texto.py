@@ -68,7 +68,7 @@ def test_kiosk_pages_know_about_autoscan():
     assert "window.AUTOSCAN" in read("templates/kiosk_inventario.html") and "event.inventory_autoscan" in read("templates/kiosk_inventario.html")
     assert "event.areas_autoscan" in read("templates/kiosk_areas.html")
     js = read("static/js/inventario.js")
-    assert "window.AUTOSCAN" in js and "byId(" in js and "if (auto && AUTOSCAN) deliver()" in js and "delivering" in js
+    assert "window.AUTOSCAN" in js and "byId(" in js and "if (auto && AUTOSCAN && !ASSIGNED) deliver()" in js and "delivering" in js          # 0161: en modo «la base lo define» la entrega automática la hace inventario-asignado.js
 
 
 def test_inventory_page_shows_the_catalog_and_calendar_not_the_event_list():
@@ -124,7 +124,7 @@ def test_camera_scanners_close_when_the_person_is_found():
         assert "scanner = QrScanner.open(" in js and "scanner.close()" in js and "found" in js, rel
     assert "return FOUND.includes(data.result)" in read("static/js/areas.js")
     inv = read("static/js/inventario.js")
-    assert "return true;" in inv and "if (auto && AUTOSCAN) deliver();" in inv          # con autoescaneo la entrega se lanza antes de cerrar
+    assert "return true;" in inv and "if (auto && AUTOSCAN && !ASSIGNED) deliver();" in inv          # con autoescaneo la entrega se lanza antes de cerrar
 
 
 def test_calendar_planning_wiring():

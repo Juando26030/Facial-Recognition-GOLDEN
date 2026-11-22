@@ -63,7 +63,7 @@ def test_la_cabecera_es_una_por_evento():
 def test_traslado_y_borrado_de_eventos_conocen_la_tabla_nueva():
     transfer = (ROOT / "app" / "event_transfer.py").read_text(encoding="utf-8")
     assert '"name": "event_legalizations"' in transfer
-    assert '"event_legalizations")' in transfer.split("OPTIONAL_TABLES =", 1)[1].split("\n", 1)[0]
+    assert '"event_legalizations"' in transfer.split("OPTIONAL_TABLES =", 1)[1].split("\n", 1)[0]          # 0161 agregó event_dependents después
     assert '"approved_by_id"' in transfer
     docs = (ROOT / "app" / "routers" / "event_docs.py").read_text(encoding="utf-8")
     assert "EventLegalization.event_id == event_id).delete()" in docs
