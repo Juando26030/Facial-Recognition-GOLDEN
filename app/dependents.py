@@ -134,13 +134,19 @@ def read_file(filename: str, content: bytes):
     return list(header_columns.keys()), rows
 
 
-def _signature(r: dict) -> tuple:
-    """Lo que hace que dos filas sean «la misma» entre una carga y la siguiente: titular, dependiente y sus datos (sin importar mayúsculas ni el orden de las columnas)."""
-    data = tuple(sorted((core.norm(k), core.norm(v)) for k, v in (r.get("data") or {}).items()))
-    return (r["holder"], r["person_key"], data)
+def _signature(r: dict, sig_cols=None) -> tuple:
+    """Lo que hace que dos filas sean «la misma» entre una carga y la siguiente: titular, dependiente y lo que define LA ASIGNACIÓN (columnas de producto y cantidad; sin ellas, todas).
+    Las demás columnas (edad, notas…) se pueden corregir sin que la fila pase a ser otra: si no, una fila ya entregada se duplicaba y volvía a quedar pendiente (staging, 21-nov-2026).
+    El dependiente sin nombre ni documento (`row:N`) se identifica por su producto, no por el número de fila: reordenar el archivo no lo cambia."""
+    items = (r.get("data") or {}).items()
+    if sig_cols:
+        items = [(k, v) for k, v in items if core.norm(k) in sig_cols]
+    data = tuple(sorted((core.norm(k), core.norm(v)) for k, v in items))
+    pk = r["person_key"]
+    return (r["holder"], "row" if pk.startswith("row:") else pk, data)
 
 
-def analyze(db, event, titles: list, rows: list, mode: str = "replace", dep_product: str = None) -> dict:
+def analyze(db, event, titles: list, rows: list, mode: str = "replace", dep_product: str = None, dep_qty: str = None) -> dict:
     """Vista previa SIN escribir nada: qué columnas se reconocieron, qué filas se cargan y cuáles no (y por qué), cómo cambia el campo «Dependientes» de los titulares y
     una muestra repartida de hasta 10 titulares tal como se verían en «Editar persona»."""
     if mode not in MODES:
@@ -168,10 +174,13 @@ def analyze(db, event, titles: list, rows: list, mode: str = "replace", dep_prod
 
     existing = [_row_json(r) for r in db.query(EventDependent).filter(EventDependent.event_id == event.id).order_by(EventDependent.id)]
     delivered_ids = _delivered_row_ids(db, event)
-    plan = _plan(existing, ok, mode, delivered_ids)
+    sig_cols = {core.norm(c) for c in (dep_product, dep_qty) if c}
+    if not sig_cols:
+        sig_cols = {c for c in ("producto", "cantidad") if any(core.norm(t) == c for t in titles)}
+    plan = _plan(existing, ok, mode, delivered_ids, sig_cols)
 
     before = _people_count(existing)
-    after_rows = plan["keep"] + plan["insert"]
+    after_rows = plan["keep"] + plan["insert"]          # (las filas «actualizadas» ya traen sus datos nuevos)
     after = _people_count(after_rows)
     holders_before, holders_after = Counter(), Counter()
     for h, n in before.items():
@@ -216,7 +225,7 @@ def analyze(db, event, titles: list, rows: list, mode: str = "replace", dep_prod
         "dependents_before": sum(before.values()), "dependents_after": sum(after.values()),
         "holders_with_dependents_before": len(before), "holders_with_dependents_after": len(after),
         "holders_changed": len(changed),
-        "insert_rows": len(plan["insert"]), "delete_rows": len(plan["delete"]), "kept_rows": len(plan["keep"]), "kept_delivered": plan["kept_delivered"],
+        "insert_rows": len(plan["insert"]), "updated_rows": len(plan["update"]), "delete_rows": len(plan["delete"]), "kept_rows": len(plan["keep"]), "kept_delivered": plan["kept_delivered"],
         "products": len(products), "product_column": product_col,
         "samples": samples,
         "_plan": plan,
@@ -239,18 +248,26 @@ def _delivered_row_ids(db, event) -> set:
     return out
 
 
-def _plan(existing: list, incoming: list, mode: str, delivered_ids: set) -> dict:
-    """Qué filas se conservan, cuáles se borran y cuáles se crean. Una fila del archivo que ya existe (misma firma) se conserva tal cual (así su asignación y lo entregado
-    siguen enlazados). Reemplazar: lo que ya no viene se borra, salvo lo ya entregado. Agregar: no se borra nada."""
+def _plan(existing: list, incoming: list, mode: str, delivered_ids: set, sig_cols=None) -> dict:
+    """Qué filas se conservan, cuáles se borran y cuáles se crean. Una fila del archivo que ya existe (misma firma) se conserva (así su asignación y lo entregado siguen enlazados) y,
+    al reemplazar, recibe los datos nuevos de las demás columnas. Reemplazar: lo que ya no viene se borra, salvo lo ya entregado. Agregar: no se borra ni se cambia nada."""
     pool = defaultdict(list)
     for r in existing:
-        pool[_signature(r)].append(r)
-    keep, insert = [], []
+        pool[_signature(r, sig_cols)].append(r)
+    keep, insert, update = [], [], []
     for r in incoming:
-        sig = _signature(r)
+        sig = _signature(r, sig_cols)
         if pool.get(sig):
-            keep.append(pool[sig].pop(0))
+            old = pool[sig].pop(0)
+            if mode != "append" and (old.get("data") or {}) != (r.get("data") or {}):
+                new_row = dict(old, data=r.get("data") or {})
+                update.append(new_row)
+                keep.append(new_row)
+            else:
+                keep.append(old)
         else:
+            if r["person_key"].startswith("row:"):
+                r = dict(r, person_key=f"row:n{r['row_num']}")          # único: no choca con la clave de una fila conservada
             insert.append(r)
     leftover = [r for rows in pool.values() for r in rows]
     if mode == "append":
@@ -262,7 +279,7 @@ def _plan(existing: list, incoming: list, mode: str, delivered_ids: set) -> dict
         still = [r for r in leftover if r["uid"] in delivered_ids]
         keep += still
         kept_delivered = len(still)
-    return {"keep": keep, "insert": insert, "delete": delete, "kept_delivered": kept_delivered}
+    return {"keep": keep, "insert": insert, "delete": delete, "update": update, "kept_delivered": kept_delivered}
 
 
 def apply(db, event, staff, analysis: dict) -> dict:
@@ -271,13 +288,16 @@ def apply(db, event, staff, analysis: dict) -> dict:
     del_ids = [r["id"] for r in plan["delete"]]
     for part in _chunks(del_ids):
         db.query(EventDependent).filter(EventDependent.event_id == event.id, EventDependent.id.in_(part)).delete(synchronize_session=False)
+    for r in plan["update"]:
+        db.query(EventDependent).filter(EventDependent.event_id == event.id, EventDependent.id == r["id"]).update(
+            {"data_json": json.dumps(r["data"], ensure_ascii=False) if r["data"] else None}, synchronize_session=False)
     now = utcnow()
     db.add_all([EventDependent(event_id=event.id, tenant_id=event.tenant_id, uid=uuid.uuid4().hex[:24], holder_id=r["holder"], person_key=r["person_key"][:200], name=(r["name"] or None),
                                doc_id=(r["doc"] or None), data_json=json.dumps(r["data"], ensure_ascii=False) if r["data"] else None, row_num=r["row_num"], created_at=now)
                 for r in plan["insert"]])
     db.flush()
     log.info("dependientes: evento=%s modo=%s nuevas=%s borradas=%s conservadas=%s", event.id, analysis["mode"], len(plan["insert"]), len(del_ids), len(plan["keep"]))
-    return {"inserted": len(plan["insert"]), "deleted": len(del_ids), "kept": len(plan["keep"]), "kept_delivered": plan["kept_delivered"],
+    return {"inserted": len(plan["insert"]), "updated": len(plan["update"]), "deleted": len(del_ids), "kept": len(plan["keep"]), "kept_delivered": plan["kept_delivered"],
             "dependents": analysis["dependents_after"], "holders": analysis["holders_with_dependents_after"], "skipped": analysis["skipped_count"]}
 
 

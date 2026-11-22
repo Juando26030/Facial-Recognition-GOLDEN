@@ -270,3 +270,31 @@ def test_directory_etag_changes_when_the_dependents_base_changes(client, ev):
     after = client.get(f"/api/users?event_id={ev.id}", headers={"If-None-Match": before.headers["etag"]})
     assert after.status_code == 200 and after.headers["etag"] != before.headers["etag"]
     assert {u["id"]: u["dependents"] for u in after.json()}["1001"] == 2
+
+
+def test_reload_never_duplicates_a_delivered_row_when_other_columns_change_or_rows_move(client, ev, db):
+    """Staging 21-nov-2026: la fila se comparaba con TODAS sus columnas y con su número de fila: corregir la edad, subir menos columnas o reordenar duplicaba lo ya entregado."""
+    from app.models import EventDependent
+    assert _assign(client, ev, dep_product="producto", dep_qty="cantidad").status_code == 200
+    base = "cedula_titular,nombre_dependiente,producto,edad\n1001,Sofía,Kit escolar,7\n1001,,Balón,3\n"
+    assert _upload(client, ev, base, what="load").status_code == 200
+    lines = client.get(f"/api/events/{ev.id}/inventory/assigned", params={"cedula": "1001"}).json()["lines"]
+    assert client.post(f"/api/events/{ev.id}/inventory/deliver-assigned", json={"cedula": "1001", "all": True}).status_code == 200
+    count = lambda: db.query(EventDependent).filter_by(event_id=ev.id).count()          # noqa: E731
+    assert count() == 2
+    # (1) se corrige la edad y (3) se reordena: el dependiente anónimo pasa de la fila 3 a la 2
+    fixed = "cedula_titular,nombre_dependiente,producto,edad\n1001,,Balón,3\n1001,Sofía,Kit escolar,8\n"
+    pv = _upload(client, ev, fixed, what="preview").json()
+    assert pv["insert_rows"] == 0 and pv["updated_rows"] == 1 and pv["kept_rows"] == 2
+    r = _upload(client, ev, fixed, what="load").json()
+    assert r["inserted"] == 0 and r["updated"] == 1 and count() == 2
+    after = client.get(f"/api/events/{ev.id}/inventory/assigned", params={"cedula": "1001"}).json()["lines"]
+    assert sorted(ln["key"] for ln in after) == sorted(ln["key"] for ln in lines) and all(ln["pending"] == 0 for ln in after)          # mismas filas (uid), nada pendiente
+    assert any(p["rows"][0].get("edad") == "8" for p in client.get(f"/api/events/{ev.id}/dependents", params={"holder": "1001"}).json()["people"])
+    # (2) «Agregar» con menos columnas: no duplica
+    r = _upload(client, ev, "cedula_titular,nombre_dependiente,producto\n1001,Sofía,Kit escolar\n", mode="append", what="load").json()
+    assert r["inserted"] == 0 and count() == 2
+    # dos filas iguales siguen siendo dos unidades (la regla de siempre)
+    two = "cedula_titular,nombre_dependiente,producto\n1002,Luz,Kit escolar\n1002,Luz,Kit escolar\n"
+    _upload(client, ev, two, mode="append", what="load")
+    assert count() == 4

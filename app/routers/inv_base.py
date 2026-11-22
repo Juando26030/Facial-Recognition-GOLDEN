@@ -173,7 +173,7 @@ def preview_dependents(event_id: int, roster_file: UploadFile = File(None), rost
     _up, name, content = _read_upload(event_id, roster_file, roster_upload)
     titles, rows = dependents.read_file(name, content)
     cfg = inv_assign.get_config(event)
-    out = _public_analysis(dependents.analyze(db, event, titles, rows, mode, cfg.get("dep_product")))
+    out = _public_analysis(dependents.analyze(db, event, titles, rows, mode, cfg.get("dep_product"), cfg.get("dep_qty")))
     db.rollback()
     return out
 
@@ -187,16 +187,16 @@ def load_dependents(event_id: int, roster_file: UploadFile = File(None), roster_
     up, name, content = _read_upload(event_id, roster_file, roster_upload)
     titles, rows = dependents.read_file(name, content)
     cfg = inv_assign.get_config(event)
-    analysis = dependents.analyze(db, event, titles, rows, mode, cfg.get("dep_product"))
+    analysis = dependents.analyze(db, event, titles, rows, mode, cfg.get("dep_product"), cfg.get("dep_qty"))
     out = dependents.apply(db, event, staff, analysis)
     if inv_assign.is_assigned(event):
         out["inventory"] = inv_assign.sync_items(db, event, staff)
     from app import audit_actions
-    audit_actions.record(db, staff, "load", "event_dependents", event.id, event.name, f"modo {mode}; {out['inserted']} nuevas, {out['deleted']} borradas, {out['kept']} conservadas")
+    audit_actions.record(db, staff, "load", "event_dependents", event.id, event.name, f"modo {mode}; {out['inserted']} nuevas, {out['updated']} actualizadas, {out['deleted']} borradas, {out['kept']} conservadas")
     db.commit()
     uploads.discard(up)
     out["message"] = (f"Base de dependientes cargada: {out['dependents']} dependientes de {out['holders']} titulares "
-                      f"({out['inserted']} filas nuevas, {out['deleted']} borradas, {out['kept']} sin cambios" + (f", {out['skipped']} filas no se cargaron" if out["skipped"] else "") + ").")
+                      f"({out['inserted']} filas nuevas, {out['updated']} con datos corregidos, {out['deleted']} borradas, {out['kept'] - out['updated']} sin cambios" + (f", {out['skipped']} filas no se cargaron" if out["skipped"] else "") + ").")
     return out
 
 

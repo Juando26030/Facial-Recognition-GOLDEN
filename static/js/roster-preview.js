@@ -71,7 +71,7 @@
     const summary = table(p.mode === 'append' ? 'Resumen («Agregar solo lo nuevo»)' : 'Resumen («Reemplazar»)', [
       ['Filas del archivo', p.rows], ['Filas que se cargan', p.loaded_rows], ['Titulares con dependientes en el archivo', p.holders],
       p.holders_not_registered ? ['Titulares que todavía no están registrados (se cargan igual; se les entrega cuando se registren)', p.holders_not_registered] : null,
-      ['Filas nuevas', p.insert_rows], ['Filas que ya estaban y se conservan', p.kept_rows], p.delete_rows ? ['Filas que ya no vienen y se borran', p.delete_rows] : null,
+      ['Filas nuevas', p.insert_rows], ['Filas que ya estaban y se conservan', p.kept_rows], p.updated_rows ? ['…de ellas, con datos corregidos (edad, notas…)', p.updated_rows] : null, p.delete_rows ? ['Filas que ya no vienen y se borran', p.delete_rows] : null,
       p.kept_delivered ? ['Filas que ya no vienen pero tienen entregas (se conservan)', p.kept_delivered] : null,
       p.own_person_rows ? ['Dependientes que además están en la base con su propio documento (no se cuentan dos veces)', p.own_person_rows] : null,
       p.product_column ? ['Productos distintos en la columna «' + p.product_column + '»', p.products] : null,
