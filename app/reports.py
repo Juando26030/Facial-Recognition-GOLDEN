@@ -177,7 +177,10 @@ class ReportManager:
 
         optional_columns = [(key, label) for key, label in optional_labels if _column_used(key)]
         signature_keys = {key for key, _ in optional_columns if field_types.get(key) == "signature"}
-        all_headers = [label for _, label in base_columns] + [label for _, label in optional_columns] + \
+        from app import dependents as deps_mod          # 0161: campo «Dependientes» (cuántos) y hoja con el detalle, si el evento tiene esa base
+        dep_counts = deps_mod.counts_by_holder(db, event) if event and deps_mod.has_dependents(db, event.id) else None
+        dep_header = [custom.get("dependents", "Dependientes")] if dep_counts is not None else []
+        all_headers = [label for _, label in base_columns] + [label for _, label in optional_columns] + dep_header + \
             ["Origen de carga", "Estado", "Tipo de Registro", "Fecha de Registro", "Hora de Registro", "Registrado por"]
 
         progress("Armando las filas", 35, 100, force=True)
@@ -198,6 +201,8 @@ class ReportManager:
                 else:
                     out[label] = row["extras"].get(key, "")
 
+            if dep_header:
+                out[dep_header[0]] = dep_counts.get(row["id"], 0)
             log = row["log"]
             origin = origin_by_user.get(row["id"]) or ("manual" if row["id"] in new_by_user else None)
             out["Origen de carga"] = ORIGIN_LABELS.get(origin, "Desconocido")                    # B1: el origen no cambia con el estado
@@ -303,6 +308,25 @@ class ReportManager:
                     hws.column_dimensions[get_column_letter(col_idx)].width = min(max([len(header)] + [len(str(v)) for v in hist[header]]) + 3, 45)
                 hws.auto_filter.ref = f"A1:{get_column_letter(len(hist_cols))}{len(hist) + 1}"
                 hws.freeze_panes = "A2"
+
+            if dep_header:          # 0161: hoja «Dependientes»: cada dependiente con su titular y sus datos (una fila por fila del archivo)
+                names = {r["id"]: f"{r['first_name'] or ''} {r['last_name'] or ''}".strip() for r in raw_rows}
+                by_holder = deps_mod.rows_of_holders(db, event, list(names))
+                drows = []
+                for holder in names:
+                    for p in deps_mod.core.group_people(by_holder.get(holder, [])):
+                        for r in p["rows"]:
+                            drows.append([holder, names[holder], p["label"], p["doc"], "; ".join(f"{k}: {v}" for k, v in (r.get("data") or {}).items())])
+                dcols = ["Cédula del titular", "Titular", "Dependiente", "Documento del dependiente", "Datos"]
+                dframe = pd.DataFrame(drows, columns=dcols)
+                safe_frame(dframe).to_excel(writer, index=False, sheet_name="Dependientes")
+                dws = writer.sheets["Dependientes"]
+                for col_idx, header in enumerate(dcols, start=1):
+                    cell = dws.cell(row=1, column=col_idx)
+                    cell.fill = HEADER_FILL
+                    cell.font = HEADER_FONT
+                    dws.column_dimensions[get_column_letter(col_idx)].width = min(max([len(header)] + [len(str(v)) for v in dframe[header]]) + 3, 60)
+                dws.freeze_panes = "A2"
 
             # Hojas derivadas del reporte (17-nov-2026): lo mismo que «Reporte», separado por estado (al final del libro, después del historial).
             registered_idx = [i for i, out in enumerate(data) if out["Estado"] == "Registrado"]

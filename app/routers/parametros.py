@@ -85,9 +85,16 @@ def _configurable_fields(event: Event):
     return fields
 
 
+DEPENDENTS_KEY = "dependents"          # 0161: campo «Dependientes» (cuántos y quiénes, de la base de dependientes): solo existe con esa base cargada; nombre, posición y estadística
+
+
 def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
     """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
     defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
+    if key == DEPENDENTS_KEY:
+        return {"key": key, "label": (row.label if row and row.label else default_label), "default_label": default_label, "locked": False, "virtual": True,
+                "required": False, "field_type": "dependents", "options": [], "help_text": "",
+                "default_stat_enabled": bool(row and row.default_stat_enabled), "default_chart_type": (row.default_chart_type if row and row.default_stat_enabled else None)}
     locked = key in LOCKED_KEYS
     label = default_label if key == "certificate" else (row.label if row and row.label else default_label)
     if row is None or locked:
@@ -108,18 +115,29 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
     }
 
 
-def field_configs_for_event(db: Session, event: Event) -> list:
+def _fields_with_virtual(db: Session, event: Event, include_virtual: bool):
+    fields = _configurable_fields(event)
+    if include_virtual:
+        from app import dependents
+        if dependents.has_dependents(db, event.id):
+            fields = fields + [(DEPENDENTS_KEY, "Dependientes")]
+    return fields
+
+
+def field_configs_for_event(db: Session, event: Event, include_virtual: bool = False) -> list:
     """Lista completa de campos configurables de este evento, cada uno con su config real si
     existe o los valores por defecto si todavía no se guardó nada — así quien consuma esto
     (frontend, o la validación de manual_register/update_user) siempre ve la lista completa sin
     filas 'faltantes'. Usado también por stats.py para saber qué gráficos generar solos.
 
     Viene ORDENADA (ítem 4): por `sort_order` si alguien reordenó; los campos sin posición guardada
-    (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto."""
+    (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto.
+    `include_virtual` (0161): agrega el campo «Dependientes» si el evento tiene base de dependientes. Solo lo piden Parámetros, «Editar persona» y Estadísticas: el resto
+    (formularios, escarapelas, validación de lo obligatorio…) nunca lo ve, porque no es un dato que se escriba."""
     rows = {r.field_key: r for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event.id)}
     last_required = lastname.is_required(db, event.id)          # Fase 2: el apellido es obligatorio si la base lo usa (automático) o si se eligió a mano
     ordered = []
-    for idx, (key, label) in enumerate(_configurable_fields(event)):
+    for idx, (key, label) in enumerate(_fields_with_virtual(db, event, include_virtual)):
         row = rows.get(key)
         if row is not None and row.field_type == DELETED_TYPE:       # B2: campo borrado en este evento (no aparece en ningún lado)
             continue
@@ -484,7 +502,7 @@ def list_field_configs(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    return field_configs_for_event(db, event)
+    return field_configs_for_event(db, event, include_virtual=True)
 
 
 @router.put("/events/{event_id}/field-configs/{field_key}")
@@ -493,7 +511,7 @@ def upsert_field_config(
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    valid_keys = {k for k, _ in _configurable_fields(event)}
+    valid_keys = {k for k, _ in _fields_with_virtual(db, event, True)}
     if field_key not in valid_keys:
         raise HTTPException(status_code=400, detail="Ese campo no existe o no es configurable en este evento")
     gone = db.query(EventFieldConfig).filter_by(event_id=event.id, field_key=field_key, field_type=DELETED_TYPE).first()
@@ -511,6 +529,16 @@ def upsert_field_config(
         db.add(row)
     row.label = None if field_key == "certificate" else label  # "Certificado": ni nombre ni tipo editables
     row.sort_order = sort_order
+
+    if field_key == DEPENDENTS_KEY:          # 0161: nombre, posición y estadística; nunca obligatorio ni de otro tipo (no se escribe: sale de la base de dependientes)
+        stat = bool(data.get("default_stat_enabled", False))
+        chart = data.get("default_chart_type") if stat else None
+        if stat and chart not in CHART_TYPES:
+            raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
+        row.required, row.field_type, row.default_stat_enabled, row.default_chart_type = False, "text_short", stat, chart
+        row.set_options([])
+        db.commit()
+        return _serialize(field_key, "Dependientes", row)
 
     if field_key in LOCKED_KEYS:
         # Identidad y Categoría: solo etiqueta y posición. Certificado: solo posición y obligatorio.

@@ -64,6 +64,8 @@ def delete_loaded(db: Session, event: Event) -> dict:
             db.query(model).filter(model.event_id == event.id, model.user_id.in_(part)).delete(synchronize_session=False)
         db.query(PersonChangeLog).filter(PersonChangeLog.tenant_id == event.tenant_id, PersonChangeLog.event_id == event.id, PersonChangeLog.user_id.in_(part)).delete(synchronize_session=False)
         removed += db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(part)).delete(synchronize_session=False)
+        from app import dependents
+        dependents.delete_for_holders(db, event.id, part)          # 0161: sus dependientes se van con ellas
         db.flush()
         still_att = {r[0] for r in db.query(EventAttendee.user_id).filter(EventAttendee.tenant_id == event.tenant_id, EventAttendee.user_id.in_(part)).distinct()}
         still_log = {r[0] for r in db.query(AccessLog.user_id).filter(AccessLog.tenant_id == event.tenant_id, AccessLog.user_id.in_(part)).distinct()}

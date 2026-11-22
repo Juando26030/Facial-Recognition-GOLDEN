@@ -77,7 +77,7 @@ def _headers() -> dict:
     return {"Content-Type": "application/json", "Accept": "application/json", "X-Node-Token": node_token(), "X-Node-Version": f"{v['commit']}|{v['schema']}"[:80], "X-Node-Schema": v["schema"]}
 
 
-def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
+def _call(method: str, path: str, body: Optional[dict] = None, timeout: Optional[float] = None) -> dict:
     url = versioning.production_url()
     if not (url.startswith("https://") or url.startswith("http://localhost") or url.startswith("http://127.0.0.1")):
         raise SyncError("PRODUCTION_URL debe ser https")
@@ -85,7 +85,7 @@ def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
     req = urllib.request.Request(url + path, data=data, method=method, headers=_headers())
     from app.cloud_client import open_no_redirect
     try:
-        with open_no_redirect(req, timeout=HTTP_TIMEOUT) as resp:      # F5-9 A-10: sin redirecciones (el token no viaja a otra dirección)
+        with open_no_redirect(req, timeout=timeout or HTTP_TIMEOUT) as resp:      # F5-9 A-10: sin redirecciones (el token no viaja a otra dirección)
             return json.loads(resp.read(2_000_000).decode("utf-8") or "{}")
     except urllib.error.HTTPError as e:
         try:

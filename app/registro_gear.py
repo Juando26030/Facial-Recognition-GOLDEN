@@ -1,7 +1,8 @@
 """Plan 7 (Registro limpio): quién ve el engranaje de «Configuración del registro».
 
-Coordinador, admin y super_admin SIEMPRE lo ven. El digitador lo ve solo si en Parámetros del evento se encendió «Mostrar configuración del registro a digitadores»
-(apagada por defecto). Es solo visual: lo ya configurado (autoregistro, autoimpresión, impresora) no se toca al apagarla ni cambian los permisos de la API.
+Coordinador, admin y super_admin SIEMPRE lo usan. Desde el 21-nov-2026 el digitador también VE el engranaje siempre; si en Parámetros del evento está apagada «Mostrar la
+configuración del registro a los digitadores» (apagada por defecto), el engranaje queda BLOQUEADO: al tocarlo pide la contraseña de desbloqueo del evento (app/config_lock.py).
+Es solo de pantalla: lo ya configurado (autoregistro, autoimpresión, impresora) no se toca y los permisos de la API no cambian.
 Se guarda en `app_settings` (una fila por evento), sin migración.
 """
 from typing import Iterable
@@ -31,8 +32,6 @@ def set_digitadores_enabled(db, event_id: int, enabled: bool) -> None:
 
 
 def can_see_gear(db, event_id: int, roles: Iterable[str]) -> bool:
-    """`roles`: los roles efectivos de la persona (con doble rol, cualquiera de ellos)."""
+    """`roles`: los roles efectivos de la persona (con doble rol, cualquiera de ellos). El digitador lo ve siempre (bloqueado o no: app/config_lock.py)."""
     roles = set(roles)
-    if roles & PRIVILEGED:
-        return True
-    return "digitador" in roles and digitadores_enabled(db, event_id)
+    return bool(roles & PRIVILEGED) or "digitador" in roles

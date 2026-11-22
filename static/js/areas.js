@@ -6,6 +6,23 @@
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const areaId = () => $('areaSelect').value;
+  /* 0161: la zona y el movimiento elegidos se recuerdan en esta tableta; con «Bloquear configuración» (Parámetros) el digitador no los puede cambiar sin la contraseña. */
+  const SEL_KEY = 'gw-areas-sel:' + window.EVENT_ID;
+  const LOCK = window.GWConfigLock || { isLocked: () => false, banner: () => {}, onChange: () => {} };
+  const locked = () => LOCK.isLocked('areas');
+  function saveSel() { try { localStorage.setItem(SEL_KEY, JSON.stringify({ zone: areaId(), dir: direction })); } catch (e) { /* sin almacenamiento: no se recuerda */ } }
+  function readSel() { try { return JSON.parse(localStorage.getItem(SEL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function paintLock() {
+    const on = locked();
+    document.querySelectorAll('.zone-btn, .dir-btn, #areaSelect').forEach(el => { el.disabled = on; el.classList.toggle('gw-locked-ctl', on); });
+  }
+  function setDirection(dir) {
+    const btn = document.querySelector(`.dir-btn[data-dir="${dir}"]`);
+    if (!btn) return;
+    direction = dir;
+    $('registerLabel').textContent = direction === 'in' ? 'Registrar entrada' : (direction === 'out' ? 'Registrar salida' : 'Registrar');
+    document.querySelectorAll('.dir-btn[data-dir]').forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  }
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
   const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
@@ -21,9 +38,11 @@
     $('autoregLabel').textContent = window.AUTOREG ? 'ON' : 'OFF';
     if (window.FACIAL) $('faceBtn').hidden = false;
     if (window.CAN_REPORT) $('reportBtn').hidden = false;
+    const sel = readSel();
+    if (sel.dir) setDirection(sel.dir);
     try {
       users = await getJson(`/api/users?event_id=${window.EVENT_ID}`);
-      await loadAreas();
+      await loadAreas(sel.zone);
     } catch (e) {
       showState('No se pudo cargar la información. Revisa la conexión y recarga la página.', true);
     }
@@ -39,8 +58,10 @@
     $('areaSelect').innerHTML = areas.length
       ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('')
       : '<option value="">Crea zonas en Parámetros del evento</option>';
-    if (current) $('areaSelect').value = current;
+    if (current && areas.some(a => String(a.id) === String(current))) $('areaSelect').value = current;
     renderZones(areas);
+    paintLock();
+    LOCK.banner($('lockBar'), 'areas', () => { const o = $('areaSelect').selectedOptions[0]; const d = { auto: 'automático', in: 'entrada', out: 'salida' }[direction]; return (o ? 'zona ' + o.textContent.replace(/ \(.*$/, '') : 'sin zona') + ' · movimiento ' + d; });
     await loadPresence();
   }
 
@@ -134,16 +155,18 @@
   document.addEventListener('click', (e) => {
     const zoneBtn = e.target.closest('.zone-btn[data-zone]');
     if (zoneBtn) {
+      if (locked()) return;
       $('areaSelect').value = zoneBtn.dataset.zone;
+      saveSel();
       document.querySelectorAll('.zone-btn').forEach(b => b.setAttribute('aria-pressed', b === zoneBtn ? 'true' : 'false'));
       loadPresence();
       return;
     }
     const dirBtn = e.target.closest('.dir-btn[data-dir]');
     if (dirBtn) {
-      direction = dirBtn.dataset.dir;
-      $('registerLabel').textContent = direction === 'in' ? 'Registrar entrada' : (direction === 'out' ? 'Registrar salida' : 'Registrar');
-      document.querySelectorAll('.dir-btn[data-dir]').forEach(b => { b.classList.toggle('active', b === dirBtn); b.setAttribute('aria-pressed', b === dirBtn ? 'true' : 'false'); });
+      if (locked()) return;
+      setDirection(dirBtn.dataset.dir);
+      saveSel();
       return;
     }
     if (e.target.closest('#registerBtn')) {
@@ -152,7 +175,8 @@
     }
   });
 
-  $('areaSelect').addEventListener('change', loadPresence);
+  $('areaSelect').addEventListener('change', () => { saveSel(); loadPresence(); });
+  LOCK.onChange((scope) => { if (scope === 'areas') paintLock(); });
 
   // Buscador único (static/js/person-finder.js): cédula, nombre o empresa con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano. Elegir de la lista o Enter con un solo resultado exacto registra.
   const finder = PersonFinder.attach({

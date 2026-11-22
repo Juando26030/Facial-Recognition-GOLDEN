@@ -16,6 +16,7 @@
          abajo. XLSX (SheetJS) para partir el Excel/CSV en trozos válidos; JSZip para armar, por
          lote, un mini-zip solo con las fotos de ESE lote (ya se usa igual en kiosk_certificados.html). -->
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
+    <script src="{{ url_for('static', path='js/roster-preview.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='vendor/jszip-3.10.1.min.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
@@ -188,6 +189,45 @@
         <button type="button" id="wipeBtn" class="gw-btn gw-btn--danger-outline" disabled>Borrar la base cargada</button>
       </div>
     </section>
+    {% endif %}
+    {% if not event_finalized %}
+    <!-- 0161: base de DEPENDIENTES (app/dependents.py, static/js/dependents-upload.js): personas asociadas a un titular (hijos, acompañantes), enlazadas por la cédula del titular. -->
+    <form id="depForm" class="gw-step" data-event="{{ event.id }}">
+      <div class="gw-step__head"><h2 class="gw-step__title">Base de dependientes (opcional)</h2></div>
+      <div class="gw-step__body gw-stack">
+        <div class="gw-alert gw-alert--info"><div class="gw-stack">
+          <div><b>Qué es:</b> un segundo archivo con las personas que vienen asociadas a un titular (hijos, acompañantes…). El titular es quien está en la base de registro; cada fila de este archivo se une a él por su cédula.</div>
+          <div><b>Para qué sirve:</b> saber cuántas personas entran de verdad con cada titular (aparece el campo «Dependientes», con su estadística) y, si el inventario lo define la base, entregarle a cada dependiente lo que le toca.</div>
+          <div><b>Qué NO hace:</b> no crea personas registradas ni les toma foto; no cambia la base de registro. Cada titular sigue contando como una persona en las estadísticas de siempre.</div>
+        </div></div>
+        {% if not dependents_available %}
+        <div class="gw-alert gw-alert--warn" role="note"><div>Primero carga la <b>base de registro</b> (arriba). La base de dependientes se carga después, porque cada dependiente se une a una persona que ya esté en el evento.</div></div>
+        {% else %}
+        <ul class="gw-list gw-text-sm">
+          <li>Columna obligatoria: <b>cedula_titular</b> (la cédula del titular, igual que en la base de registro).</li>
+          <li>Opcionales: <b>nombre_dependiente</b>, <b>cedula_dependiente</b> (si tiene documento propio), <b>producto</b>, <b>cantidad</b> y las que necesites (edad, talla…): se guardan como datos de cada dependiente.</li>
+          <li>Varias filas con la misma cédula del titular = varios dependientes (o varios productos del mismo dependiente, si traen el mismo nombre o documento).</li>
+          <li>Antes de guardar verás un resumen, cómo cambia la base y 10 titulares de muestra tal como quedarían en «Editar persona».</li>
+        </ul>
+        <p class="gw-hint"><a href="{{ url_for('static', path='templates/plantilla_carga_dependientes.xlsx') }}" download>Descarga el archivo de ejemplo de dependientes</a>.</p>
+        <p id="depInfo" class="gw-text-sm" role="status" aria-live="polite"></p>
+        <div class="gw-field">
+          <label class="gw-label" for="depFileInput">Archivo de dependientes (.xlsx o .csv)</label>
+          <input class="gw-input" type="file" id="depFileInput" accept=".xlsx,.csv" required>
+        </div>
+        <fieldset class="gw-fieldset"><legend class="gw-label">Si ya hay una base de dependientes cargada</legend>
+          <label class="gw-check gw-check--top"><input type="radio" name="depMode" value="replace" checked> <span><b>Reemplazar</b> (recomendado): queda exactamente lo del archivo nuevo. Lo que ya no viene se borra, <b>salvo lo que ya se entregó</b> (nunca se borra ni se repite).</span></label>
+          <label class="gw-check gw-check--top"><input type="radio" name="depMode" value="append"> <span><b>Agregar solo lo nuevo:</b> conserva todo lo que ya está y suma lo del archivo que no estaba.</span></label>
+        </fieldset>
+        <div class="gw-actions">
+          <button type="submit" id="depSubmit" class="gw-btn gw-btn--secondary">Ver resumen y cargar dependientes</button>
+          <button type="button" id="depWipe" class="gw-btn gw-btn--danger-outline" hidden>Borrar la base de dependientes</button>
+        </div>
+        <div id="depResult" class="gw-stack" role="status" aria-live="polite"></div>
+        {% endif %}
+      </div>
+    </form>
+    <script src="{{ url_for('static', path='js/dependents-upload.js') }}"></script>
     {% endif %}
     {% if append_available %}
     <form id="appendForm" class="gw-step">
@@ -750,6 +790,33 @@ rosterForm.addEventListener("submit", async (e) => {
     }
     const totalBytes = (rosterFile && rosterFile.size || 0) + (zipFile && zipFile.size || 0);
 
+    // 0161: vista previa ANTES de cargar (resumen, cómo cambia la base y 10 personas de muestra como en «Editar persona»); nada se guarda si se cancela.
+    let previewToken = null;
+    if (rosterFile && rosterFile.size) {
+        try {
+            const pfd = new FormData();
+            pfd.append("event_id", window.EVENT_ID);
+            pfd.append("roster_file", rosterFile);
+            pfd.append("mode", "normal");
+            if (keepDuplicates.checked) pfd.append("keep_duplicates", "true");
+            pfd.append("text_case", textCase.value);
+            setButtonLoading(btn, true, "Revisando el archivo...");
+            await DirectUpload.replaceFiles(pfd, { roster_file: ["roster_upload", "bulk_roster"] }, { body: { event_id: String(window.EVENT_ID) } });
+            const pres = await xhrPost("/api/bulk_roster/preview", pfd);
+            let pdata;
+            try { pdata = JSON.parse(pres.text); } catch (err) { showToast(`El servidor rechazó el archivo (código ${pres.status}).`, "error"); setButtonLoading(btn, false); return; }
+            if (pres.status < 200 || pres.status >= 300) { showToast(pdata.detail || "No se pudo revisar el archivo", "error"); setButtonLoading(btn, false); return; }
+            const go = await RosterPreview.confirmLoad(pdata, { mode: "normal" });
+            if (!go) { showToast("No se cargó nada", "info"); setButtonLoading(btn, false); return; }
+            previewToken = pfd.get("roster_upload");
+            setButtonLoading(btn, true, "Cargando la lista...");
+        } catch (err) {
+            showToast(err && err.message && err.message !== "network" ? err.message : "Error de red al revisar el archivo", "error");
+            setButtonLoading(btn, false);
+            return;
+        }
+    }
+
     try {
         if (rosterFile && rosterFile.size && totalBytes > BATCH_TRIGGER_BYTES) {
             if (EVENT_STATUS === "en_proceso") {
@@ -773,6 +840,7 @@ rosterForm.addEventListener("submit", async (e) => {
                 }
             }
         } else {
+            if (previewToken) { formData.delete("roster_file"); formData.set("roster_upload", previewToken); }          // el archivo ya subió para la vista previa: no se vuelve a subir
             await submitRoster(formData);
         }
     } catch (err) {
@@ -809,14 +877,8 @@ if (appendForm) appendForm.addEventListener("submit", async (e) => {
         let p;
         try { p = JSON.parse(res.text); } catch (err) { showToast(`El servidor rechazó el archivo (código ${res.status}).`, "error"); return; }
         if (res.status < 200 || res.status >= 300) { showToast(p.detail || "No se pudo revisar el archivo", "error"); return; }
-        const cols = p.columns_ignored ? ` Se ignorarán ${p.columns_ignored} columna(s): ${p.ignored_columns.map(c => "«" + c.title.replace(/</g, "&lt;") + "»").join(", ")}.` : "";
-        const extra = [p.enroll_existing ? `${p.enroll_existing} ya existen en el cliente y solo se inscribirán en este evento` : "", p.duplicates ? `${p.duplicates} repetidas en el archivo (se usa la primera)` : "",
-                       p.suppressed ? `${p.suppressed} con supresión de datos (se omiten)` : "", p.without_id ? `${p.without_id} sin cédula (se omiten)` : ""].filter(Boolean);
-        const ok = await showConfirm(
-            `Se agregarán <strong>${p.new}</strong> personas nuevas, se ignorarán <strong>${p.existing}</strong> que ya están en el evento y <strong>${p.columns_ignored}</strong> ${p.columns_ignored === 1 ? "columna se ignora" : "columnas se ignoran"}.` +
-            (extra.length ? `<br><br>${extra.join(".<br>")}.` : "") + (cols ? `<br><br>${cols}` : "") +
-            `<br><br>No se modifica a nadie que ya esté en el evento y el registro en vivo sigue funcionando. ¿Agregar?`,
-            { variant: "warning", confirmLabel: "Sí, agregar personas nuevas" });
+        // 0161: misma vista previa que la carga normal (resumen, cómo cambia la base y 10 personas de muestra); «Solo agregar» no toca a nadie que ya esté.
+        const ok = await RosterPreview.confirmLoad(p, { mode: "append" });
         if (!ok) { showToast("No se agregó a nadie", "info"); return; }
         fd.set("append_only", "true");
         const bar = ProgressBar.create(rosterResult, { title: "Agregando personas nuevas", stage: "Preparando…" });

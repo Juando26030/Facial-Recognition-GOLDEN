@@ -182,6 +182,7 @@
       if (!result.buckets.length) { msg.textContent = 'Sin datos suficientes para graficar esta variable todavía.'; select.hidden = true; return; }
       if (preferred) select.value = resolveChartType(preferred, result.type);
       msg.hidden = true; box.hidden = false;
+      if (result.summary) { var sum = el('p', 'gw-hint gw-chart-card__summary', result.summary); card.appendChild(sum); }          // 0161: p. ej. «Dependientes»: registrados + dependientes asociados
       cache[key] = { result: result, select: select, canvas: canvas };
       render(key, label);
       select.addEventListener('change', function () { render(key, label); });

@@ -52,6 +52,8 @@ def delete_event_modules(db: Session, event_id: int) -> None:
     db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event_id).delete()
     db.query(InventoryItem).filter(InventoryItem.event_id == event_id).delete()
     db.query(EventInventoryItem).filter(EventInventoryItem.event_id == event_id).delete()          # Fase 5: líneas del catálogo de inventario
+    from app.models import EventDependent
+    db.query(EventDependent).filter(EventDependent.event_id == event_id).delete()          # 0161: base de dependientes
 
 
 @router.put("/events/{event_id}/modules")
@@ -257,6 +259,14 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
         problem = subcat.area_limit_problem(db, area, locked, user.id)
         if problem:
             return {"result": "LIMIT", "direction": "in", "area": label, "data": data, "details": f"{who}: {problem}"}
+        from app import node_precheck
+        if (no_reentry_group or not area.allow_reentry) and node_precheck.enabled(event):          # 0161: evento compartido: ¿ya entró por otro puesto?
+            names = [parent.name] + [a.name for a in locked.values() if a.parent_id == parent.id] if no_reentry_group else [area.name]
+            ans = node_precheck.ask(event, user.id, areas=names)
+            if ans and any((ans.get("areas") or {}).get(n.strip().lower()) for n in names):
+                where = parent.name if no_reentry_group else area.name
+                return {"result": "ALREADY_ENTERED", "direction": "in", "area": label, "data": data,
+                        "details": f"{who} YA había entrado a «{where}» por otro puesto y esta zona no permite reingresos"}
     if direction == "out" and not (last and last.direction == "in"):
         return {"result": "NOT_INSIDE", "direction": "out", "area": label, "data": data,
                 "details": f"{who} no figura adentro de «{label}»"}
@@ -570,6 +580,9 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
+    from app import inv_assign, node_precheck
+    if inv_assign.is_assigned(event):          # 0161: con «La base lo define» no se elige: se entrega lo asignado (/inventory/deliver-assigned)
+        raise HTTPException(status_code=400, detail=inv_assign.MODE_BLOCKS_CHOOSE)
     user = _find_person(db, event, str(data.get("cedula") or ""))
     lines = data.get("items") or []
     if not lines:
@@ -622,6 +635,16 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     missing = missing_required_choice(db, event.id, user.id, wanted, delivered)
     if missing:
         raise HTTPException(status_code=400, detail=missing)
+    warning = ""
+    no_repeat = [items[i].name for i in wanted if items[i].allow_repeat_delivery is False and i not in already]
+    if no_repeat and node_precheck.enabled(event):          # 0161: evento compartido en un servidor local: ¿otro puesto ya se lo entregó?
+        ans = node_precheck.ask(event, user.id, items=no_repeat)
+        if ans is None:
+            warning = node_precheck.OFFLINE_WARNING
+        else:
+            hit = next((n for n in no_repeat if (ans.get("items") or {}).get(n.strip().lower())), None)
+            if hit:
+                raise HTTPException(status_code=409, detail=f"«{hit}» ya se le entregó a esta persona en otro puesto y este ítem no se puede repetir.")
 
     batch, now = uuid.uuid4().hex, utcnow()
     for item_id, qty in wanted.items():
@@ -635,6 +658,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         "result": "OK", "data": _person_data(user), "batch_id": batch,
         "delivered": [{"name": items[i].name, "qty": q} for i, q in wanted.items()],
         "stock": [_item_json(items[i], delivered.get(i, 0)) for i in wanted],
+        **({"warning": warning} if warning else {}),
     }
 
 

@@ -286,6 +286,12 @@ class Event(Base):
     code_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: el evento usa «código» (serial del QR distinto de la cédula); al escanear se busca primero por ID y luego por código (app/person_code.py)
     code_required = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: con el código activo, ¿es obligatorio al registrar?
     inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
+    inventory_mode = Column(String(10), nullable=True)  # 0161: NULL/'choose' = la persona elige (lo de siempre) | 'assigned' = la base lo define (app/inv_assign.py)
+    inventory_assign_json = Column(Text, nullable=True)  # 0161: columnas que mandan en el modo 'assigned' {holder_product, holder_qty, dep_product, dep_qty}
+    areas_config_locked = Column(Boolean, default=False, server_default='false', nullable=False)  # 0161: la tableta del digitador queda fija en la zona y el movimiento elegidos (app/config_lock.py)
+    inventory_config_locked = Column(Boolean, default=False, server_default='false', nullable=False)  # 0161: la tableta del digitador queda fija en lo marcado para entregar
+    config_unlock_hash = Column(String, nullable=True)  # 0161: contraseña de desbloqueo de la configuración del digitador (hash, nunca el texto)
+    dependents_badge = Column(Boolean, default=False, server_default='false', nullable=False)  # 0161: imprimir escarapela también a los dependientes (app/dependents.py)
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
     data_archived_at = Column(DateTime, nullable=True)      # 0090 (L7): la BASE DE DATOS del evento (personas y respuestas) quedó archivada a los 90 días de cerrado; el evento SIGUE en las listas. Solo un super_admin la desarchiva. Ver app/event_archive.py
@@ -1074,6 +1080,7 @@ class InventoryItem(Base):
     parent_id = Column(Integer, ForeignKey('inventory_items.id'), nullable=True)  # 0140: subcategoría (p. ej. «Perro» dentro de «Comida»); NULL = ítem o categoría principal
     stats_enabled = Column(Boolean, default=True, server_default='true', nullable=False)  # 0140: genera estadísticas en la sección de Estadísticas
     max_per_person = Column(Integer, nullable=True)  # 0140: unidades por persona (en un grupo cuentan todas sus subcategorías y manda sobre ellas); NULL = sin límite
+    source_value = Column(String, nullable=True)  # 0161: valor de la base (normalizado, app/inv_assign_core.norm) que creó este producto en el modo «la base lo define»; el nombre visible se puede cambiar
 
 
 class InventoryDelivery(Base):
@@ -1089,8 +1096,33 @@ class InventoryDelivery(Base):
     from_peer = Column(Boolean, nullable=True)          # 0160: llegó de otro servidor local (evento compartido); no se vuelve a subir
     delivered_at = Column(DateTime, default=utcnow)
     delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    assignment_key = Column(String(40), nullable=True)  # 0161: qué asignación se entregó en el modo «la base lo define»: 'h' (la del titular) o 'd<uid>' (fila de event_dependents); NULL = entrega elegida
 
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
+
+
+class EventDependent(Base):
+    """0161: una fila del archivo de DEPENDIENTES de un evento (hijos, acompañantes…): la persona asociada a un titular (`holder_id` = cédula del titular en la base del evento),
+    con sus columnas tal cual (`data_json` {título: valor}). Varias filas del mismo dependiente (mismo `person_key`) son varios productos. No es una persona del evento:
+    no tiene rostro, no cuenta como registrada y no entra a la ruleta (app/dependents.py)."""
+    __tablename__ = 'event_dependents'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    uid = Column(String(32), nullable=False)  # identificador ESTABLE de la fila (no cambia al copiar el evento a un servidor local): la entrega guarda 'd<uid>'
+    holder_id = Column(String, nullable=False)
+    person_key = Column(String, nullable=False)  # quién es el dependiente dentro del titular: su documento, su nombre o, si no trae ninguno, la fila (app/inv_assign_core.person_key)
+    name = Column(String, nullable=True)
+    doc_id = Column(String, nullable=True)
+    data_json = Column(Text, nullable=True)
+    row_num = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    def get_data(self) -> dict:
+        try:
+            return json.loads(self.data_json) if self.data_json else {}
+        except ValueError:
+            return {}
 
 
 class InventoryCategory(Base):

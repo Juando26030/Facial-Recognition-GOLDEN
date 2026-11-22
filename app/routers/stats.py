@@ -89,7 +89,9 @@ def variables_for(db: Session, event, staff_view: bool = False) -> list:
 
     # Parámetros del Evento (2026-09-16): "status" no es un campo configurable (no vive en
     # field_configs_for_event, ver parametros.py) — nunca tiene estadística por defecto.
-    defaults_by_key = {cfg["key"]: cfg for cfg in field_configs_for_event(db, event)}
+    defaults_by_key = {cfg["key"]: cfg for cfg in field_configs_for_event(db, event, include_virtual=True)}
+    if "dependents" in defaults_by_key:          # 0161: campo «Dependientes» (solo con base de dependientes)
+        variables.append(("dependents", "Dependientes"))
     result = []
     for k, label in variables:
         cfg = defaults_by_key.get(k)
@@ -122,6 +124,11 @@ def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dic
         if data is None:
             raise HTTPException(status_code=400, detail="Variable no válida para este evento")
         return data
+    if variable == "dependents":          # 0161: titulares registrados por número de dependientes + total de personas contando a los dependientes
+        from app import dependents
+        if not dependents.has_dependents(db, event.id):
+            raise HTTPException(status_code=400, detail="Variable no válida para este evento")
+        return dependents.stats_data(db, event)
     valid_keys = {k for k, _ in _FIXED_VARIABLES if staff_view or k != "origin"} | set(event.get_optional_labels().keys())
     if variable not in valid_keys:
         raise HTTPException(status_code=400, detail="Variable no válida para este evento")

@@ -396,6 +396,7 @@
       <form id="editModalForm">
         ${configuredHtml}
       </form>
+      <div id="editModalDeps" hidden></div>
       ${canManageStatus ? `
       <hr class="gw-registro__editsep">
       <div class="gw-field gw-registro__editfield">
@@ -415,6 +416,25 @@
       </div>
     `;
     overlay.appendChild(box);
+    {                                                                   // 0161: campo «Dependientes» (base de dependientes): cuántos y, al desplegarlo, quiénes y sus datos. Solo se ve: se cambia volviendo a cargar esa base
+      let depCfg = null;
+      try { const el = document.getElementById('gwDependentsCfg'); depCfg = el ? JSON.parse(el.textContent || 'null') : null; } catch (e) { depCfg = null; }
+      const depBox = box.querySelector('#editModalDeps');
+      if (depCfg && depBox && user.id) (async () => {
+        try {
+          const r = await fetch(`/api/events/${window.EVENT_ID}/dependents?holder=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+          const d = await r.json();
+          if (!r.ok) return;
+          const people = d.people || [];
+          const rowsHtml = (rows) => rows.map(rw => Object.keys(rw).map(k => `<span class="gw-badge">${esc(k)}: ${esc(rw[k])}</span>`).join(' ')).join('<br>');
+          depBox.innerHTML = `<div class="gw-field gw-registro__editfield"><span class="gw-label">${esc(depCfg.label || 'Dependientes')}</span>
+            <details class="gw-form-group"><summary class="gw-form-group__summary">${people.length} ${people.length === 1 ? 'dependiente' : 'dependientes'}${people.length ? ' · ver quiénes' : ''}</summary>
+            <div class="gw-form-group__body gw-deps">${people.length ? people.map(p => `<div class="gw-deps__person"><strong>${esc(p.label)}</strong>${p.doc ? ` · ${esc(p.doc)}` : ''}<div class="gw-hint">${rowsHtml(p.rows || [])}</div></div>`).join('') : '<p class="gw-hint">Esta persona no tiene dependientes en la base de dependientes.</p>'}</div></details>
+            <p class="gw-hint">Sale de la base de dependientes del evento (Adjuntar base de datos). Para cambiarlo, vuelve a cargar esa base.</p></div>`;
+          depBox.hidden = false;
+        } catch (e) { /* sin red: el campo no se muestra */ }
+      })();
+    }
     {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (digitador o superior, temporales incluidos; si no hay archivo, queda el texto)
       (async () => {
         try {

@@ -51,6 +51,8 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
+{% include "_config_lock.html" %}
+<script type="application/json" id="gwDependentsCfg">{{ dependents_cfg_json | safe }}</script>
 <script>window.GW_ICON_URL = "{{ url_for('static', path='img/icons.svg') }}"; window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.EVENT_AUTOPRINT_RULES = {{ "true" if autoprint_rules else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
 <script>window.EVENT_REPRINT_DISABLED = {{ "true" if event.reprint_disabled else "false" }};</script>{# Fase 1B: reimpresión con permisos (static/js/reprint.js) #}
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
@@ -455,7 +457,10 @@
         function setOpen(open) { if (!btn || !panel) return; panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
         window.GWRegCfg = { refresh, setOpen };
         if (!btn || !panel) return;
-        btn.addEventListener('click', () => setOpen(panel.hidden));
+        btn.addEventListener('click', async () => {          // 0161: con la configuración bloqueada para el digitador, el engranaje pide la contraseña (static/js/config-lock.js)
+            if (panel.hidden && window.GWConfigLock && GWConfigLock.isLocked('registro') && !(await GWConfigLock.unlock('registro'))) return;
+            setOpen(panel.hidden);
+        });
         panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); btn.focus(); } });
         const bar = document.getElementById('sharedPrintBar');
         if (bar && window.MutationObserver) new MutationObserver(refresh).observe(bar, { attributes: true, subtree: true, attributeFilter: ['class', 'hidden'] });
