@@ -1,0 +1,28 @@
+# Herramientas de DESARROLLO y PRUEBAS (no van a la imagen de producción: esa solo instala requirements.txt).
+# Uso:  pip install -r requirements.txt -r requirements-dev.txt
+#   (en Windows sin compilador, o para correr solo las pruebas, se puede saltar el motor facial como hace el CI:
+#    grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/req.txt && pip install -r /tmp/req.txt -r requirements-dev.txt)
+# Versiones FIJAS. `ruff` debe ser la MISMA en tres sitios: aquí, el job «lint» de .github/workflows/ci.yml y `rev` de .pre-commit-config.yaml.
+
+# --- Pruebas (python -m pytest -q) ---
+pytest==9.1.1
+httpx                      # lo usa el TestClient de Starlette/FastAPI (tests/conftest.py). Sin fijar: ver nota al final
+PyYAML==6.0.3              # solo tests/test_cutover_workflows.py (lee los flujos de GitHub)
+
+# --- Calidad ---
+ruff==0.16.9
+pre-commit                 # opcional: `pre-commit install` corre ruff y las revisiones básicas antes de cada commit
+
+# --- Navegador (scripts/visual_harness/shoot.py, scripts/editor_roundtrip_playwright.py) ---
+playwright==1.63.0         # después: `playwright install chromium`
+
+# --- Seguridad (las mismas herramientas de .github/workflows/seguridad.yml; opcionales en local) ---
+pip-audit
+bandit
+# semgrep no se lista: no instala en Windows; corre en el flujo de GitHub.
+
+# --- Pruebas de carga (tests/load, deploy/loadtest): NUNCA contra producción (docs/PRUEBA_CARGA_PRODUCCION.md) ---
+# locust se instala en su propia imagen (deploy/loadtest/Dockerfile: "locust>=2.32"); instalar aparte solo si se va a correr carga.
+
+# Nota (22-nov-2026): httpx, pre-commit, pip-audit y bandit quedan SIN versión porque en la máquina de la revisión no estaban
+# instalados y no había red para comprobar cuál es la última que funciona; fijarlas (==) tras la primera instalación con `pip freeze`.

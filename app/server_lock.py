@@ -10,7 +10,7 @@ fue revocado (401, botón «Revocar»), este módulo calcula además un ESTADO d
   readonly  SOLO LECTURA con aviso: `LOCAL_GRACE_DAYS` días (14 por defecto; 0 = apagado) sin una respuesta válida de la nube, o token revocado confirmado
             (REVOKED_PINGS respuestas 401 seguidas) desde hace más de REVOKED_HOURS
 Nunca se pasa a solo lectura el mismo día: sin internet la puerta sigue con aviso (decisión de Juan David, 20-nov-2026). Volver a hablar con la nube (cualquier respuesta válida) lo
-restablece solo. Las marcas viven en config\local.env (LOCAL_CLOUD_OK_AT, LOCAL_CLOUD_401_AT, LOCAL_CLOUD_401_N): las comparten los procesos del servidor.
+restablece solo. Las marcas viven en config\\local.env (LOCAL_CLOUD_OK_AT, LOCAL_CLOUD_401_AT, LOCAL_CLOUD_401_N): las comparten los procesos del servidor.
 OJO: este módulo CALCULA el estado y da la regla (`write_blocked`); quien lo APLICA es el middleware de app/main.py y el aviso de las plantillas, que todavía NO lo usan
 (docs/revision_2026-11-22/12_seguridad_correcciones.md, pendiente 2). Hasta entonces el servidor se comporta exactamente como antes.
 Módulo sin dependencias de la app (solo lee/escribe local.env)."""

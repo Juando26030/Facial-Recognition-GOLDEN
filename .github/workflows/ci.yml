@@ -89,6 +89,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: pip install ruff
+      - run: pip install ruff==0.16.9          # MISMA versión que .pre-commit-config.yaml (rev v0.16.9) y requirements-dev.txt: al subirla, se sube en los tres
       - name: Ruff (todo el repo)
         run: ruff check .

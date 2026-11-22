@@ -36,3 +36,9 @@ FORWARDED_ALLOW_IPS: "*"
 # Modo tranquilo del Job de operaciones (app/ops_state.py): sin actividad el respaldo horario pasa a cada 8 h (3, 11 y 19 h), así que "viejo" solo se alarma pasadas 9 h. Con actividad el paso
 # de respaldo corre cada hora y avisa directamente si falla.
 BACKUP_HOURLY_MAX_AGE_H: "9"
+# Aislamiento del personal (app/auth.py, app/tenant_scope.py). HOY en "0": todo el personal es de Golden y ve todos los clientes y eventos, como siempre.
+# DEBEN ir en "1" ANTES de dar una cuenta a OTRA empresa (SaaS, docs/27_SAAS_EMPRESAS.md «Antes del primer cliente»): primero en staging, con la prueba de dos empresas.
+#   ENFORCE_STAFF_TENANT=1       quien tiene cliente (tenant_id) solo ve lo de su cliente. Con "0", /plataforma se niega a crear el administrador de una empresa que no sea Golden.
+#   ENFORCE_STAFF_EVENT_SCOPE=1  coordinador y comercial solo operan en los eventos a los que pertenecen (antes de encenderlo, revisar que cada evento tenga su coordinador/comercial).
+ENFORCE_STAFF_TENANT: "0"
+ENFORCE_STAFF_EVENT_SCOPE: "0"

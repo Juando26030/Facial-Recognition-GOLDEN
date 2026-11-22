@@ -2,6 +2,9 @@ name: Cloud Run (staging y producción)
 
 # Staging se despliega solo en cada push a la rama de la migración (`migra/fase1-2`; el renombre a `staging` es un paso aparte posterior al corte). PRODUCCIÓN NO SE DESPLIEGA NUNCA POR UN PUSH NI
 # UN MERGE: solo se lanza a mano (Actions → «Cloud Run» → Run workflow → rama `main` → escribir DESPLEGAR en «confirm»), porque este repositorio no ofrece revisores obligatorios en el Environment.
+# 22-nov-2026: staging también se puede desplegar A MANO desde una rama de trabajo `feat/**` o `saas/**` (Actions → «Cloud Run» → Run workflow → elegir la rama; no hace falta escribir nada en «confirm»).
+# Es a mano y no por push a propósito: hay UN solo staging y muchas ramas `feat/`; un despliegue por cada push las haría pisarse y gastaría minutos. Requiere que la cuenta de despliegue de staging acepte
+# esas ramas en Workload Identity (comando de una sola vez en docs/19_GUIA_PRODUCCION.md § «Staging por GitHub Actions desde ramas feat/ y saas/»); sin eso, el paso de autenticación falla y no se despliega nada.
 # Un push a `main` solo corre las pruebas (`ci.yml` tiene su propio disparo). La VM ya NO se despliega desde `main` (deploy.yml quedó solo manual). Ver docs/legal/DESPLIEGUE_PRODUCCION_MANUAL.md.
 
 on:
@@ -32,7 +35,10 @@ jobs:
 
   staging:
     needs: test
-    if: github.ref == 'refs/heads/migra/fase1-2'
+    if: github.ref == 'refs/heads/migra/fase1-2' || (github.event_name == 'workflow_dispatch' && (startsWith(github.ref, 'refs/heads/feat/') || startsWith(github.ref, 'refs/heads/saas/')))
+    concurrency:              # un solo despliegue de staging a la vez, venga de la rama que venga (el segundo espera; no se cancela uno a medias)
+      group: cloudrun-staging
+      cancel-in-progress: false
     uses: ./.github/workflows/cloudrun-deploy.yml
     with:
       env: staging

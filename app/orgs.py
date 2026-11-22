@@ -14,11 +14,10 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Optional
 
-from sqlalchemy import func, text
-from sqlalchemy.orm import Session, object_session
-
-from app.models import Event, EventAttendee, Organization, StaffUser, Tenant
 from app.timeutil import utcnow
+
+# La lógica pura (planes, límites, mensajes) NO importa SQLAlchemy ni los modelos: así sus pruebas corren sin base ni dependencias (`pytest --noconftest tests/test_saas_organizations_puro.py`).
+# Las consultas los importan dentro de cada función.
 
 GOLDEN_ID = 1
 INTERNAL_PLAN = "interno"
@@ -124,7 +123,7 @@ def limit_message(key: str, limit) -> str:
 SUSPENDED_MESSAGE = f"La cuenta de tu empresa está suspendida; {SUPPORT_HINT}"
 
 
-def check_limit(db: Optional[Session], org, key: str, current: Optional[int] = None):
+def check_limit(db, org, key: str, current: Optional[int] = None):
     """¿La empresa puede hacer UNO más de `key`? Devuelve (ok, mensaje en español). `current` = cuántos tiene ya; si no se da, se cuenta en la base (`usage`).
     Golden nunca se limita (y no se consulta nada). Una empresa suspendida no puede crear nada."""
     if is_internal(org):
@@ -167,8 +166,10 @@ def month_start(now: Optional[datetime] = None) -> datetime:
 
 
 # ------------------------------- consultas -------------------------------
-def golden(db: Session) -> Organization:
+def golden(db):
     """La fila 1 (Golden). La crea la migración 0162; si falta (base recién vaciada), se repone aquí para que la siguiente empresa nunca tome el id 1."""
+    from sqlalchemy import text
+    from app.models import Organization
     org = db.query(Organization).filter(Organization.id == GOLDEN_ID).first()
     if org is None:
         org = Organization(id=GOLDEN_ID, slug="golden", name="Golden", legal_name="Golden Eventos y Logística S.A.S.", plan=INTERNAL_PLAN, status="active")
@@ -179,7 +180,8 @@ def golden(db: Session) -> Organization:
     return org
 
 
-def get_org(db: Session, org_id) -> Optional[Organization]:
+def get_org(db, org_id):
+    from app.models import Organization
     return db.query(Organization).filter(Organization.id == org_id).first() if org_id else None
 
 
@@ -188,12 +190,13 @@ def current_org(user):
     org_id = getattr(user, "org_id", None)
     if org_id in (None, GOLDEN_ID):
         return _GOLDEN
+    from sqlalchemy.orm import object_session
     db = object_session(user)
     org = get_org(db, org_id) if db is not None else None
     return org or SimpleNamespace(id=org_id, slug="", name="", plan="basico", entitlements_json=None, status="suspended")          # empresa que ya no existe: nada se le permite
 
 
-def org_for_tenant(db: Session, tenant):
+def org_for_tenant(db, tenant):
     """La empresa dueña de un cliente (`tenants.org_id`). Golden sin consultar la base (así crear un evento de Golden no cuesta una consulta más)."""
     org_id = getattr(tenant, "org_id", None)
     if org_id in (None, GOLDEN_ID):
@@ -201,7 +204,8 @@ def org_for_tenant(db: Session, tenant):
     return get_org(db, org_id) or SimpleNamespace(id=org_id, slug="", name="", plan="basico", entitlements_json=None, status="suspended")
 
 
-def _tenant_ids(db: Session, org) -> list:
+def _tenant_ids(db, org) -> list:
+    from app.models import Tenant
     q = db.query(Tenant.id)
     if is_internal(org):
         q = q.filter((Tenant.org_id == GOLDEN_ID) | (Tenant.org_id.is_(None)))
@@ -210,10 +214,12 @@ def _tenant_ids(db: Session, org) -> list:
     return [tid for (tid,) in q]
 
 
-def usage(db: Session, org, now: Optional[datetime] = None) -> dict:
+def usage(db, org, now: Optional[datetime] = None) -> dict:
     """Consumo de la empresa: eventos creados este mes (UTC), cuentas activas del personal (sin digitadores ni clientes temporales), asistentes en total y el evento más grande.
     La persona de prueba (`PRUEBA`) no cuenta."""
+    from sqlalchemy import func
     from app import testperson
+    from app.models import Event, EventAttendee, StaffUser
     tenant_ids = _tenant_ids(db, org)
     staff_q = db.query(func.count(StaffUser.id)).filter(StaffUser.is_active.is_(True), StaffUser.archived_at.is_(None), StaffUser.role.notin_(("digitador", "cliente")))
     staff_q = staff_q.filter((StaffUser.org_id == GOLDEN_ID) | (StaffUser.org_id.is_(None))) if is_internal(org) else staff_q.filter(StaffUser.org_id == org.id)
@@ -230,8 +236,9 @@ def usage(db: Session, org, now: Optional[datetime] = None) -> dict:
     return out
 
 
-def home_tenant(db: Session, org: Organization) -> Tenant:
+def home_tenant(db, org):
     """El cliente «propio» de una empresa que no es Golden: a él queda atada su cuenta de administrador (el aislamiento de hoy es por cliente). Se crea la primera vez."""
+    from app.models import Tenant
     tenant = db.query(Tenant).filter(Tenant.org_id == org.id, Tenant.archived_at.is_(None)).order_by(Tenant.id).first()
     if tenant is not None:
         return tenant
@@ -249,8 +256,9 @@ def home_tenant(db: Session, org: Organization) -> Tenant:
     return tenant
 
 
-def create_org(db: Session, data: dict) -> Organization:
+def create_org(db, data: dict):
     """Crea la empresa (sin confirmar la transacción). `data`: name (obligatorio), slug, legal_name, nit, contact_email, contact_phone, plan, entitlements, notes. ValueError con el mensaje."""
+    from app.models import Organization
     golden(db)          # la fila 1 existe antes que cualquier otra
     name = str(data.get("name") or "").strip()
     if len(name) < 2:
@@ -271,10 +279,10 @@ def create_org(db: Session, data: dict) -> Organization:
     return org
 
 
-def create_admin(db: Session, org: Organization, username: str, full_name: str, email: Optional[str], temp_password_hash: str, phone: Optional[str] = None,
-                 created_by: Optional[StaffUser] = None) -> StaffUser:
+def create_admin(db, org, username: str, full_name: str, email: Optional[str], temp_password_hash: str, phone: Optional[str] = None, created_by=None):
     """Primer administrador (rol `admin`) de la empresa, con contraseña temporal (`must_change_password`: la cambia al ingresar; docs/FASE_4_CLAVE_PRIMERA_VEZ.md). Sin confirmar la
     transacción. Una empresa distinta de Golden: solo con el aislamiento encendido, y la cuenta nace atada al cliente propio de la empresa. ValueError / PermissionError con el mensaje."""
+    from app.models import StaffUser
     username = str(username or "").strip()
     if not username:
         raise ValueError("Escribe el usuario del administrador")
@@ -298,8 +306,8 @@ def create_admin(db: Session, org: Organization, username: str, full_name: str, 
     return admin
 
 
-def create_org_with_admin(db: Session, data: dict, admin_username: str, admin_full_name: str, admin_email: Optional[str], temp_password_hash: str, admin_phone: Optional[str] = None,
-                          created_by: Optional[StaffUser] = None):
+def create_org_with_admin(db, data: dict, admin_username: str, admin_full_name: str, admin_email: Optional[str], temp_password_hash: str, admin_phone: Optional[str] = None,
+                          created_by=None):
     """Empresa + su primer administrador en UNA transacción (sin confirmarla: lo hace quien llama). Devuelve (empresa, administrador)."""
     org = create_org(db, data)
     admin = create_admin(db, org, admin_username, admin_full_name, admin_email, temp_password_hash, phone=admin_phone, created_by=created_by)

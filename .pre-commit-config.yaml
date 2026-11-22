@@ -2,7 +2,7 @@
 # Las mismas reglas de ruff.toml que corre el CI. No reformatea código.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.16.9          # MISMA versión que el job «lint» de .github/workflows/ci.yml y requirements-dev.txt: al subirla, se sube en los tres
     hooks:
       - id: ruff
   - repo: https://github.com/pre-commit/pre-commit-hooks

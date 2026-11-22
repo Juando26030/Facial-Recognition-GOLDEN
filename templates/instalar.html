@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-help"/></svg></button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Primer arranque | GoldenWeb 2.0</title>
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-acceso.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
+    <script src="{{ url_for('static', path='js/instalar.js') }}" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+</head>
+<body class="gw-page">
+<a class="gw-skip" href="#instUser">Ir al formulario</a>
+<div class="login">
+    <div class="login__top">{% include "_gw_theme_toggle.html" %}</div>
+    <main class="login__main">
+        <div class="gw-card gw-card--raised login__card">
+            <div class="login__brand">
+                <img class="login__logo" src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Eventos y Logística" width="96" height="96">
+                <h1 class="gw-title">GoldenWeb <span>2.0</span></h1>
+            </div>
+            <div class="login__title-row">
+                <h2 class="gw-subtitle">Primer arranque</h2>
+                {% call ayuda('ayInstalar', '¿Qué es esta pantalla?') %}Aparece una sola vez, cuando la plataforma está recién instalada y todavía no existe ninguna cuenta. Aquí creas la cuenta del dueño (Super Admin), la que puede todo. Apenas la crees, esta pantalla deja de existir para siempre y entras por «Ingresar» como cualquier persona.{% endcall %}
+            </div>
+            <p class="gw-hint">Crea la cuenta del dueño de la plataforma. Tú eliges la contraseña; nadie más la ve.</p>
+            <form id="installForm" class="gw-stack" novalidate>
+                {% if needs_token %}
+                <div class="gw-field">
+                    <div class="gw-row"><label class="gw-label" for="instToken">Código de instalación</label>
+                    {% call ayuda('ayToken', 'Código de instalación') %}Es una clave que se configuró al desplegar (la variable INSTALL_TOKEN) para que nadie más pueda adelantarse y crear esta cuenta. Te la da quien hizo el despliegue.{% endcall %}</div>
+                    <input class="gw-input" type="password" id="instToken" name="install_token" required autocomplete="off" data-gw-eye>
+                </div>
+                {% endif %}
+                <div class="gw-field">
+                    <div class="gw-row"><label class="gw-label" for="instUser">Usuario</label>
+                    {% call ayuda('ayUser', 'Usuario') %}Lo que vas a escribir cada vez que ingreses. Entre 3 y 64 caracteres: letras, números y . _ @ -. Ejemplo: «admin» o tu correo.{% endcall %}</div>
+                    <input class="gw-input" type="text" id="instUser" name="username" required autofocus autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64">
+                </div>
+                <div class="gw-field">
+                    <div class="gw-row"><label class="gw-label" for="instName">Nombre completo</label>
+                    {% call ayuda('ayName', 'Nombre completo') %}Tu nombre y apellido. Aparece arriba a la derecha y en el registro de quién hizo cada cosa. Ejemplo: «Juan David Pérez».{% endcall %}</div>
+                    <input class="gw-input" type="text" id="instName" name="full_name" required autocomplete="name" maxlength="120">
+                </div>
+                <div class="gw-field">
+                    <div class="gw-row"><label class="gw-label" for="instEmail">Correo</label>
+                    {% call ayuda('ayEmail', 'Correo') %}Sirve para recuperar la contraseña si la olvidas («Olvidé mi contraseña»). Usa uno que solo tú leas. Ejemplo: «gerencia@tuempresa.com».{% endcall %}</div>
+                    <input class="gw-input" type="email" id="instEmail" name="email" required autocomplete="email" maxlength="200">
+                </div>
+                <div class="gw-field">
+                    <div class="gw-row"><label class="gw-label" for="instPass">Contraseña</label>
+                    {% call ayuda('ayPass', 'Contraseña') %}Mínimo 10 caracteres, con letras y números, distinta del usuario y que no sea una de las muy comunes. Ejemplo de forma (no la copies): tres palabras y un número. Es la llave de todo: no la compartas.{% endcall %}</div>
+                    <input class="gw-input" type="password" id="instPass" name="password" required autocomplete="new-password" data-gw-eye>
+                </div>
+                <div class="gw-field">
+                    <label class="gw-label" for="instPass2">Repite la contraseña</label>
+                    <input class="gw-input" type="password" id="instPass2" name="password_confirm" required autocomplete="new-password" data-gw-eye>
+                </div>
+                <button type="submit" class="gw-btn gw-btn--primary gw-btn--block" id="installSubmit">Crear la cuenta del dueño</button>
+            </form>
+        </div>
+    </main>
+</div>
+</body>
+</html>

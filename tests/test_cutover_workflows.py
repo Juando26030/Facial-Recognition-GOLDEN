@@ -23,7 +23,10 @@ def test_cloud_run_workflow_deploys_staging_from_the_migration_branch_and_produc
     wf = _load("cloudrun.yml")
     assert wf["on"]["push"]["branches"] == ["migra/fase1-2"]                     # un push a main no lanza este flujo (el CI de ci.yml corre por su cuenta)
     jobs = wf["jobs"]
-    assert jobs["staging"]["if"] == "github.ref == 'refs/heads/migra/fase1-2'" and jobs["staging"]["with"]["env"] == "staging"
+    # 22-nov-2026: staging también A MANO (workflow_dispatch) desde `feat/**` y `saas/**`; nunca por push de esas ramas (la lista de `push` de arriba no cambia) y nunca desde `main`.
+    assert jobs["staging"]["if"] == ("github.ref == 'refs/heads/migra/fase1-2' || (github.event_name == 'workflow_dispatch' && "
+                                     "(startsWith(github.ref, 'refs/heads/feat/') || startsWith(github.ref, 'refs/heads/saas/')))")
+    assert jobs["staging"]["with"]["env"] == "staging" and jobs["staging"]["concurrency"] == {"group": "cloudrun-staging", "cancel-in-progress": False}
     assert jobs["production"]["with"]["env"] == "production" and jobs["production"]["needs"] == "test" and jobs["staging"]["needs"] == "test"
     confirm = wf["on"]["workflow_dispatch"]["inputs"]["confirm"]
     assert confirm["type"] == "string" and confirm["default"] == "" and "DESPLEGAR" in confirm["description"]

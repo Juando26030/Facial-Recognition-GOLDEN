@@ -9,15 +9,19 @@ el evento. Bloque legal del piloto: `docs/legal/` (textos de la auditora, decisi
 cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). **Para poner producción en Cloud Run: [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md)** (la ejecuta Juan David; Claude no corre nada en la nube). **Antes de dar CUALQUIER comando de despliegue lee [`deploy/gcp/README.md`](deploy/gcp/README.md)** (formato exacto del comando, `FORCE=1`, `ONEDRIVE_DRIVE_ID`, comprobar rama/commit). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
 si no coinciden con el código, manda el código y este archivo.
 
-## Infraestructura: hoy y destino
-- **Hoy (producción):** VM `golden-biometrics-prod` (us-central1-a, e2-custom 2 vCPU/4 GB), Gunicorn 3 procesos (`deploy/gunicorn.conf.py`,
-  `deploy/facial-recognition.service`), Postgres local (la app usa el rol `golden_app`), Nginx + Cloudflare, dominio
-  `app.golden-eventos.com`. Despliegue: push a `main` → `.github/workflows/deploy.yml` (runner self-hosted en la VM; congela si hay eventos).
-  Respaldos por cron a los buckets de GCS; ver [`docs/recuperacion_desastre.md`](docs/recuperacion_desastre.md).
-- **Destino (rama `migra/fase1-2`, sin desplegar):** Cloud Run (3 servicios de UNA imagen: `publico`, `web`, `biometria`; Jobs de
-  migraciones, carga masiva y operaciones) + Neon Postgres 18 + Cloud Storage + Cloud Tasks + Cloud Scheduler + Firebase Hosting (dominio) +
-  Secret Manager + Workload Identity Federation. Plan: [`docs/13`](docs/13_ARQUITECTURA_ESCALABILIDAD.md); progreso y decisiones:
-  [`docs/15_MIGRACION.md`](docs/15_MIGRACION.md); resultados de carga y facial: [`docs/14`](docs/14_FASE0_RESULTADOS.md).
+## Infraestructura: hoy y heredado
+- **Hoy (producción, desde el 28-oct-2026):** Cloud Run `us-east4` (3 servicios de UNA imagen: `golden-web`, `golden-publico`, `golden-biometria`;
+  Jobs de migraciones, carga masiva y operaciones) + Neon Postgres 18 + Cloud Storage + Cloud Tasks + Cloud Scheduler + Firebase Hosting (dominio
+  `app.golden-eventos.com`) + Secret Manager + Workload Identity Federation. Staging: lo mismo en un proyecto aparte (`staging.golden-eventos.com`).
+  Hoy se despliega a mano con `deploy/gcp/manual_deploy.sh` (ver [`deploy/gcp/README.md`](deploy/gcp/README.md) y qué corre dónde en
+  [`CHANGELOG.md`](CHANGELOG.md)); `main` va atrasado respecto de producción hasta que Juan David autorice ponerlo al día
+  ([`docs/revision_2026-11-22/02_codigo_calidad_repo.md`](docs/revision_2026-11-22/02_codigo_calidad_repo.md) §4.1). Respaldos y recuperación:
+  [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md) § «Recuperación ante desastre en Cloud Run + Neon». Arquitectura:
+  [`docs/13`](docs/13_ARQUITECTURA_ESCALABILIDAD.md); progreso y decisiones de la migración: [`docs/15_MIGRACION.md`](docs/15_MIGRACION.md);
+  resultados de carga y facial: [`docs/14`](docs/14_FASE0_RESULTADOS.md).
+- **Heredado (ya NO es producción):** VM `golden-biometrics-prod` (Gunicorn + Postgres local + Nginx; `deploy/gunicorn.conf.py`,
+  `deploy/facial-recognition.service`, `.github/workflows/deploy.yml` solo manual). Ver [`deploy/LEEME.md`](deploy/LEEME.md) y
+  [`docs/recuperacion_desastre.md`](docs/recuperacion_desastre.md) (solo sirve si se volviera a la VM).
 
 ## Mapa del código
 ```

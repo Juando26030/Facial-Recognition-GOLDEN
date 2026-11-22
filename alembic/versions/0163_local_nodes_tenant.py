@@ -6,17 +6,16 @@
 Sin llave foránea a propósito: archivar o borrar un cliente no debe tumbar ni «abrir» un servidor (con un cliente que ya no existe, el servidor
 simplemente no ve ningún evento). Escrita a mano; sin SET de sesión (pooler de Neon). Id ≤ 32 caracteres.
 
-OJO (coordinador): 0162 lo escribe otro agente. Si 0162 ya existe al juntar las ramas, cambiar `down_revision` de esta migración a ese id
-(una sola cabeza); hoy apunta a 0161 porque 0162 todavía no está en el árbol.
+Va DESPUÉS de 0162_organizations (la escribió otro agente en la misma revisión): una sola cabeza.
 
 Revision ID: 0163_local_nodes_tenant
-Revises: 0161_inventario_por_base
+Revises: 0162_organizations
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0163_local_nodes_tenant"
-down_revision = "0161_inventario_por_base"
+down_revision = "0162_organizations"
 branch_labels = None
 depends_on = None
 

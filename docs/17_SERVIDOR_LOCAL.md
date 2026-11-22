@@ -81,6 +81,19 @@ Nadie instala ni vincula un servidor local sin una **llave de producto** (`GLD-X
 - **Deshabilitar:** la nube revoca el token del nodo. Sin internet el servidor sigue trabajando; cuando vuelve a conectarse recibe 403 «Servidor deshabilitado…» (`server_keys.DISABLED_DETAIL`), escribe
   `SERVER_DISABLED=1` en `config\local.env` y TODA la app queda cerrada (`app/server_lock.py` + middleware). No se reabre: hace falta una llave nueva (reinstalar con otra llave limpia el bloqueo y el vínculo viejo).
   Si el servidor tenía un evento arrendado, queda solo lectura en la nube: recuperarlo desde Sincronización.
+- **«Solo eventos del cliente…» (0163, 22-nov-2026; opcional):** al crear la llave se puede elegir UN cliente. El servidor que se instale con ella hereda ese cliente
+  (`local_server_keys.tenant_id` → `local_nodes.tenant_id` al vincular) y la nube solo le deja ver, tomar, bajar, sincronizar y devolver eventos de ese cliente: los demás no salen en su
+  lista y cualquier llamada sobre ellos responde 404 (`node_api._event_for_node`, `nodes._leased_event`). Sin elegir («Todos los clientes»), como siempre. Las llaves y servidores
+  anteriores quedan sin cliente (sin restricción); no se puede cambiar después: para otro cliente, otra llave. Recomendado para todo portátil que salga de la oficina.
+- **Con qué cuenta sube el servidor (22-nov-2026):** con la que lo vinculó. Antes solo valía admin/super_admin y un servidor vinculado por un **coordinador o comercial** recibía 403 en
+  cada subida (los datos se quedaban en el portátil). Ahora suben las mismas cuentas que pueden vincular (`node_auth.ENROLL_ROLES`); una que no es de administración solo sube a eventos
+  que esa cuenta puede ver (`get_event_for_staff` / `_event_for_sync`). Si la cuenta se desactiva o se archiva, el servidor deja de subir (403): vincularlo de nuevo.
+- **Plazo de gracia sin nube (22-nov-2026; CALCULADO, todavía NO aplicado):** `app/server_lock.py` lleva la cuenta de la última respuesta válida de la nube (`LOCAL_CLOUD_OK_AT` en
+  `local.env`) y de los 401 seguidos (token revocado con «Revocar», que no es lo mismo que «Deshabilitar» la llave). `grace_state()` da `ok` / `warn` / `readonly`: solo lectura tras
+  `LOCAL_GRACE_DAYS` días sin nube (14 por defecto; 0 = apagado) o 24 h después de 3 respuestas 401 seguidas; nunca el mismo día (sin internet la puerta sigue, con aviso). Volver a
+  conectarse lo restablece solo. **Falta** que el middleware de `app/main.py` lo aplique (`server_lock.write_blocked`) y que las pantallas muestren el aviso: hasta entonces el servidor
+  se comporta como antes. Límite conocido: un administrador de Windows puede cambiar el reloj o editar `local.env`; esto frena al equipo perdido, no a un atacante con el disco en la mano
+  (para eso: BitLocker).
 - **Eliminar deshabilitadas (0159):** las llaves ya deshabilitadas se pueden quitar de la lista (botón «Eliminar» por fila o «Eliminar las N deshabilitadas»). El apagado no depende de la llave: queda en `local_nodes.disabled_at`, así que el servidor sigue recibiendo el 403 de deshabilitado; la auditoría conserva `server_key_delete`.
 - **Descarga del paquete:** con `UPDATE_PACKAGE_AUTH=1` el manifiesto no entrega la URL/huella y `/api/ops/update-package/*` exige `X-Node-Token` o el permiso del instalador. **Viene apagado**; se enciende cuando
   todos los servidores ya instalados corran una versión que envía su token (`fetch_manifest` y `run-update.ps1` ya lo envían).

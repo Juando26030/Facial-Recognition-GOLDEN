@@ -23,3 +23,7 @@ deploy/local/.env.local
 
 # Detalle sensible de las auditorías de seguridad: nunca al repo público
 docs/**/*PRIVADO*
+
+# Salidas del arnés visual (scripts/visual_harness/shoot.py): capturas PNG que se regeneran en cada corrida; no se versionan (22-nov-2026)
+scripts/visual_harness/out/*
+!scripts/visual_harness/out/README.md

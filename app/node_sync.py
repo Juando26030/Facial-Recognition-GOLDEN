@@ -448,7 +448,7 @@ def pull_event(db: Session, event: Event, max_pages: int = 20) -> dict:
         data = _call("GET", f"/api/node/events/{event.cloud_event_id}/changes?{q}")
         added = peer_changes.apply_changes(db, event, data)
         for k, v in added.items():
-            total[k] += v
+            total[k] = total.get(k, 0) + v                    # `added` también trae las secciones de node_extra (edits, areas…): sin .get, la primera edición bajada daba KeyError
         cur = peer_changes.clean_cursor(data.get("cursor") or cur)
         peer_changes.save_cursor(event, cur)
         db.commit()

@@ -1,12 +1,13 @@
 name: Seguridad (escáneres)
 
 # Fase 0C. Escáneres automáticos y gratuitos sobre el código: secretos (gitleaks), dependencias vulnerables (pip-audit) y análisis estático
-# (Bandit y Semgrep). Corre en cada PR, en cada push a main y cada lunes. Línea base limpia: BLOQUEAN (rojo) gitleaks (cualquier hallazgo no
+# (Bandit y Semgrep). Corre en cada PR, en cada push a main y a las ramas de trabajo (`feat/**`, `saas/**`, `hotfix/**`: desde el 22-nov-2026, porque lo que se despliega
+# sale de esas ramas y `main` iba atrasado), cada lunes y a mano (workflow_dispatch, sobre la rama que se elija). Línea base limpia: BLOQUEAN (rojo) gitleaks (cualquier hallazgo no
 # documentado en .gitleaks.toml) y Bandit de severidad ALTA; lo medio/bajo de Bandit, Semgrep y pip-audit siguen siendo informativos.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "feat/**", "saas/**", "hotfix/**"]
   schedule:
     - cron: "17 11 * * 1"
   workflow_dispatch:
@@ -14,10 +15,16 @@ on:
 permissions:
   contents: read
 
+# Un push nuevo a la misma rama cancela la corrida anterior de los escáneres (ahorra minutos); nunca en main ni en la corrida del lunes.
+concurrency:
+  group: seguridad-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+
 jobs:
   secretos:
     name: Secretos (gitleaks, todo el historial)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,6 +45,7 @@ jobs:
   dependencias:
     name: Dependencias vulnerables (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
@@ -57,6 +65,7 @@ jobs:
   estatico:
     name: Análisis estático (Bandit + Semgrep)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

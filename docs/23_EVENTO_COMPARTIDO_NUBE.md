@@ -54,6 +54,18 @@ Pedido de Juan David el 20-nov-2026: «eso también debería subirse a la nube»
 | Aceptaciones / firmas | `/extra` › `acceptances` | se crean o se verifican (la verificación más antigua vale) | no (van a la nube) |
 | Autorizaciones de datos (Ley 1581) | `/extra` › `consents` (por id; la huella de la cédula se recalcula en la nube) | solo INSERT, como exige la tabla | no (van a la nube) |
 
+**Límites de lo que la nube acepta de un servidor (seguridad, 22-nov-2026):**
+- **Solo asistentes del evento.** Las ediciones de datos, la fecha de nacimiento, las aceptaciones y las autorizaciones solo se aplican a personas que están en `event_attendees` de ESE
+  evento (antes bastaba con ser del mismo cliente). Lo demás no se guarda y se cuenta en `rejected` (en la respuesta de `/extra` y `/records`, y en un aviso del log sin datos
+  personales); la respuesta sigue siendo `ok: true` para que el ciclo del servidor no se trabe. El orden de subida ya garantiza el caso normal: las personas nuevas suben primero
+  (`/outbox`) y quedan como asistentes. Al BAJAR lo de otros servidores (`from_peer=True`) no se filtra: la fuente es la nube.
+- **Aceptación biométrica que llega de un servidor = por verificar.** Si un servidor sube una autorización con `accepted` para alguien que no tenía una vigente en la nube y sin la
+  verificación del personal (`acceptances` con `verified_at`), queda con la misma marca de `/aceptar` (`web_acceptances` sin `verified_at`): la persona no entra a la matriz de
+  reconocimiento hasta que el personal confirme su identidad (`POST /api/events/{id}/web-acceptance/{cédula}/verify`). El registro en `audit_consent_logs` se guarda igual (solo INSERT).
+- **Servidor con cliente fijo (0163).** Si su llave se creó con «Solo eventos del cliente…», tampoco puede sumarse a un evento compartido de otro cliente (404). Ver docs/17 § Llaves.
+- Un servidor con esquema anterior a 0163 sigue recibiendo 409 «desactualizado» al subir hasta actualizarse (regla de siempre, `node_auth.require_compatible`); sus llamadas y las
+  respuestas no cambiaron de forma (solo se agregó `rejected`).
+
 Cada tipo tiene su marca de agua en el evento local (`sync_edit_id`, `sync_area_id`, `sync_delivery_id`, `sync_turn_id`, `sync_call_id`, `sync_turn_at`) y cuenta en «pendientes»: «Pasar a internet»
 no libera mientras falte algo. Todo eso salió de la lista de «solo local» que bloqueaba la liberación; en ella queda únicamente el inventario de ALMACÉN del evento (en el servidor local es de
 solo consulta: no hay catálogo de productos), que de todas formas va en la copia completa.
