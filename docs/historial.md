@@ -1090,3 +1090,38 @@ Parámetro por evento (habilitada / deshabilitada); deshabilitada exige un permi
 - **Un solo permiso, dos equipos:** el gasto es un UPDATE condicionado (`status='approved' AND used_at IS NULL AND expires_at > ahora`); en la cola compartida va en la misma transacción que crea el trabajo.
 - **Coordinadores:** la 1A (alcance de evento apagado) deja entrar a todos los coordinadores a todos los eventos, pero decidir (y no necesitar permiso) es solo del coordinador asignado o admin+; los demás piden permiso como un digitador.
 - Límite conocido: la impresión automática al registrar no pide permiso (es la primera impresión).
+
+## Resumen del 5-nov al 22-nov-2026 (agregado el 22-nov-2026; tomado de `CHANGELOG.md`)
+Desde el 5-nov este archivo dejó de llevarse sprint a sprint: el detalle de cada pieza quedó en su propio documento y el registro por fecha en
+[`CHANGELOG.md`](../CHANGELOG.md), que es desde ahora donde se escribe al cerrar cada pieza. Esto es solo el resumen, del más viejo al más reciente;
+lo anterior a esta sección no se tocó.
+- **9-nov · Fase 4, equipo del evento (producción, commit `2c8c4d7`; migraciones hasta `0104`).** Compromiso digital del digitador con firma, credenciales por
+  correo, autorizar a todos, clave de primera vez, descargas de bases solo para administradores. Detalle: `docs/CIERRE_FASE_4.md`, `docs/FASE_4_*.md`.
+- **9 al 11-nov · Fases 5 a 9 y Fase 10 (producción el 11-nov, commit `0899e02`; migraciones hasta `0129_staff_client_temp`).** Eventos configurables (facturado,
+  encuesta, jornada, historial, inventario), servidor local Windows con instalador, URL limpia de inscripciones, QR dinámico/Wallet, contactos de expositores,
+  cobros Wompi multicuenta, alertas de borrado masivo, copia semanal cifrada a OneDrive; Fase 10: «Mostrar con asteriscos», prellenado del compromiso, Acta de
+  novedades, historial de cambios por persona, cuentas de cobro y gastos de infraestructura, Job horario económico (Neon puede dormir); cliente temporal
+  (`cli-xxxxxx`). Detalle: `docs/ESTADO_2026-11-11.md`, `docs/FASE_10_AJUSTES_NOV10.md`, `docs/REVISION_F5-9_PLAN_VS_CODIGO.md`, `docs/FASE_9_PLATAFORMA.md`.
+- **16-nov · CRM, coordinador temporal y contactos del cliente (producción, commit `1d5ed06`; migraciones `0130`–`0146`).** CRM completo (apagado en producción con
+  `CRM_ENABLED=0`), coordinador temporal (`staff_users.event_only`, `app/event_only.py`), duplicar evento, contactos del cliente por evento, informe final y encuesta
+  automática al pasar a «Facturado», código de la persona y subcategorías (`0140`), legalizaciones (modelo el 14-nov, formato Excel `0147` el 17-nov).
+  Detalle: `docs/PASO_A_PRODUCCION_2026-11-16.md`, `docs/crm/README.md`, `docs/COORDINADOR_TEMPORAL.md`.
+- **17-nov · Almacén piezas 1 y 2, gráfico de gastos y ronda visual por pantalla (staging; `0148`, `0149`).** Catálogo, unidades con serial, QR y etiquetas; salidas
+  y entradas por QR; tablero del evento. Ese día un despliegue de staging falló porque la rama no traía una migración que ya había corrido (`deploy/gcp/README.md` §1).
+- **18-nov · Almacén piezas 3 y 4, preimpresión por categoría, diseñador emergente y guardado unificado (producción, `prod/integrado-2026-11-18`; `0150`–`0157`).**
+  Solo se imprime a quien ya está registrado (salvo preimpresión y certificados); CRM implica inventario; orden de legalizaciones. Detalle: `docs/ALMACEN.md`,
+  `docs/ux/GUARDADO_UNIFICADO.md`.
+- **19-nov · Lector de cédula por cámara y prueba de carga «rush» (producción, `prod/lector-2026-11-19`).** `/pruebas/lector-cedula` (PDF417), Registro → «Escanear»
+  con tres modos; prueba «rush» autorizada sobre un evento sintético (`docs/PRUEBA_CARGA_PRODUCCION.md`); escarapela digital con la misma plantilla que la física.
+- **20-nov · Llaves de producto del servidor local y cierre por inactividad (producción, `prod/llaves-escaner-2026-11-20`; `0158`, `0159`).** Crear, ver y
+  deshabilitar llaves; instalador liviano; bloqueo al deshabilitar. Chequeo semanal de salud de la base (`app/db_health.py`). Detalle: `docs/17_SERVIDOR_LOCAL.md`.
+- **21-nov · Evento compartido entre servidores locales con la nube como puente (producción, commit `4615fb4`; `0160`)** y **hotfix de subida de archivos del
+  formulario público en celulares** (`hotfix/subida-formulario-2026-11-21`). Detalle: `docs/23_EVENTO_COMPARTIDO_NUBE.md`.
+- **21 y 22-nov · Inventario «lo define la base», dependientes y candados (staging, rama `feat/inventario-base`; `0161`).** Lo que le toca a cada persona se calcula en
+  vivo; vista previa obligatoria antes de cualquier carga; bloqueo por evento con contraseña del digitador; registro legible en cualquier ancho (320 a 3440 px).
+  Detalle: `docs/25_INVENTARIO_POR_BASE.md`.
+- **22-nov · Revisión integral por roles (rama `saas/revision-integral`, sin publicar).** Reportes en `docs/revision_2026-11-22/`; reglas consolidadas en
+  `docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md`; `CHANGELOG.md`, `CONTRIBUTING.md`, plantilla de PR; gobierno del repositorio (escáneres de seguridad también en ramas
+  `feat/`, `saas/` y `hotfix/`; capturas del arnés visual fuera del repositorio; `requirements-dev.txt`; scripts en modo seco para limpiar ramas y reordenar `docs/`).
+- **Lección de proceso de estas tres semanas:** `main` quedó 11 días detrás de producción y las ramas `prod/…` hicieron de etiqueta. Desde el 22-nov la convención es
+  etiquetas de git para lo desplegado y `CHANGELOG.md` como registro (`CONTRIBUTING.md`).

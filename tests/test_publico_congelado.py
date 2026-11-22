@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # 12-nov-2026, orden expresa de Juan David: «(opcional)» de los formularios públicos sale en negrilla (form-render.js: font-weight 700, sin opacidad); hash renovado.
 # 9-nov-2026 (cierre Fase 4): form_public.html, legal_base.html y form-render.js cambiaron A PROPÓSITO (compromiso digital: ficha, secciones, avisos); hashes renovados.
+# 22-nov-2026 (revisión integral, SEO de la plataforma): legal_base.html cambió A PROPÓSITO solo en el <head> (descripción, canónico y título); hash renovado.
 # 9-nov-2026 (revisión F5-9): digital_badge.html cambió A PROPÓSITO en la Fase 8 (QR dinámico, Wallet y enlace de contactos, orden de Juan David); y por ORDEN EXPRESA de
 # Juan David todas las páginas llevan el ícono de Golden en la pestaña (solo se agregaron las líneas <link rel="icon">). Hashes renovados.
 # 9-nov-2026, orden expresa de Juan David: estado de carga en botones («en ningún botón se pueda pensar que no funcionó»). form_public.html («Continuar» del código de
@@ -31,7 +32,7 @@ FROZEN = {
     "templates/aceptar_no_disponible.html": "a8de359cc787156269fb23be9d91729a0e1cf977168d1a4c7b5ee2131b2b01e4",
     "templates/digital_badge.html": "2bd1688a415cc438b66c98ee67a5c379725136d356eb9675d3dfd1674206d3e9",
     "templates/certificate_public.html": "bfdbb50504e97fdfe29cfa80e1a1236314f7d24ed75debc063026f1b1f8b3b49",
-    "templates/legal_base.html": "3b9bd1eb2fabec5d3631ec3e8fa1f1fc384cadbb9d79e3099f8076b3c2dfc0b0",
+    "templates/legal_base.html": "ce2f4b318cd543659de2b282d6a4718ed38b7880c00219fb08873bb4a3bdac89",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "215b6d5f98c0d835bd78a48238a3c7ccf5e5f2e44ea3f5162291e4e035f5b9aa",

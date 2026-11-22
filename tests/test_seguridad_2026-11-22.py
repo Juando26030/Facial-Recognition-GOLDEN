@@ -38,7 +38,7 @@ PUBLIC_ROUTES = {
     ("forms_public.py", "GET", "/f/{event_id}/{slug}"), ("forms_public.py", "GET", "/f/{event_id}/{slug}/state"), ("forms_public.py", "POST", "/f/{event_id}/{slug}/gate"),
     ("forms_public.py", "POST", "/f/{event_id}/{slug}/lookup"), ("forms_public.py", "POST", "/f/{event_id}/{slug}/check"), ("forms_public.py", "POST", "/f/{event_id}/{slug}/beacon"),
     ("forms_public.py", "GET", "/f/{event_id}/{slug}/asset/{tenant_id}/{filename}"), ("forms_public.py", "POST", "/f/{event_id}/{slug}/upload"), ("forms_public.py", "POST", "/f/{event_id}/{slug}/submit"),
-    ("legal_public.py", "GET", "/privacidad"), ("legal_public.py", "GET", "/privacidad/v1.0"), ("legal_public.py", "GET", "/terminos"), ("legal_public.py", "GET", "/reembolsos"),
+    ("legal_public.py", "GET", "/privacidad"), ("legal_public.py", "GET", "/privacidad/v1.0"), ("legal_public.py", "GET", "/terminos"), ("legal_public.py", "GET", "/reembolsos"), ("legal_public.py", "GET", "/robots.txt"),
     ("local_cert.py", "GET", "/certificado"), ("local_cert.py", "GET", "/certificado/golden-local-ca.cer"), ("local_cert.py", "GET", "/certificado/instalar-windows.cmd"),
     ("login_approval.py", "GET", "/ingreso/espera"), ("login_approval.py", "POST", "/api/ingreso/estado"), ("login_approval.py", "POST", "/api/ingreso/cancelar"),
     ("nodes.py", "POST", "/node/enroll"),          # usuario+contraseña+llave de producto en el cuerpo (mismos límites que /login)

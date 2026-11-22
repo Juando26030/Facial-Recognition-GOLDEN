@@ -50,6 +50,7 @@ def test_check_limit_messages_are_in_spanish_and_say_what_to_do():
     assert orgs.check_limit(None, _org("pro"), "events_per_month", 3) == (True, "")
     ok, msg = orgs.check_limit(None, _org("pro"), "events_per_month", 4)
     assert not ok and msg == "Tu plan permite 4 eventos por mes; contacta a soporte"
+    assert orgs.check_limit(None, _org("basico"), "events_per_month", 1)[1] == "Tu plan permite 1 evento por mes; contacta a soporte"
     ok, msg = orgs.check_limit(None, _org("basico"), "users", 9)
     assert not ok and msg == "Tu plan permite 5 usuarios; contacta a soporte"
     assert orgs.check_limit(None, _org("empresa"), "events_per_month", 999) == (True, "")

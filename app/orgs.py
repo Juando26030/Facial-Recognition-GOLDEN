@@ -30,9 +30,9 @@ KEYS = NUMERIC_KEYS + FEATURE_KEYS
 
 # Nombre, para qué sirve y cómo se nombra en los mensajes («Tu plan permite N …»).
 KEY_INFO = {
-    "events_per_month": {"label": "Eventos por mes", "unit": "eventos por mes", "help": "Cuántos eventos nuevos puede crear la empresa en un mes calendario. Ejemplo: 4."},
-    "attendees_per_event": {"label": "Asistentes por evento", "unit": "asistentes por evento", "help": "Cuántas personas caben en la base de UN evento. Ejemplo: 3000."},
-    "users": {"label": "Usuarios (cuentas del personal)", "unit": "usuarios", "help": "Cuántas cuentas de personal activas puede tener (sin contar digitadores temporales). Ejemplo: 15."},
+    "events_per_month": {"label": "Eventos por mes", "unit_one": "evento por mes", "unit": "eventos por mes", "help": "Cuántos eventos nuevos puede crear la empresa en un mes calendario. Ejemplo: 4."},
+    "attendees_per_event": {"label": "Asistentes por evento", "unit_one": "asistente por evento", "unit": "asistentes por evento", "help": "Cuántas personas caben en la base de UN evento. Ejemplo: 3000."},
+    "users": {"label": "Usuarios (cuentas del personal)", "unit_one": "usuario", "unit": "usuarios", "help": "Cuántas cuentas de personal activas puede tener (sin contar digitadores temporales). Ejemplo: 15."},
     "facial": {"label": "Reconocimiento facial", "unit": "reconocimiento facial", "help": "Si la empresa puede encender el reconocimiento facial voluntario en sus eventos."},
     "local_server": {"label": "Servidor local sin internet", "unit": "servidor local", "help": "Si puede usar llaves de producto para operar un evento sin internet."},
     "paid_forms": {"label": "Formularios con pago", "unit": "formularios con pago", "help": "Si sus formularios web pueden cobrar (Wompi)."},
@@ -117,7 +117,8 @@ def entitlements(org) -> dict:
 def limit_message(key: str, limit) -> str:
     if key in FEATURE_KEYS:
         return f"Tu plan no incluye {KEY_INFO[key]['unit']}; {SUPPORT_HINT}"
-    return f"Tu plan permite {limit} {KEY_INFO[key]['unit']}; {SUPPORT_HINT}"
+    unit = KEY_INFO[key]["unit_one"] if limit == 1 else KEY_INFO[key]["unit"]
+    return f"Tu plan permite {limit} {unit}; {SUPPORT_HINT}"
 
 
 SUSPENDED_MESSAGE = f"La cuenta de tu empresa está suspendida; {SUPPORT_HINT}"

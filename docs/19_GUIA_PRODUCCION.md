@@ -269,6 +269,41 @@ gcloud billing budgets list --billing-account <ID de la cuenta de facturación> 
 
 Si Actions no está disponible (el 5-nov-2026 estuvo bloqueado por facturación de la cuenta de GitHub), `deploy/gcp/manual_deploy.sh <staging|production> <ID-del-proyecto>` hace lo mismo que el workflow desde Cloud Shell: construye la imagen, la sube (de a una capa y con reintentos), corre `deploy.sh` y publica Firebase Hosting. Se lanza con `nohup ... &` para que sobreviva a una desconexión; la primera construcción tarda 20-60 min por dlib. Producción respeta el congelamiento (`FORCE=1` lo salta, solo con orden de Juan David). Las pruebas (CI) NO corren en este camino: correrlas antes o revisar a mano en staging.
 
+## Staging por GitHub Actions desde ramas `feat/` y `saas/` (22-nov-2026; lo corre Juan David UNA vez, pendiente)
+**Por qué.** La cuenta de despliegue de staging (`golden-deployer-staging`) solo entrega credenciales a GitHub cuando la corrida viene de la rama `migra/fase1-2` (`DEPLOY_REF` en
+`deploy/gcp/config.sh`, vínculo creado por `bootstrap.sh` paso 4). Esa rama ya no se usa; el trabajo vive en `feat/…` y `saas/…`, y por eso staging se despliega a mano con la cuenta dueña y sin pruebas.
+`.github/workflows/cloudrun.yml` ya acepta esas ramas **a mano** (Actions → «Cloud Run (staging y producción)» → Run workflow → elegir la rama; corre las pruebas y despliega staging). Falta que Google las acepte.
+Producción no cambia: solo `main`, a mano y escribiendo `DESPLEGAR`.
+
+**Por qué no basta con cambiar `DEPLOY_REF`.** El vínculo de Workload Identity compara el nombre de la rama **exacto** (no admite `feat/*`). Por eso se agrega al proveedor un atributo que agrupa las ramas
+(`attribute.ref_group`) y se vincula la cuenta a ese grupo. El vínculo viejo de `migra/fase1-2` queda igual; nada se quita. Es solo en el proyecto de **staging**.
+
+**Comando exacto (Cloud Shell, proyecto de staging; son dos órdenes, se pegan completas):**
+```bash
+gcloud config set project goldenweb-staging
+PN="$(gcloud projects describe goldenweb-staging --format='value(projectNumber)')"
+
+gcloud iam workload-identity-pools providers update-oidc github-oidc --location global --workload-identity-pool github \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref,attribute.ref_group=(assertion.ref.startsWith('refs/heads/feat/') || assertion.ref.startsWith('refs/heads/saas/')) ? 'staging-trabajo' : 'otra'"
+
+gcloud iam service-accounts add-iam-policy-binding "golden-deployer-staging@goldenweb-staging.iam.gserviceaccount.com" \
+  --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/${PN}/locations/global/workloadIdentityPools/github/attribute.ref_group/staging-trabajo"
+```
+**Comprobar (solo lee):**
+```bash
+gcloud iam workload-identity-pools providers describe github-oidc --location global --workload-identity-pool github --format='value(attributeMapping)'
+gcloud iam service-accounts get-iam-policy "golden-deployer-staging@goldenweb-staging.iam.gserviceaccount.com" --format='value(bindings.members)'
+```
+Deben verse `attribute.ref_group` en el primero y dos miembros en el segundo (`attribute.ref/refs/heads/migra/fase1-2` y `attribute.ref_group/staging-trabajo`).
+
+**Cuidados.** (1) La condición del proveedor (`assertion.repository=='Juando26030/Facial-Recognition-GOLDEN'`) no se toca: solo este repositorio obtiene credenciales. (2) Si el Environment `staging` de GitHub
+tiene «Deployment branches» restringidas, agregar ahí `feat/**` y `saas/**` (Settings → Environments → staging). (3) Hay UN staging: dos despliegues seguidos esperan en fila (`concurrency: cloudrun-staging`), y
+la rama debe traer TODAS las migraciones que ya corrieron en staging (`deploy/gcp/README.md` §1). (4) Volver atrás: `gcloud iam service-accounts remove-iam-policy-binding` con el mismo `--member` y `--role`.
+(5) `bootstrap.sh` no hace esto todavía (no se editó en la revisión): si se vuelve a correr `bootstrap.sh staging` no lo deshace (el proveedor ya existe y no lo recrea), pero un proyecto nuevo necesitaría repetir
+este paso; pendiente llevarlo a `bootstrap.sh` paso 4. (6) No se probó contra la nube: la sintaxis CEL del atributo es la documentada por Google para Workload Identity; si `update-oidc` la rechaza, no cambia nada
+y se revisa con Claude antes de reintentar. Mientras no se corra, lanzar el flujo desde una rama `feat/` falla en el paso de autenticación y no despliega nada (`manual_deploy.sh` sigue sirviendo).
+
 ## Chequeo semanal de salud de la base (20-nov-2026)
 `app/db_health.py`, paso `db-health` del Job `golden-ops` (domingo 6 a. m. hora local; `OPS_HEALTH_WEEKDAY` / `OPS_HEALTH_HOUR`). Por qué: una vez la plataforma se colapsó (había que reiniciar el cómputo de Neon) porque un botón cargaba miles de
 registros por clic y se pulsó varias veces. Mira tamaño de la base, conexiones usadas frente al máximo, conexiones colgadas, consultas largas y bloqueos. `warn` = aviso por correo (destinatarios de Configuración › Alertas del sistema) y campana;
