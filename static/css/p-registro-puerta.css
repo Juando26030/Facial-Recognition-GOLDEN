@@ -374,9 +374,9 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
    entre la cédula y el estado; el origen y «Recién registrado» quedan al final, junto a las acciones. Vacía conserva su lugar; el nombre del campo solo va en la tarjeta del celular. */
 @media (min-width: 901px) {
   html body.gw-registro .gw-reg__list .golden-table thead th[data-card-hidden] { display: none; }
-  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=cardx] { order: 4; flex: 1 1 0; min-width: 0; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=cardx] { order: 4; flex: 1.5 1 0; min-width: 0; white-space: normal; overflow-wrap: break-word; }
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx],
-  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: block; order: 4; flex: 1 1 0; min-width: 0; font-size: var(--gw-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: block; order: 4; flex: 1.5 1 0; min-width: 0; font-size: var(--gw-fs-sm); white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; hyphens: auto; line-height: var(--gw-lh-tight); }          /* lo largo baja a 2 o 3 líneas: la fila crece hacia abajo */
   html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { display: none; }
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden],
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden]:empty { display: none; }

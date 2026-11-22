@@ -729,6 +729,7 @@
   /* La cédula se MUESTRA sin ceros a la izquierda («0000349220» -> «349220»); el valor guardado y el que se usa para buscar o editar no cambian. Un documento con letras no se toca. */
   function shownId(v) { const t = String(v == null ? '' : v); return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t; }
   function buildRow(user) {
+    syncCardHeader();          // el directorio en vivo dibuja con drawRows (no renderRows): el encabezado se ajusta aquí (una sola vez por tabla)
     const tr = document.createElement('tr');
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
     tr.dataset.userId = user.id;
