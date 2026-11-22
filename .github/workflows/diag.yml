@@ -4,7 +4,7 @@ name: Diagnóstico de pruebas (corto)
 # (las pruebas viejas solo dicen «KeyError»). Sirve para arreglar muchas pruebas de una vez y dejar una sola corrida completa al final.
 on:
   push:
-    branches: ["diag/**"]
+    branches: ["diag/**", "!diag/inventario-base"]          # 21-nov-2026: en esta rama NO corre nada hasta que Juan David apruebe en staging (luego, UNA sola corrida completa)
 
 permissions:
   contents: read
