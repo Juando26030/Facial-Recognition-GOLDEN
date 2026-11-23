@@ -818,14 +818,14 @@ def recognize_photo(event_id: int = Form(...), match_token: str = Form(...), ind
 
 
 @router.get("/events/{event_id}/users/{user_id}/registration-photo")
-def registration_photo(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+def registration_photo(event_id: int, user_id: str, which: str = "registro", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
     """23-nov-2026: la foto de registro de la persona, para verla en «Editar persona» (y decidir si se retoma). Solo personas de ESTE evento, sin guardar copia
     (`no-store`), 404 si no tiene (menores y quien no aceptó no tienen). La foto pendiente de verificación NO se muestra aquí: solo la vigente."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     if not _person_of_event(db, event, user_id):
         raise HTTPException(status_code=404, detail="Persona no encontrada")
-    key = photo_key(event.tenant_id, user_id)
+    key = enroll_mod.selfie_photo_key(event.tenant_id, user_id) if which == "selfie" else photo_key(event.tenant_id, user_id)          # `which=selfie`: la selfie verificada que se conserva junto a la de registro
     content = crypto.read_bytes(key) if get_storage().exists(key) else None
     if content is None:
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")

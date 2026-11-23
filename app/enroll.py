@@ -27,9 +27,18 @@ def pending_photo_key(tenant_id: str, user_id: str) -> str:
     return photo_key(tenant_id, str(user_id))[: -len(".jpg")] + PENDING_SUFFIX
 
 
+SELFIE_SUFFIX = ".selfie.jpg"
+
+
+def selfie_photo_key(tenant_id: str, user_id: str) -> str:
+    """Clave de la selfie desde el celular YA VERIFICADA por el personal cuando la persona tenía otra foto de registro (23-nov-2026, pedido de Juan David): NO reemplaza a la de registro, se conservan las dos y «Editar»
+    las muestra como historial. Mismo prefijo biométrico que la vigente, así que toda purga, supresión y cambio de cédula la cubre por `photo_keys`."""
+    return photo_key(tenant_id, str(user_id))[: -len(".jpg")] + SELFIE_SUFFIX
+
+
 def photo_keys(tenant_id: str, user_id: str) -> tuple:
-    """Todas las claves biométricas de imagen de una persona: la vigente y la pendiente."""
-    return (photo_key(tenant_id, str(user_id)), pending_photo_key(tenant_id, user_id))
+    """Todas las claves biométricas de imagen de una persona: la vigente, la pendiente y la selfie verificada."""
+    return (photo_key(tenant_id, str(user_id)), pending_photo_key(tenant_id, user_id), selfie_photo_key(tenant_id, user_id))
 
 
 def has_any_photo(tenant_id: str, user_id: str) -> bool:
@@ -56,11 +65,12 @@ def move_photos(tenant_id: str, old_id: str, new_id: str) -> None:
 
 
 def promote_pending(db, tenant_id: str, user_id: str, event_id: int) -> bool:
-    """La persona quedó verificada: la selfie pendiente sustituye a la foto de registro y, si aún no hay vector, se encola su cálculo. No hace commit. False si no había pendiente."""
+    """La persona quedó verificada: la selfie pendiente se CONSERVA como segunda foto (`selfie_photo_key`) junto a la de registro, que sigue vigente (no se reemplaza nada; «Editar» muestra las dos). Si aún no hay vector,
+    se encola su cálculo desde la foto vigente. No hace commit. False si no había pendiente."""
     st, pend = get_storage(), pending_photo_key(tenant_id, user_id)
     if not st.exists(pend):
         return False
-    st.move(pend, photo_key(tenant_id, str(user_id)))
+    st.move(pend, selfie_photo_key(tenant_id, user_id))
     db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": utcnow(), "u": str(user_id), "t": tenant_id})
     jobs.enqueue(db, "face_enroll", {"tenant_id": tenant_id, "uref": jobs.person_ref(user_id), "event_id": int(event_id)}, max_attempts=3)      # idempotente: si ya hay vector, la tarea no hace nada
     return True

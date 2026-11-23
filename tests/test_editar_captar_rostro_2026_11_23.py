@@ -49,3 +49,14 @@ def test_aceptar_dice_con_claridad_que_la_foto_nueva_quedo_pendiente():
     s = (R / "app/routers/aceptar.py").read_text(encoding="utf-8")
     assert "held = hold" in s and '"photo_held": True' in s and "no reemplaza a la anterior" in s
     assert s.index('"photo_held": True') < s.index('"message": "¡Gracias! Cuando llegues,')
+
+
+def test_historial_de_fotos_se_conservan_las_dos():
+    """23-nov-2026: al verificar a la persona NO se reemplaza la foto de registro: la selfie se conserva como segunda foto, cubierta por toda purga (`photo_keys`), y «Editar» muestra las dos."""
+    e = (R / "app/enroll.py").read_text(encoding="utf-8")
+    assert "def selfie_photo_key" in e and "selfie_photo_key(tenant_id, user_id))" in e.split("def photo_keys")[1][:500]
+    prom = e.split("def promote_pending")[1].split("def status")[0]
+    assert "selfie_photo_key(" in prom and "photo_key(tenant_id, str(user_id)))" not in prom.split("st.move(")[1].split("\n")[0]
+    assert "which == \"selfie\"" in (R / "app/routers/api.py").read_text(encoding="utf-8")
+    d = (R / "static/js/directory.js").read_text(encoding="utf-8")
+    assert "editModalSelfiePhoto" in d and "which=${which}" in d

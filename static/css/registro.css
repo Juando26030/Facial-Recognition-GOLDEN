@@ -267,3 +267,4 @@ body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-orig
 .gw-registro__editphoto { margin: 0 0 var(--gw-sp-2); text-align: center; }
 .gw-registro__editphoto img { max-width: 160px; max-height: 200px; border-radius: var(--gw-radius-md); border: 1px solid var(--gw-border); object-fit: cover; }
 .gw-registro__editphoto figcaption { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-registro__editphotos { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); justify-content: center; }

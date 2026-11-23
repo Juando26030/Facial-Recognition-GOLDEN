@@ -56,7 +56,7 @@ def test_aceptar_holds_the_selfie_when_not_verified_and_the_default_is_active():
     assert "get_storage().exists(photo_key(event.tenant_id, uid))" in src                  # sin foto previa se guarda directo
     model = _read("app/models.py")
     assert re.search(r"accept_verify_photo = Column\(Boolean, default=True, server_default='true', nullable=False\)", model)
-    assert "enroll.promote_pending(" in _read("app/routers/consents.py")                  # al verificar, la pendiente sustituye a la vigente
+    assert "enroll.promote_pending(" in _read("app/routers/consents.py")                  # al verificar, la pendiente se conserva como segunda foto
     assert "accept_verify_photo" in _read("app/routers/consents.py")
 
 

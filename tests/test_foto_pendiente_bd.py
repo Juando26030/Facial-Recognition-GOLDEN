@@ -38,15 +38,17 @@ def test_a_stranger_with_cedula_and_birth_date_cannot_replace_the_registration_p
     assert get_storage().exists(pend)                                             # la selfie quedó aparte, pendiente
 
 
-def test_verifying_the_person_promotes_the_pending_photo_and_removes_it(client, factory, db):
+def test_verifying_the_person_keeps_both_photos_and_removes_the_pending(client, factory, db):
     ev, cur, pend = _with_old_photo(factory, db)
     _accept(client, ev, "", cedula="1001")
     selfie = get_storage().get(pend)
     factory.staff("super_admin", "dueno")
     login(client, "dueno")
     assert client.post(f"/api/events/{ev.id}/web-acceptance/1001/verify").json() == {"verified": True}
-    assert get_storage().get(cur) == selfie and selfie != OLD                     # ahora la vigente es la selfie
-    assert not get_storage().exists(pend)                                         # y la pendiente desapareció
+    sel = enroll.selfie_photo_key(ev.tenant_id, "1001")
+    assert get_storage().get(cur) == OLD                                          # 23-nov: la de registro SIGUE vigente (no se reemplaza)
+    assert get_storage().get(sel) == selfie and selfie != OLD                     # y la selfie verificada se conserva como segunda foto
+    assert not get_storage().exists(pend)                                         # la pendiente desapareció
 
 
 def test_the_personal_trusted_link_replaces_directly(client, factory, db):
