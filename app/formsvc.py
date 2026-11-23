@@ -145,6 +145,32 @@ def sub_person_id(design: dict, sub: FormSubmission) -> str:
         return ""
 
 
+def resubmission_numbers(db: Session, form: WebForm, design: dict) -> dict:
+    """Hotfix 19-nov-2026 («Permitir que la misma persona vuelva a enviar»): {id de inscripción: n} para las que son el envío número n >= 2 de una misma cédula en este formulario
+    (el primero no figura). Las de prueba se cuentan aparte de las reales. Solo mira el formulario si permite reenvíos."""
+    if not get_settings(form).get("allow_repeats"):
+        return {}
+    seen, out = {}, {}
+    for s in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed").order_by(FormSubmission.id):
+        pid = sub_person_id(design, s)
+        if not pid:
+            continue
+        key = (pid, bool(s.is_test))
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            out[s.id] = seen[key]
+    return out
+
+
+def is_resubmission(db: Session, form: WebForm, design: dict, sub: FormSubmission, person_id: str) -> bool:
+    """¿Esta inscripción es un reenvío de una cédula que ya había enviado este formulario? Solo si el formulario lo permite (con el interruptor apagado una cédula = una inscripción)."""
+    if not person_id or not get_settings(form).get("allow_repeats"):
+        return False
+    earlier = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed", FormSubmission.is_test == bool(sub.is_test),
+                                              FormSubmission.id < sub.id, FormSubmission.data_json.contains(person_id))
+    return any(sub_person_id(design, e) == person_id for e in earlier)
+
+
 def known_before(db: Session, form: WebForm, subs) -> set:
     """Ids de las inscripciones de `subs` cuya persona YA estaba en la base antes de inscribirse (el pedido del 6-nov-2026: el Excel de inscritos decía «No» a todos
     porque la columna medía otra cosa: si la inscripción ya se había PASADO a la base). Está «en la base» si su cédula figura en la fuente del formulario (la lista subida solo para
@@ -453,7 +479,15 @@ def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id:
     return q.first() is not None
 
 
-def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool, pre: bool = False) -> Tuple[bool, bool]:
+def dedupe_by_person(form: WebForm, settings: dict) -> bool:
+    """¿Este formulario rechaza una segunda inscripción de la MISMA cédula? Por defecto sí (una cédula = una inscripción). Con «Permitir que la misma persona vuelva a enviar» (`allow_repeats`)
+    NO: puede enviar otra vez para corregir o actualizar un dato (hotfix 19-nov-2026). Los compromisos (una firma por persona) y «Bloquear inscripciones repetidas» siempre rechazan."""
+    if form.kind == PLEDGE_KIND or (settings.get("block_repeats") or {}).get("enabled"):
+        return True
+    return not settings.get("allow_repeats")
+
+
+def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool, pre: bool = False, dedupe: bool = True) -> Tuple[bool, bool]:
     """(reintento, duplicado) con UNA lectura SIN bloqueo, ANTES de pedir el `FOR UPDATE` del formulario. Mismas condiciones que `form_reserve_slot` (migración 0049): reintento =
     ya hay una inscripción confirmada con esta `sid` (y esta persona, si viene); duplicado = ya hay una confirmada real con esta cédula (las pruebas nunca cuentan). Es solo un
     adelanto para no hacer fila por algo que ya se sabe: la reserva bajo bloqueo sigue siendo la autoridad y repite todas sus comprobaciones."""
@@ -466,7 +500,7 @@ def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional
             conds.append(fs.person_id == person_id)
         retry_q = select(fs.id).where(*conds).exists()
     dup_q = false()
-    if person_id is not None and not is_test:
+    if person_id is not None and not is_test and dedupe:
         dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status.in_(("confirmed", PREREGISTERED) if pre else ("confirmed",)), fs.person_id == person_id).exists()  # noqa: E712
     if not sid and (person_id is None or is_test):
         return False, False
@@ -647,12 +681,12 @@ FORM_LOCK_TIMEOUT_MS = int(os.getenv("FORM_LOCK_TIMEOUT_MS", "3000"))
 _RESERVE_SQL = text("SELECT set_config('lock_timeout', :lock_timeout, true); SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
 
 
-def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict) -> dict:
+def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict, dedupe: bool = True) -> dict:
     """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
     now = now_local()          # calendario propio de cada cupo: uno cerrado por fecha se manda con máximo 0 (= «cerrado»)
-    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
+    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id if dedupe else None, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
               "matched": json.dumps([{"sig": rule_sig(r), "limit": formlib.rule_limit_now(r, now), "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
@@ -958,6 +992,8 @@ def _send_accept_link(db: Session, event: Event, sub: FormSubmission, person_id:
 # Datos de una persona YA registrada que el formulario público nunca reemplaza (solo completa si están vacíos): correo (enlace de aceptación), teléfono (notificaciones)
 # y los que se muestran al operador y en la escarapela (X2).
 PUBLIC_FORM_PROTECTED_KEYS = frozenset({"email", "phone", "first_name", "last_name", "role", "entity"})
+# Si el formulario permite reenviar y la persona se REINSCRIBE, lo nuevo reemplaza lo anterior en esos campos; el correo sigue protegido (el enlace de aceptación no se redirige desde un formulario público).
+REINSCRIPTION_UPDATES = frozenset({"phone", "first_name", "last_name", "role", "entity"})
 
 
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
@@ -973,6 +1009,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
         return "Esta persona solicitó la supresión de sus datos: no se cargó a la base del evento"
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     is_new = user is None
+    resub = (not is_new) and is_resubmission(db, form, design, sub, person_id)      # reinscripción: la persona corrige datos, el registro queda con la ÚLTIMA versión (y el cambio, en su historial)
     prior_email = "" if is_new else str(user.email or "")      # X1: el correo que ya estaba registrado ANTES de esta inscripción
     if is_new:
         user = User(id=person_id, tenant_id=event.tenant_id)
@@ -984,7 +1021,7 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     # estaban vacíos): un nombre inventado terminaría en las pantallas del operador y en la escarapela de otra persona.
     for key, attr in (("first_name", "first_name"), ("last_name", "last_name"), ("role", "role"), ("entity", "entity"),
                       ("phone", "phone"), ("email", "email"), ("opt_1", "opt_1")):
-        protected = key in PUBLIC_FORM_PROTECTED_KEYS
+        protected = key in PUBLIC_FORM_PROTECTED_KEYS and not (resub and key in REINSCRIPTION_UPDATES)
         if kv.get(key) and (is_new or not protected or not getattr(user, attr)):
             setattr(user, attr, str(kv[key]))
     birth = minors.parse_birth(kv.get("birth_date"))

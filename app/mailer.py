@@ -93,6 +93,9 @@ def clean_subject(subject) -> str:
 def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None, reply_to: Optional[str] = None) -> dict:
     """`attachments`: lista de (nombre_archivo, bytes, mime "tipo/subtipo"). Devuelve
     {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar. `html`: versión con formato (el `body` queda como texto alterno)."""
+    from app.localmode import mail_disabled
+    if mail_disabled():
+        return {"sent": False, "detail": "Servidor local: los correos solo los envía internet"}
     attachments = attachments or []
     subject = clean_subject(subject)                            # C6: un «\r» o «\n» en el asunto hacía lanzar a EmailMessage (rompía el trabajo en cola)
     to = re.sub(r"[\s\x00-\x1f]+", "", str(to or ""))

@@ -20,7 +20,7 @@
 
     function cardHtml(u) {
         const PL = window.UsuariosCompromiso;
-        const rol = u.client_temp ? 'Cliente (temporal)' : (ROLES[u.role] || u.role);
+        const rol = u.event_only ? 'Coordinador (temporal)' : (u.client_temp ? 'Cliente (temporal)' : (ROLES[u.role] || u.role));
         const nombre = u.full_name || 'Sin nombre';
         const st = loginState[u.id] || {};
         const estado = (u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>')
@@ -56,7 +56,7 @@
                 ${resend}
                 <button type="button" class="gw-btn gw-btn--danger-outline" data-act="revoke" data-id="${esc(u.id)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-close"/></svg><span>Quitar de este evento</span></button>
                 <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
-                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-role="${esc(u.role)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>${u.role === 'digitador' ? 'Eliminar cuenta' : 'Archivar cuenta'}</span></button></div></div>
+                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}" data-role="${esc(u.event_only ? 'digitador' : u.role)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>${u.role === 'digitador' || u.event_only ? 'Eliminar cuenta' : 'Archivar cuenta'}</span></button></div></div>
             </div>
         </article>`;
     }
@@ -179,7 +179,7 @@
     const cList = document.getElementById('assignableList');
     const cValue = document.getElementById('assignableValue');
     const norm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const comboLabel = (s) => `${s.username}${s.full_name ? ' - ' + s.full_name : ''} (${s.role})`;
+    const comboLabel = (s) => `${s.username}${s.full_name ? ' - ' + s.full_name : ''} (${s.event_only ? 'coordinador temporal' : s.role})`;
 
     function comboOpen(open) {
         cList.hidden = !open;
@@ -195,7 +195,7 @@
     }
     function comboRender() {
         const q = norm(cInput.value).trim();
-        combo.shown = combo.items.filter((s) => !q || norm(`${s.username} ${s.full_name || ''} ${s.role} ${ROLES[s.role] || ''}`).includes(q));
+        combo.shown = combo.items.filter((s) => !q || norm(`${s.username} ${s.full_name || ''} ${s.role} ${ROLES[s.role] || ''} ${s.event_only ? 'coordinador temporal' : ''}`).includes(q));
         cList.innerHTML = combo.shown.length
             ? combo.shown.map((s, i) => `<li role="option" id="assignableOpt${i}" class="gw-combo__opt" data-i="${i}" aria-selected="false">${esc(comboLabel(s))}</li>`).join('')
             : '<li class="gw-combo__empty" role="presentation">No hay usuarios que coincidan.</li>';
@@ -244,15 +244,26 @@
     const roleHint = document.getElementById('uRoleHint');
     const credBox = document.getElementById('clientCreds');
     const HINT_DIG = 'La contraseña de la cuenta es la misma cédula: no hay que escribirla.';
+    const HINT_COO = 'Tiene los permisos de un coordinador, pero SOLO sobre este evento: no ve otros eventos, clientes, CRM ni configuraciones, y su acceso termina cuando el evento finaliza. Se crea igual que un coordinador normal: tú le pones usuario, contraseña inicial y teléfono (el correo es opcional); la persona cambia la contraseña al primer ingreso.';
     const HINT_CLI = 'Para el cliente que también interviene en la base: tiene los mismos permisos del digitador, pero entra con un usuario y una contraseña propios que se generan solos, sin que el coordinador tenga que autorizar cada ingreso. Escribe solo su nombre.';
     function syncRole() {
         const isClient = !!roleSel && roleSel.value === 'cliente_temp';
+        const isCoord = !!roleSel && roleSel.value === 'coordinador_temp';
         if (userField) userField.hidden = isClient;
         if (userInput) userInput.required = !isClient;
-        if (roleHint) roleHint.textContent = isClient ? HINT_CLI : HINT_DIG;
+        const pwField = document.getElementById('uPasswordField'), pwInput = document.getElementById('uPassword'), phInput = document.getElementById('uPhone'), phLabel = document.getElementById('uPhoneLabel');
+        if (pwField) pwField.hidden = !isCoord;
+        if (pwInput) { pwInput.required = isCoord; if (!isCoord) pwInput.value = ''; }
+        if (phInput) phInput.required = isCoord;
+        if (phLabel) phLabel.textContent = isCoord ? 'Teléfono (obligatorio)' : 'Teléfono (opcional, para notificaciones por WhatsApp)';
+        if (userInput) userInput.placeholder = isCoord ? 'Ej. maria.perez' : '';
+        if (roleHint) roleHint.textContent = isCoord ? HINT_COO : (isClient ? HINT_CLI : HINT_DIG);
     }
-    function showCredentials(user, pass) {
+    function showCredentials(user, pass, coord) {
         if (!credBox) return;
+        const title = document.getElementById('clientCredTitle'), lost = document.getElementById('clientCredLost');
+        if (title) title.textContent = coord ? 'Datos de ingreso del coordinador temporal' : 'Datos de ingreso del cliente';
+        if (lost) lost.textContent = coord ? 'Si se pierden, elimina esta cuenta y crea otra.' : 'Si se pierden, usa «Restablecer contraseña» para generar una nueva.';
         document.getElementById('clientCredUser').textContent = user;
         document.getElementById('clientCredPass').textContent = pass;
         credBox.hidden = false;
@@ -283,16 +294,19 @@
         const btn = form.querySelector('[data-gw-submit]');
         const payload = Object.fromEntries(new FormData(form).entries());
         const isClient = payload.role === 'cliente_temp';
-        if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; }          // el servidor genera el usuario y la contraseña
+        const isCoord = payload.role === 'coordinador_temp';
+        if (isClient) { payload.role = 'digitador'; payload.client = true; delete payload.username; delete payload.password; }
+        if (!isCoord && !isClient) delete payload.password;          // el servidor genera el usuario y la contraseña
+        if (isCoord) { payload.role = 'digitador'; payload.temp_coordinator = true; }          // coordinador temporal (16-nov-2026): se crea como un coordinador normal (usuario, contraseña y teléfono los pone quien lo crea)
         return busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
             });
-            if (res.ok && isClient) {
+            if (res.ok && (isClient || isCoord)) {
                 const d = await res.json().catch(() => ({}));
                 form.reset(); syncRole(); loadTempUsers();
-                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password);
-                showToast('Cliente creado y asignado al evento', 'success');
+                if (d.credentials) showCredentials(d.credentials.username, d.credentials.password, false);
+                showToast(isCoord ? 'Coordinador temporal creado y asignado al evento' : 'Cliente creado y asignado al evento', 'success');
             }
             else if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }
             else showToast(await errDetail(res, 'Revisa los datos: falta algún campo o no es válido'), 'error');
@@ -364,17 +378,11 @@
 
     const mailToggle = document.getElementById('staffMailToggle');
     if (mailToggle) {
-        mailToggle.addEventListener('change', async () => {
-            const want = mailToggle.checked;
-            try {
-                const res = await fetch(`/api/events/${eventId}/staff-mail`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: want }) });
-                if (!res.ok) throw new Error('http ' + res.status);
-                showToast(want ? 'Se avisará por correo a quienes se asignen' : 'No se enviarán correos al asignar', 'success');
-            } catch (e) {
-                mailToggle.checked = !want;
-                showToast('No se pudo guardar el cambio', 'error');
-            }
-        });
+        // Queda pendiente hasta «Guardar cambios» (barra única); el aviso lo da el guardado general.
+        GWParams.register({ key: 'staffmail', label: 'Aviso por correo a los digitadores', order: 10, save: async () => {
+            const res = await fetch(`/api/events/${eventId}/staff-mail`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: mailToggle.checked }) });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo guardar el aviso por correo'); }
+        } });
     }
 
     async function decideLogin(btn, staffId, username, allow) {

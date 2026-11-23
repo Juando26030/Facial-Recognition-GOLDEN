@@ -51,7 +51,7 @@ IDENTITY_FIELDS = [
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
 # Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
 # salen de las categorías del evento, no de una lista propia, y se guarda por evento).
-LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact", "birth_date"}      # birth_date: base del control de menores; solo etiqueta y posición
+LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact", "birth_date", "code"}      # birth_date: base del control de menores; solo etiqueta y posición
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -71,6 +71,8 @@ def _configurable_fields(event: Event):
     """(key, label por defecto) de todo lo configurable para este evento, en el orden POR DEFECTO
     (la identidad primero, igual que el formulario de siempre)."""
     fields = list(IDENTITY_FIELDS) + [f for f in CONFIGURABLE_FIXED_FIELDS if f[0] != "birth_date" or event.facial_enabled]      # la fecha de nacimiento solo existe con rostro (control de menores)
+    if event.code_enabled:
+        fields.insert(len(IDENTITY_FIELDS), ("code", "Código de la persona (QR)"))          # 17-nov-2026: solo existe con el interruptor «Código de la persona» activo (Parámetros › Campos); obligatorio según ese mismo interruptor
     if event.get_categories():
         fields.append(("categories", "Categoría"))
     if event.certificates_enabled:
@@ -125,6 +127,8 @@ def field_configs_for_event(db: Session, event: Event) -> list:
         cfg = _serialize(key, label, row, event.get_categories())
         if key == "last_name":
             cfg["required"] = last_required
+        elif key == "code":
+            cfg["required"] = bool(event.code_required)          # lo decide el interruptor del evento, no el diseño del formulario
         ordered.append((position, cfg))
     return [cfg for _, cfg in sorted(ordered, key=lambda pair: pair[0])]
 

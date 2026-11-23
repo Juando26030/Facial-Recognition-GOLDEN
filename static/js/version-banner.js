@@ -11,11 +11,18 @@
   };
   const BUSY = Object.keys(STEP_TEXT);
   let bar = null;
+  // La franja va en el encabezado, justo al lado del logo (fija con él); si la página no tiene ese encabezado, queda arriba del todo.
+  function place(el) {
+    const logo = document.querySelector('.golden-header-container .golden-logo');
+    if (logo && logo.parentNode) logo.parentNode.insertBefore(el, logo.nextSibling);
+    else document.body.insertBefore(el, document.body.firstChild);
+  }
 
   function paintProgress(text, cls) {
     if (!bar) return;
     bar.className = 'gw-versionbar gw-versionbar--' + (cls || 'warn');
-    bar.innerHTML = '<strong>Actualización:</strong> ' + esc(text);
+    bar.title = text;
+    bar.innerHTML = '<span class="gw-versionbar__txt"><strong>Actualización:</strong> ' + esc(text) + '</span>';
   }
 
   function poll(fails) {
@@ -56,19 +63,92 @@
     poll(0);
   }
 
-  fetch('/api/ops/version-check').then((r) => (r.ok ? r.json() : null)).then((d) => {
-    if (!d || !d.configured || d.status === 'igual' || d.status === 'desconocida') return;
+  /* Vista de prueba de los estados (solo se ve, no cambia nada): añade a la dirección ?gwver=aldia | sincomprobar | desactualizada  (p. ej. https://localhost:8443/eventos?gwver=desactualizada). */
+  const PREVIEW = { aldia: 'igual', sincomprobar: 'desconocida', desactualizada: 'desactualizada' };
+  const pv = PREVIEW[new URLSearchParams(location.search).get('gwver')];
+  fetch('/api/ops/version-check').then((r) => (r.ok ? r.json() : null)).then((d0) => {
+    const d = pv && d0 && d0.configured ? Object.assign({}, d0, { status: pv, message: 'Vista de prueba: esto es solo para ver cómo se muestra el aviso.' }) : d0;
+    if (!d || !d.configured) return;
+    if (d.status === 'igual' || d.status === 'desconocida') {          // siempre se ve en qué estado está: al día o sin poder comprobar
+      const info = document.createElement('div');
+      const ok = d.status === 'igual';
+      info.className = 'gw-versionbar gw-versionbar--' + (ok ? 'ok' : 'warn');
+      info.setAttribute('role', 'status');
+      const c7 = d.local && d.local.commit && d.local.commit !== 'desconocida' ? String(d.local.commit).slice(0, 7) : '';
+      info.title = ok ? 'Este servidor tiene la misma versión que producción' + (c7 ? ' (' + c7 + ')' : '') + '.' : (d.message || '');
+      info.innerHTML = '<span class="gw-versionbar__txt">' + (ok ? '<strong>Al día</strong>' + (c7 ? '<span class="gw-vb-extra"> · ' + esc(c7) + '</span>' : '') : '<strong>Sin comprobar</strong>') + '</span>';
+      place(info);
+      return;
+    }
     bar = document.createElement('div');
-    bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' ? 'err' : 'warn');
+    bar.className = 'gw-versionbar gw-versionbar--' + (d.status === 'desactualizada' || d.status === 'distinta_version' ? 'err' : 'warn');          // sin comprobar = naranja; no está al día = rojo
     bar.setAttribute('role', 'alert');
-    bar.innerHTML = `<strong>Versión:</strong> ${esc(d.message)}`;
+    bar.title = (d.status === 'adelantada' ? 'Versión adelantada. ' : 'Versión desactualizada. ') + (d.message || '');
+    bar.innerHTML = `<span class="gw-versionbar__txt"><strong>${d.status === 'adelantada' ? 'Adelantada' : 'Desactualizada'}</strong></span>`;
     if (d.status === 'desactualizada' || d.status === 'distinta_version') {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.textContent = 'Actualizar ahora'; b.style.marginLeft = '0.75rem';
-      b.addEventListener('click', () => start(b));
+      b.type = 'button'; b.className = 'gw-btn gw-btn--primary gw-btn--sm'; b.innerHTML = '<span class="gw-vb-long">Actualizar ahora</span><span class="gw-vb-short">Actualizar</span>';
+      if (pv) { b.title = 'Vista de prueba: no actualiza'; b.addEventListener('click', () => { if (window.showToast) window.showToast('Vista de prueba: no se actualiza nada', 'info'); }); } else b.addEventListener('click', () => start(b));
       bar.appendChild(b);
     }
-    document.body.insertBefore(bar, document.body.firstChild);
+    place(bar);
     fetch('/api/ops/update-status', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((s) => { if (s && s.enabled && BUSY.includes(s.state)) poll(0); }).catch(() => {});      // si ya hay una en curso, sigue su avance
+  }).catch(() => {});
+
+  /* «Conectar: 192.168.1.20:8443» (azul, junto a la versión): la dirección que otros equipos de la MISMA red escriben en el navegador para usar este servidor local. Clic = copia el enlace.
+     Solo en servidores locales; el instalador ya abre el puerto en el cortafuegos para la red local (install.ps1). */
+  fetch('/api/ops/local-address').then((r) => (r.ok ? r.json() : null)).then((a) => {
+    if (!a || !a.configured) return;
+    if (!a.addresses || !a.addresses.length) {                 // sin red local (cable sin DHCP, sin Wi‑Fi…): se avisa en vez de callar
+      const none = document.createElement('div');
+      none.className = 'gw-versionbar gw-versionbar--info gw-versionbar--err';
+      none.title = 'Este equipo no tiene dirección en la red local, así que otros equipos no pueden conectarse. Revisa el cable o el Wi‑Fi (el router debe darle una dirección). Puerto ' + a.port + '.';
+      none.innerHTML = '<span class="gw-versionbar__txt"><strong>Sin red local</strong></span>';
+      const l0 = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+      if (l0 && l0.parentNode) l0.parentNode.insertBefore(none, l0.nextSibling); else place(none);
+      return;
+    }
+    const url = (ip) => 'https://' + ip + ':' + a.port;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'gw-versionbar gw-versionbar--info';
+    chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador Para que no salga «No seguro», cada equipo instala una vez el certificado desde ' + url(a.addresses[0]) + '/certificado. Clic para copiar el enlace.';
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">Conectar: </strong>' + esc(a.addresses[0] + ':' + a.port) + '</span>';
+    chip.addEventListener('click', () => {
+      const text = url(a.addresses[0]);
+      const done = () => { if (window.showToast) window.showToast('Enlace copiado: ' + text, 'success'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { if (window.showToast) window.showToast(text, 'info'); });
+      else if (window.showToast) window.showToast(text, 'info');
+    });
+    const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+    if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
+    const cert = document.createElement('a');          // instrucciones para quitar el aviso «No seguro» en los demás equipos (instalar la autoridad del servidor una vez)
+    cert.className = 'gw-versionbar gw-versionbar--info';
+    cert.href = '/certificado';
+    cert.target = '_blank';
+    cert.rel = 'noopener';
+    cert.title = 'Cómo quitar el aviso «No seguro» en los computadores y celulares que se conectan a este servidor (se instala el certificado una sola vez).';
+    cert.innerHTML = '<span class="gw-versionbar__txt">Certificado</span>';
+    chip.parentNode ? chip.parentNode.insertBefore(cert, chip.nextSibling) : place(cert);
+  }).catch(() => {});
+
+  /* ID del servidor (morado claro, a la derecha de «Al día» y de la IP): es la llave de producto con la que se instaló; la ven los administradores en Configuración › Servidor local. Clic = copia. */
+  fetch('/api/ops/server-id').then((r) => (r.ok ? r.json() : null)).then((s) => {
+    if (!s || !s.configured || !s.id) return;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'gw-versionbar gw-versionbar--id';
+    chip.title = 'ID de este servidor (su llave de producto). Clic para copiarlo.';
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">ID: </strong>' + esc(s.id) + '</span>';
+    chip.addEventListener('click', () => {
+      const done = () => { if (window.showToast) window.showToast('ID copiado: ' + s.id, 'success'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s.id).then(done, () => { if (window.showToast) window.showToast(s.id, 'info'); });
+      else if (window.showToast) window.showToast(s.id, 'info');
+    });
+    // va al final de las etiquetas del encabezado, pero esperando a que la de la IP (que llega por otra consulta) ya esté puesta
+    setTimeout(() => {
+      const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
+      if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
+    }, 900);
   }).catch(() => {});
 })();

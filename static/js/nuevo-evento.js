@@ -63,7 +63,7 @@
       return '<section class="gw-wizard__panel" data-gw-wizard-panel aria-labelledby="neT' + i + '"' + (i ? ' hidden' : '') + '>' +
         '<h3 class="gw-nuevo__panel-title" id="neT' + i + '" tabindex="-1">' + esc(s.title) + '</h3>' +
         '<div class="gw-fields-row gw-fields-row--2 gw-nuevo__cols3">' + s.keys.map((k) => EF.renderField(fields[k], { ctx: ctx })).join('') + '</div>' +
-        (last ? '<div id="neInvWrap"><h4 class="gw-nuevo__section">Inventario</h4><p class="gw-hint">Productos del catálogo que pide este evento. Almacén registra después lo que sale, vuelve y se consume.</p><div id="neInventory"></div></div><h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
+        (last ? '<div id="neContactsWrap"><h4 class="gw-nuevo__section">Contactos del cliente</h4><p class="gw-hint">Por defecto entra el contacto principal del cliente en el CRM; puedes elegir otros, agregar uno a mano o poner varios. El principal recibe el informe final y la encuesta.</p><div id="neContacts"></div></div><div id="neInvWrap"><h4 class="gw-nuevo__section">Inventario</h4><p class="gw-hint">Productos del catálogo que pide este evento. Almacén registra después lo que sale, vuelve y se consume.</p><div id="neInventory"></div></div><h4 class="gw-nuevo__section">Resumen</h4><div class="gw-nuevo__summary" id="neSummary" aria-live="polite"></div>' : '') +
         '</section>';
     }).join('');
     const mounted = EF.afterMount(form, { loadCities: citiesFor, geoUrl: root.dataset.geoUrl, fields: fields });          // país/ciudad con la lista fija de la plataforma (GWGeo); si no carga, sugerencias del servidor
@@ -72,6 +72,8 @@
     applyDefaults();                // los valores por defecto se ponen en el campo de texto; el combobox los toma al engancharse (Colombia/Bogotá)
     addSuperEventButton();
     mountInventory();
+    mountContacts();
+    loadNextCode();
     nextBtn.disabled = false;
     if (window.GW && GW.wizard) GW.wizard.go(form, 0);
     document.dispatchEvent(new CustomEvent('gw:newevent-rendered', { detail: { form: form, template: tpl, enhanced: mounted } }));
@@ -84,6 +86,27 @@
     if (!box || !window.GWInvPlan) { if (wrap) wrap.hidden = true; return; }
     try { invCtrl = await GWInvPlan.mount(box, { eventId: null, saveButton: false, icons: root.dataset.icons || undefined }); } catch (e) { invCtrl = null; }
     if (!invCtrl || !invCtrl.visible || invCtrl.empty) { wrap.hidden = true; invCtrl = null; }
+  }
+  // Contactos del cliente (16-nov-2026): se envían dentro del POST /api/events; cambian solos al cambiar de cliente.
+  let contactsCtrl = null;
+  /* Código sugerido: el siguiente al más alto que exista; se ve en gris (placeholder) y, si se deja vacío, el servidor lo asigna. Se puede escribir a mano. */
+  let suggestedCode = '';
+  async function loadNextCode() {
+    const inp = form.querySelector('[data-evf-field="event_code"] input');
+    if (!inp) return;
+    try {
+      const r = await fetch('/api/events/next-code');
+      if (!r.ok) return;
+      suggestedCode = String((await r.json()).event_code || '');
+      if (suggestedCode) { inp.placeholder = suggestedCode; inp.classList.add('gw-code-suggested'); inp.title = 'Si lo dejas vacío se usa ' + suggestedCode + '. Puedes escribir otro.'; }
+    } catch (e) { /* sin sugerencia: el código sigue siendo obligatorio */ }
+  }
+  async function mountContacts() {
+    contactsCtrl = null;
+    const box = document.getElementById('neContacts'), wrap = document.getElementById('neContactsWrap');
+    if (!box || !window.GWEventContacts) { if (wrap) wrap.hidden = true; return; }
+    try { contactsCtrl = await GWEventContacts.mount(box, { eventId: null, tenantId: tenantId() || null }); } catch (e) { contactsCtrl = null; }
+    if (!contactsCtrl) wrap.hidden = true;
   }
   const control = (key, part) => form.querySelector('[data-evf-key="' + key + '"][data-evf-part="' + (part || 'v') + '"]');
   function setIfEmpty(key, value) { const c = control(key); if (c && !c.value) c.value = value; }
@@ -146,7 +169,7 @@
       const holder = panel.querySelector('[data-evf-field="' + key + '"]');
       const first = holder.querySelector('input, select, textarea');
       const v = readKey(key);
-      let msg = EF.validateValue(f, v);
+      let msg = key === 'event_code' && !v && suggestedCode ? '' : EF.validateValue(f, v);
       if (!msg && key === 'event_code' && v && !CODE_RE.test(v)) msg = CODE_HELP;
       if (msg) {
         markInvalid(holder, true);
@@ -236,12 +259,15 @@
       payload[key] = v;
     }));
     if (Object.keys(extra).length) payload.extra = extra;
+    const contacts = contactsCtrl ? contactsCtrl.value() : null;          // null = no cargaron: el servidor pone el contacto principal del CRM
+    if (contacts) payload.contacts = contacts;
     return payload;
   }
 
   // ---- Crear el evento (el último «Continuar» emite gw:wizard-finish).
   async function submitEvent() {
     if (!validateUpTo(panels().length - 1)) return;
+    if (contactsCtrl && !contactsCtrl.valid()) { const pr = GWEventContacts.problem(contactsCtrl.value()); showToast(pr || 'Revisa los contactos del cliente.', 'error'); return; }
     const payload = buildPayload();
     await busy(nextBtn, async () => {
       let res;
@@ -279,6 +305,7 @@
       root.dataset.tenantId = String(e.detail.value || '');
       root.dataset.tenantName = (e.detail.label || input.value || '').trim();
       loadSuperEvents();
+      if (contactsCtrl) contactsCtrl.setTenant(root.dataset.tenantId || null);
     });
     try {
       const res = await fetch('/api/tenants');

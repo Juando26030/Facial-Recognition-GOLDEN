@@ -79,3 +79,5 @@
 
 /* Listas de a UNA por fila también en celular y tableta (los botones pueden ir a todo el ancho). */
 .gw-ar #presBody { grid-template-columns: minmax(0, 1fr); }
+.gw-ai__group { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-2) var(--gw-sp-3); margin: 0 0 var(--gw-sp-3); }
+.gw-ai__group legend { padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); }

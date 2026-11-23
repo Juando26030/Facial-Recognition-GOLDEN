@@ -324,3 +324,66 @@ def test_form_list_rejects_bad_files_and_modes(client, factory):
     assert _list_up(client, ev, f, "Nombre", "Ana").status_code == 400
     assert _list_up(client, ev, f, "Cédula", "1001", mode="borrar").status_code == 400
     assert _list_up(client, ev, f, "Cédula,Registrado en formulario", "1001,no").status_code == 400
+
+
+# ------------------------------- hotfix 19-nov-2026: «Permitir que la misma persona vuelva a enviar»
+def test_allow_repeats_setting_is_sanitized_and_loses_against_block():
+    assert fl.sanitize_settings({})["allow_repeats"] is False
+    assert fl.sanitize_settings({"allow_repeats": True})["allow_repeats"] is True
+    assert fl.sanitize_settings({"allow_repeats": True, "block_repeats": {"enabled": True}})["allow_repeats"] is False
+
+
+def test_allow_repeats_lets_the_same_cedula_submit_again_but_the_browser_retry_stays_idempotent(client, factory, db):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    login(client, "coord1")
+    assert _put(client, ev, f, settings={"allow_repeats": True}).status_code == 200
+    _open(client, ev, f)
+    assert _id_submit(client, ev, f, _person_values()).status_code == 200
+    again = _id_submit(client, ev, f, _person_values(), sid="otra-visita")
+    assert again.status_code == 200 and not again.json().get("replayed")
+    assert _id_submit(client, ev, f, _person_values(), sid="otra-visita").json().get("replayed") is True
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).count() == 2
+
+
+def test_report_keeps_the_first_registration_and_lists_what_changed_in_each_resubmission():
+    """Reporte del formulario con reinscripciones: una fila por persona con los datos del PRIMER registro y el historial (campo, antes, después, hora) aparte."""
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from app.routers import forms as forms_router
+
+    design = {"fields": {"c": {"key": "id", "label": "Cédula"}, "n": {"key": "first_name", "label": "Nombres"}, "a": {"key": "last_name", "label": "Apellidos"}, "ci": {"key": None, "label": "Ciudad"}}}
+    cols = [("c", "Cédula", "text_short"), ("n", "Nombres", "text_short"), ("a", "Apellidos", "text_short"), ("ci", "Ciudad", "text_short")]
+
+    def sub(i, ced, city, when, test=False):
+        return SimpleNamespace(id=i, person_id=ced, is_test=test, created_at=when, data_json=json.dumps({"c": ced, "n": "Ana", "a": "Mora", "ci": city}))
+    subs = [sub(1, "1001", "Cali", datetime(2026, 11, 19, 14, 0)), sub(2, "2002", "Pasto", datetime(2026, 11, 19, 14, 5)),
+            sub(3, "1001", "Bogotá", datetime(2026, 11, 19, 15, 0)), sub(4, "1001", "Bogotá", datetime(2026, 11, 19, 16, 0))]
+    rows, changes = forms_router._resubmission_history(subs, design, cols)
+    assert [(s.id, n) for s, n, _ in rows] == [(1, 3), (2, 1)]                         # una fila por persona, con los datos del primer registro
+    assert rows[0][2] is not None and rows[1][2] is None
+    assert [(c[0], c[2], c[3], c[4]) for c in changes] == [("1001", "Ciudad", "Cali", "Bogotá"), ("1001", "(sin cambios en los datos)", "", "")]
+    assert changes[0][1] == "Ana Mora" and changes[0][6] == "Reinscripción"
+
+
+def test_resubmission_is_marked_in_answers_and_the_registry_keeps_the_latest_version(client, factory, db):
+    """Respuestas: las dos inscripciones salen, la segunda marcada como reinscripción. Registro: una sola persona con la ÚLTIMA versión y el cambio en su historial («Formulario web»)."""
+    from app import formsvc
+    from app.models import WebForm
+
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    login(client, "coord1")
+    assert _put(client, ev, f, settings={"allow_repeats": True, "feed": "realtime"}).status_code == 200
+    _open(client, ev, f)
+    first, again = _person_values(), _person_values()
+    assert _id_submit(client, ev, f, first, sid="v1").status_code == 200
+    assert _id_submit(client, ev, f, again, sid="v2").status_code == 200
+    rows = client.get(f"/api/events/{ev}/forms/{f['id']}/submissions").json()["rows"]
+    assert sorted(r["resub"] for r in rows) == [0, 2]                                   # las dos aparecen; solo la segunda dice «reinscripción»
+    form = db.get(WebForm, f["id"])
+    subs = db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).order_by(FormSubmission.id).all()
+    assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[1], formsvc.sub_person_id(formsvc.get_design(form), subs[1])) is True
+    assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[0], formsvc.sub_person_id(formsvc.get_design(form), subs[0])) is False

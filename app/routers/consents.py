@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import localmode
 from app import acceptmail, audit_actions, biometric_setup, event_history, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
 from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
@@ -240,6 +241,11 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     cur = _setup_config(event)
     new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
+    if localmode.is_local_server():          # 19-nov-2026: en el servidor local NO hay rostro ni nada de su flujo (aceptación por celular, fotos previas, entrada con rostro): se rechaza activarlo y se deja apagado
+        if any(bool(data.get(k)) for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled")):
+            raise HTTPException(status_code=403, detail=localmode.LOCAL_NO_FACE_MSG)
+        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled"):
+            new[k] = False
     if new["biometrics_locked"] and not cur["biometrics_locked"]:      # al poner el candado, lo que no se pidió expresamente se apaga solo
         for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled"):
             if k not in data:

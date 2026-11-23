@@ -3,6 +3,11 @@ import datetime
 import importlib.util
 import json
 
+import os
+import sys
+
+sys.path.insert(0, os.environ.get('REPO', '.'))
+from app.crm import SECTIONS as _CRM_SECTIONS  # noqa: E402  (una sola definición: la misma barra que la app real)
 LONG_EVENT = 'Congreso Nacional de Innovación, Tecnología Aplicada y Transformación Digital 2026'
 LONG_TENANT = 'Asociación Colombiana de Ingenieros de Sistemas y Telecomunicaciones'
 LONG_STAFF = 'María Fernanda Rodríguez Valderrama'
@@ -50,7 +55,7 @@ def kiosk_ctx(Obj, v):
 
 def context(key, v, Obj):
     ev = event(Obj, v)
-    simple = {**staff(), 'sidebar_active': ''}
+    simple = {**staff(), 'sidebar_active': '', 'crm_nav': [{'key': k, 'label': l, 'href': h} for k, l, h, _a in _CRM_SECTIONS]}
     if key in ('kiosk_registro', 'kiosk_select', 'kiosk_turnos', 'kiosk_turnos_tv', 'kiosk_expositores', 'kiosk_autoregistro', 'kiosk_parametros', 'kiosk_formularios', 'kiosk_usuarios'):
         return key + '.html', kiosk_ctx(Obj, v)
     if key == 'kiosk_tv':
@@ -91,4 +96,26 @@ def context(key, v, Obj):
         return 'nuevo_evento.html', {**simple, 'sidebar_active': 'eventos', 'pure_coordinator': False, 'tenant_id': '', 'tenant_name': '', 'pick_tenant': True, 'back_url': '/eventos'}
     if key == 'plantilla_evento':
         return 'plantilla_evento.html', {**simple, 'sidebar_active': 'configuracion'}
+    if key == 'crm_cuentas':
+        return 'crm_cuentas.html', {**simple, 'staff_role': 'admin', 'sidebar_active': 'crm', 'can_admin': v != 'comercial'}
+    if key == 'crm_cuenta':
+        return 'crm_cuenta.html', {**simple, 'sidebar_active': 'crm', 'can_admin': v != 'comercial', 'account_id': '' if v == 'new' else 1}
+    ext = _extensions(key, v, Obj, simple)          # pantallas de otras piezas (pages_<pieza>.py); así cada pieza trae su archivo y no se pisan
+    if ext is not None:
+        return ext
     raise KeyError(key)
+
+
+def _extensions(key, v, Obj, simple):
+    """Cada `scripts/visual_harness/pages_*.py` define `context(key, v, Obj, simple)` y devuelve (plantilla, contexto) o None si la pantalla no es suya."""
+    import glob
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in sorted(glob.glob(os.path.join(here, 'pages_*.py'))):
+        spec = importlib.util.spec_from_file_location(os.path.basename(path)[:-3], path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        got = mod.context(key, v, Obj, simple)
+        if got is not None:
+            return got
+    return None

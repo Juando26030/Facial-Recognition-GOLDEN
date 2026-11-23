@@ -32,6 +32,7 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <input type="text" id="clInput" readonly value="${esc(url)}" style="flex:1 1 280px; padding:0.6rem; border:1px solid #ddd; border-radius:10px; font-size:0.85rem;">
         <button type="button" id="clCopy" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;">Copiar enlace</button>
+        <button type="button" class="golden-btn" data-qr-from="clInput" data-qr-title="Certificados" style="width:auto; padding:0.6rem 1rem; background:#f0f0f0; color:var(--golden-dark);">Generar QR</button>
         <a href="${esc(url)}" target="_blank" rel="noopener" class="golden-btn" style="width:auto; padding:0.6rem 1rem; background:#f0f0f0; color:var(--golden-dark); text-decoration:none;">Abrir</a>
         <button type="button" id="clRegen" class="golden-btn" style="width:auto; padding:0.6rem 1rem; background:#f0f0f0; color:var(--golden-dark);" title="El enlace anterior deja de funcionar">Cambiar enlace</button>
       </div>`;

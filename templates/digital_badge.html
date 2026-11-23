@@ -82,6 +82,14 @@ let qrCodes = [], qrStep = 30, qrShown = '', qrFetching = false;
 let qrPerson = null;          // nombre (y teléfono, solo si el evento lo muestra) para la vCard del QR
 function renderQr(code) {
     if (typeof qrcode === 'undefined') return;
+    // 19-nov-2026: si la plantilla de la escarapela trae su QR, ESE es el QR de entrada (mismo lugar y tamaño que en la física, con el modo del diseño: vCard, MECARD, enlace o solo código)
+    // y lleva el código dinámico; la caja de abajo solo se usa cuando el diseño no tiene QR.
+    const host = document.getElementById('badgeHost');
+    if (host && host.querySelector('[data-gw-qr]')) {
+        document.getElementById('qrBox').style.display = 'none';
+        BadgeRender.redrawQrs(host, code);
+        return;
+    }
     // Fase 10 (C): vCard (guardar contacto desde el celular) con el código firmado en NOTE; nivel «L» y UTF-8. Los lectores de Golden sacan el código de NOTE.
     const V = window.GWVcard, prev = qrcode.stringToBytes;
     if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
@@ -151,7 +159,9 @@ async function load() {
     BadgeRender.renderBadge(host, template, person, {
         assetUrl: (p) => `${base}/asset/${p}`,   // storage_path = "<cliente>/<archivo>"
         photoUrl: () => `${base}/photo`,
+        qrPayload: () => qrShown || 'GW',          // el QR de la plantilla nunca lleva la cédula: solo el código dinámico (mientras llega, un marcador)
     });
+    if (qrShown && host.querySelector('[data-gw-qr]')) renderQr(qrShown);
     // Escala la escarapela (mm reales) para que entre en el ancho del celular sin cortarla.
     const clip = document.getElementById('clip');
     const naturalW = host.offsetWidth, naturalH = host.offsetHeight;

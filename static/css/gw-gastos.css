@@ -13,6 +13,12 @@
 .gw-gx__panel-title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); margin: 0; }
 .gw-gx__legend { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2) var(--gw-sp-4); list-style: none; margin: 0; padding: 0; font-size: var(--gw-fs-sm); color: var(--gw-text); }
 .gw-gx__legend li { display: inline-flex; align-items: center; gap: var(--gw-sp-2); }
+.gw-gx__chip { display: inline-flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; transition: border-color var(--gw-dur), background var(--gw-dur); }
+.gw-gx__chip:hover { border-color: var(--gw-text); }
+.gw-gx__chip:focus-visible { outline: 3px solid var(--gw-focus, var(--gw-text)); outline-offset: 2px; }
+.gw-gx__chip.is-on { border-color: var(--gw-text); font-weight: 700; box-shadow: inset 0 0 0 1px var(--gw-text); }
+.gw-gx__legend--filter:has(.is-on) .gw-gx__chip:not(.is-on) { opacity: .6; }
+.gw-gx__filter-hint { margin: var(--gw-sp-2) 0 0; }
 .gw-gx__sw { width: 0.875rem; height: 0.875rem; border-radius: 3px; flex: 0 0 auto; }
 .gw-gx__chart { position: relative; min-width: 0; }
 .gw-gx__svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -31,6 +37,7 @@
 .gw-gx-c-microsoft { fill: var(--gw-ic-violet); background: var(--gw-ic-violet); }
 .gw-gx-c-cloudflare { fill: var(--gw-ic-green); background: var(--gw-ic-green); }
 .gw-gx-c-otros { fill: var(--gw-ic-gray); background: var(--gw-ic-gray); }
+.gw-gx-c-total { fill: var(--gw-text); background: var(--gw-text); }
 .gw-gx-c-fixed { fill: var(--gw-ic-blue); background: var(--gw-ic-blue); }
 .gw-gx-c-variable { fill: var(--gw-ic-orange); background: var(--gw-ic-orange); }
 .gw-gx__tip { position: absolute; z-index: 5; pointer-events: none; max-width: 16rem; padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-navy-deep); color: #fff; border-radius: var(--gw-radius-sm); box-shadow: var(--gw-shadow-md); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-tight); }
@@ -55,3 +62,8 @@
 .gw-gx__help summary { cursor: pointer; font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .gw-gx__help ol { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); display: flex; flex-direction: column; gap: var(--gw-sp-1); }
 .gw-gx__help code { font-size: var(--gw-fs-sm); }
+
+/* Barra de guardado única (criterio de reparto y TRM por defecto): con el menú lateral fijo no queda debajo de él */
+@media (min-width: 901px) {
+  body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
+}

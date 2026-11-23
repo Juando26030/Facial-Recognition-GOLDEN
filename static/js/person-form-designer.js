@@ -4,9 +4,10 @@
    Los campos salen de Parámetros › Campos; aquí solo se decide DÓNDE va cada uno y cómo se escribe. Lo obligatorio se guarda en los parámetros del evento (una sola fuente de verdad). Funciones puras (toModel / fromModel / move) probadas en Node; la pantalla
    (mount) solo usa clases .gw-* y toast.js. */
 (function (root) {
-  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['categories', 'birth_date'], EVENT_DECIDES = ['last_name'];          // el apellido lo decide el evento (Parámetros › Apellido obligatorio; app/lastname.py): aquí solo se ve
+  const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = ['categories', 'birth_date'], EVENT_DECIDES = ['last_name', 'code'];          // el apellido lo decide el evento (Parámetros › Apellido obligatorio; app/lastname.py): aquí solo se ve
   const FIXED_TEXT = ['first_name', 'last_name', 'role', 'entity', 'opt_1'];
   const MAX_PER_ROW = 4;
+  const NEVER_HIDDEN = ['id', 'first_name', 'categories'];          // en un formulario por categoría estos siempre se ven (app/personform.py::NEVER_HIDDEN)
   const canCase = (cfg) => ['text_short', 'text_long'].includes(cfg.field_type) && (FIXED_TEXT.includes(cfg.key) || /^opcional_\d+$/.test(cfg.key));
   const simpleCond = (c) => !!c && !c.rules && c.field && (c.op || 'equals') === 'equals' && !Array.isArray(c.value);
 
@@ -26,13 +27,13 @@
         items.push({
           key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets.some((s) => s.id === row.sheet) ? row.sheet : sheets[0].id, joined: i > 0,
           required: ALWAYS_REQUIRED.includes(key) ? true : (NEVER_REQUIRED.includes(key) ? false : !!(f.required != null ? f.required : cfg.required)),
-          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(cfg), text_case: f.text_case || '',
+          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(cfg), text_case: f.text_case || '', hidden: !!f.hidden, canHide: !NEVER_HIDDEN.includes(key),
           showField: simpleCond(cond) ? cond.field : '', showValue: simpleCond(cond) ? String(cond.value == null ? '' : cond.value) : '', rawShowIf: cond && !simpleCond(cond) ? cond : null,
         });
       });
     });
-    cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key) && !EVENT_DECIDES.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
-    return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets) };
+    cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, hidden: false, canHide: !NEVER_HIDDEN.includes(cfg.key), canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key) && !EVENT_DECIDES.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
+    return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets), flow: Object.assign({}, def.flow || {}) };
   }
 
   function sortBySheet(items, sheets) {
@@ -41,7 +42,7 @@
   }
 
   /* Modelo → cuerpo de PUT /person-form. Filas: cada campo «junto al anterior» (del mismo grupo, máx. 4) comparte fila con él. */
-  function fromModel(model) {
+  function fromModel(model, variant) {
     const items = sortBySheet(model.items, model.sheets);
     const rows = [], fields = {};
     items.forEach((it) => {
@@ -50,12 +51,15 @@
       else rows.push({ sheet: it.sheet, items: [it.key] });
       const f = {};
       if (it.canRequire) f.required = !!it.required;
+      if (variant && it.hidden && it.canHide) f.hidden = true;
       if (it.canCase && it.text_case) f.text_case = it.text_case;
       if (it.rawShowIf) f.show_if = it.rawShowIf;
       else if (it.showField && String(it.showValue).trim() !== '') f.show_if = { field: it.showField, op: 'equals', value: String(it.showValue).trim() };
       fields[it.key] = f;
     });
-    return { enabled: !!model.enabled, sheets: model.sheets.map((s) => ({ id: s.id, title: s.title, open: !!s.open })), rows, fields };
+    const out = { enabled: !!model.enabled, sheets: model.sheets.map((s) => ({ id: s.id, title: s.title, open: !!s.open })), rows, fields };
+    if (variant && model.flow) { const flow = {}; ['facial_off', 'digital_off', 'autoprint_off'].forEach((k) => { if (model.flow[k]) flow[k] = true; }); if (Object.keys(flow).length) out.flow = flow; }          // flujos que esta categoría APAGA
+    return out;
   }
 
   /* Mueve un campo una posición dentro de SU grupo (dir -1 arriba, +1 abajo). Devuelve true si cambió algo. */
@@ -178,7 +182,7 @@
     const toast = opts.toast || root.showToast || (() => {});
     const eventId = opts.eventId, fetchFn = opts.fetch || root.fetch.bind(root);
     const el = (tag, cls, text, attrs) => { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; Object.keys(attrs || {}).forEach((k) => n.setAttribute(k, attrs[k])); return n; };
-    const state = { model: null, loaded: false, selected: null };       // selected: { kind: 'field', key } | { kind: 'sheet', id } | null
+    const state = { model: null, general: null, variants: {}, cats: [], cat: '', loaded: false, selected: null };       // selected: { kind: 'field', key } | { kind: 'sheet', id } | null
     // Guardado global de Parámetros (static/js/params-save.js): si existe, este bloque se registra como «personform» y el botón «Guardar» global lo guarda; si no, el botón propio guarda con su toast.
     const gw = opts.params || root.GWParams || null;
     const dirty = () => { if (gw) gw.markDirty('personform'); };
@@ -205,12 +209,13 @@
     }
 
     function card(it, selectedKey) {
-      const c = el('div', `gw-pf-card${selectedKey === it.key ? ' gw-pf-card--sel' : ''}`, null, { draggable: 'true', tabindex: '0', role: 'button', 'data-key': it.key,
+      const c = el('div', `gw-pf-card${selectedKey === it.key ? ' gw-pf-card--sel' : ''}${it.hidden ? ' gw-pf-card--hidden' : ''}`, null, { draggable: 'true', tabindex: '0', role: 'button', 'data-key': it.key,
         'aria-label': `${it.label}${it.required ? ', obligatorio' : ''}${selectedKey === it.key ? ' (seleccionado)' : ''}. Enter para editar; Alt y flechas para mover.` });
       const t = el('div', 'gw-pf-card__type'); t.append(icon(it.type === 'date' ? 'calendar' : 'form'), doc.createTextNode(` ${TYPE_LABEL[it.type] || 'Campo'}`));
       c.append(t, el('div', 'gw-pf-card__label', it.label));
       const tags = el('div', 'gw-pf-card__tags');
-      if (it.required) tags.appendChild(el('span', null, 'obligatorio'));
+      if (it.hidden) tags.appendChild(el('span', null, 'oculto en esta categoría'));
+      else if (it.required) tags.appendChild(el('span', null, 'obligatorio'));
       if (it.text_case) tags.appendChild(el('span', null, it.text_case === 'upper' ? 'MAYÚSCULAS' : 'minúsculas'));
       if (it.showField || it.rawShowIf) tags.appendChild(el('span', null, 'condicional'));
       if (tags.childNodes.length) c.appendChild(tags);
@@ -310,7 +315,14 @@
       sep.disabled = alone; sep.addEventListener('click', () => { if (separate(m, it.key)) { focusKey = it.key; changed(); } });
       host.appendChild(sep);
 
-      const rq = el('input', null, null, { type: 'checkbox', id: 'pfReq', 'aria-label': `${it.label} obligatorio` }); rq.checked = !!it.required; rq.disabled = !it.canRequire;
+      if (state.cat) {          // formulario de una categoría: ¿esta categoría lleva este campo?
+        const sh = el('input', null, null, { type: 'checkbox', id: 'pfShow', 'aria-label': `${it.label}: mostrar en esta categoría` }); sh.checked = !it.hidden; sh.disabled = !it.canHide;
+        sh.addEventListener('change', () => { it.hidden = !sh.checked; if (it.hidden) { it.required = false; it.showField = ''; it.showValue = ''; it.rawShowIf = null; } changed(); });
+        const shl = el('label', 'gw-check gw-pf-props__check'); shl.append(sh, doc.createTextNode(` Mostrar este campo a «${state.cat}»`));
+        host.appendChild(shl);
+        if (!it.canHide) host.appendChild(el('p', 'gw-hint', 'Cédula, nombres y categoría siempre se ven.'));
+      }
+      const rq = el('input', null, null, { type: 'checkbox', id: 'pfReq', 'aria-label': `${it.label} obligatorio` }); rq.checked = !!it.required; rq.disabled = !it.canRequire || !!it.hidden;
       rq.addEventListener('change', () => { it.required = rq.checked; if (rq.checked) { it.showField = ''; it.showValue = ''; it.rawShowIf = null; } changed(); });
       const rl = el('label', 'gw-check gw-pf-props__check'); rl.append(rq, doc.createTextNode(' Obligatorio'));
       host.appendChild(rl);
@@ -358,7 +370,7 @@
         mine.forEach((r) => {
           const rw = el('div', `gw-fields-row gw-fields-row--${r.keys.length}`);
           r.keys.forEach((k) => {
-            const it = byKey[k]; if (!it) return;
+            const it = byKey[k]; if (!it || it.hidden) return;
             const f = el('div', 'gw-field'), lb = el('label', 'gw-label', it.label); if (it.required) lb.appendChild(el('span', 'gw-req', ' *', { 'aria-hidden': 'true' }));
             let ctl;
             if (it.type === 'text_long') ctl = el('textarea', 'gw-textarea', null, { rows: '2' });
@@ -384,12 +396,55 @@
     }
 
     function render() {
-      const m = state.model; container.textContent = ''; state.container = container;
-      const status = el('p', 'gw-hint', `Versión del diseño: ${m.version}. Cada cambio sube la versión; los quioscos sin red usan la última que conocieron.`, { role: 'status' });
-      const enabled = el('input', null, null, { type: 'checkbox', id: 'pfEnabled' }); enabled.checked = m.enabled;
-      enabled.addEventListener('change', () => { m.enabled = enabled.checked; dirty(); });
-      const enabledLabel = el('label', 'gw-check'); enabledLabel.append(enabled, doc.createTextNode(' Usar este formulario en el quiosco (Registrar nuevo y Editar) de este evento'));
-      container.append(enabledLabel, status);
+      const m = state.model, g = state.general; container.textContent = ''; state.container = container;
+      const status = el('p', 'gw-hint', `Versión del diseño: ${g.version}. Cada cambio sube la versión; los quioscos sin red usan la última que conocieron.`, { role: 'status' });
+      const enabled = el('input', null, null, { type: 'checkbox', id: 'pfEnabled' }); enabled.checked = g.enabled;
+      enabled.addEventListener('change', () => { g.enabled = enabled.checked; dirty(); render(); });          // al prender/apagar se muestra/oculta el diseñador
+      const enabledLabel = el('label', 'gw-check'); enabledLabel.append(enabled, doc.createTextNode(' Usar un formulario de persona a la medida en el quiosco (Registrar nuevo y Editar) de este evento'));
+      container.append(enabledLabel);
+      if (!g.enabled) {          // apagado: no hay nada que configurar; el quiosco usa el formulario de siempre
+        container.appendChild(el('p', 'gw-hint', 'Apagado: el quiosco usa el formulario de siempre (campos en su orden normal y los obligatorios de «Campos»). Enciéndelo para armar un formulario a la medida: orden, grupos, textos, y formularios distintos por categoría.', { role: 'status' }));
+        return;
+      }
+      container.appendChild(status);
+      if (state.cats.length) {          // formularios por categoría: el general y uno propio por cada categoría que lo necesite
+        const pick = el('div', 'gw-field'); pick.appendChild(el('label', 'gw-label', 'Formulario de', { for: 'pfCat' }));
+        const cs = el('select', 'gw-select', null, { id: 'pfCat', 'aria-label': 'Formulario que estás diseñando' });
+        cs.appendChild(el('option', null, 'General (todas las categorías sin formulario propio)', { value: '' }));
+        state.cats.forEach((c) => { const o = el('option', null, `${c}${state.variants[c] ? ' — formulario propio' : ' — usa el general'}`, { value: c }); if (c === state.cat) o.selected = true; cs.appendChild(o); });
+        cs.addEventListener('change', () => { state.cat = cs.value; state.model = state.variants[state.cat] || state.general; state.selected = null; render(); });
+        pick.appendChild(cs); container.appendChild(pick);
+        if (!state.cat) container.appendChild(el('p', 'gw-hint', 'Cada categoría puede tener su propio formulario: qué campos se ven y cuáles son obligatorios. Quien no tenga formulario propio usa este. Una persona usa el formulario de su categoría.'));
+        else if (!state.variants[state.cat]) {
+          const box = el('div', 'gw-alert gw-alert--info', null, { role: 'note' });
+          box.appendChild(el('span', 'gw-alert__body', `«${state.cat}» usa hoy el formulario general. Crea uno propio para que vea otros campos o tenga otros obligatorios (parte de una copia del general).`));
+          container.appendChild(box);
+          const mk = el('button', 'gw-btn gw-btn--primary', `Crear formulario propio para «${state.cat}»`, { type: 'button', id: 'pfCreateVariant' });
+          mk.addEventListener('click', () => { const copy = JSON.parse(JSON.stringify(state.general)); copy.items.forEach((it) => { it.hidden = false; }); state.variants[state.cat] = copy; state.model = copy; state.selected = null; dirty(); render(); });
+          container.appendChild(mk);
+          return;
+        } else {
+          const rm = el('button', 'gw-btn gw-btn--danger-outline gw-btn--sm', `Quitar el formulario propio de «${state.cat}» (vuelve al general)`, { type: 'button', id: 'pfRemoveVariant' });
+          rm.addEventListener('click', async () => {
+            const ok = root.showConfirm ? await root.showConfirm(`¿Quitar el formulario propio de «${state.cat}»? Sus personas pasan a usar el formulario general.`, { variant: 'warning', confirmLabel: 'Sí, quitar' }) : true;
+            if (!ok) return;
+            delete state.variants[state.cat]; state.cat = ''; state.model = state.general; state.selected = null; dirty(); render();
+          });
+          container.appendChild(rm);
+          // Flujos propios de la categoría: solo APAGAN algo que el evento tiene (nunca encienden lo que el evento no usa).
+          const flow = m.flow = m.flow || {}, fbox = el('fieldset', 'gw-field gw-pf-flow');
+          fbox.appendChild(el('legend', 'gw-label', `Qué pasa con «${state.cat}» al registrarse`));
+          [['facial_off', 'Ofrecer el reconocimiento facial', 'Apagado: a esta categoría no se le ofrece la aceptación, no se calcula su rostro y no entra al reconocimiento. La aceptación sigue siendo de cada persona y los textos legales no cambian.'],
+            ['digital_off', 'Enviar la escarapela digital', 'Apagado: no se le envía el enlace por correo aunque tenga correo guardado.'],
+            ['autoprint_off', 'Imprimir sola la escarapela al registrar', 'Apagado: al registrarla no se abre la impresión sola (se puede imprimir a mano o ya estar preimpresa).']].forEach(([k, t, hint]) => {
+            const cb = el('input', null, null, { type: 'checkbox', id: `pfFlow_${k}`, 'aria-label': `${t} a ${state.cat}` }); cb.checked = !flow[k];
+            cb.addEventListener('change', () => { flow[k] = !cb.checked; dirty(); });
+            const lb = el('label', 'gw-check'); lb.append(cb, doc.createTextNode(` ${t}`));
+            fbox.append(lb, el('p', 'gw-hint', hint));
+          });
+          container.appendChild(fbox);
+        }
+      }
 
       const tools = el('div', 'gw-row gw-pf-tools');
       const pv = el('button', 'gw-btn gw-btn--secondary gw-btn--sm', null, { type: 'button', id: 'pfPreview' }); pv.append(icon('eye'), doc.createTextNode(' Previsualizar'));
@@ -408,6 +463,7 @@
 
       const actions = el('div', 'gw-row gw-row--end');
       const reset = el('button', 'gw-btn gw-btn--secondary', 'Volver al diseño por defecto', { type: 'button', id: 'pfReset' });
+      reset.hidden = !!state.cat;          // el diseño por defecto es del general
       const save = el('button', 'gw-btn gw-btn--primary', 'Guardar formulario', { type: 'button', id: 'pfSave' });
       reset.addEventListener('click', async () => {
         const ok = root.showConfirm ? await root.showConfirm('¿Volver al diseño por defecto? Se pierde la disposición actual (los obligatorios de los campos se conservan).', { variant: 'warning', confirmLabel: 'Sí, volver' }) : true;
@@ -417,7 +473,7 @@
       save.addEventListener('click', async () => {
         if (gw) { await gw.saveKey('personform'); return; }
         save.disabled = true; save.setAttribute('aria-busy', 'true');
-        try { await persist(); toast(`Formulario guardado (versión ${state.model.version}). Los quioscos lo toman al recargar o al volver la red.`, 'success'); }
+        try { await persist(); toast(`Formulario guardado (versión ${state.general.version}). Los quioscos lo toman al recargar o al volver la red.`, 'success'); }
         catch (e) { toast(e.message || 'Error de red', 'error'); } finally { save.disabled = false; save.removeAttribute('aria-busy'); }
       });
       if (gw) save.hidden = true;                    // con el Guardar global, el botón propio queda oculto (mismo guardado)
@@ -425,15 +481,32 @@
       if (focusKey) { const c = container.querySelector(`.gw-pf-card[data-key="${focusKey}"]`); focusKey = null; if (c && c.focus) { try { c.focus({ preventScroll: true }); } catch (e) { /* sin foco */ } } }
     }
 
+    // Cuerpo del PUT: el general + el formulario propio de cada categoría que lo tenga.
+    function bodyOf() {
+      const body = fromModel(state.general), variants = {};
+      Object.keys(state.variants).forEach((c) => { variants[c] = fromModel(state.variants[c], true); });
+      if (Object.keys(variants).length) body.variants = variants;
+      return body;
+    }
+    // Vista del servidor → modelos (general + uno por categoría con formulario propio); se conserva la categoría que se estaba editando si aún existe.
+    function applyView(view) {
+      state.general = toModel(view);
+      state.cats = view.categories || [];
+      state.variants = {};
+      const vs = (view.definition && view.definition.variants) || {};
+      Object.keys(vs).forEach((c) => { state.variants[c] = toModel(Object.assign({}, view, { definition: vs[c] })); });
+      if (!state.variants[state.cat]) state.cat = state.cat && state.cats.includes(state.cat) ? state.cat : '';
+      state.model = state.variants[state.cat] || state.general;
+    }
     // Guarda el diseño (PUT). Lanza Error(mensaje) si falla; no avisa por su cuenta (lo hace el Guardar global o el botón propio).
     async function persist() {
       let res, data;
       try {
-        res = await fetchFn(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fromModel(state.model)) });
+        res = await fetchFn(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyOf()) });
         data = await res.json().catch(() => ({}));
       } catch (e) { throw new Error('Error de red'); }
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el formulario');
-      state.model = toModel(data); render();
+      applyView(data); render();
     }
     if (gw) gw.register({ key: 'personform', label: 'Formulario de persona', order: 85, save: async () => { if (state.loaded) await persist(); } });
 
@@ -443,7 +516,9 @@
         const view = await res.json();
         if (!view.env_enabled) { container.textContent = 'El formulario de persona no está habilitado en este entorno.'; return; }
         if (defaults) view.definition = null;          // el servidor arma el diseño por defecto al guardar con filas vacías
-        state.model = defaults ? defaultModel(view, state.model) : toModel(view); state.loaded = true; render();
+        if (defaults) { const prev = state.general, keep = state.variants, cat = state.cat; applyView(view); state.variants = keep; state.cat = cat; state.general = defaultModel(view, prev); state.model = state.variants[state.cat] || state.general; }
+        else applyView(view);
+        state.loaded = true; render();
       } catch (e) { container.textContent = 'No se pudo cargar el formulario de persona.'; }
     }
     // Diseño por defecto en el cliente (mismo criterio que app/personform.py::default_design): identidad y obligatorios en el grupo abierto; el resto en «Más datos».

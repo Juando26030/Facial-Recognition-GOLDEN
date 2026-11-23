@@ -460,7 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (window.directorySearch) window.directorySearch.reload();
                     if (window.closeRegisterModal) window.closeRegisterModal();
                     if (window.GoldenDirectory && window.GoldenDirectory.noteRecent) window.GoldenDirectory.noteRecent(registeredId);      // A5: queda primera en la lista de ESTE equipo
-                    if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId, { auto: data.auto_print });
+                    if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId, { auto: data.auto_print, skip: data.auto_print_skip });
                     const photoSent = formData.get('file');
                     if (photoSent && photoSent.size) showPrint(registeredId);      // registro facial nuevo: «Imprimir» ahí mismo (la auto-impresión ya se disparó arriba si el evento la tiene)
                 }

@@ -12,6 +12,8 @@ import os
 import time
 from typing import Optional
 
+from app.ttlcache import TTLCache
+
 DEFAULT_MINUTES = 10
 EVENT_MIN, EVENT_MAX = 5, 60          # rango permitido para el tiempo propio de un evento (Parámetros)
 WARN_SECONDS = 60                     # el aviso sale 1 minuto antes de cerrar
@@ -19,7 +21,7 @@ EXEMPT_HOURS_DEFAULT = 12             # vigencia de la exención (IDLE_EXEMPT_HO
 PASSIVE_HEADER = "x-gw-passive"
 TOUCH_PATH = "/api/session/touch"
 # No se exige ni se renueva en: archivos estáticos, salud, tareas internas (token de Google), formularios y páginas públicas, webhooks, cierre/inicio de sesión.
-EXEMPT_PREFIXES = ("/static/", "/favicon.ico", "/health", "/ready", "/internal/", "/f/", "/b/", "/c/", "/r/", "/aceptar", "/api/aceptar/", "/reimpresion/", "/entrega/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/login", "/logout", "/cambiar-contrasena")
+EXEMPT_PREFIXES = ("/static/", "/favicon.ico", "/health", "/ready", "/internal/", "/f/", "/b/", "/c/", "/r/", "/aceptar", "/api/aceptar/", "/reimpresion/", "/entrega/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/login", "/logout", "/cambiar-contrasena", "/certificado")
 
 _current: contextvars.ContextVar = contextvars.ContextVar("gw_idle_session", default=None)
 
@@ -28,15 +30,75 @@ def now() -> int:
     return int(time.time())
 
 
-def general_minutes() -> int:
-    """Tiempo general (SESSION_IDLE_MINUTES, 10 por defecto). 0 = apagado. Un valor ilegible vuelve a 10."""
+SETTING_KEY = "session_idle_minutes"
+GENERAL_MIN, GENERAL_MAX = 5, 480           # rango que puede fijar un admin en Configuración → Apariencia (el evento en proceso tiene el suyo: EVENT_MIN..EVENT_MAX)
+_general_cache = TTLCache(ttl=30)
+
+
+def env_minutes() -> Optional[int]:
+    """SESSION_IDLE_MINUTES si está puesta (manda sobre lo que se elija en pantalla); None si no. 0 = apagado. Un valor ilegible vuelve a 10."""
     raw = os.getenv("SESSION_IDLE_MINUTES", "").strip()
     if not raw:
-        return DEFAULT_MINUTES
+        return None
     try:
         return max(0, min(int(raw), 24 * 60))
     except ValueError:
         return DEFAULT_MINUTES
+
+
+def clamp_general(value) -> int:
+    try:
+        return max(GENERAL_MIN, min(GENERAL_MAX, int(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_MINUTES
+
+
+def configured_minutes(db=None) -> int:
+    """Lo que un admin fijó en Configuración → Apariencia (`app_settings`, sin migración); 10 si nunca se tocó o la base no responde. Con caché de 30 s: se pregunta en CADA petición del personal."""
+    hit = _general_cache.get("m")
+    if hit is not None:
+        return hit
+    value = DEFAULT_MINUTES
+    session = None
+    try:
+        from app.database import SessionLocal
+        from app.models import AppSetting
+        session = db or SessionLocal()
+        row = session.get(AppSetting, SETTING_KEY)
+        if row is not None and (row.value or "").strip():
+            value = clamp_general(row.value)
+    except Exception:       # noqa: BLE001 — sin base, sin tabla o sin SQLAlchemy (pruebas puras): el tiempo de siempre, nunca una página rota
+        value = DEFAULT_MINUTES
+    finally:
+        if session is not None and db is None:
+            session.close()
+    _general_cache.set("m", value)
+    return value
+
+
+def set_configured_minutes(db, value) -> int:
+    from app.models import AppSetting
+    from app.timeutil import utcnow
+    minutes = clamp_general(value)
+    row = db.get(AppSetting, SETTING_KEY)
+    if row is None:
+        row = AppSetting(key=SETTING_KEY)
+        db.add(row)
+    row.value, row.updated_at = str(minutes), utcnow()
+    db.commit()
+    _general_cache.set("m", minutes)
+    return minutes
+
+
+def general_is_stale() -> bool:
+    """¿Hay que volver a leer el tiempo general? (el middleware lo hace en un hilo aparte, para no frenar el bucle de eventos)"""
+    return env_minutes() is None and _general_cache.get("m") is None
+
+
+def general_minutes() -> int:
+    """Tiempo general de inactividad: SESSION_IDLE_MINUTES si está puesta; si no, el que fijó un admin en Apariencia; si no, 10. 0 = apagado (solo por la variable de entorno)."""
+    env = env_minutes()
+    return env if env is not None else configured_minutes()
 
 
 def event_minutes(event) -> Optional[int]:
@@ -92,12 +154,12 @@ def limit_seconds(session) -> int:
     return general_minutes() * 60
 
 
-ABSOLUTE_ROLES = ("admin", "super_admin")      # roles sin `sid` (varias sesiones a la vez): la cookie robada de uno se podía mantener viva indefinidamente navegando (Fase 3, B7)
+ABSOLUTE_ROLES = ("admin", "super_admin", "coordinador", "comercial")      # roles sin `sid` (varias sesiones a la vez; coordinador y comercial desde 20-nov-2026): la cookie robada de uno se podía mantener viva indefinidamente navegando (Fase 3, B7)
 ABSOLUTE_HOURS_DEFAULT = 12
 
 
 def absolute_hours() -> float:
-    """Tope ABSOLUTO de una sesión de admin/super_admin desde que inició (ADMIN_SESSION_MAX_HOURS, 12 por defecto; 0 = apagado). Un valor ilegible vuelve a 12."""
+    """Tope ABSOLUTO de una sesión de admin/super_admin/coordinador/comercial desde que inició (ADMIN_SESSION_MAX_HOURS, 12 por defecto; 0 = apagado). Un valor ilegible vuelve a 12."""
     raw = os.getenv("ADMIN_SESSION_MAX_HOURS", "").strip()
     if not raw:
         return ABSOLUTE_HOURS_DEFAULT
@@ -108,7 +170,7 @@ def absolute_hours() -> float:
 
 
 def absolute_expired(session, at: Optional[int] = None) -> bool:
-    """¿Pasó el tope absoluto (desde `iat`, el inicio de la sesión) de una sesión de admin/super_admin? Renovar con actividad NO lo mueve. Sin `iat` (cookie anterior al cambio) no expulsa:
+    """¿Pasó el tope absoluto (desde `iat`, el inicio de la sesión) de una sesión de un rol sin `sid`? Renovar con actividad NO lo mueve. Sin `iat` (cookie anterior al cambio) no expulsa:
     el middleware lo marca desde ahora."""
     if session.get("staff_role") not in ABSOLUTE_ROLES:
         return False

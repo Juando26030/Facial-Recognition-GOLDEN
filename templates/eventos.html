@@ -53,7 +53,7 @@
         <p class="gw-page-head__sub">Busca un evento, mira en qué estado está y entra a trabajarlo.</p>
       </div>
       <div class="gw-page-head__actions">
-        <a href="/eventos/nuevo" class="gw-btn gw-btn--primary" data-new-event>{{ ic('plus', 'gw-icon--sm') }} Nuevo evento</a>
+        {% if not (event_only_session is defined and event_only_session(request)) %}<a href="/eventos/nuevo" class="gw-btn gw-btn--primary" data-new-event>{{ ic('plus', 'gw-icon--sm') }} Nuevo evento</a>{% endif %}
         {% if staff_role == "super_admin" %}
         <button type="button" class="gw-btn gw-btn--secondary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">{{ ic('upload', 'gw-icon--sm') }} Importar evento</button>
         {% endif %}
@@ -134,6 +134,7 @@ function fmtRangeShort(e) {
 // Acciones poco usadas (devolver, exportar): un solo botón de tres puntos con menú (data-* y handlers intactos). Mismo botón y misma posición que en la lista de eventos de Clientes.
 function moreMenu(e) {
   const items = [];
+  if (CAN_DUP && !e.archived) items.push(`<button type="button" class="gw-menu__item" data-dup-event="${e.id}" data-event-name="${esc(e.name)}" title="Crea otro evento igual, con otro código y el nombre (copia)">${icon("plus", "gw-icon--sm")} Duplicar evento</button>`);
   if (CAN_REVERT && e.status === "en_proceso") items.push(`<button type="button" class="gw-menu__item" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>`);
   if (CAN_REVERT && !e.archived && e.status === "finalizado") items.push(`<button type="button" class="gw-menu__item" data-archive-event="${e.id}" data-event-name="${esc(e.name)}" title="Lo oculta de las listas; no borra nada y se puede restaurar">${icon("lock", "gw-icon--sm")} Archivar evento</button>`);
   if (CAN_REVERT && e.archived && (!e.archived_auto || STAFF_ROLE === "super_admin")) items.push(`<button type="button" class="gw-menu__item" data-restore-event="${e.id}" data-event-name="${esc(e.name)}">${icon("undo", "gw-icon--sm")} Restaurar evento</button>`);
@@ -169,7 +170,7 @@ function eventCard(e) {
     <div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
       <div class="gw-card-row__head">
         <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? " (" + esc(e.event_code) + ")" : ""}"><span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span> <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ""}</span></span>
-        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ""}${e.billed ? ` <span class="gw-badge gw-badge--ok" title="Facturado${e.billed_by_name ? " por " + esc(e.billed_by_name) : ""}">${esc(e.state_name || "Facturado")}</span>` : ""}
+        <span class="p-cli__states"><span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>${e.archived ? ' <span class="gw-badge">Archivado</span>' : ""}${e.billed ? ` <span class="gw-badge gw-badge--ok" title="Facturado${e.billed_by_name ? " por " + esc(e.billed_by_name) : ""}">${esc(e.state_name || "Facturado")}</span>` : ""}</span>
       </div>
       <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.tenant_name, where].filter(Boolean).join(" · ") + sup)}"><strong>${esc(e.tenant_name)}</strong>${where ? " · " + esc(where) : ""}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="${esc(who)}"><span class="ev-who"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name) || "—"}</span><span class="ev-who"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || "—"}</span></span></p>
       <div class="gw-card-row__actions p-cli__acts">
@@ -185,6 +186,7 @@ function eventCard(e) {
 }
 
 const STAFF_ROLE = {{ staff_role|tojson }};
+const CAN_DUP = ["coordinador", "comercial", "admin", "super_admin"].includes(STAFF_ROLE) && !{{ 'true' if (event_only_session is defined and event_only_session(request)) else 'false' }};      // duplicar un evento: igual que crearlos (el servidor lo vuelve a exigir)
 const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin";      // devolver «En proceso» a «Creado»: solo admin y super_admin
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 
@@ -275,6 +277,19 @@ eventsList.addEventListener("click", async (e) => {
   if (btn) {
     const ev = eventsCache.find(x => String(x.id) === btn.dataset.editEvent);
     if (ev) openEventEditModal(ev, runSearch);
+    return;
+  }
+  const dup = e.target.closest("[data-dup-event]");
+  if (dup) {
+    await GW.busy(dup, async () => {
+      const sg = await fetch(`/api/events/${dup.dataset.dupEvent}/duplicate-suggestion`).then(r => r.json().then(d => ({ ok: r.ok, d })));
+      if (!sg.ok) { showToast(sg.d.detail || "No se pudo preparar la copia", "error"); return; }
+      if (!await showConfirm(`Se creará el evento <strong>${esc(sg.d.name)}</strong> con el código <strong>${esc(sg.d.event_code)}</strong>.<br><br>Copia todo lo configurado (datos, campos, escarapela, formularios, ruleta, áreas, inventario) y las personas de la base. <strong>No copia</strong> los ingresos, impresiones, pagos, respuestas de formularios ni sorteos, ni lo biométrico: cada persona acepta de nuevo. La copia nace en «Creado» y sus formularios quedan en pruebas.`, { confirmLabel: "Duplicar evento" })) return;
+      const r = await fetch(`/api/events/${dup.dataset.dupEvent}/duplicate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const d = await r.json().catch(() => ({}));
+      showToast(r.ok ? d.message : (typeof d.detail === "string" ? d.detail : "No se pudo duplicar el evento"), r.ok ? "success" : "error");
+      if (r.ok) runSearch();
+    });
     return;
   }
   const arch = e.target.closest("[data-archive-event]");

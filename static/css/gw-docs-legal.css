@@ -72,3 +72,28 @@
   .gw-card > .gw-stats-row.gw-stats-row--2 .gw-stat__value { font-size: var(--gw-fs-2xl); }
   .gw-docs-zip .gw-btn { margin-top: 0; margin-left: auto; }
 }
+
+/* Legalizaciones por rubro (14-nov-2026): tabla de gastos y resumen de cuatro cifras. Solo tokens --gw-*. */
+.gw-leg-table td { vertical-align: top; }
+.gw-leg-table .gw-leg-num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--gw-fw-bold); }
+.gw-leg-table td .gw-btn { margin-top: 0; }
+.gw-leg-cell { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }       /* soporte y acciones: una línea base común, botones del mismo alto */
+.gw-leg-cell .gw-btn { flex: 0 0 auto; min-width: 6.5rem; min-height: var(--gw-tap); white-space: nowrap; }
+.gw-leg-table td:last-child { white-space: nowrap; }
+.gw-leg-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gw-sp-3); }
+@media (max-width: 900px) { .gw-leg-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .gw-leg-stats { grid-template-columns: minmax(0, 1fr); } }
+/* Revisión del director: gasto aprobado = fondo verde; no aprobado = naranja sutil (el texto «Aprobado» / «No aprobado» de la fila lo dice también, el color no va solo). */
+.gw-leg-table tr.gw-leg-row--ok > td { background: var(--gw-ok-bg); }
+.gw-leg-table tr.gw-leg-row--no > td { background: color-mix(in srgb, var(--gw-warn-line) 16%, var(--gw-surface)); }
+.gw-leg-table tbody tr.gw-leg-row--ok:hover > td, .gw-leg-table tbody tr.gw-leg-row--no:hover > td { filter: brightness(0.97); }
+
+/* Legalizaciones (17-nov-2026): el panel del rubro ocupa todo el ancho que deja la lista de rubros y termina en el mismo borde derecho que el resumen. */
+#legTabs > .gw-tabpanels { flex: 1 1 0; min-width: 0; width: 100%; }
+#legTabs > .gw-tabpanels > .gw-tabpanel { width: 100%; box-sizing: border-box; }
+@media (min-width: 900px) and (max-width: 1100px) { #legTabs > .gw-tablist { flex-basis: 220px; } }
+/* Orden de los gastos (18-nov-2026): arrastrar la fila o usar ↑ ↓ */
+.gw-leg-order { white-space: nowrap; }
+.gw-leg-grip { cursor: grab; padding: 0 var(--gw-sp-2); color: var(--gw-text-muted, inherit); }
+.gw-leg-row--drag { opacity: .5; }
+.gw-leg-row--over { outline: 2px dashed var(--gw-ok-line); outline-offset: -2px; }

@@ -8,6 +8,15 @@ from app.storage import get_storage, key_of
 from tests.conftest import login
 
 
+@pytest.fixture(autouse=True)
+def _installer_storage_is_clean():
+    """Los instaladores se guardan en data/system/ (no en un cliente de prueba): lo que deja una prueba no puede verlo la siguiente."""
+    import shutil
+    shutil.rmtree("data/system/local-installer", ignore_errors=True)
+    yield
+    shutil.rmtree("data/system/local-installer", ignore_errors=True)
+
+
 def _put(name, data=b"MZ-instalador"):
     get_storage().put(key_of("system", "local-installer", name), data)
 

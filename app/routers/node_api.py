@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 
-from app import event_lease, event_transfer
+from app import event_checklist, event_lease, event_transfer
 from app.database import get_db
 from app.models import AuditAction, Event
 from app.models import LocalNode
@@ -25,6 +25,10 @@ def _meta(e: Event) -> dict:
         "id": e.id, "event_code": e.event_code, "name": e.name, "tenant_id": e.tenant_id, "tenant_name": e.tenant.name if e.tenant else None,
         "city": e.city, "start_date": e.start_date.isoformat() if e.start_date else None, "end_date": e.end_date.isoformat() if e.end_date else None,
         "status": e.status, "state_name": e.state.name if e.state else None, "local": event_lease.serialize(e),
+        # Para que la lista del servidor local se vea como la de Eventos de la nube (solo metadatos del evento, nada de personas)
+        "location": e.location, "report_uploaded": bool(e.report_pdf_path),
+        "commercial_name": (e.commercial.full_name or e.commercial.username) if e.commercial else None,
+        "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
     }
 
 
@@ -42,7 +46,7 @@ def _audit(db: Session, node: LocalNode, action: str, event: Event, detail: str)
 
 @router.get("/node/events")
 def node_events(db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
-    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state)).filter(Event.archived_at.is_(None)).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
+    rows = db.query(Event).options(joinedload(Event.tenant), joinedload(Event.state), joinedload(Event.commercial), joinedload(Event.coordinator)).filter(Event.archived_at.is_(None)).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all()
     return {"events": [_meta(e) for e in rows]}
 
 
@@ -58,6 +62,15 @@ def node_package(event_id: int, db: Session = Depends(get_db), node: LocalNode =
     log.info("node_package event=%s bytes=%s", event_id, len(data))
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", event.event_code or "evento")
     return Response(content=data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="evento_{name}.zip"', "Cache-Control": "no-store"})
+
+
+@router.get("/node/events/{event_id}/inventory-checklist")
+def node_inventory_checklist(event_id: int, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
+    """El checklist de inventario del evento (lo alistado), para consultarlo en el servidor local. Solo hacia el servidor que TIENE el evento; sin datos de personas."""
+    event = _event(db, event_id)
+    if event.local_node_name != node.name:
+        raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local.")
+    return {"lines": event_checklist.cloud_lines(db, event.id)}
 
 
 @router.post("/node/events/{event_id}/lease")

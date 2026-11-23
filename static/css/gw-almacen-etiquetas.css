@@ -1,0 +1,28 @@
+/* Ventana de impresión de las etiquetas QR del almacén (Pieza 1). Medidas físicas en mm (es una etiqueta impresa, no una pantalla); el alto lo fija almacen-etiquetas.js con @page.
+   Solo tokens --gw-* para color y tipografía de la pantalla; en el papel todo va en negro sobre blanco. NO toca la impresión compartida de escarapelas. */
+.gw-almlbl__bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-3); padding: var(--gw-sp-3); background: var(--gw-surface-2); border-bottom: 1px solid var(--gw-border); }
+.gw-almlbl__bar .gw-hint { flex: 1 1 16rem; margin: 0; }
+.gw-almlbl__sheet { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-3); padding: var(--gw-sp-4); }
+.gw-almlbl__label { display: flex; align-items: center; gap: 2mm; box-sizing: border-box; padding: 2mm; background: white; color: black; border: 1px dashed var(--gw-border); overflow: hidden; break-after: page; page-break-after: always; }
+.gw-almlbl__qr { flex: none; }
+.gw-almlbl__qr svg { width: 100%; height: 100%; display: block; }
+.gw-almlbl__text { min-width: 0; flex: 1; }
+.gw-almlbl__text p { margin: 0; line-height: 1.15; overflow-wrap: anywhere; }
+.gw-almlbl__title { font-weight: var(--gw-fw-bold); font-size: 3.8mm; max-height: 13mm; overflow: hidden; }
+.gw-almlbl__code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 3.6mm; font-weight: var(--gw-fw-bold); margin-top: 1mm !important; letter-spacing: 0.3mm; }
+.gw-almlbl__sub { font-size: 2.8mm; margin-top: 0.8mm !important; }
+/* Editor de la plantilla (solo en pantalla) */
+.gw-almlbl__editor { margin: var(--gw-sp-3); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-almlbl__editor > summary { cursor: pointer; font-weight: var(--gw-fw-bold); }
+.gw-almlbl__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); align-items: end; }
+.gw-almlbl__tplbtns { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); margin-top: var(--gw-sp-3); }
+.gw-almlbl__label--top { flex-direction: column; justify-content: center; }
+.gw-almlbl__label--center .gw-almlbl__text { text-align: center; }
+@media print {
+  .gw-no-print { display: none !important; }
+  html, body, .gw-almlbl, .gw-almlbl__sheet { margin: 0; padding: 0; background: white; display: block; }
+  .gw-almlbl__sheet { gap: 0; }
+  .gw-almlbl__label { border: 0; padding: 1mm 2mm; }
+  .gw-almlbl__label:last-child { break-after: auto; page-break-after: auto; }
+  .gw-almlbl__editor { display: none !important; }
+}

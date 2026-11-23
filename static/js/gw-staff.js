@@ -20,7 +20,7 @@
     super_admin: ['admin', 'comercial', 'coordinador', 'almacen', 'contabilidad', 'digitador', 'cliente'],
   }[staffRole] || [];
   // Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17): lo hace el administrador. Solo admite este único par, en cualquier orden.
-  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente', almacen: 'Almacén', contabilidad: 'Contabilidad' };
+  const ROLE_LABELS = { coordinador: 'Coordinador', comercial: 'Comercial', admin: 'Admin', super_admin: 'Super admin', digitador: 'Digitador', cliente: 'Cliente', almacen: 'Almacén', contabilidad: 'Contabilidad', dir_coordinadores: 'Director de coordinadores' };
   const roleLabel = (r) => ROLE_LABELS[r] || r;
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -68,16 +68,53 @@
     return parts.join('');
   }
 
-  function render(list) {
+  /* Buscador: se filtra mientras se escribe (sin tildes ni mayúsculas) por usuario, nombre, correo y rol. */
+  const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const searchEl = document.getElementById('staffSearch');
+  let searchTerm = '';
+  const matches = (s) => !searchTerm || norm([s.username, s.full_name, s.email, [s.role].concat(s.extra_roles || []).map(roleLabel).join(' ')].join(' ')).includes(searchTerm);
+  if (searchEl) searchEl.addEventListener('input', () => { searchTerm = norm(searchEl.value.trim()); render(staffList); });
+
+  function render(all) {
+    const list = all.filter(matches);
+    if (!list.length) setLayout(false);          // avisos de «sin resultados / sin cuentas»: con el contenedor de filas de siempre
+    if (all.length && !list.length) {
+      listEl.innerHTML = '<div class="gw-empty" role="status"><p><strong>Ninguna cuenta coincide con «' + esc(searchEl ? searchEl.value.trim() : '') + '»</strong></p><p>Prueba con otra parte del nombre, el usuario o el correo.</p></div>';
+      return;
+    }
     if (!list.length) {
       listEl.innerHTML = showArchived
         ? '<div class="gw-empty" role="status"><p><strong>No hay cuentas archivadas</strong></p><p>Cuando archives una, aparecerá aquí para poder restaurarla.</p></div>'
         : '<div class="gw-empty" role="status"><p><strong>Todavía no hay cuentas de staff</strong></p><p>Abre «Nueva cuenta» arriba para crear la primera.</p></div>';
       return;
     }
-    listEl.innerHTML = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>' + list.map((s) => {
-      const roles = [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).map(roleLabel).join(' + ');
-      return `
+    if (searchTerm) { setLayout(false); listEl.innerHTML = COLHEAD + list.map(rowHtml).join(''); return; }          // buscando: lista plana, solo quien coincide
+    // Sin búsqueda: un panel desplegable por rol; quien tiene doble rol sale en los dos (principal + extras).
+    setLayout(true);
+    const rolesOf = (s) => [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).filter(Boolean);
+    const present = [];
+    list.forEach((s) => rolesOf(s).forEach((r) => { if (present.indexOf(r) < 0) present.push(r); }));
+    const ordered = GROUP_ORDER.filter((r) => present.indexOf(r) >= 0).concat(present.filter((r) => GROUP_ORDER.indexOf(r) < 0));
+    listEl.innerHTML = ordered.map((r) => {
+      const members = list.filter((s) => rolesOf(s).indexOf(r) >= 0);
+      return `<details class="gw-group gw-staff__group" data-role="${esc(r)}"${openGroups.has(r) ? ' open' : ''}>
+        <summary class="gw-group__sum"><span class="gw-group__title">${esc(GROUP_LABELS[r] || roleLabel(r))}</span><span class="gw-badge gw-badge--info">${members.length}</span></summary>
+        <div class="gw-group__body"><div class="gw-cards gw-rows gw-staff__list">${COLHEAD}${members.map(rowHtml).join('')}</div></div>
+      </details>`;
+    }).join('');
+  }
+
+  const COLHEAD = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>';
+  const GROUP_ORDER = ['super_admin', 'admin', 'comercial', 'dir_coordinadores', 'coordinador', 'contabilidad', 'almacen', 'digitador', 'cliente'];
+  const GROUP_LABELS = { super_admin: 'Super administradores', admin: 'Administradores', comercial: 'Comerciales', dir_coordinadores: 'Directores de coordinadores', coordinador: 'Coordinadores', contabilidad: 'Contabilidad', almacen: 'Almacén', digitador: 'Digitadores', cliente: 'Clientes' };
+  const openGroups = new Set();          // paneles que la persona dejó abiertos (se conservan al recargar o al cambiar algo)
+  listEl.addEventListener('toggle', (e) => { const d = e.target; if (d && d.matches && d.matches('details.gw-staff__group')) { if (d.open) openGroups.add(d.dataset.role); else openGroups.delete(d.dataset.role); } }, true);
+  /* En vista agrupada el contenedor deja de ser la rejilla de filas (cada panel trae la suya); buscando, vuelve a serlo. */
+  function setLayout(grouped) { ['gw-cards', 'gw-rows', 'gw-staff__list'].forEach((c) => listEl.classList.toggle(c, !grouped)); }
+
+  function rowHtml(s) {
+    const roles = [s.role].concat(s.extra_roles || (s.secondary_role ? [s.secondary_role] : [])).map(roleLabel).join(' + ');
+    return `
       <article class="gw-card-row gw-staff__row">
         <div class="gw-card-row__head gw-staff__head">
           <h3 class="gw-card-row__title gw-staff__who gw-staff__c-user" title="${esc(s.username)}">${esc(s.username)}</h3>
@@ -89,7 +126,6 @@
         <p class="gw-staff__c-role"><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
         <div class="gw-card-row__actions gw-staff__actions gw-staff__c-act">${actionsHtml(s)}</div>
       </article>`;
-    }).join('');
   }
 
   /* ---------------------------------------------------------------- Acciones */
@@ -128,14 +164,14 @@
     const username = btn.dataset.username;
     const currentExtras = (btn.dataset.extras || '').split(',').filter(Boolean);
     const options = allowed.map((r) => `<option value="${r}" ${r === current ? 'selected' : ''}>${roleLabel(r)}</option>`).join('');
-    const extraChoices = ['coordinador', 'comercial', 'almacen', 'contabilidad'].concat(staffRole === 'super_admin' ? ['admin'] : []);          // Almacén y Contabilidad: rol principal o sumados (inventario)
+    const extraChoices = ['coordinador', 'comercial', 'almacen', 'contabilidad', 'dir_coordinadores'].concat(staffRole === 'super_admin' ? ['admin'] : []);          // Almacén y Contabilidad: rol principal o sumados (inventario)
     const d = openGwDialog({
       title: 'Roles de la cuenta',
       bodyHtml: `<p class="gw-modal__text">Cuenta <strong>${esc(username)}</strong>. Los permisos cambian en cuanto confirmes; si tiene varios roles, recibe la suma de todos.</p>` +
         '<div class="gw-field"><label class="gw-label" for="staffNewRole">Rol principal</label><select class="gw-select" id="staffNewRole">' + options + '</select></div>' +
         '<fieldset class="gw-field" id="staffExtraBox"><legend class="gw-label">Añadir roles</legend>' +
         extraChoices.map((r) => `<label class="gw-check" data-extra-row="${r}"><input type="checkbox" value="${r}" ${currentExtras.includes(r) ? 'checked' : ''}><span>${esc(roleLabel(r))}</span></label>`).join('') +
-        '<p class="gw-hint">Almacén puede ver y editar el inventario de los eventos; Contabilidad solo lo consulta. Ninguno de los dos administra cuentas ni ve datos de asistentes.</p></fieldset>',
+        '<p class="gw-hint">Director de coordinadores es un coordinador que además asigna coordinadores a los eventos y revisa las legalizaciones (requiere el rol Coordinador). Almacén puede ver y editar el inventario de los eventos; Contabilidad solo lo consulta. Ninguno de los dos administra cuentas ni ve datos de asistentes.</p></fieldset>',
       buttons: [{ id: 'staffRoleCancel', cls: 'gw-btn--secondary', label: 'Cancelar' }, { id: 'staffRoleOk', cls: 'gw-btn--primary', label: 'Guardar roles' }],
       onEscape: () => d.close(),
     });
@@ -143,6 +179,9 @@
     const box = d.dlg.querySelector('#staffExtraBox');
     const syncBox = () => {          // el rol principal no se repite como extra; con «admin» como principal no hay extras
       box.hidden = sel.value === 'admin';
+      const dirRow = box.querySelector('[data-extra-row="dir_coordinadores"]');          // el director es un coordinador: solo con ese rol (principal o sumado)
+      const isCoord = sel.value === 'coordinador' || !!box.querySelector('[data-extra-row="coordinador"] input:checked');
+      if (dirRow) { dirRow.hidden = !isCoord; if (!isCoord) dirRow.querySelector('input').checked = false; }
       box.querySelectorAll('[data-extra-row]').forEach((row) => {
         const same = row.dataset.extraRow === sel.value;
         row.hidden = same;
@@ -150,6 +189,7 @@
       });
     };
     sel.addEventListener('change', syncBox);
+    box.addEventListener('change', syncBox);
     syncBox();
     d.dlg.querySelector('#staffRoleCancel').addEventListener('click', () => d.close());
     d.dlg.querySelector('#staffRoleOk').addEventListener('click', () => {

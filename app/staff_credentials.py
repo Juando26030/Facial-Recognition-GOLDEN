@@ -33,9 +33,10 @@ RESEND_ACTION = "resend_credentials"
 _EMAIL = re.compile(r"^[A-Za-z0-9._%+\-']{1,64}@[A-Za-z0-9.\-]{1,190}\.[A-Za-z]{2,}$")          # sin comas, punto y coma, comillas ni espacios (un solo destinatario)
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]", "testserver")
 
-ROLE_LABELS = {"digitador": "digitador", "coordinador": "coordinador", "comercial": "comercial", "admin": "administrador", "super_admin": "superadministrador", "cliente": "cliente"}
+ROLE_LABELS = {"digitador": "digitador", "coordinador": "coordinador", "dir_coordinadores": "director de coordinadores", "comercial": "comercial", "admin": "administrador", "super_admin": "superadministrador", "cliente": "cliente"}
 ROLE_INSTRUCTIONS = {
     "digitador": "Con tu cuenta registras y acreditas a las personas en la puerta del evento.",
+    "dir_coordinadores": "Con tu cuenta administras los eventos como coordinador, asignas coordinadores a los eventos y revisas las legalizaciones.",
     "coordinador": "Con tu cuenta administras los eventos que te asignen: personal temporal, parámetros, registro y reportes.",
     "comercial": "Con tu cuenta gestionas clientes y eventos, y recibes los informes finales.",
     "admin": "Con tu cuenta administras la plataforma de tu cuenta de cliente: eventos, personal y configuración.",

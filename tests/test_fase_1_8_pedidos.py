@@ -77,7 +77,7 @@ def test_papelera_en_todos_los_buscadores_dentro_del_campo():
     assert "data-gw-clear-btn" in js and "gw-search__clear--proxy" in js
     assert re.search(r"\.gw-search__clear--in \.gw-icon \{ width: 1\.5rem", css)
     assert "right: var(--gw-sp-4)" in css
-    for rel, ident in (("templates/kiosk_registro.html", "searchNombre"), ("templates/_gw_buscador.html", "searchCedula"), ("templates/kiosk_areas.html", "nameSearch"),
+    for rel, ident in (("templates/kiosk_registro.html", "searchNombre"), ("templates/_gw_buscador.html", "searchCedula"), ("templates/kiosk_areas.html", "scanInput"),
                        ("templates/kiosk_ruleta.html", "pickerSearch"), ("templates/calendario.html", "noteTargetSearch")):
         assert re.search(rf'id="{ident}"[^>]*data-gw-clearable', read(rel)), (rel, ident)
 

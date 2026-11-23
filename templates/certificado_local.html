@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quitar el aviso «No seguro» | Golden Local</title>
+    {% include "_gw_head.html" %}
+    <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+</head>
+<body class="gw-page">
+<main class="gw-container gw-stack-lg">
+    <div class="gw-card gw-card--raised gw-stack">
+        <h1 class="gw-title">Quitar el aviso «No seguro»</h1>
+        <p>Este servidor local de Golden usa su propio certificado. Cada computador o celular que se conecta muestra «No seguro» hasta que lo instala <strong>una sola vez</strong>. Después, la conexión sale segura (candado) y no vuelve a preguntar, aunque cambie la IP del servidor.</p>
+        {% if not available %}
+        <div class="gw-alert" role="alert">Este servidor todavía no tiene certificado. Vuelve a ejecutar el instalador en el servidor.</div>
+        {% else %}
+        <p class="gw-hint">Huella del certificado (para comprobar que es el de este servidor): <code style="overflow-wrap:anywhere">{{ fingerprint }}</code></p>
+        {% endif %}
+    </div>
+    {% if available %}
+    <section class="gw-card gw-stack" aria-labelledby="win">
+        <h2 class="gw-subtitle" id="win">Computador con Windows (Chrome o Edge)</h2>
+        <ol>
+            <li>Descarga y abre este archivo (doble clic): <a class="gw-btn gw-btn--primary gw-btn--sm" href="/certificado/instalar-windows.cmd" download>Instalar certificado en Windows</a></li>
+            <li>Si Windows dice que protegió el equipo, elige «Más información» › «Ejecutar de todas formas».</li>
+            <li>En el aviso de seguridad de Windows elige <strong>«Sí»</strong>.</li>
+            <li>Cierra <strong>todas</strong> las ventanas del navegador y vuelve a abrir {{ server_url or 'la dirección del servidor' }}.</li>
+        </ol>
+        <p class="gw-hint">No necesita permisos de administrador. Firefox: abre <code>about:preferences#privacy</code> › Certificados › «Ver certificados» › Autoridades › Importar, y elige el archivo <a href="/certificado/golden-local-ca.cer" download>golden-local-ca.cer</a>.</p>
+    </section>
+    <section class="gw-card gw-stack" aria-labelledby="android">
+        <h2 class="gw-subtitle" id="android">Celular o tableta Android</h2>
+        <ol>
+            <li>Descarga el certificado: <a class="gw-btn gw-btn--primary gw-btn--sm" href="/certificado/golden-local-ca.cer" download>Descargar certificado</a></li>
+            <li>Abre Ajustes › Seguridad (o «Seguridad y privacidad») › Más ajustes › Cifrado y credenciales › <strong>Instalar un certificado</strong> › <strong>Certificado de CA</strong>.</li>
+            <li>Acepta el aviso y elige el archivo <code>golden-local-ca.cer</code> de Descargas.</li>
+            <li>Cierra Chrome por completo y vuelve a abrir la dirección del servidor.</li>
+        </ol>
+        <p class="gw-hint">Los nombres del menú cambian un poco según la marca: busca «certificado» en el buscador de Ajustes.</p>
+    </section>
+    <section class="gw-card gw-stack" aria-labelledby="ios">
+        <h2 class="gw-subtitle" id="ios">iPhone o iPad</h2>
+        <ol>
+            <li>Abre esta página en <strong>Safari</strong> y toca: <a class="gw-btn gw-btn--primary gw-btn--sm" href="/certificado/golden-local-ca.cer">Descargar certificado</a> › «Permitir».</li>
+            <li>Ajustes › «Perfil descargado» › <strong>Instalar</strong> (pide el código del equipo).</li>
+            <li>Ajustes › General › Información › <strong>Ajustes de confianza de certificados</strong> › activa «Golden Local CA».</li>
+        </ol>
+    </section>
+    <section class="gw-card gw-stack" aria-labelledby="mac">
+        <h2 class="gw-subtitle" id="mac">Mac</h2>
+        <ol>
+            <li>Descarga <a href="/certificado/golden-local-ca.cer" download>golden-local-ca.cer</a> y ábrelo (se abre «Acceso a Llaveros»).</li>
+            <li>Busca «Golden Local CA», ábrelo › Confiar › «Al utilizar este certificado»: <strong>Confiar siempre</strong>.</li>
+        </ol>
+    </section>
+    {% endif %}
+    <p class="gw-hint">El certificado solo sirve para las direcciones de redes locales (192.168…, 10…, 172.16–31…) y el nombre de este servidor: no puede usarse para suplantar sitios de internet.</p>
+</main>
+</body>
+</html>

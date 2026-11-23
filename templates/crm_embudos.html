@@ -1,0 +1,30 @@
+{# CRM - Embudos (C2, solo administradores): crear embudos y editar sus etapas (nombre, probabilidad, orden, archivar). Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_embudos.js; API: /api/crm/pipelines y /api/crm/stages. #}
+{% from "_crm_macros.html" import ic, ayuda with context %}
+{% set page_title = "CRM - Embudos" %}{% set page_css = ["css/p-crm-c2.css"] %}{% set page_js = ["js/params-save.js", "js/crm_embudos.js"] %}{% set crm_section = 'embudos' %}
+{% include "_crm_shell_top.html" %}
+  <div class="gw-container gw-stack-lg" id="pipeRoot">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">CRM · Administración</p>
+        <h1 class="gw-page-head__title">Embudos y etapas</h1>
+        <p class="gw-page-head__sub">Las columnas del tablero de oportunidades. Cada embudo necesita al menos una etapa abierta, una ganada y una perdida.</p>
+      </div>
+      <div class="gw-page-head__actions"><button type="button" class="gw-btn gw-btn--primary" id="pipeNew">{{ ic('plus', 'gw-icon--sm') }} Nuevo embudo</button></div>
+    </div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige el embudo</span>
+        {% call ayuda('ay_pipe1', 'Elige el embudo') %}El embudo marcado como predeterminado es el que ve el equipo al abrir el tablero.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ajusta las etapas</span>
+        {% call ayuda('ay_pipe2', 'Ajusta las etapas') %}Cambia el nombre y la probabilidad de cada etapa, y súbelas o bájalas con las flechas; todo queda pendiente hasta pulsar «Guardar cambios». «Ganada» y «Perdida» siempre quedan al final.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Archiva lo que no uses</span>
+        {% call ayuda('ay_pipe3', 'Archiva lo que no uses') %}Una etapa con oportunidades abiertas no se puede archivar: primero muévelas a otra etapa.{% endcall %}</li>
+    </ol>
+
+    <div id="paramsRoot">
+      <div id="pipeList" class="gw-stack-lg" aria-live="polite" aria-busy="true" data-psave="embudos"></div>
+    </div>
+    {# Barra única de guardado (nombre, probabilidad y orden de las etapas). #}
+    {% include "_gw_savebar.html" %}
+  </div>
+{% include "_crm_shell_bottom.html" %}

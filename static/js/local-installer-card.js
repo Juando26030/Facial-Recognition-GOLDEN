@@ -3,7 +3,7 @@
 (function () {
   const body = document.getElementById('localInstallerBody');
   const tab = document.getElementById('tab_servidor');
-  if (!body || !tab) return;
+  if (!body) return;
   let started = false;
 
   function row(text, cls) {
@@ -48,7 +48,7 @@
     }
   }
 
-  tab.addEventListener('click', load);
-  tab.addEventListener('focus', load);
-  if (location.hash === '#servidor' || tab.getAttribute('aria-selected') === 'true') load();
+  /* Se pide apenas carga la página (la consulta no toca la base): antes dependía de un clic o foco en la pestaña y, si la pestaña se volvía a dibujar, la tarjeta se quedaba en «revisando». */
+  if (tab) { tab.addEventListener('click', load); tab.addEventListener('focus', load); }
+  load();
 })();

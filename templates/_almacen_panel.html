@@ -1,0 +1,55 @@
+{# Almacén (Piezas 1 a 3): salidas y entradas por QR con el tablero del evento. La creación de tipos, objetos y etiquetas vive en Administrar catálogo (almacen-catalog.js). Lo incluye inventario.html solo con ALMACEN_ENABLED y para almacén, admin y super_admin. Lo maneja static/js/almacen-moves.js (buscador de evento, salidas, entradas, cámara QR, alistado). #}
+    <section class="gw-invpg__panel gw-stack" id="invPanelAlm" role="tabpanel" aria-labelledby="invTabAlm" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+      <p class="gw-hint">Aquí se registran las salidas y entradas de material por evento escaneando el QR y se lleva el checklist de cada evento.</p>
+
+      <section class="gw-card gw-stack" aria-labelledby="almMoveTitle">
+        <h2 class="gw-card__title" id="almMoveTitle">Salidas y entradas por evento</h2>
+        <div class="gw-field">          {# la barra de búsqueda NO va dentro del bloque plegable: «Plegar todo» no la oculta #}
+          <label class="gw-label" for="almMvEventSearch">1. Buscar evento</label>
+          <input class="gw-input" type="search" id="almMvEventSearch" placeholder="Nombre o código del evento" autocomplete="off" spellcheck="false">
+          <p class="gw-hint" id="almMvEventInfo" role="status" aria-live="polite"></p>
+        </div>
+        <p class="gw-alm__chosen">Evento elegido: <strong id="almMvEventChosenName">ninguno</strong> <span id="almMvEventChosenMeta" class="gw-hint"></span></p>
+        <details class="gw-form-group" id="almMvEventBox" open>
+          <summary class="gw-form-group__summary"><span>Eventos encontrados</span></summary>
+          <div class="gw-form-group__body"><div id="almMvEventList" aria-live="polite"></div></div>
+        </details>
+        <input type="hidden" id="almMvEvent" value="">
+        <div class="gw-fields-row gw-fields-row--2">
+          <fieldset class="gw-field gw-fieldset"><legend class="gw-label">2. ¿Qué registras?</legend>
+            <label class="gw-check"><input type="radio" name="almMvMode" value="salida" checked> <span>Salida (sale de bodega al evento)</span></label>
+            <label class="gw-check"><input type="radio" name="almMvMode" value="entrada"> <span>Entrada (vuelve a bodega)</span></label></fieldset>
+          <div class="gw-field"><label class="gw-label" for="almMvQty">Cantidad <span class="gw-hint">(solo para elementos por modelo o por cantidad)</span></label>
+            <input class="gw-input" type="number" id="almMvQty" min="1" value="1" inputmode="numeric"></div>
+        </div>
+        <div class="gw-field">
+          <label class="gw-label" for="almMvScan">3. Escanea el código</label>
+          <div class="gw-alm__scanrow">
+            <input type="text" id="almMvScan" data-gw-clearable class="gw-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="almMvHint" placeholder="Escanea o escribe el código y presiona Enter" disabled>
+            <button type="button" id="almMvQrBtn" class="gw-btn gw-btn--secondary gw-alm__scanbtn" aria-label="Escanear QR con cámara" title="Escanear QR con cámara" disabled><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-scan"/></svg></button>
+          </div>
+          <p class="gw-hint" id="almMvHint">Primero elige el evento. El lector escribe el código y pulsa Enter, o usa la cámara; cada lectura registra un movimiento.</p>
+        </div>
+        <div id="almMvResult" aria-live="polite"></div>
+      </section>
+
+      <section class="gw-card gw-stack" id="almBoardCard" aria-labelledby="almBoardTitle" hidden>
+        <div class="gw-row gw-row--between"><h2 class="gw-card__title" id="almBoardTitle">Checklist del evento</h2><span id="almBoardSummary" class="gw-hint"></span></div>
+        <div class="gw-row"><a class="gw-btn gw-btn--secondary" id="almXlsx" href="#" download><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-download"/></svg> Descargar checklist en Excel (.xlsx)</a> <span class="gw-hint">Mismo formato GEYL; sale a nombre de quien lo descarga.</span></div>
+        <div id="almBoardUnmapped" role="status"></div>
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary"><span>Filas del checklist</span></summary>
+          <div class="gw-form-group__body"><div id="almBoard" aria-live="polite"></div></div>
+        </details>
+        <details class="gw-form-group" open>
+          <summary class="gw-form-group__summary"><span>Fuera de bodega (equipos con serial que siguen en el evento)</span> <span class="gw-badge" id="almOutsideCount"></span></summary>
+          <div class="gw-form-group__body"><div id="almOutside" aria-live="polite"></div></div>
+        </details>
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary"><span>Últimos movimientos</span> <span class="gw-badge" id="almMovementsCount"></span></summary>
+          <div class="gw-form-group__body"><div id="almMovements" aria-live="polite"></div></div>
+        </details>
+      </section>
+
+      <p class="gw-hint">Para crear un tipo de elemento («Portátil Lenovo»), agregar sus objetos con su QR o imprimir etiquetas, usa la pestaña <strong>Administrar catálogo</strong>.</p>
+    </section>

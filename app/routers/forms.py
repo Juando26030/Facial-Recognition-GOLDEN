@@ -502,7 +502,8 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
 def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     src = _get_form(db, event, form_id)
-    name = f"{src.name} (copia)"
+    from app.legalization_svc import copy_name
+    name = copy_name(src.name, [n for (n,) in db.query(WebForm.name).filter(WebForm.event_id == event.id).all()], 200)      # «X (copia)», «X (copia 1)», «X (copia 2)»…
     copy = WebForm(event_id=event.id, name=name, slug=_unique_slug(db, event.id, name), manual_status="pruebas", design_json=src.design_json,
                    settings_json=src.settings_json, capacity=src.capacity, test_key=secrets.token_urlsafe(12), created_by_id=staff.id)
     db.add(copy)
@@ -586,7 +587,7 @@ def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     out = []
     for cfg in parametros.field_configs_for_event(db, event):
         key = cfg["key"]
-        if key in ("categories", "certificate", "digital_contact") or cfg["field_type"] == "signature":
+        if key in ("categories", "certificate", "digital_contact", "code") or cfg["field_type"] == "signature":
             continue
         kind = {"boolean": "checkbox", "consent": "checkbox", "email": "email"}.get(cfg["field_type"], cfg["field_type"])
         if key == "email":
@@ -988,9 +989,10 @@ def list_submissions(event_id: int, form_id: int, include_tests: bool = True, pa
         rows = base.filter(FormSubmission.id.in_(ids)).order_by(FormSubmission.id.desc()).all() if ids else []
     paid = _approved_by_submission(db, form, [s.id for s in rows])
     known = formsvc.known_before(db, form, rows)
+    resub = formsvc.resubmission_numbers(db, form, design)
     return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)],
             "total": total, "total_all": total_all, "page": pg["page"], "page_size": pg["page_size"], "pages": pg["pages"], "quotas": quotas, "rows": [
-        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "known": s.id in known, "source": s.source or "",
+        {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "known": s.id in known, "source": s.source or "", "resub": resub.get(s.id, 0),
          "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
 
 
@@ -1215,6 +1217,45 @@ def download_files_zip(event_id: int, form_id: int, field: str, include_tests: b
     return Response(content=tmp.read(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
+def _resubmission_history(subs: list, design: dict, cols: list) -> tuple:
+    """Reinscripciones de la misma cédula (hotfix 19-nov-2026, «Permitir que la misma persona vuelva a enviar»). Igual que el reporte del evento, el reporte conserva los datos del PRIMER
+    registro y deja aparte qué cambió después y a qué hora. Devuelve (filas, cambios): `filas` = [(primera inscripción, veces, última reinscripción | None)], una por persona (las inscripciones
+    sin cédula no se agrupan: cada una es su fila); `cambios` = [(cédula, nombre, campo, antes, después, momento local, nota)], del más antiguo al más nuevo, comparando cada envío con el ANTERIOR
+    de esa persona. Un reenvío sin ningún dato distinto también queda anotado. Pura (no toca la base)."""
+    first_by, later_by, rows = {}, {}, []
+    for s in subs:
+        pid = formsvc.sub_person_id(design, s)
+        key = (pid, bool(s.is_test)) if pid else None
+        if key is None or key not in first_by:
+            if key is not None:
+                first_by[key] = s
+            rows.append(s)
+        else:
+            later_by.setdefault(key, []).append(s)
+    name_keys = {f.get("key"): fid for fid, f in design["fields"].items() if f.get("key") in ("first_name", "last_name")}
+    changes = []
+    for key, rest in later_by.items():
+        prev = first_by[key]
+        prev_data = json.loads(prev.data_json)
+        who = " ".join(str(_display(prev_data.get(name_keys[k])) or "").strip() for k in ("first_name", "last_name") if k in name_keys).strip()
+        for s in rest:
+            data = json.loads(s.data_json)
+            at = to_local(s.created_at)
+            diffs = [(label, _display(prev_data.get(fid)), _display(data.get(fid))) for fid, label, _ in cols if str(_display(prev_data.get(fid))).strip() != str(_display(data.get(fid))).strip()]
+            if diffs:
+                changes.extend((key[0], who, label, old, new, at, "Reinscripción") for label, old, new in diffs)
+            else:
+                changes.append((key[0], who, "(sin cambios en los datos)", "", "", at, "Reinscripción"))
+            prev_data = data
+    out = []
+    for s in rows:
+        pid = formsvc.sub_person_id(design, s)
+        rest = later_by.get((pid, bool(s.is_test)), []) if pid else []
+        out.append((s, 1 + len(rest), to_local(rest[-1].created_at) if rest else None))
+    changes.sort(key=lambda c: c[5])
+    return out, changes
+
+
 @router.get("/events/{event_id}/forms/{form_id}/report")
 def report(event_id: int, form_id: int, include_tests: bool = False, request: Request = None, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Reporte Excel del formulario (mismas convenciones que `app/reports.py`: título arriba, encabezado oscuro,
@@ -1231,25 +1272,41 @@ def report(event_id: int, form_id: int, include_tests: bool = False, request: Re
     has_pay = bool(formlib.payment_field(design))
     paid = _approved_by_submission(db, form) if has_pay else {}
     known = formsvc.known_before(db, form, subs)
+    people_rows, changes = _resubmission_history(subs, design, cols)
+    has_re = any(n > 1 for _, n, _ in people_rows)          # solo si alguien se reinscribió: así el reporte de siempre queda igual
     wb = Workbook()
     ws = wb.active
     ws.title = "Inscripciones"
     ws.append([f"{form.name} — {event.name} ({event.event_code})"])
     ws["A1"].font = Font(bold=True, size=13, color="0A0E2E")
-    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "Persona en la base antes de inscribirse", "Cargada a la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)", "Comisión Wompi estimada (COP)", "Neto estimado de comisión (COP)"] if has_pay else [])
+    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + (["Veces que se inscribió", "Última reinscripción"] if has_re else []) + ["Origen", "Prueba", "Persona en la base antes de inscribirse", "Cargada a la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)", "Comisión Wompi estimada (COP)", "Neto estimado de comisión (COP)"] if has_pay else [])
     ws.append(headers)
     for c in ws[2]:
         c.font = Font(color="FFFFFF", bold=True)
         c.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    for n, s in enumerate(subs, start=1):
+    for n, (s, times, last_re) in enumerate(people_rows, start=1):          # una fila por persona: los datos de su PRIMER registro (lo que cambió después va en «Historial de cambios»)
         data = json.loads(s.data_json)
         local = to_local(s.created_at)
-        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + [s.source or "Directo", "Sí" if s.is_test else "No", ("Sí" if s.id in known else "No (nueva)") if formsvc.sub_person_id(design, s) else "Sin cédula", "Sí" if s.fed else "No"] + (_pay_cells(paid.get(s.id)) if has_pay else []))
+        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + ([times, last_re.strftime("%Y-%m-%d %H:%M:%S") if last_re else ""] if has_re else []) + [s.source or "Directo", "Sí" if s.is_test else "No", ("Sí" if s.id in known else "No (nueva)") if formsvc.sub_person_id(design, s) else "Sin cédula", "Sí" if s.fed else "No"] + (_pay_cells(paid.get(s.id)) if has_pay else []))
     ws.auto_filter.ref = f"A2:{get_column_letter(len(headers))}{max(ws.max_row, 2)}"
     for i in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 24 if i > 3 else 10
     ws.freeze_panes = "A3"
+    if changes:                                          # igual que «Historial de cambios» del reporte del evento: qué cambió, a qué hora y de dónde viene
+        hs = wb.create_sheet("Historial de cambios")
+        hist_cols = ["Cédula", "Nombre", "Campo", "Valor anterior", "Valor nuevo", "Fecha", "Hora", "Origen"]
+        hs.append(hist_cols)
+        for c in hs[1]:
+            c.font = Font(color="FFFFFF", bold=True)
+            c.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for ced, who, label, old, new, at, note in changes:
+            hs.append([ced, who, label, old, new, at.strftime("%Y-%m-%d"), at.strftime("%H:%M:%S"), note])
+        for i in range(1, len(hist_cols) + 1):
+            hs.column_dimensions[get_column_letter(i)].width = 28 if i in (2, 3, 4, 5) else 14
+        hs.auto_filter.ref = f"A1:{get_column_letter(len(hist_cols))}{len(changes) + 1}"
+        hs.freeze_panes = "A2"
     return heavy.workbook_response(wb, f"Formulario_{form.slug}.xlsx")
 
 

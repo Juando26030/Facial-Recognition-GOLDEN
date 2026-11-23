@@ -1,7 +1,7 @@
 """Una tarea de un Cloud Run Job = un generador de carga (Locust en el mismo proceso) contra STAGING. Fase 4 (docs/15, «Prueba de carga distribuida»).
 
 Variables (las pone `deploy/loadtest/run_phase4.sh` con `--update-env-vars`; los totales se reparten entre las N tareas del Job):
-  LOAD_SCENARIO   forms | cedula | face
+  LOAD_SCENARIO   forms | cedula | face | rush (40.000 escaneos de cédula sin pausa; LOAD_SCANS = total)
   LOAD_HOST       https://…  OBLIGATORIO y debe contener «staging» (se niega a apuntar a cualquier otra cosa; nunca producción)
   LOAD_USERS      usuarios virtuales en TOTAL (forms: 10000 → una apertura cada uno; cedula: 200; face: p. ej. 60)
   LOAD_RATE       usuarios nuevos por segundo en TOTAL (forms: ~170 → 10.000 aperturas en ~60 s)
@@ -22,7 +22,7 @@ from locust.env import Environment
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "load"), os.path.dirname(HERE)]      # en la imagen: /app/load (locustfile) y /app (scripts/load_cfg.py)
 
-CLASSES = {"forms": "FormBurst", "cedula": "CedulaScanner", "face": "FaceScanner"}
+CLASSES = {"forms": "FormBurst", "cedula": "CedulaScanner", "face": "FaceScanner", "rush": "CedulaRush"}
 
 
 def watch_generator(lags: list) -> None:
@@ -32,6 +32,12 @@ def watch_generator(lags: list) -> None:
         t = time.perf_counter()
         gevent.sleep(0.1)
         lags.append((time.perf_counter() - t - 0.1) * 1000)
+
+
+def _all_answered(env, quota: int) -> bool:
+    """CedulaRush: ¿ya llegó el resultado final de todos los escaneos de esta tarea? (los «[usuario] …» que deja cada uno)."""
+    done = sum(e.num_requests for (name, method), e in env.stats.entries.items() if method == "USER")
+    return done >= quota
 
 
 def make_env(user_class, host):
@@ -45,7 +51,10 @@ def main() -> int:
     if scenario not in CLASSES:
         sys.exit(f"LOAD_SCENARIO debe ser uno de {list(CLASSES)}")
     from scripts.load_cfg import check_host              # doble candado (ver load_cfg.check_host): host de staging Y, si viene LOAD_ALLOWED_HOSTS, uno de los EXACTOS de staging
-    problem = check_host(host, os.getenv("LOAD_ALLOWED_HOSTS", "").split(","))
+    production = os.getenv("LOAD_TARGET") == "production"        # prueba autorizada en producción (19-nov-2026): solo «rush», solo la URL de Cloud Run del servicio web
+    if production and scenario != "rush":
+        sys.exit("En producción solo se permite el escenario «rush» (40.000 escaneos de cédula en un evento sintético).")
+    problem = check_host(host, os.getenv("LOAD_ALLOWED_HOSTS", "").split(","), production=production)
     if problem:
         sys.exit(f"Por seguridad no se genera carga contra este destino: {problem}")
     if not os.getenv("LOAD_ALLOWED_HOSTS"):
@@ -55,6 +64,9 @@ def main() -> int:
     index, count = int(os.getenv("CLOUD_RUN_TASK_INDEX", "0")), int(os.getenv("CLOUD_RUN_TASK_COUNT", "1"))
     total_users, total_rate, duration = int(os.environ["LOAD_USERS"]), float(os.getenv("LOAD_RATE", "50")), int(os.getenv("LOAD_DURATION", "300"))
     users = total_users // count + (1 if index < total_users % count else 0)
+    if scenario == "rush":                                   # LOAD_SCANS escaneos en TOTAL, repartidos entre las tareas (el locustfile lee su parte de LOAD_SCANS_TASK)
+        total_scans = int(os.getenv("LOAD_SCANS", "40000"))
+        os.environ["LOAD_SCANS_TASK"] = str(total_scans // count + (1 if index < total_scans % count else 0))
     rate = max(1.0, total_rate / count)
     import locustfile
     env = make_env(getattr(locustfile, CLASSES[scenario]), host)
@@ -67,6 +79,10 @@ def main() -> int:
     if scenario == "forms":                                   # cada usuario hace su parte y termina: se espera a que no quede ninguno
         gevent.sleep(2)
         while locustfile.DONE["users"] < users and time.time() - started < duration:          # usuarios que YA terminaron (no user_count: ver locustfile.FormBurst)
+            gevent.sleep(1)
+    elif scenario == "rush":                                 # termina cuando esta tarea hizo su parte y ya no queda ninguno en vuelo (o se acaba LOAD_DURATION)
+        quota = int(os.environ["LOAD_SCANS_TASK"])
+        while time.time() - started < duration and not (locustfile.DONE["scans"] >= quota and _all_answered(env, quota)):
             gevent.sleep(1)
     else:
         gevent.sleep(duration)

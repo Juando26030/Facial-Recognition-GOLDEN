@@ -57,7 +57,7 @@ def test_parametros_has_the_dwell_block_and_item_column():
     for needle in ('id="dwellBox"', 'id="dwellEnabled"', 'id="dwellPrize"', 'id="dwellRefH"', 'id="dwellPct"', 'id="areasAutoscan"', 'id="inventoryAutoscan"',
                    'id="dwellCerts"', "js/dwell-params.js", "item-dwell", "newItemDwell", "Solo a quien cumple la estadía"):
         assert needle in html, needle
-    assert "cols=7" in html and 'colspan="7"' in html
+    assert "cols=10" in html and 'colspan="10"' in html          # 0140: 10 columnas (subcategoría, máx. por persona y estadísticas)
     assert 'id="dwellSave"' not in html and 'data-psave="dwell"' in html          # se guarda con el «Guardar cambios» general
     assert "data-pnodirty" in html.split('id="dwellStats"')[1].split(">")[0]          # «Calcular» y la lista van aparte
     js = read("static/js/dwell-params.js")

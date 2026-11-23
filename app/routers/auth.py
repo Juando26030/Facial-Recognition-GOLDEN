@@ -15,7 +15,7 @@ from app.mailer import send_mail
 from app.models import StaffUser
 from app import localmode
 from app.auth import all_extra_roles, get_current_staff, hash_password, verify_password
-from app import idle, login_control, pledge, security, sessions
+from app import idle, login_control, nextpage, pledge, security, sessions
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -27,7 +27,10 @@ def login_form(request: Request):
     if request.session.get("staff_user_id"):
         return RedirectResponse("/", status_code=302)
     notice = "Tu sesión se cerró por inactividad. Ingresa de nuevo para continuar." if request.query_params.get("expirada") else None
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None, "notice": notice})
+    back = nextpage.safe_next(request.query_params.get("next"))          # la página donde estaba cuando se cerró por tiempo: al ingresar se vuelve a ella
+    if back:
+        notice = "Tu sesión se cerró por inactividad. Ingresa de nuevo y seguirás en la misma página."
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": None, "notice": notice, "next_url": back})
 
 
 GENERIC_LOGIN_ERROR = "Usuario o contraseña incorrectos"
@@ -43,7 +46,7 @@ def _dummy_verify(password: str) -> None:
 
 
 def _login_page(request: Request, error: str, status_code: int, error_body: str = None):
-    return templates.TemplateResponse(request=request, name="login.html", status_code=status_code, context={"error": error, "error_body": error_body})
+    return templates.TemplateResponse(request=request, name="login.html", status_code=status_code, context={"error": error, "error_body": error_body, "next_url": getattr(request.state, "next_url", None)})
 
 
 def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=None):
@@ -59,6 +62,8 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["ep"] = int(staff.session_epoch or 0)         # S2: época de sesión de la cuenta (cambiar/restablecer la contraseña la sube)
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
+    if getattr(staff, "event_only", False):
+        request.session["staff_event_only"] = True          # coordinador temporal (app/event_only.py): main.py y el menú lateral lo leen sin consultar la base
     request.session["staff_secondary_role"] = ",".join(all_extra_roles(staff)) or None  # Fase 15 + 0103: los roles que se suman al principal (coma); las páginas lo leen con auth.split_roles
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username
@@ -75,8 +80,10 @@ def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    request.state.next_url = nextpage.safe_next(next)          # solo una dirección del mismo sitio (app/nextpage.py); se conserva si la contraseña falla
     ip = security.limit_ip(request)                 # None = IP de Google: solo cuenta el límite por usuario
     username = username.strip()
     # Bloqueo temporal tras varios fallos (0C-C7: por PAR usuario+IP, por IP y un tope global alto por usuario). Se aplica igual exista o no la cuenta,
@@ -84,6 +91,11 @@ def login_submit(
     wait = security.login_minutes_locked(db, username, ip)
     if wait:
         return _login_page(request, f"Demasiados intentos fallidos. Espera {wait} minuto(s) e intenta de nuevo.", 429)
+    if localmode.is_local_server():
+        from app import local_link          # primer ingreso del servidor local: se vincula con producción con las mismas credenciales (ver app/local_link.py)
+        res = local_link.maybe_link_on_login(db, username, password)
+        if res is not None:
+            return _login_page(request, res["message"], res["status"])
     staff = db.query(StaffUser).filter(StaffUser.username == username, StaffUser.is_active == True).first()
     if login_control.applies(staff) and login_control.is_locked(staff):          # S1 (b): digitador bloqueado tras 3 fallos
         return _login_page(request, login_control.LOCKED_MSG, 403, "Solo el coordinador del evento puede desbloquearla desde «Usuarios del evento».")
@@ -126,6 +138,8 @@ def login_submit(
     target, busy = complete_login(request, db, staff, request.session.get("sid"))
     if busy:
         return _login_page(request, busy, 403)
+    if target == "/" and request.state.next_url:
+        target = request.state.next_url          # la sesión se había cerrado por tiempo: vuelve a la misma página
     return RedirectResponse(target, status_code=302)
 
 
@@ -153,7 +167,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
         if staff is not None:
             if sid and staff.session_token == sid:      # al cerrar sesión la cuenta queda libre (un puesto puede volver a entrar sin esperar)
                 staff.session_token = sessions.logout_token()      # S2: NULL volvía a dar por buenas las cookies viejas (también las reemplazadas); este valor no coincide con ninguna
-            if staff.role in sessions.MULTI_ROLES and int(request.session.get("ep") or 0) == int(staff.session_epoch or 0):
+            if staff.role in sessions.ADMIN_ROLES and int(request.session.get("ep") or 0) == int(staff.session_epoch or 0):
                 sessions.revoke_all(staff)          # B7: admin/super_admin no tienen `sid`; subir la época invalida toda copia de la cookie (y cierra también sus otras sesiones, que es lo esperable de «cerrar sesión»)
             db.commit()
     request.session.clear()

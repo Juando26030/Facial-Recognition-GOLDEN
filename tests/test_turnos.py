@@ -23,7 +23,7 @@ def test_labels_and_config():
 def test_alpha_order_and_round_robin():
     people = [{"user_id": "3", "first_name": "Zoe", "last_name": "Bravo"}, {"user_id": "1", "first_name": "Ana", "last_name": "Alvarez"}, {"user_id": "2", "first_name": "Luis", "last_name": "Castro"}]
     out = qt.assign_numbers(qt.order_people("alpha", people), _lanes())
-    assert [(o["user_id"], o["lane"], o["number"]) for o in out] == [("1", "A", 1), ("2", "B", 1), ("3", "A", 2)]
+    assert [(o["user_id"], o["lane"], o["number"]) for o in out] == [("1", "A", 1), ("3", "B", 1), ("2", "A", 2)]          # orden alfabético por APELLIDO (Alvarez, Bravo, Castro)
 
 
 def test_manual_rows_report_problems_without_cedulas():

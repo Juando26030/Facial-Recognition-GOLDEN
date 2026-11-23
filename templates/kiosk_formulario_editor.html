@@ -151,7 +151,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               </div>
               <p class="gw-hint" id="capInfo"></p>
               <p class="gw-hint" id="statusLocked" role="status" hidden>{{ ic('info', 'gw-icon--sm') }} <b>Bloqueado: el estado lo controla el calendario.</b> Ahora mismo el formulario está <b id="statusLockedNow"></b> según el tramo que está en curso. Para volver a elegir el estado a mano, desactiva «Programar el estado por fechas».</p>
-              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
+              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar cambios» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
             </div>
             <div class="gw-group__item">
               <label class="gw-check" data-own-pending><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
@@ -170,7 +170,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <div id="qRules"></div>
               <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAdd">{{ ic('plus', 'gw-icon--sm') }} Agregar cupo</button>
                 <select id="qQuickField" class="gw-select gwe-select-auto" data-instant aria-label="Campo para crear un cupo por cada opción"></select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qQuick">Un cupo por cada opción del campo</button></div>
-              <p class="gw-hint">Se guardan con el botón «Guardar configuración» de abajo.</p>
+              <p class="gw-hint">Se guardan con el botón «Guardar cambios» de abajo.</p>
             </div>
           </div>
         </details>
@@ -239,6 +239,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint" id="sendBadgeHint">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
             </div>
             <div class="gw-group__item">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="allowRep"> Permitir que la misma persona vuelva a enviar el formulario</label>
+              <p class="gw-hint">Por defecto una cédula solo puede inscribirse una vez en este formulario. Con esta casilla puede enviarlo otra vez (por ejemplo, para corregir o actualizar un dato) y se guarda como una inscripción más. No aplica si «Bloquear inscripciones repetidas» está encendido.</p>
+            </div>
+            <div class="gw-group__item">
               <label class="gw-check gw-check--top"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
               <div id="blockRepBox" class="gwe-indent" hidden><div class="gw-field gw-field--inline"><label class="gw-label" for="blockRepField">Campo que identifica a la persona</label><select id="blockRepField" class="gw-select"></select></div></div>
               <p class="gw-hint">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
@@ -264,7 +268,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div class="gw-group__item">
               <div class="gw-field gw-field--inline"><label class="gw-label" for="rfDays">Plazo para pedir el reembolso (días después del pago; vacío = el general)</label><input type="number" class="gw-input gw-input--short" id="rfDays" min="1" max="365"></div>
               <div class="gw-field"><label class="gw-label" for="rfNote">Nota para quien paga (opcional; por ejemplo, si la comisión de la pasarela se devuelve o no)</label><textarea class="gw-textarea" id="rfNote" rows="3"></textarea></div>
-              <p class="gw-hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con el botón «Guardar configuración» de abajo.</p>
+              <p class="gw-hint">Se muestra en la página de la Política de Reembolsos a la que enlaza el cuadro de pago de este formulario. Se guarda con el botón «Guardar cambios» de abajo.</p>
             </div>
           </div>
         </details>
@@ -333,7 +337,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     {# Barra de guardado ÚNICA (R1): guarda lo de la pestaña en que estás (Diseño o Configuración). Ctrl o Cmd + S hace lo mismo. #}
     <div class="gw-savebar" id="saveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}">
       <div class="gw-savebar__status" id="saveStatus" role="status" aria-live="polite">Sin cambios por guardar</div>
-      <button type="button" class="gw-btn gw-btn--primary" id="saveBtn">Guardar diseño</button>
+      <button type="button" class="gw-btn gw-btn--primary" id="saveBtn">Guardar cambios</button>
     </div>
   </div>
 </main>
@@ -416,6 +420,7 @@ let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
 let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
 const markDirty = () => { dirty = true; namesCache = null; paintSaveBar(); };
+['fname', 'fslug'].forEach((id) => $(id).addEventListener('input', markDirty));          // nombre y dirección del formulario también quedan pendientes hasta guardar
 const activeTabName = () => { const t = document.querySelector('#tabs [aria-selected="true"]'); return t ? t.dataset.tab : 'design'; };
 // Lo que la persona ve en Estado y enlaces (estado, cupo, calendario) NO se guarda solo: queda pendiente y se aplica con el botón de guardar (mismos endpoints PUT .../status de siempre).
 const capOf = () => ($('cfgCap').value === '' ? null : +$('cfgCap').value);
@@ -434,7 +439,7 @@ function pendingParts() {
 function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendiente y guarda el diseño, la configuración, el estado, el cupo y el calendario
   const bar = $('saveBar'), tab = activeTabName(), parts = pendingParts(), pend = parts.length > 0;
   if (!bar) return;
-  bar.hidden = !(tab === 'design' || tab === 'config');
+  bar.hidden = !(tab === 'design' || tab === 'config') && !pend;          // en las demás pestañas solo aparece si hay algo pendiente (así nunca queda un cambio sin botón)
   bar.dataset.state = pend ? 'dirty' : 'idle';
   const ico = (n) => `<svg class="gw-icon" aria-hidden="true"><use href="${(bar.dataset.icons || '').replace(/"/g, '')}#i-${n}"></use></svg>`;
   const st = $('saveStatus');   // alerta clara cuando hay algo por guardar (barra de color + signo de alerta); tranquila cuando no
@@ -443,7 +448,6 @@ function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendi
   line.innerHTML = ico(pend ? 'alert' : 'check');
   line.appendChild(document.createTextNode(!pend ? 'Sin cambios por guardar' : `Hay cambios sin guardar en ${parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0]}`));
   st.appendChild(line);
-  $('saveBtn').textContent = tab === 'config' ? 'Guardar configuración' : 'Guardar diseño';
 }
 window.addEventListener('beforeunload', (e) => { if (pendingParts().length) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -1066,7 +1070,7 @@ async function loadCodes() { try { CODES = await j(`${api}/discount-codes`); } c
 function linkBox(item, what) {
   if (!item.link_key) return `<div class="hint gwe-bg-warn-bg gwe-p-sp-2-sp-2 gwe-r-radius-sm gwe-mt-sp-1">${gwIcon('link')} Guarda el diseño para generar el enlace de este ${what}.</div>`;
   const url = `${window.PUBLIC_BASE || location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
-  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><input type="text" readonly value="${esc(url)}" class="gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(url)}">Copiar</button></div>
+  return `<div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1"><input type="text" readonly value="${esc(url)}" class="gwe-fs-fs-sm"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(url)}">Copiar</button>${GWLinkQr.button(url, { title: form.name || 'Formulario', label: 'Generar QR' })}</div>
     <div class="hint">Solo quien entre por este enlace tendrá este ${what}. Compártelo únicamente con quien deba recibirlo. (Si el formulario está en «Pruebas», el enlace real necesita además <code>&amp;k=…</code>).</div>`;
 }
 function codeBox(d, i) {
@@ -1408,9 +1412,9 @@ function paintStatusControls() {   // estado, cupo y calendario tal como están 
 function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin pendientes); con keepStatus respeta el estado/cupo/calendario que la persona aún no ha guardado
   const s = settings;
   if (!opts.keepStatus) paintStatusControls();
-  $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button></div>
+  $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button>${GWLinkQr.button(form.public_url, { title: form.name || 'Formulario' })}</div>
     ${form.public_state === 'pruebas'
-      ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button></div>`
+      ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button>${GWLinkQr.button(form.test_url, { title: (form.name || 'Formulario') + ' (pruebas)' })}</div>`
       : `<div class="hint gwe-m-sp-2-0-sp-1 gwe-c-warn-text gwe-bg-warn-bg gwe-p-sp-2-sp-3 gwe-r-radius-sm">${gwIcon('alert')} Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
   $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
   $('secOn').checked = s.security.enabled; $('secBox').hidden = !(s.security.enabled); $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').hidden = !(s.security.type === 'code');
@@ -1426,6 +1430,7 @@ function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
   paintBlockRep(s.block_repeats || {});
+  $('allowRep').checked = !!s.allow_repeats && !(s.block_repeats || {}).enabled;
   paintRegCount();
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
@@ -1470,7 +1475,7 @@ function paintBlockRep(b) {
   sel.value = (b.field && design.fields[b.field]) ? b.field : '';
   $('blockRep').checked = !!b.enabled; $('blockRepBox').hidden = !(b.enabled);
 }
-$('blockRep').addEventListener('change', () => { $('blockRepBox').hidden = !($('blockRep').checked); if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
+$('blockRep').addEventListener('change', () => { if ($('blockRep').checked) $('allowRep').checked = false; $('blockRepBox').hidden = !($('blockRep').checked); if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
 const QOPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const qFields = () => Object.values(design.fields).filter((f) => !STATIC.includes(f.type) && !NOCOND.includes(f.type) && f.type !== 'file');
 function qValueHtml(c, ri, ci) {
@@ -1596,6 +1601,7 @@ async function saveConfig(opts = {}) {
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
     block_repeats: { enabled: $('blockRep').checked, field: $('blockRep').checked ? $('blockRepField').value : '' },
+    allow_repeats: $('allowRep').checked && !$('blockRep').checked,
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
@@ -1666,7 +1672,7 @@ async function loadAnswers() {
   $('ansPrev').disabled = d.page <= 1; $('ansNext').disabled = d.page >= d.pages;
   $('ansHead').innerHTML = `<tr><th class="gwe-col-id">#</th><th class="gwe-col-date">Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th class="gwe-col-amt">Pagado</th>' : ''}<th class="gwe-col-src">Origen</th><th class="gwe-col-fed" title="Si la persona ya estaba en la base del evento antes de inscribirse">Ya estaba en la base</th><th class="gwe-col-act"><span class="gw-sr-only">Acciones</span></th></tr>`;
   $('ansBody').closest('table').classList.toggle('gwe-many', d.columns.length > 7);   // con muchas columnas la tabla pasa a tarjetas (nada de desplazamiento lateral)
-  $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
+  $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}${r.resub ? ` <span class="gw-badge gw-badge--info" title="Esta persona ya había enviado el formulario: es su envío número ${r.resub}. En el registro del evento queda solo la última versión.">Reinscripción (${r.resub}.º envío)</span>` : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
     const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.known ? 'Sí' : 'No (nueva)'}</td>
     <td class="gwe-cell-wrap gw-table-cards__actions">${['admin', 'super_admin'].includes(window.STAFF_ROLE) ? `<button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">${filtered ? 'Ninguna inscripción coincide con la búsqueda.' : 'Todavía no hay inscripciones.'}</td></tr>`;
   fitTable($('ansBody').closest('table'));
@@ -1781,7 +1787,7 @@ let dash = null;
 function mountAnalytics() {
   $('anHost').innerHTML = '';
   AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30, large: true });
-  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="gw-btn gw-btn--secondary gw-btn--sm" data-utm="${s}">${gwIcon('link')} Copiar enlace para ${s}</button>`).join('');
+  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<span class="gwe-d-flex gwe-gap-sp-1"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-utm="${s}">${gwIcon('link')} Copiar enlace para ${s}</button>${GWLinkQr.button(`${form.public_url}?utm_source=${s}`, { title: `${form.name || 'Formulario'} · ${s}`, label: 'QR' })}</span>`).join('');
   $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
 }
 $('anTests').addEventListener('change', mountAnalytics);

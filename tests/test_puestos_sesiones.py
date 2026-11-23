@@ -255,3 +255,39 @@ def test_accounts_that_do_not_serve_anyone_and_admins_keep_the_old_behaviour(cli
     with c1, c2:
         login(c1, "adm"); login(c2, "adm")
         assert _api_ok(c1).status_code == 200 and _api_ok(c2).status_code == 200                  # admin: sesiones múltiples sin límite
+
+
+# ---------------------------------------------------------------------------------------------------- 20-nov-2026: sesión única SOLO para las cuentas temporales (digitador y cliente)
+def test_the_single_session_policy_is_only_for_temporary_accounts():
+    from types import SimpleNamespace as NS
+
+    from app import sessions
+    for role in ("digitador", "cliente"):
+        assert sessions.policy(NS(role=role, print_station=False)) == "single"
+        assert sessions.policy(NS(role=role, print_station=True)) == "station"
+    for role in ("admin", "super_admin", "coordinador", "comercial"):
+        assert sessions.policy(NS(role=role, print_station=False)) == "multi"
+        assert sessions.policy(NS(role=role, print_station=True)) == "multi"          # ni la protección de «puesto en uso» les aplica
+    assert sessions.ADMIN_ROLES == ("admin", "super_admin")                              # lo exclusivo del admin (liberar puestos, revocar al cerrar sesión) no se amplió
+
+
+def test_coordinador_and_comercial_can_be_open_on_many_devices_at_once(client, second, env, factory, db):
+    factory.staff("coordinador", "coord2"); factory.staff("comercial", "com2")
+    for name in ("coord2", "com2"):
+        c1, c2 = TestClient(client.app, follow_redirects=False), TestClient(client.app, follow_redirects=False)
+        with c1, c2:
+            login(c1, name); login(c2, name)
+            assert _api_ok(c1).status_code == 200 and _api_ok(c2).status_code == 200
+            c2.post("/logout")
+            assert _api_ok(c1).status_code == 200                                         # cerrar sesión en un equipo NO cierra el otro (solo el admin revoca todas)
+
+
+def test_the_temporary_client_account_keeps_a_single_session(client, second, env, factory, db):
+    cli = factory.staff("digitador", "cli-prueba")
+    cli.client_temp = True
+    db.commit()
+    factory.authorize(env[0], cli)
+    login(client, "cli-prueba"); login(second, "cli-prueba")
+    assert _api_ok(second).status_code == 200
+    r = _api_ok(client)
+    assert r.status_code == 401 and r.json()["detail"] == "session_replaced"

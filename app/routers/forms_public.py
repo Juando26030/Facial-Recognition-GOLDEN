@@ -709,7 +709,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     # «replayed», un duplicado o un sobrante esperaban su turno del bloqueo, hasta 3 s reteniendo turno de Cloud Run, hilo y conexión, para que la base dijera lo mismo). Es solo
     # un adelanto: la reserva bajo bloqueo repite TODAS estas comprobaciones y sigue siendo la autoridad; esto puede rechazar de MÁS unos segundos (el conteo del «lleno» va con
     # caché de ~2 s y un cupo pudo liberarse), nunca dejar pasar de más.
-    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test, pre=bool(formsvc.repeat_target(settings, design)))
+    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test, pre=bool(formsvc.repeat_target(settings, design)), dedupe=formsvc.dedupe_by_person(form, settings))
     full = form.capacity is not None and not is_test and not retry and formsvc.held_count_cached(db, form) >= form.capacity
     db.rollback()             # lecturas hechas: la conexión vuelve al pool antes de seguir
     if retry:
@@ -789,7 +789,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
                     return JSONResponse({"detail": "Ya tienes un pago en proceso. Termínalo o espera unos minutos antes de volver a intentar."}, status_code=409)
                 formsvc.discard_submission(db, form, old, force=True)      # recomprueba bajo candado (R1): si entre tanto se aprobó, no la borra
             db.flush()
-        res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean)
+        res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean, dedupe=formsvc.dedupe_by_person(form, settings))
         if not res["ok"]:
             db.rollback()
             reason = res["reason"]

@@ -388,7 +388,10 @@ def qconf(v, q):
 
 
 import json as _json, os as _os
-_TPL = _json.load(open(_os.path.join(_os.path.dirname(__file__), 'tpl.json')))
+try:
+    _TPL = _json.load(open(_os.path.join(_os.path.dirname(__file__), 'tpl.json')))
+except OSError:      # tpl.json no se versiona: sin él la pantalla de plantilla del evento no se simula, el resto sí
+    _TPL = {}
 
 
 @route('GET', r'/api/event-template')
@@ -475,3 +478,119 @@ def login_state(v, q):
 @route('GET', r'/api/events/42/pledge.*')
 def pledge_any(v, q):
     return {}
+
+
+# ------- CRM (C1b-2) -------
+CRM_OWNERS = [{'id': 7, 'name': 'María Fernanda Rodríguez Valderrama'}, {'id': 8, 'name': 'Andrés Ochoa'}, {'id': 9, 'name': 'Laura Páez'}]
+
+
+def _crm_account(i, v=''):
+    names = ['Asociación Colombiana de Ingenieros de Sistemas y Telecomunicaciones', 'Distribuidora Andina S.A.S.', 'Fundación Horizonte', 'Corferias', 'Constructora Bolívar Ltda.',
+             'Café Sierra Nevada', 'Universidad del Norte', 'Seguros Pacífico', 'Banco Mercantil', 'Logística Express']
+    return {'id': i, 'code': 51000 + i, 'name': names[(i - 1) % len(names)], 'status': ['activo', 'activo', 'inactivo', 'masivo'][i % 4], 'city': ['Bogotá', 'Medellín', 'Cali', None][i % 4],
+            'owner_staff_id': [7, 8, 9, None][i % 4], 'is_client': i % 3 == 0, 'tenant_id': 'acme' if i % 3 == 0 else None, 'archived': v == 'archived',
+            'primary_contact': ['Camila Torres Quintero', None, 'Juan Pablo Rojas', 'Ana María Villegas de la Torre'][i % 4], 'updated_at': '2026-11-10T15:00:00'}
+
+
+@route('GET', r'/api/crm/meta')
+def crm_meta(v, q):
+    return {'statuses': ['activo', 'inactivo', 'masivo'], 'owners': CRM_OWNERS, 'cities': ['Bogotá', 'Cali', 'Medellín'], 'payment_terms': ['Contado', '30 días', '60 días']}
+
+
+@route('GET', r'/api/crm/accounts')
+def crm_list(v, q):
+    if v == 'error':
+        return 500, {'detail': 'No se pudo cargar la lista.'}, {}
+    if v == 'empty' or q.get('q') == 'zzz':
+        return {'items': [], 'total': 0, 'page': 1, 'size': 20}
+    items = [_crm_account(i, v) for i in range(1, 21)]
+    return {'items': items, 'total': 1243, 'page': int(q.get('page') or 1), 'size': 20}
+
+
+@route('GET', r'/api/crm/accounts/(\d+)')
+def crm_get(v, q, i):
+    if v == 'missing':
+        return 404, {'detail': 'Cuenta no encontrada.'}, {}
+    if v == 'error':
+        return 500, {'detail': 'No se pudo cargar la ficha.'}, {}
+    a = _crm_account(int(i), 'archived' if v == 'archived' else '')
+    a['is_client'] = v == 'client'
+    a.update({'nit': '900123456-7', 'email': 'contabilidad@ejemplo.test', 'phone': '601 555 1234', 'billing_address': 'Carrera 15 # 88-64, Oficina 502', 'billing_city': 'Bogotá',
+              'billing_state': 'Cundinamarca', 'billing_country': 'Colombia', 'shipping_address': None, 'shipping_city': None, 'shipping_country': None,
+              'billing_contact_name': 'Tesorería', 'billing_contact_phone': '601 555 9876', 'payment_term': '30 días', 'billing_close': 'Día 25', 'description': 'Cliente de congresos anuales.',
+              'payment_days': 30, 'agency_percent': '10.00', 'created_at': '2024-03-02T10:00:00'})
+    return a
+
+
+@route('PUT', r'/api/crm/accounts/(\d+)')
+def crm_put(v, q, i):
+    if v == 'conflict':
+        return 409, {'detail': 'Alguien más modificó esta cuenta mientras la editabas.'}, {}
+    return crm_get('', q, i)
+
+
+@route('POST', r'/api/crm/accounts')
+def crm_create(v, q):
+    return crm_get('', q, '1')
+
+
+_CRM_CONTACTS = [
+    {'id': 11, 'account_id': 1, 'first_name': 'Camila', 'last_name': 'Torres Quintero', 'full_name': 'Camila Torres Quintero', 'job_title': 'Directora de eventos', 'email': 'camila.torres@ejemplo.test',
+     'phone': '601 555 1234', 'mobile': '300 123 4567', 'is_primary': True, 'notes': 'Prefiere que la llamen por la mañana.', 'archived': False, 'updated_at': '2026-11-10T15:00:00'},
+    {'id': 12, 'account_id': 1, 'first_name': 'Juan Pablo', 'last_name': 'Rojas', 'full_name': 'Juan Pablo Rojas', 'job_title': None, 'email': 'jprojas@ejemplo.test', 'phone': None,
+     'mobile': '310 999 8888', 'is_primary': False, 'notes': None, 'archived': False, 'updated_at': '2026-11-10T15:00:00'},
+]
+
+
+@route('GET', r'/api/crm/accounts/\d+/contacts')
+def crm_contacts(v, q):
+    if v == 'cerror':
+        return 500, {'detail': 'No se pudieron cargar los contactos.'}, {}
+    if q.get('archived'):
+        return []
+    return [] if v == 'cempty' else _CRM_CONTACTS
+
+
+@route('GET', r'/api/crm/contacts/\d+/erase-preview')
+def crm_preview(v, q):
+    review = {'description': True, 'general_notes': 2} if v != 'clean' else {'description': False, 'general_notes': 0}
+    return {'counts': {'contacts': 1, 'notes': 2, 'changes': 4, 'account_history': 3, 'account_fields': 2, 'tenant_fields': 3, 'review': review}}
+
+
+@route('POST', r'/api/crm/contacts/\d+/erase')
+def crm_erase(v, q):
+    return crm_preview(v, q)['counts'] and {'message': 'Datos del contacto suprimidos', 'counts': crm_preview(v, q)['counts']}
+
+
+@route('GET', r'/api/crm/accounts/\d+/notes')
+def crm_notes(v, q):
+    if v == 'nempty':
+        return []
+    return [{'id': 1, 'contact_id': 11, 'kind': 'note', 'body': 'Pidió cotización para el congreso de 2027.\nQuedamos en llamar el lunes.', 'author': 'María Fernanda Rodríguez Valderrama', 'created_at': '2026-11-09T14:00:00'},
+            {'id': 2, 'contact_id': None, 'kind': 'note', 'body': 'Cuenta con crédito a 30 días.', 'author': 'Andrés Ochoa', 'created_at': '2026-11-02T09:30:00'}]
+
+
+@route('GET', r'/api/crm/accounts/\d+/history')
+def crm_history(v, q):
+    return [{'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'payment_term', 'old': '30 días', 'new': '60 días', 'by': 'Andrés Ochoa', 'source': 'edit', 'at': '2026-11-10T15:00:00'},
+            {'entity': 'contact', 'entity_id': 11, 'contact': 'Camila Torres Quintero', 'field': 'is_primary', 'old': 'False', 'new': 'True', 'by': 'Laura Páez', 'source': 'edit', 'at': '2026-11-09T11:00:00'},
+            {'entity': 'account', 'entity_id': 1, 'contact': None, 'field': 'name', 'old': None, 'new': 'Asociación Colombiana de Ingenieros', 'by': None, 'source': 'import', 'at': '2026-10-01T08:00:00'}]
+
+
+# ------- extensiones por pieza: cada `mocks_*.py` registra sus rutas con `from mocks import route` (así las piezas en paralelo no editan este archivo) -------
+def _load_extensions():
+    import glob
+    import importlib.util
+    import os
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    for path in sorted(glob.glob(os.path.join(here, 'mocks_*.py'))):
+        name = os.path.basename(path)[:-3]
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+
+_load_extensions()

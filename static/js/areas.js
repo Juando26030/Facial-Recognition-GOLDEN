@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   let direction = 'auto', users = [], scanner = null;
-  const FOUND = ['OK', 'FOUND_PENDING', 'ALREADY_ENTERED', 'NOT_INSIDE'];          // resultados en los que la persona sí se encontró
+  const FOUND = ['OK', 'FOUND_PENDING', 'ALREADY_ENTERED', 'NOT_INSIDE', 'LIMIT'];          // resultados en los que la persona sí se encontró
   const $ = (id) => document.getElementById(id);
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const areaId = () => $('areaSelect').value;
@@ -31,7 +31,10 @@
   }
 
   async function loadAreas(keep) {
-    const areas = await getJson(`/api/events/${window.EVENT_ID}/areas`);
+    const all = await getJson(`/api/events/${window.EVENT_ID}/areas`);
+    // Subcategorías: solo se elige una zona «hoja» (suelta o subcategoría); la principal con subcategorías no recibe movimientos y se muestra como «Salón A › Entrada A».
+    const byId = {}; all.forEach(a => { byId[a.id] = a; });
+    const areas = all.filter(a => !a.is_group).map(a => (a.parent_id && byId[a.parent_id] ? Object.assign({}, a, { name: byId[a.parent_id].name + ' › ' + a.name }) : a));
     const current = keep || areaId();
     $('areaSelect').innerHTML = areas.length
       ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('')
@@ -104,6 +107,8 @@
       $('confirmBtn').addEventListener('click', (e) => busy(e.currentTarget, () => retry(true, result.direction)));
     } else if (result.result === 'ALREADY_ENTERED') {
       show('err', 'Ya está adentro', esc(result.details));
+    } else if (result.result === 'LIMIT') {
+      show('err', 'Llegó al máximo', esc(result.details));
     } else if (result.result === 'NOT_INSIDE') {
       show('warn', 'No está adentro', esc(result.details));
     } else {
@@ -126,15 +131,6 @@
     } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); return false; }
   }
 
-  async function scanValue(rawText) {
-    let raw = rawText;
-    try { raw = await QrCode.resolveDynamic(rawText, window.EVENT_ID, 'area'); } catch (err) { show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código')); return; }          // QR dinámico de la credencial digital
-    const qr = QrCode.parse(raw);
-    if (qr && qr.isQr) return register(qr.cedula, false, undefined, 'qr');   // QR propio: en vez de entregar la cédula
-    const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);               // cédula vieja (CSV del lector) o ID suelto
-    return register(parsed ? parsed.cedula : raw);
-  }
-
   document.addEventListener('click', (e) => {
     const zoneBtn = e.target.closest('.zone-btn[data-zone]');
     if (zoneBtn) {
@@ -150,42 +146,36 @@
       document.querySelectorAll('.dir-btn[data-dir]').forEach(b => { b.classList.toggle('active', b === dirBtn); b.setAttribute('aria-pressed', b === dirBtn ? 'true' : 'false'); });
       return;
     }
-    const sug = e.target.closest('#suggest button[data-id]');
-    if (sug) { register(sug.dataset.id); $('suggest').innerHTML = ''; $('nameSearch').value = ''; return; }
     if (e.target.closest('#registerBtn')) {
-      const raw = $('scanInput').value.trim();
-      if (!raw) { showToast('Escribe o escanea una cédula', 'error'); $('scanInput').focus(); return; }
-      $('scanInput').value = '';
-      busy($('registerBtn'), () => scanValue(raw));
+      if (!$('scanInput').value.trim()) { showToast('Escribe o escanea una cédula o un nombre', 'error'); $('scanInput').focus(); return; }
+      busy($('registerBtn'), () => finder.submit());
     }
   });
 
   $('areaSelect').addEventListener('change', loadPresence);
 
-  $('scanInput').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    let raw = e.target.value.trim(); e.target.value = '';
-    if (!raw) return;
-    raw = QrCode.collect(raw);                                                // QR en vCard con lector de mano: llega en varias líneas (Fase 10, C)
-    if (raw === null) return;
-    scanValue(raw);
+  // Buscador único (static/js/person-finder.js): cédula, nombre o empresa con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano. Elegir de la lista o Enter con un solo resultado exacto registra.
+  const finder = PersonFinder.attach({
+    input: $('scanInput'), box: $('suggest'), users: () => users, purpose: 'area',
+    onPick: (u, via) => register(u.id, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
+    onRaw: (cedula, via) => register(cedula, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
+    onMessage: (text) => show('warn', 'Búsqueda', esc(text)),
   });
 
-  // Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
+  // Cámara del dispositivo: el MISMO escáner del Registro (selector «Cédula vieja · Cédula nueva · QR» en la misma ventana) y escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
+  // Si la cámara lee el código y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
+  if (window.QrScanner && QrScanner.warm && $('scanQrBtn')) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara no traba)
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
-    title: 'Escanear QR — Control de Áreas',
-    // Si la cámara lee el QR y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
-    onCode: (text) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => { const qr = QrCode.parse(raw); return qr ? register(qr.cedula, false, undefined, 'qr') : false; })
+    title: 'Escanear cédula o QR — Control de Áreas',
+    formats: ['qr_code', 'pdf417'],
+    modes: ['old', 'new', 'qr'],                       // cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
+    onCedula: (d) => { register(d.cedula, false, undefined, 'cedula').then((found) => { if (found && scanner) scanner.close(); }); },
+    onCode: (text, format) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => {
+        const r = QrCode.classify(raw, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
+        return r ? register(r.cedula, false, undefined, r.kind === 'qr' ? 'qr' : 'cedula') : (show('warn', 'No se reconoció el código', 'Acerca la cámara al QR o al reverso de la cédula'), false); })
       .then((found) => { if (found && scanner) scanner.close(); })
       .catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
   }); });
-
-  $('nameSearch').addEventListener('input', (e) => {
-    const q = e.target.value.trim();
-    const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
-    $('suggest').innerHTML = found.map(u => `<button type="button" data-id="${esc(u.id)}">${esc(u.first_name)} ${esc(u.last_name)} · ${esc(u.id)}</button>`).join('');
-  });
 
   $('faceBtn').addEventListener('click', () => CameraCapture.open({ title: 'Reconocimiento facial', onCapture: async (blob) => {
     const send = async (confirm, forcedDirection) => {

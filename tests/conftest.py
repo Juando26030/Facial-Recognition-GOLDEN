@@ -105,6 +105,8 @@ def _clean_tables(_database):
     from app import faces, formsvc
     faces.clear_cache()
     formsvc.invalidate_public_cache()
+    from app import idle as _idle
+    _idle._general_cache.set("m", _idle.DEFAULT_MINUTES)          # el tiempo general de sesión (Apariencia) se guarda 30 s en memoria: cada prueba empieza con el de siempre y sin una consulta extra (las que cuentan consultas)
     from app.routers import forms_public
     forms_public._limiter.reset()          # el limite por IP es en memoria: cada prueba empieza de cero
     forms_public._code_fails.reset()
@@ -222,6 +224,8 @@ def factory(db):
 
         def staff(self, role, username=None, password=PASSWORD, email=None, tenant_id=None, phone=None, **extra):
             self.counter += 1
+            if tenant_id:
+                self.tenant(tenant_id)          # el cliente debe existir antes que su staff (llave foránea)
             full_name = extra.pop("full_name", None) or f"{role} {self.counter}"
             s = StaffUser(
                 username=username or f"{role}{self.counter}", password_hash=hash_password(password), role=role,
@@ -248,7 +252,7 @@ def factory(db):
             db.add(EventStaffAuthorization(event_id=event.id, staff_user_id=staff.id))
             db.commit()
 
-        def person(self, event, user_id="1001", first_name="Ana", last_name="Prueba", attend=True):
+        def person(self, event, user_id="1001", first_name="Ana", last_name="Prueba", attend=True, registered=False):
             from app.models import EventAttendee
 
             u = db.query(User).filter_by(id=user_id, tenant_id=event.tenant_id).first()
@@ -258,6 +262,10 @@ def factory(db):
                 db.commit()
             if attend:
                 db.add(EventAttendee(event_id=event.id, user_id=u.id, tenant_id=event.tenant_id))
+                db.commit()
+            if registered:          # 19-nov-2026: la escarapela solo se imprime a quien ya está registrado (acreditado) en el evento
+                from app.models import AccessLog
+                db.add(AccessLog(tenant_id=event.tenant_id, user_id=u.id, event_id=event.id, record_type="Existente", registration_method="tradicional"))
                 db.commit()
             return u
 

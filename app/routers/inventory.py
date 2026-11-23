@@ -14,10 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import audit_actions, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
-from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, require_role_or_any
+from app import almacen_novelties, audit_actions, event_checklist, inventory, inventory_alerts, inventory_calendar, inventory_svc, jobs
+from app.auth import ROLE_HIERARCHY, assert_event_scope, assert_event_tenant, effective_roles, get_event_for_staff, require_role, require_role_or_any
 from app.database import get_db
-from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, StaffUser
+from app.models import Event, EventInventoryItem, InventoryCategory, InventoryProduct, InventoryUnit, StaffUser
 from app.timeutil import to_local, utcnow
 
 router = APIRouter()
@@ -261,14 +261,39 @@ def restore_product(product_id: int, db: Session = Depends(get_db), staff: Staff
     return _product_json(p)
 
 
+def product_usage(db: Session, p: InventoryProduct) -> dict:
+    """Dónde está un producto: eventos que lo tienen asignado, objetos con serial y si tiene historial (movimientos o novedades) que impide borrarlo."""
+    from app.models import InventoryMovement, InventoryNovelty
+    rows = (db.query(EventInventoryItem, Event).join(Event, Event.id == EventInventoryItem.event_id)
+            .filter(EventInventoryItem.product_id == p.id).order_by(Event.start_date.desc().nullslast(), Event.id.desc()).all())
+    events = [{"id": e.id, "name": e.name, "status": e.status, "archived": e.archived_at is not None, "qty_assigned": i.qty_assigned, "qty_out": i.qty_out} for (i, e) in rows]
+    return {"events": events, "units": db.query(InventoryUnit).filter(InventoryUnit.product_id == p.id).count(),
+            "movements": db.query(InventoryMovement).filter(InventoryMovement.product_id == p.id).count(),
+            "novelties": db.query(InventoryNovelty).filter(InventoryNovelty.product_id == p.id).count()}
+
+
+@router.get("/inventory/products/{product_id}/usage")
+def get_product_usage(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """«¿Dónde está?»: los eventos que tienen este producto (nombre, estado, cantidades) para decidir si se puede eliminar."""
+    return product_usage(db, _product(db, product_id))
+
+
 @router.delete("/inventory/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+def delete_product(product_id: int, force: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Eliminar definitivamente un producto ARCHIVADO. Con historial (movimientos o novedades) nunca; si solo está asignado a eventos o tiene objetos sin historial,
+    `force=true` (confirmado en pantalla con la lista de eventos) los quita y lo elimina; sin `force` el error dice en qué eventos está."""
     p = _product(db, product_id)
     if p.archived_at is None:
         _err("Archiva el producto antes de eliminarlo")
-    if db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).count():
-        _err("El producto está en el inventario de algún evento: no se puede eliminar (queda archivado)")
-    audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name)
+    u = product_usage(db, p)
+    if u["movements"] or u["novelties"]:
+        _err("El producto ya tiene salidas, entradas o novedades de almacén registradas: por su historial no se puede eliminar (queda archivado)", 409)
+    if (u["events"] or u["units"]) and not force:
+        names = ", ".join(f"{e['name']} ({e['status']})" for e in u["events"][:5]) + (f" y {len(u['events']) - 5} más" if len(u["events"]) > 5 else "")
+        _err("El producto está asignado a: " + (names or "ningún evento") + (f" y tiene {u['units']} objeto(s) con serial" if u["units"] else "") + ". Confirma para quitarlo de ahí y eliminarlo.", 409)
+    db.query(EventInventoryItem).filter(EventInventoryItem.product_id == p.id).delete(synchronize_session=False)
+    db.query(InventoryUnit).filter(InventoryUnit.product_id == p.id).delete(synchronize_session=False)
+    audit_actions.record(db, staff, "delete", "inventory_product", p.id, p.name, f"Quitado de {len(u['events'])} evento(s) y {u['units']} objeto(s)" if (u["events"] or u["units"]) else None)
     db.delete(p)
     db.commit()
     return {"deleted": True}
@@ -335,6 +360,28 @@ def list_inventory_events(q: str = "", db: Session = Depends(get_db), staff: Sta
         if len(rows) >= 300:
             break
     return {"events": rows}
+
+
+@router.get("/events/{event_id}/inventory-checklist")
+def get_checklist(event_id: int, refresh: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Lo que se alistó para el evento según el checklist de inventario, SOLO PARA CONSULTAR en el quiosco (tarjeta «Inventario»). En la nube sale de la base; en un servidor local, de la
+    foto que se guardó al descargar el evento (con `refresh=1` y conexión se vuelve a pedir a la nube). Sin datos de personas."""
+    event = get_event_for_staff(event_id, db, staff)
+    from app import cloud_client, localmode
+    if not localmode.is_local_server():
+        return {"source": "nube", "available": True, "fetched_at": None, "warning": None, "lines": event_checklist.cloud_lines(db, event.id)}
+    warning = None
+    if refresh and not getattr(event, "cloud_event_id", None):
+        warning = "Este evento no está vinculado con el de la nube (se importó a mano): el inventario no se puede traer desde internet."
+    if refresh and getattr(event, "cloud_event_id", None):
+        try:
+            event_checklist.save_snapshot(db, event.id, cloud_client.inventory_checklist(event.cloud_event_id))
+            db.commit()
+        except Exception as e:          # noqa: BLE001  (sin internet, token vencido, evento de otro servidor…)
+            db.rollback()
+            warning = f"No se pudo actualizar desde internet: {e}"
+    snap = event_checklist.load_snapshot(db, event.id)
+    return {"source": "local", "available": snap is not None, "fetched_at": snap.get("fetched_at") if snap else None, "warning": warning, "lines": snap["lines"] if snap else []}
 
 
 @router.get("/events/{event_id}/inventory-plan")
@@ -542,11 +589,14 @@ def assign_inventory(data: dict, db: Session = Depends(get_db), staff: StaffUser
         _err("No se guardó: " + " ".join(i.message for i in rep.errors[:3]))
     left = None
     if prod.qty_total is not None:
+        in_nov = almacen_novelties.open_qty_by_product(db, [prod.id]).get(prod.id, 0)          # Almacén (Pieza 3): lo que está en novedad no se puede asignar
+        stock = almacen_novelties.available(prod.qty_total, in_nov)
         others = [{"span": o["span"], "lines": {pid: l.qty_assigned for pid, l in o["lines"].items()}} for o in _events_in_range(db, span[0], span[1]) if o["event"].id != event.id]
         peak = inventory_calendar.peak_usage(span, others, prod.id)
-        left = inventory_calendar.max_assignable(prod.qty_total, peak)
+        left = inventory_calendar.max_assignable(stock, peak)
         if qty > left:
-            _err(f"No alcanza «{prod.name}»: en las fechas de este evento (del {span[0].isoformat()} al {span[1].isoformat()}, con montaje) ya hay {peak} asignados a otros eventos de {prod.qty_total} que tiene Golden. Se pueden asignar hasta {left}.")
+            _err(f"No alcanza «{prod.name}»: en las fechas de este evento (del {span[0].isoformat()} al {span[1].isoformat()}, con montaje) ya hay {peak} asignados a otros eventos de {prod.qty_total} que tiene Golden"
+                 + (f" ({in_nov} en novedad, que no se pueden asignar)" if in_nov else "") + f". Se pueden asignar hasta {left}.")
     if line is None:
         if qty == 0:
             return {"event_id": event.id, "product_id": prod.id, "assigned": 0, "max_assignable": left}

@@ -114,6 +114,11 @@ def test_digital_badge_does_not_expose_contact_data(client, factory, db):
 # Rutas con `get_event_for_staff` que NO tocan personas, respuestas ni pagos (configuración, plantillas, archivos del evento, personal, derechos de privacidad…).
 # Mantener corta y revisada: una ruta nueva obliga a decidir entre `event_archive.require_data_open` o añadirse aquí con su porqué.
 ALLOW = {
+    "contacts.py": {"list_exhibitors", "create_exhibitor", "update_exhibitor", "rotate_exhibitor", "delete_exhibitor"},          # expositores: empresas y su enlace, no las personas registradas
+    "public_link.py": {"get_link", "update_link"},          # enlace público del evento: solo su configuración
+    "qr_resolve.py": {"resolve_qr"},          # ya rechaza por su cuenta los eventos archivados o con la base archivada
+    "queue.py": {"get_queue_config", "put_queue_config", "assign_turns", "upload_manual", "manual_template", "queue_tv_state", "_operate"},          # turnos: configuración, plantilla y pantalla (solo números); asignar/subir/llamar exigen evento en proceso. La lista con nombres (queue_state) lleva el guard
+    "selfreg.py": {"selfreg_form", "selfreg_submit", "get_config", "set_config"},          # autorregistro: exige evento en proceso y el interruptor encendido
     "api.py": {"email_check", "recognize", "_recognition_from_token", "checkin_cedula", "bulk_job_active"},          # reconocimiento/registro exigen evento «en proceso» (nunca uno archivado)
     "areas_inventory.py": {"set_modules", "list_areas", "create_area", "update_area", "archive_area", "restore_area", "delete_area", "list_inventory", "create_item", "update_item",
                            "archive_item", "restore_item", "delete_item"},          # configuración de zonas y catálogo
@@ -123,6 +128,8 @@ ALLOW = {
     "consents.py": {"consent_text", "set_precalc", "set_consent_config", "get_biometric_setup", "put_biometric_setup", "accept_mail_status", "accept_mail_test", "accept_mail_stop", "set_badge_bio_photo"},
     "delivery.py": {"get_delivery", "post_link", "post_send_email"},          # enlace de entrega y correo al cliente: no leen personas, respuestas ni pagos (el enlace se cierra solo con el evento/base archivados: delivery.is_billed)
     "event_docs.py": {"list_documents", "add_document", "_find_doc", "download_all_documents", "list_expenses", "add_expense", "_get_expense", "expenses_report"},          # documentos y gastos: no son personas
+    "coord_assign.py": {"assign_coordinator"},          # asignar el coordinador de un evento: no toca personas, respuestas ni pagos
+    "legalizations.py": {"_event_leg"},          # gastos y encabezado de la legalización: no son personas, respuestas ni pagos
     "event_report.py": {"upload_final_report", "download_final_report"},
     "event_history.py": {"get_change_history"},          # historial de campos del evento: solo campos del evento, nunca personas, respuestas ni pagos
     "events.py": {"get_event", "list_event_staff", "assign_existing_staff", "staff_users_template", "import_event_staff", "purge_event_staff", "delete_event_staff_account", "revoke_event_staff"},          # personal de la plataforma, no asistentes
@@ -143,11 +150,11 @@ ALLOW = {
     "print_stations.py": {"my_station", "put_station"},
     "privacy.py": {"get_privacy", "purge_event_biometrics", "purge_person_biometrics", "purge_data"},          # el derecho de supresión debe funcionar siempre
     "reprint.py": {"set_mode", "mine"},
-    "roulette.py": {"get_roulette", "filter_fields", "save_behavior", "save_style", "upload_image", "display_link", "get_display_link", "authorize_spin", "cancel_authorization",
+    "roulette.py": {"get_queue", "get_roulette", "filter_fields", "save_behavior", "save_style", "upload_image", "display_link", "get_display_link", "authorize_spin", "cancel_authorization",
                     "get_authorization", "reset_round", "round_status"},
     "shared_print.py": {"_enabled_event", "config", "set_enabled", "set_route"},
     "stats.py": {"list_stats_variables"},
-    "stats_links.py": {"create_link", "list_links", "revoke_link"},
+    "stats_links.py": {"create_link", "list_links", "revoke_link", "staff_tv_data"},
     "uploads.py": {"sign_upload"},
 }
 

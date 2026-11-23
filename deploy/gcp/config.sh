@@ -25,6 +25,17 @@ GITHUB_REPO="${GITHUB_REPO:-Juando26030/Facial-Recognition-GOLDEN}"
 if [ "$GOLDEN_ENV" = production ]; then DEPLOY_REF="refs/heads/main"; else DEPLOY_REF="${STAGING_BRANCH_REF:-refs/heads/migra/fase1-2}"; fi
 # Modo contingencia del quiosco (copia local de la lista + service worker): ENCENDIDO en staging y en producción (orden explícita de Juan David, 28-oct-2026; antes producción iba en 0: docs/15 D2.5d). Apagarlo = volver producción a =0 y redesplegar.
 if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=1; else CONTINGENCY_ENABLED="${CONTINGENCY_ENABLED:-1}"; fi
+# CRM (docs/crm/README.md): staging lo ENCIENDE por defecto; producción queda APAGADO hasta que Juan David lo autorice (en ese momento: CRM_ENABLED=1 en el comando del despliegue).
+# `gcloud run deploy --env-vars-file` REEMPLAZA todas las variables del servicio: un CRM_ENABLED puesto a mano se pierde en el siguiente despliegue; por eso el valor vive aquí y deploy.sh lo escribe
+# (solo en el servicio `web`). Sirve igual para deploy/gcp/manual_deploy.sh y para GitHub Actions, porque ambos pasan por deploy.sh.
+# 16-nov-2026: Juan David AUTORIZÓ encender el CRM en producción (aviso a la auditora aprobado). OJO: el contador `account` debe estar fijado ANTES (scripts/crm_set_counter.py), si no /sistema sale en rojo y crear clientes responde 409.
+if [ "$GOLDEN_ENV" = production ]; then CRM_ENABLED="${CRM_ENABLED:-1}"; else CRM_ENABLED="${CRM_ENABLED:-1}"; fi
+# Almacén (Pieza 1, docs/ALMACEN.md): staging y producción ENCENDIDOS (producción autorizado por Juan David el 18-nov-2026). Vive aquí por la misma razón que CRM_ENABLED (`--env-vars-file` reemplaza las variables).
+if [ "$GOLDEN_ENV" = production ]; then ALMACEN_ENABLED="${ALMACEN_ENABLED:-1}"; else ALMACEN_ENABLED="${ALMACEN_ENABLED:-1}"; fi
+# Responsable de lo importado (usuario de la plataforma, p. ej. la comercial): CRM_IMPORT_OWNER_USERNAME=<usuario> en el comando del despliegue; vacío = quien lance la carga. Solo se escribe en `web` si trae valor.
+CRM_IMPORT_OWNER_USERNAME="${CRM_IMPORT_OWNER_USERNAME:-}"
+# Carga real del importador de SuiteCRM (docs/crm/IMPORTADOR.md): solo staging (1); producción 0 salvo autorización expresa de Juan David (CRM_IMPORT_APPLY=1 en el comando del despliegue).
+if [ "$GOLDEN_ENV" = production ]; then CRM_IMPORT_APPLY="${CRM_IMPORT_APPLY:-0}"; else CRM_IMPORT_APPLY="${CRM_IMPORT_APPLY:-1}"; fi
 # Firebase Hosting solo da permisos a nivel de PROYECTO (no por sitio). Por eso la cuenta de despliegue de staging NO los recibe salvo
 # que staging viva en su propio proyecto de Google Cloud (recomendado, docs/15): FIREBASE_DEPLOY=1 para dárselos igual.
 if [ "$GOLDEN_ENV" = production ]; then FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-1}"; else FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-0}"; fi
@@ -117,7 +128,7 @@ wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET 
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET
 wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET wompi-sandbox-private-key:WOMPI_SANDBOX_PRIVATE_KEY
 azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER
-payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY neon-api-key:NEON_API_KEY"   # neon-api-key: Gastos › uso de Neon (opcional; se omite si el secreto no existe)
 # E8: secretos por servicio (solo cuentan con SPLIT_SERVICE_ACCOUNTS=1; sin él cada servicio recibe APP_SECRETS completo, como hasta hoy). `web` (panel, cobros y reembolsos, correos) los lleva todos.
 # `publico` (abierto a internet: formularios, pagos, aceptación, escarapela digital) NO lleva las credenciales de correo de Microsoft ni la llave PRIVADA de Wompi (reembolsos): solo base, claves de la app,
 # ops-token y las claves públicas/de firma de eventos de Wompi. `biometria` NO lleva Microsoft ni nada de Wompi (el correo y los pagos salen por la cola general, que ejecuta `web`).

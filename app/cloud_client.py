@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
+from app import local_env
+
 log = logging.getLogger("golden.cloud_client")
 TIMEOUT = float(os.getenv("CLOUD_TIMEOUT_SECONDS", "30"))
 DOWNLOAD_TIMEOUT = float(os.getenv("CLOUD_DOWNLOAD_TIMEOUT_SECONDS", "900"))
@@ -40,14 +42,17 @@ def open_no_redirect(req, timeout: float):
 
 
 def base_url() -> str:
+    local_env.refresh()
     return os.getenv("CLOUD_BASE_URL", "").strip().rstrip("/")
 
 
 def node_name() -> str:
+    local_env.refresh()
     return " ".join((os.getenv("NODE_NAME") or "Servidor local").split())[:60] or "Servidor local"
 
 
 def configured() -> bool:
+    local_env.refresh()
     return bool(base_url() and os.getenv("NODE_TOKEN", "").strip())
 
 
@@ -78,6 +83,8 @@ def _request(method: str, path: str, body: Optional[dict] = None, timeout: float
             detail = json.loads(e.read(20000).decode("utf-8")).get("detail", "")
         except (ValueError, OSError, AttributeError):
             pass
+        from app import server_lock
+        server_lock.note_cloud_error(e.code, detail)
         raise CloudError(detail if isinstance(detail, str) and detail else f"La nube respondió con un error ({e.code}).", e.code)
     except (urllib.error.URLError, OSError):
         log.info("cloud %s %s -> sin conexión", method, path.split("?")[0])
@@ -98,6 +105,11 @@ def list_events() -> list:
 def download_event(cloud_event_id: int) -> bytes:
     """Paquete del evento SIN biometría (el .zip de app/event_transfer.py)."""
     return _request("GET", f"/api/node/events/{int(cloud_event_id)}/package", timeout=DOWNLOAD_TIMEOUT, raw=True)
+
+
+def inventory_checklist(cloud_event_id: int) -> list:
+    """Checklist de inventario del evento (lo alistado), solo lectura."""
+    return _request("GET", f"/api/node/events/{int(cloud_event_id)}/inventory-checklist").get("lines", [])
 
 
 def take_lease(cloud_event_id: int) -> dict:

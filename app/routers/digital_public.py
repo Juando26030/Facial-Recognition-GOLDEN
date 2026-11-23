@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from app import crypto, digital_fields, dynamic_qr, publicurl, qr_vcard, wallet
+from app import contacts, crypto, digital_fields, dynamic_qr, publicurl, qr_vcard, wallet
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
@@ -59,17 +59,45 @@ def digital_badge_contact(token: str, db: Session = Depends(get_db)):
     return RedirectResponse(f"/contacto/{card.token}", status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
+# 19-nov-2026: la escarapela digital usa la MISMA plantilla que la física, incluido el QR con el modo que elija el diseño (vCard con sus campos, MECARD, enlace o solo el código).
+# Los campos que pide el QR cuentan como «usados por la plantilla»: los de contacto (teléfono y correo) siguen la regla de siempre (solo si el evento los marca en «Datos que se ven en la escarapela digital»).
+QR_FIELD_KEYS = {"org": "entity", "title": "role", "phone": "phone", "email": "email", "categories": "categories"}
+
+
+def qr_needed_keys(template: dict) -> set:
+    keys = set()
+    for el in template.get("elements", []):
+        if el.get("type") != "qr":
+            continue
+        mode = el.get("qr_mode") or ("code" if el.get("vcard") is False else "vcard")
+        if mode in ("vcard", "mecard"):
+            fields = el.get("vcard_fields") if isinstance(el.get("vcard_fields"), list) else ["phone"]
+            keys.update(QR_FIELD_KEYS[f] for f in fields if f in QR_FIELD_KEYS)
+    return keys
+
+
+def qr_wants_link(template: dict) -> bool:
+    return any(el.get("type") == "qr" and el.get("qr_mode") == "link" for el in template.get("elements", []))
+
+
 @router.get("/b/{token}/data")
-def digital_badge_data(token: str, db: Session = Depends(get_db)):
+def digital_badge_data(token: str, request: Request, db: Session = Depends(get_db)):
     att, event, user = _resolve(db, token)
     category = template_category_for_user(event, db, user.id)
     template = _serialize_template(_get_or_create_template(event, db, category))
     has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1)
-    needed = _variables_used(template)
+    needed = _variables_used(template) | qr_needed_keys(template)
     labels = event.get_optional_labels()
     keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), needed, labels)          # A3: sin lista = solo lo que pinta la plantilla y sin correo ni teléfono; con lista = lo que el evento eligió
     person = {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "has_photo": has_photo}          # «id» solo alimenta el QR de la escarapela; no es un dato elegible
     person.update(digital_fields.build_person(user, att, keys))
+    if event.code_enabled and "code" in needed and att.code:          # la variable «Código de la persona» de la plantilla se pinta igual que en la escarapela física
+        person["code"] = att.code
+    if qr_wants_link(template):                                       # QR en modo «enlace»: la tarjeta pública de la persona (solo muestra datos si ella aceptó compartirlos)
+        base = publicurl.base(str(request.base_url))
+        if base:
+            person["card_url"] = f"{base}/tarjeta/{contacts.person_card(db, event, user.id).share_token}"
+            db.commit()
     return JSONResponse({
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
@@ -90,7 +118,8 @@ def _wallet_args(db: Session, token: str) -> dict:
     att, event, user = _resolve(db, token)
     # El código del pase es una vCard (guardar contacto al escanear) con el código firmado en NOTE; el teléfono va solo si el evento lo muestra en la escarapela digital (mismo criterio que /data).
     keys = digital_fields.visible_keys(digital_fields.parse_stored(event.digital_badge_fields), set(), event.get_optional_labels())
-    code = qr_vcard.build(user.first_name, user.last_name, user.phone if "phone" in keys else "", note=dynamic_qr.make_static(att.id, att.digital_token))
+    code = qr_vcard.build(user.first_name, user.last_name, user.phone if "phone" in keys else "", note=dynamic_qr.make_static(att.id, att.digital_token),
+                          email=user.email if "email" in keys else "", org=user.entity if "entity" in keys else "", title=user.role if "role" in keys else "", categories=", ".join(att.get_categories()) if "categories" in keys else "")
     return {"att_id": att.id, "person_name": f"{user.first_name or ''} {user.last_name or ''}".strip(), "event_name": event.name, "code": code}
 
 

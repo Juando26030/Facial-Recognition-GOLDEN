@@ -70,15 +70,28 @@
   }
 
   /* Fase 10 (C): el QR de la escarapela ahora es una vCard con el código en NOTE (static/js/vcard.js); si el lector la entrega entera se saca el código de adentro. Sin vcard.js cargado, no cambia nada. */
+  function vcardLib() {
+    return (typeof module !== 'undefined' && typeof require === 'function') ? (function () { try { return require('./vcard.js'); } catch (e) { return null; } })() : (typeof window !== 'undefined' ? window.GWVcard : null);
+  }
   function unwrapVcard(text) {
-    const v = (typeof module !== 'undefined' && typeof require === 'function') ? (function () { try { return require('./vcard.js'); } catch (e) { return null; } })() : (typeof window !== 'undefined' ? window.GWVcard : null);
+    const v = vcardLib();
     return v ? v.unwrap(text) : text;
   }
 
   function classifyQuery(texto) {
-    const raw = unwrapVcard(String(texto == null ? '' : texto));
+    const original = String(texto == null ? '' : texto);
+    const V = vcardLib();
+    let raw = unwrapVcard(original);
+    let card = null;
+    if (V && V.isVcard && V.isVcard(original)) {
+      // Lector 2D que teclea la vCard (con o sin saltos de línea): mientras llega no se busca nada; completa, se busca por el código de Golden (exacto, aunque sea corto) o, si es una vCard ajena, por el nombre.
+      if (V.isPartial(original)) return { kind: 'vacio', raw: '', words: [], completa: false };
+      card = V.parseCard(original);
+      if (card && !card.golden) raw = card.name || '';
+    }
     const text = raw.replace(/[\r\n\t]+/g, ' ').trim();
     if (!text) return { kind: 'vacio', raw, words: [], completa: false };
+    if (card && card.golden && /^\d[\d.\s-]*$/.test(text)) return { kind: 'qr', raw, cedula: cedulaKey(text), words: [], completa: true };
     const qr = parseQr(text);
     if (qr !== null) return { kind: 'qr', raw, cedula: cedulaKey(qr), words: [], completa: true };
     const barcode = parseBarcode(text);

@@ -6,7 +6,7 @@ contingencia sin conexión en el quiosco (IndexedDB). Consentimiento explícito 
 el evento. Bloque legal del piloto: `docs/legal/` (textos de la auditora, decisiones y pendientes). Repo público: https://github.com/Juando26030/Facial-Recognition-GOLDEN
 
 **Para retomar el trabajo en curso lee primero [`docs/ESTADO_2026-11-11.md`](docs/ESTADO_2026-11-11.md), [`docs/REGLAS_Y_FORMA_DE_TRABAJO.md`](docs/REGLAS_Y_FORMA_DE_TRABAJO.md) y [`docs/HANDOFF.md`](docs/HANDOFF.md).** El detalle de cada sprint (porqués, bugs reales y
-cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). **Para poner producción en Cloud Run: [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md)** (la ejecuta Juan David; Claude no corre nada en la nube). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
+cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). **Para poner producción en Cloud Run: [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md)** (la ejecuta Juan David; Claude no corre nada en la nube). **Antes de dar CUALQUIER comando de despliegue lee [`deploy/gcp/README.md`](deploy/gcp/README.md)** (formato exacto del comando, `FORCE=1`, `ONEDRIVE_DRIVE_ID`, comprobar rama/commit). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
 si no coinciden con el código, manda el código y este archivo.
 
 ## Infraestructura: hoy y destino
@@ -26,15 +26,18 @@ app/database.py        engine (pool persistente, pre_ping, reintentos); DATABASE
 app/models.py          modelos; app/auth.py roles y permisos (require_role, effective_roles, get_event_for_staff)
 app/routers/           api.py (registro, reconocimiento, directorio, carga masiva), events, forms/forms_public/form_payments,
                        badges, roulette, ops (/health, /ready, /sistema, /internal/jobs/run), …
+app/pruebas/          páginas de prueba sin datos (lector de cédula PDF417 en /pruebas/lector-cedula; docs/PRUEBA_LECTOR_CEDULA.md)
 app/storage.py         archivos: LocalStorage | GcsStorage (STORAGE_BACKEND); claves como acme/known_people/1001.jpg
 app/uploads.py         subida directa de archivos grandes (URLs firmadas / PUT local)
 app/jobs.py            cola en Postgres; la despierta un hilo (JOBS_BACKEND=db) o Cloud Tasks (cloudtasks)
 app/bulk_jobs.py       carga masiva con progreso: hilo (BULK_BACKEND=thread) o Cloud Run Job (cloudrun, app/bulk_runner.py)
+app/name_index.py      cédula no encontrada → candidatos por NOMBRE (índice por cliente; misma regla que api._identity_name_matches; no recorrer personas a mano)
 app/faces.py           reconocimiento: matriz del evento en memoria, cálculo en procesos hijo (face_worker.py), biometrics.py
 app/formlib.py         lógica pura de formularios; app/formsvc.py lo que toca la base (cupo atómico: form_reserve_slot)
 app/ops.py             estado del sistema; app/ops_runner.py Job horario (respaldos, purga, cola, precalentamiento: app/warmup.py)
 app/appmode.py         APP_MODE all|publico|web|biometria (app/entrypoints/); qué rutas sirve cada servicio
 app/crypto.py, privacy.py   cifrado del rostro (FACE_ENCRYPTION_KEY) y retención/purga biométrica
+app/server_keys.py, server_lock.py, routers/server_keys.py   llaves de producto del servidor local (docs/17_SERVIDOR_LOCAL.md § Llaves): crear/ver/deshabilitar, instalador liviano, bloqueo al deshabilitar
 app/event_transfer.py, event_transfer_jobs.py   exportar/importar un evento completo entre entornos (docs/18_EXPORTAR_EVENTOS.md); solo super_admin
 static/js/             app.js (kiosco), directory.js, toast.js, form-render.js, badge-render.js, …
 templates/             páginas Jinja2; alembic/versions/ migraciones; tests/ pytest (+ tests/js)
@@ -79,6 +82,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - **Frontend:** `showToast`/`showConfirm`/`showPrompt` de `toast.js`, nunca `alert`/`confirm`/`prompt`; delegación de eventos para HTML
   generado (nada de `onclick` inline); en plantillas siempre `url_for('static', ...)` (agrega `?v=`); no mutar el subárbol de `e.target`
   antes de que el evento termine de burbujear; los formularios de datos no se cierran al hacer clic afuera.
+- **Coordinador temporal (16-nov-2026):** `staff_users.event_only` (rol coordinador SOLO sobre sus eventos asignados; sin clientes, CRM, configuración ni otros eventos). La regla de rutas permitidas es `app/event_only.py` (lista de PERMITIDOS: una ruta global nueva queda cerrada hasta agregarla); detalle y decisiones en [`docs/COORDINADOR_TEMPORAL.md`](docs/COORDINADOR_TEMPORAL.md).
 - **Permisos:** `STAFF_ROLES` = cliente < digitador < coordinador < comercial < admin < super_admin, con excepciones por rol
   (`require_role_excluding`, `effective_roles` para el doble rol coordinador+comercial). Dos puertas distintas: `get_event_for_staff`
   (acceso) y `require_event_in_progress` (registrar/reconocer).
@@ -87,6 +91,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - **Impresión (INAMOVIBLE, 28-oct-2026):** los parámetros probados en la Brother QL-800 (página SIEMPRE de 62 × 99,8 mm, imagen de máximo 96 mm, margen izquierdo 0,5 mm, marca de fin, misma etiqueta compuesta que el USB; **Chrome siempre normal con su cuadro de impresión: nunca `--kiosk-printing`**) están en [`docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`](docs/IMPRESION_PARAMETROS_INAMOVIBLES.md) y los fija `tests/test_impresion_parametros_fijos.py`. Cualquier cambio que toque impresión compartida, el diseñador de escarapela, Parámetros, el USB o la ventana de impresión se hace respetándolos; cambiarlos solo si Juan David lo pide expresamente y se repite la prueba física.
 - **Todo lo visual** (pantallas, componentes, correos, textos) sigue [`docs/ux/ESTANDARES_VISUALES.md`](docs/ux/ESTANDARES_VISUALES.md): solo tokens `--gw-*` y clases `.gw-*` de `static/css/design-system.css`, muestrario en `docs/ux/guia_visual.html`; nada de colores o tamaños sueltos.
 - **Persona de prueba (5-nov-2026):** cada evento nuevo trae la cédula `PRUEBA` (`app/testperson.py`); nunca cuenta en reportes, estadísticas, ruleta ni contadores (usar `testperson.drop_test`/filtros al agregar consultas nuevas). Es la única que se registra/imprime con el evento en «creado». Registrar e imprimir al resto solo con el evento «en proceso».
+- **Código de la persona (0140; campo desde 17-nov-2026):** serial aparte de la cédula (`EventAttendee.code`, `app/person_code.py`). El interruptor vive en Parámetros › Campos (arriba de las categorías) y SOLO con él activo existe la clave `code` en `parametros.field_configs_for_event` (bloqueado: solo nombre y posición; obligatorio según `Event.code_required`), y con ella: «Campos de la persona», Registrar/Editar, formulario de persona (`personform.EVENT_DECIDES`) y la variable «Código de la persona (QR)» del diseñador de escarapelas (`badge-print-data` trae `code`). Nunca se ofrece en formularios web públicos ni en la escarapela digital.
 - **Origen de carga:** `base` / `manual` / `autoregistro`; `manual` se muestra como «Creado nuevo». El estado es solo Registrado / No registrado.
 - **Fases 0 y 1 cerradas (5-nov-2026):** [`docs/CIERRE_FASES_0_1.md`](docs/CIERRE_FASES_0_1.md). Siguiente: Fase 2 (diseño y calendario).
 - Mensajes al usuario en español; identificadores en inglés; respuestas como dicts planos.
@@ -97,7 +102,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - Un commit + push por pieza terminada (con sus pruebas pasando) y la lista de progreso de `docs/15_MIGRACION.md` al día.
 - **Secretos nunca en el repo ni en el chat** (solo nombres de variables): van a `.env`/`.env.staging` (ignorados) o a Secret Manager
   (el bootstrap los pide a ciegas). Nada de fotos, encodings ni datos reales en el repo, logs o commits; resultados solo agregados.
-- Pruebas de carga nunca contra producción. Ante una ambigüedad: decidir, documentar el porqué y seguir (salvo que Juan David pida que
+- Pruebas de carga nunca contra producción, salvo la prueba «rush» que Juan David autorizó el 19-nov-2026 en un evento sintético (solo por [`docs/PRUEBA_CARGA_PRODUCCION.md`](docs/PRUEBA_CARGA_PRODUCCION.md), con sus candados en `deploy/loadtest/run_phase4.sh`). Ante una ambigüedad: decidir, documentar el porqué y seguir (salvo que Juan David pida que
   se le pregunte).
 - El `.env` de la VM se edita o se le agregan líneas; nunca se reemplaza con el local (incidente real, ver historial).
 - Windows: `.gitattributes` fuerza LF en `*.sh`/`*.yml`; con PowerShell/bash cuidado con `\f`, `\n` y comillas al generar archivos.

@@ -33,6 +33,7 @@
         <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
         <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}/estadisticas" title="Estadísticas">${icon('chart')} <span class="gw-forms-lbl">Estadísticas</span></a>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}" title="Copiar enlace">${icon('link')} <span class="gw-forms-lbl">Copiar enlace</span></button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qr-link="${esc(f.public_url)}" data-qr-title="${esc(f.name)}" title="Generar QR de este enlace" aria-label="Generar QR del enlace de ${esc(f.name)}">${icon('qr')} <span class="gw-forms-lbl">Generar QR</span></button>
         ${f.archived
     ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-restore="${f.id}" data-name="${esc(f.name)}">Restaurar</button>${isSuper ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}" title="Eliminar definitivamente" aria-label="Eliminar definitivamente ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Eliminar definitivamente</span></button>` : ''}`
     : (canArchive ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-archive="${f.id}" data-name="${esc(f.name)}" title="Archivar" aria-label="Archivar ${esc(f.name)}">${icon('trash')} <span class="gw-forms-lbl">Archivar</span></button>` : '')}

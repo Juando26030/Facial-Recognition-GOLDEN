@@ -253,7 +253,7 @@ def test_the_operator_only_authorizes_and_the_public_screen_spins(client, factor
     _save(client, ev, mode="single_fixed", winners=["1003"])
     token = _token(client, ev)
     api = f"/api/events/{ev.id}/roulette"
-    assert client.get(f"{api}/authorization").json() == {"authorized": False, "label": "", "since": None}
+    assert client.get(f"{api}/authorization").json() == {"authorized": False, "label": "", "since": None, "queue": False, "step": 0, "total": 0}          # la fila de sorteos agregó queue/step/total
     assert client.get(f"/r/{token}/state").json()["authorized"] is False
     client.post("/logout")
     assert client.post(f"/r/{token}/spin").status_code == 409                     # sin autorización el botón no hace nada

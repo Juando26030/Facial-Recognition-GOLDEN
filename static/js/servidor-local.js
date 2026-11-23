@@ -16,19 +16,45 @@
     alertBox.className = 'gw-alert gw-alert--' + (kind || 'warn');
     alertBox.textContent = text || '';
   }
-  function badge(e) {
-    if (e.leased_here || e.downloaded) return '<span class="gw-badge gw-badge--ok">Ya está en este servidor</span>';
-    if (e.leased_elsewhere) return `<span class="gw-badge gw-badge--warn">En el servidor local «${esc((e.local || {}).node_name)}»</span>`;
+  const ICONS = (document.currentScript && document.currentScript.dataset.icons) || '';
+  const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
+  const STATUS_BADGE = { creado: 'gw-badge--info', en_proceso: 'gw-badge--ok', finalizado: '' };
+  const fmtDate = (d) => { if (!d) return '-'; const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString(); };
+  function fmtShort(e) {
+    if (!e.end_date || e.end_date === e.start_date) return fmtDate(e.start_date);
+    const a = new Date(e.start_date + 'T00:00:00'), b = new Date(e.end_date + 'T00:00:00');
+    if (isNaN(a) || isNaN(b) || a.getFullYear() !== b.getFullYear()) return `${fmtDate(e.start_date)} al ${fmtDate(e.end_date)}`;
+    return `${a.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' })} – ${fmtDate(e.end_date)}`;
+  }
+  // Informe final: aquí no se descarga (el archivo vive en la nube), solo se muestra si está enviado o pendiente, igual que en Eventos.
+  function bulb(e, compact) {
+    const on = !!e.report_uploaded;
+    const label = on ? 'Informe final enviado' : 'Informe final pendiente de subir';
+    if (compact) return on ? `<span class="gw-bulb gw-bulb--dot gw-bulb--on" title="${label}" role="img" aria-label="${label}">${icon('check')}</span>` : `<span class="gw-bulb gw-bulb--dot" title="${label}" role="img" aria-label="${label}"></span>`;
+    return on ? `<span class="gw-badge gw-badge--ok gw-bulb">${icon('check')}Informe enviado</span>` : `<span class="gw-badge gw-badge--warn gw-bulb">${icon('info')}Informe pendiente</span>`;
+  }
+  function stateBadge(e) {
+    if (e.leased_elsewhere) return ` <span class="gw-badge gw-badge--warn" title="Este evento está en otro servidor local">En «${esc((e.local || {}).node_name)}»</span>`;
+    if (e.downloaded || e.leased_here) return ' <span class="gw-badge gw-badge--ok">En este servidor</span>';
     return '';
   }
+  // Misma tarjeta que la lista de Eventos (clases gw-event-card y p-cli__*); sin «Editar» ni cambio de estado: eso se hace dentro del evento, ya descargado.
   function row(e) {
-    const dates = e.start_date ? ' · ' + esc(e.start_date) + (e.end_date && e.end_date !== e.start_date ? ' a ' + esc(e.end_date) : '') : '';
+    const where = [e.location, e.city].filter(Boolean).join(' · ');
     const can = !e.downloaded && !e.leased_here && !e.leased_elsewhere;
     const action = can
-      ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-download="${e.id}" data-name="${esc(e.name)}">Descargar a local</button>`
-      : (e.local_event_id ? `<a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${e.local_event_id}/registro">Abrir</a>` : '');
-    return `<li class="gw-list__item"><div><strong>${esc(e.name)}</strong> <span class="gw-hint">${esc(e.event_code)} · ${esc(STATUS[e.status] || e.status)}${dates}</span> ${badge(e)}</div>${action}</li>`;
+      ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" data-download="${e.id}" data-name="${esc(e.name)}">${icon('download', 'gw-icon--sm')} Descargar a local</button>`
+      : (e.local_event_id ? `<a class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" href="/kiosk/${e.local_event_id}">${icon('home', 'gw-icon--sm')} Ingresar</a>` : '');
+    return `<div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
+      <div class="gw-card-row__head">
+        <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}"><span class="p-cli__rep p-cli__rep--full">${bulb(e)}</span><span class="p-cli__rep p-cli__rep--dot">${bulb(e, true)}</span> <span class="p-cli__nm"><span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code"><span class="p-cli__paren">(</span><span class="p-cli__pfx">Código: </span>${esc(e.event_code)}<span class="p-cli__paren">)</span></span>` : ''}</span></span>
+        <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS[e.status] || e.status)}</span>${stateBadge(e)}
+      </div>
+      <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.tenant_name, where].filter(Boolean).join(' · '))}"><strong>${esc(e.tenant_name || 'Sin cliente')}</strong>${where ? ' · ' + esc(where) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date"><span class="p-cli__pfx">Fecha: </span>${fmtShort(e)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord"><span class="p-cli__pfx">Comercial: </span>${esc(e.commercial_name || '—')}<span class="p-cli__sep"> · </span><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name || '—')}</span></p>
+      <div class="gw-card-row__actions p-cli__acts">${action}</div>
+    </div>`;
   }
+  const EV_COLS = '<div class="p-cli__cols" aria-hidden="true"><span class="p-cli__c1">Evento</span><span class="p-cli__c2">Cliente · lugar</span><span class="p-cli__c3">Fecha</span><span class="p-cli__c4">Comercial / coordinador</span><span class="p-cli__c5">Estado</span><span class="p-cli__c6">Acciones</span></div>';
   function keyOf(e) {
     if (group === 'client') return e.tenant_name || e.tenant_id || 'Sin cliente';
     if (!e.start_date) return 'Sin fecha';
@@ -44,7 +70,7 @@
     let keys = [...groups.keys()];
     if (group === 'client') keys.sort((a, b) => a.localeCompare(b, 'es'));
     else keys = keys.sort((a, b) => (groups.get(b)[0].start_date || '').localeCompare(groups.get(a)[0].start_date || ''));
-    list.innerHTML = keys.map((k) => `<section class="gw-stack"><h2 class="gw-section-title">${esc(k)}</h2><ul class="gw-list">${groups.get(k).map(row).join('')}</ul></section>`).join('');
+    list.innerHTML = keys.map((k) => `<section class="gw-stack"><h2 class="gw-section-title">${esc(k)}</h2><div class="gw-event-list">${EV_COLS}${groups.get(k).map(row).join('')}</div></section>`).join('');
   }
   async function load() {
     list.setAttribute('aria-busy', 'true');
@@ -80,9 +106,9 @@
   list.addEventListener('click', (e) => { const b = e.target.closest('[data-download]'); if (b) download(b); });
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 200); });
   document.addEventListener('click', (e) => {
-    const g = e.target.closest('[data-group]');
-    if (g) { group = g.dataset.group; document.querySelectorAll('[data-group]').forEach((x) => x.setAttribute('aria-pressed', String(x === g))); draw(); }
     if (e.target.closest('#slReload')) load();
   });
+  const groupSel = document.getElementById('slGroup');
+  if (groupSel) groupSel.addEventListener('change', () => { group = groupSel.value === 'calendar' ? 'calendar' : 'client'; draw(); });
   load();
 })();

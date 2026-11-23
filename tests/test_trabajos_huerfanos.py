@@ -18,7 +18,10 @@ from app.timeutil import utcnow
 def _declared_kinds() -> set:
     kinds = set()
     for f in pathlib.Path("app").rglob("*.py"):
-        kinds |= set(re.findall(r'@jobs\.handler\("([^"]+)"\)', f.read_text(encoding="utf-8")))
+        text = f.read_text(encoding="utf-8")
+        kinds |= set(re.findall(r'@jobs\.handler\("([^"]+)"\)', text))
+        if "@jobs.handler(MAIL_KIND)" in text:          # app/mass_delete.py declara el tipo en una constante
+            kinds |= set(re.findall(r'^MAIL_KIND\s*=\s*"([^"]+)"', text, re.M))
     return kinds
 
 

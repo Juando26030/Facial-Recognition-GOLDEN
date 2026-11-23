@@ -116,7 +116,7 @@ def test_attempt_limit_per_device(client, station, monkeypatch):
 def test_no_biometrics_are_stored(client, db, station):
     _send(client, station)
     u = db.query(User).filter_by(id="7001", tenant_id=station.tenant_id).one()
-    assert not u.is_biometric_enabled
+    assert u.face_encoding is None and u.face_captured_at is None and u.biometric_consent_at is None          # no se guarda rostro (is_biometric_enabled = «no es menor»; no dice que haya rostro)
 
 
 def test_config_needs_coordinator_and_toggles(client, factory, db):

@@ -5,9 +5,10 @@
   'use strict';
   var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var HEX = /^#[0-9a-fA-F]{6}$/;
-  function paint(host, cats, anyActive) {
+  function paint(host, cats, anyActive, opts) {
+    var title = (opts && opts.title) || 'Tipo de evento', aria = (opts && opts.aria) || 'Filtrar por tipo de evento';
     host.hidden = false;
-    host.innerHTML = '<span class="gw-label cal-cats__title">Tipo de evento</span><div class="cal-cats__list" role="group" aria-label="Filtrar por tipo de evento">' +
+    host.innerHTML = '<span class="gw-label cal-cats__title">' + esc(title) + '</span><div class="cal-cats__list" role="group" aria-label="' + esc(aria) + '">' +
       '<button type="button" class="gw-chip cal-cat" data-cat-all aria-pressed="' + (anyActive ? 'false' : 'true') + '"><span class="cal-cat__name">Todos</span></button>' +
       cats.map(function (c) {
         return '<button type="button" class="gw-chip cal-cat" data-cat="' + esc(c.key) + '" aria-pressed="' + (c.active ? 'true' : 'false') + '">' +

@@ -20,11 +20,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
 from app import node_sync, local_installer
-from app import bodylimit, mass_delete, form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
-from app.database import get_db
+from app import bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app.database import SessionLocal, get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
+from app import preprint as preprint_mod
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
 from app.routers import clean_url as clean_url_router      # D2.5k: /inscripciones/<evento>/<formulario> (se registra al final)
 from app.routers import public_link as public_link_router
@@ -34,6 +35,7 @@ from app.routers import selfreg as selfreg_router
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
+from app.routers import server_keys as server_keys_router      # 20-nov-2026: llaves de producto del servidor local
 from app.routers import local_installer as local_installer_router      # Fase 10 E: descarga del instalador del servidor local (tarjeta de Configuración)
 from app.routers import local_server as local_server_router      # Fase 6: lista de eventos de la nube y «Descargar a local» (solo con LOCAL_SERVER=1)
 from app.routers import node_api as node_api_router      # Fase 6: API de la nube para los servidores locales (token de nodo)
@@ -43,7 +45,9 @@ from app.routers import staff_credentials as staff_credentials_router      # Fas
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
-from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import crm as crm_router
+from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, preprint as preprint_router, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, almacen_novedades as almacen_novedades_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, lastname, personform, registro_gear
@@ -99,6 +103,17 @@ async def lifespan(_app: FastAPI):
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    try:          # servidor LOCAL: los eventos que ya estaban descargados con el rostro activado se dejan sin rostro (aquí no corre la biometría)
+        from app import localmode as _lm
+        if _lm.is_local_server():
+            _db = SessionLocal()
+            try:
+                if _lm.enforce_no_face(_db):
+                    log.info("servidor local: rostro apagado en eventos descargados con el reconocimiento facial activo")
+            finally:
+                _db.close()
+    except Exception:  # noqa: BLE001
+        log.warning("no se pudo apagar el rostro de los eventos locales al arrancar", exc_info=True)
     node_sync.start()                     # servidor LOCAL (LOCAL_SERVER=1 con token): sube a la nube cada ~30 min; en la nube no hace nada
     publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
@@ -151,6 +166,23 @@ async def csrf_and_password_gate(request, call_next):
 
 
 @app.middleware("http")
+async def event_only_gate(request, call_next):
+    """Coordinador temporal del evento (app/event_only.py): su sesión solo abre las pantallas del evento y las llamadas de la API que sirven para operar dentro de él; lo demás se cierra aquí,
+    antes de llegar a la ruta (las rutas que usan `get_current_staff` lo vuelven a comprobar con la base, y cada ruta de evento valida que el evento sea uno de los suyos)."""
+    session = request.scope.get("session")
+    if session and session.get("staff_event_only"):
+        path = request.url.path
+        if path.startswith("/api/"):
+            if not event_only.api_allowed(request.method, path):
+                return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
+        elif not event_only.page_allowed(path):
+            if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
+                return RedirectResponse("/", status_code=302)
+            return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def idle_gate(request, call_next):
     """Cierre de sesión por inactividad del personal (app/idle.py, docs/22). Sin consultas a la base: la última actividad va en la cookie de sesión. Pasado el tiempo (el del evento en proceso, o el
     general), la sesión se borra: las páginas llevan a /login?expirada=1 y las llamadas reciben 401 «session_expired». Solo renuevan la sesión las navegaciones y /api/session/touch."""
@@ -159,10 +191,13 @@ async def idle_gate(request, call_next):
     if not session or not session.get("staff_user_id") or idle.exempt_path(path):
         return await call_next(request)
     nav = idle.is_navigation(request.method, request.headers)
-    if idle.absolute_expired(session) or idle.expired(session):          # tope absoluto de admin/super_admin (B7) o inactividad
+    if idle.general_is_stale():          # el tiempo general (Configuración → Apariencia) se relee cada 30 s, en un hilo: este middleware no toca la base en el bucle de eventos
+        await anyio.to_thread.run_sync(idle.configured_minutes)
+    if idle.absolute_expired(session) or idle.expired(session):          # tope absoluto de los roles sin `sid` (B7) o inactividad
         session.clear()
         if nav:
-            return RedirectResponse("/login?expirada=1", status_code=302)
+            back = nextpage.login_url_back(request.url.path, request.url.query) if request.method == "GET" else "/login?expirada=1"          # tras volver a entrar, la persona sigue en la página donde estaba
+            return RedirectResponse(back, status_code=302)
         return JSONResponse({"detail": "session_expired"}, status_code=401, headers={"Cache-Control": "no-store"})
     if (nav or path == idle.TOUCH_PATH) and request.headers.get(idle.PASSIVE_HEADER) != "1":
         idle.renew(session, reset_event=nav)
@@ -184,15 +219,33 @@ async def idle_gate(request, call_next):
 # img-src y form-action ya cortan la salida de datos. Cuando la consola salga limpia en staging se pasa a obligatoria. Sin `report-uri` (no hay ruta de reportes; ver docs/FASE_3_SEGURIDAD.md).
 # CSP_REPORT_ONLY=0 apaga la cabecera de prueba.
 _CSP_REPORT_ONLY = os.getenv("CSP_REPORT_ONLY", "1") == "1"
-_CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+_CSP_PANEL = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
               "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com; font-src 'self' data:; media-src 'self' blob:; "
-              "connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com; frame-src 'self' blob:; worker-src 'self' blob:; "
+              "connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com https://cdn.jsdelivr.net https://unpkg.com; frame-src 'self' blob:; worker-src 'self' blob:; "
               "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
 _CSP_PUBLIC_FORM = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://checkout.wompi.co https://translate.google.com "
                     "https://translate.googleapis.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.gstatic.com; "
                     "img-src 'self' data: blob: https://tile.openstreetmap.org https://cdnjs.cloudflare.com https://www.gstatic.com https://www.google.com https://translate.googleapis.com; "
                     "font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://nominatim.openstreetmap.org https://storage.googleapis.com https://*.wompi.co https://translate.googleapis.com; "
                     "frame-src 'self' blob: https://*.wompi.co https://translate.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'")      # sin frame-ancestors: se incrusta a propósito
+
+
+@app.middleware("http")
+async def local_catalog_readonly(request, call_next):
+    """Servidor local (LOCAL_SERVER=1): el catálogo de inventario no se edita aquí (se cambia en internet y llega solo)."""
+    from app import localmode, server_lock
+    if localmode.is_local_server():
+        if server_lock.is_locked() and not request.url.path.startswith(("/static", "/health")):          # llave de producto deshabilitada: la aplicación queda cerrada
+            if request.url.path.startswith("/api/") or "application/json" in request.headers.get("accept", ""):
+                return JSONResponse(status_code=403, content={"detail": server_lock.LOCKED_MSG})
+            return HTMLResponse(f"<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Servidor deshabilitado</title><body style='font-family:system-ui;max-width:34rem;margin:15vh auto;padding:0 1rem'><h1>Servidor deshabilitado</h1><p>{server_lock.LOCKED_MSG}</p></body></html>", status_code=403)
+        if localmode.is_catalog_write(request.method, request.url.path):
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
+        if localmode.is_face_call(request.method, request.url.path):
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_NO_FACE_MSG})
+        if localmode.is_cloud_only_page(request.method, request.url.path):          # inventario global, cuentas de cobro y gastos: solo en internet (ni el menú los ofrece)
+            return RedirectResponse("/clientes", status_code=302)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -309,6 +362,24 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+
+
+def _crm_nav_visible(request) -> bool:
+    """Enlace «CRM» del menú lateral: solo con CRM_ENABLED encendido y para quien tenga comercial o más (rol real de la sesión, no el que se muestra: el
+    coordinador+comercial ve la etiqueta «coordinador» pero sí entra al CRM; el coordinador puro no)."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        return False
+    try:
+        role = request.session.get("staff_role")
+        roles = [role] + split_roles(request.session.get("staff_secondary_role"))
+        return bool(role) and max(ROLE_HIERARCHY.get(r, 0) for r in roles) >= ROLE_HIERARCHY["comercial"]
+    except Exception:
+        return False
+
+
+templates.env.globals["crm_nav_visible"] = _crm_nav_visible
+templates.env.globals["event_only_session"] = lambda request: bool(request.session.get("staff_event_only")) if request.scope.get("session") is not None else False          # coordinador temporal: el menú lateral solo ofrece Eventos y Calendario
 templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
@@ -335,6 +406,14 @@ _include(gastos_router.router, prefix="/api")      # Fase 9C: /api/gastos/infra/
 _include(event_template_router.router, prefix="/api")      # Fase 2: plantilla de evento (campos, vista de creación y vista del calendario)
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
+_include(crm_import_router.router, prefix="/api")      # CRM C1c: importador de SuiteCRM (/api/crm/import/*; solo admin)
+_include(crm_tools_router.router, prefix="/api")      # CRM C3: búsqueda global, filtros guardados, exportar CSV
+from app.routers import crm_inventory as crm_inventory_router
+_include(crm_inventory_router.router, prefix="/api")      # CRM → inventario del evento (/api/events/{id}/crm-inventory)
+_include(crm_quotes_router.router, prefix="/api")      # CRM C3: productos, cotizaciones, proformas (/api/crm/*)
+_include(crm_today_router.router, prefix="/api")      # CRM C4: «Mi día», tableros y ganar una oportunidad (/api/crm/*)
+_include(crm_pipeline_router.router, prefix="/api")      # CRM C2: embudos, oportunidades, leads y actividades (/api/crm/*; mismo apagado por CRM_ENABLED)
+_include(crm_router.router, prefix="/api")      # CRM C1b: /api/crm/* (cada ruta responde 404 mientras CRM_ENABLED esté apagado; ver app/routers/crm.py)
 _include(downloads.router, prefix="/api")      # Fase 4: bases de digitadores y de clientes (app/download_perms.py)
 _include(badges.router, prefix="/api")
 _include(cedula.router, prefix="/api")
@@ -350,6 +429,8 @@ _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públi
 _include(event_report.router, prefix="/api")
 _include(final_database.router, prefix="/api")      # Fase 5: base de datos final del evento (subir/reemplazar/descargar; coordinador+)
 _include(event_docs.router, prefix="/api")
+_include(coord_assign_router.router, prefix="/api")      # asignar coordinadores desde el calendario (director de coordinadores y administradores)
+_include(legalizations_router.router, prefix="/api")      # legalizaciones en el formato oficial (por rubro, envío y aprobación)
 _include(event_acts_router.router, prefix="/api")      # Fase 10: acta de novedades (texto + firma del coordinador y del cliente)
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
@@ -361,6 +442,8 @@ _include(system_alerts_router.router, prefix="/api")      # Fase 9-A: destinatar
 _include(notifications_router.router, prefix="/api")      # campana de notificaciones de cada cuenta (Fase 5)
 _include(qr_resolve_router.router, prefix="/api")      # Fase 8: valida el QR dinámico de la credencial digital
 _include(inventory_router.router, prefix="/api")      # catálogo de inventario (Super Admin) y líneas de inventario por evento con regla de cuadre (Fase 5)
+_include(almacen_novedades_router.router, prefix="/api")      # Almacén (Pieza 3): novedades y bloqueo (/api/almacen/novelties*)
+_include(almacen_router.router, prefix="/api")      # Almacén (Pieza 1): controles, unidades con serial, QR y etiquetas (/api/almacen/*; 404 con ALMACEN_ENABLED apagado)
 _include(analytics.router, prefix="/api")
 _include(gastos_eventos_router.router, prefix="/api")      # Fase 9 D: /api/gastos/eventos/* (satisfacción y tiempos; solo admin)
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
@@ -371,6 +454,7 @@ _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) 
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
 _include(contacts_router.router)      # Fase 8: captura de contactos para expositores (/contacto, /tarjeta, /expositor y /api/events/{id}/exhibitors)
 _include(roulette.router, prefix="/api")
+_include(preprint_router.router, prefix="/api")          # Preimpresiones: elegir a quién se le imprime la escarapela antes de que llegue
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
 _include(event_history_router.router, prefix="/api")      # GET /api/events/{id}/change-history (coordinador del evento, comercial, admin)
@@ -395,7 +479,10 @@ _include(selfreg_router.router, prefix="/api")          # Fase 8: autorregistro 
 _include(node_sync_router.router, prefix="/api")      # solo responde con LOCAL_SERVER=1
 _include(payment_accounts_router.router, prefix="/api")      # Fase 8: cuentas de cobro (solo admin)
 _include(nodes_router.router, prefix="/api")      # Fase 6: tokens de nodos y subida desde servidores locales
+_include(server_keys_router.router, prefix="/api")      # 20-nov-2026: llaves de producto (crear, ver, deshabilitar; el instalador las reclama)
 _include(local_server_router.router, prefix="/api")
+from app.routers import local_cert as local_cert_router          # servidor local: /certificado (quitar el aviso «No seguro» en los equipos que se conectan)
+_include(local_cert_router.router)
 _include(local_installer_router.router, prefix="/api")
 _include(node_api_router.router, prefix="/api")
 
@@ -434,6 +521,11 @@ def _display_role(role: str, secondary_role: str = None) -> str:
     if {"coordinador", "comercial"} <= roles:
         return "coordinador"
     return role
+
+
+def effective_roles_from_session(request: Request) -> set:
+    """Los roles de la cuenta (principal y sumados) tal como quedaron en la sesión al ingresar."""
+    return {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
 
 
 def _require_page_role(request: Request, minimum_role: str):
@@ -475,6 +567,11 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     if is_inventory_only(staff_user):
         return RedirectResponse("/inventario", status_code=302)          # almacén / contabilidad sin otro rol: su única pantalla es el inventario
 
+    if staff_user.event_only:          # coordinador temporal: su evento (si es uno solo) o la lista de sus eventos; nunca el panel de clientes
+        mine = db.query(Event).join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id).filter(
+            EventStaffAuthorization.staff_user_id == staff_user.id, Event.status != "finalizado", Event.archived_at.is_(None)).all()
+        return RedirectResponse(f"/kiosk/{mine[0].id}" if len(mine) == 1 else "/eventos", status_code=302)
+
     if staff_user.role in ("digitador", "cliente"):
         # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
         # entra derecho ahí. Con 0 o >1 se le muestra la lista mínima (dashboard.html la maneja).
@@ -496,6 +593,130 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     # Cliente→Eventos) se partió en secciones del menú lateral nuevo — Clientes es el punto de
     # entrada por defecto ahora, ver templates/clientes.html.
     return RedirectResponse("/clientes", status_code=302)
+
+
+def _crm_page(request: Request, template: str, **extra):
+    """Pantallas del CRM (C1b-2): 404 con CRM_ENABLED apagado; comercial, admin y super_admin entran (D1); el coordinador puro vuelve al inicio.
+    `can_admin` (archivar/restaurar/suprimir) es admin+ según el rol REAL de la sesión."""
+    from app import crm as crm_pkg
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "comercial")
+    if redirect:
+        return redirect
+    roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
+    context = {
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
+        "sidebar_active": "crm",
+        "can_admin": bool({"admin", "super_admin"} & roles),
+    }
+    context["crm_nav"] = crm_pkg.sections(context["can_admin"])
+    context.update(extra)
+    return templates.TemplateResponse(request=request, name=template, context=context)
+
+
+@app.get("/crm")
+def crm_cuentas_page(request: Request):
+    return _crm_page(request, "crm_cuentas.html")
+
+
+@app.get("/crm/cuentas/nueva")
+def crm_cuenta_nueva_page(request: Request):
+    return _crm_page(request, "crm_cuenta.html", account_id="")
+
+
+@app.get("/crm/cuentas/{account_id}")
+def crm_cuenta_page(request: Request, account_id: int):
+    return _crm_page(request, "crm_cuenta.html", account_id=account_id)
+
+
+@app.get("/crm/oportunidades")
+def crm_oportunidades_page(request: Request):
+    return _crm_page(request, "crm_oportunidades.html")
+
+
+@app.get("/crm/oportunidades/{opportunity_id}")
+def crm_oportunidad_page(request: Request, opportunity_id: int):
+    return _crm_page(request, "crm_oportunidad.html", opportunity_id=opportunity_id)
+
+
+@app.get("/crm/leads")
+def crm_leads_page(request: Request):
+    return _crm_page(request, "crm_leads.html")
+
+
+@app.get("/crm/embudos")
+def crm_embudos_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_embudos.html")
+
+
+@app.get("/crm/importar")
+def crm_importar_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")          # sin sesión → /login
+    if redirect:
+        if request.session.get("staff_role"):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede importar.")          # con sesión pero rol menor: 403, no redirección
+        return redirect
+    return _crm_page(request, "crm_importar.html")
+
+
+@app.get("/crm/cotizaciones")
+def crm_cotizaciones_page(request: Request):
+    return _crm_page(request, "crm_cotizaciones.html")
+
+
+@app.get("/crm/cotizaciones/{quote_id}")
+def crm_cotizacion_page(request: Request, quote_id: int):
+    return _crm_page(request, "crm_cotizacion.html", quote_id=quote_id)
+
+
+@app.get("/crm/buscar")
+def crm_buscar_page(request: Request):
+    return _crm_page(request, "crm_buscar.html")
+
+
+@app.get("/crm/mi-dia")
+def crm_midia_page(request: Request):
+    return _crm_page(request, "crm_midia.html")
+
+
+@app.get("/crm/tableros")
+def crm_tableros_page(request: Request):
+    return _crm_page(request, "crm_tableros.html")
+
+
+@app.get("/crm/plantillas/{template_id}/disenar")
+def crm_plantilla_disenador_page(request: Request, template_id: int):
+    """Diseñador del PDF de cotización (bloques que se arrastran). Solo administradores."""
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_plantilla.html", template_id=template_id)
+
+
+@app.get("/crm/productos")
+def crm_productos_page(request: Request):
+    from app.crm import crm_enabled
+    if not crm_enabled():
+        raise HTTPException(status_code=404, detail="No encontrado")
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return _crm_page(request, "crm_productos.html")
 
 
 @app.get("/clientes")
@@ -573,11 +794,16 @@ def calendario_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
     if redirect:
         return redirect
+    from app.crm import crm_enabled
+    roles = {request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))
     return templates.TemplateResponse(request=request, name="calendario.html", context={
+        "assign_calendar": bool({"dir_coordinadores", "admin", "super_admin"} & roles),          # tercer botón grande «Asignar coordinadores» (director de coordinadores y administradores)
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "calendario",
+        "crm_calendar": crm_enabled() and bool({"comercial", "admin", "super_admin"} & roles),          # el botón grande «Eventos / CRM» del calendario
+        "crm_calendar_admin": bool({"admin", "super_admin"} & roles),                                   # el admin ve a todo el equipo y elige comercial
     })
 
 
@@ -595,6 +821,7 @@ def configuracion_page(request: Request):
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
+        "offsite_folder_url": (os.getenv("OFFSITE_FOLDER_URL", "").strip() if os.getenv("OFFSITE_FOLDER_URL", "").strip().startswith("https://") else ""),   # carpeta de las copias semanales (no es secreto)
         "can_local_installer": local_installer.roles_allowed({request.session.get("staff_role")} | set(split_roles(request.session.get("staff_secondary_role")))),      # tarjeta «Servidor local»: todos menos digitador y cliente
     })
 
@@ -628,8 +855,26 @@ def inventario_page(request: Request):
     return templates.TemplateResponse(request=request, name="inventario.html", context={
         "staff_name": request.session.get("staff_name"),
         "inv_manager": bool(roles & {"almacen", "admin", "super_admin"}),          # Fase 10: administran el catálogo (crear, renombrar, archivar)
+        "almacen_on": _almacen_visible(roles),          # pestaña «Almacén» (Pieza 1): con ALMACEN_ENABLED y para almacén, admin y super_admin
         "staff_role": _display_role(role, request.session.get("staff_secondary_role")),
     })
+
+
+def _almacen_visible(roles) -> bool:
+    from app import almacen as almacen_mod
+    return almacen_mod.almacen_enabled() and bool(set(roles) & {"almacen", "admin", "super_admin"})
+
+
+@app.get("/inventario/etiquetas")
+def inventario_etiquetas_page(request: Request):
+    """Ventana de impresión de las etiquetas QR del almacén (Pieza 1). Es una página PROPIA: no toca la impresión compartida de escarapelas ni sus parámetros inamovibles."""
+    role = request.session.get("staff_role")
+    if not role:
+        return RedirectResponse("/login", status_code=302)
+    roles = {role} | set(split_roles(request.session.get("staff_secondary_role")))
+    if not _almacen_visible(roles):
+        raise HTTPException(status_code=404, detail="No encontrado")
+    return templates.TemplateResponse(request=request, name="almacen_etiquetas.html", context={"staff_name": request.session.get("staff_name")})
 
 
 @app.get("/gastos")
@@ -701,6 +946,24 @@ def impresion_usb_page(request: Request):
     return templates.TemplateResponse(request=request, name="impresion_usb.html", context={})
 
 
+# PRUEBA (19-nov-2026): lector de cédula por cámara (PDF417), página de un solo archivo y SIN datos de la app. Se sirve TAL CUAL (no es plantilla Jinja) desde app/pruebas/lector_cedula.html,
+# que es copia exacta del entregado en la sesión de desarrollo (lo fija tests/test_lector_cedula_prueba.py). Todo se procesa en el navegador: no llama a ninguna API de la app ni guarda nada.
+# Descarga zxing-wasm desde cdn.jsdelivr.net, por eso la ruta fija su propia política «Report-Only» (la del panel no lo permite; hoy no bloquea, pero así no falla si se vuelve obligatoria).
+_LECTOR_CEDULA_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; "
+                      "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com; worker-src 'self' blob:; "
+                      "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+_LECTOR_CEDULA_HTML = Path(__file__).resolve().parent / "pruebas" / "lector_cedula.html"
+
+
+@app.get("/pruebas/lector-cedula")
+def lector_cedula_prueba_page(request: Request):
+    """Prueba del lector de cédula por cámara: PDF417 (cédula vieja) y las 3 líneas de abajo (cédula nueva). Digitador o más (sesión de la app). Sin base de datos y sin enviar nada al servidor."""
+    redirect = _require_page_role(request, "digitador")
+    if redirect:
+        return redirect
+    return HTMLResponse(_LECTOR_CEDULA_HTML.read_text(encoding="utf8"), headers={"Content-Security-Policy-Report-Only": _LECTOR_CEDULA_CSP})
+
+
 def contingency_enabled() -> bool:
     """Modo contingencia del quiosco (copia local de la lista + service worker `/kiosk/sw.js`). APAGADO por defecto; lo prende `CONTINGENCY_ENABLED=1` (staging, desde deploy/gcp/config.sh).
     Encenderlo en producción exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David (docs/15, D2.5d)."""
@@ -769,6 +1032,9 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     # effective_roles (Fase 15, 2026-09-17): considera el rol secundario si tiene uno (doble rol
     # coordinador+comercial) — tanto para el mínimo jerárquico como para exclude_roles abajo.
     staff_roles = effective_roles(staff_user)
+    from app import localmode as _lm
+    if _lm.is_local_server():
+        _lm.enforce_no_face(db, event)          # un evento descargado antes con el rostro activo no queda «atrapado» en la pantalla de la cámara
     if min_role and max(ROLE_HIERARCHY[r] for r in staff_roles) < ROLE_HIERARCHY[min_role]:
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     # exclude_roles (2026-09-16): para vistas que NO siguen la jerarquía de min_role — ej.
@@ -799,6 +1065,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     context = {
         "person_form_json": json.dumps(person_form).replace("</", "<\\/") if person_form else "null",
         "person_form_env": personform.env_enabled(),
+        "autoprint_rules": bool(person_form and any((v.get("flow") or {}).get("autoprint_off") for v in (person_form.get("variants") or {}).values())),          # alguna categoría tiene apagada la impresión automática: el quiosco consulta antes de imprimir sola
         "person_form_can_design": personform.env_enabled() and max(ROLE_HIERARCHY[r] for r in staff_roles) >= ROLE_HIERARCHY["admin"],
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": _display_role(staff_user.role, staff_user.secondary_role),
@@ -861,6 +1128,7 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
     event_obj = db.get(Event, event_id)
     return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"],
                                extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL,
+                                              "code_enabled": bool(event_obj is not None and event_obj.code_enabled), "code_required": bool(event_obj is not None and event_obj.code_required),
                                               # «Solo agregar personas nuevas»: con el evento en proceso, o con la base ya cargada (nunca finalizado)
                                               "append_available": event_obj is not None and not event_rules.roster_block_reason(event_obj, append_only=True) and (event_obj.status == "en_proceso" or bool(event_obj.roster_uploaded))})
 
@@ -871,7 +1139,8 @@ def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db
     vivía como pestaña "Usuarios del Evento" dentro de /kiosk/{event_id}/registro; se mueve a su
     propia ruta, mismo patrón que "Escarapelas"/"Adjuntar Base de Datos". Mismo mínimo de rol que
     antes (coordinador+ para crear digitador, admin+ dentro del template para cliente/asignar)."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador")
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador",
+                               extra_context={"can_temp_coordinator": bool(effective_roles_from_session(request) & {"comercial", "admin", "super_admin"})})          # crear coordinadores temporales (16-nov-2026): comercial o más, por el rol REAL de la sesión
 
 
 @app.get("/kiosk/{event_id}/usuarios/hoja")
@@ -954,6 +1223,12 @@ def kiosk_acts(event_id: int, request: Request, db: Session = Depends(get_db)):
 def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Ruleta — configuración de comportamiento y ejecución (Sprint 5) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/preimpresiones")
+def kiosk_preprint(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Preimpresiones — elegir a quién se le imprime la escarapela ANTES de que llegue (VIPs, expositores…) — coordinador+ (la comercial no imprime)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_preimpresiones.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/ruleta/visual")
@@ -1053,6 +1328,12 @@ def kiosk_inventory(event_id: int, request: Request, db: Session = Depends(get_d
     return _resolve_kiosk_page(event_id, request, db, "kiosk_inventario.html", min_role="digitador", exclude_roles=["comercial"])
 
 
+@app.get("/kiosk/{event_id}/alistamiento")
+def kiosk_checklist(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Tarjeta «Inventario» (18-nov-2026): lo alistado según el checklist de inventario del evento, solo para consultar (en un servidor local, la foto guardada al descargar el evento)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_alistamiento.html", min_role="digitador", exclude_roles=["comercial"])
+
+
 @app.get("/kiosk/{event_id}/certificado")
 def kiosk_certificate_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Diseñador del certificado (reunión 2026-09-21, ítem 5): el MISMO editor de escarapelas, en modo
@@ -1067,14 +1348,15 @@ def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
-def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, db: Session = Depends(get_db)):
+def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, preprint: int = 0, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
     auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
     excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
     imprimir")."""
     # `?users=a,b,c` (29-oct-2026, «Imprimir pendientes»): UNA sola ventana con una página por escarapela (hasta 50); sin él, una sola persona como siempre.
-    many = [u.strip() for u in (users or "").split(",") if u.strip()][:50]
+    # Preimpresiones (18-nov-2026): también UNA sola ventana/ejecución de impresión, pero con más hojas (tope MAX_PRINT_WINDOW; la dirección sigue siendo corta con cédulas).
+    many = [u.strip() for u in (users or "").split(",") if u.strip()][:(preprint_mod.MAX_BATCH if preprint else 50)]
     return _resolve_kiosk_page(event_id, request, db, "badge_print.html", exclude_roles=["comercial"], extra_context={
         "print_user_id": user_id,
         "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),

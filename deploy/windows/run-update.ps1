@@ -1,4 +1,4 @@
-# Actualización del servidor local a la versión de producción (Fase 6). La dispara la petición que escribe la app (app/local_update.py); corre como SYSTEM dentro del servicio GoldenLocalUpdater.
+﻿# Actualización del servidor local a la versión de producción (Fase 6). La dispara la petición que escribe la app (app/local_update.py); corre como SYSTEM dentro del servicio GoldenLocalUpdater.
 # Pasos, cada uno anunciado en data\update\update-status.json (la pantalla lo muestra): 1 copia de la base -> 2 descarga y verificación SHA-256 -> 3 cambio de archivos -> 4 migraciones -> 5 reinicio y comprobación.
 # Si CUALQUIER paso falla después de tocar algo: se vuelve a la versión anterior de los archivos Y a la copia de la base, y el estado queda «rolledback». Si falla antes de tocar algo (copia, descarga, huella): «error» y nada cambia.
 . "$PSScriptRoot\config.ps1"
@@ -35,7 +35,8 @@ try {
     # (HTTPS, sin redirecciones) y solo se sigue si coincide EXACTAMENTE con lo publicado; se instala lo que dice producción, no lo que dice el archivo.
     $prod = "$env:PRODUCTION_URL".Trim().TrimEnd('/')
     if (-not $prod.StartsWith('https://')) { throw 'PRODUCTION_URL no es HTTPS' }
-    $manifest = Invoke-RestMethod -Uri "$prod/api/ops/update-manifest" -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0
+    $nodeHdr = @{ 'X-Node-Token' = "$env:NODE_TOKEN" }          # llave de producto: con UPDATE_PACKAGE_AUTH=1 producción solo da el paquete a un servidor autorizado
+    $manifest = Invoke-RestMethod -Uri "$prod/api/ops/update-manifest" -Headers $nodeHdr -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0
     if (-not $manifest.available -or "$($manifest.package_url)" -ne "$($req.package_url)" -or "$($manifest.sha256)".ToLower() -ne "$($req.sha256)") {
         throw 'La petición no coincide con el paquete que publica producción'
     }
@@ -47,7 +48,8 @@ try {
 
     Write-UpdateStatus 'download' 'Descargando la versión nueva'
     Remove-Quietly $pkg
-    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -UseBasicParsing -TimeoutSec 1800
+    $dlHdr = @{}; if ($pkgUrl.StartsWith($prod + '/')) { $dlHdr = $nodeHdr }          # el token solo viaja a producción
+    Invoke-WebRequest -Uri $pkgUrl -OutFile $pkg -Headers $dlHdr -UseBasicParsing -TimeoutSec 1800
     $hash = (Get-FileHash $pkg -Algorithm SHA256).Hash.ToLower()
     if ($hash -ne $pkgSha) { Remove-Quietly $pkg; throw 'La descarga no coincide con la huella de producción; no se instaló nada' }
 
@@ -55,6 +57,13 @@ try {
     Remove-Quietly $new; Remove-Quietly $old
     Expand-Archive -Path $pkg -DestinationPath $new -Force
     if (-not (Test-Path (Join-Path $new 'alembic.ini')) -or -not (Test-Path (Join-Path $new 'app\main.py'))) { throw 'El paquete no trae la aplicación completa' }
+
+    $bi = Join-Path $new '.build_info'
+    if ($req.target_commit -and (Test-Path $bi)) {
+        $got = "$((Get-Content $bi -Raw | ConvertFrom-Json).commit)".ToLower(); $want = "$($req.target_commit)".ToLower()
+        $n = [Math]::Min($got.Length, $want.Length)
+        if ($n -lt 7 -or $got.Substring(0, $n) -ne $want.Substring(0, $n)) { throw "El paquete trae otra versión ($got) y no la que anuncia producción ($want); no se instaló nada" }
+    }
 
     # ---- desde aquí se toca el sistema: cualquier falla vuelve atrás
     $touched = $true

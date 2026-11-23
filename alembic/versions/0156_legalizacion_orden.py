@@ -1,0 +1,26 @@
+"""Orden manual de los gastos de una legalización (18-nov-2026). Solo ADITIVA.
+
+  event_expenses.position: lugar del gasto dentro de su rubro (se arrastra y se suelta en la pantalla). NULL = gasto anterior al orden manual: sale primero, por fecha.
+
+Escrita a mano; sin SET de sesión (pooler de Neon). Id ≤ 32 caracteres.
+
+Revision ID: 0156_legalizacion_orden
+Revises: 0155_almacen_serial_y_archivos
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "0156_legalizacion_orden"
+down_revision = "0155_almacen_serial_y_archivos"
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    cols = {c["name"] for c in sa.inspect(op.get_bind()).get_columns("event_expenses")}
+    if "position" not in cols:          # tolerante: si un intento anterior ya la creó, no falla
+        op.add_column("event_expenses", sa.Column("position", sa.Integer(), nullable=True))
+
+
+def downgrade():
+    op.drop_column("event_expenses", "position")

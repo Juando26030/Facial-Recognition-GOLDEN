@@ -93,7 +93,7 @@ def test_display_screen_has_the_free_spin_flow():
     page = (ROOT / "templates/roulette_display.html").read_text(encoding="utf-8")
     assert 'id="topImages"' in page and "RouletteRender.topImages" in page
     assert "spin_mode === 'manual'" in page and "{ stop }" in page and "if (freeStop) { freeStop(); return; }" in page and "'Detener'" in page
-    assert "run(draw, manual())" in page and "run(st.draw)" in page                                  # el giro de otra pantalla no pide «Detener»
+    assert "run(draw, draw.spin_mode ? draw.spin_mode === 'manual' : manual())" in page and "run(st.draw)" in page                                  # el giro de otra pantalla no pide «Detener»
     js = (ROOT / "static/js/roulette-render.js").read_text(encoding="utf-8")
     assert "MAX_FREE_MS = 120000" in js and js.count("spinFree") >= 6 and "ctl.stop" in js
 

@@ -53,6 +53,21 @@
     return { lines, size: px, shrunk: true, truncated: true };
   }
 
+  /* ---------- Espacio libre debajo de un texto (19-nov-2026): si el texto no cabe en su caja, puede seguir hacia abajo por el espacio que dejó la persona hasta el siguiente elemento que
+     queda debajo y se cruza con él a lo ancho (o hasta el borde de la etiqueta). PURO; se prueba en tests/js/badge_text_fit_check.js. Solo textos sin girar. Devuelve milímetros (≥ 0). */
+  const ROOM_GAP_MM = 0.5;
+  function roomBelow(el, elements, labelHeightMm) {
+    if (((Number(el.rotation) || 0) % 360 + 360) % 360 !== 0) return 0;
+    const bottom = (el.y || 0) + (el.height || 0), left = el.x || 0, right = left + (el.width || 0);
+    let limit = Number(labelHeightMm) > 0 ? Number(labelHeightMm) : bottom;
+    (elements || []).forEach((o) => {
+      if (o === el || o.id === el.id) return;
+      const oTop = o.y || 0, oLeft = o.x || 0, oRight = oLeft + (o.width || 0);
+      if (oTop > (el.y || 0) + 0.01 && oLeft < right - 0.01 && oRight > left + 0.01 && oTop < limit) limit = oTop;
+    });
+    return Math.max(0, limit - bottom - ROOM_GAP_MM);
+  }
+
   /* ---------- Mayúsculas / minúsculas de cada texto (25-oct-2026): SOLO presentación; los datos de la base y los reportes no cambian. ----------
      text_case: «as_is» (como está en la base, por defecto y en las plantillas viejas) | «upper» | «lower» | «title» (Altas y Bajas).
      Se aplica ANTES del ajuste de texto, así el ajuste mide lo que de verdad se imprime. Puro: se prueba en tests/js/badge_text_case_check.js. */
@@ -124,15 +139,23 @@
 
   /* Antes: una sola línea sin saltos (`nowrap`), centrada y con lo que sobra escondido: un nombre o una empresa más largos que la caja se cortaban POR LOS DOS LADOS
      («AN SEBAS», «IGARITA ROJA» en la QL-800, 25-oct-2026). Ahora el texto se ajusta a su caja (fitText) y se dibuja con las líneas ya partidas. */
-  function renderTextElement(div, el, data) {
+  function renderTextElement(div, el, data, room) {
     const content = textContent(el, data);                 // con su modo de mayúsculas, ANTES de ajustar (se mide lo que se imprime)
-    const fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight));
+    const meas = canvasMeasurer(el.font_family, el.font_weight), sizePx = (el.font_size || 12) * PX_PER_PT;
+    let fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, sizePx, meas);
+    let grown = 0;
+    if ((fit.shrunk || fit.truncated) && room > 0) {       // no cabe en su caja: usa primero el espacio libre de abajo (más líneas) y solo si aún no alcanza, achica la letra
+      const fit2 = fitText(content, (el.width || 0) * PX_PER_MM, ((el.height || 0) + room) * PX_PER_MM, sizePx, meas);
+      fit = fit2;
+      grown = Math.max(0, Math.min(room, (fit2.lines.length * fit2.size * LINE_HEIGHT) / PX_PER_MM - (el.height || 0)));
+    }
+    if (grown > 0) { div.style.height = `${(el.height || 0) + grown}mm`; div.dataset.grown = grown.toFixed(1); }
     div.style.fontFamily = `'${el.font_family || 'Roboto'}', ${FONT_STACK_FALLBACK}`;
     div.style.fontSize = `${fit.size}px`;
     div.style.color = el.font_color || '#000000';
     div.style.fontWeight = el.font_weight || 'normal';
     div.style.display = 'flex';
-    div.style.alignItems = 'center';
+    div.style.alignItems = grown > 0 ? 'flex-start' : 'center';
     div.style.justifyContent = el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start';
     div.style.textAlign = el.align || 'left';
     div.style.overflow = 'hidden';
@@ -170,13 +193,45 @@
   /* Fase 10 (C): el QR de la escarapela es una vCard (nombre, teléfono si el dato viene, y en NOTE el código de siempre) para poder guardar el contacto al escanear con el celular.
      Los lectores de Golden (qr.js) sacan el código de NOTE y siguen aceptando el formato anterior. Nivel de corrección «L» (la vCard es más larga y así el QR queda en una versión más chica);
      el tamaño del elemento y de la etiqueta NO cambia. Sin vcard.js cargado se dibuja el formato anterior. UTF-8 para las tildes y la ñ. */
-  function drawQr(holder, payload, person) {
-    const V = (typeof window !== 'undefined') ? window.GWVcard : null;
-    const text = V ? V.build({ first_name: person && person.first_name, last_name: person && person.last_name, phone: person && person.phone, note: payload }) : payload;
+  /* 19-nov-2026: cada QR elige qué datos lleva su vCard (propiedad `vcard_fields` del elemento; el nombre va siempre). Sin la propiedad: nombre y teléfono, como antes de agregar correo, empresa y rol.
+     `vcard: false` = QR solo con el código (sin vCard): el más chico y el que mejor lee el lector. Cuantos más datos, más cuadritos (versión más alta): ver qrDensity. */
+  const VCARD_FIELDS = ['org', 'title', 'phone', 'email', 'categories'];
+  const DEFAULT_VCARD_FIELDS = ['phone'];
+  /* 18-nov-2026: cada QR elige CÓMO se arma (propiedad `qr_mode` del elemento; sin ella: vCard, y `vcard: false` de antes = solo el código):
+       vcard   contacto completo (los datos que se marquen en `vcard_fields`)      mecard  contacto corto (nombre, teléfono, correo)
+       link    solo el enlace a la tarjeta de la persona (QR chico, sin límite de datos; los datos salen solo si ella aceptó compartirlos)
+       code    solo el código (el más chico y el que mejor lee el lector de la puerta)
+     Dos QR en la misma escarapela = dos elementos «Código QR», cada uno con su modo. Si un modo no se puede armar (sin vcard.js, sin enlace público) se cae a «solo el código». */
+  const QR_MODES = ['vcard', 'mecard', 'link', 'code'];
+  function qrMode(el) { return el && QR_MODES.indexOf(el.qr_mode) >= 0 ? el.qr_mode : (el && el.vcard === false ? 'code' : 'vcard'); }
+  function qrText(el, payload, person) {
+    const V = (window && window.GWVcard) || (typeof globalThis !== 'undefined' ? globalThis.GWVcard : null) || null;
+    const mode = qrMode(el), p = person || {};
+    if (!V || mode === 'code') return { text: payload, card: false, level: 'M' };
+    if (mode === 'link') {
+      if (!p.card_url) return { text: payload, card: false, level: 'M' };
+      return { text: V.buildLink(p.card_url, payload), card: false, level: 'M' };
+    }
+    const fields = el && Array.isArray(el.vcard_fields) ? el.vcard_fields : DEFAULT_VCARD_FIELDS, has = (k) => fields.indexOf(k) >= 0;
+    if (mode === 'mecard') return { card: true, level: V.QR_LEVEL, text: V.buildMecard({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', note: payload }) };
+    return { card: true, level: V.QR_LEVEL, text: V.build({ first_name: p.first_name, last_name: p.last_name, phone: has('phone') ? p.phone : '', email: has('email') ? p.email : '', org: has('org') ? p.entity : '',
+      title: has('title') ? p.role : '', categories: has('categories') ? p.categories : '', note: payload }) };
+  }
+  /* Qué tan apretado queda un QR: versión (1-40) y cuadritos por lado. Hasta la 8 se lee bien en la etiqueta; de la 11 en adelante, mal en celulares y lectores. `level` = nivel de corrección ('L'|'M'); true = 'L'. */
+  function qrDensity(text, level) {
+    if (typeof qrcode === 'undefined') return null;
+    const lv = level === true ? 'L' : (level === false || !level ? 'M' : level);
     const prev = qrcode.stringToBytes;
-    if (V && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    try { const q = qrcode(0, lv); q.addData(text); q.make(); const n = q.getModuleCount(); return { version: (n - 17) / 4, modules: n, level: n <= 45 ? 'good' : n <= 53 ? 'ok' : 'dense' }; }
+    catch (e) { return null; } finally { qrcode.stringToBytes = prev; }
+  }
+  function drawQr(holder, payload, person, el) {
+    const t = qrText(el, payload, person), text = t.text;
+    const prev = qrcode.stringToBytes;
+    if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
     try {
-      const qr = qrcode(0, V ? V.QR_LEVEL : 'M');
+      const qr = qrcode(0, t.level || 'M');
       qr.addData(text);
       qr.make();
       holder.innerHTML = qr.createSvgTag({ scalable: true });
@@ -185,18 +240,26 @@
     if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; }
   }
 
-  function renderQr(div, el, data) {
+  function renderQr(div, el, data, opts) {
     const holder = document.createElement('div');
+    holder.setAttribute('data-gw-qr', '1'); holder._gwEl = el; holder._gwData = data;          // la escarapela digital vuelve a dibujar este QR con cada código nuevo (redrawQrs)
     holder.style.cssText = 'width:100%; height:100%; display:flex; align-items:center; justify-content:center;';
     div.appendChild(holder);
     const variables = (el.variables && el.variables.length ? el.variables : ['id']);
-    const value = variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
+    const value = (opts && typeof opts.qrPayload === 'function' ? opts.qrPayload(el) : '') || variables.map(v => resolveVariable(v, data)).join('|') || 'PREVIEW';
     if (typeof qrcode === 'undefined') { holder.innerText = 'QR'; return; }
     try {
-      drawQr(holder, value, data);
+      drawQr(holder, value, data, el);
     } catch (e) {
       holder.innerText = 'QR';
     }
+  }
+
+  /* Escarapela digital: los QR de la plantilla llevan el código DINÁMICO (cambia cada 30 s) con el mismo modo del diseño (vCard, MECARD, enlace, solo código). Devuelve cuántos QR volvió a dibujar. */
+  function redrawQrs(root, payload) {
+    let n = 0;
+    root.querySelectorAll('[data-gw-qr]').forEach((h) => { try { drawQr(h, payload, h._gwData, h._gwEl); n++; } catch (e) { /* queda el anterior */ } });
+    return n;
   }
 
   function renderBarcode(div, el, data) {
@@ -220,10 +283,10 @@
     div.dataset.elId = el.id;
     div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); transform-origin:50% 50%; z-index:${el.z_index || 1}; box-sizing:border-box;`;
 
-    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data);
+    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data, opts.room || 0);
     else if (el.type === 'image_static') renderImageStatic(div, el, opts);
     else if (el.type === 'image_variable') renderImageVariable(div, el, data, opts);
-    else if (el.type === 'qr') renderQr(div, el, data);
+    else if (el.type === 'qr') renderQr(div, el, data, opts);
     else if (el.type === 'barcode') renderBarcode(div, el, data);
 
     /* Un elemento GIRADO no recorta lo que sobresale (25-oct-2026, QL-800: «DRÍGL», «LAMIZ»): html2canvas 1.4.1 aplica el `overflow: hidden` de un elemento con `transform`
@@ -251,7 +314,8 @@
       container.style.backgroundColor = template.background_value || '#ffffff';
     }
     const sorted = (template.elements || []).slice().sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
-    sorted.forEach(el => container.appendChild(renderElement(el, data, opts)));
+    const all = template.elements || [];
+    sorted.forEach(el => container.appendChild(renderElement(el, data, Object.assign({}, opts, { room: (el.type === 'text_static' || el.type === 'text_variable') ? roomBelow(el, all, template.height_mm) : 0 }))));
   }
 
   /* Espera a que las tipografías de la plantilla (normal y negrita) estén cargadas ANTES de dibujar o imprimir: si no, el navegador usa una de respaldo y la etiqueta impresa cambia de tipografía. */
@@ -274,7 +338,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, roomBelow, qrText, qrMode, QR_MODES, qrDensity, redrawQrs, VCARD_FIELDS, DEFAULT_VCARD_FIELDS, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del
@@ -352,6 +416,7 @@
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
       if (countRes.ok) {
         const countData = await countRes.json();
+        if (countData.blocked) { if (typeof showToast === 'function') showToast(countData.blocked, 'error'); return; }          // p. ej. «aún no está registrado»: no se abre la ventana
         let approved = false;
         if (countData.times_printed > 0 && window.GWReprint) {          // Fase 1B: reimpresión deshabilitada → «No se puede reimprimir» + «Solicitar permiso» (static/js/reprint.js)
           const g = await window.GWReprint.check(userId, countData);
@@ -449,13 +514,20 @@
   }
   /* ¿Se imprime solo? Manda la respuesta del servidor (`opts.auto`); sin ella (escáner facial, que no la trae) vale la bandera de la página, que se mantiene al día con cada sondeo. */
   function resolveAuto(opts) {
-    if (opts && typeof opts.auto === 'boolean') { setFlags({ auto_print: opts.auto }); return opts.auto; }
+    if (opts && typeof opts.auto === 'boolean') { setFlags({ auto_print: opts.auto }); return opts.auto && !opts.skip; }          // `skip`: la categoría de esta persona tiene apagada la impresión automática (la bandera del evento no cambia)
     return !!window.EVENT_AUTO_PRINT;
+  }
+  /* Impresión automática por CATEGORÍA (formulario por categoría): si la respuesta del servidor ya trae la decisión (`opts.auto` booleano) se usa; si no (escáner facial) y alguna categoría tiene la
+     impresión automática apagada (`window.EVENT_AUTOPRINT_RULES`), se pregunta al servidor por esta persona. Sin reglas no hay consulta alguna. */
+  function categorySkips(userId, opts) {
+    if (opts && typeof opts.auto === 'boolean') return Promise.resolve(!!opts.skip);
+    if (!window.EVENT_AUTOPRINT_RULES || typeof fetch !== 'function') return Promise.resolve(false);
+    return fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(userId)}/print-flow`, { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : {})).then((d) => !!d.auto_print_skip).catch(() => false);
   }
   function maybeAutoPrint(userId, opts) {
     if (!resolveAuto(opts)) { cancelPrimed(); return Promise.resolve(false); }
     primedKeep = true;                                           // esta llamada se queda con la ventana preparada
-    return claimTicket(userId).then(async (ticket) => {
+    return categorySkips(userId, opts).then((skip) => (skip ? null : claimTicket(userId))).then(async (ticket) => {
       if (!ticket) { dropPrimed(); return false; }
       let w;
       try { w = await printNow(userId); } catch (e) { w = null; }

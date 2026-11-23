@@ -79,7 +79,7 @@ def post_send_email(event_id: int, request: Request, data: dict = None, db: Sess
         raise HTTPException(status_code=409, detail="Todavía no se ha subido la base de datos final del evento: el cliente no tendría qué descargar.")
     contact = delivery.client_contact(db, event)
     if contact is None:
-        raise HTTPException(status_code=409, detail="El cliente de este evento no tiene un correo de contacto registrado. Agréguelo en Clientes o copie el enlace y envíelo a mano.")
+        raise HTTPException(status_code=409, detail="El cliente de este evento no tiene un correo de contacto registrado. Agréguelo como contacto principal del evento (Editar evento), en Clientes, o copie el enlace y envíelo a mano.")
     link = delivery.ensure_link(db, event, staff)
     if delivery.mail_sent_recently(db, link.id):
         raise HTTPException(status_code=429, detail="El correo ya se envió hace menos de una hora. Si no llegó, revise el spam o espere un momento.")

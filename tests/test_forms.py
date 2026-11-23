@@ -347,7 +347,8 @@ def test_self_service_prefill_locks_visibility_fields_and_ignores_tampering(clie
     st = _state(client, ev, f, t=found["token"])
     pre = {st["design"]["fields"][fid]["key"]: v for fid, v in st["prefill"].items()}
     # X4: lo de solo lectura llega ENMASCARADO al navegador (quien escribe una cédula ajena no lee sus datos); al enviar manda la base
-    assert pre["first_name"] == "A**" and pre["email"] == "a**@e******.com" and len(st["readonly"]) == 3 and "Ana" not in pre.values()
+    # (decisión posterior: el nombre sale tal cual salvo que el diseñador pida asteriscos; el correo y el teléfono siempre se enmascaran, ver formlib.mask_wanted)
+    assert pre["first_name"] == "Ana" and pre["email"] == "a**@e******.com" and len(st["readonly"]) == 3 and "ana@empresa.com" not in pre.values()
     ids = {v["key"]: k for k, v in st["design"]["fields"].items()}
     tampered = {ids["id"]: "1001", ids["first_name"]: "HACKER", ids["last_name"]: "X", ids["email"]: "otro@example.com"}
     assert _submit(client, ev, f, tampered, token=found["token"]).status_code == 200

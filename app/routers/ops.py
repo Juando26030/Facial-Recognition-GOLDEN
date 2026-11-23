@@ -118,11 +118,57 @@ def version_check(request: Request, force: bool = False) -> dict:
     return versioning.check(force=force)
 
 
+@router.get("/api/ops/local-address")
+def local_address(request: Request) -> dict:
+    """Solo servidores locales: la IP y el puerto para conectar OTROS equipos de la misma red a este servidor (se muestra junto al aviso de versión). En la nube: {configured: false}. Pide sesión; sin base de datos."""
+    from app import localmode
+    if not localmode.is_local_server():
+        return {"configured": False}
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    host = (request.headers.get("host") or "").rsplit(":", 1)
+    port = int(host[1]) if len(host) == 2 and host[1].isdigit() else int(os.getenv("LOCAL_APP_PORT", "8443"))
+    return {"configured": True, "port": port, "addresses": localmode.lan_addresses()}
+
+
+@router.get("/api/ops/server-id")
+def server_id(request: Request) -> dict:
+    """Solo servidores locales: el ID del servidor (= su llave de producto), que se ve como etiqueta morada junto a la versión. En la nube: {configured: false}. Pide sesión; sin base de datos."""
+    from app import local_env, localmode, server_lock
+    if not localmode.is_local_server():
+        return {"configured": False}
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    local_env.refresh()
+    code = (os.getenv("SERVER_KEY") or "").strip()
+    return {"configured": bool(code), "id": code, "disabled": server_lock.is_locked()}
+
+
 @router.get("/api/ops/update-manifest")
-def update_manifest() -> dict:
-    """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público y sin base de datos."""
+def update_manifest(request: Request) -> dict:
+    """Lo que producción publica para que los servidores locales se actualicen (dirección HTTPS del paquete y su huella SHA-256, de variables de entorno). Público: commit y esquema los ve cualquiera
+    (la franja «Al día» los compara); la dirección del paquete solo la ve quien tenga un token de servidor o el permiso de un instalador cuando `UPDATE_PACKAGE_AUTH=1` (app/routers/server_keys.py)."""
     from app import local_update
-    return local_update.published_manifest()
+    from app.routers import server_keys as keys_router
+    m = local_update.published_manifest()
+    if m.get("available") and not keys_router.package_allowed(request):
+        return {**m, "package_url": None, "sha256": None, "locked": True}
+    return m
+
+
+@router.get("/api/ops/update-package/{name}")
+def update_package(name: str, request: Request):
+    """El paquete de actualización del servidor local (código de la app, sin datos ni secretos; el servidor local verifica su huella SHA-256 antes de aplicarlo). Con `UPDATE_PACKAGE_AUTH=1` exige un
+    token de servidor (`X-Node-Token`) o el permiso de un instalador (`X-Install-Ticket` + `X-Install-Id`); sin esa variable sigue público."""
+    from fastapi.responses import Response
+    from app import local_update
+    from app.routers import server_keys as keys_router
+    if not keys_router.package_allowed(request):
+        raise HTTPException(status_code=401, detail="Para bajar el paquete hace falta un servidor autorizado o una llave de producto válida")
+    data = local_update.package_bytes(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Paquete no encontrado")
+    return Response(content=data, media_type="application/zip", headers={"Cache-Control": "no-store", "Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/api/ops/update-status")

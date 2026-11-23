@@ -1,15 +1,21 @@
 """Páginas legales públicas (sin login): Política de Privacidad, Términos y Condiciones y Política de Reembolsos. Ver app/legal.py y los borradores
-en templates/legal_*.html (marcados PENDIENTE DE REVISIÓN LEGAL)."""
+en templates/legal_*.html (Privacidad, Términos y Reembolsos: aprobados por la auditora el 5-6 de octubre de 2026)."""
 from fastapi import APIRouter, Request
 
 router = APIRouter()
+
+
+# Términos y Condiciones y Política de Reembolsos: aprobados por la auditora el 6 de octubre de 2026 junto con la Política de Privacidad (dicho por Juan David el 18-nov-2026;
+# la constancia escrita se archiva en docs/legal/). Por eso ya no salen como «borrador pendiente de revisión legal».
+APPROVED_WITH_PRIVACY = "Texto aprobado por la auditora el 6 de octubre de 2026, junto con la Política de Privacidad."
 
 
 def _page(request: Request, template: str, title: str):
     from app.main import templates  # import tardío: main.py importa este módulo
     from app import legal
     name = template.replace("legal_", "").replace(".html", "")
-    return templates.TemplateResponse(request=request, name=template, context={"page_title": title, "review": legal.review_status(name)})
+    ratified = APPROVED_WITH_PRIVACY if name in ("terminos", "reembolsos") else None
+    return templates.TemplateResponse(request=request, name=template, context={"page_title": title, "review": legal.review_status(name), "ratified": ratified})
 
 
 @router.get("/privacidad")
@@ -54,4 +60,4 @@ def reembolsos(request: Request, e: int = 0, f: str = ""):
         finally:
             db.close()
     from app.main import templates
-    return templates.TemplateResponse(request=request, name="legal_reembolsos.html", context={"page_title": "Política de Reembolsos", "form_refund": extra})
+    return templates.TemplateResponse(request=request, name="legal_reembolsos.html", context={"page_title": "Política de Reembolsos", "form_refund": extra, "ratified": APPROVED_WITH_PRIVACY})

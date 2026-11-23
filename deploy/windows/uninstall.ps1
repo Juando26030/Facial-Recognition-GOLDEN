@@ -1,4 +1,4 @@
-# Desinstalación del servidor local (la corre el desinstalador). Por seguridad NO borra la base de datos ni los archivos del evento (C:\GoldenLocal\data) ni las copias (backups\):
+﻿# Desinstalación del servidor local (la corre el desinstalador). Por seguridad NO borra la base de datos ni los archivos del evento (C:\GoldenLocal\data) ni las copias (backups\):
 # si se quiere borrar todo, se borra esa carpeta a mano DESPUÉS de confirmar que los eventos ya se subieron a la nube.
 . "$PSScriptRoot\config.ps1"
 $ErrorActionPreference = 'Continue'

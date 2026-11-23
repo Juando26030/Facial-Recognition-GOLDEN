@@ -419,3 +419,99 @@ window.copyText = async function (text) {
     return !!ok;
   } catch (e) { return false; }
 };
+
+// QR de un enlace (18-nov-2026): junto a CADA enlace que la app genera para que lo use la gente va un botón «Generar QR».
+//   · HTML: <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qr-link="URL" data-qr-title="Formulario X">…</button>  (o data-qr-from="idDelCampo" para leer el enlace del campo en el momento del clic)
+//   · JS:   GWLinkQr.button(url, { title, label, compact }) devuelve ese HTML · GWLinkQr.open(url, { title, filename }) abre la ventana con el QR (copiar, bajar PNG y SVG).
+// Solo se dibuja en el navegador (qrcode-generator, que se carga al primer uso); el enlace no sale a ningún servicio de fuera.
+(function () {
+  var self = document.currentScript, src = (self && self.src) || '';
+  var base = src ? src.replace(/\/js\/toast\.js.*$/, '') : '/static';
+  var libPromise = null, last = null;
+  function ensureLib() {
+    if (window.qrcode) return Promise.resolve();
+    if (!libPromise) libPromise = new Promise(function (ok, fail) {
+      var s = document.createElement('script'); s.src = base + '/vendor/qrcode-generator-1.4.4.min.js';
+      s.onload = function () { window.qrcode ? ok() : fail(new Error('qr')); }; s.onerror = function () { libPromise = null; fail(new Error('qr')); };
+      document.head.appendChild(s);
+    });
+    return libPromise;
+  }
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function icon(name) { return '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + base + '/img/icons.svg#i-' + name + '"/></svg>'; }
+  function make(url) {
+    var lv = ['M', 'L'];
+    for (var i = 0; i < lv.length; i++) { try { var q = window.qrcode(0, lv[i]); q.addData(url); q.make(); return q; } catch (e) { /* demasiado largo para ese nivel: se prueba el siguiente */ } }
+    return null;
+  }
+  function toCanvas(q, px) {
+    var n = q.getModuleCount(), quiet = 4, scale = Math.max(2, Math.floor(px / (n + quiet * 2)));
+    var c = document.createElement('canvas'); c.width = c.height = (n + quiet * 2) * scale;
+    var x = c.getContext('2d'); x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = '#000000';
+    for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) if (q.isDark(r, k)) x.fillRect((k + quiet) * scale, (r + quiet) * scale, scale, scale);
+    return c;
+  }
+  function toSvg(q) {
+    var n = q.getModuleCount(), quiet = 4, d = [];
+    for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) if (q.isDark(r, k)) d.push('M' + (k + quiet) + ' ' + (r + quiet) + 'h1v1h-1z');
+    var s = n + quiet * 2;
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s + ' ' + s + '" shape-rendering="crispEdges"><rect width="' + s + '" height="' + s + '" fill="#ffffff"/><path d="' + d.join('') + '" fill="#000000"/></svg>';
+  }
+  function fileSlug(url, title) {
+    var t = String(title || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!t) { try { var u = new URL(url); t = (u.pathname.split('/').filter(Boolean).pop() || u.hostname).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40); } catch (e) { t = 'enlace'; } }
+    return 'qr-' + (t || 'enlace');
+  }
+  function save(blob, name) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000); }
+  function close() { if (!last) return; var l = last; last = null; document.removeEventListener('keydown', l.onKey, true); l.bd.remove(); if (l.opener && l.opener.focus) try { l.opener.focus(); } catch (e) { /* el botón ya no existe */ } }
+
+  function open(url, opts) {
+    opts = opts || {}; url = String(url || '').trim();
+    if (!url) { if (window.showToast) showToast('Todavía no hay enlace para hacer el QR', 'error'); return Promise.resolve(); }
+    close();
+    return ensureLib().then(function () {
+      var q = make(url);
+      if (!q) { if (window.showToast) showToast('El enlace es demasiado largo para un QR', 'error'); return; }
+      var title = opts.title ? 'QR: ' + opts.title : 'QR del enlace', slug = opts.filename || fileSlug(url, opts.title);
+      var bd = document.createElement('div'); bd.className = 'gw-modal-backdrop gw-modal-backdrop--top'; bd.setAttribute('data-open', 'true');
+      bd.innerHTML = '<div class="gw-modal gw-modal--dialog gw-linkqr" role="dialog" aria-modal="true" aria-labelledby="gwLinkQrT">'
+        + '<div class="gw-modal__head"><h2 class="gw-modal__title" id="gwLinkQrT">' + esc(title) + '</h2><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-lq="close" aria-label="Cerrar">' + icon('close') + '</button></div>'
+        + '<div class="gw-modal__body"><div class="gw-linkqr__box gw-no-theme" data-lq="img" role="img" aria-label="Código QR del enlace"></div>'
+        + '<p class="gw-modal__text gw-linkqr__url"><input type="text" class="gw-input" readonly value="' + esc(url) + '" aria-label="Enlace del QR"></p>'
+        + '<p class="gw-hint">Quien escanee este QR abre el enlace. Descárgalo para ponerlo en una pieza, o compártelo por mensaje.</p></div>'
+        + '<div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-lq="copy">Copiar enlace</button><button type="button" class="gw-btn gw-btn--secondary" data-lq="svg">' + icon('download') + ' SVG</button><button type="button" class="gw-btn gw-btn--primary" data-lq="png">' + icon('download') + ' Descargar PNG</button></div></div>';
+      document.body.appendChild(bd);
+      var preview = toCanvas(q, 640); preview.className = 'gw-linkqr__canvas'; preview.setAttribute('aria-hidden', 'true');
+      bd.querySelector('[data-lq="img"]').appendChild(preview);
+      var onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+      document.addEventListener('keydown', onKey, true);
+      bd.addEventListener('click', function (e) {
+        if (e.target === bd) { close(); return; }
+        var b = e.target.closest('[data-lq]'); if (!b) return;
+        var act = b.getAttribute('data-lq');
+        if (act === 'close') close();
+        else if (act === 'copy') { (window.copyText ? window.copyText(url) : Promise.resolve(false)).then(function (ok) { if (window.showToast) showToast(ok ? 'Enlace copiado' : 'No se pudo copiar: selecciónalo y cópialo a mano', ok ? 'success' : 'error'); }); }
+        else if (act === 'png') { var big = toCanvas(q, 1200); big.toBlob(function (bl) { if (bl) save(bl, slug + '.png'); }, 'image/png'); }
+        else if (act === 'svg') save(new Blob([toSvg(q)], { type: 'image/svg+xml' }), slug + '.svg');
+      });
+      last = { bd: bd, onKey: onKey, opener: document.activeElement };
+      var f = bd.querySelector('[data-lq="png"]'); if (f) f.focus();
+    }).catch(function () { if (window.showToast) showToast('No se pudo preparar el QR. Revisa la conexión e inténtalo de nuevo.', 'error'); });
+  }
+
+  function button(url, o) {
+    o = o || {};
+    return '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qr-link="' + esc(url) + '"' + (o.title ? ' data-qr-title="' + esc(o.title) + '"' : '') + ' title="Generar QR de este enlace" aria-label="Generar QR de este enlace">' + icon('qr') + (o.compact ? '' : ' <span class="gw-forms-lbl">' + esc(o.label || 'Generar QR') + '</span>') + '</button>';
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-qr-link],[data-qr-from]');
+    if (!b) return;
+    e.preventDefault();
+    var url = b.getAttribute('data-qr-link');
+    if (!url && b.getAttribute('data-qr-from')) { var f = document.getElementById(b.getAttribute('data-qr-from')); url = f ? (f.value || f.textContent || '') : ''; }
+    open(url, { title: b.getAttribute('data-qr-title') || '' });
+  });
+
+  window.GWLinkQr = { open: open, button: button, close: close, _toSvg: toSvg };
+})();

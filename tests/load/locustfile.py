@@ -105,7 +105,7 @@ class FormUser(HttpUser):
                 r.failure(f"submit {r.status_code}: {r.text[:120]}")
 
 
-DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorrido (run_task.py espera a que lleguen al total)
+DONE = {"users": 0, "scans": 0}          # usuarios de FormBurst que ya terminaron su recorrido / escaneos hechos por CedulaRush (run_task.py espera a que lleguen al total)
 
 
 try:
@@ -118,6 +118,7 @@ except ImportError:                                          # ejecución local 
 RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
 CEDULA_TIMEOUT = float(os.getenv("LOAD_CEDULA_TIMEOUT", "10"))          # s por petición: lo mismo que la estación real (static/js/directory.js)
 CEDULA_RETRY_WAIT = float(os.getenv("LOAD_CEDULA_RETRY_WAIT_MS", "400")) / 1000
+RUSH_QUOTA = int(os.getenv("LOAD_SCANS_TASK", "40000"))          # CedulaRush: escaneos de ESTA tarea (run_task.py reparte LOAD_SCANS entre las tareas del Job)
 RETRY_BASE = float(os.getenv("LOAD_RETRY_BASE_MS", "1500")) / 1000
 
 
@@ -227,12 +228,36 @@ class FormBurst(HttpUser):
         gevent.sleep(10 ** 6)
 
 
+_STAFF_COOKIES: dict = {}
+
+
+def _shared_staff_cookies(host: str) -> dict:
+    """UN solo login por proceso generador y la cookie de sesión se COPIA a todos los usuarios virtuales. Motivo (19-nov-2026): 400 estaciones entrando a la vez con la MISMA
+    cuenta chocaban con el bloqueo de ingreso, que anota cada intento ANTES de verificar la clave (tope de 5 simultáneos por cuenta): 1.870 de 1.880 logins daban 429. La estación
+    real inicia sesión una vez y luego solo escanea; esto reproduce eso. Con la sesión viva no se vuelve a pasar por /login."""
+    if _STAFF_COOKIES:
+        return _STAFF_COOKIES
+    import requests
+    last = None
+    for attempt in range(6):
+        r = requests.post(f"{host.rstrip('/')}/login", data={"username": STAFF_USER, "password": PASSWORD}, allow_redirects=False, timeout=30, headers={"X-Forwarded-For": _fake_ip()})
+        last = r.status_code
+        if r.status_code in (302, 303) and r.cookies:
+            _STAFF_COOKIES.update(r.cookies.get_dict())
+            return _STAFF_COOKIES
+        if r.status_code in (401, 403):      # clave mala, cuenta sin evento en proceso o bloqueada: repetir no ayuda y empeora el bloqueo
+            break
+        time.sleep(2 + attempt * 3)
+    raise RuntimeError(f"login falló ({last}): la cuenta de carga no puede entrar (clave distinta del OPS_TOKEN del Job, evento no «en proceso», cuenta sin autorizar o bloqueada): vuelve a sembrar (`run_phase4.sh seed`)")
+
+
 class _Staff(HttpUser):
     abstract = True
 
     def on_start(self):
         self.client.headers["X-Forwarded-For"] = _fake_ip()
-        _login(self.client, STAFF_USER)
+        for k, v in _shared_staff_cookies(self.host).items():
+            self.client.cookies.set(k, v)
 
 
 class CedulaScanner(_Staff):
@@ -258,6 +283,55 @@ class CedulaScanner(_Staff):
                     r.success()
                     retry = True
                 elif r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO"):
+                    r.success()
+                    label, retry = ("escaneo ok" if attempt == 0 else "escaneo ok tras reintento"), False
+                else:
+                    r.failure(f"{r.status_code} {r.text[:100]}")
+                    retry = False
+            if not retry:
+                break
+            if attempt == 0:
+                gevent.sleep(CEDULA_RETRY_WAIT)
+        _user_result(label, started, failed=label.endswith("sin resultado"))
+
+
+RUSH_NAMES = ("Juan Carlos Gomez", "Maria Jose Rodriguez", "Andres Felipe Martinez", "Yuliana Ramires", "Jhoan Sebastian Angarita Rojas", "Laura Valentina Lopez",
+              "Persona 0", "Persona 1234", "Ana", "Pedro Perez Garcia")
+
+
+class CedulaRush(_Staff):
+    """40.000 escaneos de cédula LO MÁS RÁPIDO POSIBLE (19-nov-2026, «que no se cuelgue con 40.000»). Cada usuario virtual es una estación que escanea SIN pausa (la real
+    hace ~1 cada 3,5 s: esto es mucho más duro) hasta que entre todas suman LOAD_SCANS (repartido entre las tareas del Job). 80 % cédulas del roster (se acreditan); 20 %
+    cédulas que NO existen y traen nombre: el respaldo por nombre sobre todas las personas del cliente, el peor caso. Mismos reintentos que la estación real.
+    Resultado por escaneo: «escaneo ok» (SÍ, DUPLICADO o NO_MATCH: el servidor respondió algo útil), «… tras reintento» o «sin resultado»."""
+    wait_time = constant(0)
+
+    @task
+    def scan(self):
+        import gevent
+        if DONE["scans"] >= RUSH_QUOTA:
+            gevent.sleep(1)
+            return
+        DONE["scans"] += 1
+        if random.random() < 0.8:
+            data = {"event_id": EVENT_ID, "cedula": f"9{random.randint(0, N_PEOPLE - 1):09d}", "confirm": "true", "force": "true", "client_id": uuid.uuid4().hex}
+            name0 = "POST checkin-cedula (existe)"
+        else:
+            first, _, last = random.choice(RUSH_NAMES).partition(" ")
+            data = {"event_id": EVENT_ID, "cedula": f"8{random.randint(0, 10 ** 9 - 1):09d}", "first_name": first, "last_name": last, "client_id": uuid.uuid4().hex}
+            name0 = "POST checkin-cedula (no existe, por nombre)"
+        started, label = time.time(), "escaneo sin resultado"
+        for attempt in range(2):
+            name = name0 if attempt == 0 else name0 + " (reintento)"
+            with self.client.post("/api/checkin-cedula", data=data, name=name, timeout=CEDULA_TIMEOUT, catch_response=True) as r:
+                if r.status_code in (0, 502, 503, 504):
+                    try:
+                        r.request_meta["name"] = _busy_name(name, r)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    r.success()
+                    retry = True
+                elif r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO", "NO_MATCH"):
                     r.success()
                     label, retry = ("escaneo ok" if attempt == 0 else "escaneo ok tras reintento"), False
                 else:

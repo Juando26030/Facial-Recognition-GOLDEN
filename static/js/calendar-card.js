@@ -100,7 +100,15 @@
     try { return require('./event-field-render.js'); } catch (e) { return null; }
   }
 
+  /* «Revisar el detalle» (0143): triángulo rojo con «!» si la comercial lo marcó; sin marca no sale nada. Va en el encabezado de la tarjeta y en la mini del mes (sin importar la zona de la plantilla). */
+  function reviewHtml(ev) {
+    if (!ev || !ev.review_detail) return '';
+    return '<span class="cal-card__review" role="img" aria-label="Revisar el detalle del evento" title="Revisar el detalle del evento">' +
+      '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 2.5 22.5 21h-21z" fill="currentColor"/><path d="M12 9v5.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.3" fill="#fff"/></svg></span>';
+  }
+
   function itemHtml(it, strong) {
+    if (it.key === 'sw_review_detail') return '';          // ya se pinta como triángulo en el encabezado
     if (it.type === 'switch') {          // interruptor: píldora con ícono donde el nombre y la respuesta van JUNTOS («✓ Impresión compartida: Sí»), para que un Sí/No nunca parezca de otro campo
       var on = it.text === 'Sí';
       return '<span class="cal-card__f cal-card__sw-row cal-card__sw-row--' + (on ? 'on' : 'off') + '" data-field="' + esc(it.key) + '">' +
@@ -122,7 +130,7 @@
     var top = zone('top') + (extraTop || ''), left = zone('left'), right = zone('right'), bottom = zone('bottom');
     var cols = (left ? '<span class="cal-card__col cal-card__col--left">' + left + '</span>' : '') +
       (right ? '<span class="cal-card__col cal-card__col--right">' + right + '</span>' : '');
-    return '<span class="cal-card cal-card--tpl"><span class="cal-card__head">' + swatchesHtml(root_ev) + (top ? '<span class="cal-card__top">' + top + '</span>' : '') + '</span>' +
+    return '<span class="cal-card cal-card--tpl"><span class="cal-card__head">' + swatchesHtml(root_ev) + reviewHtml(root_ev) + (top ? '<span class="cal-card__top">' + top + '</span>' : '') + '</span>' +
       (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') + (bottom ? '<span class="cal-card__bottom">' + bottom + '</span>' : '') + '</span>';
   }
   /* Recuadros grandes con el color de la pañoleta (uno por color). El color va en data-bandana y lo aplica la página por DOM (no hay estilos en línea). Sin color: recuadro punteado vacío. */
@@ -144,7 +152,7 @@
   /* Línea resumida (calendario plegado): recuadro(s) de color de pañoleta + nombre + código. Todo escapado. */
   function renderCalendarMini(event) {
     var ev = event || {};
-    return '<span class="cal-mini">' + swatchesHtml(ev) + '<span class="cal-mini__name">' + esc(ev.name) + '</span>' +
+    return '<span class="cal-mini">' + swatchesHtml(ev) + reviewHtml(ev) + '<span class="cal-mini__name">' + esc(ev.name) + '</span>' +
       (ev.event_code ? '<span class="cal-mini__code">' + esc(ev.event_code) + '</span>' : '') + '</span>';
   }
 
@@ -166,7 +174,7 @@
     });
     var cols = (out.left ? '<span class="cal-card__col cal-card__col--left">' + out.left + '</span>' : '') +
       (out.right ? '<span class="cal-card__col cal-card__col--right">' + out.right + '</span>' : '');
-    return '<span class="cal-card">' + (swatchesHtml(ev, true) ? '<span class="cal-card__head">' + swatchesHtml(ev, true) + '</span>' : '') + (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') +
+    return '<span class="cal-card">' + ((swatchesHtml(ev, true) || reviewHtml(ev)) ? '<span class="cal-card__head">' + swatchesHtml(ev, true) + reviewHtml(ev) + '</span>' : '') + (cols ? '<span class="cal-card__cols">' + cols + '</span>' : '') +
       (out.bottom ? '<span class="cal-card__bottom">' + out.bottom + '</span>' : '') + '</span>';
   }
 

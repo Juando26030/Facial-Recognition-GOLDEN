@@ -38,3 +38,11 @@
 .gw-inv-plan__issues { margin: var(--gw-sp-2) 0 0; padding-left: var(--gw-sp-5); }
 
 .gw-inv-plan__warnings { display: grid; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); padding: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-warn-bg); color: var(--gw-warn-text); }
+
+/* CRM → inventario: bloque «Productos del CRM» del inventario del evento (19-nov-2026). Solo tokens --gw-*. */
+.gw-inv-plan__crm { display: grid; gap: var(--gw-space-3, 0.75rem); padding: var(--gw-space-4, 1rem); border: 1px solid var(--gw-border, #d9dee7); border-radius: var(--gw-radius-md, 8px); background: var(--gw-surface, #fff); margin-block: var(--gw-space-3, 0.75rem); }
+.gw-inv-plan__crmtitle { margin: 0; font-size: var(--gw-text-md, 1rem); }
+.gw-inv-plan__crmlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-space-2, 0.5rem); }
+.gw-inv-plan__crmrow { display: grid; gap: var(--gw-space-1, 0.25rem); padding-block: var(--gw-space-2, 0.5rem); border-top: 1px solid var(--gw-border, #d9dee7); }
+.gw-inv-plan__crmrow:first-child { border-top: 0; }
+.gw-inv-plan__crmadd .gw-actions { align-items: center; }

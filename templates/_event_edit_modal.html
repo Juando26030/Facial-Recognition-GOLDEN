@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-event-fields.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-map.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/gw-inventory.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/event-contacts.css') }}">
 
 <div class="gw-modal-backdrop" id="eventModalOverlay">
   <div class="gw-modal ee-modal" role="dialog" aria-modal="true" aria-labelledby="eeTitle">
@@ -36,6 +37,7 @@
                 <p class="gw-hint" id="eeBilledInfo" hidden></p>
               </div>
               <div class="gw-field"><label class="gw-label" for="eeNotes">Observaciones</label><input class="gw-input" type="text" id="eeNotes" name="notes"></div>
+              <div class="gw-field"><label class="gw-check" for="eeReview"><input type="checkbox" id="eeReview" name="review_detail"> <span class="gw-choice__text">Revisar el detalle</span></label><p class="gw-hint">Si lo marcas, en el calendario sale un triángulo rojo con «!» para que el equipo lea lo que dejaste en este evento.</p></div>
             </div>
           </div>
         </details>
@@ -103,23 +105,6 @@
           </div>
         </details>
 
-        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
-        <details class="gw-form-group" open id="eeFinalDbGroup">
-          <summary class="gw-form-group__summary">Base de datos final</summary>
-          <div class="gw-form-group__body ee-report">
-            <div class="ee-report__head">
-              <span class="gw-hint" id="eeFinalDbInfo"></span>
-              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
-            </div>
-            <div class="ee-report__row">
-              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
-              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
-              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
-            </div>
-            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
-          </div>
-        </details>
-
         {# Enlace limpio de inscripciones (D2.5k): nombre del evento en la dirección pública y formulario principal. Solo comercial, admin y super_admin. #}
         {% if staff_role in ("comercial", "admin", "super_admin") %}
         <details class="gw-form-group" open id="eeLinkGroup">
@@ -128,8 +113,8 @@
             <div class="gw-field"><label class="gw-label" for="eeLinkSlug">Nombre del evento en el enlace</label><input class="gw-input" type="text" id="eeLinkSlug" autocomplete="off" maxlength="60" spellcheck="false"><small class="gw-hint" id="eeLinkHint"></small></div>
             <div class="gw-field"><label class="gw-label" for="eeLinkPrimary">Formulario principal</label><select class="gw-select" id="eeLinkPrimary"><option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option></select></div>
             <p class="gw-hint" id="eeLinkPreview"></p>
-            <div class="ee-report__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeLinkSave">Guardar enlace</button></div>
-            <p class="gw-hint">Solo letras minúsculas sin tildes, números y guiones. Si lo cambias, el enlace anterior sigue funcionando (redirige al nuevo) y los enlaces ya enviados no se rompen.</p>
+            <div class="ee-report__row"><button type="button" class="gw-btn gw-btn--secondary" id="eeLinkQr" title="Generar QR del enlace de inscripciones ya guardado">{{ ic('qr', 'gw-icon--sm') }} Generar QR</button></div>
+            <p class="gw-hint">Solo letras minúsculas sin tildes, números y guiones. Se guarda con «Guardar cambios». Si lo cambias, el enlace anterior sigue funcionando (redirige al nuevo) y los enlaces ya enviados no se rompen.</p>
           </div>
         </details>
         {% endif %}
@@ -166,10 +151,33 @@
           </div>
         </details>
 
+        {# Contactos del cliente en el evento (16-nov-2026): varios, uno principal (recibe el informe final y la encuesta). Se guardan con «Guardar cambios». #}
+        <details class="gw-form-group" id="eeContactsGroup" open>
+          <summary class="gw-form-group__summary">Contactos del cliente</summary>
+          <div class="gw-form-group__body"><p class="gw-hint">El contacto principal recibe el informe final y la encuesta. Elígelos del CRM o agrégalos a mano, con una nota de quién es en este evento.</p><div id="eeContactsBox"></div></div>
+        </details>
+
         {# Inventario del evento (Fase 5): productos del catálogo con cantidades y estado del cuadre; lo que cada rol puede editar lo decide el servidor. Se guarda con «Guardar cambios» o con su propio botón. #}
         <details class="gw-form-group" id="eeInvGroup" open hidden>
           <summary class="gw-form-group__summary">Inventario</summary>
           <div class="gw-form-group__body"><div id="eeInvBox"></div></div>
+        </details>
+
+        {# Base de datos final (Fase 5): la base ya procesada por humanos que se le entrega al cliente al facturar. Acción aparte de «Guardar cambios»; avisa por correo a la comercial. #}
+        <details class="gw-form-group" open id="eeFinalDbGroup">
+          <summary class="gw-form-group__summary">Base de datos final</summary>
+          <div class="gw-form-group__body ee-report">
+            <div class="ee-report__head">
+              <span class="gw-hint" id="eeFinalDbInfo"></span>
+              <a id="eeFinalDbDownload" class="gw-btn gw-btn--secondary gw-btn--sm" href="#" target="_blank" rel="noopener" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar base final</a>
+            </div>
+            <div class="ee-report__row">
+              <label class="gw-sr-only" for="eeFinalDbFile">Archivo de la base de datos final (Excel o CSV)</label>
+              <input type="file" id="eeFinalDbFile" accept=".xlsx,.csv">
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeFinalDbUpload">{{ ic('upload', 'gw-icon--sm') }} Subir base final y avisar a la comercial</button>
+            </div>
+            <p class="gw-hint">Sube UNA sola base, la ya revisada y procesada por el equipo, en Excel (.xlsx) o CSV. Subir otra la reemplaza. No es la base de estadísticas. Al subirla le llega un correo a la comercial del evento para que revise si ya se puede facturar.</p>
+          </div>
         </details>
 
         {# Informe final (ítem 6b): se sube aparte de «Guardar cambios», con su propia confirmación. #}
@@ -200,6 +208,7 @@
               <label class="gw-sr-only" for="eeDeliveryLink">Enlace de entrega al cliente</label>
               <input class="gw-input" type="text" id="eeDeliveryLink" readonly>
               <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryCopy">{{ ic('link', 'gw-icon--sm') }} Copiar</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryQr" data-qr-from="eeDeliveryLink" data-qr-title="Entrega al cliente">{{ ic('qr', 'gw-icon--sm') }} Generar QR</button>
               <button type="button" class="gw-btn gw-btn--secondary" id="eeDeliveryRegen">Regenerar enlace</button>
             </div>
             <p class="gw-hint" id="eeDeliveryInfo" role="status"></p>
@@ -236,6 +245,7 @@
 <script src="{{ url_for('static', path='js/gw-inventory.js') }}"></script>
 <script src="{{ url_for('static', path='js/workday.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-inventory-plan.js') }}"></script>
+<script src="{{ url_for('static', path='js/event-contacts.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-history-panel.js') }}"></script>
 <script>
@@ -407,7 +417,7 @@
       const needsFinal = ev.status !== 'finalizado' && ev.state_id !== st.id;
       const needsDb = !ev.final_db_uploaded && ev.state_id !== st.id;
       const blocked = st.billing && (!info.canBill || needsFinal || needsDb);
-      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (primero adjunte la base de datos final)');
+      const why = !info.canBill ? ' (solo comercial o administrador)' : (needsFinal ? ' (solo si está Finalizado)' : ' (falta la BASE de datos final; el informe final no cuenta)');
       return `<option value="id:${st.id}" data-base="${esc(st.base_status)}"${blocked ? ' disabled' : ''}>${esc(st.name)}${st.billing && blocked ? why : ''}</option>`;
     }).join('');
     let sel = ev.state_id && info.list.some((st) => st.id === ev.state_id) ? 'id:' + ev.state_id : null;
@@ -465,7 +475,19 @@
   });
 
   /* ---------- enlace limpio de inscripciones (D2.5k) ---------- */
-  let linkTimer = null, linkInfo = null;
+  let linkTimer = null, linkInfo = null, linkSaved = null;
+  const linkNow = () => ({ slug: document.getElementById('eeLinkSlug').value.trim().toLowerCase(), primary: document.getElementById('eeLinkPrimary').value });
+  const linkDirty = () => !!(linkInfo && linkSaved && document.getElementById('eeLinkGroup') && !document.getElementById('eeLinkGroup').hidden && (linkNow().slug !== linkSaved.slug || linkNow().primary !== linkSaved.primary));
+  async function saveLink() {            // se guarda con el «Guardar cambios» del evento (mismo endpoint de siempre); devuelve {ok, error}
+    const now = linkNow(), body = { slug: now.slug };
+    if (now.primary) body.primary_form_id = Number(now.primary); else body.clear_primary = true;
+    let res;
+    try { res = await fetch(`/api/events/${current.id}/public-link`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { return { ok: false, error: 'No se pudo guardar el enlace: sin conexión.' }; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el enlace' };
+    linkInfo = data; linkSaved = now; linkPreview();
+    return { ok: true };
+  }
   function linkPreview() {
     const slug = (document.getElementById('eeLinkSlug').value || '').trim().toLowerCase();
     const sel = document.getElementById('eeLinkPrimary');
@@ -474,6 +496,11 @@
     const formSlug = (linkInfo && (linkInfo.forms.find((f) => String(f.id) === sel.value) || {}).slug) || '<formulario>';
     document.getElementById('eeLinkPreview').textContent = clean ? `Enlace: ${base}/${slug || '<evento>'}${sel.value ? '' : '/' + formSlug}${sel.value ? '  (abre el formulario principal)' : ''}` : 'El enlace limpio se activa cuando el sistema tenga su dirección de inscripciones configurada; mientras tanto los enlaces siguen como siempre.';
   }
+  document.getElementById('eeLinkQr')?.addEventListener('click', () => {      // QR del enlace de inscripciones YA guardado (no el que se está escribiendo)
+    if (!linkInfo || !linkInfo.clean_enabled || !linkInfo.slug) { showToast('Guarda primero el nombre del evento en el enlace para generar su QR', 'info'); return; }
+    if ((document.getElementById('eeLinkSlug').value || '').trim().toLowerCase() !== linkInfo.slug) { showToast('Hay cambios sin guardar: guarda el enlace y luego genera el QR', 'info'); return; }
+    GWLinkQr.open(`${linkInfo.base}/${linkInfo.slug}`, { title: 'Inscripciones' });
+  });
   async function paintLink(ev) {
     const grp = document.getElementById('eeLinkGroup');
     if (!grp) return;
@@ -488,6 +515,7 @@
     sel.innerHTML = '<option value="">— Ninguno (si hay un solo formulario abierto, ese) —</option>' + linkInfo.forms.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
     const prim = linkInfo.forms.find((f) => f.is_primary);
     sel.value = prim ? String(prim.id) : '';
+    linkSaved = linkNow();
     linkPreview();
   }
   if (document.getElementById('eeLinkGroup')) {
@@ -502,19 +530,6 @@
       }, 350);
     });
     document.getElementById('eeLinkPrimary').addEventListener('change', linkPreview);
-    document.getElementById('eeLinkSave').addEventListener('click', async (e) => {
-      const slug = document.getElementById('eeLinkSlug').value.trim().toLowerCase();
-      const primary = document.getElementById('eeLinkPrimary').value;
-      await busy(e.currentTarget, async () => {
-        const body = { slug };
-        if (primary) body.primary_form_id = Number(primary); else body.clear_primary = true;
-        const res = await fetch(`/api/events/${current.id}/public-link`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) { showToast(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar el enlace', 'error'); return; }
-        linkInfo = data; linkPreview();
-        showToast('Enlace de inscripciones guardado', 'success');
-      });
-    });
   }
 
   /* ---------- servidor local (Fase 6) ---------- */
@@ -616,7 +631,7 @@
     deliveryGroup.hidden = !d.eligible;
     if (!d.eligible) return;
     dEl('eeDeliveryLink').value = d.link || '';
-    dEl('eeDeliveryCopy').disabled = !d.link;
+    dEl('eeDeliveryCopy').disabled = !d.link; dEl('eeDeliveryQr').disabled = !d.link;
     const bits = [];
     bits.push(d.has_final_db ? 'Base final: ' + (d.final_db_name || 'subida') : 'Aún no se ha subido la base final: el cliente no tendría qué descargar.');
     bits.push(d.survey_done ? 'El cliente ya envió la encuesta.' : 'El cliente aún no envía la encuesta.');
@@ -671,6 +686,13 @@
   }
 
   /* Inventario del evento (Fase 5): se pinta con event-inventory-plan.js; si el rol no puede verlo o el catálogo está vacío, la sección no aparece. */
+  let contactsCtrl = null;
+  async function mountContacts(ev) {
+    contactsCtrl = null;
+    if (!window.GWEventContacts) return;
+    try { contactsCtrl = await GWEventContacts.mount(document.getElementById('eeContactsBox'), { eventId: ev.id, onChange: markDirty }); } catch (e) { contactsCtrl = null; }
+    if (!contactsCtrl || !contactsCtrl.loaded) document.getElementById('eeContactsGroup').hidden = true;          // sin permiso o sin red: la sección no aparece
+  }
   const invGroup = document.getElementById('eeInvGroup');
   let invCtrl = null;
   async function mountInventory(ev) {
@@ -699,6 +721,7 @@
   window.openEventEditModal = async function (ev, onSaved) {
     opener = document.activeElement;
     await staffOptionsReady;
+    try { const fresh = await fetch(`/api/events/${ev.id}`, { cache: 'no-store' }); if (fresh.ok) Object.assign(ev, await fresh.json()); } catch (e) { /* sin red: se usa lo que traía la lista */ }          // la lista puede estar desactualizada (p. ej. base final subida después de cargarla): el estado «Facturado» depende de esto
     current = ev; savedCallback = onSaved || null;
     const [tpl] = await Promise.all([loadTemplate(), loadSuperEvents(ev.super_event_id)]);
     form.event_id.value = ev.id;
@@ -714,6 +737,7 @@
     form.location.value = ev.location || '';
     form.address.value = ev.address || '';
     form.notes.value = ev.notes || '';
+    form.review_detail.checked = !!ev.review_detail;
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
     await paintState(ev);
@@ -724,6 +748,7 @@
     paintWorkday(tpl);
     paintHistory(ev);
     mountInventory(ev);
+    mountContacts(ev);
     document.getElementById('eeReportFile').value = '';
     paintReport(ev);
     document.getElementById('eeFinalDbFile').value = '';
@@ -752,7 +777,7 @@
       if (!res.ok) { showToast(data.detail || 'No se pudo subir el informe', 'error'); return; }
       current.report_uploaded = true; current.report_uploaded_at = new Date().toISOString().replace('Z', '');
       paintReport(current);
-      showToast(data.email && data.email.sent ? 'Informe subido y correo enviado' : `Informe subido. ${data.email ? data.email.detail : ''}`, 'success');
+      showToast((data.email && data.email.sent ? 'Informe subido y correo enviado a la comercial. ' : `Informe subido. ${data.email ? data.email.detail + '. ' : ''}`) + (data.client_email ? data.client_email.detail + '.' : ''), 'success');
       if (savedCallback) savedCallback();
     });
   });
@@ -762,6 +787,7 @@
     const payload = Object.fromEntries(new FormData(form).entries());
     const eventId = payload.event_id;
     delete payload.event_id;
+    payload.review_detail = form.review_detail.checked;          // una casilla sin marcar no viaja en FormData: se manda el Sí/No explícito
     payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
     if (typeSel.dataset.loaded) payload.event_type_id = payload.event_type_id ? parseInt(payload.event_type_id, 10) : null; else delete payload.event_type_id;
 
@@ -794,6 +820,14 @@
       const base = (stateSel.selectedOptions[0] && stateSel.selectedOptions[0].dataset.base) || (stateValue.startsWith('st:') ? stateValue.slice(3) : '');
       if (base === 'finalizado' && stateSel.dataset.initialBase !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
     }
+    if (contactsCtrl && contactsCtrl.loaded && contactsCtrl.dirty()) {
+      const cs = await contactsCtrl.save();
+      if (!cs.ok) { setStatus('error', cs.error); showToast(cs.error, 'error'); return; }
+    }
+    if (linkDirty()) {          // el enlace de inscripciones va con el mismo botón
+      const lk = await saveLink();
+      if (!lk.ok) { setStatus('error', lk.error); showToast(lk.error, 'error'); return; }
+    }
     if (invCtrl && invCtrl.dirty()) {          // primero el inventario: si el cuadre impide el cambio de estado, ya quedó guardado lo que escribiste
       const inv = await invCtrl.save();
       if (!inv.ok) { setStatus('error', inv.error); showToast(inv.error, 'error'); return; }
@@ -809,7 +843,9 @@
         return;
       }
       if (res.ok) {
-        showToast('Evento actualizado', 'success');
+        const saved = await res.json().catch(() => ({}));
+        const sv = saved && saved.survey_email;          // al pasar a «Facturado» la encuesta sale sola al contacto principal
+        showToast('Evento actualizado' + (sv ? '. ' + sv.detail : ''), sv && !sv.sent ? 'error' : 'success');
         markClean();
         closeModal();
         if (savedCallback) savedCallback();

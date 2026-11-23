@@ -1,0 +1,119 @@
+{# Preimpresiones del evento (18-nov-2026): elegir a quién se le imprime la escarapela ANTES de que llegue (VIPs, expositores…), a mano o por filtro. Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md).
+   Toda la selección sale en UNA sola impresión (varias hojas). La ventana es la de siempre (badge_print.html): sus parámetros son INAMOVIBLES (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md). #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+<!DOCTYPE html>
+{% from "_gw_skeleton.html" import skeleton %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preimpresiones | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-ruleta.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-preprint.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+  <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
+</head>
+<body class="gw-page gw-shell gw-preprint has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
+    </a>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.EVENT_ID = {{ event.id }}; window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};</script>
+
+<main class="golden-main">
+  <div class="gw-container gw-preprint__wrap">
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name }}</p>
+        <h1 class="gw-page-head__title">Preimpresiones</h1>
+        <p class="gw-page-head__sub">Imprime antes las escarapelas de un grupo (VIPs, expositores…) para entregárselas apenas lleguen, sin esperar la impresión.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/{{ event.id }}">Volver al kiosco</a>
+      </div>
+    </div>
+
+    <div class="gw-alert gw-alert--warn" id="ppClosed" role="alert" hidden>{{ ic('alert') }}<div>Con el evento finalizado ya no se preimprimen escarapelas.</div></div>
+    <div class="gw-alert" id="ppCreado" hidden>{{ ic('info') }}<div>El evento está en «Creado»: aquí sí se pueden preimprimir escarapelas, pero nadie se registra todavía. Se registran cuando el evento esté en proceso.</div></div>
+
+    <section class="gw-card gw-stack" aria-labelledby="ppSelTitle">
+      <h2 class="gw-card__title" id="ppSelTitle">1 · ¿A quiénes?</h2>
+      <div class="gw-segment" role="group" aria-label="Cómo elegir">
+        <button type="button" class="gw-segment__opt" id="ppModeHand" aria-pressed="true">A mano</button>
+        <button type="button" class="gw-segment__opt" id="ppModeFilter" aria-pressed="false">Por filtro</button>
+      </div>
+
+      <div class="gw-field">
+        <label class="gw-label" for="ppReg">Estado de registro</label>
+        <select class="gw-select" id="ppReg">
+          <option value="todos" selected>Todos (registrados y no registrados)</option>
+          <option value="si">Solo los ya registrados</option>
+          <option value="no">Solo los no registrados</option>
+        </select>
+        <p class="gw-hint">Este filtro va primero; las condiciones de abajo se aplican sobre lo que quede.</p>
+      </div>
+
+      <div class="gw-field gw-field--grow">
+        <label class="gw-label" for="ppSearch">Buscar una persona</label>
+        <input class="gw-input" type="search" id="ppSearch" placeholder="Nombre, cédula o entidad" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div id="ppFilterBox" hidden>
+        <p class="gw-hint"><strong>Filtro:</strong> todas las condiciones deben cumplirse. Por ejemplo, Categoría = VIP, o Entidad contiene «Ministerio».</p>
+        <div id="ppConds"></div>
+        <div class="gw-actions">
+          <button type="button" class="gw-btn gw-btn--secondary" id="ppAddCond">{{ ic('plus', 'gw-icon--sm') }} Agregar condición</button>
+        </div>
+      </div>
+
+      <p class="gw-hint" id="ppSummary" role="status" aria-live="polite"></p>
+      <div class="gw-actions">
+        <button type="button" class="gw-btn gw-btn--secondary" id="ppSelectAll">Elegir todas las que se ven</button>
+        <button type="button" class="gw-btn gw-btn--secondary" id="ppSelectPending">Elegir las que aún no están preimpresas</button>
+        <button type="button" class="gw-btn gw-btn--secondary" id="ppClear">Quitar la selección</button>
+      </div>
+    </section>
+
+    <section class="gw-card gw-stack" aria-labelledby="ppListTitle">
+      <h2 class="gw-card__title" id="ppListTitle">2 · Personas</h2>
+      <div id="ppList" aria-busy="true" aria-live="polite">{{ skeleton('list', rows=5, label='Cargando las personas…') }}</div>
+    </section>
+
+    <section class="gw-card gw-stack gw-preprint__print" aria-labelledby="ppPrintTitle">
+      <h2 class="gw-card__title" id="ppPrintTitle">3 · Imprimir</h2>
+      <p class="gw-hint" id="ppPrintHint">Elige al menos una persona.</p>
+      <div class="gw-actions">
+        <button type="button" class="gw-btn gw-btn--primary" id="ppPrint" disabled>{{ ic('printer', 'gw-icon--sm') }} <span id="ppPrintLabel">Preimprimir</span></button>
+      </div>
+      <p class="gw-hint">Se abre la ventana de impresión de siempre, con una hoja por escarapela (hasta 300 en una sola impresión). Al terminar, confirma que salieron bien para dejarlas marcadas como preimpresas.</p>
+    </section>
+  </div>
+</main>
+<script src="{{ url_for('static', path='js/preprint.js') }}" defer></script>
+</body>
+</html>

@@ -27,7 +27,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.secretkey import secret_key
-from app import consent, face_worker
+from app import consent, face_worker, personform
 from app.models import Event, EventAttendee, User
 
 log = logging.getLogger("golden.faces")
@@ -184,10 +184,11 @@ def _build(db: Session, event: Event, version: int, ungated: bool = False) -> _I
     # NADIE se reconoce por su rostro sin una aceptación registrada para este evento (aunque ya tenga vector). Única excepción, `ungated` (camino 2: evento con pre-cálculo autorizado
     # y UN clic válido del quiosco): también entran quienes aún no han decidido, pero NUNCA quien ya rechazó o revocó en este evento.
     allowed = consent.accepted_user_ids(db, event.tenant_id, event.id)
+    no_facial = personform.facial_off_user_ids(db, event)          # categorías sin reconocimiento facial (formulario por categoría): nunca entran al índice
     denied = consent.denied_user_ids(db, event.tenant_id, event.id) if ungated else None
     ids, vectors, dim = [], [], None
     for uid, raw in rows:
-        if (uid in denied) if ungated else (uid not in allowed):
+        if uid in no_facial or ((uid in denied) if ungated else (uid not in allowed)):
             continue
         try:
             arr = np.asarray(json.loads(raw), dtype=np.float32)

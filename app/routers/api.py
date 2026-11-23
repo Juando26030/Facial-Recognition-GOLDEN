@@ -2,7 +2,7 @@ import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from app import event_archive, audit_actions, person_history
+from app import event_archive, event_lease, audit_actions, person_history, roster_delete
 import re
 import json
 from typing import List, Optional
@@ -16,8 +16,8 @@ import time
 import logging
 from openpyxl.utils import get_column_letter
 from PIL import Image
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import APIRouter, Body, Depends, File, UploadFile, Form, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import UnidentifiedImageError
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PersonChangeLog, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app import testperson
+from app import testperson, person_code, name_index
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
@@ -47,16 +47,21 @@ SKIP_REQUIRED_TYPES = ("signature", "categories")       # se guardan aparte (arc
 def person_missing_required(db: Session, event: Event, user: User) -> list:
     """A3 (26-oct-2026): los campos OBLIGATORIOS del evento que esta persona tiene vacíos ({key, label}), con los mismos valores que comprueba «Editar persona» (update_user). Sirve para
     no acreditar a quien le falta un obligatorio (p. ej. se marcó obligatorio después de cargar la base): el escaneo, la fila y el autoregistro responden MISSING_REQUIRED."""
-    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
-    if not any(c["required"] for c in field_configs):
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    all_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), attendee.get_categories() if attendee else [])          # lo obligatorio de la categoría de la persona
+    field_configs = [c for c in all_configs if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    if not any(c["required"] for c in all_configs if not c.get("locked")):
         return []
     values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
               "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else ""}
-    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     values["certificate"] = "true" if (attendee and attendee.certificate) else ""
     values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
     labels = set(_missing_required_fields(field_configs, values))
-    return [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]
+    if _last_name_error(field_configs, user.last_name):                      # 19-nov-2026: el apellido obligatorio también cuenta (`_missing_required_fields` lo salta porque no viaja en `values`)
+        labels.add(_last_name_label(field_configs))
+    if attendee is not None and not attendee.get_categories():              # «Tipo de asistente» obligatorio y sin elegir
+        labels.update(c["label"] for c in all_configs if c["field_type"] == "categories" and c["required"] and not c.get("locked"))
+    return [{"key": c["key"], "label": c["label"]} for c in all_configs if c["required"] and not c.get("locked") and c["label"] in labels]
 
 
 def missing_required_message(missing: list) -> str:
@@ -406,7 +411,7 @@ def _upsert_attendee_cached(db: Session, event_id: int, user_id: str, tenant_id:
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
-    """Categorías (ítem 14) de `raw` (lista o texto separado por , ; |) que existen en el evento,
+    """Categoría (ítem 14; desde 19-nov-2026 una sola por persona) de `raw` (lista o texto separado por , ; |) que existe en el evento,
     con la escritura oficial del evento. `auto_add=True` (carga de roster) agrega al evento las
     que no existían todavía, para que importar un Excel con categorías nuevas no las pierda."""
     if isinstance(raw, str):
@@ -426,7 +431,7 @@ def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
             result.append(canonical)
     if auto_add:
         event.set_categories(known)
-    return result
+    return result[:1]          # UNA sola categoría por persona (19-nov-2026): define su escarapela y su formulario; si llegan varias, vale la primera
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
@@ -539,6 +544,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "digital_sent_at": att.digital_sent_at.isoformat() if att and att.digital_sent_at else None,
             "recent_at": recent_at,
             "test": testperson.is_test(u.id),          # la persona de prueba del evento: se ve y se acredita, pero no cuenta en contadores, reportes ni estadísticas
+            **({"code": (att.code or "") if att else ""} if event.code_enabled else {}),          # 0140: código del QR (la clave solo existe si el evento lo usa)
         })
     return result
 
@@ -574,6 +580,21 @@ def event_flags(event: Event) -> dict:
     """Las banderas de la puerta que decide el SERVIDOR en cada petición (no la página, que las congela al cargar): `auto_print` (autoimpresión de la escarapela) y
     `auto_register` (modo autorregistro). Las respuestas de checkin-cedula, register, PATCH status y undo las incluyen para que el cliente imprima según ellas."""
     return {"auto_print": bool(event.auto_print_badge), "auto_register": bool(event.auto_register)}
+
+
+def person_flags(db: Session, event: Event, user_id) -> dict:
+    """Las banderas del evento + `auto_print_skip` si la CATEGORÍA de esta persona tiene apagada la impresión automática (formulario por categoría): la pantalla no le imprime sola la escarapela."""
+    flags = event_flags(event)
+    if user_id and personform.user_flow(db, event, str(user_id)).get("autoprint_off"):
+        flags["auto_print_skip"] = True
+    return flags
+
+
+@router.get("/events/{event_id}/users/{user_id}/print-flow")
+def person_print_flow(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """¿La categoría de esta persona tiene apagada la impresión automática? (el escáner facial no recibe las banderas con su respuesta)."""
+    event = get_event_for_staff(event_id, db, staff)
+    return {"auto_print_skip": bool(personform.user_flow(db, event, user_id).get("autoprint_off"))}
 
 
 def _directory_total(db: Session, event: Event) -> int:
@@ -842,22 +863,18 @@ def checkin_cedula(
     event = get_event_for_staff(event_id, db, staff)
     if not testperson.bypasses_gate(event, cedula):
         require_event_in_progress(event)          # la persona de prueba es la ÚNICA excepción: se ensaya el flujo y la impresión aun con el evento en «creado»
+    event_lease.assert_writable_by(event, staff)          # ...pero ni ella escribe en la nube con el evento en un servidor local
     if client_id:
         replay = _replayed_checkin(db, event, client_id)
         if replay:
             return replay
 
-    user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+    user, _via = person_code.find_user(db, event, cedula)          # 0140: identificación y, si el evento usa código, código
     if not user:
-        full_name = f"{first_name} {last_name}".strip()
-        name_matches = []
-        if full_name:
-            candidates = db.query(User).filter(User.tenant_id == event.tenant_id).all()
-            for candidate in candidates:
-                db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
-                if _identity_name_matches(db_name, full_name):
-                    name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
-        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, **event_flags(event)}
+        full_name = f"{first_name} {last_name}".strip()[:200]
+        # 19-nov-2026: índice por cliente (app/name_index.py) con la MISMA regla de `_identity_name_matches`; antes se cargaban todas las personas del cliente en cada escaneo fallido.
+        name_matches, total = name_index.find(db, event.tenant_id, full_name) if full_name else ([], 0)
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, "name_matches_total": total, **event_flags(event)}
 
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(db, event.id, user)
@@ -872,7 +889,7 @@ def checkin_cedula(
     data["sibling_events"] = [s["event_name"] for s in sibling_attendance(db, event, user.id)]
 
     if not event.auto_register and not confirm:
-        return {"result": "FOUND_PENDING", "data": data, **event_flags(event)}
+        return {"result": "FOUND_PENDING", "data": data, **person_flags(db, event, user.id)}
     missing = person_missing_required(db, event, user)
     if missing:                                         # A3: NO se acredita; la página abre «Editar persona» en el primer campo vacío
         return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing), **event_flags(event)}
@@ -897,7 +914,7 @@ def checkin_cedula(
         if not replay:
             raise
         return replay
-    return {"result": "SÍ", "data": data, **event_flags(event)}
+    return {"result": "SÍ", "data": data, **person_flags(db, event, user.id)}
 
 
 ACCREDIT_UNDO_WINDOW = timedelta(seconds=15)          # «Deshacer» una acreditación: solo quien la hizo y hace menos de 15 s (la pantalla ofrece ~8 s; aquí se verifica en el SERVIDOR)
@@ -916,6 +933,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
     if not (log and testperson.bypasses_gate(event, log.user_id)):
         require_event_in_progress(event)
+    event_lease.assert_writable_by(event, staff)
     if not log:
         raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
     if log.registered_by_staff_id != staff.id:
@@ -926,7 +944,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     audit_actions.record(db, staff, "delete", "access_log", log.id, None, f"evento {event.id}: acreditación deshecha por quien la hizo (15 s)")          # sin cédula
     db.delete(log)
     db.commit()
-    return {"undone": True, "user_id": user_id, **event_flags(event)}
+    return {"undone": True, "user_id": user_id, **person_flags(db, event, user_id)}
 
 
 def _person_data(user: User) -> dict:
@@ -944,7 +962,7 @@ def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dic
     if not prev:
         return None
     user = db.get(User, (prev.user_id, event.tenant_id))
-    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True, **event_flags(event)}
+    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True, **person_flags(db, event, prev.user_id)}
 
 
 SYNC_MAX_RECORDS = 500
@@ -978,7 +996,6 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
     if event.archived_at is not None:                # B4: ningún rol (ni coordinador+, que conserva su margen después de finalizar) escribe en un evento archivado
         raise HTTPException(status_code=403, detail="Este evento está archivado: no recibe registros")
-    from app import event_lease
     if event_lease.is_leased(event) and getattr(staff, "via_node_name", None) != event.local_node_name:
         event_lease.assert_editable(event)           # F5-9 A-09 (Fase 6): con el evento en un servidor local, solo ESE servidor sube (un solo escritor); los quioscos de la nube reciben 423
     event_archive.require_data_open(event, staff)    # ni con la base archivada (L7)
@@ -1135,6 +1152,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
             return {"op_id": op_id, "result": "duplicado", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
         kind = "Existente"
     else:
+        field_configs = personform.person_configs(db, event, field_configs, categories)          # lo obligatorio de la categoría de la persona
         missing = _missing_required_fields(field_configs, values)
         last_error = _last_name_error(field_configs, last)
         if last_error:
@@ -1218,6 +1236,7 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     final = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(), **{k: v for k, v in changes.items() if k in ("role", "entity", "phone", "email", "opt_1")}, **extras}
     final["certificate"] = "true" if (certificate or (attendee and attendee.certificate)) else ""
     final["digital_contact"] = contact or ((attendee.digital_contact if attendee else "") or "")
+    field_configs = personform.person_configs(db, event, field_configs, categories or (attendee.get_categories() if attendee else []))          # lo obligatorio de la categoría de la persona
     touched = set(changes) | set(extras)
     bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
     if bad:
@@ -1414,6 +1433,7 @@ def update_user(
     staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     user = _person_of_event(db, event, user_id)
     if user:
@@ -1448,6 +1468,15 @@ def update_user(
         certificate = data.pop("certificate", None)  # ítem 5: también por evento
         if certificate is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, certificate=_truthy(certificate))
+        code_raw = data.pop("code", None)  # 0140: código del evento (serial del QR); por evento, no una columna de User
+        if code_raw is not None and event.code_enabled:
+            clean_code = _validated_code(db, event, user.id, code_raw)
+            if not clean_code and event.code_required:
+                raise HTTPException(status_code=400, detail="En este evento el código es obligatorio")
+            _upsert_attendee(db, event.id, user.id, event.tenant_id)
+            db.flush()
+            row = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+            row.code = clean_code or None
         extra_fields = data.pop("extra_fields", None)
         if extra_fields is not None:
             merged = user.get_extras()
@@ -1487,6 +1516,7 @@ def update_user(
         attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
         final_values["certificate"] = "true" if (attendee and attendee.certificate) else ""
         final_values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
+        field_configs = personform.person_configs(db, event, field_configs, (attendee.get_categories() if attendee else None) or (_clean_categories(event, categories) if categories else []))          # lo obligatorio de la categoría de la persona
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -1530,6 +1560,7 @@ def update_user_cedula(
     persona en TODOS los eventos de este cliente, no solo en este — más sensible que un campo
     normal del perfil."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     old_id = user_id
     new_id = str(data.get("new_id", "")).strip()
@@ -1545,6 +1576,10 @@ def update_user_cedula(
     conflict = db.query(User).filter(User.id == new_id, User.tenant_id == event.tenant_id).first()
     if conflict:
         raise HTTPException(status_code=409, detail="Ya existe otra persona con esa cédula en este cliente")
+    try:
+        person_code.require_free_id(db, event, new_id)          # 0140: la nueva identificación no puede ser igual a un código ya usado en el evento
+    except person_code.CodeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
     new_user = User(
         id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
@@ -1591,6 +1626,7 @@ def delete_user_logs(
     la identificación de la persona. Queda en `audit_actions` (cuántos registros; nunca la cédula). Antes borraba por cliente completo (bug); ahora solo el evento indicado. Lo normal para
     deshacer un ingreso es `PATCH /events/{id}/users/{id}/status` (queda en el historial de cambios)."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     if str(confirm or "").strip() != str(user_id).strip():
         raise HTTPException(status_code=400, detail="Para borrar el histórico de accesos escribe (confirm) la identificación de la persona")
@@ -1614,6 +1650,7 @@ def delete_user_from_event(
     eventos, ver CLAUDE.md), se borra también el `User` y su foto física — si sigue en otro
     evento, ese `User` se conserva intacto, no se puede reventar la base de un evento ajeno."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
@@ -1663,6 +1700,31 @@ def delete_user_from_event(
     }
 
 
+@router.get("/events/{event_id}/roster-loaded")
+def roster_loaded_preview(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Cuántas personas trajo «Adjuntar base de datos» y cuántas se borrarían (ver app/roster_delete.py)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    return roster_delete.preview(db, event)
+
+
+@router.delete("/events/{event_id}/roster-loaded")
+def roster_loaded_delete(event_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Borra de este evento a las personas cargadas por «Adjuntar base de datos» (origen base) que no tengan ingresos: sirve para corregir una carga equivocada. Exige escribir BORRAR.
+    Queda en `audit_actions` (solo cantidades, nunca cédulas ni nombres). No se puede con la base archivada (L7) ni con el evento finalizado."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
+    event_archive.require_data_open(event, staff)
+    if event.status == "finalizado":
+        raise HTTPException(status_code=409, detail="El evento ya finalizó: su base no se puede borrar.")
+    if str(data.get("confirm") or "").strip().upper() != "BORRAR":
+        raise HTTPException(status_code=400, detail="Para borrar la base cargada escribe BORRAR.")
+    out = roster_delete.delete_loaded(db, event)
+    audit_actions.record(db, staff, "delete", "roster_loaded", event.id, None, f"evento {event.id}: {out['removed']} persona(s) de la base cargada, {out['kept_registered']} conservadas por tener ingresos")
+    db.commit()
+    return {**out, "message": f"Se borraron {out['removed']} persona(s) de la base cargada." + (f" Se conservaron {out['kept_registered']} que ya tienen ingresos registrados." if out["kept_registered"] else "")}
+
+
 @router.patch("/events/{event_id}/users/{user_id}/status")
 def update_registration_status(
     event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
@@ -1689,6 +1751,7 @@ def update_registration_status(
     if new_status == "no_registrado" and max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["coordinador"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 
+    event_lease.assert_writable_by(event, staff)
     was_registered = _already_checked_in(db, event_id, user_id)
     deleted_logs = 0
     if new_status == "registrado" and not was_registered and not testperson.bypasses_gate(event, user_id):
@@ -1715,7 +1778,7 @@ def update_registration_status(
                             old_value="Registrado" if was_registered else "No registrado", new_value="Registrado" if new_status == "registrado" else "No registrado",
                             detail=f"accesos borrados: {deleted_logs}" if new_status == "no_registrado" else None))
     db.commit()
-    return {"message": "Estado de registro actualizado", "status": new_status, **event_flags(event)}
+    return {"message": "Estado de registro actualizado", "status": new_status, **person_flags(db, event, user_id)}
 
 @router.post("/register")
 def manual_register(
@@ -1724,7 +1787,7 @@ def manual_register(
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
-    took_ms: str = Form(""), ui_flow: str = Form(""),
+    took_ms: str = Form(""), ui_flow: str = Form(""), code: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -1744,13 +1807,38 @@ def manual_register(
     return _manual_register(**locals())          # a esta altura `locals()` son solo los parámetros del endpoint: se pasan tal cual al cuerpo (sin repetirlos a mano)
 
 
+def _validated_code(db: Session, event: Event, user_id: str, code, enforce_required: bool = True) -> str:
+    """0140: valida el código que llega con un alta o edición (único, distinto de cualquier identificación, obligatorio si el evento lo exige). Con el código apagado se ignora."""
+    if not event.code_enabled:
+        return ""
+    try:
+        clean = person_code.validate(db, event, code, user_id)
+        person_code.require_free_id(db, event, user_id)
+        if enforce_required and event.code_required and not clean and not person_code.code_of(db, event, user_id):
+            raise person_code.CodeError("En este evento el código es obligatorio")
+    except person_code.CodeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return clean
+
+
+def _store_code(db: Session, event: Event, user_id: str, clean: str) -> None:
+    """Guarda el código ya validado (tras crear o actualizar la inscripción de la persona en el evento)."""
+    if clean and event.code_enabled:
+        db.flush()
+        try:
+            person_code.set_code(db, event, user_id, clean, required=False)
+        except person_code.CodeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional"):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None, origin: str = "manual", method: str = "tradicional", code: str = ""):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
+    code_clean = _validated_code(db, event, id, code, enforce_required=(method != "autoregistro"))          # 0140: código opcional del evento (vacío si el evento no lo usa)
 
     extras = _parse_extra_fields(extra_fields)
     pf = personform.active(db, event)          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» también se aplica aquí, no solo en pantalla
@@ -1804,13 +1892,14 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         )
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, origin=origin, touch=True)
+        _store_code(db, event, existing.id, code_clean)
         db.commit()
-        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
+        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **person_flags(db, event, existing.id)}
         if contact_clean and event.digital_badge_enabled:
             reply["digital"] = _send_digital(db, event, existing, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return reply
 
-    field_configs = parametros.field_configs_for_event(db, event)
+    field_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), person_categories)          # lo obligatorio de la categoría de la persona
     final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", "digital_contact": contact_clean or "", **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
@@ -1877,12 +1966,13 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     )
     db.add(log)
     _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, origin=origin, touch=True)
+    _store_code(db, event, id, code_clean)
     db.commit()
 
     if img_array is not None:
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
-    reply = {"message": "Usuario registrado exitosamente como Nuevo.", **event_flags(event)}
+    reply = {"message": "Usuario registrado exitosamente como Nuevo.", **person_flags(db, event, id)}
     if img_array is not None and not face_enc_json:
         reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
     if minor:
@@ -1927,6 +2017,29 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
     return ids, source.name
 
 
+@router.get("/events/{event_id}/roster-template")
+def roster_template(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Plantilla de la base de asistentes de ESTE evento: la de siempre y, si el evento usa código (0140), con la columna «codigo» justo después de la cédula."""
+    import openpyxl
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    wb = openpyxl.load_workbook(os.path.join(os.path.dirname(__file__), "..", "..", "static", "templates", "plantilla_carga_base_asistentes.xlsx"))
+    if event.code_enabled:
+        ws = wb["Base de Asistentes"]
+        ws.insert_cols(2)
+        ws.cell(row=1, column=2, value="codigo")
+        ws.cell(row=2, column=2, value="A1B2C3D4")
+        ws.cell(row=1, column=2)._style = ws.cell(row=1, column=1)._style
+        ws.cell(row=2, column=2)._style = ws.cell(row=2, column=1)._style
+        ws.column_dimensions["B"].width = 18
+        if "Instrucciones" in wb.sheetnames:
+            wb["Instrucciones"].append(["codigo", "Código del QR de la persona (serial aparte de la cédula). No se puede repetir ni ser igual a ninguna cédula." + (" Obligatorio en este evento." if event.code_required else " Opcional.")])
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return StreamingResponse(out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="plantilla_carga_base_asistentes.xlsx"'})
+
+
 @router.post("/bulk_roster")
 def bulk_roster(
     event_id: int = Form(...), roster_file: UploadFile = File(None), field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(True),
@@ -1949,6 +2062,7 @@ def bulk_roster_preview(
     """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
     la carga real lo vuelve a usar."""
     event = get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     if blocked := event_rules.roster_block_reason(event, append_only=True):
         raise HTTPException(status_code=400, detail=blocked)
@@ -1976,6 +2090,7 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
     case_mode, keep_dups = _text_case_or_400(text_case), _truthy(keep_duplicates)          # Plan 5: «Texto» y «No eliminar repetidos» (app/roster_text.py, app/roster_dups.py)
     append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
@@ -2105,7 +2220,7 @@ def bulk_job_active(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """La carga por pasos de esta persona que quedó a medias en este evento (para retomarla tras cerrar la página)."""
-    get_event_for_staff(event_id, db, staff)
+    event_lease.assert_writable_by(get_event_for_staff(event_id, db, staff), staff)
     return {"job": bulk_steps.active_for(db, event_id, staff)}
 
 
@@ -2127,6 +2242,7 @@ def bulk_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Carga no encontrada")
     event_archive.require_data_open(get_event_for_staff(job.event_id, db, staff), staff)
+    event_lease.assert_writable_by(get_event_for_staff(job.event_id, db, staff), staff)
     if bulk_steps._is_steps(job):
         return bulk_steps.serialize_job(job)
     return bulk_jobs.serialize(job, db)
@@ -2152,6 +2268,42 @@ def _reset_event_fields(db: Session, event: Event, header_columns: dict, kept_la
         elif row is None:
             db.add(EventFieldConfig(event_id=event.id, field_key=key, field_type=parametros.DELETED_TYPE, help_text=ROSTER_HIDDEN_MARK))
     db.flush()
+
+
+_CODE_KEYS = ("codigo", "código")
+
+
+def _bulk_code_state(db: Session, event: Event, row_infos: list):
+    """0140: estado en memoria para validar los códigos de UNA tanda de la carga masiva sin una consulta por fila. None = el evento no usa código.
+    `owner` = códigos ya usados en el evento (en minúsculas -> identificación); `id_clash` = códigos del archivo que son iguales a una identificación del cliente."""
+    if not event.code_enabled:
+        return None
+    owner = {(c or "").lower(): uid for uid, c in db.query(EventAttendee.user_id, EventAttendee.code).filter(EventAttendee.event_id == event.id, EventAttendee.code.isnot(None))}
+    file_codes = {person_code.normalize(next((i["clean_row"][k] for k in _CODE_KEYS if i["clean_row"].get(k)), "")).lower() for i in row_infos}
+    file_codes.discard("")
+    id_clash = set()
+    for part in _chunks(sorted(file_codes), _LOOKUP_CHUNK):
+        for (uid,) in db.query(User.id).filter(User.tenant_id == event.tenant_id, func.lower(User.id).in_(part)):
+            id_clash.add(uid.lower())
+    return {"owner": owner, "id_clash": id_clash, "file_ids": {(i["identificador"] or "").lower() for i in row_infos if i["identificador"]}}
+
+
+def _bulk_code_problem(state: dict, event: Event, identificador: str, code: str, current_code) -> Optional[str]:
+    """Motivo (sin datos personales) por el que el código de la fila no sirve, o None. Se evalúa ANTES de crear a la persona: una fila con código inválido se omite."""
+    low = (code or "").lower()
+    clash = state["owner"].get(identificador.lower())
+    if clash and clash != identificador:
+        return "la identificación es igual a un código ya asignado en este evento"
+    if not code:
+        return "el código es obligatorio en este evento" if (event.code_required and not current_code) else None
+    if len(code) > person_code.MAX_CODE_LENGTH:
+        return "el código es demasiado largo"
+    if low == identificador.lower() or low in state["id_clash"] or low in state["file_ids"]:
+        return "el código es igual a una identificación"
+    holder = state["owner"].get(low)
+    if holder and holder != identificador:
+        return "el código ya está asignado a otra persona"
+    return None
 
 
 def _bulk_register_impl(
@@ -2239,6 +2391,9 @@ def _bulk_register_impl(
         if not birth_used:
             birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
             roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
+
+        if not event.code_enabled:          # 0140: la columna «código» solo se usa con el código activado en el evento; si no, se informa como no usada
+            roster_columns.drop_column(header_columns, rows, columns_report, "codigo", "este evento no usa código (actívalo en Parámetros del evento)")
 
         # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
         # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -2466,6 +2621,7 @@ def _bulk_register_impl(
             for att in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(part)):
                 attendees_by_user[att.user_id] = att
     new_users, new_attendees = [], []
+    code_state = _bulk_code_state(db, event, row_infos)          # 0140: None si el evento no usa código
 
     phases.mark("consultas_en_bloque")
     photo_state = {"calls": 0, "keys": None}
@@ -2515,6 +2671,16 @@ def _bulk_register_impl(
                             # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
                             errors.append(f"ℹ️ Fila {row_num}: la cédula '{identificador}' ya venía del evento anterior — se conservaron sus datos del evento anterior (no se duplicó).")
                             continue
+
+                        row_code = ""
+                        if code_state is not None:          # 0140: código opcional del evento (columna «código»); una fila con código inválido se omite
+                            row_code = person_code.normalize(next((clean_row[k] for k in _CODE_KEYS if clean_row.get(k)), ""))
+                            known_att = attendees_by_user.get(identificador)
+                            problem = _bulk_code_problem(code_state, event, identificador, row_code, known_att.code if known_att is not None else None)
+                            if problem:
+                                where = info["id_cell"] or f"fila {row_num}"
+                                errors.append(f"❌ Fila {row_num} ({where}): se omitió, {problem}.")
+                                continue
 
                         # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
                         # exactamente en qué celda está el problema para que el operador lo revise si quiere.
@@ -2631,6 +2797,12 @@ def _bulk_register_impl(
                                     _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
                                     certificate=_truthy(raw_certificate) if raw_certificate else None,
                                 )
+                                if code_state is not None and row_code:
+                                    att_row = attendees_by_user[identificador]
+                                    if att_row.code:
+                                        code_state["owner"].pop(att_row.code.lower(), None)
+                                    att_row.code = row_code
+                                    code_state["owner"][row_code.lower()] = identificador
                                 if _truthy(clean_row.get('registrado en formulario') or ''):
                                     form_registered_ids.append(identificador)
                                 if isolate:
@@ -2741,8 +2913,8 @@ def _person_form_files(db: Session, event: Event, user_id: str) -> list:
 
 
 @router.get("/events/{event_id}/users/{user_id}/form-files")
-def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Coordinador o superior."""
+def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """«Editar persona»: los archivos (PDF, imágenes) que la persona subió en un formulario y que están vinculados a un campo de su registro. Digitador o superior (incluye cliente temporal y digitador temporal; el acceso al evento lo valida get_event_for_staff)."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     if not _person_of_event(db, event, user_id):
@@ -2754,7 +2926,7 @@ def person_form_files(event_id: int, user_id: str, db: Session = Depends(get_db)
 
 
 @router.get("/events/{event_id}/users/{user_id}/form-files/{submission_id}/{field_id}")
-def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def person_form_file_download(event_id: int, user_id: str, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
     import json as _json
     from app.models import FormSubmission
     from app.storage import form_file_key
@@ -2773,9 +2945,11 @@ def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff
     como «falta completar» para abrir «Editar persona» en el campo vacío. Sin columnas nuevas: se calcula con los datos de hoy."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
-    if not any(c["required"] for c in field_configs):
+    base_configs = parametros.field_configs_for_event(db, event)
+    field_configs = [c for c in base_configs if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    if not any(c["required"] for c in field_configs) and not (personform.env_enabled() and (personform.load_raw(db, event) or {}).get("variants")):
         return {"count": 0, "people": []}
+    stored_pf = personform.load_raw(db, event)          # una sola lectura del diseño para todas las personas
     ids = {u for (u,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado").distinct()}
     if not ids:
         return {"count": 0, "people": []}
@@ -2786,9 +2960,10 @@ def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff
         values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
                   "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else "",
                   "certificate": "true" if (att and att.certificate) else "", "digital_contact": (att.digital_contact if att else "") or ""}
-        labels = set(_missing_required_fields(field_configs, values))
+        person_cfgs = [c for c in personform.person_configs(db, event, base_configs, att.get_categories() if att else [], stored=stored_pf) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]          # lo obligatorio de su categoría
+        labels = set(_missing_required_fields(person_cfgs, values))
         if labels:
             people.append({"id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                           "missing": [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]})
+                           "missing": [{"key": c["key"], "label": c["label"]} for c in person_cfgs if c["required"] and c["label"] in labels]})
     people.sort(key=lambda p: (p["last_name"] or "", p["first_name"] or ""))
     return {"count": len(people), "people": people[:200]}

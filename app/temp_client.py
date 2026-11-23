@@ -21,11 +21,11 @@ _DIGITS = "23456789"                                                   # sin 0 y
 _SAFE = _LETTERS + _DIGITS
 
 
-def new_username(exists: Callable[[str], bool], tries: int = 50) -> str:
-    """Un usuario `cli-xxxxxx` que no exista todavía (`exists` consulta la base). Minúsculas y cifras: se dicta y se escribe sin errores."""
+def new_username(exists: Callable[[str], bool], tries: int = 50, prefix: str = USER_PREFIX) -> str:
+    """Un usuario `cli-xxxxxx` (o con otro prefijo: `ct-` el coordinador temporal) que no exista todavía (`exists` consulta la base). Minúsculas y cifras: se dicta y se escribe sin errores."""
     alphabet = "abcdefghjkmnpqrstuvwxyz" + _DIGITS
     for _ in range(tries):
-        name = USER_PREFIX + "".join(secrets.choice(alphabet) for _ in range(USER_LEN))
+        name = prefix + "".join(secrets.choice(alphabet) for _ in range(USER_LEN))
         if not exists(name):
             return name
     raise RuntimeError("No se pudo generar un usuario libre")

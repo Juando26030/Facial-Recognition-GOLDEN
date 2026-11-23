@@ -16,7 +16,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from app import versioning
+from app import publicurl, versioning
+from app.storage import get_storage, key_of
 from app.timeutil import utcnow
 
 REQUEST_FILE = "update-request.json"
@@ -36,13 +37,75 @@ def update_dir() -> Path:
 
 
 # ------------------------------------------------------------------ lo que PUBLICA producción
+PACKAGE_PREFIX = key_of("system", "local-update")
+PACKAGE_RE = re.compile(r"^golden-local-update-([0-9][0-9A-Za-z._-]*)\.zip$")
+
+
+def _vkey(v: str):
+    return [int(x) if x.isdigit() else -1 for x in re.split(r"[._-]", v)]
+
+
+def storage_package() -> Optional[tuple]:
+    """(nombre, sha256, commit) del paquete de actualización MÁS NUEVO guardado en el almacenamiento (`system/local-update/`: el .zip, su .sha256 y su .commit, que sube el armado), o None.
+    `commit` es None en paquetes viejos que no traen el archivo .commit."""
+    try:
+        st = get_storage()
+        found = [(_vkey(m.group(1)), k.rsplit("/", 1)[-1]) for k in st.list(PACKAGE_PREFIX) for m in [PACKAGE_RE.match(k.rsplit("/", 1)[-1])] if m]
+        if not found:
+            return None
+        name = max(found)[1]
+        m = re.match(r"\s*([0-9a-fA-F]{64})", st.get(key_of("system", "local-update", name[:-4] + ".sha256")).decode("utf-8", "ignore"))
+        if not m:
+            return None
+        commit = None
+        try:
+            c = st.get(key_of("system", "local-update", name[:-4] + ".commit")).decode("utf-8", "ignore").strip().lower()
+            commit = c if re.fullmatch(r"[0-9a-f]{7,40}", c) else None
+        except Exception:          # noqa: BLE001 — paquete anterior a este archivo
+            commit = None
+        return (name, m.group(1).lower(), commit)
+    except Exception:          # noqa: BLE001 — sin almacenamiento o sin archivo: simplemente no hay paquete publicado
+        return None
+
+
+def same_commit(a: Optional[str], b: Optional[str]) -> bool:
+    """Dos commits (completos o abreviados) son el mismo si uno es prefijo del otro."""
+    a, b = (a or "").strip().lower(), (b or "").strip().lower()
+    n = min(len(a), len(b))
+    return n >= 7 and a[:n] == b[:n]
+
+
+def package_bytes(name: str) -> Optional[bytes]:
+    if not PACKAGE_RE.match(name or ""):
+        return None
+    try:
+        return get_storage().get(key_of("system", "local-update", name))
+    except Exception:          # noqa: BLE001
+        return None
+
+
 def published_manifest() -> dict:
-    """Lo que la nube dice de su versión publicada para que los locales se actualicen. `available` es falso si la nube no tiene paquete configurado."""
+    """Lo que la nube dice de su versión publicada para que los locales se actualicen. `available` es falso si la nube no tiene paquete. Primero lo que diga UPDATE_PACKAGE_URL/SHA256
+    (si se fijaron a mano); si no, el paquete más nuevo del almacenamiento, que la propia app sirve en /api/ops/update-package/<nombre> (sin variables que tocar en cada versión)."""
     url = (os.getenv("UPDATE_PACKAGE_URL") or "").strip()
     sha = (os.getenv("UPDATE_PACKAGE_SHA256") or "").strip().lower()
+    pkg = None
+    if not (url.startswith("https://") and SHA256_RE.match(sha)):
+        pkg = storage_package()
+        base = publicurl.base()
+        if pkg and base.startswith("https://"):
+            url, sha = f"{base}/api/ops/update-package/{pkg[0]}", pkg[1]
     v = versioning.local_version()
     ok = url.startswith("https://") and bool(SHA256_RE.match(sha))
-    return {"available": ok, "commit": v["commit"], "schema": v["schema"], "package_url": url if ok else None, "sha256": sha if ok else None}
+    commit = v["commit"]
+    if ok and pkg and len(pkg) > 2 and pkg[2]:
+        # El manifiesto anuncia el commit del paquete que de verdad existe. Si producción ya va más adelante (el armado del paquete falló o no corrió), no se ofrece uno viejo:
+        # antes «Actualizar ahora» reinstalaba el mismo código y decía «Actualizado».
+        commit = pkg[2]
+        if not same_commit(pkg[2], v["commit"]):
+            return {"available": False, "pending": True, "commit": v["commit"], "schema": v["schema"], "package_url": None, "sha256": None,
+                    "message": "La actualización de esta versión todavía se está preparando."}
+    return {"available": ok, "commit": commit, "schema": v["schema"], "package_url": url if ok else None, "sha256": sha if ok else None}
 
 
 def validate_manifest(m: Optional[dict]) -> Optional[str]:
@@ -64,7 +127,7 @@ def fetch_manifest(timeout: float = versioning.FETCH_TIMEOUT) -> Optional[dict]:
         return None
     try:
         from app.cloud_client import open_no_redirect
-        with open_no_redirect(urllib.request.Request(base + "/api/ops/update-manifest", headers={"Accept": "application/json"}), timeout=timeout) as resp:      # F5-9 A-10: sin redirecciones
+        with open_no_redirect(urllib.request.Request(base + "/api/ops/update-manifest", headers={"Accept": "application/json", "X-Node-Token": os.getenv("NODE_TOKEN", "").strip()}), timeout=timeout) as resp:      # F5-9 A-10: sin redirecciones
             data = json.loads(resp.read(20000).decode("utf-8"))
         return data if isinstance(data, dict) else None
     except (urllib.error.URLError, OSError, ValueError):
@@ -141,3 +204,26 @@ def request_update(*, staff_id: int, events_in_progress: int, recent_checkins: i
     _atomic_write(folder / STATUS_FILE, {"state": "pending", "message": "Petición enviada; el servicio de actualización la recogerá en unos segundos.", "at": req["requested_at"]})
     _atomic_write(folder / REQUEST_FILE, req)
     return {"state": "pending"}
+
+
+def auto_enabled() -> bool:
+    """Actualización silenciosa (por defecto encendida en un servidor local; AUTO_UPDATE=0 la apaga)."""
+    return is_local_server() and (os.getenv("AUTO_UPDATE", "1").strip().lower() not in ("0", "false", "no"))
+
+
+def auto_update(db) -> str:
+    """Como las tiendas de aplicaciones: si producción publicó otra versión y NO hay un turno en marcha, deja la petición sola (con copia previa de la base y vuelta atrás si falla).
+    Con un turno en marcha espera al siguiente ciclo. Devuelve un código corto (para el registro): disabled | pending | <código de UpdateRefused>."""
+    if not auto_enabled():
+        return "disabled"
+    from datetime import timedelta
+
+    from app.models import AccessLog, Event
+    in_progress = db.query(Event).filter(Event.status == "en_proceso").count()
+    since = utcnow() - timedelta(minutes=RECENT_ACTIVITY_MINUTES)
+    recent = db.query(AccessLog).filter(AccessLog.timestamp >= since).count()
+    try:
+        request_update(staff_id=0, events_in_progress=in_progress, recent_checkins=recent, confirm_shift=False)
+        return "pending"
+    except UpdateRefused as e:
+        return e.code

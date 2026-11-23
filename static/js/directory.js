@@ -370,7 +370,7 @@
         <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" class="gw-input">
         <p class="gw-hint">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
       </div>`;
-      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key], 'text', cfg.key === 'last_name' ? !!cfg.required : true);
+      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key], 'text', (cfg.key === 'last_name' || cfg.key === 'code') ? !!cfg.required : true);          // el código (solo existe con el interruptor activo) y el apellido: obligatorios según el evento
       return configuredFieldRow(cfg);
     })())).join('');
     const isRegistered = user.status !== 'No registrado';
@@ -415,7 +415,7 @@
       </div>
     `;
     overlay.appendChild(box);
-    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (coordinador o superior; si no, queda el texto)
+    {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (digitador o superior, temporales incluidos; si no hay archivo, queda el texto)
       (async () => {
         try {
           const res = await fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/form-files`);
@@ -458,7 +458,7 @@
             const ul = document.createElement('ul'); ul.className = 'gw-list';
             d.items.forEach((r) => {
               const li = document.createElement('li');
-              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: ${r.old || '(vacío)'} → ${r.new || '(vacío)'}`;
+              li.textContent = `${r.at_local} · ${r.by} · ${r.label}: de ${r.old || '(vacío)'} pasó a ${r.new || '(vacío)'}`;
               ul.appendChild(li);
             });
             body.appendChild(ul);
@@ -567,7 +567,7 @@
             // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
             // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
             if (newStatus === 'registrado' && window.RegTimer) RegTimer.done();
-            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
+            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false;
@@ -579,6 +579,7 @@
       }
 
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
+      if (Object.prototype.hasOwnProperty.call(user, 'code')) payload.code = val('code');
       const newExtras = {};
       fieldConfigs.filter((cfg) => !cfg.locked).forEach((cfg) => {
         if (Object.prototype.hasOwnProperty.call(user, cfg.key)) payload[cfg.key] = val(cfg.key);
@@ -617,7 +618,7 @@
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
-              if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
+              if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
               else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
@@ -1212,6 +1213,14 @@
       } catch (err) { pollSignal(false); /* sin red: se reintenta en el siguiente ciclo */ }
     }
 
+    /* Después de un escaneo o de deshacer: solo lo que cambió (`refresh`, por cursor) en vez de volver a bajar TODO el directorio. Con 40.000 personas la recarga completa eran
+       40 peticiones de 1.000 filas y repintar la tabla en CADA escaneo (lento para la estación y carga innecesaria para el servidor). Si no hay cursor todavía, si el directorio
+       está en modo local o si el total no cuadra, `refresh` cae a la recarga completa de siempre. */
+    async function syncAfterScan() {
+      if (loading) { await loading; return; }
+      if (cursor && !localMode) { await refresh(); return; }
+      await reload();
+    }
     function reload() {
       if (loading) T('directory:reload-joined-in-flight');          // ya hay una carga en curso: esta llamada espera a ESA (si está colgada en una petición, espera con ella)
       if (!loading) loading = fullLoad().finally(() => { loading = null; checkIncomplete(); });
@@ -1310,7 +1319,7 @@
           if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
           applyFlags(data);
           if (window.BadgePrint && BadgePrint.releaseClaim) BadgePrint.releaseClaim(data.user_id || acc.id);       // PR3 (causa B/T5): volver a acreditar a la misma persona dentro de los 30 s sí imprime
-          await reload();
+          await reload();          // deshacer QUITA un ingreso: el incremental no ve bajas, así que aquí sí va la recarga completa
         }
         showToast(`Acreditación de ${acc.name} deshecha`, 'success');
       } catch (e) { showToast('No se pudo deshacer: sin conexión con el servidor', 'error'); }
@@ -1375,6 +1384,28 @@
       verdict('info', 'Encontrado(a): confirma', `${found.person.n} · pulsa «Acreditar» en su tarjeta`);
     }
 
+    /* Cédula (vieja o nueva) leída con la cámara y sin ninguna coincidencia —ni por cédula ni por nombre—: la banda de siempre (arriba, 15 s) se puede pasar por alto con la cámara
+       recién cerrada. Esto es una ventana roja GRANDE que se queda hasta que el operador la cierre (botón, Esc o clic afuera). Solo texto en pantalla: nada va a logs. */
+    function showNotFoundAlert(cedula, fullName) {
+      const old = document.getElementById('gwNotFoundAlert'); if (old) old.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'gwNotFoundAlert'; overlay.className = 'gw-modal-backdrop gw-modal-backdrop--top'; overlay.setAttribute('data-open', 'true');
+      overlay.setAttribute('role', 'alertdialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-labelledby', 'gwNotFoundTitle');
+      const box = document.createElement('div'); box.className = 'gw-notfound';
+      const title = document.createElement('h2'); title.id = 'gwNotFoundTitle'; title.className = 'gw-notfound__title'; title.textContent = 'No encontramos coincidencias de esta persona en la base de datos';
+      const who = [cedula ? `Cédula ${cedula}` : '', fullName].filter(Boolean).join(' · ');
+      const detail = document.createElement('p'); detail.className = 'gw-notfound__text'; detail.textContent = (who ? who + '. ' : '') + 'Si es una persona nueva, usa «Registrar nuevo».';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--primary gw-btn--xl'; btn.textContent = 'Entendido';
+      box.append(title, detail, btn); overlay.appendChild(box); document.body.appendChild(overlay);
+      const close = () => { document.removeEventListener('keydown', onKey, true); overlay.remove(); };
+      const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
+      btn.addEventListener('click', close);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+      document.addEventListener('keydown', onKey, true);
+      btn.focus();
+    }
+    let bigNotFound = false;          // solo lo prende `scanCedulaCard` (cédula vieja/nueva por cámara); el QR y el lector de mano siguen como siempre
+
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const GC0 = window.GoldenContingency && window.GoldenContingency.instance;
       if (!(GC0 && GC0.active()) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
@@ -1418,11 +1449,17 @@
         if (data.result === 'MISSING_REQUIRED') {
           // A3 (26-oct-2026): falta un campo OBLIGATORIO (p. ej. se marcó obligatorio después de cargar la base): NO se acredita. Se dice cuál y se abre «Editar persona» con el foco en el
           // primer campo vacío; al guardar queda acreditado(a) en el mismo paso y la autoimpresión imprime después, con el dato ya lleno.
-          showToast(data.details || `Falta el campo obligatorio: ${(data.missing || []).map((m) => m.label).join(', ')}`, 'warning');
-          verdict('warn', 'Falta un dato obligatorio', (data.missing || []).map((m) => m.label).join(', '));
-          await reload();
+          const faltan = (data.missing || []).map((m) => m.label).join(', ');
+          verdict('warn', 'Falta un dato obligatorio', faltan);
+          await syncAfterScan();
           const person = allUsers.find((u) => u.id === data.data.id) || Object.assign({ status: 'No registrado' }, data.data);
-          buildEditModal(person, { missing: data.missing || [], method });
+          const nombre = `${data.data.first_name || ''} ${data.data.last_name || ''}`.trim();
+          // Se AVISA y se ofrece abrir «Editar persona» (antes se abría sola o solo salía un aviso que se iba): no se acredita hasta completar el dato.
+          const abrir = window.showConfirm
+            ? await window.showConfirm(`<strong>${window.escapeHtml ? window.escapeHtml(nombre) : nombre}</strong> no se puede acreditar todavía.<br>${window.escapeHtml ? window.escapeHtml(data.details || ('Falta: ' + faltan)) : (data.details || faltan)}.<br><br>¿Abrir «Editar persona» para completarlo? Al guardar queda acreditado(a) en el mismo paso.`, { variant: 'warning', title: 'Falta un dato obligatorio', confirmLabel: 'Abrir «Editar persona»' })
+            : true;
+          if (abrir) buildEditModal(person, { missing: data.missing || [], method });
+          else showToast(`${nombre || 'La persona'} no se acreditó: falta ${faltan}`, 'warning');
           return;
         }
         if (data.result === 'SÍ') {
@@ -1438,8 +1475,8 @@
             showToast(`Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
           applyFlags(data);
-          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
-          await reload();
+          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print, skip: data.auto_print_skip });
+          await syncAfterScan();
           clearSearchBox();                                         // 5-nov-2026: acreditar deja la caja vacía (antes dejaba la cédula escrita)
           return;
         }
@@ -1448,7 +1485,7 @@
           // real: antes esto acreditaba igual, quedaba "verde" sin querer) — se deja la fila
           // filtrada y VISIBLE pero SIN acreditar (blanco/"No registrado"); un botón puntual en
           // esa misma fila confirma con un clic, sin modal aparte.
-          await reload();
+          await syncAfterScan();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
           const row = document.querySelector(`#directoryTableBody tr[data-user-id="${CSS.escape(data.data.id)}"]`);
           const actionTd = row ? row.querySelector('.action-cell') : null;
@@ -1487,10 +1524,11 @@
             found ? 'success' : 'error'
           );
           if (found) verdict('info', 'Cédula no encontrada', `Mostrando coincidencias por nombre para «${fullName}»`);
-          else verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`);
+          else { verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`); if (bigNotFound) showNotFoundAlert(cedula, fullName); }
         } else {
           showToast(data.details || 'Cédula no encontrada', 'error');
           verdict('err', 'No está en la lista', 'Cédula no encontrada. Si es una persona nueva, usa «Registrar nuevo».');
+          if (bigNotFound) showNotFoundAlert(cedula, '');
         }
       } catch (e) {
         showToast('Error de red', 'error');
@@ -1511,9 +1549,11 @@
           e.preventDefault();
           let raw = cedulaInput.value.trim();
           if (!raw) return;
+          let leido = raw;                                                // lo que escribió el lector, tal cual (una vCard entera): el buscador la entiende completa
           if (window.QrCode && QrCode.collect) {                       // QR en vCard con lector de mano: llega en varias líneas; se espera a que termine (Fase 10, C)
             const whole = QrCode.collect(raw);
             if (whole === null) { cedulaInput.value = ''; syncClearBtn(); return; }
+            leido = whole;
             raw = QrCode.unwrap(whole).trim();
             if (!raw) { cedulaInput.value = ''; syncClearBtn(); return; }
           }
@@ -1526,7 +1566,7 @@
             return;
           }
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
-            const q = SC.classifyQuery(raw);
+            const q = SC.classifyQuery(leido);
             const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
               || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
@@ -1557,6 +1597,12 @@
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
       hashesSettled: async () => { while (inflightHashes.size) await Promise.all([...inflightHashes]); },      // para pruebas y para quien necesite saber que la búsqueda por cédula ya se completó
       submitScannedCedula: (cedula, nameInfo, method) => fastCheckin(cedula, false, nameInfo || null, undefined, method),
+      /* Cédula vieja o nueva leída con la cámara: busca PRIMERO por cédula (acredita si coincide, igual que el lector de mano); si no, por nombre con la misma tolerancia de siempre
+         (errores de escritura, nombres abreviados) y deja las coincidencias a la vista; y si no hay ninguna, avisa con la ventana roja grande. El QR no pasa por aquí. */
+      scanCedulaCard: async (cedula, nameInfo) => {
+        bigNotFound = true;
+        try { return await fastCheckin(cedula, false, nameInfo || null, undefined, undefined); } finally { bigNotFound = false; }
+      },
       /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
          filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
       clearFilters: () => {

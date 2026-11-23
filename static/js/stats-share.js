@@ -43,14 +43,16 @@
     var input = el('input', 'gw-input'); input.type = 'text'; input.readOnly = true; input.value = d.url; input.setAttribute('aria-label', 'Enlace de solo lectura');
     var btn = el('button', 'gw-btn gw-btn--secondary', 'Copiar enlace'); btn.type = 'button';
     btn.addEventListener('click', function () { copy(d.url).then(function (ok) { if (ok) toast('Enlace copiado', 'success'); else { input.focus(); input.select(); toast('Selecciona el enlace y cópialo', 'info'); } }); });
-    line.append(input, btn);
+    var qrBtn = el('button', 'gw-btn gw-btn--secondary', 'Generar QR'); qrBtn.type = 'button'; qrBtn.setAttribute('data-qr-link', d.url); qrBtn.setAttribute('data-qr-title', 'Estadísticas');
+    line.append(input, btn, qrBtn);
     box.append(line);
     if (d.tv_url) {          // la misma credencial abre la pantalla de TV (ingreso en vivo para proyectar)
       var tvLine = el('div', 'gw-share__line');
       var tvIn = el('input', 'gw-input'); tvIn.type = 'text'; tvIn.readOnly = true; tvIn.value = d.tv_url; tvIn.setAttribute('aria-label', 'Enlace de la pantalla de TV');
       var tvBtn = el('button', 'gw-btn gw-btn--secondary', 'Copiar enlace de TV'); tvBtn.type = 'button';
       tvBtn.addEventListener('click', function () { copy(d.tv_url).then(function (ok) { if (ok) toast('Enlace de TV copiado', 'success'); else { tvIn.focus(); tvIn.select(); toast('Selecciona el enlace y cópialo', 'info'); } }); });
-      tvLine.append(tvIn, tvBtn);
+      var tvQr = el('button', 'gw-btn gw-btn--secondary', 'Generar QR'); tvQr.type = 'button'; tvQr.setAttribute('data-qr-link', d.tv_url); tvQr.setAttribute('data-qr-title', 'Pantalla de TV');
+      tvLine.append(tvIn, tvBtn, tvQr);
       box.append(el('p', 'gw-hint', 'Para proyectar en un televisor (ingreso en vivo):'), tvLine);
     }
     box.append(el('p', 'gw-hint', 'Vence el ' + d.expires_local + '. Solo muestra estadísticas' + (d.tv_url ? ' y el ingreso en vivo' : '') + '.'));

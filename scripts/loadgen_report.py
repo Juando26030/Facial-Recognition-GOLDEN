@@ -11,6 +11,7 @@ import sys
 CRITERIA = {   # escenario: (petición que se juzga, p95 máximo en ms). «forms» tiene su propio criterio (forms_criteria, abajo)
     "cedula": ("POST checkin-cedula", 500),
     "face": ("POST recognize", 2000),
+    "rush": ("POST checkin-cedula (no existe, por nombre)", 1500),          # 40.000 escaneos sin pausa: el peor caso (búsqueda por nombre sobre todo el cliente)
 }
 
 

@@ -93,7 +93,8 @@
             <div class="gw-field">
               <label class="gw-label" for="rosterFileInput">Archivo de la lista (.xlsx o .csv)</label>
               <input class="gw-input" type="file" name="roster_file" id="rosterFileInput" accept=".xlsx,.csv" required aria-describedby="rosterFileHelp">
-              <p id="rosterFileHelp" class="gw-hint">¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download>Descarga la plantilla de Excel</a>.</p>
+              <p id="rosterFileHelp" class="gw-hint">¿No tienes el formato? {% if code_enabled %}<a href="/api/events/{{ event.id }}/roster-template" download>Descarga la plantilla de Excel (trae la columna «código»)</a>{% else %}<a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download>Descarga la plantilla de Excel</a>{% endif %}.</p>
+            {% if code_enabled %}<p class="gw-hint">Este evento usa <b>código</b>: la columna <b>«código»</b> trae el número del QR de cada persona{% if code_required %} (es <b>obligatorio</b>: la fila sin código no se carga){% else %} (opcional){% endif %}. No se puede repetir ni ser igual a ninguna cédula.</p>{% endif %}
             </div>
             <p class="gw-hint">Columna opcional <b>«Registrado en formulario»</b> (sí / no): con «sí» la persona queda como <b>ya inscrita</b> en los formularios de este evento y no podrá inscribirse otra vez; no ocupa cupo. Se aplica a los formularios que ya existan al cargar la lista.</p>
             <p class="gw-hint">Si la lista tiene miles de personas con foto, no hace falta partir el archivo: el sistema lo envía solo en varios grupos seguidos.</p>
@@ -178,6 +179,16 @@
 
     <div id="rosterResult" class="gw-stack" role="status" aria-live="polite"></div>
 
+    {% if not roster_blocked and event.status != 'finalizado' %}
+    <section class="gw-step" id="rosterWipe" aria-labelledby="wipeTitle">
+      <div class="gw-step__head"><h2 class="gw-step__title" id="wipeTitle">¿Subiste una base equivocada?</h2></div>
+      <div class="gw-step__body gw-stack">
+        <p>Puedes borrar de este evento a las personas que entraron por «Adjuntar base de datos». No se borran las personas creadas a mano, las que se autoregistraron ni quienes ya tienen un ingreso registrado. Después puedes subir la base correcta.</p>
+        <p id="wipeInfo" class="gw-text-sm" role="status" aria-live="polite">Calculando…</p>
+        <button type="button" id="wipeBtn" class="gw-btn gw-btn--danger-outline" disabled>Borrar la base cargada</button>
+      </div>
+    </section>
+    {% endif %}
     {% if append_available %}
     <form id="appendForm" class="gw-step">
       <div class="gw-step__head"><h2 class="gw-step__title">Solo agregar personas nuevas</h2></div>
@@ -241,6 +252,34 @@ useSourceEvent.addEventListener("change", async () => {
         sourceEventsLoaded = true;
     }
 });
+/* «Borrar la base cargada»: solo las personas de origen «base» sin ingresos (app/roster_delete.py). Pide escribir BORRAR. */
+(function () {
+    const btn = document.getElementById("wipeBtn"), info = document.getElementById("wipeInfo");
+    if (!btn) return;
+    const base = `/api/events/${window.EVENT_ID}/roster-loaded`;
+    async function refresh() {
+        try {
+            const r = await fetch(base), d = await r.json();
+            if (!r.ok) throw new Error(d.detail || "No se pudo consultar.");
+            info.textContent = d.loaded ? `Personas cargadas por base: ${d.loaded}. Se borrarían ${d.deletable}` + (d.kept_registered ? ` y se conservarían ${d.kept_registered} por tener ingresos.` : ".") : "Este evento no tiene personas cargadas por base.";
+            btn.disabled = !d.deletable; btn.dataset.n = String(d.deletable);
+        } catch (err) { info.textContent = err.message; btn.disabled = true; }
+    }
+    btn.addEventListener("click", async () => {
+        const n = btn.dataset.n || "0";
+        const typed = await showPrompt(`Se borrarán ${n} persona(s) de este evento. No se puede deshacer. Para confirmar escribe BORRAR.`, { title: "Borrar la base cargada", confirmLabel: "Borrar", placeholder: "BORRAR" });
+        if (typed == null) return;
+        if (String(typed).trim().toUpperCase() !== "BORRAR") { showToast("No se borró nada: hay que escribir BORRAR.", "error"); return; }
+        btn.disabled = true;
+        try {
+            const r = await fetch(base, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "BORRAR" }) }), d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "No se pudo borrar.");
+            showToast(d.message, "success");
+        } catch (err) { showToast(err.message, "error"); }
+        refresh();
+    });
+    refresh();
+})();
 const rosterForm = document.getElementById("rosterForm");
 const keepDuplicates = document.getElementById("keepDuplicates");
 const textCase = document.getElementById("textCase");

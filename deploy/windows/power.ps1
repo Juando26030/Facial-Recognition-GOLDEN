@@ -1,4 +1,4 @@
-# El servidor local NO se apaga ni se duerme solo (decisión de Juan David, 9-nov-2026): un turno puede durar 12 horas o más. Solo se apaga a mano.
+﻿# El servidor local NO se apaga ni se duerme solo (decisión de Juan David, 9-nov-2026): un turno puede durar 12 horas o más. Solo se apaga a mano.
 # Se corre una vez al instalar (con permisos de administrador). Corriente (AC): nunca suspender, nunca hibernar, nunca apagar pantalla ni disco.
 . "$PSScriptRoot\config.ps1"
 Write-Log 'Ajustando energía: el equipo no se duerme ni se apaga solo (con corriente)'

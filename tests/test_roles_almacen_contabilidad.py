@@ -158,7 +158,7 @@ def test_roles_mix_freely_over_a_standalone_account(client, factory, db):
     alm = factory.staff("almacen", "alm2")
     login(client, "adm")
     r = client.put(f"/api/staff/{alm.id}/roles", json={"extra_roles": ["contabilidad", "comercial"]})
-    assert r.status_code == 200 and r.json()["extra_roles"] == ["contabilidad", "comercial"]
+    assert r.status_code == 200 and sorted(r.json()["extra_roles"]) == ["comercial", "contabilidad"]
     db.expire_all()
     got = db.get(StaffUser, alm.id)
     assert effective_roles(got) == {"almacen", "contabilidad", "comercial"} and not auth.is_inventory_only(got)          # con comercial ya tiene panel

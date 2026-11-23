@@ -81,7 +81,8 @@ def test_form_files_routes_and_screens():
     f = _t("app/routers/forms.py")
     assert '/forms/{form_id}/files-zip' in f and "formfiles.MAX_FILES" in f
     a = _t("app/routers/api.py")
-    assert "/users/{user_id}/form-files" in a and 'require_role("coordinador")' in a[a.index("def person_form_files"):a.index("def person_form_file_download")]
+    assert "/users/{user_id}/form-files" in a and 'require_role("digitador")' in a[a.index("def person_form_files"):a.index("def person_form_file_download")]
+    assert 'require_role("digitador")' in a[a.index("def person_form_file_download"):a.index("def incomplete_registrations")]      # cliente temporal y digitador temporal también descargan; get_event_for_staff les exige estar autorizados en el evento
     assert "formfiles.stored_text" in _t("app/formsvc.py")
     assert "files-zip?field=" in _t("templates/kiosk_formulario_editor.html") and 'id="ansFiles"' in _t("templates/kiosk_formulario_editor.html")
     assert "/form-files`" in _t("static/js/directory.js")
@@ -94,3 +95,13 @@ def test_switch_to_realtime_feeds_existing_submissions():
     body = s[s.index("def enqueue_pending_feed"):s.index("def feed_pending")]
     assert "fed == False" in body and '"form_feed"' in body and "dedupe_key" in body
     assert "feed_queued" in _t("templates/kiosk_formulario_editor.html")
+
+
+def test_servidor_local_lista_como_eventos_y_abre_el_kiosco():
+    js = _t("static/js/servidor-local.js")
+    assert "gw-event-card" in js and "p-cli__acts" in js and "Informe pendiente" in js          # la misma tarjeta que la lista de Eventos
+    assert "href=\"/kiosk/${e.local_event_id}\"" in js and "/registro" not in js               # «Ingresar» lleva al kiosco, no al registro
+    page = _t("templates/servidor_local.html")
+    assert "p-clientes.css" in page and "gw-eventos.css" in page
+    meta = _t("app/routers/node_api.py")
+    assert "commercial_name" in meta and "coordinator_name" in meta and "report_uploaded" in meta

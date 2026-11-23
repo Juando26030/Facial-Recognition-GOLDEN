@@ -28,12 +28,13 @@ KNOWN = {
     "certificado": {"certificado", "certificado de asistencia"},
     "registrado en formulario": {"registrado en formulario", "registrado en el formulario", "registrado formulario", "registrada en formulario", "ya registrado en formulario", "ya inscrito", "inscrito en formulario",
                                  "inscrito formulario", "ya inscrito en formulario"},
+    "codigo": {"codigo", "codigo qr", "codigo del qr", "codigo de acceso", "serial", "serial qr", "serial del qr", "qr"},          # 0140: código del evento (serial del QR, distinto de la cédula)
     "fecha de nacimiento": {"fecha de nacimiento", "fecha nacimiento", "nacimiento", "fecha de nac", "fec nacimiento", "fecha nac", "f nacimiento", "birth date", "birthdate", "date of birth", "dob"},
 }
 _LOOKUP = {variant: canonical for canonical, variants in KNOWN.items() for variant in variants}
 
 LABELS = {"id": "Cédula", "nombres": "Nombres", "apellidos": "Apellidos", "cargo": "Cargo", "entidad": "Entidad", "telefono": "Teléfono", "correo": "Correo", "tipo de asistente": "Tipo de asistente",
-          "categoria": "Categoría", "certificado": "Certificado", "registrado en formulario": "Registrado en formulario", "fecha de nacimiento": "Fecha de nacimiento"}
+          "categoria": "Categoría", "certificado": "Certificado", "registrado en formulario": "Registrado en formulario", "fecha de nacimiento": "Fecha de nacimiento", "codigo": "Código"}
 
 
 def norm(title) -> str:

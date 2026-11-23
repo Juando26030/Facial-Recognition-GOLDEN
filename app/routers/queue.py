@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from app import queue_svc, queue_turns as qt, security
+from app import event_archive, queue_svc, queue_turns as qt, security
 from app.auth import get_event_for_staff, require_event_in_progress, require_role_excluding
 from app.database import get_db
 from app.login_control import poll_allowed
@@ -78,7 +78,7 @@ def upload_manual(event_id: int, file: UploadFile = File(...), rebuild: bool = F
     removed = queue_svc.reset_turns(db, event) if rebuild else 0
     res = queue_svc.assign_batch(db, event, "manual", parsed)
     db.commit()
-    return {**res, "removed": removed, "errors": parsed["errors"][:30], "errors_total": len(parsed["errors"]), "duplicates": len(parsed["duplicates"])}
+    return {**res, "removed": removed, "errors": parsed["errors"][:30], "errors_total": len(parsed["errors"]), "duplicates": int(parsed["duplicates"])}
 
 
 @router.get("/events/{event_id}/queue/template")
@@ -91,6 +91,7 @@ def manual_template(event_id: int, db: Session = Depends(get_db), staff: StaffUs
 @router.get("/events/{event_id}/queue")
 def queue_state(event_id: int, lane: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)          # la lista trae nombres de personas: con la base archivada solo la ve un super_admin
     snap = queue_svc.snapshot(db, event)
     return JSONResponse({**qt.tv_view(snap), "enabled": snap["enabled"], "mode": snap["mode"], "total": snap["total"],
                          "listing": queue_svc.queue_listing(db, event, lane.strip().upper() or None)}, headers=NO_STORE)

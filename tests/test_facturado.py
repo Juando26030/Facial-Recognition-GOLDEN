@@ -400,3 +400,26 @@ def test_email_text_escapes_the_event_name():
     mail = final_db.render("<b>Feria</b>", "Ana", "https://app.example.com/eventos?editar=1")
     assert "<b>Feria</b>" not in mail["html"] and "&lt;b&gt;Feria&lt;/b&gt;" in mail["html"] and "\n" not in mail["subject"]
     assert "Ya se subió la base de datos final del evento <b>Feria</b>. Revisa si ya se puede facturar el evento." in mail["text"]
+
+
+def test_billing_sends_the_survey_by_itself_to_the_primary_contact(client, factory, db):
+    """16-nov-2026: al pasar a «Facturado» la encuesta se encola sola para el contacto PRINCIPAL del evento (y sin contacto con correo no se envía y se avisa, sin deshacer el cambio)."""
+    from app import event_contacts
+    ev, facturado, _ = _setup(factory, db, "com")
+    event_contacts.replace(db, ev, [{"name": "Ana Cliente", "phone": "300", "email": "ana@example.com", "is_primary": True}])
+    db.commit()
+    login(client, "com")
+    r = client.patch(f"/api/events/{ev.id}", json={"state_id": facturado.id})
+    assert r.status_code == 200, r.text
+    sv = r.json()["survey_email"]
+    assert sv["sent"] is True and sv["recipient"] == "ana@example.com"
+    assert db.query(Job).filter(Job.kind == "delivery_mail").count() == 1
+
+
+def test_billing_without_a_contact_email_still_bills_and_says_why(client, factory, db):
+    ev, facturado, _ = _setup(factory, db, "com")
+    login(client, "com")
+    r = client.patch(f"/api/events/{ev.id}", json={"state_id": facturado.id})
+    assert r.status_code == 200 and r.json()["survey_email"]["sent"] is False and "contacto principal" in r.json()["survey_email"]["detail"]
+    db.expire_all()
+    assert db.get(Event, ev.id).billed_at is not None and db.query(Job).filter(Job.kind == "delivery_mail").count() == 0

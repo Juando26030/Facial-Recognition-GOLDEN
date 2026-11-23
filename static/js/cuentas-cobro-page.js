@@ -1,5 +1,7 @@
 /* Pantalla /cuentas-de-cobro (Fase 8): cuentas de Wompi de terceros, asignación a formularios y QR. Las llaves secretas solo viajan al guardar; nunca se muestran de vuelta.
-   Delegación de eventos, texto escapado, mensajes con showToast/showConfirm. El QR se dibuja en el navegador (qrcode-generator). */
+   Delegación de eventos, texto escapado, mensajes con showToast/showConfirm. El QR se dibuja en el navegador (qrcode-generator).
+   Guardado unificado: la cuenta de cobro que se elige para cada formulario queda PENDIENTE y se guarda con la barra única (GWParams, bloque «formularios»). Agregar/cambiar llaves/«A qué pertenece»
+   (ventanas con su propio «Guardar»), probar, crear enlace, activar/desactivar y borrar siguen siendo inmediatos con aviso. */
 (function () {
   'use strict';
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -8,6 +10,7 @@
   let accounts = [];
   let formsData = [];
   let eventsData = [];
+  const pendingAssign = new Map();          // id del formulario -> id de la cuenta elegida ('' = la de Golden), sin guardar; sobrevive a recargar la lista
   async function api(path, opts) {
     const res = await fetch(path, opts);
     const data = await res.json().catch(() => ({}));
@@ -92,9 +95,10 @@
       const d = await api('/api/payment-accounts-forms');
       formsData = d.forms;
       eventsData = d.events || [];
+      const selOf = (f) => (pendingAssign.has(f.id) ? pendingAssign.get(f.id) : f.payment_account_id);
       const opts = (sel, f) => '<option value="">Cuenta de Golden</option>' + accounts.filter((a) => (a.active && usable(a, f)) || a.id === sel).map((a) => `<option value="${a.id}"${a.id === sel ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
       frmBox.innerHTML = d.forms.length ? `<ul class="gw-list">${d.forms.map((f) => `<li class="gw-list__item"><div><strong>${esc(f.name)}</strong> <span class="gw-hint">${esc(f.event)}</span></div>
-        <div class="gw-card-row__actions"><select class="gw-input gw-input--short" data-assign="${f.id}" data-event="${f.event_id}" aria-label="Cuenta de cobro de ${esc(f.name)}">${opts(f.payment_account_id, f)}</select>
+        <div class="gw-card-row__actions"><select class="gw-input gw-input--short" data-assign="${f.id}" data-event="${f.event_id}" data-orig="${f.payment_account_id == null ? '' : f.payment_account_id}" aria-label="Cuenta de cobro de ${esc(f.name)}">${opts(selOf(f), f)}</select>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-qr="${esc(f.url)}" data-title="${esc(f.name)}">QR</button></div></li>`).join('')}</ul>`
         : '<div class="gw-state" role="status"><p class="gw-state__title">No hay formularios</p></div>';
     } catch (err) { frmBox.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">${esc(err.message)}</p></div>`; }
@@ -143,6 +147,7 @@
       } else if (b.dataset.toggle) {
         const a = accounts.find((x) => String(x.id) === b.dataset.toggle);
         await send('PUT', `/api/payment-accounts/${a.id}`, { active: !a.active });
+        showToast(a.active ? 'Cuenta desactivada' : 'Cuenta activada', 'success');
         await load();
       } else if (b.dataset.del) {
         if (!(await showConfirm(`¿Borrar la cuenta «${b.dataset.name}» y sus llaves? Los formularios que la usan vuelven a cobrar con la de Golden.`, { variant: 'warning', confirmLabel: 'Sí, borrar' }))) return;
@@ -160,10 +165,10 @@
           <div class="gw-field"><label class="gw-label">Descripción (opcional)</label><input class="gw-input" name="description" maxlength="200"></div>`,
           async (v, back) => {
             const r = await send('POST', `/api/payment-accounts/${b.dataset.link}/payment-link`, v);
-            modal('Enlace listo', `<div style="max-width:16rem;margin:auto">${qrSvg(r.url, 6)}</div><p class="gw-hint"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>`);
+            modal('Enlace listo', `<div class="gw-qrbox">${qrSvg(r.url, 6)}</div><p class="gw-hint"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>`);
           }, 'Crear');
       } else if (b.dataset.qr) {
-        modal('QR de ' + b.dataset.title, `<div style="max-width:16rem;margin:auto">${qrSvg(b.dataset.qr, 6)}</div><p class="gw-hint">${esc(b.dataset.qr)}</p>`);
+        modal('QR de ' + b.dataset.title, `<div class="gw-qrbox">${qrSvg(b.dataset.qr, 6)}</div><p class="gw-hint">${esc(b.dataset.qr)}</p>`);
       }
     } catch (err) { b.disabled = false; fail(err); }
   });
@@ -173,12 +178,23 @@
     const own = e.target.closest('select[data-scope]');
     if (own) { syncOwner(own.closest('.gw-modal') || document); return; }
     const s = e.target.closest('select[data-assign]');
-    if (!s) return;
-    try {
-      await send('PUT', `/api/events/${s.dataset.event}/forms/${s.dataset.assign}`, { payment_account_id: s.value ? Number(s.value) : null });
-      showToast('Cuenta de cobro asignada', 'success');
+    if (s) pendingAssign.set(Number(s.dataset.assign), s.value ? Number(s.value) : '');          // pendiente: la barra ya avisa «Cambios sin guardar» (select dentro de [data-psave])
+  });
+
+  GWParams.register({
+    key: 'formularios', label: 'Cuenta de cobro de los formularios', order: 10,
+    save: async () => {
+      const failed = [];
+      for (const [fid, acc] of Array.from(pendingAssign.entries())) {
+        const f = formsData.find((x) => x.id === fid);
+        if (!f) { pendingAssign.delete(fid); continue; }
+        if ((f.payment_account_id == null ? '' : f.payment_account_id) === acc) { pendingAssign.delete(fid); continue; }          // quedó como estaba
+        try { await send('PUT', `/api/events/${f.event_id}/forms/${fid}`, { payment_account_id: acc === '' ? null : acc }); pendingAssign.delete(fid); }
+        catch (err) { failed.push(f.name + ': ' + err.message); }
+      }
       await load();
-    } catch (err) { fail(err); await load(); }
+      if (failed.length) throw new Error(failed.join(' · '));
+    },
   });
 
   load();

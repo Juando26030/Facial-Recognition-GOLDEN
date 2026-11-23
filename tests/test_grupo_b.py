@@ -72,9 +72,12 @@ def test_parametros_page_has_the_delete_button():
 
 
 # ---------------------------------------------------------------------------------------------------- B3
-def test_new_cedula_is_a_checkbox_and_the_scan_goes_in_the_same_id_field():
+def test_new_registration_has_one_scan_button_with_the_full_scanner_and_the_scan_goes_in_the_same_id_field():
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
-    assert 'id="regNewCedulaChk"' in reg and 'id="regNewCedulaBox" hidden' in reg and "Escanear cédula" in reg and "Adjuntar imagen" not in reg
+    assert 'id="regScanMrzCameraBtn"' in reg and "Escanear cédula o QR" in reg and "Adjuntar imagen" not in reg
+    assert 'id="regNewCedulaChk"' not in reg and 'id="regNewCedulaBox"' not in reg and "¿Es cédula nueva?" not in reg      # 19-nov-2026: sin casilla, el botón siempre está
+    modo = reg[reg.index("regScanMrzCameraBtn.addEventListener"):]
+    assert "modes: ['old', 'new', 'qr']" in modo[:900] and "onCedula" in modo[:900]                                         # el MISMO escáner del Registro (cédula vieja · nueva · QR)
     assert 'id="regScanCedulaInput"' not in reg                                                     # un solo campo de cédula
     assert "const regScanCedulaInput = document.getElementById('manualIdField');" in reg
     js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")

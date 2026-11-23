@@ -61,3 +61,74 @@ assert.ok(version(dynamicCard, 'L') <= 8);
 assert.ok(version(longest, 'L') <= 10, 'aun el peor caso razonable no pasa de versión 10 (57 módulos)');
 assert.ok(version(typical, 'L') < version(typical, 'M'), 'L es más chico que M para el mismo texto');
 console.log('qr_vcard_check OK');
+
+// ---- 19-nov-2026: cada QR elige qué datos lleva su vCard; sin elegir: nombre y teléfono; «sin vCard» = solo el código
+{
+  const BR = require("../../static/js/badge-render.js");
+  global.window = global.window || {}; window.GWVcard = V; global.GWVcard = V; global.qrcode = qrcode;
+  const VF = ["org", "title", "phone", "email", "categories"];
+  const person = { first_name: "María Fernanda", last_name: "Rodríguez Castañeda", phone: "3001234567", email: "maria@correo.com", entity: "Corporación Universitaria Minuto de Dios", role: "Coordinador general", categories: "VIP, Staff" };
+  const t = (el) => BR.qrText(el, "1016100329", person).text;
+  const base = t({});
+  assert.ok(base.includes("TEL:") && !base.includes("EMAIL:") && !base.includes("ORG:") && !base.includes("TITLE:"), "por defecto: nombre y teléfono");
+  const mini = t({ vcard_fields: [] });
+  assert.ok(!mini.includes("TEL:") && mini.includes("FN:María Fernanda Rodríguez Castañeda"), "sin datos extra: solo el nombre y el código");
+  const all = t({ vcard_fields: ["org", "title", "phone", "email", "categories"] });
+  ["ORG:", "TITLE:", "TEL:", "EMAIL:", "CATEGORIES:"].forEach((k) => assert.ok(all.includes(k), k));
+  assert.deepStrictEqual(BR.qrText({ vcard: false }, "1016100329", person), { text: "1016100329", card: false, level: "M" }, "sin vCard: solo el código");
+  assert.strictEqual(V.unwrap(all), "1016100329", "el lector saca el código igual");
+  if (typeof globalThis.qrcode !== "undefined") {
+    const dens = (el) => { const q = BR.qrText(el, "1016100329|María Fernanda|Rodríguez Castañeda", person); return BR.qrDensity(q.text, q.level); };
+    const dAll = dens({ vcard_fields: ["org", "title", "phone", "email", "categories"] }), dMini = dens({ vcard_fields: [] }), dPlain = dens({ vcard: false });
+    console.log("densidad (versión): todo", dAll.version, "| solo nombre", dMini.version, "| sin vCard", dPlain.version);
+    assert.ok(dAll.version > dMini.version && dMini.version >= dPlain.version, "más datos = QR más denso");
+    assert.ok(dPlain.level === "good", "solo el código: lectura buena");
+  }
+  // modos de QR (18-nov-2026): vcard (por defecto) | mecard | link | code; «vcard:false» de antes = code
+  const withCard = Object.assign({}, person, { card_url: "https://app.golden-eventos.com/tarjeta/AbCdEfGhIjKlMnOpQrStUvWx" });
+  const tm = (el, who) => BR.qrText(el, "1016100329", who || withCard);
+  assert.strictEqual(BR.qrMode({}), "vcard"); assert.strictEqual(BR.qrMode({ vcard: false }), "code"); assert.strictEqual(BR.qrMode({ qr_mode: "link", vcard: false }), "link"); assert.strictEqual(BR.qrMode({ qr_mode: "raro" }), "vcard");
+  assert.strictEqual(tm({ qr_mode: "code" }).text, "1016100329");
+  const lk = tm({ qr_mode: "link" });
+  assert.ok(lk.text.startsWith("https://app.golden-eventos.com/tarjeta/AbCd") && lk.text.endsWith("#GW:1016100329"), "enlace + código en el fragmento"); assert.strictEqual(V.unwrap(lk.text), "1016100329");
+  assert.strictEqual(tm({ qr_mode: "link" }, person).text, "1016100329", "sin enlace público: solo el código");
+  const mc = tm({ qr_mode: "mecard", vcard_fields: ["phone", "email", "org"] });
+  assert.ok(mc.text.startsWith("MECARD:N:") && mc.text.includes("TEL:3001234567;") && mc.text.includes("EMAIL:maria@correo.com;") && !mc.text.includes("ORG"), "MECARD: nombre, teléfono y correo"); assert.strictEqual(V.unwrap(mc.text), "1016100329");
+  assert.strictEqual(tm({ qr_mode: "mecard" }).text.includes("EMAIL"), false, "MECARD por defecto: nombre y teléfono");
+  if (typeof globalThis.qrcode !== "undefined") {
+    const v = (el) => { const q = tm(el); return BR.qrDensity(q.text, q.level).version; };
+    
+// ---- 18-nov-2026: lector 2D que escribe la vCard SIN saltos de línea (la de la prueba en la máquina virtual)
+const plana = 'BEGIN:VCARDVERSION:3.0N:HORTA POLANIA;JENNIFER;;;FN:JENNIFER HORTA POLANIATEL:3112632479NOTE:GW:1END:VCARD';
+assert.deepStrictEqual(V.parseCard(plana), { golden: true, code: '1', name: 'JENNIFER HORTA POLANIA', phone: '3112632479' });
+const completa = V.build({ first_name: 'Ana', last_name: 'Pérez', phone: '300 123', org: 'ACME', title: 'Jefe', email: 'a@b.co', categories: 'VIP,Staff', note: '1016100329|Ana|Pérez' });
+assert.deepStrictEqual(V.parseCard(completa), V.parseCard(completa.replace(/\n/g, '')), 'con o sin saltos de línea sale lo mismo');
+assert.strictEqual(V.parseCard('BEGIN:VCARD\nVERSION:3.0\nFN:Juan Ajeno\nTEL:555\nEND:VCARD').golden, false);
+assert.strictEqual(SC.classifyQuery(plana).kind, 'qr', 'código de Golden, aunque sea corto, se busca exacto');
+assert.strictEqual(SC.classifyQuery(plana).cedula, '1');
+assert.strictEqual(SC.classifyQuery('BEGIN:VCARDVERSION:3.0N:HORTA PO').kind, 'vacio', 'mientras el lector todavía escribe no se busca');
+const ajena = SC.classifyQuery('BEGIN:VCARDVERSION:3.0FN:Juan AjenoTEL:555END:VCARD');
+assert.deepStrictEqual([ajena.kind, ajena.words], ['texto', ['juan', 'ajeno']], 'vCard de un celular: se busca por el nombre');
+const gente = [{ id: '1', first_name: 'JENNIFER', last_name: 'HORTA POLANIA' }, { id: '1001', first_name: 'X', last_name: 'Y' }];
+assert.deepStrictEqual(SC.search(gente, SC.classifyQuery(plana)).map((r) => r.persona.id), ['1']);
+// lector con teclado de Windows en español (19-nov-2026): «:» llega como Ñ y «;» como ñ, sin saltos de línea
+const espanol = 'BEGINÑVCARDVERSIONÑ3.0NÑMORENO FLOREZñLUIS CARLOSñññFNÑLUIS CARLOS MORENO FLOREZTELÑ3115408570NOTEÑGWÑ479888ENDÑVCARD';
+assert.deepStrictEqual(V.parseCard(espanol), { golden: true, code: '479888', name: 'LUIS CARLOS MORENO FLOREZ', phone: '3115408570' });
+assert.strictEqual(V.unwrap(espanol), '479888');
+assert.strictEqual(SC.classifyQuery(espanol).kind, 'qr'); assert.strictEqual(SC.classifyQuery(espanol).cedula, '479888');
+assert.strictEqual(SC.classifyQuery('BEGINÑVCARDVERSIONÑ3.0NÑMORENO FLO').kind, 'vacio', 'mientras escribe, tampoco se busca');
+assert.strictEqual(V.fixLayout('Ñandú ñu'), 'Ñandú ñu', 'un texto normal con Ñ no se toca');
+console.log("versión por modo: código", v({ qr_mode: "code" }), "| enlace", v({ qr_mode: "link" }), "| MECARD", v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }), "| vCard completa", v({ vcard_fields: VF }));
+    assert.ok(v({ qr_mode: "link" }) <= 6, "el enlace queda chico"); assert.ok(v({ qr_mode: "mecard", vcard_fields: ["phone", "email"] }) < v({ vcard_fields: VF }), "MECARD más chico que la vCard completa");
+  }
+  // escarapela digital (19-nov-2026): el QR de la plantilla lleva el código DINÁMICO con el modo del diseño y el lector lo reconoce igual
+  const dyn = "gwq1.123.4567.0123456789abcdef0123";
+  ["vcard", "mecard", "link", "code"].forEach((mode) => {
+    const txt = BR.qrText({ qr_mode: mode, vcard_fields: ["phone", "email"] }, dyn, withCard).text;
+    assert.strictEqual(V.unwrap(txt), dyn, "el código dinámico sale intacto en el modo " + mode);
+    assert.ok(isDynamic(txt), "el lector lo reconoce como dinámico en el modo " + mode);
+    assert.ok(!txt.includes("1016100329"), "el QR digital nunca lleva la cédula");
+  });
+  assert.strictEqual(typeof BR.redrawQrs, "function");
+  delete global.window; delete global.GWVcard; delete global.qrcode;
+}

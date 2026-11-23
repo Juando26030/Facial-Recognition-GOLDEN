@@ -41,9 +41,9 @@ def test_default_reproduces_todays_new_event_form():
     t = _tpl()
     keys = [k for s in t["creation_layout"]["sections"] for k in s["keys"]]
     assert keys == ["client", "event_code", "name", "event_type_id", "country", "city", "location", "address", "start_date", "end_date", "event_time_start", "event_time_end", "setup_date", "setup_time_start", "setup_time_end",
-                    "coordinator_staff_id", "commercial_staff_id", "super_event_id", "bandana", "notes"]
+                    "coordinator_staff_id", "commercial_staff_id", "super_event_id", "bandana", "notes", "sw_review_detail"]
     req = {f["key"] for f in t["fields"] if f["required"]}
-    assert req == set(keys) - {"event_type_id", "super_event_id", "bandana", "notes"}
+    assert req == set(keys) - {"event_type_id", "super_event_id", "bandana", "notes", "sw_review_detail"}
     assert len(t["creation_layout"]["sections"]) == 4
 
 
@@ -53,7 +53,7 @@ def test_switch_fields_exist_and_map_to_parametros_columns():
     assert set(sw) == set(et.SWITCH_KEYS)
     assert sw["inventory_enabled"] == "sw_inventory_enabled" and et.BASE_COLUMNS["sw_inventory_enabled"] == ("inventory_enabled",)
     placed = {k for s in t["creation_layout"]["sections"] for k in s["keys"]}
-    assert not placed & set(sw.values())            # de fábrica no se piden al crear: se definen después en Parámetros
+    assert not placed & (set(sw.values()) - {"sw_review_detail"})            # de fábrica no se piden al crear: se definen después en Parámetros (salvo «Revisar el detalle», que nace en «Revisa y crea»)
 
 
 def test_locked_fields_cannot_be_removed_or_made_optional():

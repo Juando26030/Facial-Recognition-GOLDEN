@@ -16,6 +16,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app import server_keys
 from app.database import get_db
 from app.models import LocalNode, StaffUser
 from app.timeutil import utcnow
@@ -42,9 +43,28 @@ def find_node(db: Session, token: Optional[str]) -> Optional[LocalNode]:
     return node if node is not None and node.revoked_at is None else None
 
 
+DISABLED_DETAIL = server_keys.DISABLED_DETAIL
+
+
+def is_disabled(db: Session, token: Optional[str]) -> bool:
+    """¿El token es de un servidor que un administrador DESHABILITÓ (su llave está deshabilitada)? Sin esto un token revocado por otro motivo y uno deshabilitado se verían igual."""
+    token = (token or "").strip()
+    if not token.startswith(TOKEN_PREFIX) or len(token) > 200:
+        return False
+    node = db.query(LocalNode).filter(LocalNode.token_hash == hash_token(token)).first()
+    if node is None or node.revoked_at is None:
+        return False
+    if node.disabled_at is not None:                  # 0159: queda en el nodo aunque la llave deshabilitada se haya eliminado de la lista
+        return True
+    from app.models import LocalServerKey
+    return db.query(LocalServerKey.id).filter(LocalServerKey.node_id == node.id, LocalServerKey.disabled_at.isnot(None)).first() is not None
+
+
 def require_node(request: Request, db: Session = Depends(get_db)) -> LocalNode:
     node = find_node(db, request.headers.get("X-Node-Token"))
     if node is None:
+        if is_disabled(db, request.headers.get("X-Node-Token")):
+            raise HTTPException(status_code=403, detail=DISABLED_DETAIL)
         raise HTTPException(status_code=401, detail="Servidor local no autorizado (token ausente, no válido o revocado)")
     now = utcnow()
     version = (request.headers.get("X-Node-Version") or "")[:80] or None

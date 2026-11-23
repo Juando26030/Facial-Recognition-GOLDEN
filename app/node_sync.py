@@ -20,8 +20,8 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import versioning
-from app.models import AccessLog, Event, EventAttendee, User
+from app import local_env, versioning
+from app.models import AccessLog, Event, EventAttendee, PersonChange, PrintLog, User
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.node_sync")
@@ -29,7 +29,7 @@ HTTP_TIMEOUT = 20.0
 MIN_GAP = timedelta(seconds=60)                      # dos procesos del mismo servidor no suben el mismo evento a la vez
 PERSON_ORIGINS = ("manual", "autoregistro")
 LOG_TYPE = "Existente"
-BATCH_LOGS, BATCH_OPS = 400, 100                     # por debajo de los topes de la nube (SYNC_MAX_RECORDS 500 / OUTBOX_MAX_OPS)
+BATCH_LOGS, BATCH_OPS, BATCH_REC = 400, 100, 400                     # por debajo de los topes de la nube (SYNC_MAX_RECORDS 500 / OUTBOX_MAX_OPS)
 _run_lock = threading.Lock()
 
 
@@ -43,6 +43,7 @@ def is_local_server() -> bool:
 
 
 def node_token() -> str:
+    local_env.refresh()
     return (os.getenv("NODE_TOKEN") or "").strip()
 
 
@@ -78,6 +79,8 @@ def _call(method: str, path: str, body: Optional[dict] = None) -> dict:
             detail = json.loads(e.read(5000).decode("utf-8")).get("detail")
         except (ValueError, OSError):
             detail = None
+        from app import server_lock
+        server_lock.note_cloud_error(e.code, detail)
         raise SyncError(str(detail)[:200] if isinstance(detail, str) else f"La nube respondió {e.code}")
     except (urllib.error.URLError, OSError, ValueError):
         raise SyncError("Sin conexión con la nube")
@@ -106,10 +109,26 @@ def _logs_query(db: Session, event: Event):
     return q
 
 
+def _prints_query(db: Session, event: Event):
+    q = db.query(PrintLog).filter(PrintLog.event_id == event.id)
+    if event.sync_print_id is not None:
+        return q.filter(PrintLog.id > event.sync_print_id)
+    return q.filter(PrintLog.printed_at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)          # sin marca: solo lo hecho DESPUÉS de bajar el evento
+
+
+def _changes_query(db: Session, event: Event):
+    q = db.query(PersonChange).filter(PersonChange.event_id == event.id)
+    if event.sync_change_id is not None:
+        return q.filter(PersonChange.id > event.sync_change_id)
+    return q.filter(PersonChange.at > event.sync_package_at) if event.sync_package_at is not None else q.filter(False)
+
+
 def pending_counts(db: Session, event: Event) -> dict:
     persons = _persons_query(db, event).count()
     logs = _logs_query(db, event).filter(AccessLog.record_type == LOG_TYPE).count()
-    return {"persons": persons, "logs": logs, "total": persons + logs}
+    prints = _prints_query(db, event).count()
+    changes = _changes_query(db, event).count()
+    return {"persons": persons, "logs": logs, "prints": prints, "changes": changes, "total": persons + logs + prints + changes}
 
 
 # Lo que se hace en el servidor local y TODAVÍA NO SUBE a la nube (la subida solo lleva personas nuevas e ingresos). Mientras exista algo así,
@@ -118,8 +137,6 @@ LOCAL_ONLY = (
     ("inventory_deliveries", "delivered_at", "entregas de inventario"),
     ("event_inventory_items", "updated_at", "cambios del inventario del evento"),
     ("area_movements", "timestamp", "movimientos de áreas"),
-    ("print_logs", "printed_at", "impresiones"),
-    ("person_changes", "at", "ediciones de personas"),
     ("roulette_draws", "created_at", "sorteos de la ruleta"),
     ("queue_turns", "created_at", "turnos"),
     ("queue_calls", "called_at", "llamados de turnos"),
@@ -206,6 +223,26 @@ def _push_logs(db: Session, event: Event) -> None:
         db.commit()
 
 
+def _push_records(db: Session, event: Event) -> None:
+    """Impresiones y ediciones de personas hechas aquí (historial). Avanzan sus marcas de agua solo con lo que la nube confirmó."""
+    path = f"/api/node/events/{event.cloud_event_id}/records"
+    while True:
+        prints = _prints_query(db, event).order_by(PrintLog.id).limit(BATCH_REC).all()
+        changes = _changes_query(db, event).order_by(PersonChange.id).limit(BATCH_REC).all()
+        if not prints and not changes:
+            return
+        body = {"print_logs": [{"cedula": p.user_id, "printed_at": p.printed_at.isoformat() if p.printed_at else None, "kind": p.kind} for p in prints],
+                "person_changes": [{"cedula": c.user_id, "at": c.at.isoformat() if c.at else None, "kind": c.kind, "old_value": c.old_value, "new_value": c.new_value, "detail": c.detail} for c in changes]}
+        out = _call("POST", path, body)
+        if not out.get("ok"):
+            raise SyncError("La nube no confirmó las impresiones o ediciones del lote: se reintenta")
+        if prints:
+            event.sync_print_id = prints[-1].id
+        if changes:
+            event.sync_change_id = changes[-1].id
+        db.commit()
+
+
 def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
     """Sube lo pendiente de UN evento. Devuelve {"ok", "pending", "error"}. No lanza: guarda el motivo en `sync_error`."""
     if event.cloud_event_id is None:
@@ -219,6 +256,7 @@ def upload_event(db: Session, event: Event, *, force: bool = False) -> dict:
         cloud_ping()
         _push_persons(db, event)             # primero las personas nuevas: los ingresos de esa misma gente ya las encuentran
         _push_logs(db, event)
+        _push_records(db, event)
         counts = pending_counts(db, event)
         if counts["total"] == 0:
             _call("POST", f"/api/node/events/{event.cloud_event_id}/uploaded")
@@ -244,6 +282,24 @@ def _refresh_accounts(db: Session) -> None:
         log.warning("no se pudieron actualizar las cuentas desde la nube")
 
 
+def refresh_checklist(db: Session, ev: Event) -> bool:
+    """Pone al día la foto del checklist de inventario de UN evento descargado (solo lectura; sin datos de personas). Sin internet o con un fallo, se conserva la anterior. True si se actualizó."""
+    from app import cloud_client, event_checklist
+    try:
+        event_checklist.save_snapshot(db, ev.id, cloud_client.inventory_checklist(ev.cloud_event_id))
+        db.commit()
+        return True
+    except Exception:                                        # noqa: BLE001  (sin internet: normal)
+        db.rollback()
+        return False
+
+
+def _refresh_checklists(db: Session) -> None:
+    """Mientras hay internet, deja puesta al día la foto del checklist de cada evento descargado."""
+    for ev in synced_events(db):
+        refresh_checklist(db, ev)
+
+
 def upload_all(db: Session, *, force: bool = False) -> dict:
     """Un ciclo: todos los eventos bajados de la nube. Un fallo en uno no detiene a los demás."""
     if not configured():
@@ -252,6 +308,7 @@ def upload_all(db: Session, *, force: bool = False) -> dict:
         return {"configured": True, "busy": True, "events": 0}
     try:
         _refresh_accounts(db)                                # al conectarse y en cada ciclo de ~30 min: cuentas y contraseñas de la nube (la nube manda)
+        _refresh_checklists(db)                              # y el checklist de inventario de cada evento (para consultarlo en el quiosco aunque después se pierda internet)
         res = [upload_event(db, ev, force=force) for ev in synced_events(db)]
         return {"configured": True, "events": len(res), "failed": sum(1 for r in res if not r["ok"]), "pending": sum(r["pending"] for r in res)}
     finally:
@@ -291,11 +348,34 @@ def _loop() -> None:
     stop.wait(60)                                         # deja arrancar la aplicación
     while not stop.is_set():
         try:
+            cloud_ping()                                  # llave de producto: si la deshabilitaron, la nube responde 403 y este servidor se cierra (app/server_lock.py)
+        except Exception:                                 # noqa: BLE001 — sin internet no pasa nada: sigue trabajando
+            log.debug("ping a la nube falló", exc_info=True)
+        try:
             with SessionLocal() as db:
                 upload_all(db)
         except Exception:                                 # el reloj nunca se cae por un error de un ciclo
             log.exception("ciclo de subida falló")
-        stop.wait(interval_minutes() * 60)
+        try:
+            from app import local_update
+            with SessionLocal() as db:
+                res = local_update.auto_update(db)
+            if res == "pending":
+                log.info("actualización automática solicitada")
+        except Exception:
+            log.exception("actualización automática falló")
+        waited = 0                                        # entre ciclos completos, el checklist de inventario se pone al día cada ~5 min (liviano; sin internet no hace nada)
+        while not stop.is_set() and waited < interval_minutes() * 60:
+            step = min(300, interval_minutes() * 60 - waited)
+            if stop.wait(step):
+                break
+            waited += step
+            if waited < interval_minutes() * 60:
+                try:
+                    with SessionLocal() as db:
+                        _refresh_checklists(db)
+                except Exception:                         # noqa: BLE001
+                    log.debug("refresco del checklist falló", exc_info=True)
 
 
 def start() -> bool:

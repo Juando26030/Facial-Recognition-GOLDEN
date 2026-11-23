@@ -1,4 +1,4 @@
-# Rutas y utilidades comunes del servidor local de Windows (Fase 6). Lo cargan los demás scripts con:  . "$PSScriptRoot\config.ps1"
+﻿# Rutas y utilidades comunes del servidor local de Windows (Fase 6). Lo cargan los demás scripts con:  . "$PSScriptRoot\config.ps1"
 # Diseño: TODO vive en C:\GoldenLocal (sin Docker). Subcarpetas:
 #   app\        la aplicación (se reemplaza entera al actualizar)         python\   Python embebido
 #   pgsql\      PostgreSQL (binarios)                                      tools\    WinSW (servicios)
@@ -49,14 +49,15 @@ function Set-EnvKey([string]$Key, [string]$Value) {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     $lines = @(); if (Test-Path $EnvFile) { $lines = @(Get-Content $EnvFile -Encoding UTF8) }
     $found = $false
-    $lines = $lines | ForEach-Object { if ($_ -match "^\s*$Key\s*=") { $found = $true; "$Key=$Value" } else { $_ } }
-    if (-not $found) { $lines += "$Key=$Value" }
+    # @(...) fuerza una lista: con una sola línea PowerShell devuelve un texto suelto y «+=» pegaba las variables en una sola línea
+    $lines = @($lines | ForEach-Object { if ($PSItem -match "^\s*$Key\s*=") { $found = $true; "$Key=$Value" } else { $PSItem } })
+    if (-not $found) { $lines = @($lines) + @("$Key=$Value") }
     Set-Content -Path $EnvFile -Value $lines -Encoding UTF8
 }
 
 function Protect-File([string]$Path) {
     # Solo SYSTEM y Administradores pueden leer los secretos.
-    & icacls $Path /inheritance:r /grant:r 'SYSTEM:(F)' 'BUILTIN\Administrators:(F)' | Out-Null
+    & icacls $Path /inheritance:r /grant:r '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' | Out-Null
 }
 
 function New-RandomSecret([int]$Bytes = 32) {
@@ -86,6 +87,51 @@ function Get-LanAddresses {
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.PrefixOrigin -ne 'WellKnown' } |
         ForEach-Object { $_.IPAddress }
+}
+
+function Update-RouteMetrics {
+    # Servidor con DOS redes: el cable al router del evento (sin internet; los demás equipos entran por ahí) y otra con internet (Wi-Fi, zona del celular, otro cable). Windows, al ver un cable con puerta de enlace, manda TODO el tráfico
+    # por él aunque no tenga salida, y la sincronización con producción se queda sin internet. Aquí, si Windows ve que una conexión SÍ tiene internet y otra solo red local, la de solo red local pasa a prioridad baja (métrica 700):
+    # la red local sigue igual (los demás equipos entran sin cambio) y el internet sale por la que lo tiene. Si deja de haber dos redes (o la otra consigue internet), se devuelve a automático. Idempotente; devuelve cuántos cambios hizo.
+    $mark = 700
+    $changed = 0
+    try {
+        $profiles = @(Get-NetConnectionProfile -ErrorAction Stop | Where-Object { $_.IPv4Connectivity -ne 'Disconnected' })
+        $withNet = @($profiles | Where-Object { $_.IPv4Connectivity -eq 'Internet' })
+        foreach ($p in $profiles) {
+            $ifc = Get-NetIPInterface -InterfaceIndex $p.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            if (-not $ifc) { continue }
+            $ours = ($ifc.AutomaticMetric -eq 'Disabled' -and $ifc.InterfaceMetric -eq $mark)
+            $noNet = ($p.IPv4Connectivity -ne 'Internet')
+            if ($noNet -and $withNet.Count -gt 0 -and -not $ours) {
+                Set-NetIPInterface -InterfaceIndex $p.InterfaceIndex -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric $mark
+                Write-Log "Red «$($p.Name)» (solo red local): prioridad baja para que el internet salga por la otra red" 'actualizador.log'
+                $changed++
+            } elseif ($ours -and ((-not $noNet) -or $withNet.Count -eq 0)) {
+                Set-NetIPInterface -InterfaceIndex $p.InterfaceIndex -AddressFamily IPv4 -AutomaticMetric Enabled
+                Write-Log "Red «$($p.Name)»: prioridad devuelta a automática" 'actualizador.log'
+                $changed++
+            }
+        }
+    } catch { Write-Log "Prioridad de redes: $_" 'actualizador.log' }
+    return $changed
+}
+
+function Update-ServerCert {
+    # Si este equipo cambió de dirección IP (de fija a automática o al revés, otro router), el certificado HTTPS ya no cubre la nueva y el navegador de los otros equipos avisaría.
+    # Se vuelve a firmar con la MISMA autoridad (los celulares que ya la instalaron no repiten nada) y conserva las direcciones anteriores. Devuelve $true si regeneró (hay que reiniciar la app para que lo lea).
+    $serverPem = Join-Path $CertDir 'server.pem'
+    if (-not (Test-Path $serverPem)) { return $false }
+    $ips = @(Get-LanAddresses)
+    if ($ips.Count -eq 0) { return $false }
+    try {
+        $missing = "$(& $Python (Join-Path $ScriptsDir 'gen_cert.py') --missing $serverPem @ips)".Trim()
+        if (-not $missing) { return $false }
+        Write-Log "Certificado HTTPS: falta cubrir la(s) dirección(es) $missing; se vuelve a firmar" 'actualizador.log'
+        & $Python (Join-Path $ScriptsDir 'gen_cert.py') $CertDir $env:COMPUTERNAME @ips | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Log 'Certificado HTTPS: no se pudo volver a firmar' 'actualizador.log'; return $false }
+        return $true
+    } catch { Write-Log "Certificado HTTPS: $_" 'actualizador.log'; return $false }
 }
 
 function Invoke-Pg([string]$Tool, [string[]]$Arguments) {

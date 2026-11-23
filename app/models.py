@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import event as sa_event
-from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint, Index, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint, Index, text
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
@@ -36,6 +36,7 @@ class Tenant(Base):
     contact_email = Column(String)
     archived_at = Column(DateTime, nullable=True)  # 0088 (Fase 3): NULL = activo; con fecha = archivado (oculto de las listas, se restaura; nada se borra). Ver app/routers/tenants.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    legacy_client_code = Column(String, unique=True, nullable=True)  # 0130 (CRM C1a): el código hexadecimal de antes cuando el cliente pasó al número consecutivo del CRM; alias para paquetes de eventos viejos (app/event_transfer.py). NULL = nunca cambió
 
     users = relationship("User", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
@@ -91,6 +92,7 @@ class EventAttendee(Base):
     accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
+    code = Column(String(64), nullable=True)  # 0140: código de la persona EN este evento (serial del QR, aparte de la cédula); único por evento sin distinguir mayúsculas; app/person_code.py
     last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
     archived_at = Column(DateTime, nullable=True)  # sin uso: reservado (0091). Las personas se BORRAN del evento (decisión 7-nov-2026); lo que se archiva es la base del evento (events.data_archived_at). Nada la lee ni la escribe
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -151,6 +153,7 @@ class PrintLog(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     printed_at = Column(DateTime, default=utcnow)
     printed_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    kind = Column(String(10), nullable=False, default='normal', server_default='normal')          # 0150: 'normal' | 'pre' (escarapela PREIMPRESA antes de que la persona llegue; módulo Preimpresiones)
 
     __table_args__ = (
         ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),
@@ -217,6 +220,7 @@ class StaffUser(Base):
     login_req_status = Column(String(12), nullable=True)
     session_epoch = Column(Integer, default=0, server_default='0', nullable=False)
     client_temp = Column(Boolean, default=False, server_default='false', nullable=False)  # 0129 (12-nov-2026): cliente temporal del evento = digitador (mismos permisos) con usuario y contraseña aleatorios, sin solicitud de ingreso (app/temp_client.py)
+    event_only = Column(Boolean, default=False, server_default='false', nullable=False)  # 0146 (16-nov-2026): coordinador temporal del evento = rol coordinador SOLO sobre los eventos que se le asignan (EventStaffAuthorization), sin las pantallas globales (app/event_only.py)
     archived_at = Column(DateTime, nullable=True)  # 0089 (Fase 3): NULL = normal; con fecha = archivada (no inicia sesión, no sale en listas ni selectores; se restaura). Ver app/routers/staff.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -276,6 +280,8 @@ class Event(Base):
     dwell_reference_minutes = Column(Integer, nullable=True)  # 0122: el 100 % en minutos (lo define el coordinador); NULL = la duración del evento
     dwell_threshold_pct = Column(Integer, nullable=True)  # 0122: porcentaje mínimo para cumplir (NULL = 80)
     areas_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter registra la entrada o salida sin pulsar «Acreditar»
+    code_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: el evento usa «código» (serial del QR distinto de la cédula); al escanear se busca primero por ID y luego por código (app/person_code.py)
+    code_required = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: con el código activo, ¿es obligatorio al registrar?
     inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     archived_at = Column(DateTime, nullable=True)      # 0090 (Fase 3): NULL = activo; con fecha = archivado (solo eventos finalizados; oculto de listas y selectores, sin registro ni formularios, NADA se borra; se restaura). Ver app/event_archive.py
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)      # quién lo archivó; NULL con archived_at = archivado por el Job (L7, 90 días)
@@ -307,6 +313,7 @@ class Event(Base):
     precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)
+    review_detail = Column(Boolean, default=False, server_default='false', nullable=False)  # 0143: «Revisar el detalle»: la comercial lo marca para que el equipo lea las observaciones; en el calendario sale un triángulo rojo con «!»
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
     selfreg_enabled = Column(Boolean, default=False, server_default='false', nullable=False)      # 0115 (Fase 8): «Autorregistro sin base de datos»: pantalla de kiosco para que la persona se cree sola (app/selfreg.py). APAGADO por defecto
     face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)
@@ -332,6 +339,8 @@ class Event(Base):
     cloud_event_id = Column(Integer, nullable=True)      # id que tiene este evento en la nube (lo fija «Descargar a local»); NULL = no es una copia de la nube, no se sube
     sync_log_id = Column(Integer, nullable=True)         # marca de agua: último AccessLog.id local ya CONFIRMADO por la nube
     sync_persons_at = Column(DateTime, nullable=True)    # marca de agua: último alta local (EventAttendee.created_at) ya confirmada por la nube
+    sync_print_id = Column(Integer, nullable=True)       # 0157: marca de agua: último PrintLog.id local ya CONFIRMADO por la nube
+    sync_change_id = Column(Integer, nullable=True)      # 0157: marca de agua: último PersonChange.id local ya CONFIRMADO por la nube
     sync_package_at = Column(DateTime, nullable=True)    # cuándo se bajó el paquete del evento desde la nube
     sync_attempt_at = Column(DateTime, nullable=True)    # último intento de subida (bien o mal)
     sync_error = Column(String(300), nullable=True)      # motivo del último fallo (sin datos personales); NULL = el último intento salió bien
@@ -428,6 +437,25 @@ class EventType(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+
+class EventContact(Base):
+    """Contacto del CLIENTE en UN evento (16-nov-2026): quién es y para qué (`note`, p. ej. «Quien aprueba» o «Logística en sitio»). Puede venir de un contacto del CRM (`crm_contact_id`, copia de sus datos
+    al elegirlo) o escribirse a mano (nombre + teléfono). El PRINCIPAL (uno solo por evento) recibe el informe final y la encuesta. DATOS PERSONALES (Ley 1581): al suprimir el contacto en el CRM
+    se borran estas filas (app/crm/erase.py). No viaja en el paquete de exportar/importar; «Duplicar evento» sí los copia."""
+    __tablename__ = 'event_contacts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    crm_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    phone = Column(String(60), nullable=True)
+    email = Column(String(200), nullable=True)
+    note = Column(String(200), nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (Index('ix_event_contacts_event', 'event_id'), Index('uq_event_contacts_primary', 'event_id', unique=True, postgresql_where=text('is_primary')))
 
 
 class EventStaffAuthorization(Base):
@@ -907,6 +935,61 @@ class EventExpense(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0093 (Fase 3)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    # 0147 (legalizaciones en el formato oficial de Golden, 14-nov-2026). Todo opcional: los gastos viejos quedan como kind='otro'.
+    # `category`/`responsible` siguen siendo obligatorias: en un gasto nuevo `category` lleva el nombre del rubro y `responsible` al coordinador.
+    # `amount` es SIEMPRE el valor total de la línea (en alimentación, la suma de las comidas).
+    kind = Column(String(20), nullable=False, default='otro', server_default='otro')   # EXPENSE_KINDS
+    expense_date = Column(Date, nullable=True)
+    tax_id = Column(String, nullable=True)        # NIT o cédula de quien cobra
+    vendor_name = Column(String, nullable=True)   # establecimiento, taxista, hotel, digitador(a)…
+    address = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    origin = Column(String, nullable=True)        # desde / hasta (pasajes y taxis)
+    destination = Column(String, nullable=True)
+    concept = Column(String, nullable=True)       # concepto (en «otros gastos»: el detalle)
+    plate = Column(String, nullable=True)
+    vehicle = Column(String(10), nullable=True)   # taxis en la ciudad: 'taxi' | 'otro'
+    iva = Column(Numeric(14, 2), nullable=True)
+    has_support = Column(Boolean, nullable=True)  # SOPORTE (S/N): tiene recibo o factura
+    breakfast = Column(Numeric(14, 2), nullable=True)
+    lunch = Column(Numeric(14, 2), nullable=True)
+    dinner = Column(Numeric(14, 2), nullable=True)
+    snack = Column(Numeric(14, 2), nullable=True)
+    unit_value = Column(Numeric(14, 2), nullable=True)
+    observation = Column(Text, nullable=True)
+    approved = Column(Boolean, nullable=True)     # APROBADO: NULL = pendiente de revisar
+    position = Column(Integer, nullable=True)     # 0156: orden dentro del rubro (arrastrar y soltar); NULL = anterior al orden manual
+    approved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_event_expenses_event_kind', 'event_id', 'kind'),)
+
+
+# Tipos de gasto de una legalización: cada uno cae en una hoja/tabla del Excel (app/legalization_xlsx.py).
+EXPENSE_KINDS = ("hospedaje", "pasaje", "taxi_terminal", "taxi_ciudad", "alimentacion", "digitador", "otro")
+# Ciclo de una legalización: el coordinador la arma (borrador), la envía, el director la aprueba o la devuelve para corregir.
+LEGALIZATION_STATUSES = ("borrador", "enviada", "aprobada", "devuelta")
+
+
+class EventLegalization(Base):
+    """Encabezado de la legalización de un evento (una por evento): quién responde, el anticipo en pesos que se le
+    entregó y en qué etapa va. El consecutivo, el CE final y las observaciones contables los escribe el área
+    administrativa en el Excel, por eso no están aquí."""
+    __tablename__ = 'event_legalizations'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False, unique=True)
+    responsible_name = Column(String, nullable=True)
+    responsible_cc = Column(String, nullable=True)
+    advance_amount = Column(Numeric(14, 2), nullable=True)      # «CE. # (Anticipo)»: valor en pesos entregado al coordinador
+    legalization_date = Column(Date, nullable=True)
+    status = Column(String(12), nullable=False, default='borrador', server_default='borrador')
+    submitted_at = Column(DateTime, nullable=True)
+    submitted_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    review_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow)
 
 
 class SuperEvent(Base):
@@ -935,6 +1018,9 @@ class EventArea(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    parent_id = Column(Integer, ForeignKey('event_areas.id'), nullable=True)  # 0140: subcategoría (p. ej. «Entrada A» dentro de «Salón A»); NULL = zona principal
+    stats_enabled = Column(Boolean, default=True, server_default='true', nullable=False)  # 0140: genera estadísticas en la sección de Estadísticas
+    max_per_person = Column(Integer, nullable=True)  # 0140: entradas permitidas por persona (en un grupo cuentan todas sus subcategorías y manda sobre ellas); NULL = sin límite
 
 
 class AreaMovement(Base):
@@ -966,6 +1052,9 @@ class InventoryItem(Base):
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)  # 0092 (Fase 3): NULL = activo; con fecha = archivado (oculto, se restaura, conserva historial)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    parent_id = Column(Integer, ForeignKey('inventory_items.id'), nullable=True)  # 0140: subcategoría (p. ej. «Perro» dentro de «Comida»); NULL = ítem o categoría principal
+    stats_enabled = Column(Boolean, default=True, server_default='true', nullable=False)  # 0140: genera estadísticas en la sección de Estadísticas
+    max_per_person = Column(Integer, nullable=True)  # 0140: unidades por persona (en un grupo cuentan todas sus subcategorías y manda sobre ellas); NULL = sin límite
 
 
 class InventoryDelivery(Base):
@@ -1006,12 +1095,116 @@ class InventoryProduct(Base):
     sku = Column(String, nullable=True)
     fields_json = Column(Text, nullable=True)
     qty_total = Column(Integer, nullable=True)      # 0110: existencias de Golden (NULL = no se controla); con ellas se avisa cuando lo asignado a eventos que se cruzan en fechas las supera (app/inventory_alerts.py)
+    tracking = Column(String(10), nullable=False, default='cantidad', server_default='cantidad')          # 0148 (almacén): 'serial' (QR por equipo) | 'modelo' (QR por modelo) | 'cantidad' (QR por tipo); app/almacen.py
+    checklist_row = Column(String(40), nullable=True)          # 0148: clave de la fila del checklist GEYL a la que suma (app/almacen.py CHECKLIST_ROWS); NULL = no sale en el checklist
+    is_consumable = Column(Boolean, nullable=False, default=False, server_default='false')          # 0148: se gasta y no vuelve (almacén lo repone y lo cuenta a mano)
+    qr_code = Column(String(12), nullable=True, unique=True)          # 0148: código del QR del producto (solo 'modelo' y 'cantidad'; los 'serial' llevan el QR en cada unidad)
+    photo_key = Column(String(200), nullable=True)          # 0149: foto del elemento (almacenamiento: app/storage.py, clave almacen/elementos/…)
     position = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(DateTime, default=utcnow)
     archived_at = Column(DateTime, nullable=True)
     archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     category = relationship('InventoryCategory')
+
+
+class InventoryUnit(Base):
+    """Un equipo con serial del almacén (0148, Pieza 1): su propio número visible (`number`, único por producto, nunca se reutiliza) y su propio QR (`code`: «GW» + 6 caracteres, solo mayúsculas y números).
+    `status`: disponible | en_evento | novedad (la novedad y el bloqueo: tabla `inventory_novelties`, Pieza 3). Archivar no borra: la unidad deja de ofrecerse y conserva su número."""
+    __tablename__ = 'inventory_units'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    number = Column(Integer, nullable=False)
+    code = Column(String(32), nullable=False, unique=True)          # = el serial (0153: un solo dato; antes «GW»+6 y un serial aparte)
+    serial = Column(String(80), nullable=True)          # copia de `code` (se conserva por compatibilidad)
+    status = Column(String(20), nullable=False, default='disponible', server_default='disponible')
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)          # 0149: en qué evento está hoy (vacío = en bodega)
+
+    product = relationship('InventoryProduct')
+    event = relationship('Event')
+    __table_args__ = (UniqueConstraint('product_id', 'number', name='uq_inventory_unit_number'), Index('ix_inventory_units_product', 'product_id'))
+
+
+class InventoryMovement(Base):
+    """Salida o entrada de almacén por lectura de QR (0149, Pieza 2). Solo se agrega: anular marca `voided_*`, nunca se borra. `unit_id` = equipo con serial (null en los controlados por modelo o cantidad).
+    `extra` = cuánto de la salida excede lo asignado al evento (se justifica con `reason` o `is_plan_b`; sube `qty_assigned` pero no cuenta como NECESARIO)."""
+    __tablename__ = 'inventory_movements'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    kind = Column(String(10), nullable=False)          # salida | entrada
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    extra = Column(Integer, nullable=False, default=0, server_default='0')
+    reason = Column(String(300), nullable=True)
+    is_plan_b = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    __table_args__ = (Index('ix_inventory_movements_event', 'event_id', 'product_id'), Index('ix_inventory_movements_unit', 'unit_id'))
+
+
+class InventoryNovelty(Base):
+    """Novedad de almacén (0152, Pieza 3): un daño o problema de un elemento. `unit_id` = el equipo con serial (null en los controlados por modelo o cantidad, que llevan `qty` piezas).
+    Abierta mientras `resolved_at` sea nulo: el equipo queda «En novedad» y no se puede sacar a un evento hasta que almacén la resuelve (`resolution` = qué se hizo). Nada se borra.
+    `event_id` = el evento donde se detectó (si fue al devolver), `movement_id` = la entrada con la que se reportó, `photo_key` = foto del daño (almacén/novedades/<uuid>.jpg)."""
+    __tablename__ = 'inventory_novelties'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey('inventory_products.id'), nullable=False)
+    unit_id = Column(Integer, ForeignKey('inventory_units.id'), nullable=True)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    description = Column(Text, nullable=False)
+    photo_key = Column(String(200), nullable=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    movement_id = Column(Integer, ForeignKey('inventory_movements.id'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    resolution = Column(Text, nullable=True)
+
+    product = relationship('InventoryProduct')
+    unit = relationship('InventoryUnit')
+    event = relationship('Event')
+    __table_args__ = (Index('ix_inventory_novelties_product', 'product_id', 'resolved_at'), Index('ix_inventory_novelties_unit', 'unit_id'))
+
+
+class InventoryNoveltyFile(Base):
+    """Archivo adjunto de una novedad (0153): evidencia al reportarla (`kind='reporte'`) o al resolverla (`'resolucion'`). Foto (JPEG re-codificado), PDF o video corto. Nada se borra."""
+    __tablename__ = 'inventory_novelty_files'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    novelty_id = Column(Integer, ForeignKey('inventory_novelties.id'), nullable=False)
+    kind = Column(String(12), nullable=False)
+    file_key = Column(String(200), nullable=False)
+    filename = Column(String(120), nullable=False)
+    content_type = Column(String(60), nullable=False)
+    size = Column(Integer, nullable=False, default=0, server_default='0')
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    novelty = relationship('InventoryNovelty', backref='files')
+    __table_args__ = (Index('ix_inventory_novelty_files_novelty', 'novelty_id'),)
+
+
+class EventChecklistRow(Base):
+    """Casilla «OK S/N» (alistado) y observación de UNA fila del checklist GEYL en un evento (0149, Pieza 2). `row_key` = clave de app/almacen.py CHECKLIST_ROWS (incluye las 5 de verificación manual)."""
+    __tablename__ = 'event_checklist_rows'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    row_key = Column(String(40), nullable=False)
+    done = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    notes = Column(String(300), nullable=True)
+    updated_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint('event_id', 'row_key', name='uq_event_checklist_row'),)
 
 
 class LocalNode(Base):
@@ -1026,8 +1219,31 @@ class LocalNode(Base):
     revoked_at = Column(DateTime, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
     last_version = Column(String(80), nullable=True)      # commit/esquema que reportó la última vez
+    disabled_at = Column(DateTime, nullable=True)          # 0159: su llave fue DESHABILITADA (queda aquí aunque la llave se elimine de la lista: el servidor sigue recibiendo «deshabilitado»)
 
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
+
+
+class LocalServerKey(Base):
+    """Llave de producto de un servidor local (0158, 20-nov-2026; lógica en app/server_keys.py). La crea un administrador; es de UN solo uso: la reclama el instalador (queda atada a esa instalación,
+    `installation_id`), se activa al vincular el servidor (`node_id`) y desde entonces es su identificador (serial). Una sin usar vence a los 7 días (`expires_at`). Deshabilitarla (`disabled_at`) revoca
+    el nodo asociado. El código se guarda tal cual (el administrador necesita verlo en la lista; una vez usada deja de ser un secreto). Sin datos personales."""
+    __tablename__ = 'local_server_keys'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), nullable=False, unique=True)
+    label = Column(String(60), nullable=True)                       # para quién o para qué equipo es (opcional)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    claimed_at = Column(DateTime, nullable=True)
+    installation_id = Column(String(64), nullable=True)
+    activated_at = Column(DateTime, nullable=True)
+    node_id = Column(Integer, ForeignKey('local_nodes.id', ondelete='SET NULL'), nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
+    disabled_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+
+    created_by = relationship("StaffUser", foreign_keys=[created_by_id])
+    node = relationship("LocalNode", foreign_keys=[node_id])
 
 
 class Notification(Base):
@@ -1065,6 +1281,56 @@ class EventInventoryItem(Base):
 
     product = relationship('InventoryProduct')
     __table_args__ = (UniqueConstraint('event_id', 'product_id', name='uq_event_inventory_product'),)
+
+
+class CrmProductCategory(Base):
+    """Lo que IMPLICA un producto del CRM en CATEGORÍAS de Almacén (0154; antes, 0153, eran elementos sueltos): «Registro bidimensional» = 1 Portátiles + 1 Lectores. `checklist_key` es la fila del checklist GEYL (app/almacen.py); no descuenta existencias: Almacén elige después los equipos concretos de cada categoría."""
+    __tablename__ = 'crm_product_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='CASCADE'), nullable=False)
+    checklist_key = Column(String(40), nullable=False)
+    qty_per_unit = Column(Integer, nullable=False, default=1, server_default='1')
+    __table_args__ = (UniqueConstraint('crm_product_id', 'checklist_key', name='uq_crm_product_category'),)
+
+
+class EventCrmProduct(Base):
+    """Productos del CRM que lleva un evento (0153). `origin` 'crm' = vienen de la última cotización al ganar la oportunidad (o de aplicar una alerta); 'manual' = los agregó una persona en el inventario del evento. `name` es copia del nombre al guardar."""
+    __tablename__ = 'event_crm_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    crm_product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    qty = Column(Integer, nullable=False, default=1, server_default='1')
+    origin = Column(String(10), nullable=False, default='crm', server_default='crm')
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    __table_args__ = (Index('ix_event_crm_products_event', 'event_id'),)
+
+
+class EventCrmSync(Base):
+    """Estado de la sincronización CRM → inventario de un evento (0153): cotización de origen y lo que se sumó al «asignado» la última vez (`implied_json` {id de elemento: cantidad}), para poder restar lo anterior y sumar lo nuevo sin pisar lo manual antiguo."""
+    __tablename__ = 'event_crm_sync'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False, unique=True)
+    source_quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    implied_json = Column(Text, nullable=True)
+    synced_at = Column(DateTime, default=utcnow)
+
+
+class EventInventoryAlert(Base):
+    """Alerta en el inventario de un evento cuando el CRM ya no coincide con lo que el evento tiene (0153). `status`: open | applied | dismissed | obsolete. `snapshot_json` = lista [{crm_product_id, name, qty}] propuesta; `diff_json` = lo que difiere; `snap_hash` evita repetir una alerta descartada."""
+    __tablename__ = 'event_inventory_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    status = Column(String(10), nullable=False, default='open', server_default='open')
+    snapshot_json = Column(Text, nullable=False)
+    diff_json = Column(Text, nullable=False)
+    snap_hash = Column(String(40), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (Index('ix_event_inventory_alerts_event', 'event_id', 'status'),)
 
 
 class Job(Base):
@@ -1699,3 +1965,454 @@ class MassDeleteLog(Base):
     label = Column(String(40), nullable=False)
     rows = Column(Integer, nullable=False)
     event_id = Column(Integer, nullable=True)
+
+
+# ------------------------------------------------------------------------------------------------ CRM (módulo de GoldenWeb; docs/crm/, migración 0130)
+class CrmCounter(Base):
+    """Contadores de los códigos consecutivos del CRM (`name`: account | event). `value` es el último número entregado; `ready` es falso hasta que alguien fije el número inicial
+    (scripts/crm_set_counter.py) y mientras tanto app/crm/codes.next_code se niega a entregar números."""
+    __tablename__ = 'crm_counters'
+    name = Column(String(32), primary_key=True)
+    value = Column(BigInteger, nullable=False, default=0, server_default='0')
+    ready = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class CrmAccount(Base):
+    """Cuenta del CRM (la empresa cliente o prospecto). `code` es el número consecutivo (el mismo que `tenants.client_code` cuando la cuenta ya es cliente de la plataforma). El estado
+    (`status`) se valida en el código (app/crm/__init__.py: ACCOUNT_STATUSES), no con CHECK: la lista se ajusta cuando se vea la exportación de SuiteCRM."""
+    __tablename__ = 'crm_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(BigInteger, nullable=False)
+    tenant_id = Column(String, ForeignKey('tenants.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    name_norm = Column(String(200), nullable=False)
+    status = Column(String(12), nullable=False, default='activo', server_default='activo')
+    nit = Column(String(40))
+    email = Column(String(200))
+    phone = Column(String(60))
+    billing_address = Column(String(300))
+    billing_city = Column(String(120))
+    billing_state = Column(String(120))
+    billing_country = Column(String(120))
+    shipping_address = Column(String(300))
+    shipping_city = Column(String(120))
+    shipping_country = Column(String(120))
+    billing_contact_name = Column(String(200))
+    billing_contact_phone = Column(String(60))
+    payment_term = Column(String(60))
+    payment_days = Column(Integer)
+    billing_close = Column(String(60))
+    agency_percent = Column(Numeric(5, 2))
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    description = Column(Text)
+    category = Column(String(40))          # 0142: categoría de cliente de SuiteCRM (ClienteVIP, ClienteA…)
+    account_type = Column(String(40))          # 0142: tipo de cuenta (Agencias, BTL, OPC, Asociaciones…)
+    industry = Column(String(60))
+    website = Column(String(300))
+    legacy_json = Column(Text)          # 0142: lo de SuiteCRM que no tiene columna, con su nombre original (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    source_created_at = Column(DateTime)
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    contacts = relationship("CrmContact", back_populates="account", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (
+        UniqueConstraint('code', name='uq_crm_accounts_code'),
+        Index('uq_crm_accounts_tenant', 'tenant_id', unique=True, postgresql_where=text('tenant_id IS NOT NULL')),
+        Index('uq_crm_accounts_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_accounts_status', 'status'),
+        Index('ix_crm_accounts_owner', 'owner_staff_id'),
+        Index('ix_crm_accounts_city', 'billing_city'),
+        Index('ix_crm_accounts_name_norm', 'name_norm', postgresql_ops={'name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmContact(Base):
+    """Contacto de una cuenta del CRM (datos personales: Ley 1581; ver docs/crm/README.md, supresión). Un solo contacto principal por cuenta."""
+    __tablename__ = 'crm_contacts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    first_name = Column(String(120))
+    last_name = Column(String(120))
+    full_name_norm = Column(String(240), nullable=False, default='')
+    job_title = Column(String(120))
+    email = Column(String(200))
+    email_norm = Column(String(200))
+    phone = Column(String(60))
+    mobile = Column(String(60))
+    is_primary = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    notes = Column(Text)
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    account = relationship("CrmAccount", back_populates="contacts")
+    __table_args__ = (
+        Index('uq_crm_contacts_primary', 'account_id', unique=True, postgresql_where=text('is_primary')),
+        Index('uq_crm_contacts_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_contacts_account', 'account_id'),
+        Index('ix_crm_contacts_email_norm', 'email_norm'),
+        Index('ix_crm_contacts_name_norm', 'full_name_norm', postgresql_ops={'full_name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmNote(Base):
+    """Línea de tiempo de una cuenta: notas escritas por el personal (`kind` note) o del sistema (`system`). Si habla de un contacto, `contact_id` lo señala y se borra con él."""
+    __tablename__ = 'crm_notes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='CASCADE'), nullable=True)
+    kind = Column(String(16), nullable=False, default='note', server_default='note')
+    body = Column(Text, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    legacy_sugar_id = Column(String(40))
+    __table_args__ = (Index('ix_crm_notes_account_created', 'account_id', 'created_at'), Index('ix_crm_notes_contact', 'contact_id'))
+
+
+class CrmChangeLog(Base):
+    """Registro de cambios del CRM, con la forma de `person_change_log` (app/person_history.py): una fila por campo cambiado (campo, valor anterior, valor nuevo, quién y cuándo).
+    `entity`: account | contact. Sin llaves foráneas (como el original): se borra desde el código junto con su cuenta/contacto (app/crm/erase.py). `source`: edit | import | system."""
+    __tablename__ = 'crm_change_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity = Column(String(16), nullable=False)
+    entity_id = Column(Integer, nullable=False)
+    field_key = Column(String(64), nullable=False)
+    old_value = Column(String(500), nullable=True)
+    new_value = Column(String(500), nullable=True)
+    changed_by_id = Column(Integer, nullable=True)
+    source = Column(String(16), nullable=False, default='edit', server_default='edit')
+    changed_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_change_log_entity', 'entity', 'entity_id', 'changed_at'),)
+
+
+# ------------------------------------------------------------------ CRM etapa C1c–C4 (docs/crm/ETAPA_C1C_C4_DISENO.md). Migraciones 0131 (embudos, oportunidades, leads, actividades) y 0132 (importador).
+class CrmPipeline(Base):
+    """Embudo de ventas (p. ej. «Eventos»). Las etapas viven en `crm_stages`. Uno solo es el predeterminado."""
+    __tablename__ = 'crm_pipelines'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(120), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    is_default = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('name', name='uq_crm_pipelines_name'),)
+
+
+class CrmStage(Base):
+    """Etapa de un embudo. `kind`: open | won | lost (la ganada y la perdida cierran la oportunidad). `probability` 0–100 (la oportunidad puede traer la suya)."""
+    __tablename__ = 'crm_stages'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('crm_pipelines.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String(80), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    probability = Column(Integer, nullable=False, default=0, server_default='0')
+    kind = Column(String(8), nullable=False, default='open', server_default='open')
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('pipeline_id', 'name', name='uq_crm_stages_pipeline_name'), Index('ix_crm_stages_pipeline_pos', 'pipeline_id', 'position'))
+
+
+class CrmLead(Base):
+    """Cliente potencial. DATOS PERSONALES (Ley 1581): nombre, correo y teléfono; se suprimen con el mismo criterio que un contacto (app/crm/erase.py). `description` es texto libre:
+    el historial no guarda su contenido (history.FREE_TEXT). `status`: nuevo | contactado | calificado | convertido | descartado."""
+    __tablename__ = 'crm_leads'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    first_name = Column(String(120))
+    last_name = Column(String(120))
+    full_name_norm = Column(String(240), nullable=False, default='', server_default='')
+    company_name = Column(String(200))
+    job_title = Column(String(120))
+    email = Column(String(200))
+    email_norm = Column(String(200))
+    phone = Column(String(60))
+    source = Column(String(60))
+    status = Column(String(16), nullable=False, default='nuevo', server_default='nuevo')
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    description = Column(Text)
+    converted_at = Column(DateTime, nullable=True)
+    converted_account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='SET NULL'), nullable=True)
+    converted_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    converted_opportunity_id = Column(Integer, nullable=True)          # sin llave foránea: la oportunidad se crea después que la tabla y se puede borrar sin tocar al lead
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        Index('uq_crm_leads_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_leads_status', 'status'),
+        Index('ix_crm_leads_owner', 'owner_staff_id'),
+        Index('ix_crm_leads_email_norm', 'email_norm'),
+        Index('ix_crm_leads_name_norm', 'full_name_norm', postgresql_ops={'full_name_norm': 'text_pattern_ops'}),
+    )
+
+
+class CrmOpportunity(Base):
+    """Oportunidad = un posible evento. `code` sale del contador `event` al CREARLA y es el mismo número que tendrá el evento si se gana (regla de códigos, docs/crm/ETAPA_C1C_C4_DISENO.md §4).
+    `outcome`: open | won | lost (lo fija la etapa). `next_activity_at` es una copia (la mantiene app/crm/activities.py) para marcar las que no tienen próxima actividad sin consultar otra tabla."""
+    __tablename__ = 'crm_opportunities'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(BigInteger, nullable=False)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    pipeline_id = Column(Integer, ForeignKey('crm_pipelines.id', ondelete='RESTRICT'), nullable=False)
+    stage_id = Column(Integer, ForeignKey('crm_stages.id', ondelete='RESTRICT'), nullable=False)
+    name = Column(String(200), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False, default=0, server_default='0')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    probability = Column(Integer, nullable=True)
+    expected_close = Column(Date, nullable=True)
+    opp_type = Column(String(60))
+    source = Column(String(60))
+    next_step = Column(String(200))
+    description = Column(Text)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    primary_contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    event_start = Column(Date, nullable=True)
+    city = Column(String(120))
+    outcome = Column(String(8), nullable=False, default='open', server_default='open')
+    closed_at = Column(DateTime, nullable=True)
+    lost_reason = Column(String(200))
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='SET NULL'), nullable=True)
+    next_activity_at = Column(DateTime, nullable=True)
+    stage_entered_at = Column(DateTime, nullable=False, default=utcnow)
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        UniqueConstraint('code', name='uq_crm_opportunities_code'),
+        Index('uq_crm_opportunities_event', 'event_id', unique=True, postgresql_where=text('event_id IS NOT NULL')),
+        Index('uq_crm_opportunities_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_opps_board', 'pipeline_id', 'stage_id', 'stage_entered_at'),
+        Index('ix_crm_opps_account', 'account_id'),
+        Index('ix_crm_opps_owner', 'owner_staff_id'),
+        Index('ix_crm_opps_close', 'expected_close'),
+        Index('ix_crm_opps_outcome', 'outcome'),
+    )
+
+
+class CrmActivity(Base):
+    """Llamada, tarea, reunión o nota con fecha. Cuelga de una cuenta, un contacto, un lead o una oportunidad (al menos uno; lo exige el código). Si habla de un contacto o un lead, se borra con él.
+    `result` es una lista cerrada corta (portafolio enviado, cotización enviada, orden de compra pendiente, sin respuesta…) para el seguimiento por contacto. `subject` y `description` son texto libre."""
+    __tablename__ = 'crm_activities'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(8), nullable=False)
+    status = Column(String(10), nullable=False, default='planned', server_default='planned')
+    subject = Column(String(200), nullable=False)
+    description = Column(Text)
+    due_at = Column(DateTime, nullable=True)
+    remind_at = Column(DateTime, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    result = Column(String(24))
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=True)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='CASCADE'), nullable=True)
+    lead_id = Column(Integer, ForeignKey('crm_leads.id', ondelete='CASCADE'), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey('crm_opportunities.id', ondelete='CASCADE'), nullable=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    __table_args__ = (
+        Index('uq_crm_activities_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')),
+        Index('ix_crm_act_owner_due', 'owner_staff_id', 'status', 'due_at'),
+        Index('ix_crm_act_account', 'account_id', 'created_at'),
+        Index('ix_crm_act_contact', 'contact_id'),
+        Index('ix_crm_act_lead', 'lead_id'),
+        Index('ix_crm_act_opp', 'opportunity_id', 'created_at'),
+    )
+
+
+class CrmImportRun(Base):
+    """Una corrida del importador (C1c). `mode`: sample (20 filas por archivo, nada se guarda) | dry_run (todo el archivo, nada se guarda) | apply (guarda). `status`: queued | running | done | failed | cancelled.
+    Los archivos subidos viven en el almacenamiento con prefijo `crm/imports/<id>/` y se borran al terminar. `counts_json`, `cursor_json` y el informe NO llevan datos personales: solo conteos, números de fila y motivos."""
+    __tablename__ = 'crm_import_runs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(16), nullable=False, default='suitecrm', server_default='suitecrm')
+    mode = Column(String(8), nullable=False, default='sample', server_default='sample')
+    status = Column(String(10), nullable=False, default='queued', server_default='queued')
+    files_json = Column(Text)
+    options_json = Column(Text)
+    counts_json = Column(Text)
+    cursor_json = Column(Text)
+    report_key = Column(String(300))
+    error = Column(String(500))
+    started_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_crm_import_runs_created', 'created_at'),)
+
+
+class CrmImportPair(Base):
+    """Informe de emparejamiento: un cliente de la plataforma (hexadecimal) frente a una cuenta de SuiteCRM. `bucket`: seguro | dudoso | sin_pareja. `decision`: pending | approved | rejected | applied.
+    Solo nombres de EMPRESAS (no de personas). Aplicar una pareja aprobada pasa el `client_code` del cliente al número de SuiteCRM y guarda el hexadecimal en `legacy_client_code`."""
+    __tablename__ = 'crm_import_pairs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey('crm_import_runs.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=True)
+    tenant_name = Column(String(200))
+    suitecrm_legacy_id = Column(String(40))
+    suitecrm_code = Column(BigInteger, nullable=True)
+    suitecrm_name = Column(String(200))
+    score = Column(Integer, nullable=False, default=0, server_default='0')
+    bucket = Column(String(12), nullable=False)
+    decision = Column(String(10), nullable=False, default='pending', server_default='pending')
+    decided_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('ix_crm_import_pairs_run', 'run_id', 'bucket'),)
+
+
+
+class CrmProduct(Base):
+    """Producto o servicio del catálogo del CRM (C3). Sin datos personales."""
+    __tablename__ = 'crm_products'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sku = Column(String(60))
+    name = Column(String(200), nullable=False)
+    name_norm = Column(String(200), nullable=False)
+    description = Column(Text)
+    category = Column(String(80))
+    cost = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    price = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    tax_percent = Column(Numeric(5, 2), nullable=False, default=19, server_default='19')
+    active = Column(Boolean, nullable=False, default=True, server_default=text('true'))
+    image_key = Column(String(300))          # 0144: foto del producto; sale en la cotización si el diseño del PDF tiene la columna «Foto»
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_products_name', 'name_norm'),
+                      Index('uq_crm_products_sku', 'sku', unique=True, postgresql_where=text('sku IS NOT NULL')),
+                      Index('uq_crm_products_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmTerm(Base):
+    """Condición comercial elegible en una cotización (contado, 50-50, 30 días…)."""
+    __tablename__ = 'crm_terms'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False)
+    body = Column(Text, nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    archived_at = Column(DateTime, nullable=True)
+
+
+class CrmDocTemplate(Base):
+    """Plantilla de texto del PDF de cotización o proforma (`kind` quote | proforma)."""
+    __tablename__ = 'crm_doc_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String(10), nullable=False)
+    name = Column(String(80), nullable=False)
+    header_text = Column(Text)
+    greeting_text = Column(Text)
+    footer_text = Column(Text)
+    logo_key = Column(String(300))
+    layout_json = Column(Text)          # 0144: diseño por bloques (app/crm/quote_layout.py); NULL = la plantilla sencilla de siempre (encabezado, saludo y pie)
+    is_default = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    archived_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('uq_crm_doc_templates_default', 'kind', unique=True, postgresql_where=text('is_default AND archived_at IS NULL')),)
+
+
+class CrmQuote(Base):
+    """Cotización (C3). `number` es el consecutivo (contador `quote`); cada versión nueva repite el número con `version` + 1. `contact_id` pasa a NULL si se suprime al contacto (Ley 1581)."""
+    __tablename__ = 'crm_quotes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    number = Column(BigInteger, nullable=False)
+    version = Column(Integer, nullable=False, default=1, server_default='1')
+    parent_quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    contact_id = Column(Integer, ForeignKey('crm_contacts.id', ondelete='SET NULL'), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey('crm_opportunities.id', ondelete='SET NULL'), nullable=True)
+    title = Column(String(200), nullable=False)
+    stage = Column(String(12), nullable=False, default='borrador', server_default='borrador')
+    approval_status = Column(String(12), nullable=False, default='pendiente', server_default='pendiente')
+    invoice_status = Column(String(12), nullable=False, default='no_facturada', server_default='no_facturada')
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    valid_until = Column(Date, nullable=True)
+    event_start = Column(Date, nullable=True)
+    terms_id = Column(Integer, ForeignKey('crm_terms.id', ondelete='SET NULL'), nullable=True)
+    terms_text = Column(Text)
+    meeting_notes = Column(Text)
+    template_id = Column(Integer, ForeignKey('crm_doc_templates.id', ondelete='SET NULL'), nullable=True)
+    subtotal = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    discount_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    tax_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    pdf_key = Column(String(300))
+    pdf_generated_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    archived_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index('uq_crm_quotes_number_version', 'number', 'version', unique=True), Index('ix_crm_quotes_account', 'account_id'), Index('ix_crm_quotes_opportunity', 'opportunity_id'),
+                      Index('ix_crm_quotes_stage', 'stage', 'updated_at'),
+                      Index('uq_crm_quotes_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmQuoteLine(Base):
+    __tablename__ = 'crm_quote_lines'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='CASCADE'), nullable=False)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    product_id = Column(Integer, ForeignKey('crm_products.id', ondelete='SET NULL'), nullable=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    qty = Column(Numeric(12, 2), nullable=False, default=1, server_default='1')
+    unit_price = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    discount_percent = Column(Numeric(5, 2), nullable=False, default=0, server_default='0')
+    tax_percent = Column(Numeric(5, 2), nullable=False, default=19, server_default='19')
+    line_total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    __table_args__ = (Index('ix_crm_quote_lines_quote', 'quote_id', 'position'),)
+
+
+class CrmProforma(Base):
+    """Proforma (C3): documento de cobro anticipado, con su propio consecutivo (contador `proforma`)."""
+    __tablename__ = 'crm_proformas'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    number = Column(BigInteger, nullable=False)
+    quote_id = Column(Integer, ForeignKey('crm_quotes.id', ondelete='SET NULL'), nullable=True)
+    account_id = Column(Integer, ForeignKey('crm_accounts.id', ondelete='CASCADE'), nullable=False)
+    issued_at = Column(Date, nullable=False)
+    due_at = Column(Date, nullable=True)
+    status = Column(String(10), nullable=False, default='no_pagado', server_default='no_pagado')
+    event_name = Column(String(200))
+    city = Column(String(120))
+    currency = Column(String(3), nullable=False, default='COP', server_default='COP')
+    total = Column(Numeric(16, 2), nullable=False, default=0, server_default='0')
+    pdf_key = Column(String(300))
+    created_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    legacy_json = Column(Text)          # 0142: datos originales de SuiteCRM sin columna propia (solo lectura)
+    legacy_sugar_id = Column(String(40))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('uq_crm_proformas_number', 'number', unique=True), Index('ix_crm_proformas_account', 'account_id'),
+                      Index('uq_crm_proformas_legacy', 'legacy_sugar_id', unique=True, postgresql_where=text('legacy_sugar_id IS NOT NULL')))
+
+
+class CrmSavedFilter(Base):
+    """Filtro guardado de una lista del CRM. `filters_json` guarda SOLO filtros estructurados: el texto de búsqueda libre no se guarda (podría ser el nombre de una persona)."""
+    __tablename__ = 'crm_saved_filters'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    scope = Column(String(14), nullable=False)
+    name = Column(String(80), nullable=False)
+    filters_json = Column(Text, nullable=False)
+    shared = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (Index('ix_crm_saved_filters_owner', 'owner_staff_id', 'scope'),)

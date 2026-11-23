@@ -83,7 +83,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     <div class="gw-tabs" id="paramsRoot">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de parámetros" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la sección" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves cómo está esa sección.">
         <button type="button" class="gw-tab" role="tab" id="tab_registro" data-tab="registro" aria-controls="grp_registro" aria-selected="true">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Registro y pantalla</span><span class="gw-tab__sum">{{ event.directory_page_size or 50 }} filas · sesión {{ event.idle_minutes or idle_general_minutes }} min</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if local_server %}No disponible en el servidor local{% elif event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_invitaciones" data-tab="invitaciones" aria-controls="grp_invitaciones" aria-selected="false" tabindex="-1">{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">{% if event.aceptar_enabled %}Aceptación desde el celular activa{% else %}Aceptación desde el celular apagada{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_impresion" data-tab="impresion" aria-controls="grp_impresion" aria-selected="false" tabindex="-1">{{ ic('printer', 'gw-tab__icon') }}<span class="gw-tab__name">Impresión y reimpresión</span><span class="gw-tab__sum">Reimpresión {% if event.reprint_disabled %}deshabilitada{% else %}habilitada{% endif %}{% if event.shared_print_enabled %} · compartida{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
         <button type="button" class="gw-tab" role="tab" id="tab_escarapelas" data-tab="escarapelas" aria-controls="grp_escarapelas" aria-selected="false" tabindex="-1">{{ ic('badge', 'gw-tab__icon') }}<span class="gw-tab__name">Escarapelas y certificados</span><span class="gw-tab__sum">Digital {% if event.digital_badge_enabled %}activa{% else %}apagada{% endif %} · certificados {% if event.certificates_enabled %}activos{% else %}apagados{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
@@ -169,8 +169,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         </section>
 
         {# ====================================================================================== RECONOCIMIENTO FACIAL #}
-        <section class="gw-tabpanel" role="tabpanel" id="grp_facial" data-group="facial" aria-labelledby="tab_facial" hidden>
+        <section class="gw-tabpanel" role="tabpanel" id="grp_facial" data-group="facial" aria-labelledby="tab_facial"{% if local_server %} inert data-local-nofacial{% endif %} hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Reconocimiento facial</h2><p class="gw-tabpanel__lead">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR.</p></div>
+          {% if local_server %}<div class="gw-alert gw-alert--warn" role="note">{{ ic('lock') }}<div class="gw-alert__body"><b>El reconocimiento facial no está disponible en el servidor local.</b> Aquí se registra por cédula, QR o búsqueda; el rostro solo se usa en internet. Esta sección queda bloqueada.</div></div>{% endif %}
 
           <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
           <div class="gw-group__item">
@@ -179,8 +180,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <fieldset class="gw-fieldset">
                 <legend class="gw-label">¿Este evento usa reconocimiento facial?</legend>
                 <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
-                <label class="gw-choice"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>Usa rostro.</b><span>Quien acepte entra con su rostro; quien no, por cédula o QR.</span></span></label>
-                <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled and not local_server %}checked{% endif %}{% if local_server %} disabled{% endif %}> <span class="gw-choice__text"><b>Usa rostro.</b><span>Quien acepte entra con su rostro; quien no, por cédula o QR.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled or local_server %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
               </fieldset>
 
               <div class="gw-field">
@@ -238,8 +239,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         </section>
 
         {# ====================================================================================== INVITACIONES #}
-        <section class="gw-tabpanel" role="tabpanel" id="grp_invitaciones" data-group="invitaciones" aria-labelledby="tab_invitaciones" hidden>
+        <section class="gw-tabpanel" role="tabpanel" id="grp_invitaciones" data-group="invitaciones" aria-labelledby="tab_invitaciones"{% if local_server %} inert data-local-nofacial{% endif %} hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Invitaciones</h2><p class="gw-tabpanel__lead">Que las personas acepten y se tomen la selfie desde su celular, antes de llegar.</p></div>
+          {% if local_server %}<div class="gw-alert gw-alert--warn" role="note">{{ ic('lock') }}<div class="gw-alert__body"><b>El reconocimiento facial no está disponible en el servidor local.</b> Aquí se registra por cédula, QR o búsqueda; el rostro solo se usa en internet. Esta sección queda bloqueada.</div></div>{% endif %}
           <div class="gw-group__item" data-psave="cc">
             <div class="gw-item-head"><h4>Aceptación desde el celular</h4>{% call ayuda('ay_aceptar', 'Aceptación desde el celular') %}Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en la puerta con el documento o el QR.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %}> Permitir aceptar y dar la selfie desde el celular antes del evento</label>
@@ -421,12 +423,16 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedAreas"> Ver zonas archivadas</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=3, label='Cargando zonas…') }}</tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Permitir reingresos</th><th scope="col">Máx. entradas por persona</th><th scope="col">Genera estadísticas</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody">{{ skeleton('table', rows=2, cols=6, label='Cargando zonas…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
+                <div class="gw-field"><label class="gw-label" for="newAreaParent">Dentro de (opcional)</label><select class="gw-select" id="newAreaParent"><option value="">— Zona principal —</option></select></div>
+                <div class="gw-field"><label class="gw-label" for="newAreaMax">Máx. entradas por persona</label><input class="gw-input gw-input--short" type="number" id="newAreaMax" min="1" placeholder="Sin límite"></div>
                 <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
+                <label class="gw-check"><input type="checkbox" id="newAreaStats" checked> Genera estadísticas</label>
                 <button type="button" id="addAreaBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar zona</button>
               </div>
+              <p class="gw-hint"><strong>Subcategorías:</strong> elige «Dentro de» para crear, por ejemplo, Entrada A, B y C dentro de «Salón A». La configuración de la zona principal manda: si no permite reingresos, entrar por A bloquea B; si lo permite, A y luego B cuentan como dos entradas al salón (y en Estadísticas se ve que fue una sola persona). Cada una puede tener su propio máximo de entradas.</p>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/areas">Ir a Control de áreas</a></p>
             </div>
           </div>
@@ -440,15 +446,19 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
-              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=7, label='Cargando ítems…') }}</tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Dentro de (subcategoría)</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Repetir la entrega a la misma persona</th><th scope="col">Solo a quien cumple la estadía</th><th scope="col">Máx. por persona</th><th scope="col">Genera estadísticas</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody">{{ skeleton('table', rows=2, cols=10, label='Cargando ítems…') }}</tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
+                <div class="gw-field"><label class="gw-label" for="newItemParent">Dentro de (opcional)</label><select class="gw-select" id="newItemParent"><option value="">— Ítem principal —</option></select></div>
+                <div class="gw-field"><label class="gw-label" for="newItemMax">Máx. por persona</label><input class="gw-input gw-input--short" type="number" id="newItemMax" min="1" placeholder="Sin límite"></div>
+                <label class="gw-check"><input type="checkbox" id="newItemStats" checked> Genera estadísticas</label>
                 <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
                 <label class="gw-check"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
                 <label class="gw-check"><input type="checkbox" id="newItemRepeat"> Permitir repetir la entrega a la misma persona</label>
                 <label class="gw-check"><input type="checkbox" id="newItemDwell"> Solo a quien cumple la estadía</label>
                 <button type="button" id="addItemBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar ítem</button>
               </div>
+              <p class="gw-hint"><strong>Subcategorías:</strong> por ejemplo «Comida» con Hamburguesa, Perro y Comida china dentro (elige «Dentro de»). El «Máx. por persona» del ítem principal manda sobre todas sus subcategorías juntas (Comida = 1 por persona, sea cual sea); cada subcategoría puede tener además el suyo (si quieres que una repita, activa «Permitir repetir la entrega»). La cantidad inicial se define en cada subcategoría. En el puesto, quien entrega elige qué subcategoría reparte.</p>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
             </div>
           </div>
@@ -500,8 +510,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
           </div>
 
-          <!-- Turnos y filas (Fase 8): módulo propio con su botón Guardar (fuera del seguimiento de «Sin guardar»). -->
-          <div class="gw-group__item" id="queueBox" data-pnodirty data-event="{{ event.id }}">
+          <!-- Turnos y filas (Fase 8): se guarda con el «Guardar cambios» general (clave «queue»). -->
+          <div class="gw-group__item" id="queueBox" data-psave="queue" data-event="{{ event.id }}">
             <div class="gw-item-head"><h4>Turnos y filas</h4>{% call ayuda('ay_turnos', 'Turnos y filas') %}La persona escanea un QR, ve su turno (A1, B7…) en su celular y le avisa cuando la llamen. En la pantalla del televisor se ve el turno llamado. El orden puede ser por llegada, por orden de inscripción, alfabético o el que tú subas en un Excel.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="queueEnabled" {% if event.queue_enabled %}checked{% endif %}> Activar turnos y filas</label>
             <div id="queueConfig" class="gw-stack" {% if not event.queue_enabled %}hidden{% endif %}>
@@ -517,15 +527,22 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <p class="gw-hint">Máximo 8 filas. Con una sola letra (A) todos van en la misma fila.</p></div>
               <label class="gw-check"><input type="checkbox" id="queueShowName"> Mostrar el primer nombre en el celular (nunca la cédula; nunca a menores de edad)</label>
               <label class="gw-check"><input type="checkbox" id="queueRequireReg"> Por llegada: dar turno solo a quien ya fue acreditado</label>
-              <div class="gw-actions"><button type="button" id="queueSave" class="gw-btn gw-btn--secondary">Guardar turnos y filas</button></div>
-              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
+                            <p class="gw-hint"><a href="/kiosk/{{ event.id }}/turnos">Ir a Turnos y filas</a> · <a href="/kiosk/{{ event.id }}/turnos/tv">Pantalla de TV</a></p>
             </div>
           </div>
         </section>
 
         {# ====================================================================================== CAMPOS #}
         <section class="gw-tabpanel" role="tabpanel" id="grp_campos" data-group="campos" aria-labelledby="tab_campos" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">Categorías de las personas y cómo se llama, se ordena y se pide cada dato.</p></div>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">El código de la persona, las categorías y cómo se llama, se ordena y se pide cada dato.</p></div>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al activarlo aparece el campo «Código de la persona (QR)» en «Campos de la persona», en Registrar y Editar, en el formulario de persona y en el diseñador de escarapelas (para poner el QR o el código de barras con este código). Al escanear (registro, zonas, inventario o cualquier control) el sistema busca primero por identificación y luego por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
+            <div data-psave="mod_code">
+              <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
+              <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
+            </div>
+          </div>
 
           <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar y las plantillas de escarapela por categoría (editor de escarapelas). -->
           <div class="gw-group__item">
@@ -720,6 +737,14 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         } });
     });
 
+    (function () {          // 0140: código de la persona (QR)
+        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired');
+        en.addEventListener('change', () => { rq.disabled = !en.checked; if (!en.checked) rq.checked = false; });
+        GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, reload: true, save: async () => {
+            await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked }), 'No se pudo guardar el código del evento');
+        } });
+    })();
+
     const ROLE = {{ staff_role|tojson }}, CAN_ARCHIVE = ['coordinador', 'comercial', 'admin', 'super_admin'].includes(ROLE), CAN_HARD_DELETE = ROLE === 'super_admin';
     const archToggle = (id) => { const el = document.getElementById(id); return !!(el && el.checked && CAN_ARCHIVE); };
     // Archivar = ocultar y conservar el historial (coordinador+); restaurar (coordinador+); borrado definitivo solo super_admin, de lo archivado y sin historial.
@@ -729,18 +754,29 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         return `<span class="gw-badge">Archivado</span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm ${kind}-rest" aria-label="Restaurar ${label} ${esc(x.name)}">Restaurar</button>`
             + (CAN_HARD_DELETE ? ` <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm ${kind}-del" aria-label="Eliminar definitivamente ${label} ${esc(x.name)}">${gwIcon('trash')} Eliminar definitivamente</button>` : '');
     };
+    // Subcategorías (0140): las subcategorías salen justo debajo de su principal, con sangría; «Dentro de» solo ofrece principales (un nivel).
+    const optionsFor = (rows, selected, selfId) => '<option value="">— Principal —</option>' + rows.filter(r => !r.parent_id && !r.archived && r.id !== selfId).map(r => `<option value="${r.id}" ${String(selected) === String(r.id) ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+    const treeOrder = (rows) => { const out = []; rows.filter(r => !r.parent_id || !rows.some(p => p.id === r.parent_id)).forEach(r => { out.push(r); rows.filter(c => c.parent_id === r.id).forEach(c => out.push(c)); }); return out; };
+    const fillParent = (id, rows) => { const el = document.getElementById(id); if (el) { const cur = el.value; el.innerHTML = optionsFor(rows, cur); } };
     async function loadAreas() {
         const areas = await api(`${base}/areas${archToggle('showArchivedAreas') ? '?include_archived=true' : ''}`);
-        document.getElementById('areasBody').innerHTML = areas.length ? areas.map(a => `
+        fillParent('newAreaParent', areas);
+        document.getElementById('areasBody').innerHTML = areas.length ? treeOrder(areas).map(a => `
             <tr data-area="${a.id}"><td data-label="Zona"><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+            <td data-label="Dentro de (subcategoría)"><select class="gw-select area-parent" aria-label="Zona principal de ${esc(a.name)}" ${a.archived || a.is_group ? 'disabled' : ''}>${optionsFor(areas, a.parent_id, a.id)}</select></td>
             <td data-label="Permitir reingresos"><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} ${a.archived ? 'disabled' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
+            <td data-label="Máx. entradas por persona"><input type="number" class="gw-input gw-input--short area-max" min="1" value="${a.max_per_person == null ? '' : a.max_per_person}" placeholder="Sin límite" aria-label="Máximo de entradas por persona a ${esc(a.name)}" ${a.archived ? 'disabled' : ''}></td>
+            <td data-label="Genera estadísticas"><label class="gw-check"><input type="checkbox" class="area-stats" ${a.stats_enabled ? 'checked' : ''} ${a.archived ? 'disabled' : ''} aria-label="${esc(a.name)} genera estadísticas"></label></td>
             <td class="gw-pm-act">${rowActions(a, 'area', 'la zona')}</td></tr>`).join('')
-            : '<tr><td colspan="3">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
+            : '<tr><td colspan="6">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
-        await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked });
-        showToast('Zona actualizada', 'success');
+        try {
+            await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked, parent_id: tr.querySelector('.area-parent').value, max_per_person: tr.querySelector('.area-max').value, stats_enabled: tr.querySelector('.area-stats').checked });
+            showToast('Zona actualizada', 'success');
+        } catch (err) { /* el toast ya lo mostró api() */ }
+        loadAreas();
     });
     async function archiveAction(url, msg, confirmLabel, okMsg, reload, method) {
         if (!await showConfirm(msg, { confirmLabel })) return;
@@ -760,26 +796,32 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const name = document.getElementById('newAreaName').value.trim();
         if (!name) { showToast('Escribe el nombre de la zona', 'error'); return; }
         await GWParams.flush('mod_areas');                    // agregar es inmediato: si el módulo se acaba de activar, primero se guarda eso
-        await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked });
-        document.getElementById('newAreaName').value = ''; loadAreas();
+        await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked, parent_id: document.getElementById('newAreaParent').value, max_per_person: document.getElementById('newAreaMax').value, stats_enabled: document.getElementById('newAreaStats').checked });
+        document.getElementById('newAreaName').value = ''; document.getElementById('newAreaMax').value = ''; loadAreas();
     });
 
     async function loadItems() {
         const items = await api(`${base}/inventory${archToggle('showArchivedItems') ? '?include_archived=true' : ''}`);
-        document.getElementById('itemsBody').innerHTML = items.length ? items.map(i => `
+        fillParent('newItemParent', items);
+        document.getElementById('itemsBody').innerHTML = items.length ? treeOrder(items).map(i => `
             <tr data-item="${i.id}"><td data-label="Ítem"><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
-            <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+            <td data-label="Dentro de (subcategoría)"><select class="gw-select item-parent" aria-label="Ítem principal de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}>${optionsFor(items, i.parent_id, i.id)}</select></td>
+            <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}" ${i.archived || i.is_group ? 'disabled' : ''}></td>
             <td data-label="Varias unidades a la vez"><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
             <td data-label="Repetir la entrega a la misma persona"><label class="gw-check"><input type="checkbox" class="item-repeat" ${i.allow_repeat_delivery ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Permitir repetir la entrega de ${esc(i.name)} a la misma persona"></label></td>
             <td data-label="Solo a quien cumple la estadía"><label class="gw-check"><input type="checkbox" class="item-dwell" ${i.requires_dwell ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="Entregar ${esc(i.name)} solo a quien cumple el porcentaje de estadía"></label></td>
+            <td data-label="Máx. por persona"><input type="number" class="gw-input gw-input--short item-max" min="1" value="${i.max_per_person == null ? '' : i.max_per_person}" placeholder="Sin límite" aria-label="Máximo por persona de ${esc(i.name)}" ${i.archived ? 'disabled' : ''}></td>
+            <td data-label="Genera estadísticas"><label class="gw-check"><input type="checkbox" class="item-stats" ${i.stats_enabled ? 'checked' : ''} ${i.archived ? 'disabled' : ''} aria-label="${esc(i.name)} genera estadísticas"></label></td>
             <td data-label="Entregado / Disponible">${i.delivered} / <strong>${i.available}</strong></td>
             <td class="gw-pm-act">${rowActions(i, 'item', 'el ítem')}</td></tr>`).join('')
-            : '<tr><td colspan="7">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
+            : '<tr><td colspan="10">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
+        const body = { name: tr.querySelector('.item-name').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked, parent_id: tr.querySelector('.item-parent').value, max_per_person: tr.querySelector('.item-max').value, stats_enabled: tr.querySelector('.item-stats').checked };
+        const qty = tr.querySelector('.item-qty'); if (!qty.disabled) body.initial_qty = qty.value;          // un grupo no tiene cantidad propia: es la suma de sus subcategorías
         try {
-            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', { name: tr.querySelector('.item-name').value, initial_qty: tr.querySelector('.item-qty').value, allow_multiple: tr.querySelector('.item-multi').checked, allow_repeat_delivery: tr.querySelector('.item-repeat').checked, requires_dwell: tr.querySelector('.item-dwell').checked });
+            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', body);
             showToast('Ítem actualizado', 'success');
         } catch (err) { /* el toast ya lo mostró api() */ }
         loadItems();
@@ -795,8 +837,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const name = document.getElementById('newItemName').value.trim();
         if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
         await GWParams.flush('mod_inventory');
-        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked });
-        document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
+        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked, allow_repeat_delivery: document.getElementById('newItemRepeat').checked, requires_dwell: document.getElementById('newItemDwell').checked, parent_id: document.getElementById('newItemParent').value, max_per_person: document.getElementById('newItemMax').value, stats_enabled: document.getElementById('newItemStats').checked });
+        document.getElementById('newItemMax').value = ''; document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
     const failBox = (id) => () => { const b = document.getElementById(id); if (b && b.querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error(b, { text: 'Recarga la página para intentarlo de nuevo.' }); };
     loadAreas().catch(failBox('areasBody')); loadItems().catch(failBox('itemsBody'));
@@ -1153,7 +1195,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         tr.innerHTML = `
             <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
             <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
-            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name', 'code'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
             <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>

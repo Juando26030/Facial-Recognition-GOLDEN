@@ -113,7 +113,7 @@ def datos(client, factory, db):
     e2 = factory.event("finalizado", commercial=com, end_date=today - timedelta(days=60), finalized_at=utcnow() - timedelta(days=50))
     e3 = factory.event("finalizado", commercial=com, end_date=today - timedelta(days=5))
     e3.event_code = "LOAD-STG"
-    db.add(EventDeliveryLink(event_id=e1.id))
+    db.add(EventDeliveryLink(event_id=e1.id, token_hash="a" * 64, nonce="n" * 32))
     db.commit()
     _survey(db, e1, 2.8, 10, comment="Excelente servicio")
     return {"admin": admin, "com": com, "e1": e1, "e2": e2, "e3": e3}

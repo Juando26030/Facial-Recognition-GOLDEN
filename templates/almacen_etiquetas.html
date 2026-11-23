@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Etiquetas QR del almacén | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-almacen-etiquetas.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/almacen-etiquetas.js') }}" defer></script>
+</head>
+{# Pieza 1 de almacén: ventana de impresión PROPIA de las etiquetas QR (rollo de 62 mm de la Brother QL-800). No usa ni cambia la impresión compartida de escarapelas (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md). #}
+<body class="gw-page gw-almlbl">
+<header class="gw-almlbl__bar gw-no-print">
+  <button type="button" class="gw-btn gw-btn--primary" id="lblPrint" disabled>Imprimir</button>
+  <button type="button" class="gw-btn gw-btn--secondary" id="lblClose">Cerrar</button>
+  <p class="gw-hint" id="lblStatus" role="status" aria-live="polite">Preparando las etiquetas…</p>
+</header>
+<details class="gw-almlbl__editor gw-no-print" id="lblEditor" open>
+  <summary>Plantilla de la etiqueta (la ves aquí abajo y se guarda para todos)</summary>
+  <div class="gw-almlbl__grid">
+    <div class="gw-field"><label class="gw-label" for="tplHeight">Alto de la etiqueta (mm)</label>
+      <input class="gw-input" type="number" id="tplHeight" min="15" max="100" step="1" inputmode="numeric">
+      <span class="gw-hint">29 = etiqueta troquelada 29 × 62; 62 = cuadrada. El ancho siempre es 62 mm.</span></div>
+    <div class="gw-field"><label class="gw-label" for="tplQrPos">Código QR</label>
+      <select class="gw-select" id="tplQrPos">
+        <option value="left">A la izquierda</option><option value="right">A la derecha</option>
+        <option value="top">Arriba</option><option value="none">Sin QR (solo texto)</option>
+      </select></div>
+    <div class="gw-field"><label class="gw-label" for="tplQrMm">Tamaño del QR (mm, 0 = automático)</label>
+      <input class="gw-input" type="number" id="tplQrMm" min="0" max="60" step="1" inputmode="numeric"></div>
+    <div class="gw-field"><label class="gw-label" for="tplAlign">Alineación del texto</label>
+      <select class="gw-select" id="tplAlign"><option value="left">Izquierda</option><option value="center">Centrado</option></select></div>
+    <label class="gw-check"><input type="checkbox" id="tplShowTitle"> <span>Mostrar el nombre del equipo</span></label>
+    <div class="gw-field"><label class="gw-label" for="tplTitleMm">Letra del nombre (mm)</label>
+      <input class="gw-input" type="number" id="tplTitleMm" min="2" max="9" step="0.2" inputmode="decimal"></div>
+    <label class="gw-check"><input type="checkbox" id="tplShowCode"> <span>Mostrar el serial / código</span></label>
+    <div class="gw-field"><label class="gw-label" for="tplCodeMm">Letra del serial (mm)</label>
+      <input class="gw-input" type="number" id="tplCodeMm" min="2" max="9" step="0.2" inputmode="decimal"></div>
+    <label class="gw-check"><input type="checkbox" id="tplShowSub"> <span>Mostrar el tipo («Por modelo», «Por cantidad»)</span></label>
+    <div class="gw-field"><label class="gw-label" for="tplSubMm">Letra del tipo (mm)</label>
+      <input class="gw-input" type="number" id="tplSubMm" min="1.5" max="7" step="0.2" inputmode="decimal"></div>
+    <div class="gw-field"><label class="gw-label" for="tplExtra">Texto fijo en todas (opcional)</label>
+      <input class="gw-input" type="text" id="tplExtra" maxlength="60" placeholder="Ej.: Propiedad de Golden Eventos" autocomplete="off"></div>
+    <div class="gw-field"><label class="gw-label" for="tplCopies">Copias de cada etiqueta</label>
+      <input class="gw-input" type="number" id="tplCopies" min="1" max="10" step="1" inputmode="numeric"></div>
+  </div>
+  <div class="gw-almlbl__tplbtns">
+    <button type="button" class="gw-btn gw-btn--primary" id="tplSave">Guardar plantilla</button>
+    <button type="button" class="gw-btn gw-btn--secondary" id="tplReset">Volver al formato de fábrica</button>
+  </div>
+</details>
+<main class="gw-almlbl__sheet" id="lblSheet" aria-label="Vista previa de las etiquetas"></main>
+</body>
+</html>

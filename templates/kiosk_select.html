@@ -106,6 +106,9 @@
         {% if event.inventory_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entrega de insumos y combos, con el disponible al día") }}
         {% endif %}
+        {% if staff_role != "comercial" %}
+        {{ tile("/kiosk/%s/alistamiento" % event.id, "inbox", "Inventario", "Consulta lo que se alistó para este evento según el checklist de inventario") }}
+        {% endif %}
         {% if staff_role != "digitador" %}{# el digitador no tiene acceso a /estadisticas (main.py: exclude_roles): no se le dibuja una puerta cerrada #}
         {{ tile("/kiosk/%s/estadisticas" % event.id, "chart", "Estadísticas", "Exporta el reporte y consulta gráficos del evento") }}
         {% endif %}
@@ -120,6 +123,7 @@
           {% if staff_role != "comercial" %}
           {{ tile("/kiosk/%s/roster" % event.id, "upload", "Adjuntar base de datos", "Carga masiva desde Excel/CSV") }}
           {{ tile("/kiosk/%s/escarapela" % event.id, "badge", "Escarapelas", "Diseña la escarapela de este evento e imprímela al registrar") }}
+          {{ tile("/kiosk/%s/preimpresiones" % event.id, "printer", "Preimpresiones", "Imprime antes las escarapelas de un grupo (VIPs, expositores…) para no imprimirlas cuando lleguen") }}
           {% endif %}
           {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
           {{ tile("/kiosk/%s/formularios" % event.id, "form", "Formularios web", "Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento") }}

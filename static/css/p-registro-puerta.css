@@ -412,3 +412,49 @@ html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-tabl
   html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=origin]:empty,
   html body.gw-registro .gw-reg__list .golden-table thead th[data-col=origin] { display: none; }
 }
+
+/* ================= Hotfix 17-nov-2026 · Registro en laptop pequeña: que la lista tenga el mayor alto posible =================
+   Causa: en una pantalla de ~620 px de alto lo de arriba (cabecera 80 + separador 80 + franja 68 + título 68 + pasos 38 + buscador grande 141 + contadores 61) dejaba la zona de trabajo
+   en su alto mínimo (26rem) y la lista en ~210 px: se veían 3 personas. Ahora, en escritorio, la cabecera, el título, el buscador y los contadores son compactos, y el alto mínimo baja a 14rem.
+   Solo disposición y tokens; no toca impresión ni lógica. Pantallas angostas/táctiles quedan como estaban (reglas de arriba). */
+@media (min-width: 721px) and (pointer: fine) {
+  .gw-registro .golden-header-container { height: 3.25rem; }
+  .gw-registro .golden-header .golden-logo img { max-height: 2.5rem; width: auto; }
+  .gw-registro .golden-content-spacer { height: 3.25rem; }
+  .gw-registro .golden-event-strip { padding: var(--gw-sp-1) var(--gw-sp-4); }
+  .gw-registro .golden-event-strip-inner { gap: var(--gw-sp-1) var(--gw-sp-5); }
+  .gw-registro .golden-event-strip strong { display: inline; margin-right: var(--gw-sp-1); font-size: var(--gw-fs-sm); }
+  .gw-registro .golden-section { padding: var(--gw-sp-2) 0 var(--gw-sp-2); }
+  .gw-registro .gw-registro__head { margin-bottom: var(--gw-sp-1); }
+  .gw-registro .golden-section-title > span { display: none; }
+  .gw-registro .golden-section-title h2 { font-size: var(--gw-fs-xl); line-height: 1.2; }
+  .gw-registro #gwConn { min-height: 2rem; font-size: var(--gw-fs-sm); }
+  .gw-registro .gw-steps--compact { margin-bottom: var(--gw-sp-1); }
+  .gw-registro .gw-steps--compact > li { min-height: 1.75rem; }
+  .gw-registro .tabs { margin-bottom: var(--gw-sp-1); }
+  .gw-registro button.tab { padding: var(--gw-sp-1) var(--gw-sp-4); }
+  /* zona de trabajo: alto = pantalla menos lo de arriba; el mínimo baja para que la lista no se quede sin espacio */
+  .gw-registro .gw-workarea { min-height: 14rem; height: calc(100dvh - var(--gw-workarea-top, 10rem) - var(--gw-sp-2)); }
+  .gw-registro .gw-workarea__bar { gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-3); }
+  .gw-registro .gw-workarea__bar .gw-search--hero { padding: 0; }
+  .gw-registro .gw-workarea__bar .gw-search > .gw-row { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }   /* la etiqueta queda para lectores de pantalla */
+  .gw-registro .gw-workarea__bar .gw-search--hero .gw-input { min-height: var(--gw-tap); font-size: var(--gw-fs-lg); }
+  .gw-registro .gw-workarea__bar .gw-search--hero .gw-search__icon { width: 1.5rem; height: 1.5rem; }
+  .gw-registro .gw-workarea__bar .gw-search__scan, .gw-registro .gw-workarea__bar .gw-search--hero .gw-search__clear { min-height: var(--gw-tap); }
+  .gw-registro .gw-workarea__bar .gw-search__scan { flex-basis: var(--gw-tap); width: var(--gw-tap); }
+  .gw-registro .gw-workarea__bar .gw-search--hero .gw-search__clear { min-width: var(--gw-tap); }
+  .gw-registro .gw-workarea__bar .gw-hint { margin: 0; }
+  .gw-registro .gw-workarea__bar .gw-hint:empty { display: none; }
+  .gw-registro .gw-workarea__bar .gw-toolbar { gap: var(--gw-sp-2); }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn,
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-menu__btn { min-height: var(--gw-tap); }
+  .gw-registro .gw-workarea__summary { gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-3); }
+  .gw-registro .gw-workarea__summary .gw-chip { min-height: 1.75rem; padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); }
+  body.gw-registro .gw-reg__list { padding: var(--gw-sp-2) var(--gw-sp-3); }
+  .gw-registro .gw-registro__incomplete { margin: 0 0 var(--gw-sp-2); padding: var(--gw-sp-1) var(--gw-sp-3); }
+}
+/* pantallas de poco alto (laptop pequeña, ≤ 800 px): se quitan además los chips de pasos (la ayuda sigue en cada botón «?» y en el buscador) */
+@media (min-width: 721px) and (pointer: fine) and (max-height: 800px) {
+  .gw-registro .gw-steps--compact { display: none; }
+  .gw-registro .golden-event-strip { font-size: var(--gw-fs-sm); }
+}

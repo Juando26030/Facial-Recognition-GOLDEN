@@ -94,7 +94,7 @@
   const stateBox = (msg, err) => `<div class="gw-state${err ? ' gw-state--error' : ''}" role="${err ? 'alert' : 'status'}"><p class="gw-state__title">${esc(msg)}</p></div>`;
 
   /* ---- pestañas */
-  const TABS = { cat: ['invTabCat', 'invPanelCat'], cal: ['invTabCal', 'invPanelCal'], adm: ['tab_inventario', 'inventario'] };
+  const TABS = { cat: ['invTabCat', 'invPanelCat'], cal: ['invTabCal', 'invPanelCal'], adm: ['tab_inventario', 'inventario'], alm: ['invTabAlm', 'invPanelAlm'], nov: ['invTabNov', 'invPanelNov'] };
   function showTab(name) {
     Object.keys(TABS).forEach((t) => {
       const tab = $(TABS[t][0]), panel = $(TABS[t][1]);
@@ -106,6 +106,9 @@
     });
     if (name === 'cal' && !cal.loaded) loadCalendar();
     if (name === 'adm' && $('tab_inventario')) $('tab_inventario').dispatchEvent(new Event('gw:tabshow'));          // el administrador del catálogo carga al abrirse
+    if (name === 'alm' && $('invTabAlm')) $('invTabAlm').dispatchEvent(new Event('gw:tabshow'));          // Almacén (Pieza 1) carga al abrirse
+    if (name === 'nov' && $('invTabNov')) $('invTabNov').dispatchEvent(new Event('gw:tabshow'));          // Novedades (Pieza 3) carga al abrirse
+    if ($('almSaveBar')) $('almSaveBar').hidden = !(name === 'alm' || name === 'adm');          // el botón «Guardar cambios» de Almacén solo en sus pestañas (Almacén y Administrar catálogo)
     if (name === 'cat' && catalog) loadCatalog();          // el catálogo pudo cambiar en «Administrar»
   }
   doc.querySelector('.gw-invpg__container, .gw-container').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b && TABS[b.dataset.tab]) showTab(b.dataset.tab); });
@@ -181,9 +184,35 @@
 
   /* ---- calendario */
   const today = toIso(new Date());
-  const cal = { view: 'month', anchor: today, selected: today, data: null, loaded: false, ctrl: null, key: '', cats: new Set(), known: {}, armed: 0, panelQ: '' };
+  const cal = { view: 'month', anchor: today, selected: today, data: null, loaded: false, ctrl: null, key: '', cats: new Set(), known: {}, armed: 0, panelQ: '', raw: null, pcats: new Set() };
   const visible = () => cal.data.events.filter((e) => root.CalendarCats.matches(e, cal.cats));          // filtro por tipo de evento (chips)
   const pidFilter = () => Number($('invCalProduct').value) || 0;
+
+  /* ---- categorías de equipo (chips, mismo componente): dejan solo los equipos de las categorías elegidas y los eventos que los usan */
+  const prodCatKey = (p) => String(p.category_id == null ? 0 : p.category_id);
+  function filterByProductCat(raw) {
+    if (!raw || !cal.pcats.size) return raw;
+    const keep = (p) => cal.pcats.has(prodCatKey(p));
+    const ids = new Set(raw.products.filter(keep).map((p) => p.id));
+    const events = raw.events.map((e) => Object.assign({}, e, { lines: e.lines.filter((l) => ids.has(l.product_id)) })).filter((e) => e.lines.length);
+    return Object.assign({}, raw, { products: raw.products.filter(keep), events });
+  }
+  function renderProdCats() {
+    const host = $('invCalProdCats');
+    if (!cal.raw || !root.CalendarCatsUI) { host.hidden = true; return; }
+    const by = new Map();
+    cal.raw.products.forEach((p) => { const k = prodCatKey(p); const c = by.get(k) || { key: k, label: p.category_name || 'Sin categoría', count: 0 }; c.count += 1; by.set(k, c); });
+    if (by.size < 2) { host.hidden = true; return; }
+    const cats = Array.from(by.values()).sort((a, b) => a.label.localeCompare(b.label, 'es')).map((c) => Object.assign(c, { active: cal.pcats.has(c.key) }));
+    root.CalendarCatsUI.paint(host, cats, cal.pcats.size > 0, { title: 'Categoría de equipo', aria: 'Filtrar por categoría de equipo' });
+  }
+  $('invCalProdCats').addEventListener('click', (e) => {
+    if (e.target.closest('[data-cat-all]')) cal.pcats = new Set();
+    else { const b = e.target.closest('[data-cat]'); if (!b) return; const k = b.dataset.cat; if (cal.pcats.has(k)) cal.pcats.delete(k); else cal.pcats.add(k); }
+    cal.data = filterByProductCat(cal.raw);
+    const sel = $('invCalProduct'); if (sel.value && !cal.data.products.some((p) => String(p.id) === sel.value)) sel.value = '';
+    fillProducts(); renderCalendar();
+  });
 
   async function loadCalendar() {
     const r = rangeFor(cal.view, cal.anchor);
@@ -195,7 +224,8 @@
     $('invCalBody').setAttribute('aria-busy', 'true');
     if (root.GW && root.GW.skeleton) root.GW.skeleton($('invCalBody'), { kind: 'list', rows: 4, label: 'Cargando el calendario…' });
     try {
-      cal.data = await jget(`/api/inventory/calendar?start=${r.start}&end=${r.end}`, cal.ctrl.signal);
+      cal.raw = await jget(`/api/inventory/calendar?start=${r.start}&end=${r.end}`, cal.ctrl.signal);
+      cal.data = filterByProductCat(cal.raw);
       cal.key = key; cal.loaded = true;
       fillProducts();
       renderCalendar();
@@ -291,6 +321,7 @@
     $('invCalBody').innerHTML = cal.view === 'month' ? renderMonth() : (cal.view === 'week' ? renderWeek() : '');
     doc.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === cal.view)));
     renderCats();
+    renderProdCats();
     renderPanel();
     renderBoard();
     renderDetail();

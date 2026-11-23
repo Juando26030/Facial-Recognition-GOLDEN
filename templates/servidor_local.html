@@ -7,6 +7,9 @@
     <title>Servidor local | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-clientes.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -50,19 +53,14 @@
       </div>
     </div>
     <div id="slAlert" role="status" hidden></div>
-    <div class="gw-toolbar">
-      <div class="gw-search gw-search--hero gw-toolbar__grow">
-        <div class="gw-search__row"><div class="gw-search__field">
-          <input class="gw-input" type="search" id="slSearch" placeholder="Buscar por evento, código o cliente" aria-label="Buscar evento" autocomplete="off" spellcheck="false">
-        </div></div>
-      </div>
-      <div class="gw-toolbar__actions" role="group" aria-label="Agrupar eventos">
-        <button type="button" class="gw-chip" data-group="client" aria-pressed="true">Por cliente</button>
-        <button type="button" class="gw-chip" data-group="calendar" aria-pressed="false">Por calendario</button>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="slReload">Actualizar lista</button>
-      </div>
+    <div class="ev-filters gw-card-row sl-filters">
+      <div class="gw-field"><label class="gw-label" for="slSearch">Buscar</label>
+        <input class="gw-input" type="search" id="slSearch" placeholder="Evento, código o cliente" autocomplete="off" spellcheck="false"></div>
+      <div class="gw-field"><label class="gw-label" for="slGroup">Agrupar</label>
+        <select id="slGroup" class="gw-select"><option value="client">Por cliente</option><option value="calendar">Por calendario</option></select></div>
+      <button type="button" class="gw-btn gw-btn--secondary" id="slReload">Actualizar lista</button>
     </div>
-    <div id="slEvents" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
+    <div id="slEvents" class="ev-list gw-tenant__body" aria-busy="true">{{ skeleton('list', rows=4, label='Cargando eventos de la nube…') }}</div>
     <p class="gw-hint">¿Sin conexión o prefieres hacerlo a mano? En la nube exporta el evento y aquí impórtalo (Parámetros del sistema). El resultado es el mismo.</p>
   </div>
 </main>

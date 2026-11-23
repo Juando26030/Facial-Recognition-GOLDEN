@@ -75,13 +75,24 @@ def test_admin_session_inside_the_limit_survives(client, factory, monkeypatch):
     assert client.get("/api/my-events").status_code == 200
 
 
-def test_the_absolute_limit_does_not_apply_to_other_roles(client, factory, monkeypatch):
-    factory.staff("coordinador", "coord_abs")
+@pytest.mark.parametrize("role", ["coordinador", "comercial"])
+def test_the_absolute_limit_also_applies_to_coordinador_and_comercial(client, factory, monkeypatch, role):
+    """20-nov-2026: sin sesión única (varios dispositivos a la vez) tampoco llevan `sid`: el mismo tope de 12 h que el admin."""
+    factory.staff(role, "multi_abs")
     monkeypatch.setenv("SESSION_IDLE_MINUTES", "0")
-    login(client, "coord_abs")
+    login(client, "multi_abs")
     real = idle.now()
     monkeypatch.setattr(idle, "now", lambda: real + 13 * 3600)
-    assert client.get("/api/my-events").status_code == 200
+    assert client.get("/api/my-events").status_code == 401
+
+
+def test_the_absolute_limit_does_not_apply_to_the_single_session_roles(client, factory, monkeypatch):
+    factory.staff("digitador", "dig_abs")          # los de sesión única ya se invalidan por `sid`
+    monkeypatch.setenv("SESSION_IDLE_MINUTES", "0")
+    login(client, "dig_abs")
+    real = idle.now()
+    monkeypatch.setattr(idle, "now", lambda: real + 13 * 3600)
+    assert client.get("/api/my-events").status_code != 401
 
 
 def test_absolute_limit_helpers():

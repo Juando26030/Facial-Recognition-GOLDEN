@@ -86,6 +86,7 @@
   --gw-ic-red: #c62828;
   --gw-ic-amber: #a85a00;
   --gw-ic-violet: #6d28d9;
+  --gw-id-bg: #ede9fe;       --gw-id-text: #4c1d95;       --gw-id-line: #a78bfa;
   --gw-ic-teal: #0f766e;
   --gw-ic-orange: #c2410c;
   --gw-ic-pink: #be185d;
@@ -129,6 +130,7 @@
   --gw-ic-red: #ff8a80;
   --gw-ic-amber: #f5b84a;
   --gw-ic-violet: #b79cff;
+  --gw-id-bg: #2c1f5c;       --gw-id-text: #d9ccff;       --gw-id-line: #8b6cf0;
   --gw-ic-teal: #4fd1c5;
   --gw-ic-orange: #ff9d5c;
   --gw-ic-pink: #ff7eb6;
@@ -141,6 +143,7 @@
   --gw-ic-red: #ff8a80;
   --gw-ic-amber: #f5b84a;
   --gw-ic-violet: #b79cff;
+  --gw-id-bg: #2c1f5c;       --gw-id-text: #d9ccff;       --gw-id-line: #8b6cf0;
   --gw-ic-teal: #4fd1c5;
   --gw-ic-orange: #ff9d5c;
   --gw-ic-pink: #ff7eb6;
@@ -484,6 +487,7 @@
 .gw-group__pending[hidden], .gw-group [hidden] { display: none !important; }   /* los botones «Guardar» por bloque siguen en el DOM, ocultos y funcionales */
 
 .gw-savebar { position: sticky; bottom: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+.gw-savebar.gw-savebar--vacia { display: none; }
 .gw-savebar[data-state="dirty"] { border-color: var(--gw-warn-line); }
 .gw-savebar[data-state="saved"] { border-color: var(--gw-ok-line); }
 .gw-savebar[data-state="error"] { border-color: var(--gw-err-line); }
@@ -536,6 +540,13 @@
 .gw-workarea__summary { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-4); border-bottom: 1px solid var(--gw-border); background: var(--gw-surface-2); }
 .gw-workarea__summary:empty { display: none; }
 .gw-workarea__list { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+/* Pantalla BAJA (ventana pequeña, portátil con barras del navegador, celular horizontal): reservar «pantalla menos lo de arriba» dejaba la lista en 2-3 filas con desplazamiento interno y la página
+   con huecos. Ahí la zona de trabajo crece con su contenido y desplaza la PÁGINA; la barra de búsqueda se queda pegada arriba mientras se baja. */
+@media (max-height: 860px) {
+  .gw-workarea, .gw-registro .gw-workarea { height: auto; min-height: 0; overflow: visible; }
+  .gw-workarea__list { overflow: visible; }
+  .gw-workarea__bar { position: sticky; top: 3.4rem; z-index: 5; }          /* debajo del encabezado fijo */
+}
 .gw-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gw-sp-3); }
 .gw-toolbar__grow { flex: 1 1 18rem; min-width: 0; }
 .gw-toolbar__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
@@ -664,7 +675,12 @@
 .gw-card-row__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
 .gw-card-row__meta { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-cards > .gw-card-row { height: 100%; }                                   /* tarjetas de la misma fila: igual altura */
+.gw-cards > .gw-card-row > .gw-card-row__head { align-items: flex-start; }    /* título y estado arriba, siempre en la misma posición */
+.gw-cards > .gw-card-row > .gw-card-row__actions { margin-top: auto; }       /* el botón queda al pie de todas */
 .gw-card-row__actions .gw-btn { flex: 1 1 auto; }
+.gw-chips { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: var(--gw-sp-2) 0; }          /* fila de etiquetas con cifras (se acomodan en varias líneas en el celular) */
+.gw-table-cards .gw-badge { white-space: nowrap; }          /* «Deshabilitada» no se parte letra por letra en una celda angosta */
 @media (max-width: 768px) {
   .gw-table-cards thead { display: none; }
   .gw-table-cards, .gw-table-cards tbody, .gw-table-cards tr, .gw-table-cards td { display: block; width: 100%; }
@@ -672,6 +688,12 @@
   .gw-table-cards td { padding: var(--gw-sp-1) 0; border: 0; }
   .gw-table-cards td[data-label]::before { content: attr(data-label) ": "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
   .gw-table-cards td.gw-table-cards__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); padding-top: var(--gw-sp-3); }
+  .gw-table-cards td.gw-table-cards__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); padding-bottom: var(--gw-sp-2); }       /* la primera celda (la llave, el nombre…) hace de título de la tarjeta */
+  .gw-table-cards td.gw-table-cards__title::before { content: none; }
+  .gw-table-cards code, .gw-table-cards td { overflow-wrap: anywhere; }
+  .gw-table-cards td .gw-hint { display: block; margin-top: var(--gw-sp-1); }          /* el detalle va debajo de la etiqueta de estado, no pegado */
+  .gw-table-cards td.gw-table-cards__actions .gw-btn { flex: 1 1 auto; }
+  .gw-table-cards td.gw-table-cards__actions:empty { display: none; }          /* fila sin acciones (p. ej. llave ya deshabilitada): no deja un hueco vacío */
   .gw-page-head__actions { width: 100%; }
   .gw-page-head__actions .gw-btn { flex: 1 1 auto; }
   .gw-savebar { padding-bottom: calc(var(--gw-sp-3) + env(safe-area-inset-bottom, 0px)); }
@@ -958,7 +980,7 @@
   .gw-page .gw-stack > * + * { margin-top: var(--gw-sp-2); }
   .gw-page .gw-stack-lg > .gw-page-head + .gw-steps, .gw-page .gw-stack-lg > .gw-stack:first-child + .gw-steps { margin-top: var(--gw-sp-1); }
   .gw-page .gw-parametros__wrap { gap: var(--gw-sp-2); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-3); }
-  .gw-page .gw-container { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .gw-page .gw-container, .gw-page .gw-crm-nav { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
   .gw-page .golden-main > .gw-container { padding-top: var(--gw-sp-2); }
   .gw-page .gw-card { padding: var(--gw-sp-3); }
   .gw-page .gw-card__head { margin-bottom: var(--gw-sp-2); }
@@ -1066,7 +1088,7 @@
   .gw-page .golden-event-strip strong { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
 
-/* ============================================================ Revisión visual F5-9 · piezas que el JS nuevo ya usaba sin estilo (muestrario: guia_visual.html#lista-filas)
+/* ============================================================ Revisión visual F5-9 · piezas que el JS nuevo ya usaba sin estilo (muestrario: guia_visual.html, sección lista-filas)
    - `.gw-list__item`: fila de lista con datos a la izquierda y acciones a la derecha (Servidor local, Sincronización, Inventario, Cuentas de cobro). En celular las acciones bajan.
    - `.gw-section-title`: subtítulo de grupo dentro de una página (por cliente, por mes, nombre del evento abierto).
    - `.gw-text-danger`: texto de error dentro de una fila o ventana (con palabras, no solo color). */
@@ -1133,6 +1155,7 @@
 @media (prefers-reduced-motion: reduce) {
   :where(.gw-page) button[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) [role="button"][data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, :where(.gw-page) a[data-gw-busy]:not(.gw-btn):not(.gw-menu__item)::after, .gw-btn[aria-busy="true"]::before, :where(.gw-page) button[aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before, :where(.gw-page) [role="button"][aria-busy="true"]:not([data-gw-busy]):not(.gw-btn):not(.gw-menu__item)::before { animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
   .gw-loadbar[data-active] .gw-loadbar__fill { width: 100%; transform: none; animation: gw-busy-fade 1.2s ease-in-out infinite alternate !important; }
+  .gw-kanban { scroll-behavior: auto; scroll-snap-type: none; }          /* tablero del CRM: sin desplazamiento animado (aquí para que este bloque siga siendo el último de movimiento reducido) */
 }
 
 /* Bloque de comandos copiables (tutoriales de Configuración, Fase 10 E): `.gw-code` en <pre>; el código en línea toma el mismo fondo. Solo tokens. */
@@ -1141,8 +1164,85 @@
 .gw-code code { background: none; padding: 0; }
 
 /* «Volver al kiosco» (static/js/kiosk-back.js): píldora dorada en la franja del evento, distinta de los botones normales; no mueve el título */
-.gw-backchip { display: inline-flex; align-items: center; align-self: center; flex: 0 0 auto; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-4); border-radius: 999px; background: var(--gw-gold-grad); color: var(--gw-on-gold); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); line-height: 1.2; text-decoration: none; white-space: nowrap; border: 2px solid var(--gw-surface); box-shadow: 0 2px 10px rgba(0, 0, 0, .45); }
+.gw-backchip { display: inline-flex; align-items: center; align-self: center; flex: 0 0 auto; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-4); border-radius: 999px; background: var(--gw-gold-grad); color: var(--gw-on-gold); font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); line-height: 1.2; text-decoration: none; white-space: nowrap; border: 2px solid var(--gw-surface); box-shadow: var(--gw-shadow-md); }
 .gw-backchip:hover { filter: brightness(1.08); text-decoration: none; }
 .gw-backchip:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-backrow { display: flex; padding: var(--gw-sp-2) 0 0; }
 @media (max-width: 760px) { .gw-page .golden-event-strip-inner > .gw-backchip { display: inline-flex; margin-right: var(--gw-sp-2); } }
+
+/* ============================================================ CRM · tablero Kanban y barra de etapas (etapa C2, 12-nov-2026). Solo tokens --gw-*; ningún color suelto.
+   `.gw-kanban` es una fila de columnas con desplazamiento horizontal PROPIO (la página nunca se desplaza de lado); en celular cada columna ocupa casi todo el ancho y se encaja al desplazar.
+   `.gw-kcard` es una tarjeta: el título es un enlace; «Mover a…» (menú `.gw-menu`) es la alternativa de teclado y de pantalla táctil al arrastre. Una tarjeta sin próxima actividad lleva
+   la franja `.gw-kcard__flag` con ícono y texto (el color nunca va solo). Pares de texto: --gw-text y --gw-text-muted sobre --gw-surface / --gw-surface-2; --gw-warn-text sobre --gw-warn-bg. */
+.gw-kanban { display: flex; align-items: flex-start; gap: var(--gw-sp-4); overflow-x: auto; padding: var(--gw-sp-1) var(--gw-sp-1) var(--gw-sp-4); scroll-snap-type: x proximity; max-width: 100%; }
+.gw-kanban__col { flex: 0 0 min(320px, 100%); min-width: 0; display: flex; flex-direction: column; gap: var(--gw-sp-3); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md);
+  background: var(--gw-surface-2); color: var(--gw-text); scroll-snap-align: start; }
+.gw-kanban__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gw-sp-1) var(--gw-sp-2); }
+.gw-kanban__title { margin: 0; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-kanban__count { display: inline-block; min-width: 1.75rem; padding: 0 var(--gw-sp-2); border-radius: var(--gw-radius-pill); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); text-align: center; }
+.gw-kanban__sum { flex: 1 0 100%; margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-kanban__body { display: flex; flex-direction: column; gap: var(--gw-sp-3); min-height: var(--gw-tap); border: 2px dashed transparent; border-radius: var(--gw-radius-sm); }
+.gw-kanban__body.is-over { border-color: var(--gw-border-strong); }
+.gw-kanban__more { align-self: stretch; }
+.gw-kanban__empty { margin: 0; padding: var(--gw-sp-3); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); text-align: center; }
+.gw-kcard { display: flex; flex-direction: column; gap: var(--gw-sp-2); padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); color: var(--gw-text); box-shadow: var(--gw-shadow-sm); }
+.gw-kcard[draggable="true"] { cursor: grab; }
+.gw-kcard.is-dragging { opacity: 0.5; cursor: grabbing; }
+.gw-kcard__title { margin: 0; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-kcard__title a { color: var(--gw-link); text-decoration: none; }
+.gw-kcard__title a:hover { text-decoration: underline; }
+.gw-kcard__sub { margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); overflow-wrap: anywhere; }
+.gw-kcard__amount { margin: 0; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
+.gw-kcard__meta { display: flex; flex-wrap: wrap; gap: var(--gw-sp-1) var(--gw-sp-3); margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-kcard__flag { display: inline-flex; align-items: center; gap: var(--gw-sp-1); align-self: flex-start; padding: var(--gw-sp-1) var(--gw-sp-2); border-radius: var(--gw-radius-sm); background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 1px solid var(--gw-warn-line); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-kcard__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-kcard__move { min-height: var(--gw-tap); }
+@media (max-width: 640px) { .gw-kanban__col { flex-basis: 88%; } }
+
+/* Movimiento reducido (prefers-reduced-motion) del tablero: la regla vive en el bloque @media de la rueda de carga (arriba), que debe seguir siendo el último de esa consulta. */
+/* Barra de etapas de una oportunidad: una fila de pasos (ganada/perdida cierran). Cada paso dice su estado con palabras (`__state`) además del color. En celular se apila. */
+.gw-stagebar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: 0; padding: 0; list-style: none; }
+.gw-stagebar__step { flex: 1 1 8rem; display: flex; flex-direction: column; gap: var(--gw-sp-1); min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); background: var(--gw-surface); color: var(--gw-text); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-stagebar__step button { all: unset; cursor: pointer; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; min-height: var(--gw-tap); width: calc(100% + 2 * var(--gw-sp-3)); margin: calc(-1 * var(--gw-sp-2)) calc(-1 * var(--gw-sp-3)); padding: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-stagebar__step button:focus-visible { box-shadow: var(--gw-ring); border-radius: var(--gw-radius-sm); }
+.gw-stagebar__state { font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
+.gw-stagebar__step.is-done { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-stagebar__step.is-done .gw-stagebar__state { color: var(--gw-ok-text); }
+.gw-stagebar__step[aria-current="step"] { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }
+.gw-stagebar__step[aria-current="step"] .gw-stagebar__state { color: var(--gw-info-text); }
+.gw-stagebar__step.is-lost { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
+.gw-stagebar__step.is-lost .gw-stagebar__state { color: var(--gw-err-text); }
+
+/* CRM · barra de secciones (etapa C1c–C4): fila de píldoras con desplazamiento propio; la sección actual lleva `aria-current="page"`. Misma columna que .gw-container (alineada con el título). Las pantallas del CRM además cargan p-crm-nav.css con la misma regla (URL propia: una caché vieja de este archivo no la desalinea). */
+.gw-crm-nav { display: flex; flex-wrap: nowrap; gap: var(--gw-sp-2); overflow-x: auto; box-sizing: border-box; width: 100%; max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-1) var(--gw-sp-4); }
+.gw-crm-nav .gw-chip { flex: 0 0 auto; text-decoration: none; }
+.gw-chip--current { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); border-width: 2px; }
+
+/* Menú lateral que se puede ocultar en escritorio (18-nov-2026): «Ocultar menú» lo pliega; el botón ☰ lo vuelve a mostrar. En celular nada cambia (ya está plegado). */
+.golden-sidebar-hide { display: none; align-items: center; gap: var(--gw-sp-2); margin: 0 var(--gw-sp-3) 0 auto; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); color: var(--golden-sidebar-contrast); background: transparent; border: 1px solid currentColor; border-radius: var(--gw-radius-md); cursor: pointer; opacity: 0.85; }
+.golden-sidebar-hide:hover { opacity: 1; background: rgba(255, 255, 255, 0.1); }
+.golden-sidebar-hide:focus-visible { outline: 3px solid var(--gw-nav-accent); outline-offset: 2px; }
+.golden-sidebar-hide .gw-icon { transform: rotate(180deg); width: 1rem; height: 1rem; }
+@media (min-width: 901px) {
+  .golden-sidebar { display: flex; flex-direction: column; }
+  .golden-sidebar-hide { display: inline-flex; }
+  body.sidebar-collapsed .golden-sidebar { transform: translateX(-100%); transition: transform var(--gw-dur); }
+  body.sidebar-collapsed.sidebar-open .golden-sidebar { transform: translateX(0); }
+  body.sidebar-collapsed .golden-sidebar-toggle { display: block; }
+  body.sidebar-collapsed.sidebar-open .golden-sidebar-backdrop { display: block; }
+  body.sidebar-collapsed.has-sidebar .golden-header { left: 0; width: 100%; }
+  body.sidebar-collapsed.has-sidebar .golden-main,
+  body.sidebar-collapsed.has-sidebar .golden-content-spacer,
+  body.sidebar-collapsed.has-sidebar .golden-event-strip { margin-left: 0; }
+  body.sidebar-collapsed.has-sidebar .golden-header-container { padding-left: 4.2rem; }
+  body.sidebar-collapsed.has-sidebar .gw-savebar { margin-left: var(--gw-sp-4); }
+}
+
+/* QR de un enlace (toast.js › GWLinkQr, 18-nov-2026): el QR siempre es negro sobre blanco (se lee igual en tema oscuro) */
+.gw-linkqr { max-width: 400px; }
+.gw-linkqr__box { display: flex; justify-content: center; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); margin-bottom: var(--gw-sp-3); }
+.gw-linkqr__canvas { display: block; width: min(100%, 280px); height: auto; image-rendering: pixelated; }
+.gw-linkqr__url .gw-input { width: 100%; }
+
+/* Servidor local: las secciones del reconocimiento facial se ven apagadas y no se pueden tocar (el rostro solo existe en internet). */
+[data-local-nofacial] > :not(.gw-tabpanel__head):not(.gw-alert) { opacity: .5; pointer-events: none; }

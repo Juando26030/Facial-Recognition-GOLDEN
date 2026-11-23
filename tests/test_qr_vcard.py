@@ -96,8 +96,10 @@ def test_badge_render_draws_the_vcard_with_level_l_and_utf8_and_keeps_the_old_fo
 def test_every_scanner_entry_point_unwraps_the_vcard():
     qr = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
     assert qr.count("unwrap(raw)") >= 4 and "onCode(unwrap(text), format)" in qr                          # parse, classify, isDynamic, resolveDynamic y la cámara
-    for js in ("static/js/areas.js", "static/js/inventario.js", "static/js/directory.js"):
+    for js in ("static/js/person-finder.js", "static/js/directory.js"):                                   # Áreas e Inventario usan el buscador único (person-finder.js)
         assert "QrCode.collect" in (ROOT / js).read_text(encoding="utf-8"), js                           # lector de mano: la vCard llega en varias líneas
+    for js in ("static/js/areas.js", "static/js/inventario.js"):
+        assert "PersonFinder.attach" in (ROOT / js).read_text(encoding="utf-8"), js
     assert "QrCode.collect" in (ROOT / "templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert "unwrapVcard" in (ROOT / "static/js/search-core.js").read_text(encoding="utf-8")
 
@@ -125,3 +127,87 @@ def test_resolve_accepts_a_vcard_with_the_signed_code(client, factory, db):
     assert r.status_code == 200 and r.json() == {"kind": "d", "cedula": "1001", "first_name": "Ana", "last_name": "Mora"}
     stat = qr_vcard.build("Ana", "Mora", "", note=dynamic_qr.make_static(att.id, token))
     assert client.post("/api/qr/resolve", json={"text": stat, "event_id": ev.id}).json()["kind"] == "s"
+
+
+# ---- 19-nov-2026: la vCard trae todos los datos de contacto que vengan con valor (empresa, rol, teléfono, correo, categorías) además del nombre y el código
+def test_full_card_has_every_contact_field_and_the_code_stays_last():
+    card = qr_vcard.build("Ana", "Mora", "300 123 4567", note="1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+    lines = card.split("\n")
+    assert "ORG:Acme\\, S.A." in lines and "TITLE:Gerente\; ventas" in lines and "EMAIL:ana@x.co" in lines and "CATEGORIES:VIP,Staff" in lines and "TEL:300 123 4567" in lines
+    assert lines[-2] == "NOTE:GW:1016100329" and lines[-1] == "END:VCARD"
+    assert qr_vcard.unwrap(card) == "1016100329"
+
+
+def test_empty_contact_fields_are_left_out_and_a_bad_email_is_ignored():
+    card = qr_vcard.build("Ana", note="x", email="no-es-correo", org=" ", title="", categories=" , ")
+    assert not any(k in card for k in ("ORG:", "TITLE:", "EMAIL:", "CATEGORIES:"))
+
+
+def test_js_and_python_build_the_same_full_card():
+    import json
+    import subprocess
+    args = dict(first_name="Ana", last_name="Mora", phone="3001234567", note="1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+    r = subprocess.run(["node", "-e", f"console.log(JSON.stringify(require('./static/js/vcard.js').build({json.dumps(args)})))"], capture_output=True, text=True, cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent), timeout=30)
+    assert json.loads(r.stdout) == qr_vcard.build("Ana", "Mora", "3001234567", "1016100329", email="ana@x.co", org="Acme, S.A.", title="Gerente; ventas", categories="VIP, Staff")
+
+
+# ------------------------------------------------------------------ 18-nov-2026: MECARD y enlace (JS y Python iguales; el servidor lee ambos)
+@pytest.mark.parametrize("args", [("María", "Pérez", "300 123 4567", "1016100329|María|Pérez", "a@b.co"), ("A;B,C", "D:E", "", "x;y", "sin-arroba"), ("", "", "", "1016100329", "")])
+def test_js_and_python_build_the_same_mecard(args):
+    first, last, phone, note, mail = args
+    expr = f"console.log(JSON.stringify(require('./static/js/vcard.js').buildMecard({{first_name:{json.dumps(first)},last_name:{json.dumps(last)},phone:{json.dumps(phone)},email:{json.dumps(mail)},note:{json.dumps(note)}}})))"
+    r = _node("-e", expr)
+    built = qr_vcard.build_mecard(first, last, phone, note, mail)
+    assert json.loads(r.stdout) == built
+    assert qr_vcard.unwrap(built) == note
+
+
+@pytest.mark.parametrize("code", ["1016100329", "1016100329|Ña|Pérez", "AB 12/3"])
+def test_js_and_python_build_the_same_link_and_both_unwrap_it(code):
+    url = "https://app.golden-eventos.com/tarjeta/AbCdEfGhIjKlMnOpQrStUvWx"
+    r = _node("-e", f"console.log(JSON.stringify(require('./static/js/vcard.js').buildLink({json.dumps(url)},{json.dumps(code)})))")
+    built = qr_vcard.build_link(url, code)
+    assert json.loads(r.stdout) == built
+    assert qr_vcard.unwrap(built) == code
+
+
+def test_badge_print_data_brings_the_card_link_and_the_designer_offers_the_four_modes():
+    br = (ROOT / "app/routers/badges.py").read_text(encoding="utf-8")
+    assert '"card_url": card_url' in br and "contacts.person_card" in br
+    ed = (ROOT / "templates/badge_editor.html").read_text(encoding="utf-8")
+    assert all(f"['{m}'," in ed for m in ("vcard", "mecard", "link", "code")) and "p_qr_mode" in ed
+
+
+# ------------------------------------------------------------------ 19-nov-2026: escarapela digital con la plantilla de la física
+@pytest.mark.parametrize("mode", ["vcard", "mecard", "link", "code"])
+def test_digital_qr_modes_keep_the_dynamic_code_readable(mode):
+    code = "gwq1.123.4567.0123456789abcdef0123"
+    wrapped = {"vcard": qr_vcard.build("Ana", "Pérez", "300", code, "a@b.co"), "mecard": qr_vcard.build_mecard("Ana", "Pérez", "300", code, "a@b.co"),
+               "link": qr_vcard.build_link("https://app.golden-eventos.com/tarjeta/AbCdEfGhIjKlMnOpQrSt", code), "code": code}[mode]
+    assert qr_vcard.unwrap(wrapped) == code
+
+
+def test_digital_page_draws_the_template_qr_with_the_dynamic_code_and_data_carries_the_qr_fields():
+    page = (ROOT / "templates/digital_badge.html").read_text(encoding="utf-8")
+    assert "redrawQrs(host, code)" in page and "qrPayload:" in page and "data-gw-qr" in page
+    src = (ROOT / "app/routers/digital_public.py").read_text(encoding="utf-8")
+    assert "qr_needed_keys(template)" in src and "qr_wants_link(template)" in src and '"card_url"' in src
+
+
+def test_qr_needed_keys_follow_the_designs_fields():
+    pytest.importorskip("fastapi")
+    from app.routers.digital_public import qr_needed_keys, qr_wants_link
+    tpl = {"elements": [{"type": "qr", "vcard_fields": ["org", "title", "phone"]}, {"type": "qr", "qr_mode": "link"}, {"type": "qr", "qr_mode": "code"}, {"type": "text_static"}]}
+    assert qr_needed_keys(tpl) == {"entity", "role", "phone"} and qr_wants_link(tpl)
+    assert qr_needed_keys({"elements": [{"type": "qr"}]}) == {"phone"} and qr_needed_keys({"elements": [{"type": "qr", "vcard": False}]}) == set()
+
+
+def test_areas_and_inventory_share_one_finder_and_the_old_name_box_is_gone():
+    for page in ("templates/kiosk_areas.html", "templates/kiosk_inventario.html"):
+        html = (ROOT / page).read_text(encoding="utf-8")
+        assert "person-finder.js" in html and "search-core.js" in html and 'id="suggest"' in html and "nameSearch" not in html and "Buscar por nombre" not in html, page
+
+
+def test_person_finder_js_check_passes():
+    r = _node("tests/js/person_finder_check.js")
+    assert r.returncode == 0 and "person_finder_check OK" in r.stdout, r.stdout[-1500:] + r.stderr[-1500:]

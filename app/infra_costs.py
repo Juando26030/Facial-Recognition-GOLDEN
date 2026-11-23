@@ -24,7 +24,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import AccessLog, AppSetting, Event, InfraCost
+from app.models import AccessLog, AppSetting, Event, FormSubmission, InfraCost
 from app.testperson import TEST_ID
 from app.timeutil import utcnow
 
@@ -177,6 +177,7 @@ def _set(db: Session, key: str, value: Optional[str]) -> None:
         db.add(AppSetting(key=key, value=value))
     else:
         row.value, row.updated_at = value, utcnow()
+    db.flush()          # la sesión no autoflushea: sin esto la lectura de justo después (la respuesta del PUT) veía el valor viejo
 
 
 def save_settings(db: Session, data: dict) -> dict:
@@ -208,8 +209,34 @@ def event_days_in_month(start: Optional[date], end: Optional[date], month: str) 
     return max(0, (hi - lo).days + 1)
 
 
-def activity_by_event_month(db: Session, first: str, last: str) -> dict:
-    """{(event_id, 'AAAA-MM'): ingresos} en el rango (hora local), SIN la persona de prueba."""
+def _local_range(first: str, last: str):
+    y, mo = int(first[:4]), int(first[5:7])
+    ny = month_add(last, 1)
+    return datetime(y, mo, 1) + timedelta(hours=LOCAL_UTC_OFFSET_H), datetime(int(ny[:4]), int(ny[5:7]), 1) + timedelta(hours=LOCAL_UTC_OFFSET_H)
+
+
+def forms_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): inscripciones por formulario web} en el rango (hora local). Solo las confirmadas y que no son de prueba (ni la persona de prueba):
+    un evento que se llena por formulario también gasta (páginas, pagos, correos) aunque nadie pase por la puerta."""
+    lo, hi = _local_range(first, last)
+    local = func.to_char(FormSubmission.created_at - timedelta(hours=LOCAL_UTC_OFFSET_H), "YYYY-MM")
+    rows = (db.query(FormSubmission.event_id, local, func.count(FormSubmission.id))
+            .filter(FormSubmission.status == "confirmed", FormSubmission.is_test.is_(False), FormSubmission.created_at >= lo, FormSubmission.created_at < hi,
+                    func.upper(func.trim(func.coalesce(FormSubmission.person_id, ""))) != TEST_ID)
+            .group_by(FormSubmission.event_id, local).all())
+    return {(eid, m): int(n) for eid, m, n in rows}
+
+
+def merge_activity(*parts: dict) -> dict:
+    out: dict = defaultdict(int)
+    for part in parts:
+        for k, n in part.items():
+            out[k] += n
+    return dict(out)
+
+
+def door_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): ingresos por la puerta} en el rango (hora local), SIN la persona de prueba."""
     y, mo = int(first[:4]), int(first[5:7])
     lo = datetime(y, mo, 1) + timedelta(hours=LOCAL_UTC_OFFSET_H)
     ny = month_add(last, 1)
@@ -219,6 +246,11 @@ def activity_by_event_month(db: Session, first: str, last: str) -> dict:
             .filter(AccessLog.event_id.isnot(None), AccessLog.timestamp >= lo, AccessLog.timestamp < hi, func.upper(func.trim(AccessLog.user_id)) != TEST_ID)
             .group_by(AccessLog.event_id, local).all())
     return {(eid, m): int(n) for eid, m, n in rows}
+
+
+def activity_by_event_month(db: Session, first: str, last: str) -> dict:
+    """{(event_id, 'AAAA-MM'): actividad} = ingresos por la puerta + inscripciones por formulario web, SIN la persona de prueba."""
+    return merge_activity(door_by_event_month(db, first, last), forms_by_event_month(db, first, last))
 
 
 def events_info(db: Session, ids) -> dict:
@@ -294,7 +326,9 @@ def summary(db: Session, first: str, last: str) -> dict:
         by_provider[c.provider] += c.amount_cop
         by_concept[(c.provider, c.concept)] += c.amount_cop
         costs.append({"month": c.month, "kind": c.kind, "amount_cop": c.amount_cop})
-    activity = activity_by_event_month(db, months[0], months[-1])
+    door = door_by_event_month(db, months[0], months[-1])
+    forms = forms_by_event_month(db, months[0], months[-1])
+    activity = merge_activity(door, forms)
     candidates = db.query(Event).filter(Event.start_date.isnot(None), Event.status != "creado").all()
     y, mo = int(months[0][:4]), int(months[0][5:7])
     lo_d = date(y, mo, 1)
@@ -310,18 +344,22 @@ def summary(db: Session, first: str, last: str) -> dict:
                 days[(e.id, m)] = n
     basis = get_basis(db)
     alloc = allocate(costs, activity, days, basis)
-    info = events_info(db, alloc["events"].keys())
+    seen = set(alloc["events"].keys()) | {e for (e, _m) in days} | {e for (e, _m) in activity}          # TODOS los eventos del periodo, también los de costo cero
+    info = events_info(db, seen)
     ev_rows = []
-    for eid, v in alloc["events"].items():
+    for eid in seen:
         e = info.get(eid)
-        if not e or v["total"] <= 0:
+        if not e:
             continue
-        ev_rows.append({"event_id": eid, "code": e.event_code, "name": e.name, "total": float(v["total"]), "fixed": float(v["fixed"]), "variable": float(v["variable"]),
-                        "activity": v["activity"], "days": v["days"]})
-    ev_rows.sort(key=lambda r: -r["total"])
+        v = alloc["events"].get(eid) or {"total": Decimal(0), "fixed": Decimal(0), "variable": Decimal(0), "activity": 0, "days": 0}
+        ev_rows.append({"event_id": eid, "code": e.event_code, "name": e.name, "status": e.status, "total": float(v["total"]), "fixed": float(v["fixed"]), "variable": float(v["variable"]),
+                        "activity": v["activity"], "days": v["days"],
+                        "door": sum(n for (x, _m), n in door.items() if x == eid), "forms": sum(n for (x, _m), n in forms.items() if x == eid),
+                        "by_month": {m: float(alloc["by_month"].get(m, {}).get(eid, 0)) for m in months}})
+    ev_rows.sort(key=lambda r: (-r["total"], r["name"] or ""))
     grand = sum(totals.values(), Decimal(0))
     n_active = sum(1 for m in months if totals[m] > 0)
-    n_events = len(ev_rows)
+    n_events = sum(1 for r in ev_rows if r["total"] > 0)
     unassigned = sum(alloc["unassigned"].values(), Decimal(0))
     return {
         "months": months,
@@ -539,26 +577,30 @@ def neon_usage(month: str, fetch=None) -> dict:
     month = valid_month(month)
     if not neon_configured():
         return {"available": False, "reason": "Falta NEON_API_KEY y NEON_ORG_ID en el entorno"}
-    y, mo = int(month[:4]), int(month[5:7])
-    q = urllib.parse.urlencode({"from": f"{month}-01T00:00:00Z", "to": f"{month}-{monthrange(y, mo)[1]:02d}T23:59:59Z", "granularity": "monthly",
+    q = urllib.parse.urlencode({"from": f"{month}-01T00:00:00Z", "to": f"{month_add(month, 1)}-01T00:00:00Z", "granularity": "monthly",
                                 "org_id": os.environ["NEON_ORG_ID"].strip(), "metrics": "compute_unit_seconds,root_branch_bytes_month,child_branch_bytes_month", "limit": "100"})
     url = f"https://console.neon.tech/api/v2/consumption_history/v2/projects?{q}"
 
     def default_fetch(u):
-        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json"})
+        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json", "User-Agent": "GoldenWeb/2.0 (+gastos)"})
         with urllib.request.urlopen(req, timeout=15) as resp:             # noqa: S310 — URL fija de Neon
             return json.loads(resp.read().decode("utf-8"))
 
     try:
         data = (fetch or default_fetch)(url)
     except Exception as e:  # noqa: BLE001
-        log.warning("Neon consumo: %s", type(e).__name__)
-        return {"available": False, "reason": "No se pudo consultar la API de Neon (revisa la llave y el plan)"}
+        code = getattr(e, "code", None)                                      # HTTPError: solo el número, nunca el cuerpo ni la llave
+        log.warning("Neon consumo: %s %s", type(e).__name__, code or "")
+        hint = {401: "la llave no es válida", 403: "el plan no incluye esta consulta o la llave no tiene permiso", 404: "el id de la organización no corresponde a la llave",
+                406: "el rango de fechas no es válido", 429: "demasiadas consultas, intenta en un minuto"}.get(code, "revisa la llave, el id de la organización y el plan")
+        return {"available": False, "reason": f"No se pudo consultar la API de Neon ({'error ' + str(code) + ': ' if code else ''}{hint})"}
     compute = 0.0
     for p in data.get("projects", []) or []:
         for per in p.get("periods", []) or []:
             for c in per.get("consumption", []) or []:
-                compute += float(c.get("compute_time_seconds") or 0)
+                for m in c.get("metrics", []) or []:                    # forma real de la API v2: metrics[{metric_name, value}], verificada en producción (17-nov-2026)
+                    if m.get("metric_name") == "compute_unit_seconds":
+                        compute += float(m.get("value") or 0)
     return {"available": True, "month": month, "compute_hours": round(compute / 3600, 1), "projects": len(data.get("projects", []) or [])}
 
 
@@ -597,7 +639,7 @@ def connections(db: Optional[Session] = None) -> list:
         google.update(state="error", summary="La variable GCP_BILLING_EXPORT_TABLE está mal escrita: debe verse como proyecto.conjunto.tabla.",
                       steps=["Corrige el valor (tres partes separadas por puntos, sin comillas ni espacios) y vuelve a desplegar."])
     else:
-        google.update(state="ok", summary="Conectado: la facturación de Google se importa sola cada mes y con el botón «Importar Google ahora».", steps=[])
+        google.update(state="ok", summary="Conectado: la facturación de Google se importa sola cada domingo a las 12 m. (hora de Colombia) y también con el botón «Importar Google ahora».", steps=[])
         if db is not None:
             try:
                 last = db.query(func.max(InfraCost.updated_at)).filter(InfraCost.source == "gcp_export").scalar()

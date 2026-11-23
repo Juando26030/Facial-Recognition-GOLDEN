@@ -24,7 +24,7 @@ def _admin(client, factory, name="admin1"):
 
 
 def _acc(n, **extra):
-    return {**ACC, "name": f"Cuenta {n}", "public_key": f"pub_prod_ACCOUNT{n:02d}", "integrity_secret": f"prod_integrity_acc{n:02d}xx", "events_secret": f"prod_events_acc{n:02d}xx", **extra}
+    return {**ACC, "name": f"Cuenta {n}", "public_key": f"pub_prod_ACCOUNT{n:02d}", "integrity_secret": f"prod_integrity_acc{n:02d}abcd", "events_secret": f"prod_events_acc{n:02d}abcd", **extra}
 
 
 # ------------------------------------------------------------------ cuentas de cobro
@@ -62,6 +62,7 @@ def test_scope_validation(client, factory):
 def test_form_scope_derives_event_and_restricts_assignment(client, factory):
     ev = _event(client, factory)
     form = _with_payment(client, ev)
+    login(client, "coord1")          # _with_payment publica el formulario y cierra la sesión: se entra de nuevo para crear el segundo
     other = _with_payment(client, ev)
     _admin(client, factory)
     acc = client.post("/api/payment-accounts", json=_acc(1, scope="formulario", form_id=form["id"])).json()

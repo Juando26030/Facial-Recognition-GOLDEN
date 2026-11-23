@@ -4,7 +4,7 @@
 {% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
-{% set has_filters = staff_role in ("comercial", "admin", "super_admin") %}
+{% set has_filters = staff_role in ("comercial", "admin", "super_admin") or assign_calendar %}
 <!DOCTYPE html>
 {% from "_gw_skeleton.html" import skeleton %}
 <html lang="es">
@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-calendario.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-calendar-cats.css') }}">
+    {% if crm_calendar %}<link rel="stylesheet" href="{{ url_for('static', path='css/p-crm.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-crm-c2.css') }}">{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
@@ -27,6 +29,7 @@
     <script src="{{ url_for('static', path='js/event-actions.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
+    {% if assign_calendar %}<script src="{{ url_for('static', path='js/params-save.js') }}"></script>{% endif %}
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -50,7 +53,7 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="gw-container cal-shell gw-stack-lg" data-gw-tour="calendario" data-gw-tour-auto>
+  <div class="gw-container cal-shell gw-stack-lg"{% if assign_calendar %} id="paramsRoot" data-tabs-key="calendario"{% endif %} data-gw-tour="calendario" data-gw-tour-auto>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">Panel</p>
@@ -62,6 +65,22 @@
         <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-gw-tour-restart="calendario">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
+
+    {% if crm_calendar or assign_calendar %}
+    <div class="cal-mode" role="group" aria-label="Qué quieres ver en el calendario" id="calMode">
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="events" aria-pressed="true">{{ ic('calendar') }} Eventos</button>
+      {% if crm_calendar %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="crm" aria-pressed="false">{{ ic('users') }} CRM</button>{% endif %}
+      {% if assign_calendar %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-mode="assign" aria-pressed="false">{{ ic('users') }} Asignar coordinadores</button>{% endif %}
+    </div>
+    <p class="gw-hint cal-mode__hint" id="calModeHint" role="status">Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.</p>
+    {% endif %}
+
+    {% if assign_calendar %}
+    <section id="assignBar" class="cal-assign" aria-label="Coordinadores disponibles" hidden>
+      <p class="gw-hint" id="assignHelp">Arrastra un coordinador sobre un evento para asignarlo. Con teclado o en el celular: toca el coordinador y luego el evento. Verde: ya tiene coordinador · naranja: sin coordinador · rojo: sin coordinador y empieza en menos de 2 días.</p>
+      <div class="cal-assign__cards" id="assignCards" role="list"></div>
+    </section>
+    {% endif %}
 
     <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
       <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira el mes</span>
@@ -89,7 +108,21 @@
 
     <div class="cal-cats" id="catBar" hidden></div>
 
-    <div class="cal-filters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Muestra solo los eventos de una persona del equipo.">
+    {% if crm_calendar %}
+    <div class="cal-filters" id="crmFilters" hidden>
+      <div class="gw-field"><span class="gw-label" id="crmTypesLabel">Qué mostrar</span>
+        <div class="cal-types" role="group" aria-labelledby="crmTypesLabel">
+          <button type="button" class="gw-chip" data-crm-type="activity" aria-pressed="true">Tareas y llamadas</button>
+          <button type="button" class="gw-chip" data-crm-type="close" aria-pressed="true">Cierres de oportunidades</button>
+          <button type="button" class="gw-chip" data-crm-type="quote" aria-pressed="true">Cotizaciones por vencer</button>
+        </div></div>
+      <div class="gw-field"><span class="gw-label">Crear</span><button type="button" class="gw-btn gw-btn--primary" id="crmNewTask">{{ ic('plus', 'gw-icon--sm') }} Nueva tarea</button></div>
+      {% if crm_calendar_admin %}<div class="gw-field"><label class="gw-label" for="crmOwner">Comercial</label>
+        <select id="crmOwner" class="gw-select"><option value="">Todo el equipo</option></select></div>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="cal-filters" id="evFilters" data-gw-tour-step="2" data-gw-tour-title="2. Filtra" data-gw-tour-text="Muestra solo los eventos de una persona del equipo.">
       {% if has_filters %}{% if staff_role == "comercial" %}
       <div class="gw-field"><label class="gw-label" for="mineFilter">Mostrar</label>
         <select id="mineFilter" class="gw-select">
@@ -114,6 +147,12 @@
     <div id="calBody" aria-busy="false">{{ skeleton('block', label='Cargando el calendario…') }}</div>
   </div>
 </main>
+{% if assign_calendar %}{# Asignar coordinadores: las asignaciones quedan pendientes y se guardan con la barra única (solo se ve en ese modo o si quedó algo sin guardar). #}
+<div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+  <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+  <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+  <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+</div>{% endif %}
 
 {% include "_event_edit_modal.html" %}
 
@@ -142,9 +181,17 @@
   </div>
 </div>
 
+{% if crm_calendar %}<script src="{{ url_for('static', path='js/crm_common.js') }}"></script>
+<script src="{{ url_for('static', path='js/crm_live.js') }}"></script>{% endif %}
 <script>
 const STAFF_ROLE = {{ staff_role|tojson }};
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
+const CRM_CAL = {{ 'true' if crm_calendar else 'false' }};
+const ASSIGN_CAL = {{ 'true' if assign_calendar else 'false' }};
+const CRM_ADMIN = {{ 'true' if crm_calendar_admin else 'false' }};
+const MODE_HINT = { assign: 'Asignar coordinadores: los mismos eventos y filtros del calendario. Asigna arrastrando un coordinador sobre el evento (verde: asignado · naranja: sin coordinador · rojo: sin coordinador y a menos de 2 días).', events: 'Eventos del equipo: los que están creados, en proceso o finalizados, con los recordatorios. Toca uno para ver sus acciones.',
+  crm: CRM_ADMIN ? 'CRM: tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Eliges de qué comercial. Toca un elemento para abrirlo o ir a su cuenta.'
+                 : 'CRM: tus tareas, llamadas, reuniones, cierres de oportunidades y cotizaciones por vencer. Solo ves lo tuyo. Toca un elemento para abrirlo o ir a su cuenta.' };          // el botón grande Eventos / CRM (comercial, admin y super_admin, con el CRM encendido)
 const ICONS = {{ url_for('static', path='img/icons.svg')|tojson }};
 const icon = (n, cls) => `<svg class="gw-icon ${cls || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
 
@@ -163,6 +210,9 @@ function isSameDay(a, b) { return toISO(a) === toISO(b); }
 function todayDate() { const t = new Date(); t.setHours(0,0,0,0); return t; }
 
 let currentView = 'month';
+let calMode = 'events';          // 'events' = el calendario de siempre · 'crm' = lo del CRM de cada comercial (CRM_CAL)
+let crmCache = [];
+const crmTypes = new Set(['activity', 'close', 'quote']);
 // Plegar / desplegar (pedido de Juan David, 2026-11-07): por defecto DESPLEGADO (toda la información de la plantilla). Plegado = una línea con color de pañoleta, nombre y código. Se recuerda en este navegador.
 let eventsFolded = false;
 try { eventsFolded = localStorage.getItem('gw.cal.folded') === '1'; } catch (e) { /* sin almacenamiento: queda desplegado */ }
@@ -171,9 +221,12 @@ try {                                                  // refrescar deja la vist
   const hp = new URLSearchParams((location.hash || '').slice(1));
   if (['month', 'week', 'day'].includes(hp.get('vista'))) currentView = hp.get('vista');
   if (/^\d{4}-\d{2}-\d{2}$/.test(hp.get('fecha') || '')) refDate = fromISO(hp.get('fecha'));
+  if (CRM_CAL && hp.get('modo') === 'crm') calMode = 'crm';
+  if (ASSIGN_CAL && hp.get('modo') === 'asignar') calMode = 'assign';
 } catch (e) { /* sin hash: vista de siempre */ }
 let eventsCache = [];
 let notesCache = [];
+const crmOwner = document.getElementById('crmOwner');
 
 const rangeLabel = document.getElementById('rangeLabel');
 const calBody = document.getElementById('calBody');
@@ -248,8 +301,9 @@ function currentRange() {
 }
 
 async function loadAndRender() {
-  try { history.replaceState(null, '', '#vista=' + currentView + '&fecha=' + toISO(refDate)); } catch (e) { /* sin historial */ }
+  try { history.replaceState(null, '', '#vista=' + currentView + '&fecha=' + toISO(refDate) + (calMode === 'crm' ? '&modo=crm' : calMode === 'assign' ? '&modo=asignar' : '')); } catch (e) { /* sin historial */ }
   const { start, end } = currentRange();
+  if (calMode === 'crm') { await loadCrm(start, end); return; }
   const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
   if (mineFilter && mineFilter.value === 'mine' && STAFF_ID) params.set('commercial_staff_id', STAFF_ID);
   if (commercialFilter && commercialFilter.value) params.set('commercial_staff_id', commercialFilter.value);
@@ -268,6 +322,7 @@ async function loadAndRender() {
     notesCache = noteRes.ok ? await noteRes.json() : [];
     renderCatChips();
     render();
+    if (calMode === 'assign') renderCoordCards();
   } catch (err) {
     calBody.innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar el calendario</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry-cal>Reintentar</button></div>';
   } finally {
@@ -281,6 +336,7 @@ const knownCats = {};          // nombre y color de las categorías ya vistas (p
 const catBar = document.getElementById('catBar');
 let catCatalog = null;          // tipos vigentes (se piden una vez): los chips salen SIEMPRE, con conteo aunque sea 0
 function renderCatChips() {
+  if (calMode === 'crm') return;
   const cats = CalendarCats.build(eventsCache, activeCats, knownCats, catCatalog);
   cats.forEach((c) => { if (c.count) knownCats[c.key] = { label: c.label, color: c.color }; });
   CalendarCatsUI.paint(catBar, cats, activeCats.size > 0);
@@ -292,6 +348,73 @@ catBar.addEventListener('click', (e) => {
 });
 CalendarCatsUI.loadCatalog().then((t) => { catCatalog = t; renderCatChips(); });
 renderCatChips();
+
+// ---- Modo CRM (lo de cada comercial: tareas, cierres de oportunidades, cotizaciones por vencer). Cada elemento abre su pantalla del CRM.
+async function loadCrm(start, end) {
+  const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
+  if (crmOwner && crmOwner.value) params.set('owner_id', crmOwner.value);
+  calBody.setAttribute('aria-busy', 'true');
+  try {
+    const res = await fetch(`/api/crm/calendar?${params.toString()}`);
+    if (!res.ok) throw new Error('http');
+    crmCache = (await res.json()).items || [];
+    render();
+  } catch (err) {
+    calBody.innerHTML = '<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar lo del CRM</p><p class="gw-state__text">Revisa tu conexión e inténtalo de nuevo.</p><button type="button" class="gw-btn gw-btn--primary" data-retry-cal>Reintentar</button></div>';
+  } finally { calBody.setAttribute('aria-busy', 'false'); }
+}
+function crmForDay(iso) { return crmCache.filter((i) => i.date === iso && crmTypes.has(i.type)); }
+function crmChip(i) {
+  const label = i.label || '';
+  const sub = i.sub && !i.title.includes(i.sub) ? i.sub : '';          // si la cuenta ya sale en el título no se repite
+  return `<button type="button" class="cal-crm cal-crm--${i.type}${i.status === 'done' ? ' cal-crm--done' : ''}" data-crm-key="${esc(i.type + ':' + i.id)}" aria-haspopup="dialog" title="${esc(i.title + (i.sub ? ' — ' + i.sub : ''))}">
+      <span class="cal-crm__tag">${esc(label)}${i.time ? ' · ' + esc(i.time) : ''}${i.status === 'done' ? ' · hecha' : ''}</span>
+      <span class="cal-crm__title">${esc(i.title)}</span>${sub ? `<span class="cal-crm__sub">${esc(sub)}</span>` : ''}</button>`;
+}
+// Al tocar un elemento del CRM: elegir entre abrir ESO (tarea, oportunidad, cotización) o ir a la cuenta.
+function openCrmItem(key) {
+  const i = crmCache.find((x) => (x.type + ':' + x.id) === key); if (!i) return;
+  const X = window.CRMX, body = document.createElement('div'); body.className = 'gw-stack';
+  const p = document.createElement('p'); p.className = 'gw-modal__text'; p.textContent = [i.label, i.time ? i.time : '', i.sub].filter(Boolean).join(' · '); body.appendChild(p);
+  const link = (label, href) => { const a = document.createElement('a'); a.className = 'gw-btn gw-btn--secondary gw-btn--xl'; a.href = href; a.textContent = label; body.appendChild(a); return a; };
+  const act = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-btn ' + cls + ' gw-btn--xl'; b.textContent = label; b.addEventListener('click', fn); body.appendChild(b); return b; };
+  const d = X.dialog({ title: i.title, bodyHtml: '', onEscape: () => d.close(), buttons: [{ id: 'cmClose', cls: 'gw-btn--secondary', label: 'Cerrar' }] });
+  d.dlg.querySelector('.gw-modal__body').replaceChildren(body); d.dlg.querySelector('#cmClose').addEventListener('click', () => d.close());
+  if (i.type === 'activity') {
+    act('Abrir y editar la tarea', 'gw-btn--primary', async () => { try { const a = await X.api('GET', '/api/crm/activities/' + i.id); d.close(); X.activityForm({}, a, loadAndRender); } catch (e) { showToast(e.message, 'error'); } });
+    if (i.status !== 'done') act('Marcar como hecha', 'gw-btn--secondary', async () => { try { const a = await X.api('GET', '/api/crm/activities/' + i.id); d.close(); X.completeForm(a, loadAndRender); } catch (e) { showToast(e.message, 'error'); } });
+    if (i.opportunity_id) link('Ir a la oportunidad', '/crm/oportunidades/' + i.opportunity_id);
+  } else if (i.type === 'close') link('Abrir la oportunidad', i.href); else link('Abrir la cotización', i.href);
+  if (i.account_id) link('Ir a la cuenta', '/crm/cuentas/' + i.account_id);
+}
+function setCalMode(m) {
+  calMode = (CRM_CAL && m === 'crm') ? 'crm' : (ASSIGN_CAL && m === 'assign') ? 'assign' : 'events';
+  const crm = calMode === 'crm';
+  const ab = document.getElementById('assignBar'); if (ab) ab.hidden = calMode !== 'assign';
+  syncAssignBar();
+  if (calMode !== 'assign') selectedCoord = null;
+  document.querySelectorAll('#calMode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === calMode ? 'true' : 'false'));
+  const set = (id, hide) => { const n = document.getElementById(id); if (n) n.hidden = hide; };
+  set('evFilters', crm); set('crmFilters', !crm); set('catBar', true);
+  const mh = document.getElementById('calModeHint'); if (mh) mh.textContent = MODE_HINT[calMode];
+  foldBtn.hidden = crm; document.getElementById('addNoteTodayBtn').hidden = crm;
+  if (!crm) renderCatChips();
+  calBody.innerHTML = '';
+  loadAndRender();
+}
+(function wireCalMode() {
+  const bar = document.getElementById('calMode'); if (!bar) return;
+  bar.addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== calMode) setCalMode(b.dataset.mode); });
+  document.querySelectorAll('[data-crm-type]').forEach((b) => b.addEventListener('click', () => {
+    const t = b.dataset.crmType; if (crmTypes.has(t)) crmTypes.delete(t); else crmTypes.add(t);
+    b.setAttribute('aria-pressed', crmTypes.has(t) ? 'true' : 'false'); render();
+  }));
+  const nt = document.getElementById('crmNewTask'); if (nt) nt.addEventListener('click', () => window.CRMX.activityForm({ pick: true, due: toISO(refDate) }, null, loadAndRender));
+  if (crmOwner) {
+    fetch('/api/staff/commercials').then((r) => (r.ok ? r.json() : [])).then((list) => { crmOwner.innerHTML = '<option value="">Todo el equipo</option>' + list.map((c) => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join(''); }).catch(() => {});
+    crmOwner.addEventListener('change', loadAndRender);
+  }
+})();
 
 function eventsForDay(iso) {
   const st = statusFilter ? statusFilter.value : '';
@@ -333,7 +456,90 @@ function loadCardLayout() {
 }
 
 // Mes, Semana y Día dibujan LA MISMA tarjeta (la de la plantilla de evento) o, si el calendario está plegado, la línea resumida (color, nombre y código).
+// ---- Asignar coordinadores (17-nov-2026): director de coordinadores y administradores. Mismos eventos y filtros que «Eventos»; arriba, una tarjeta por coordinador para arrastrar sobre el evento. ----
+let coordList = [], selectedCoord = null;
+function assignState(e) {
+  if (e.coordinator_staff_id) return 'ok';
+  if (e.status === 'finalizado') return 'none';
+  const days = Math.round((fromISO(e.start_date) - todayDate()) / 86400000);
+  return days < 2 ? 'urgent' : 'open';          // sin coordinador y empieza en menos de 2 días (o ya empezó) = rojo
+}
+const ASSIGN_LABEL = { ok: 'Con coordinador', open: 'Sin coordinador', urgent: 'Sin coordinador y empieza en menos de 2 días', none: 'Finalizado' };
+// Asignaciones pendientes (eventId -> id del coordinador, o null = quitar): se ven en pantalla marcadas «sin guardar» y se guardan con la barra única.
+const pendingAssign = new Map();
+function withPending(e) {
+  if (!pendingAssign.has(e.id)) return e;
+  const cid = pendingAssign.get(e.id), c = coordList.find((x) => x.id === cid);
+  return Object.assign({}, e, { coordinator_staff_id: cid, coordinator_name: c ? (c.full_name || c.username) : null, _pending: true });
+}
+function syncAssignBar() { const bar = document.getElementById('paramsSaveBar'); if (bar) bar.hidden = calMode !== 'assign' && !(window.GWParams && GWParams.hasDirty()); }
+function assignChip(e0) {
+  const e = withPending(e0);
+  const st = assignState(e), who = (e.coordinator_name ? `Coordina: ${e.coordinator_name}` : ASSIGN_LABEL[st]) + (e._pending ? ' (sin guardar)' : '');
+  return `<div class="cal-assign-chip cal-assign-chip--${st}" data-assign-event="${e.id}" data-assign-ok="${e.status === 'finalizado' ? '0' : '1'}" tabindex="0" role="button" aria-label="${esc(e.name + '. ' + who + '. Suelta o elige un coordinador aquí para asignarlo')}">
+      <strong class="cal-assign-chip__name">${esc(e.name)}</strong>
+      <span class="cal-assign-chip__who">${esc(who)}</span>
+      ${e.coordinator_staff_id ? `<button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-assign-clear="${e.id}" aria-label="Quitar el coordinador de ${esc(e.name)}">Quitar</button>` : ''}
+    </div>`;
+}
+function renderCoordCards() {
+  const box = document.getElementById('assignCards'); if (!box) return;
+  const count = {}; eventsCache.map(withPending).forEach((e) => { if (e.coordinator_staff_id) count[e.coordinator_staff_id] = (count[e.coordinator_staff_id] || 0) + 1; });
+  box.innerHTML = coordList.length ? coordList.map((c) => `<button type="button" role="listitem" class="cal-coord${selectedCoord === c.id ? ' cal-coord--on' : ''}" draggable="true" data-coord-id="${c.id}" aria-pressed="${selectedCoord === c.id}" title="Arrástrame sobre un evento">
+      <span class="cal-coord__dot" aria-hidden="true">${esc((c.full_name || c.username).trim().charAt(0).toUpperCase())}</span>
+      <span class="cal-coord__name">${esc(c.full_name || c.username)}</span><span class="cal-coord__n">${count[c.id] || 0}</span></button>`).join('')
+    : '<p class="gw-hint">No hay coordinadores activos.</p>';
+}
+// Asignar o quitar un coordinador NO guarda: queda pendiente (barra «Cambios sin guardar») y se guarda con «Guardar cambios».
+function assignCoordinator(eventId, coordId) {
+  const orig = eventsCache.find((x) => x.id === eventId);
+  if (!orig) return;
+  if ((orig.coordinator_staff_id || null) === (coordId || null)) pendingAssign.delete(eventId); else pendingAssign.set(eventId, coordId || null);
+  if (window.GWParams) GWParams.markDirty('asignaciones');
+  renderCoordCards(); render();
+}
+if (ASSIGN_CAL && window.GWParams) {
+  GWParams.register({
+    key: 'asignaciones', label: 'Coordinadores asignados', order: 10,
+    save: async () => {
+      const failed = [];
+      for (const [eventId, coordId] of Array.from(pendingAssign.entries())) {
+        try {
+          const res = await fetch(`/api/events/${eventId}/assign-coordinator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinator_staff_id: coordId }) });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || 'No se pudo asignar el coordinador'); }
+          const upd = await res.json(), i = eventsCache.findIndex((x) => x.id === eventId);
+          if (i >= 0) eventsCache[i] = Object.assign({}, eventsCache[i], { coordinator_staff_id: upd.coordinator_staff_id, coordinator_name: upd.coordinator_name });
+          pendingAssign.delete(eventId);
+        } catch (err) {
+          const ev = eventsCache.find((x) => x.id === eventId);
+          failed.push((ev ? ev.name + ': ' : '') + (err.message || 'Sin conexión'));
+        }
+      }
+      renderCoordCards(); render();
+      setTimeout(syncAssignBar, 2500);
+      if (failed.length) throw new Error(failed.join(' · '));
+    },
+  });
+}
+(function wireAssign() {
+  if (!ASSIGN_CAL) return;
+  fetch('/api/staff/coordinators').then((r) => (r.ok ? r.json() : [])).then((l) => { coordList = l; renderCoordCards(); }).catch(() => {});
+  document.addEventListener('dragstart', (ev) => { const c = ev.target.closest && ev.target.closest('[data-coord-id]'); if (c && ev.dataTransfer) { ev.dataTransfer.setData('text/plain', c.dataset.coordId); ev.dataTransfer.effectAllowed = 'copy'; } });
+  const targetOf = (ev) => (calMode === 'assign' && ev.target.closest ? ev.target.closest('[data-assign-event]') : null);
+  document.addEventListener('dragover', (ev) => { const t = targetOf(ev); if (t && t.dataset.assignOk === '1') { ev.preventDefault(); t.classList.add('cal-assign-chip--over'); } });
+  document.addEventListener('dragleave', (ev) => { const t = targetOf(ev); if (t) t.classList.remove('cal-assign-chip--over'); });
+  document.addEventListener('drop', (ev) => { const t = targetOf(ev); if (!t || t.dataset.assignOk !== '1') return; ev.preventDefault(); t.classList.remove('cal-assign-chip--over'); const id = Number(ev.dataTransfer.getData('text/plain')); if (id) assignCoordinator(Number(t.dataset.assignEvent), id); });
+  document.addEventListener('click', (ev) => {
+    if (calMode !== 'assign' || !ev.target.closest) return;
+    const clr = ev.target.closest('[data-assign-clear]'); if (clr) { assignCoordinator(Number(clr.dataset.assignClear), null); return; }
+    const card = ev.target.closest('[data-coord-id]'); if (card) { const id = Number(card.dataset.coordId); selectedCoord = selectedCoord === id ? null : id; renderCoordCards(); return; }
+    const t = ev.target.closest('[data-assign-event]'); if (t && selectedCoord && t.dataset.assignOk === '1') { assignCoordinator(Number(t.dataset.assignEvent), selectedCoord); }
+  });
+  document.addEventListener('keydown', (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && calMode === 'assign' && ev.target.matches && ev.target.matches('[data-assign-event]')) { ev.preventDefault(); ev.target.click(); } });
+})();
+
 function eventChip(e, mode) {
+  if (calMode === 'assign') return assignChip(e);
   const tip = `${e.name}${e.bandana_color_name ? ' — ' + e.bandana_color_name : ''}`;
   const body = eventsFolded ? renderCalendarMini(e) : renderCalendarCard(e, CARD_LAYOUT);
   return `<div class="cal-chip cal-chip--big cal-chip--${mode}${eventsFolded ? ' cal-chip--folded' : ''}">
@@ -351,6 +557,13 @@ function noteChip(n, withAuthor) {
 }
 
 function dayCellContent(d, iso, extraClass) {
+  if (calMode === 'crm') {
+    const its = crmForDay(iso), month = !extraClass.includes('cal-cell--week'), shown = month ? its.slice(0, 3) : its;          // en el mes caben 3; el resto se ve en «Día»
+    return `<div class="cal-cell ${extraClass}${its.length ? '' : ' cal-cell--empty'}" data-date="${iso}">
+      <div class="cal-daynum"><span class="cal-dow">${DAY_LABELS[(d.getDay() + 6) % 7]}</span> ${d.getDate()}</div>
+      <div class="cal-cell__body">${shown.map(crmChip).join('')}${its.length > shown.length ? `<button type="button" class="cal-add" data-crm-day="${iso}">+ ${its.length - shown.length} más: ver el día</button>` : ''}</div>
+      <button type="button" class="cal-add" data-crm-new="${iso}">+ tarea</button></div>`;
+  }
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
   const empty = !evs.length && !notes.length ? ' cal-cell--empty' : '';
@@ -386,7 +599,8 @@ function renderMonth() {
   }
   html += '</div>';
   calBody.innerHTML = html;
-  if (!eventsCache.length && !notesCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay eventos ni recordatorios en este mes. Usa «Agregar recordatorio» o crea un evento desde Clientes - Cuentas.</p>');
+  if (calMode === 'crm') { if (!crmCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay tareas, cierres ni cotizaciones por vencer en este mes. Usa «+ tarea» en cualquier día para crear una.</p>'); }
+  else if (!eventsCache.length && !notesCache.length) calBody.insertAdjacentHTML('afterbegin', '<p class="gw-hint" role="status">No hay eventos ni recordatorios en este mes. Usa «Agregar recordatorio» o crea un evento desde Clientes - Cuentas.</p>');
 }
 
 function renderWeek() {
@@ -410,6 +624,13 @@ function renderWeek() {
 function renderDay() {
   const iso = toISO(refDate);
   rangeLabel.textContent = `${refDate.getDate()} de ${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
+  if (calMode === 'crm') {
+    const its = crmForDay(iso);
+    calBody.innerHTML = `<div class="cal-day"><h3 class="cal-day__title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</h3>` +
+      (its.length ? its.map(crmChip).join('') : `<div class="gw-empty" role="status">${icon('calendar', 'gw-icon--lg')}<p><strong>Nada del CRM para este día.</strong></p><p>Puedes crear una tarea para esta fecha.</p></div>`) +
+      `<div><button type="button" class="gw-btn gw-btn--secondary" data-crm-new="${iso}">${icon('plus', 'gw-icon--sm')} Nueva tarea para este día</button></div></div>`;
+    return;
+  }
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
   let html = `<div class="cal-day"><h3 class="cal-day__title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</h3>`;
@@ -428,6 +649,12 @@ calBody.addEventListener('click', async (ev) => {
   if (ev.target.closest('[data-retry-cal]')) { loadAndRender(); return; }
   const evBtn = ev.target.closest('[data-event-id]');
   if (evBtn) { openEventActions(evBtn); return; }
+  const crmBtn = ev.target.closest('[data-crm-key]');
+  if (crmBtn) { openCrmItem(crmBtn.dataset.crmKey); return; }
+  const newBtn = ev.target.closest('[data-crm-new]');
+  if (newBtn) { window.CRMX.activityForm({ pick: true, due: newBtn.dataset.crmNew }, null, loadAndRender); return; }
+  const moreBtn = ev.target.closest('[data-crm-day]');
+  if (moreBtn) { refDate = fromISO(moreBtn.dataset.crmDay); currentView = 'day'; updateViewButtons(); loadAndRender(); return; }
   const addBtn = ev.target.closest('[data-add-note]');
   if (addBtn) { openNoteModal(addBtn.dataset.addNote, addBtn); return; }
   const delBtn = ev.target.closest('[data-note-del]');
@@ -581,7 +808,7 @@ function openEventActions(btn) {
   eventActions.open(btn, ev);
 }
 
-loadAndRender();
+if (calMode === 'crm' || calMode === 'assign') setCalMode(calMode); else loadAndRender();
 </script>
 </body>
 </html>

@@ -65,3 +65,65 @@ def test_status_states_written_by_the_updater_are_known_to_the_app():
 def test_workflow_is_manual_only_and_does_not_publish():
     wf = (SRC / ".github" / "workflows" / "instalador-windows.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch" in wf and "push:" not in wf and "pull_request" not in wf and "schedule" not in wf
+
+
+def test_instalador_cierra_procesos_antes_de_reinstalar():
+    """Reinstalar encima con el servicio corriendo falló con «código 5» (postgres.exe mantenía icudt77.dll): el instalador debe parar servicios y procesos de la carpeta."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8")
+    for svc in ("GoldenLocalUpdater", "GoldenLocalApp", "GoldenLocalDB"):
+        assert f"stop {svc}" in iss
+    assert "Stop-Process -Force" in iss and "StartsWith($d" in iss
+
+
+def test_instalador_avisa_si_pisa_una_version_mas_nueva():
+    """El instalador compara su hora de construcción con el .build_info instalado y pide confirmar antes de sobrescribir algo más nuevo (silencioso: se niega)."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8")
+    assert "function InitializeSetup" in iss and "#define BuildStamp" in iss and ".build_info" in iss
+    assert "Inst > Mine" in iss and "WizardSilent" in iss and "MB_DEFBUTTON2" in iss
+    sh = (WIN / "build_en_cloudshell.sh").read_text(encoding="utf-8")
+    assert "GOLDEN_BUILD_STAMP" in sh and "date -u +%Y%m%d%H%M%S" in sh
+
+
+def test_build_cross_pide_tzdata_explicito():
+    """pandas necesita tzdata en Windows; instalado desde Linux el marcador lo omite: debe pedirse a mano o el instalador falla en pip."""
+    txt = (SRC / "deploy" / "windows" / "build_cross.py").read_text(encoding="utf-8")
+    assert 'req.append("tzdata")' in txt
+
+
+def test_instalador_no_da_por_buena_una_instalacion_fallida():
+    """Si algo falla, el instalador lo dice (paso y motivo) y NO ofrece abrir el programa como si todo hubiera salido bien."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8-sig")
+    dl = (WIN / "download-app.ps1").read_text(encoding="utf-8-sig")
+    assert "resultado-instalacion.txt" in inst and "$script:Step" in inst and "exit 1" in inst
+    for chk in ("Servicio $svc en marcha", "/health", "(migraciones)", "Piezas de Python completas", "cortafuegos"):
+        assert chk in inst
+    assert inst.index("Instalación CON FALLOS") < inst.index("Instalación terminada: todas las comprobaciones OK")
+    # el asistente corre install.ps1 él mismo, lee el código de salida y solo ofrece abrir la app si salió bien
+    assert "Check: InstallOk" in iss and "LA INSTALACIÓN NO QUEDÓ BIEN" in iss and "InstallResultCode" in iss
+    assert 'install.ps1"""; StatusMsg' not in iss
+    # lo que dijo pip queda en el registro y el error trae su código
+    assert "pip: " in dl and "pip código" in dl
+
+
+def test_verificacion_final_usa_python_y_la_autoridad_propia():
+    """Windows PowerShell 5.1 daba «error inesperado de envío» contra uvicorn aunque la app estaba bien: /health se comprueba con el Python de la app y ca.pem."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "Invoke-WebRequest -Uri" not in inst.split("VERIFICACIÓN FINAL")[1]          # .NET Framework fallaba el TLS con uvicorn; se comprueba con el Python de la app
+    assert "cafile=" in inst and "https://localhost:$AppPort/health" in inst
+
+
+def test_la_llave_siempre_se_pide_y_se_reutiliza_la_vinculada():
+    """Tras varias instalaciones/borrados a medias la página de la llave se saltaba y luego fallaba por «falta la llave»: ahora se muestra siempre
+    (vacía = conservar la vinculada) y, si falta la app pero local.env tiene llave e instalación, se vuelve a bajar con ellas."""
+    iss = (WIN / "GoldenLocal.iss").read_text(encoding="utf-8-sig")
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "ShouldSkipPage" not in iss and "KeyTyped()" in iss and "YA tiene una llave vinculada" in iss
+    assert "if (CurStep = ssInstall) and KeyTyped() then" in iss
+    assert "$prev['INSTALLATION_ID']" in inst and inst.index("$prev['SERVER_KEY']") < inst.index("& (Join-Path $ScriptsDir 'download-app.ps1')")
+
+
+def test_verificacion_no_usa_el_modo_estricto_de_python():
+    """Las autoridades creadas antes del 20-nov-2026 no traen Subject Key Identifier: el modo estricto de Python 3.13 las rechaza (navegadores y celulares no)."""
+    inst = (WIN / "install.ps1").read_text(encoding="utf-8-sig")
+    assert "c.verify_flags &= ~ssl.VERIFY_X509_STRICT" in inst

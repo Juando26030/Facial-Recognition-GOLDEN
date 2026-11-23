@@ -28,7 +28,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from sqlalchemy import Date, DateTime, Float, Numeric, select, text
+from sqlalchemy import Date, DateTime, Float, Numeric, or_, select, text
 from sqlalchemy.orm import Session
 
 from app import consent, crypto, minors, public_slug
@@ -50,7 +50,7 @@ FILE_NAME_RE = re.compile(r"^files/[0-9a-f]{64}$")
 KDF_ITERATIONS = int(os.getenv("EVENT_TRANSFER_KDF_ITERATIONS", "600000"))
 BIO_CHECK = b"goldenweb-biometria"
 MIN_PASSPHRASE = 8
-OPTIONAL_TABLES = ("event_documents", "event_expenses")          # los paquetes de la fase F1 no las traen
+OPTIONAL_TABLES = ("event_documents", "event_expenses", "event_legalizations")          # los paquetes de la fase F1 no las traen
 BIOMETRIC_USER_COLUMNS = ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source", "is_biometric_enabled")
 
 
@@ -90,7 +90,8 @@ TABLES = [
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
     {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id", "archived_by_id")},
-    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id")},
+    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id", "archived_by_id", "approved_by_id")},
+    {"name": "event_legalizations", "kind": "event", "staff": ("submitted_by_id", "reviewed_by_id")},
 ]
 SPEC = {t["name"]: t for t in TABLES}
 PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "person_change_log", "audit_consent_logs", "web_acceptances")
@@ -301,7 +302,7 @@ def _person_ids(db: Session, event) -> set:
     return ids
 
 
-def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None, progress=None, record: bool = True) -> tuple:
+def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None, progress=None, record: bool = True, exclude_tables: frozenset = frozenset()) -> tuple:
     """Arma el paquete de un evento. Devuelve (bytes del .zip, manifest). Escribe una fila en la bitácora (sin datos personales). `include_biometrics` (solo super_admin: lo exige el
     endpoint) lleva vectores y fotos CIFRADOS con la frase de transporte `passphrase`, que no se guarda."""
     if include_biometrics and len(passphrase or "") < MIN_PASSPHRASE:
@@ -314,7 +315,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
     ctx["payment_ids"] = [r[0] for r in db.execute(select(m.FormPayment.id).where(m.FormPayment.event_id == event.id)).all()] if ctx["form_ids"] else []
     tenant = db.get(m.Tenant, event.tenant_id)
     manifest = {"format": FORMAT, "format_version": FORMAT_VERSION, "alembic_revision": _revision(db), "source_env": os.getenv("DEPLOY_ENV", "").strip().lower() or "local",
-                "created_at": utcnow().isoformat(), "tenant": {"id": tenant.id, "client_code": tenant.client_code, "name": tenant.name} if tenant else {"id": event.tenant_id},
+                "created_at": utcnow().isoformat(), "tenant": {"id": tenant.id, "client_code": tenant.client_code, "legacy_client_code": tenant.legacy_client_code, "name": tenant.name} if tenant else {"id": event.tenant_id},
                 "event": {"event_code": event.event_code, "name": event.name, "status": event.status}, "options": {"include_biometrics": False}, "includes_files": True,
                 "tables": {}, "files": [], "staff_usernames": [], "warnings": []}
     used_staff = set()
@@ -328,7 +329,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                 progress(f"Tabla {spec['name']}", int(75 * idx / len(TABLES)))
             n, h = 0, hashlib.sha256()
             with zf.open(f"data/{spec['name']}.jsonl", "w") as out:
-                for row in _select_rows(db, spec, event, ctx):
+                for row in (() if spec["name"] in exclude_tables else _select_rows(db, spec, event, ctx)):          # exclude_tables: «Duplicar evento» no lleva la historia (ingresos, pagos, sorteos)
                     d = {k: _ser(v) for k, v in row.items()}
                     extra = {}
                     ref = str(d["id"]) if isinstance(d.get("id"), int) else f"{d.get('tenant_id')}|{d.get('user_id')}|{d.get('event_id')}"
@@ -578,9 +579,15 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     # ---- cliente (solo nombre y código si falta, y solo cuando es el mismo del paquete)
     if not db.get(m.Tenant, tenant_id):
         client_code = tenant_info.get("client_code") or tenant_id
-        if db.query(m.Tenant.id).filter(m.Tenant.client_code == client_code).first():
-            raise TransferError("El código de cliente del paquete ya existe en este sistema con otro identificador: crea el cliente a mano y vuelve a importar.")
-        db.add(m.Tenant(id=tenant_id, client_code=client_code, name=tenant_info.get("name") or tenant_id))
+        legacy_code = tenant_info.get("legacy_client_code") or None
+        # CRM C1a: el código del paquete puede ser el hexadecimal VIEJO de un cliente que aquí ya pasó al número consecutivo (alias en `legacy_client_code`): se revisan las dos columnas
+        clash = db.query(m.Tenant.id, m.Tenant.client_code).filter(or_(m.Tenant.client_code == client_code, m.Tenant.legacy_client_code == client_code)).first()
+        if clash:
+            raise TransferError(f"El código de cliente del paquete ya existe en este sistema con otro identificador («{clash[0]}», código actual {clash[1]}): importa el evento eligiendo ese cliente "
+                                "(«Importar en otro cliente») o crea el cliente a mano y vuelve a importar.")
+        if legacy_code and db.query(m.Tenant.id).filter(or_(m.Tenant.client_code == legacy_code, m.Tenant.legacy_client_code == legacy_code)).first():
+            legacy_code = None                                                      # el alias ya lo usa otro cliente: el nuevo se crea sin alias en lugar de fallar
+        db.add(m.Tenant(id=tenant_id, client_code=client_code, legacy_client_code=legacy_code, name=tenant_info.get("name") or tenant_id))
         db.flush()
         report["warnings"].append("El cliente no existía en el destino: se creó solo con su nombre y código.")
     staff_by_name = {un: sid for sid, un in db.execute(select(m.StaffUser.id, m.StaffUser.username)).all()}
@@ -688,6 +695,10 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
             logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
             d["logo_path"] = d["report_pdf_path"] = None
             d["local_node_name"] = d["local_since"] = d["local_by_id"] = d["local_last_upload_at"] = None          # Fase 6: el arrendamiento es de la nube; la copia importada no nace «en servidor local»
+            from app import localmode
+            if localmode.is_local_server():          # el reconocimiento facial no corre en un servidor local: el evento baja con el escáner apagado
+                d["facial_enabled"] = False
+                d["face_door_enabled"] = False
             _sd = d.get("start_date")
             d["public_slug"] = public_slug.unique_for(db, d.get("name") or ev_src.get("name") or "evento", getattr(_sd, "year", None) or (int(str(_sd)[:4]) if _sd and str(_sd)[:4].isdigit() else utcnow().year))          # D2.5k: el nombre del enlace es único en TODO el sistema: la copia recibe el suyo, no el del origen
             d["final_db_key"] = d["final_db_name"] = d["final_db_uploaded_at"] = None          # la base final (Fase 5) no viaja en el paquete: se vuelve a subir en el destino

@@ -22,7 +22,7 @@ def _jpg():
 
 def _event(factory, db, **kw):
     ev = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True, start_date=date(2026, 10, 29), **kw)
-    u = factory.person(ev, "1001", "Ana", "Mora")
+    u = factory.person(ev, "1001", "Ana", "Mora", registered=True)
     u.birth_date = date(1990, 4, 2)
     db.commit()
     att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").one()

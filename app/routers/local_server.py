@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import cloud_client, event_lease, event_transfer
+from app import cloud_client, event_checklist, event_lease, event_transfer
 from app.auth import require_role_or_any
 from app.database import get_db
 from app.models import Event, StaffUser
@@ -95,6 +95,12 @@ def download_event(cloud_event_id: int, db: Session = Depends(get_db), staff: St
         local_event.cloud_event_id = cloud_event_id
         local_event.sync_package_at = utcnow()
         db.commit()
+        try:          # el checklist de inventario viaja aparte (solo para consultarlo en el quiosco); si falla, el evento queda igual y se puede refrescar después
+            event_checklist.save_snapshot(db, local_event.id, cloud_client.inventory_checklist(cloud_event_id))
+            db.commit()
+        except Exception:          # noqa: BLE001
+            db.rollback()
+            log.warning("no se pudo guardar el checklist de inventario del evento %s", cloud_event_id)
     log.info("descarga a local ok (evento de la nube %s)", cloud_event_id)
     return {"ok": True, "event_id": report.get("event_id"), "event_code": report.get("event_code"), "name": report.get("name"), "warnings": report.get("warnings", []),
             "message": "El evento quedó en este servidor. En la nube ahora se ve en solo lectura."}

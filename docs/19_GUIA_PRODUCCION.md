@@ -268,3 +268,9 @@ gcloud billing budgets list --billing-account <ID de la cuenta de facturación> 
 ## Despliegue manual sin GitHub Actions (plan B)
 
 Si Actions no está disponible (el 5-nov-2026 estuvo bloqueado por facturación de la cuenta de GitHub), `deploy/gcp/manual_deploy.sh <staging|production> <ID-del-proyecto>` hace lo mismo que el workflow desde Cloud Shell: construye la imagen, la sube (de a una capa y con reintentos), corre `deploy.sh` y publica Firebase Hosting. Se lanza con `nohup ... &` para que sobreviva a una desconexión; la primera construcción tarda 20-60 min por dlib. Producción respeta el congelamiento (`FORCE=1` lo salta, solo con orden de Juan David). Las pruebas (CI) NO corren en este camino: correrlas antes o revisar a mano en staging.
+
+## Chequeo semanal de salud de la base (20-nov-2026)
+`app/db_health.py`, paso `db-health` del Job `golden-ops` (domingo 6 a. m. hora local; `OPS_HEALTH_WEEKDAY` / `OPS_HEALTH_HOUR`). Por qué: una vez la plataforma se colapsó (había que reiniciar el cómputo de Neon) porque un botón cargaba miles de
+registros por clic y se pulsó varias veces. Mira tamaño de la base, conexiones usadas frente al máximo, conexiones colgadas, consultas largas y bloqueos. `warn` = aviso por correo (destinatarios de Configuración › Alertas del sistema) y campana;
+`critical` (o la base no responde) = aviso y **reinicio del cómputo de Neon por su API** (`POST …/endpoints/{id}/restart`, usa NEON_API_KEY/NEON_PROJECT_ID/NEON_ENDPOINT_ID del Job). No borra datos. Con un evento «en proceso» NO reinicia a ciegas: solo avisa.
+`DB_HEALTH_RESTART=0` apaga el reinicio. A mano (también reinicia si ve algo crítico): `gcloud run jobs execute golden-ops --region us-east4 --args=-m,app.ops_runner,db-health`. Pruebas: `tests/test_db_health.py`.

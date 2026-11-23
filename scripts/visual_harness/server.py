@@ -44,6 +44,7 @@ def make_env():
     env.globals.update(url_for=url_for, company_name='Golden Eventos y Logística S.A.S.', event_logo_url=lambda e: '/static/img/logo-golden.png', event_logo_attrs=lambda e: '', golden_logo_attrs=lambda *a: '',
                        public_base_url=lambda: 'https://app.ejemplo.test', print_settings_json=lambda e: '{}', deploy_env=lambda: '',
                        legal=lambda: {'company': 'Golden Eventos y Logística S.A.S.', 'nit': '900.000.000-0', 'address': 'Calle Falsa 123, Bogotá', 'email': 'datos@ejemplo.test', 'phone': '601 000 0000'})
+    env.globals['crm_nav_visible'] = lambda r: True
     env.filters['fromjson'] = json.loads
     env.filters['local_dt'] = lambda dt: dt.strftime('%d/%m/%Y %I:%M %p') if dt else ''
     return env

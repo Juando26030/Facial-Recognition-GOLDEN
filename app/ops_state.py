@@ -123,14 +123,14 @@ def due_daily(steps: dict, name: str, now_local: datetime, hour: int) -> bool:
     return to_local(last).date() < now_local.date()
 
 
-def due_weekly(steps: dict, name: str, now_local: datetime, weekday: int, hour: int) -> bool:
+def due_weekly(steps: dict, name: str, now_local: datetime, weekday: int, hour: int, now_utc: Optional[datetime] = None) -> bool:
     """Una vez por semana: pasaron al menos 6,5 días desde la última vez y ya es la hora del día fijada. Si nunca corrió, solo el día de la semana fijado."""
     if now_local.hour < hour:
         return False
     last = _parse(steps.get(name))
     if last is None:
         return now_local.weekday() == weekday
-    return utcnow() - last >= timedelta(days=6.5)
+    return (now_utc or utcnow()) - last >= timedelta(days=6.5)
 
 
 def due_monthly(steps: dict, name: str, now_local: datetime, day: int, hour: int) -> bool:
