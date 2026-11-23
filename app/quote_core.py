@@ -52,7 +52,7 @@ def _text(data: dict, key: str, label: str, errors: Dict[str, str], required: bo
     raw = data.get(key)
     if raw is None or raw == "":
         if required:
-            errors[key] = f"{label} es obligatorio"
+            errors[key] = f"{label} es {'obligatoria' if label.startswith('La ') else 'obligatorio'}"
         return ""
     if not isinstance(raw, str):
         errors[key] = f"{label} no es válido"
@@ -60,7 +60,7 @@ def _text(data: dict, key: str, label: str, errors: Dict[str, str], required: bo
     value = re.sub(r"\s+", " ", raw).strip() if key != "contacto" else raw.strip()
     if not value:
         if required:
-            errors[key] = f"{label} es obligatorio"
+            errors[key] = f"{label} es {'obligatoria' if label.startswith('La ') else 'obligatorio'}"
         return ""
     if len(value) > MAX_LEN[key]:
         errors[key] = f"{label} es muy largo (máximo {MAX_LEN[key]} caracteres)"
