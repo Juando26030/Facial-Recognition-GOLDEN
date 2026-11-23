@@ -357,9 +357,11 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
     if trusted and wa.verified_at is None:                  # dueño del correo al que el organizador envió el enlace: verificada, sin confirmación del personal
         wa.verified_at, wa.verified_via = now, "link"
     db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t"), {"u": uid, "t": event.tenant_id})
+    held = False          # True: la selfie quedó PENDIENTE porque ya había una foto de registro y la persona aún no está verificada (se le dice con claridad)
     if arr is not None:
         verified = trusted or wa.verified_at is not None
         hold = bool(event.accept_verify_photo is not False) and not verified and get_storage().exists(photo_key(event.tenant_id, uid))      # hallazgo 5: no se pisa la foto de registro de alguien que no está verificado
+        held = hold
         crypto.save_image(Image.fromarray(arr), enroll.pending_photo_key(event.tenant_id, uid) if hold else photo_key(event.tenant_id, uid))
         db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": now, "u": uid, "t": event.tenant_id})      # 0C (E5): arranca el reloj de retención aunque el vector aún no exista (también cubre la pendiente: la purga la encuentra)
         if hold:
@@ -375,4 +377,6 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
     jobs.kick()
     if trusted:
         return {"status": "accepted", "verified": True, "message": "¡Gracias! Tu autorización quedó registrada. Si tienes un correo registrado, te enviaremos tu constancia."}
+    if held:
+        return {"status": "accepted", "verified": False, "photo_held": True, "message": "¡Gracias! Tu autorización quedó registrada. Ya tenías una foto de registro anterior: esta nueva se guardó para que el personal la compare contigo cuando llegues, y mientras tanto no reemplaza a la anterior. Muestra tu cédula o QR en la acreditación."}
     return {"status": "accepted", "verified": False, "message": "¡Gracias! Cuando llegues, muestra tu cédula o QR en la acreditación: el personal confirmará tu identidad y desde ahí podrás entrar con tu rostro."}

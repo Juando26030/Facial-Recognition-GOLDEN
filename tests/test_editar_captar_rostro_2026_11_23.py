@@ -42,3 +42,10 @@ def test_recuadros_de_resultado_foto_en_editar_y_acreditar_en_el_escaner():
     assert "registration-photo" in d and "Retomar la foto" in d
     api = (R / "app/routers/api.py").read_text(encoding="utf-8")
     assert '"reason": "no_face"' in api and '"reason": "no_match"' in api and "def registration_photo" in api
+
+
+def test_aceptar_dice_con_claridad_que_la_foto_nueva_quedo_pendiente():
+    """23-nov-2026: si la selfie queda pendiente (ya había foto de registro y la persona no está verificada), el mensaje no dice solo «Listo»: dice que la anterior sigue vigente."""
+    s = (R / "app/routers/aceptar.py").read_text(encoding="utf-8")
+    assert "held = hold" in s and '"photo_held": True' in s and "no reemplaza a la anterior" in s
+    assert s.index('"photo_held": True') < s.index('"message": "¡Gracias! Cuando llegues,')
