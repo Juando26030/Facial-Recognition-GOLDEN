@@ -60,6 +60,8 @@ Reglas que mandan: [`docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md`](../REGLAS_INAMOVI
 Filtro por empresa en todas las consultas y RLS (160-220 h, reporte 01 Anexo A.3) · facturación y marca propia por empresa · formulario de cotización del sitio con envío real · páginas por servicio del sitio · registro de decisiones del modelo facial y pruebas de sesgo · foto pendiente en `/aceptar` · purga de eventos devueltos en el servidor local · pruebas de extremo a extremo en staging · CSP estricta.
 
 ## 7. Texto para una sesión nueva (segunda pasada con la memoria fresca)
+> **Plan vigente (23-nov):** [`docs/revision_2026-11-22b/00_PLAN_SEGUNDA_PASADA.md`](../revision_2026-11-22b/00_PLAN_SEGUNDA_PASADA.md) reemplaza el texto de abajo; su §9 trae el texto para pegar.
+
 ```
 Lee CLAUDE.md, docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md y docs/revision_2026-11-22/README.md (y los reportes 01-15 de esa carpeta).
 Estás en el repositorio Facial-Recognition-GOLDEN, rama saas/revision-integral. El sitio web está en el repo golden-sitio-web (commit en deploy/sitio/VERSION).
