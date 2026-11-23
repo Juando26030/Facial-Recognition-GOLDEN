@@ -227,3 +227,5 @@ Todo lo demás es invisible: cabeceras para Google y redes, `<h2>` con la misma 
 | El sitio de Hosting | `npx -y firebase-tools@13 hosting:disable --site golden-sitio-<número> --project goldenweb-prod` (lo deja en blanco) |
 
 Nada de esto toca `app.golden-eventos.com`, Cloud Run, Neon ni el correo.
+
+> **23-nov-2026:** `deploy/sitio/VERSION` apunta ahora a `39e4c6f` (rama `fix/pasos-tablet` del repo del sitio = `6eb6b6a` + un arreglo de 4 líneas: en tableta, 600-860 px, los tres pasos de «Cómo trabajamos» caben en la fila). El parche de montaje aplica igual encima (probado con `git am --3way`). Pendiente: que el bot del sitio incorpore esa rama a su `main`.
