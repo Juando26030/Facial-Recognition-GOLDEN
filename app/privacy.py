@@ -112,6 +112,39 @@ def purge_event(db: Session, event: Event) -> dict:
     return {"deleted": deleted, "kept_in_other_events": kept, "kept_reason": reason}
 
 
+RETURNED_PURGE_PENDING = "Purga local pendiente"      # marca en `events.sync_error` de un evento devuelto a internet cuya purga local falló a medias (se reintenta sola)
+
+
+@mass_delete.expected_call
+def purge_returned_event(db: Session, event: Event) -> dict:
+    """Servidor LOCAL: un evento ya «devuelto a internet» no debe dejar rostros en el portátil (docs/17 § «Lo que NO se borra solo»). Borra foto, vector y marca de
+    consentimiento de las personas del evento, salvo quien sigue en OTRO evento todavía bajado de la nube (cloud_event_id no nulo). Idempotente; la constancia
+    de consentimiento (`audit_consent_logs`) no se toca. Solo devuelve conteos y NUNCA registra nombres, cédulas ni la ruta de una foto (la ruta lleva la cédula)."""
+    from app import enroll
+    from app.models import EventAttendee as _EA
+    deleted = kept = errors = 0
+    people = (db.query(User).join(_EA, (_EA.user_id == User.id) & (_EA.tenant_id == User.tenant_id))
+              .filter(_EA.event_id == event.id).all())
+    for user in people:
+        if not (user.face_encoding or user.biometric_consent_at or enroll.has_any_photo(user.tenant_id, user.id)):
+            continue
+        elsewhere = (db.query(_EA.id).join(Event, Event.id == _EA.event_id)
+                     .filter(_EA.user_id == user.id, _EA.tenant_id == user.tenant_id, Event.id != event.id, Event.cloud_event_id.isnot(None)).first())
+        if elsewhere:
+            kept += 1
+            continue
+        try:
+            _erase(user)                                   # primero la foto; si falla, el vector sigue y se reintenta
+            deleted += 1
+        except Exception as exc:  # noqa: BLE001
+            errors += 1
+            log.error("purga local: no se pudo borrar un rostro (%s); se reintenta", type(exc).__name__)      # solo el tipo del error: la ruta lleva la cédula
+    if not errors:
+        event.biometrics_purged_at = utcnow()
+    db.commit()
+    return {"deleted": deleted, "kept_in_other_events": kept, "errors": errors}
+
+
 # Quién tiene lo biométrico vencido. Regla A: tiene eventos y NINGUNO está abierto ni finalizado hace menos de :after días. Regla B (tope): capturado
 # hace más de :cap días. `(tenant_id, id) > (...)` recorre por claves: una persona que falla no se vuelve a pedir en esta corrida.
 _EXPIRED_SQL = text("""

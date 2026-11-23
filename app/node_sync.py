@@ -595,7 +595,32 @@ def release_event(db: Session, event: Event) -> dict:
     event.cloud_event_id = None                      # la copia local queda inerte: el evento sigue en la nube
     event.sync_error = None
     db.commit()
-    return {"ok": True, "pending": 0}
+    purge = purge_returned(db, event)                # ya está en la nube: ahora se borran los rostros de este portátil (si falla, queda marcado y se reintenta)
+    return {"ok": True, "pending": 0, "purge": purge}
+
+
+def purge_returned(db: Session, event: Event) -> dict:
+    """Purga local de un evento devuelto a internet (app/privacy.purge_returned_event). Nunca deshace la devolución: si falla deja `sync_error` = «Purga local pendiente»."""
+    from app import privacy
+    try:
+        out = privacy.purge_returned_event(db, event)
+        failed = out["errors"] > 0
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        out, failed = {"deleted": 0, "kept_in_other_events": 0, "errors": 1}, True
+        log.error("purga local del evento devuelto falló (%s)", type(exc).__name__)
+    event.sync_error = privacy.RETURNED_PURGE_PENDING if failed else None
+    db.commit()
+    return out
+
+
+def retry_pending_purges(db: Session) -> int:
+    """Reintenta la purga de eventos devueltos que quedaron «Purga local pendiente». Devuelve cuántos reintentó."""
+    from app import privacy
+    rows = db.query(Event).filter(Event.cloud_event_id.is_(None), Event.sync_error == privacy.RETURNED_PURGE_PENDING).all()
+    for ev in rows:
+        purge_returned(db, ev)
+    return len(rows)
 
 
 # ------------------------------------------------------------------------------------------------ reloj (solo en el servidor local)
@@ -613,6 +638,7 @@ def _loop() -> None:
             log.debug("ping a la nube falló", exc_info=True)
         try:
             with SessionLocal() as db:
+                retry_pending_purges(db)                  # purgas de eventos devueltos que fallaron antes
                 upload_all(db)
         except Exception:                                 # el reloj nunca se cae por un error de un ciclo
             log.exception("ciclo de subida falló")
