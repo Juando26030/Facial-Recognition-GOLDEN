@@ -63,11 +63,25 @@ def cover_info(event, tenant_name: str, df, changes: list) -> dict:
 def decorate(book, event, tenant_name: str, tenant_id: str, df, field_hints: dict, changes: list, read_optional, key_of=None) -> None:
     """Agrega «Gráficos» y «Portada» (la primera) al libro openpyxl `book`, que ya trae la hoja «Reporte». Cada pieza falla por separado sin tumbar a la otra."""
     try:
-        report_charts.build_sheet(book, report_charts.build_specs(df, field_hints, changes))
+        report_charts.build_sheet(book, report_charts.build_specs(df, field_hints, changes), title="Gráficos del reporte — toda la base")
     except Exception:          # los gráficos fallaron: se quita la hoja a medias y la portada sale igual
         log.exception("no se pudieron armar los gráficos del reporte")
         if report_charts.SHEET in book.sheetnames:
             del book[report_charts.SHEET]
+    # Hotfix 23-nov-2026: las mismas gráficas, una hoja solo con registrados y otra solo con no registrados (sin la de «Estado», que sería 100 %, ni el historial de cambios).
+    if report_charts.SHEET in book.sheetnames and "Estado" in getattr(df, "columns", []):
+        registered = df["Estado"] == "Registrado"
+        for name, part, title, empty in (
+            (report_charts.SHEET_REGISTERED, df[registered], "Gráficos — solo personas registradas", "Todavía no hay personas registradas para graficar."),
+            (report_charts.SHEET_NOT_REGISTERED, df[~registered], "Gráficos — solo personas no registradas", "No quedan personas sin registrar para graficar."),
+        ):
+            try:
+                specs = [sp for sp in report_charts.build_specs(part.drop(columns=["Estado"]), field_hints, []) ]
+                report_charts.build_sheet(book, specs, name=name, title=title, empty_text=empty)
+            except Exception:
+                log.exception("no se pudo armar la hoja %s del reporte", name)
+                if name in book.sheetnames:
+                    del book[name]
     cover = book.create_sheet("Portada", 0)
     logo, footer = cover_logos(event, read_optional)
     report_cover.build_cover(cover, cover_info(event, tenant_name, df, changes), logo, footer)

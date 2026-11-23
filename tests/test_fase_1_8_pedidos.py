@@ -25,7 +25,7 @@ def test_origen_solo_para_el_personal():
     links, client = read("app/routers/stats_links.py"), read("app/routers/form_client.py")
     assert "registro_dashboard(db, event)" in links and "with_origin" not in links          # el enlace público nunca lo recibe
     assert "form_stats.build(db, form, False)" in client                                      # el cliente del formulario tampoco
-    assert "data_for(db, event, variable)" in links                                           # sin staff_view → «Origen de carga» no es válida para enlaces públicos
+    assert "data_for(db, event, variable, scope=scope)" in links and "staff_view" not in links                                        # sin staff_view → «Origen de carga» no es válida para enlaces públicos
 
 
 def test_aplicar_a_todos_los_textos_copia_todo_el_aspecto():

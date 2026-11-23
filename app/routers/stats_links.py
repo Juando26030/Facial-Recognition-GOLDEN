@@ -192,12 +192,12 @@ def public_variables(token: str, request: Request, db: Session = Depends(get_db)
 
 
 @public_router.get("/api/ver/{token}/stats/data")
-def public_data(token: str, variable: str, request: Request, db: Session = Depends(get_db)):
+def public_data(token: str, variable: str, request: Request, scope: str = "all", db: Session = Depends(get_db)):
     event, err = _api_event(token, request, db)
     if err:
         return err
     try:
-        return JSONResponse(stats_router.data_for(db, event, variable), headers=NO_STORE)
+        return JSONResponse(stats_router.data_for(db, event, variable, scope=scope), headers=NO_STORE)
     except HTTPException as e:
         return JSONResponse({"detail": e.detail}, status_code=e.status_code, headers=NO_STORE)
 

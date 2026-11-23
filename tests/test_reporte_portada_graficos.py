@@ -60,9 +60,9 @@ def charts_of(wb):
 # ------------------------------------------------------------------ estructura
 def test_sheet_order_and_cover_first():
     wb = book()
-    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos"]
+    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Gráficos registrados", "Gráficos no registrados"]
     assert wb.active.title == "Portada"
-    assert [ws.sheet_view.tabSelected for ws in wb.worksheets] == [True, False, False]          # una sola hoja seleccionada
+    assert [ws.sheet_view.tabSelected for ws in wb.worksheets] == [True, False, False, False, False]          # una sola hoja seleccionada
     assert wb["Portada"].sheet_view.showGridLines is False and wb["Gráficos"].sheet_view.showGridLines is False
 
 
@@ -114,7 +114,7 @@ def test_logo_is_resized_keeping_proportion():
 
 def test_empty_report_still_gets_cover_and_a_charts_notice():
     wb = book(df=make_df(0).reindex(columns=make_df(1).columns), changes=[])
-    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos"]
+    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Gráficos registrados", "Gráficos no registrados"]
     assert charts_of(wb) == []
     assert "Todavía no hay datos" in wb["Gráficos"]["B4"].value
 
@@ -181,7 +181,7 @@ def test_workbook_roundtrip_and_xlsx_has_chart_parts(tmp_path):
     out = tmp_path / "r.xlsx"
     book().save(out)
     wb = load_workbook(out)
-    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos"]
+    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Gráficos registrados", "Gráficos no registrados"]
     import zipfile
     names = zipfile.ZipFile(out).namelist()
     assert sum(n.startswith("xl/charts/chart") for n in names) >= 12 and any(n.startswith("xl/media/") for n in names)
@@ -206,3 +206,42 @@ def test_histogram_and_top_helpers():
 @pytest.mark.parametrize("raw,expected", [(["Sí", "No", "sí"], "doughnut"), (["a", "b", "a"], "doughnut"), ([str(i) for i in range(30)], "col")])
 def test_column_spec_kinds(raw, expected):
     assert report_charts.column_spec("X", raw * (3 if expected == "col" else 1))["kind"] == expected
+
+
+# ------------------------------------------------------------------ hotfix 23-nov-2026: gráficas por estado de registro y colores por categoría
+def test_registered_and_not_registered_chart_sheets_count_only_their_people():
+    wb = book()
+    def entity_total(sheet):
+        ws = wb[sheet]
+        titles = {ws.cell(row=r, column=report_charts.DATA_COL).value: r for r in range(1, ws.max_row + 1)}
+        r = titles["Entidad: personas (principales y «Otros»)"]
+        total = 0
+        while ws.cell(row=r + 1, column=report_charts.DATA_COL).value is not None:
+            r += 1
+            total += ws.cell(row=r, column=report_charts.DATA_COL + 1).value
+        return total
+    assert entity_total("Gráficos") == 60 and entity_total("Gráficos registrados") == 48 and entity_total("Gráficos no registrados") == 12
+    assert wb["Gráficos registrados"]["A1"].value == "Gráficos — solo personas registradas"
+    for sheet in ("Gráficos registrados", "Gráficos no registrados"):          # ni «Estado» (sería 100 %) ni historial de cambios
+        titles = [c.title.tx.rich.p[0].r[0].t for c in wb[sheet]._charts if c.title and c.title.tx and c.title.tx.rich]
+        assert not any(t.startswith("Estado") or "Cambios" in t for t in titles)
+
+
+def test_not_registered_sheet_without_people_shows_notice():
+    df = make_df(10)
+    df["Estado"] = "Registrado"
+    wb = book(df=df)
+    assert "No quedan personas sin registrar" in wb["Gráficos no registrados"]["B4"].value
+
+
+def test_category_bars_get_one_color_each():
+    spec = {"kind": "barh", "title": "T", "cats": ["A", "B", "C", "Otros"], "vals": [3, 2, 1, 1]}
+    wb = Workbook()
+    ws = wb.active
+    for i, (c, v) in enumerate(zip(spec["cats"], spec["vals"]), start=2):
+        ws.cell(row=i, column=1, value=c)
+        ws.cell(row=i, column=2, value=v)
+    from openpyxl.chart import Reference
+    ch = report_charts._make_chart(spec, Reference(ws, min_col=1, min_row=2, max_row=5), Reference(ws, min_col=2, min_row=1, max_row=5))
+    fills = [getattr(pt.graphicalProperties.solidFill.srgbClr, "val", pt.graphicalProperties.solidFill.srgbClr) for pt in ch.series[0].dPt]
+    assert len(fills) == 4 and len(set(fills[:3])) == 3 and fills[3] == report_charts.OTHER_GRAY
