@@ -1,6 +1,6 @@
-From eaf574714d4176799bd3362e4eca1a7b39038d66 Mon Sep 17 00:00:00 2001
+From 57feb0e04e9c5b5ddc1023de82fd4afb8adba4b2 Mon Sep 17 00:00:00 2001
 From: Parche de montaje <noreply@golden-eventos.com>
-Date: Sun, 22 Nov 2026 23:25:56 -0500
+Date: Sun, 22 Nov 2026 23:55:40 -0500
 Subject: [PATCH] Parche de montaje en golden-eventos.com sobre 6eb6b6a
 
 ---
@@ -25,7 +25,7 @@ Subject: [PATCH] Parche de montaje en golden-eventos.com sobre 6eb6b6a
  public/site.webmanifest                 |  13 ++++
  src/components/Header.astro             |   9 ++-
  src/data/inicio.json                    |   4 +-
- src/data/sitio.json                     |  36 ++++++++-
+ src/data/sitio.json                     |  44 +++++++++--
  src/layouts/Base.astro                  |  76 +++++++++++++++++--
  src/layouts/Legal.astro                 |  53 +++++++++++++
  src/pages/404.astro                     |  26 +++++++
@@ -36,7 +36,7 @@ Subject: [PATCH] Parche de montaje en golden-eventos.com sobre 6eb6b6a
  src/pages/robots.txt.ts                 |  11 +++
  src/pages/sitemap.xml.ts                |  18 +++++
  src/styles/global.css                   |  11 ++-
- 32 files changed, 486 insertions(+), 88 deletions(-)
+ 32 files changed, 490 insertions(+), 92 deletions(-)
  create mode 100644 public/apple-touch-icon.png
  delete mode 100644 public/favicon.svg
  create mode 100644 public/fonts/LICENCIA-Poppins.txt
@@ -7949,20 +7949,26 @@ index 2b7e6d2..63952a1 100644
 \ No newline at end of file
 +}
 diff --git a/src/data/sitio.json b/src/data/sitio.json
-index 0f193fe..ce4c002 100644
+index 0f193fe..ee677ee 100644
 --- a/src/data/sitio.json
 +++ b/src/data/sitio.json
-@@ -6,7 +6,7 @@
+@@ -4,17 +4,24 @@
+     "nombreCorto": "Golden",
+     "nit": "901.542.833-2",
      "direccion": "Carrera 14a # 71a-59, Bogotá",
-     "telefono": "+57 317 427 6073",
-     "telefonoHref": "tel:+573174276073",
+-    "telefono": "+57 317 427 6073",
+-    "telefonoHref": "tel:+573174276073",
 -    "correo": "info@goldenlogisticas.com",
++    "telefono": "+57 318 098 1752",
++    "telefonoHref": "tel:+573180981752",
 +    "correo": "soporteit@goldenlogisticas.com",
      "horario": "Lunes a viernes, 8:00 a 18:00"
    },
    "whatsapp": {
-@@ -14,7 +14,14 @@
-     "numero": "573174276073",
+-    "_nota": "PENDIENTE: Juan confirma el número oficial de WhatsApp. El sitio viejo usaba otro (+57 318 098 1752).",
+-    "numero": "573174276073",
++    "_nota": "Número oficial confirmado por Juan David el 22-nov-2026: +57 318 098 1752 (el mismo del pie legal de la plataforma). Correo oficial: soporteit@goldenlogisticas.com. El correo y el celular de la comercial (lyz) NO se publican: reciben las cotizaciones por QUOTE_TO_EMAIL.",
++    "numero": "573180981752",
      "mensaje": "Hola, quiero cotizar un evento con Golden."
    },
 -  "privacidad": "https://app.golden-eventos.com/privacidad",
