@@ -84,6 +84,7 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     [ -z "${OFFSITE_FOLDER_URL:-}" ] || echo "OFFSITE_FOLDER_URL: \"$OFFSITE_FOLDER_URL\""    # enlace a la carpeta de las copias semanales (Configuración › Copias de seguridad); no es secreto
     [ -z "${GCP_BILLING_EXPORT_TABLE:-}" ] || echo "GCP_BILLING_EXPORT_TABLE: \"$GCP_BILLING_EXPORT_TABLE\""    # Gastos › Google Cloud: proyecto.conjunto.tabla de la exportación a BigQuery (web y Job de ops)
     [ -z "${NEON_ORG_ID:-}" ] || echo "NEON_ORG_ID: \"$NEON_ORG_ID\""                                              # Gastos › uso de Neon (la llave va por secreto)
+    [ -z "${QUOTE_ALLOWED_ORIGINS:-}" ] || echo "QUOTE_ALLOWED_ORIGINS: \"$QUOTE_ALLOWED_ORIGINS\""      # cotización del sitio web (docs/26 Parte C); el correo de destino va por el secreto quote-to-email
     echo "STORAGE_BACKEND: \"gcs\""
     echo "GCS_BUCKET: \"$APP_BUCKET\""
     echo "GCS_PREFIX: \"$APP_PREFIX\""

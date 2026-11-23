@@ -77,6 +77,9 @@ elif [ "$FIREBASE_DEPLOY" = 1 ]; then
 else
   FIREBASE_SITE=""; WEB_MODULE="app.main:app"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(run_url "golden-web${SUFFIX}")}"
 fi
+# Formulario «Pide tu cotización» del sitio web (22-nov-2026, docs/26 Parte C): orígenes del SITIO que pueden llamar a POST /api/public/quote-request (no es secreto). Producción: golden-eventos.com;
+# staging: el sitio de ensayo golden-sitio-<número del proyecto>. El correo de destino (QUOTE_TO_EMAIL) es un dato de una persona: va como secreto «quote-to-email» (opcional; ver APP_SECRETS).
+if [ "$GOLDEN_ENV" = production ]; then QUOTE_ALLOWED_ORIGINS="${QUOTE_ALLOWED_ORIGINS:-https://golden-eventos.com,https://www.golden-eventos.com}"; else QUOTE_ALLOWED_ORIGINS="${QUOTE_ALLOWED_ORIGINS:-https://golden-sitio-${PROJECT_NUMBER}.web.app}"; fi
 
 # URL limpia de las inscripciones (D2.5k, docs/20): vacío = todo sigue saliendo como /f/<evento>/<formulario>. Con valor (https://app.golden-eventos.com/inscripciones) los enlaces de correos y del panel
 # salen limpios (/inscripciones/<evento>/<formulario>). Mismo host de la app: no hay sitio, dominio ni CORS aparte.
@@ -128,7 +131,7 @@ wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET 
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET
 wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET wompi-sandbox-private-key:WOMPI_SANDBOX_PRIVATE_KEY
 azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER
-payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY neon-api-key:NEON_API_KEY"   # neon-api-key: Gastos › uso de Neon (opcional; se omite si el secreto no existe)
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY neon-api-key:NEON_API_KEY quote-to-email:QUOTE_TO_EMAIL"   # neon-api-key: Gastos › uso de Neon (opcional; se omite si el secreto no existe)
 # E8: secretos por servicio (solo cuentan con SPLIT_SERVICE_ACCOUNTS=1; sin él cada servicio recibe APP_SECRETS completo, como hasta hoy). `web` (panel, cobros y reembolsos, correos) los lleva todos.
 # `publico` (abierto a internet: formularios, pagos, aceptación, escarapela digital) NO lleva las credenciales de correo de Microsoft ni la llave PRIVADA de Wompi (reembolsos): solo base, claves de la app,
 # ops-token y las claves públicas/de firma de eventos de Wompi. `biometria` NO lleva Microsoft ni nada de Wompi (el correo y los pagos salen por la cola general, que ejecuta `web`).
@@ -137,7 +140,7 @@ SECRETS_WEB="$APP_SECRETS"
 SECRETS_PUBLICO="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*
 wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET wompi-events-secret:WOMPI_EVENTS_SECRET
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET
-payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY"
+payment-keys-encryption-key:PAYMENT_KEYS_ENCRYPTION_KEY quote-to-email:QUOTE_TO_EMAIL"
 # ↑ F5-9 E: `publico` sirve /f/ (firma del pago) y /webhooks/ (firma de eventos): con cuentas de cobro de terceros (0118) necesita descifrar sus secretos de
 #   integridad y de eventos. Sin esta llave, con SPLIT_SERVICE_ACCOUNTS=1 esos cobros fallaban. Ojo: la misma llave abre también la llave PRIVADA cifrada de esas cuentas.
 SECRETS_BIOMETRIA="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*"

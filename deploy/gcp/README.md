@@ -49,3 +49,9 @@ La ruta pública `POST /api/public/quote-request` (servicio `golden-publico`, si
 - `QUOTE_TO_EMAIL`: correo de una persona de Golden que recibe las solicitudes. Es un dato personal: va en **Secret Manager** (secreto `QUOTE_TO_EMAIL`, expuesto como variable de entorno al servicio `golden-web`, que es quien envía el correo desde la cola, y también a `golden-publico`, que la comprueba antes de aceptar), **nunca en el repo**. Sin ella la ruta responde 503 «No se pudo enviar ahora, escríbanos por WhatsApp».
 - `QUOTE_ALLOWED_ORIGINS`: no es secreto; variable normal de Cloud Run (`golden-publico`), por ejemplo `https://golden-eventos.com,https://www.golden-eventos.com`. Vacía = solo mismo origen. Solo esta ruta acepta esos orígenes.
 - En Firebase Hosting la regla de reescritura de `/api/public/**` hacia `golden-publico` sale sola de `deploy/firebase/make_config.py`. Límites: 5 intentos por IP cada 10 min (`QUOTE_IP_MAX_PER_10MIN`) y cuerpo de 8 KB.
+
+**Cableado automático (23-nov-2026):** `config.sh`/`deploy.sh` ya ponen solos `QUOTE_ALLOWED_ORIGINS` (producción: `https://golden-eventos.com,https://www.golden-eventos.com`; staging: `https://golden-sitio-<número del proyecto>.web.app`) y conectan el secreto `quote-to-email` a `golden-web` y `golden-publico` SI EXISTE. Lo único que falta es crear el secreto, una vez por proyecto, **sin escribir el correo en el historial** (el comando lo pide a ciegas):
+```bash
+read -rsp "Correo de quien responde las cotizaciones: " Q; echo; printf %s "$Q" | gcloud secrets create quote-to-email --data-file=- --project <proyecto>; unset Q
+```
+Después hay que volver a desplegar para que los servicios lo lean. **Staging nunca manda correos reales** (no lleva las credenciales de Microsoft), así que allí el formulario valida y encola pero el correo no sale: la entrega real solo se prueba en producción.
