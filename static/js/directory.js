@@ -1497,6 +1497,13 @@
       if (found.cedula) localHashes.set(found.cedula.toLowerCase(), found.person.h);
       clearSearchBox();                                                  // sin red también: acreditar deja la caja vacía
     });
+    /* Un solo botón por persona: la fila ya trae el suyo («Acreditar», o «Acreditado» sin acción si ya consta). Tras buscar por cédula con el autoregistro apagado NO se agrega otro: si ya estaba
+       acreditada se dice y no pasa nada más; si no, se usa el de la fila. Devuelve 'done' | 'row' | 'none' (no hay botón de fila: el llamador agrega el suyo). */
+    function rowAccreditState(actionTd) {
+      if (!actionTd) return 'none';
+      if (actionTd.querySelector('.btn-accredit-row.is-done')) return 'done';
+      return actionTd.querySelector('.btn-accredit-row') ? 'row' : 'none';
+    }
     async function offlineCheckin(GC, cedula, method, cid) {
       if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
       const found = await GC.scanLocal(cedula);
@@ -1506,7 +1513,9 @@
       const tbody = document.getElementById(opts.tbodyId);
       const row = tbody && (tbody.querySelector(`tr[data-user-id="${CSS.escape(found.cedula)}"]`) || tbody.querySelector(`tr[data-h="${found.person.h}"]`));
       const actionTd = row ? row.querySelector('.action-cell') : null;
-      if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
+      const st0 = rowAccreditState(actionTd);
+      if (st0 === 'done') { verdict('ok', 'Ya estaba acreditado(a)', `${found.person.n} · no se volvió a acreditar`); return; }
+      if (st0 === 'none' && actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
         const btn = document.createElement('button');
         btn.type = 'button'; btn.innerText = 'Acreditar'; btn.className = 'gw-btn gw-btn--primary gw-btn--xl btn-table-action btn-accredit-pending';
         btn.addEventListener('click', async () => { btn.disabled = true; btn.innerText = 'Acreditando...'; await offlineAccredit(GC, { cedula: found.cedula }, method, newClientId()); });
@@ -1571,11 +1580,9 @@
         }
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); verdict('err', 'No se pudo acreditar', data.detail || ''); return; }
-        if (data.result === 'DUPLICADO') {
-          cancelPrimedPrint();                                      // mientras se pregunta no queda una ventana en blanco abierta
-          const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
-          if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
-          else verdict('warn', 'Ya estaba registrado(a)', `${[data.data.first_name, data.data.last_name].filter(Boolean).join(' ')} · no se volvió a acreditar`.replace(/^ · /, ''));
+        if (data.result === 'DUPLICADO') {                         // ya constaba como acreditada: solo se avisa; no se pregunta ni se vuelve a acreditar
+          cancelPrimedPrint();
+          verdict('ok', 'Ya estaba acreditado(a)', `${[data.data.first_name, data.data.last_name].filter(Boolean).join(' ')} · no se volvió a acreditar`.replace(/^ · /, ''));
           return;
         }
         if (data.result === 'MISSING_REQUIRED') {
@@ -1621,7 +1628,12 @@
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
           const row = document.querySelector(`#directoryTableBody tr[data-user-id="${CSS.escape(data.data.id)}"]`);
           const actionTd = row ? row.querySelector('.action-cell') : null;
-          if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
+          const st1 = rowAccreditState(actionTd);
+          if (st1 === 'done') {                                      // ya constaba como acreditada: no hay segundo botón ni pregunta; no se vuelve a acreditar
+            verdict('ok', 'Ya estaba acreditado(a)', `${data.data.first_name} ${data.data.last_name}`.trim() + ' · no se volvió a acreditar');
+            return;
+          }
+          if (st1 === 'none' && actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
             const acreditarBtn = document.createElement('button');
             acreditarBtn.type = 'button';
             acreditarBtn.innerText = 'Acreditar';

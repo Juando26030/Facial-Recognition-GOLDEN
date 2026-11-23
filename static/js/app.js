@@ -293,14 +293,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (data.match_token) scanToken = data.match_token;
 
-            if (data.result === 'DUPLICADO') {
-                setResult("Ya registrado(a) en este evento", 'warn');
-                const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
-                if (confirmado) {
-                    formData.set('force', 'true');
-                    if (data.match_token) { formData.set('match_token', data.match_token); formData.delete('file'); }
-                    await submitRecognize(formData);
-                }
+            if (data.result === 'DUPLICADO') {                   // ya constaba como acreditada: se dice y NO pasa nada más (sin pregunta ni segundo botón; pedido de Juan David, 23-nov-2026)
+                setResult("Ya estaba acreditado(a): no se volvió a acreditar", 'warn');
                 return;
             }
 

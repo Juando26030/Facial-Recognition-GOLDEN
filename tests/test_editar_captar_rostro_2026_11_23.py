@@ -17,3 +17,14 @@ def test_setoff_se_define_antes_de_apagar_la_camara():
     a = (R / "static/js/app.js").read_text(encoding="utf-8")
     assert a.index("const setOff =") < a.index("if (video) {") < a.index("        cameraOff();")
     assert a.index("const resTexto =") < a.index("const setResult =") < a.index("if (video) {")
+
+
+def test_un_solo_boton_y_acreditada_no_pregunta():
+    """23-nov-2026: la fila trae SU botón (Acreditar / Acreditado); la búsqueda por cédula no agrega otro, y una persona ya acreditada solo se avisa (en línea)."""
+    d = (R / "static/js/directory.js").read_text(encoding="utf-8")
+    a = (R / "static/js/app.js").read_text(encoding="utf-8")
+    assert "function rowAccreditState" in d and "st1 === 'none'" in d and "st0 === 'none'" in d
+    i = d.index("if (data.result === 'DUPLICADO') {                         // ya constaba")
+    assert "confirmDuplicateRegistration" not in d[i:i + 400]
+    j = a.index("if (data.result === 'DUPLICADO') {                   // ya constaba")
+    assert "confirmDuplicateRegistration" not in a[j:j + 400]
