@@ -18,12 +18,13 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import report_jobs
+from app import report_jobs, quote_core
 from app import node_sync, local_installer
 from app import bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import SessionLocal, get_db
 from app.models import Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
+from app.routers import quote_request as quote_request_router
 from app import reprint as reprint_core
 from app import preprint as preprint_mod
 from app.routers import event_history as event_history_router      # Fase 5: historial de cambios del evento por campo
@@ -150,7 +151,9 @@ async def csrf_and_password_gate(request, call_next):
     (`must_change_password`) no puede usar nada más hasta cambiarla."""
     if request.method in _MUTATING:
         origin = request.headers.get("origin")
-        if origin and origin != "null":
+        if origin and origin != "null" and request.url.path == quote_core.PATH and quote_core.origin_allowed(origin):
+            pass          # «Pide tu cotización»: el sitio corporativo llega por reescritura de Firebase Hosting con SU origen (QUOTE_ALLOWED_ORIGINS); solo esta ruta, y sin sesión
+        elif origin and origin != "null":
             allowed = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
             public = os.getenv("PUBLIC_BASE_URL")
             if public:
@@ -400,6 +403,7 @@ def _include(router, prefix: str = "") -> None:
     app.include_router(router, prefix=prefix)
 
 _include(auth_router.router)
+_include(quote_request_router.router)      # sitio web corporativo: «Pide tu cotización» (pública, sin sesión; servicio golden-publico)
 _include(pledge_router.router, prefix="/api")      # Fase 4: compromiso digital del digitador (lado del coordinador; el público es el motor de formularios)
 _include(login_approval_router.router)      # S1: ingreso de digitadores autorizado por el coordinador y desbloqueo de cuentas (app/login_control.py)
 _include(api.router, prefix="/api")

@@ -18,6 +18,7 @@ MAIN = open(os.path.join(ROOT, "app", "main.py"), encoding="utf8").read()
 
 # Rutas que NO llevan sesión ni token por diseño (formularios públicos, enlaces por token, salud, inicio de sesión…). (archivo, método, ruta tal como la declara el router.)
 PUBLIC_ROUTES = {
+    ("quote_request.py", "POST", "/api/public/quote-request"),
     ("aceptar.py", "GET", "/api/aceptar/{code}/logo"), ("aceptar.py", "GET", "/aceptar/{code}"), ("aceptar.py", "GET", "/aceptar/{code}/{token}"),
     ("aceptar.py", "GET", "/api/aceptar/{code}/text"), ("aceptar.py", "POST", "/api/aceptar/{code}/check"), ("aceptar.py", "POST", "/api/aceptar/{code}"),
     ("auth.py", "GET", "/login"), ("auth.py", "POST", "/login"), ("auth.py", "GET", "/api/session/idle"), ("auth.py", "POST", "/api/session/touch"),

@@ -29,6 +29,8 @@ def limit_for(method: str, path: str) -> Optional[int]:
     if method not in _MUTATING:
         return None
     small = _env_int("MAX_BODY_SMALL_BYTES", 64 * KB)
+    if path == "/api/public/quote-request":
+        return 8 * KB          # «Pide tu cotización» del sitio web: siete campos de texto
     if path.startswith("/f/"):
         return _env_int("MAX_BODY_PUBLIC_BYTES", 36 * MB) if path.endswith("/submit") else _env_int("MAX_BODY_FORM_JSON_BYTES", 256 * KB)
     if path.startswith("/webhooks/"):

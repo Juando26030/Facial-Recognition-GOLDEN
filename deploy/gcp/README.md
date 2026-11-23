@@ -42,3 +42,10 @@ Para Gastos (costos de infraestructura) el mismo archivo lleva `GCP_BILLING_EXPO
 
 ## Servidores locales: el paquete de actualización sale solo (18-nov-2026)
 `manual_deploy.sh production` termina con el paso «5. PAQUETE DE ACTUALIZACIÓN»: construye `golden-local-update-<fecha UTC>.zip` (+ `.sha256` + `.commit`) del MISMO commit, lo sube a `system/local-update/` y comprueba que `/api/ops/update-manifest` lo anuncia. Si falla, el script avisa y sale con código 2 (el despliegue ya salió, pero los locales no verán la versión). El manifiesto anuncia el commit del paquete; si producción va adelante del paquete, dice «se está preparando» y no ofrece «Actualizar ahora». El instalador `.exe` sigue siendo manual (`deploy/windows/build_en_cloudshell.sh`) y solo hace falta para instalaciones nuevas.
+
+
+## 7. Sitio web: «Pide tu cotización» (`QUOTE_TO_EMAIL`, `QUOTE_ALLOWED_ORIGINS`)
+La ruta pública `POST /api/public/quote-request` (servicio `golden-publico`, sin sesión ni base nueva) manda por correo la solicitud del sitio corporativo. Juan David pone dos variables en cada entorno; Claude no las toca:
+- `QUOTE_TO_EMAIL`: correo de una persona de Golden que recibe las solicitudes. Es un dato personal: va en **Secret Manager** (secreto `QUOTE_TO_EMAIL`, expuesto como variable de entorno al servicio `golden-web`, que es quien envía el correo desde la cola, y también a `golden-publico`, que la comprueba antes de aceptar), **nunca en el repo**. Sin ella la ruta responde 503 «No se pudo enviar ahora, escríbanos por WhatsApp».
+- `QUOTE_ALLOWED_ORIGINS`: no es secreto; variable normal de Cloud Run (`golden-publico`), por ejemplo `https://golden-eventos.com,https://www.golden-eventos.com`. Vacía = solo mismo origen. Solo esta ruta acepta esos orígenes.
+- En Firebase Hosting la regla de reescritura de `/api/public/**` hacia `golden-publico` sale sola de `deploy/firebase/make_config.py`. Límites: 5 intentos por IP cada 10 min (`QUOTE_IP_MAX_PER_10MIN`) y cuerpo de 8 KB.
