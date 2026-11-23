@@ -14,7 +14,7 @@ from app import event_archive
 from app.database import get_db
 from app import subcat, testperson
 from app.models import AccessLog, EventAttendee, StaffUser, User
-from app.routers.parametros import field_configs_for_event
+from app.routers.parametros import STAT_SCOPES, field_configs_for_event
 
 router = APIRouter()
 
@@ -49,6 +49,20 @@ def _event_directory_users(db: Session, event_id: int, tenant_id: str):
     return db.query(User).filter(User.tenant_id == tenant_id, User.id.in_(all_ids)).all()
 
 
+def registered_ids(db: Session, event_id: int) -> set:
+    """Personas REGISTRADAS en el evento: tienen al menos un registro que no es «Actualizado» (misma regla que `_status_of` y que el reporte). Una sola consulta."""
+    return {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id, AccessLog.record_type != "Actualizado").distinct()}
+
+
+def scope_users(users: list, registered: set, scope: str) -> list:
+    """Filtra las personas según el alcance pedido. `all` (o cualquier valor desconocido) = toda la base."""
+    if scope == "registered":
+        return [u for u in users if u.id in registered]
+    if scope == "unregistered":
+        return [u for u in users if u.id not in registered]
+    return users
+
+
 def _status_of(db: Session, event_id: int, user_id: str) -> str:
     # Mismo bug corregido en routers/api.py (2026-09-17, reportado en QA): "Actualizado" es una
     # edición de perfil, no una acreditación — contarla acá inflaba "Registrado" en la variable de
@@ -70,8 +84,10 @@ def _origin_of(db: Session, event_id: int, user_id: str) -> str:
     return ORIGIN_LABELS.get(origin, "Desconocido")
 
 
-def _value_of(db: Session, event_id: int, user: User, variable: str):
+def _value_of(db: Session, event_id: int, user: User, variable: str, registered: "set | None" = None):
     if variable == "status":
+        if registered is not None:
+            return "Registrado" if user.id in registered else "No registrado"
         return _status_of(db, event_id, user.id)
     if variable == "origin":
         return _origin_of(db, event_id, user.id)
@@ -98,6 +114,7 @@ def variables_for(db: Session, event, staff_view: bool = False) -> list:
             "key": k, "label": cfg["label"] if cfg else label,  # etiqueta propia del evento (ítem 3a)
             "default_stat_enabled": bool(cfg and cfg["default_stat_enabled"]),
             "default_chart_type": cfg["default_chart_type"] if cfg else None,
+            "default_stat_scope": (cfg.get("default_stat_scope") if cfg else None) or "all",
         })
     result.extend(subcat.area_variables(db, event))          # 0140: zonas / inventario con «genera estadísticas» (cada subcategoría y su grupo)
     result.extend(subcat.inventory_variables(db, event))
@@ -112,8 +129,9 @@ def list_stats_variables(
     return variables_for(db, event, staff_view=is_staff_view(staff))
 
 
-def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dict:
-    """Conteos agregados de UNA variable del evento (sin nombres ni cédulas); los usa la pantalla del personal y el enlace de solo lectura."""
+def data_for(db: Session, event, variable: str, staff_view: bool = False, scope: str = "all") -> dict:
+    """Conteos agregados de UNA variable del evento (sin nombres ni cédulas); los usa la pantalla del personal y el enlace de solo lectura.
+    `scope` (hotfix 23-nov-2026): `all` = toda la base, `registered` = solo registrados, `unregistered` = solo no registrados. Zonas e inventario no lo usan."""
     if variable.startswith("zona:") or variable.startswith("inv:"):          # 0140: variables de zonas / inventario
         kind, _, raw_id = variable.partition(":")
         data = None
@@ -126,8 +144,12 @@ def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dic
     if variable not in valid_keys:
         raise HTTPException(status_code=400, detail="Variable no válida para este evento")
 
+    if scope not in STAT_SCOPES:
+        raise HTTPException(status_code=400, detail="Alcance no válido: usa all, registered o unregistered")
     users = _event_directory_users(db, event.id, event.tenant_id)
-    raw_values = [_value_of(db, event.id, u, variable) for u in users]
+    registered = registered_ids(db, event.id)
+    users = scope_users(users, registered, scope)
+    raw_values = [_value_of(db, event.id, u, variable, registered) for u in users]
     non_empty = [str(v).strip() for v in raw_values if v is not None and str(v).strip() != ""]
 
     if not non_empty:
@@ -172,9 +194,9 @@ def data_for(db: Session, event, variable: str, staff_view: bool = False) -> dic
 
 @router.get("/events/{event_id}/stats/data")
 def get_stats_data(
-    event_id: int, variable: str, db: Session = Depends(get_db),
+    event_id: int, variable: str, scope: str = "all", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    return data_for(db, event, variable, staff_view=is_staff_view(staff))
+    return data_for(db, event, variable, staff_view=is_staff_view(staff), scope=scope)

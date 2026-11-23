@@ -21,7 +21,7 @@ def test_real_report_has_cover_report_and_charts_without_the_test_person(client,
     out = tmp_path / "r.xlsx"
     ReportManager.generate_excel_report(db, ev.id, ev.tenant_id, str(out))
     wb = load_workbook(out)
-    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Historial de cambios", "Personas registradas", "Personas no registradas"]
+    assert wb.sheetnames == ["Portada", "Reporte", "Gráficos", "Gráficos registrados", "Gráficos no registrados", "Historial de cambios", "Personas registradas", "Personas no registradas"]
     assert wb.active.title == "Portada"
     cover = [str(c.value) for row in wb["Portada"].iter_rows() for c in row if c.value is not None]
     assert "3" in cover and "1" in cover                          # 3 personas (sin PRUEBA), 1 registrada
