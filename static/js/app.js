@@ -102,6 +102,12 @@ document.addEventListener("DOMContentLoaded", () => {
             } finally { identBtn.disabled = false; }
         }
         if (identBtn) identBtn.addEventListener('click', identify);
+        /* Desde «Editar persona» → «Captar rostro»: lleva al escáner, escribe la cédula y arranca el MISMO camino de siempre (la PERSONA acepta en pantalla completa y luego se capta; menores y rechazos
+           siguen por cédula/QR). No salta ninguna regla de consentimiento: solo evita tener que volver a escribir la cédula. */
+        window.GoldenFace = { enrollFor(cedula) {
+            const tab = document.querySelector('.tab[data-tab="scanner"]'); if (tab) tab.click();
+            if (identInput) { identInput.value = String(cedula || ''); identify(); }
+        } };
         if (identInput) identInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); identify(); } });
         cameraOff();
         startClickScreen();

@@ -405,6 +405,11 @@
         ${configuredHtml}
       </form>
       <div id="editModalDeps" hidden></div>
+      ${window.GoldenFace && user.id ? `<div class="gw-field gw-registro__editfield" id="editModalFaceBox">
+        <span class="gw-label">Reconocimiento facial</span>
+        <button type="button" id="editModalFace" class="gw-btn gw-btn--secondary gw-btn--block">Captar rostro de esta persona</button>
+        <p class="gw-hint">La persona primero acepta en la pantalla completa (es voluntario); luego se capta su rostro. Si es menor de 18 años o no acepta, sigue por cédula o QR. Si ya tenía rostro, se actualiza.</p>
+      </div>` : ''}
       ${canManageStatus ? `
       <hr class="gw-registro__editsep">
       <div class="gw-field gw-registro__editfield">
@@ -515,6 +520,8 @@
     // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
     // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
+    const faceBtn = box.querySelector('#editModalFace');
+    if (faceBtn) faceBtn.addEventListener('click', () => { close(); window.GoldenFace.enrollFor(user.id); });
 
     const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
