@@ -79,10 +79,11 @@ def test_deploy_passes_infra_variables_to_web_and_ops():
     wf = _read(".github/workflows/cloudrun-deploy.yml")
     assert "GCP_BILLING_EXPORT_TABLE: ${{ vars.GCP_BILLING_EXPORT_TABLE }}" in wf and "ONEDRIVE_DRIVE_ID: ${{ vars.ONEDRIVE_DRIVE_ID }}" in wf
     sh = _read("deploy/gcp/deploy.sh")
-    web = [ln for ln in sh.splitlines() if ln.startswith('deploy_service web ')][0]
-    assert 'GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE' in web
+    # la tabla de facturación va en las variables COMUNES (env_file): la reciben web y el Job de ops (y el resto, sin efecto)
+    common = sh[sh.index("env_file() {"):sh.index("BULK_BACKEND")]
+    assert 'GCP_BILLING_EXPORT_TABLE: \\"$GCP_BILLING_EXPORT_TABLE\\"' in common
     ops = [ln for ln in sh.splitlines() if 'ops.yaml' in ln and 'env_file' in ln][0]
-    assert 'GCP_BILLING_EXPORT_TABLE=$GCP_BILLING_EXPORT_TABLE' in ops and 'ONEDRIVE_DRIVE_ID=$ONEDRIVE_DRIVE_ID' in ops
+    assert 'ONEDRIVE_DRIVE_ID=$ONEDRIVE_DRIVE_ID' in ops
 
 
 def test_connections_never_print_values():

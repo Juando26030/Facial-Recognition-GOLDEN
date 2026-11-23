@@ -219,7 +219,7 @@ have = {e.get("name") for e in (cs[0].get("env") or [])} & {"DIGITADOR_LOGIN_CON
 if have:
     sys.exit("limits-up SE NIEGA en producción: el servicio web ya tiene " + ", ".join(sorted(have)) + " puesta(s); limits-down la borraría. Revísalo antes (no se cambió nada).")
 ' || exit 1
-        gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars DIGITADOR_LOGIN_CONTROL=0,SINGLE_SESSION=0 --quiet
+        gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars "^@^DIGITADOR_LOGIN_CONTROL=0@SINGLE_SESSION=0" --quiet
         echo "PRODUCCIÓN: ingreso controlado y sesión única APAGADOS en $SVC_WEB. Al terminar: limits-down (obligatorio)."
       else
         gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --remove-env-vars DIGITADOR_LOGIN_CONTROL,SINGLE_SESSION --quiet
@@ -230,7 +230,7 @@ if have:
       # La cuenta de carga es «digitador»: con el evento en proceso, el ingreso queda esperando que un coordinador lo apruebe (app/login_control.py) y nunca hay sesión (401 «No autenticado»).
       # También SINGLE_SESSION=0: las 4 tareas del generador entran con la misma cuenta y cada login expulsaría al anterior (401 «session_replaced»).
       # Se apaga SOLO en el servicio web de staging mientras dura la prueba (limits-down lo devuelve; un despliegue también lo borra).
-      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars DIGITADOR_LOGIN_CONTROL=0,SINGLE_SESSION=0 --quiet
+      gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --update-env-vars "^@^DIGITADOR_LOGIN_CONTROL=0@SINGLE_SESSION=0" --quiet
     else
       gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --remove-env-vars PUBLIC_LIMIT_FACTOR --quiet   # vuelve al valor de common.yaml (1)
       gcloud run services update "$SVC_WEB" --project "$PROJECT" --region "$REGION" --remove-env-vars DIGITADOR_LOGIN_CONTROL,SINGLE_SESSION --quiet   # vuelve al ingreso controlado

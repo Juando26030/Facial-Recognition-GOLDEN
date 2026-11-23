@@ -9,10 +9,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import event_lease, node_auth, server_keys, versioning
+from app import event_lease, node_auth, node_extra, server_keys, versioning
 from app.auth import require_role
 from app.database import get_db
-from app.models import AuditAction, Event, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
+from app.models import AuditAction, Event, EventLocalNode, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
 from app.routers import api
 from app.timeutil import utcnow
 
@@ -115,16 +115,18 @@ def _leased_event(db: Session, event_id: int, node: LocalNode, lock: bool = Fals
     event = (q.with_for_update() if lock else q).first()          # F5-9 A-06: liberar con la fila bloqueada
     if event is None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
-    if event.local_node_name != node.name:
+    if not event_lease.is_writer(event, node.name):          # el que lo tiene (o uno del grupo, si el evento es compartido: 0160)
         raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
     return event
 
 
 @router.get("/node/ping")
-def node_ping(request: Request, node: LocalNode = Depends(node_auth.require_node)):
-    """El servidor local pregunta si la nube lo acepta: versión de la nube y si la suya es compatible. Una sola lectura (el token)."""
+def node_ping(request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
+    """El servidor local pregunta si la nube lo acepta: versión de la nube y si la suya es compatible. Además (0160) los eventos COMPARTIDOS que tiene: así un servidor que ya tenía el
+    evento se entera (en su siguiente ciclo) de que ahora es compartido y empieza a bajar lo de los demás. Una lectura liviana más (índice por evento)."""
     ok, msg = node_auth.schema_compatible(request.headers.get("X-Node-Schema"))
-    return {"ok": True, "node": node.name, "cloud": versioning.local_version(), "compatible": ok, "message": msg}
+    shared = [eid for (eid,) in db.query(Event.id).join(EventLocalNode, EventLocalNode.event_id == Event.id).filter(Event.local_shared.is_(True), EventLocalNode.node_name == node.name)]
+    return {"ok": True, "node": node.name, "cloud": versioning.local_version(), "compatible": ok, "message": msg, "shared_events": shared}
 
 
 @router.post("/node/events/{event_id}/access-logs")
@@ -151,8 +153,8 @@ def _when(value):
 
 @router.post("/node/events/{event_id}/records")
 def node_records(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
-    """Historial hecho en el servidor local: impresiones de escarapela (`print_logs`) y ediciones de personas (`person_changes`: estado de registro y fecha de nacimiento, solo como HISTORIAL; no vuelve a
-    aplicar el cambio). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
+    """Historial hecho en el servidor local: impresiones de escarapela (`print_logs`) y cambios de personas (`person_changes`). Desde 0160 el cambio también se APLICA: «No registrado» borra los
+    registros de la persona hechos hasta ese momento y la fecha de nacimiento se pone (app/node_extra.py). Idempotente por llave natural (persona + momento + tipo): repetir un lote no duplica. Si la persona no existe en la nube, el registro se da por recibido sin guardarlo."""
     node_auth.require_compatible(request)
     event = _leased_event(db, event_id, node)
     staff = node_auth.node_staff(db, node, via=True)
@@ -187,9 +189,77 @@ def node_records(event_id: int, body: dict, request: Request, db: Session = Depe
             continue
         db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind=kind, at=at,
                             old_value=(r.get("old_value") or None), new_value=(r.get("new_value") or None), detail=(str(r.get("detail"))[:200] if r.get("detail") else None)))
+        node_extra.apply_person_change_effect(db, event, kind, uid, at, r.get("new_value") or None)          # 0160: «deshacer registro» y fecha de nacimiento también se APLICAN (antes solo historial)
         saved_c += 1
     db.commit()
     return {"ok": True, "saved": {"print_logs": saved_p, "person_changes": saved_c}}
+
+
+@router.post("/node/events/{event_id}/extra")
+def node_extra_upload(event_id: int, body: dict, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(node_auth.require_node)):
+    """0160: lo que antes se quedaba en el servidor local: ediciones de datos de personas, movimientos de áreas, entregas de inventario, turnos (y su estado) y llamados.
+    Idempotente por llave natural (repetir un lote no duplica). Ver app/node_extra.py."""
+    node_auth.require_compatible(request)
+    event = _leased_event(db, event_id, node)
+    if node_extra.count(body) > 2000:
+        raise HTTPException(status_code=413, detail="Lote demasiado grande")
+    saved = node_extra.apply_all(db, event, body)
+    db.commit()
+    return {"ok": True, "saved": saved}
+
+
+def _store_backup(event_id: int, node_name: str, data: bytes, file_key: str = "") -> dict:
+    from app import local_backup
+    from app.database import SessionLocal
+    from app.storage import get_storage, normalize_key
+    with SessionLocal() as db:
+        event = db.get(Event, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+        if not event_lease.is_writer(event, node_name):
+            raise HTTPException(status_code=409, detail="Este evento no está asignado a este servidor local")
+        folder = local_backup.prefix(event.tenant_id, event.id, node_name)
+        st = get_storage()
+        if file_key:
+            key = folder + "files/" + normalize_key(file_key)
+            st.put(key, data)
+            return {"ok": True}
+        key = folder + utcnow().strftime("%Y%m%dT%H%M%SZ") + ".json.gz"
+        st.put(key, data)
+        local_backup.prune(st, folder)
+        db.add(AuditAction(actor_role="nodo", action="local_backup", entity="event", entity_id=str(event.id), entity_name=event.name, detail=f"Copia completa desde «{node_name}» ({len(data)} bytes)"))
+        db.commit()
+    log.info("local_backup event=%s bytes=%s", event_id, len(data))
+    return {"ok": True}
+
+
+@router.post("/node/events/{event_id}/backup")
+async def node_backup(event_id: int, request: Request, node: LocalNode = Depends(node_auth.require_node)):
+    """0160: COPIA COMPLETA del evento tal como está en el servidor local (gzip de JSON, app/local_backup.py). Se guarda en el almacenamiento privado (últimas 20 por servidor).
+    Async solo para leer el cuerpo crudo (como el webhook de pagos); el trabajo va en un hilo."""
+    from starlette.concurrency import run_in_threadpool
+    from app import local_backup
+    node_auth.require_compatible(request)
+    data = await request.body()
+    if len(data) > local_backup.MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Copia demasiado grande")
+    if data[:2] != b"\x1f\x8b":
+        raise HTTPException(status_code=400, detail="Copia vacía o dañada")
+    return await run_in_threadpool(_store_backup, event_id, node.name, data)
+
+
+@router.post("/node/events/{event_id}/backup-file")
+async def node_backup_file(event_id: int, request: Request, key: str, node: LocalNode = Depends(node_auth.require_node)):
+    """0160: un ARCHIVO del evento (documento, evidencia, foto…) que nombra la copia completa. Se guarda junto a ella, una vez."""
+    from starlette.concurrency import run_in_threadpool
+    from app import local_backup
+    node_auth.require_compatible(request)
+    if not key or ".." in key or len(key) > 500:
+        raise HTTPException(status_code=400, detail="Archivo no válido")
+    data = await request.body()
+    if len(data) > local_backup.MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+    return await run_in_threadpool(_store_backup, event_id, node.name, data, key)
 
 
 @router.post("/node/events/{event_id}/uploaded")
@@ -211,9 +281,10 @@ def node_release(event_id: int, body: dict, request: Request, db: Session = Depe
     if not isinstance(pending, int) or pending != 0:
         raise HTTPException(status_code=409, detail="Todavía hay datos pendientes de subir: no se puede pasar a internet")
     event_lease.mark_uploaded(event)
-    name = event.local_node_name
-    event_lease.release(event)
-    db.add(AuditAction(actor_id=node.created_by_id, actor_role="nodo", action="lease_release", entity="event", entity_id=str(event.id), entity_name=event.name, detail=f"Volvió a internet desde el servidor local «{name}» (sincronizado)"))
+    released = event_lease.leave(event, node.name)          # compartido: solo sale ESTE servidor; el evento vuelve a internet cuando sale el último (0160)
+    detail = (f"Volvió a internet desde el servidor local «{node.name}» (sincronizado)" if released
+              else f"El servidor local «{node.name}» devolvió su parte (sincronizado); el evento sigue en: {', '.join(event_lease.writers(event))}")
+    db.add(AuditAction(actor_id=node.created_by_id, actor_role="nodo", action="lease_release", entity="event", entity_id=str(event.id), entity_name=event.name, detail=detail[:500]))
     db.commit()
     log.info("node_release event=%s node=%s", event.id, node.id)
     return event_lease.serialize(event)

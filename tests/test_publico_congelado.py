@@ -21,19 +21,23 @@ ROOT = Path(__file__).resolve().parent.parent
 # opcional, una sola autorización) y gw-ruleta-display.css deja de anular el tamaño de «más datos» del ganador. Huella renovada.
 # 21-nov-2026, HOTFIX con orden expresa de Juan David (formulario del evento 14 en curso: «Error de red al subir el archivo» en celulares): direct-upload.js copia el archivo a memoria
 # al elegirlo y reintenta la subida con una URL nueva si la conexión se corta. Mismo flujo y mismos textos del formulario. Huella renovada.
+# 18-nov-2026, cambios pedidos por Juan David (revisados el 21-nov al dejar las pruebas en verde): escarapela digital con la plantilla de la física en el QR y el código de
+# la persona (digital_badge.html, badge-render.js); solo se imprime a quien ya está registrado salvo preimpresión y certificados, y sin hojas en blanco (badge_print.html,
+# badge-render.js; parámetros de impresión intactos: los fija tests/test_impresion_parametros_fijos.py); Términos y Reembolsos aprobados por la auditora sin marcas de borrador
+# y con quién cobra (legal_terminos.html, legal_reembolsos.html). Huellas renovadas.
 FROZEN = {
     "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
     "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
     "templates/aceptar_no_disponible.html": "a8de359cc787156269fb23be9d91729a0e1cf977168d1a4c7b5ee2131b2b01e4",
-    "templates/digital_badge.html": "f715c590d11cb2511a65a930cb7e5a835b2ebb805962c1c1b8269df154caf7f3",
+    "templates/digital_badge.html": "2bd1688a415cc438b66c98ee67a5c379725136d356eb9675d3dfd1674206d3e9",
     "templates/certificate_public.html": "bfdbb50504e97fdfe29cfa80e1a1236314f7d24ed75debc063026f1b1f8b3b49",
     "templates/legal_base.html": "3b9bd1eb2fabec5d3631ec3e8fa1f1fc384cadbb9d79e3099f8076b3c2dfc0b0",
     "templates/legal_privacidad.html": "04482353406d3bbe8df4d3929bb0e0c774d65656de3db0662608740a62b9f4a4",
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
-    "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
-    "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
+    "templates/legal_reembolsos.html": "215b6d5f98c0d835bd78a48238a3c7ccf5e5f2e44ea3f5162291e4e035f5b9aa",
+    "templates/legal_terminos.html": "ff29dbd98775aaa06a957d3500431a33efcfd425d5c09eb097229e09b1deb9c2",
     "templates/roulette_display.html": "0d095afc32fda8902a50a211250475ced849be613d8b62b170f86e64d10fc9b9",
-    "templates/badge_print.html": "6ed7e10d2dc70329eb20dccb1861e73eb167a27e2355d886617812e37f4e3f87",
+    "templates/badge_print.html": "2efb40dc61d70e449288323dc4136a10d2a8888d7f77a20744dc07cf4d953ce6",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
     "static/js/form-render.js": "87efcadfa55b3a73e363fcc293fd476112e108fbb4f0b183fcd34626f3036951",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
@@ -41,7 +45,7 @@ FROZEN = {
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",
     "static/css/fonts-propias.css": "ac7d385e4523d16f1e096040af3ec024beb81e283f04805597cd945821ec93f0",
     "static/js/cookie-notice.js": "3ba161fa3e997046272fdba4dbcab23582579669995ebc3a64bdd281cab33990",
-    "static/js/badge-render.js": "4b60e4ba9d0d2036f9851ddbf25a1f897c0218a47ffafe9d8e60e1f1b7d5182e",
+    "static/js/badge-render.js": "7850b512e994d26c5c760febd79f5b8a39fa100b9bfa20b428ebf4fbfd76249c",
     "static/js/roulette-render.js": "4987b437bc4bf570c9c9db64dfe61f572b0689645f00fde0425c08399737c143",
     "static/js/photo-capture.js": "d2d938ab04bba511f06b20981fb12e2a94321239e047a961d81eb41b88b55da4",
     "static/css/agrandir.css": "a3ca46e1a8b678f2f3a55b4663f529d6c975e81c9dc6bf5313b2c0c09ea4384d",

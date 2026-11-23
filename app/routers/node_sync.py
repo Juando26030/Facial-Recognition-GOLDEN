@@ -3,7 +3,7 @@ Quién: los mismos roles que llevan eventos a local (coordinador, comercial, adm
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import event_lease, node_sync, versioning
+from app import event_lease, node_sync, peer_changes, versioning
 from app.auth import require_role_or_any
 from app.database import get_db
 from app.models import Event, StaffUser
@@ -22,7 +22,8 @@ def _event_row(db: Session, e: Event) -> dict:
             "package_at": e.sync_package_at.isoformat() if e.sync_package_at else None,
             "last_upload_at": e.local_last_upload_at.isoformat() if e.local_last_upload_at else None,
             "last_attempt_at": e.sync_attempt_at.isoformat() if e.sync_attempt_at else None,
-            "error": e.sync_error, "pending": node_sync.pending_counts(db, e), "local_only": node_sync.local_only_changes(db, e)}
+            "error": e.sync_error, "pending": node_sync.pending_counts(db, e), "local_only": node_sync.local_only_changes(db, e),
+            "shared": bool(e.local_shared), "last_pull_at": peer_changes.last_pull_at(e)}
 
 
 @router.get("/node-sync/status")

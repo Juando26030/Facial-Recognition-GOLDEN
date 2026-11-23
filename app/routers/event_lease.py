@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import event_lease
-from app.auth import assert_event_tenant, require_role_or_any
+from app.auth import assert_event_tenant, require_role, require_role_or_any
 from app.database import get_db
 from app.models import AuditAction, Event, StaffUser
 
@@ -63,3 +63,68 @@ def release_lease(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     _audit(db, staff, "lease_release", event, f"Volvió a internet desde el servidor local «{node}»")
     db.commit()
     return event_lease.serialize(event)
+
+
+def _apply_mode(db: Session, event, staff: StaffUser, mode: str):
+    """Fija «Usará servidores locales» y cómo se conectan. `""` = apagado (un solo servidor local, como siempre); `cloud` = compartido con la nube como puente
+    (docs/23_EVENTO_COMPARTIDO_NUBE.md). Se puede encender aunque el evento ya esté en un servidor (ese pasa a ser el primero del grupo). Apagarlo solo con uno o ningún
+    servidor: si hay varios, cada uno debe «Pasar a internet» antes."""
+    mode = (mode or "").strip().lower()
+    if mode and mode not in event_lease.MODES:
+        raise HTTPException(status_code=400, detail="Forma de conexión desconocida")
+    if mode and mode not in event_lease.READY_MODES:
+        raise HTTPException(status_code=409, detail=f"«{event_lease.MODES[mode]}» todavía no está disponible. Por ahora usa «{event_lease.MODES['cloud']}».")
+    want = mode == "cloud"
+    if (event.local_mode or "") == mode and bool(event.local_shared) == want:
+        return event_lease.serialize(event)
+    if want and not event.local_shared:
+        event.local_shared = True
+        if event_lease.is_leased(event):
+            event_lease._join(event, event.local_node_name)
+    elif not want and event.local_shared:
+        if len(event_lease.writers(event)) > 1:
+            raise HTTPException(status_code=409, detail="El evento está en varios servidores locales: cada uno debe «Pasar a internet» antes de cambiar cómo se conectan.")
+        event.shared_nodes.clear()
+        event.local_shared = False
+    event.local_mode = mode or None
+    _audit(db, staff, "lease_shared", event, f"Usará servidores locales: {event_lease.MODES[mode]}" if mode else "Ya no usará varios servidores locales")
+    db.commit()
+    return event_lease.serialize(event)
+
+
+@router.post("/events/{event_id}/lease/mode")
+def set_mode(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """«Usará servidores locales» (Editar evento › Servidor local): {"mode": "" | "cloud" | "peer" | "hub"}."""
+    event = _event(db, event_id, staff, lock=True)
+    return _apply_mode(db, event, staff, str((data or {}).get("mode") or ""))
+
+
+@router.post("/events/{event_id}/lease/shared")
+def set_shared(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_who)):
+    """Compatibilidad (0160, primera versión): {"enabled": true} = puente por la nube; false = apagado."""
+    event = _event(db, event_id, staff, lock=True)
+    return _apply_mode(db, event, staff, "cloud" if (data or {}).get("enabled") else "")
+
+
+@router.get("/events/{event_id}/local-backups")
+def list_local_backups(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    """0160: copias completas que subieron los servidores locales de este evento (app/local_backup.py). Solo super_admin (llevan datos personales)."""
+    from app import local_backup
+    from app.storage import get_storage
+    event = _event(db, event_id, staff)
+    return {"backups": local_backup.listing(get_storage(), event.tenant_id, event.id)}
+
+
+@router.get("/events/{event_id}/local-backups/download")
+def download_local_backup(event_id: int, key: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("super_admin"))):
+    from app import audit_actions, local_backup
+    from app.storage import get_storage
+    event = _event(db, event_id, staff)
+    if not key.startswith(local_backup.prefix(event.tenant_id, event.id)) or ".." in key or not key.endswith(".json.gz"):
+        raise HTTPException(status_code=404, detail="Copia no encontrada")
+    st = get_storage()
+    if not st.exists(key):
+        raise HTTPException(status_code=404, detail="Copia no encontrada")
+    audit_actions.record(db, staff, "download", "local_backup", event.id, event.name, "Descargó una copia completa de un servidor local")
+    db.commit()
+    return st.response(key, filename=f"copia-local-{event.event_code or event.id}-{key.rsplit('/', 1)[-1]}", media_type="application/gzip")

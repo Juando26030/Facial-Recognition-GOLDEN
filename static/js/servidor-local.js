@@ -34,16 +34,18 @@
     return on ? `<span class="gw-badge gw-badge--ok gw-bulb">${icon('check')}Informe enviado</span>` : `<span class="gw-badge gw-badge--warn gw-bulb">${icon('info')}Informe pendiente</span>`;
   }
   function stateBadge(e) {
-    if (e.leased_elsewhere) return ` <span class="gw-badge gw-badge--warn" title="Este evento está en otro servidor local">En «${esc((e.local || {}).node_name)}»</span>`;
-    if (e.downloaded || e.leased_here) return ' <span class="gw-badge gw-badge--ok">En este servidor</span>';
+    const shared = (e.local || {}).shared ? ' <span class="gw-badge gw-badge--info" title="Varios servidores locales trabajan este evento a la vez y se ven entre sí por internet">Compartido</span>' : '';
+    if (e.leased_elsewhere) return ` <span class="gw-badge gw-badge--warn" title="Este evento está en otro servidor local">En «${esc((e.local || {}).node_name)}»</span>${shared}`;
+    if (e.downloaded || e.leased_here) return ' <span class="gw-badge gw-badge--ok">En este servidor</span>' + shared;
+    if (shared) return shared;
     return '';
   }
   // Misma tarjeta que la lista de Eventos (clases gw-event-card y p-cli__*); sin «Editar» ni cambio de estado: eso se hace dentro del evento, ya descargado.
   function row(e) {
     const where = [e.location, e.city].filter(Boolean).join(' · ');
-    const can = !e.downloaded && !e.leased_here && !e.leased_elsewhere;
+    const can = !e.downloaded && !e.leased_here && (!e.leased_elsewhere || e.can_join);          // compartido (0160): también se puede sumar si ya está en otro servidor
     const action = can
-      ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" data-download="${e.id}" data-name="${esc(e.name)}">${icon('download', 'gw-icon--sm')} Descargar a local</button>`
+      ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" data-download="${e.id}" data-name="${esc(e.name)}">${icon('download', 'gw-icon--sm')} ${e.can_join ? 'Sumarse (compartido)' : 'Descargar a local'}</button>`
       : (e.local_event_id ? `<a class="gw-btn gw-btn--primary gw-btn--sm p-cli__act" href="/kiosk/${e.local_event_id}">${icon('home', 'gw-icon--sm')} Ingresar</a>` : '');
     return `<div class="gw-card-row gw-event-card" aria-label="${esc(e.name)}">
       <div class="gw-card-row__head">

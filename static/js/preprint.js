@@ -3,11 +3,13 @@
    (templates/badge_print.html, parámetros inamovibles). Al terminar se pregunta si salieron bien y solo entonces se dejan marcadas como preimpresas. */
 (function () {
   'use strict';
-  const EID = window.EVENT_ID;
+  const ROOT = document.querySelector('main[data-event-id]');     // datos del evento en atributos (sin <script> en línea: CSP)
+  const EID = ROOT.dataset.eventId;
+  const ICONS = ROOT.dataset.gwIcons;
   const API = `/api/events/${EID}/preprint`;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const ico = (n, c) => `<svg class="gw-icon ${c || ''}" aria-hidden="true"><use href="${window.GW_ICONS}#i-${n}"/></svg>`;
+  const ico = (n, c) => `<svg class="gw-icon ${c || ''}" aria-hidden="true"><use href="${ICONS}#i-${n}"/></svg>`;
   const RENDER_CAP = 500;                                   // filas dibujadas (el resto se alcanza buscando o filtrando); «elegir todas» sí toma todas las que cumplen
   const PRINT_WINDOW = 'goldenweb_print';
 

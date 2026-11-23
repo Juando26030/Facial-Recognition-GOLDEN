@@ -112,6 +112,7 @@ def test_nobody_unregistered_prints_a_badge_except_through_preprint_and_certific
     _admin(client, factory)
     ev = factory.event("en_proceso")
     factory.person(ev, "1001", first_name="Ana")
+    testperson.ensure_for_event(db, ev)          # la fábrica no la crea (la API de crear evento sí)
     db.commit()
     r = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}")
     assert r.status_code == 403 and "aún no está registrado" in r.json()["detail"]

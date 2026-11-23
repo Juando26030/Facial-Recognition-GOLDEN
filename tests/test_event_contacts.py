@@ -39,7 +39,7 @@ def test_replace_copy_and_primary(db, factory):
     assert ec.primary(db, ev.id) == {"name": "Ana", "email": "ana@x.co", "phone": "301"}
     ec.replace(db, ev, [{"name": "Luis", "phone": "300", "email": "luis@x.co"}])
     assert ec.primary(db, ev.id)["email"] == "luis@x.co" and len(ec.list_for(db, ev.id)) == 1
-    other = _build(db, factory)
+    other = factory.event("creado")          # _build otra vez repetiría sus usuarios (nombre único)
     assert ec.copy_to(db, ev.id, other.id) == 1 and ec.list_for(db, other.id)[0]["is_primary"] is True
 
 

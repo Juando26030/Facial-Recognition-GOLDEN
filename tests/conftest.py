@@ -115,6 +115,19 @@ def _clean_tables(_database):
 
 
 @pytest.fixture(autouse=True)
+def _server_never_left_locked(monkeypatch, tmp_path):
+    """Bloqueo del servidor local (app/server_lock.py): `lock()` escribe SERVER_DISABLED en os.environ, en su caché de 10 s y en config/local.env. Una prueba que lo activa no puede dejar
+    cerradas a las siguientes («Este servidor local fue deshabilitado…»): cada prueba parte con el servidor abierto y con su propio local.env en una carpeta temporal."""
+    from app import server_lock
+    monkeypatch.setenv("LOCAL_ENV_FILE", str(tmp_path / "local.env"))
+    monkeypatch.delenv("SERVER_DISABLED", raising=False)
+    server_lock._cache.update(at=0.0, locked=False)
+    yield
+    os.environ.pop("SERVER_DISABLED", None)
+    server_lock._cache.update(at=0.0, locked=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_wompi_status_network(monkeypatch):
     """`GET quote` del formulario público consulta la página de estado PÚBLICA de Wompi (`wompi.service_problem`, https://wompi.statuspage.io): una prueba que depende de un servicio externo falla
     cuando Wompi reporta una incidencia («service» en la respuesta) o tarda en responder (timeout de 4 s). Aquí la caché de ese estado queda fija en «opera normal» y no hay red; las pruebas

@@ -30,6 +30,7 @@ def test_link_success_saves_syncs_and_starts(tmp_path, monkeypatch):
     f = tmp_path / "local.env"
     monkeypatch.setenv("LOCAL_ENV_FILE", str(f))
     monkeypatch.setenv("PRODUCTION_URL", "https://prod.example")
+    monkeypatch.setenv("SERVER_KEY", "GW-PRUEBA-LLAVE")          # 20-nov-2026: sin llave de producto no se vincula (la deja el instalador)
     monkeypatch.delenv("NODE_TOKEN", raising=False)
     calls = []
     monkeypatch.setattr(local_link, "_post", lambda url, body, timeout=20.0: (200, {"token": "gwn_t", "name": "Servidor local X"}))
@@ -44,6 +45,10 @@ def test_link_success_saves_syncs_and_starts(tmp_path, monkeypatch):
 def test_link_errors_are_plain(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCAL_ENV_FILE", str(tmp_path / "local.env"))
     monkeypatch.setenv("PRODUCTION_URL", "https://prod.example")
+    monkeypatch.delenv("SERVER_KEY", raising=False)
+    res = local_link.link(None, "ana", "clave")
+    assert res["ok"] is False and res["status"] == 403 and "llave de producto" in res["message"]          # sin llave: ni se intenta
+    monkeypatch.setenv("SERVER_KEY", "GW-PRUEBA-LLAVE")
     for status, expected in ((0, 503), (429, 429), (401, 401)):
         monkeypatch.setattr(local_link, "_post", lambda url, body, timeout=20.0, s=status: (s, {}))
         res = local_link.link(None, "ana", "mala")

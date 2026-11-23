@@ -49,7 +49,9 @@ def test_moving_to_won_closes_it_and_moving_back_reopens_it(client, factory, crm
     o = _opp(client, new_account(client)["id"])
     won = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Ganada"]["id"], "updated_at": o["updated_at"]}).json()
     assert won["outcome"] == "won" and won["closed_at"] and won["stage_name"] == "Ganada" and won["event_id"] is not None          # desde C4 ganar crea el cliente y el evento (tests/test_crm_ganada.py)
-    assert client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Negociación"]["id"]}).status_code == 409          # con evento no sale de «ganada»
+    # 16-nov-2026: sacarla de «ganada» archiva el evento recién creado y sin uso (en proceso o finalizado se niega con 409; ver app/crm/platform_link.leave_won)
+    back_from_won = client.post(f"/api/crm/opportunities/{o['id']}/move", json={"stage_id": st["Negociación"]["id"]})
+    assert back_from_won.status_code == 200 and back_from_won.json()["outcome"] == "open"
     o2 = _opp(client, new_account(client, "Hotel Ejemplo Dos")["id"], "Otra")          # perdida y reabrir se prueban con una que no ganó
     lost = client.post(f"/api/crm/opportunities/{o2['id']}/move", json={"stage_id": st["Perdida"]["id"], "lost_reason": "Precio"}).json()
     assert lost["outcome"] == "lost" and lost["lost_reason"] == "Precio" and lost["closed_at"]

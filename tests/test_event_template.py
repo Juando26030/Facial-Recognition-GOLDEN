@@ -220,7 +220,8 @@ def test_switches_share_the_parametros_columns(admin, factory, db):
     coord = factory.staff("coordinador", "coord")
     com = factory.staff("comercial", "com")
     tpl = admin.get("/api/event-template").json()
-    place = [f["key"] for f in tpl["fields"] if f["type"] == "switch"]
+    placed = {k for sec in tpl["creation_layout"]["sections"] for k in sec["keys"]}          # la plantilla de fábrica ya trae algunos interruptores en la vista de creación
+    place = [f["key"] for f in tpl["fields"] if f["type"] == "switch" and f["key"] not in placed]
     _make_template(admin, place=place)
     p = _payload(coord.id, commercial_staff_id=com.id)
     r = admin.post("/api/events", json={**p, "facial_enabled": True, "inventory_enabled": True, "areas_enabled": True, "digital_badge_enabled": True})

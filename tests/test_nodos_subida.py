@@ -113,6 +113,7 @@ def local_env(monkeypatch):
             return {"ok": True}
         return {}
     monkeypatch.setattr(node_sync, "_call", fake)
+    monkeypatch.setattr(node_sync, "push_backup", lambda db, ev: {"copy": False, "files": 0})          # la copia completa (0160) se prueba en test_evento_compartido.py
     return calls
 
 
@@ -129,7 +130,7 @@ def _local_event(db, factory):
 
 def test_upload_sends_new_people_and_existing_checkins_then_marks_watermarks(db, factory, local_env):
     ev = _local_event(db, factory)
-    assert node_sync.pending_counts(db, ev) == {"persons": 1, "logs": 1, "prints": 0, "changes": 0, "total": 2}
+    assert node_sync.pending_counts(db, ev) == {"persons": 1, "logs": 1, "prints": 0, "changes": 0, "extra": 0, "total": 2}
     out = node_sync.upload_event(db, ev, force=True)
     assert out == {"ok": True, "pending": 0, "error": None}
     paths = [c[1] for c in local_env]

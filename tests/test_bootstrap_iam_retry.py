@@ -98,4 +98,7 @@ def test_bootstrap_loads_the_library_and_no_binding_function_calls_gcloud_direct
     assert 'project_bind "$SA_DEPLOYER" "projects/${PROJECT_ID}/roles/${OPS_ROLE}"' in b
     assert 'bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "$LISTER"' in b and 'bucket_bind "$BACKUP_BUCKET" "$SA_APP" "$LISTER"' in b
     created = re.findall(r"gcloud iam roles create (\"?\$?\w+\"?)", b)
-    assert sorted(c.strip('"') for c in created) == ["$OPS_ROLE", "goldenBackupLister"]          # no hay un tercer rol personalizado sin cubrir
+    assert sorted(c.strip('"') for c in created) == ["$OPS_ROLE", "goldenBackupLister", "goldenBackupReader", "goldenOffsiteState"]   # no hay otro rol personalizado sin cubrir
+    # copia semanal: el lector pasa por bucket_bind (con reintentos); el de estado lleva condición IAM (bucket_bind no la maneja), espera la propagación al crearse y su enlace no detiene el bootstrap
+    assert 'bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "projects/${PROJECT_ID}/roles/goldenBackupReader"' in b
+    assert "goldenOffsiteState --project \"$PROJECT_ID\"" in b and "sleep 45" in b

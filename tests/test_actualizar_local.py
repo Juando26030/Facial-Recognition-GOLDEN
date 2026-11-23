@@ -14,6 +14,7 @@ OLD = {"configured": True, "status": "desactualizada", "message": "x", "local": 
 @pytest.fixture
 def local(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCAL_SERVER", "1")
+    monkeypatch.setenv("NODE_TOKEN", "gwn_test")          # servidor ya vinculado (sin vincular, el primer ingreso intenta vincularse con producción)
     monkeypatch.setenv("LOCAL_UPDATE_DIR", str(tmp_path))
     monkeypatch.setattr(versioning, "check", lambda force=False: OLD)
     monkeypatch.setattr(lu, "fetch_manifest", lambda timeout=4.0: dict(GOOD))
