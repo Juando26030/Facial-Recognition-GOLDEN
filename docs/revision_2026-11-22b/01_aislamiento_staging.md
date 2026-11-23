@@ -23,7 +23,9 @@ Cuenta ficticia: empresa «PRUEBA Empresa Ficticia» (plan Básico) y su adminis
 | 5 | `GET /api/system-alerts` | destinatarios, personal elegible (12) y avisos de Golden | 403 para cuentas ajenas |
 | 6 | `POST /api/events` | aceptó como «comercial» a una persona de Golden | validación por cliente al crear y editar (`10e633e`) |
 
-Pruebas de texto: `tests/test_aislamiento_listas_2026_11_23.py` (6). Falta re-verificar en staging tras redesplegar.
+Pruebas de texto: `tests/test_aislamiento_listas_2026_11_23.py` (6).
+
+**Re-verificado en staging (`b0cc145`, misma cuenta ficticia):** coordinadores 1 (solo ella misma), comerciales 0, servidores 0, formularios/eventos 1/1 (los propios), alertas 403. Las filtraciones 1-5 quedaron cerradas. La 6 (asignar comercial de Golden) no se pudo repetir en vivo porque el plan Básico ya agotó su evento del mes; queda cubierta solo por la prueba de texto.
 
 ## Lo que sigue abierto (plan, no improvisado)
 - **Catálogos globales sin dueño por empresa:** almacén (productos, unidades, novedades), catálogo de inventario, tipos de evento, estados y plantilla de evento se ven iguales para todas las empresas. Decidir si son de la plataforma (compartidos) o de cada empresa.
