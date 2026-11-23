@@ -123,6 +123,8 @@ def consent_click(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     event_archive.require_data_open(event, staff)
     if not event.precalculo_autorizado:
         raise HTTPException(status_code=409, detail="Este evento no tiene autorizado el pre-cálculo de vectores: identifica a la persona por cédula o QR")
+    if reason := biometric_setup.annex_block_reason(event):
+        raise HTTPException(status_code=409, detail=reason)
     t = legal_texts.render(event)
     if t["blocked"]:
         raise HTTPException(status_code=503, detail="El texto de autorización aún tiene datos de la empresa sin completar")
@@ -274,7 +276,7 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])
-    if event.precalculo_autorizado and not (event.facial_enabled and event.controller_mode == "tercero" and event.client_photos_before):
+    if event.precalculo_autorizado and not (event.facial_enabled and event.client_photos_before):
         event.precalculo_autorizado = False
     biometric_setup.apply_precalc_default(event)          # modo de un clic por defecto si ya cumple todo y tiene el anexo firmado
     _hr = event_history.record(db, event, _hb, staff, "switch")

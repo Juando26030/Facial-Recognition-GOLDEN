@@ -62,8 +62,15 @@ def test_historial_de_fotos_se_conservan_las_dos():
     assert "editModalSelfiePhoto" in d and "which=${which}" in d
 
 
-def test_modo_un_clic_por_defecto_solo_con_anexo():
-    b = (R / "app/biometric_setup.py").read_text(encoding="utf-8").split("def apply_precalc_default")[1].split("def facial_blockers")[0]
-    assert "precalc_blockers(event, event.precalculo_anexo_ref, event.precalculo_anexo_fecha, bool(event.precalculo_garantia))" in b and "return False" in b          # sin anexo/tercero/fotos no se enciende
-    assert "apply_precalc_default(event)" in (R / "app/routers/parametros.py").read_text(encoding="utf-8")
-    assert "apply_precalc_default(event)" in (R / "app/routers/consents.py").read_text(encoding="utf-8")
+def test_anexo_bloquea_la_camara_y_se_sube_en_parametros():
+    """23-nov-2026: modo «acepto» por defecto con fotos del cliente; el archivo del anexo se sube en Parámetros y sin él la cámara queda bloqueada con el motivo."""
+    b = (R / "app/biometric_setup.py").read_text(encoding="utf-8")
+    assert "def annex_block_reason" in b and "event.facial_enabled and event.client_photos_before and not has_annex(event)" in b and "ANNEX_MISSING" in b
+    assert "event.facial_enabled and event.client_photos_before):" in b.split("def apply_precalc_default")[1]          # ya no exige tercero ni anexo para encender el clic
+    api, con, par = [(R / f).read_text(encoding="utf-8") for f in ("app/routers/api.py", "app/routers/consents.py", "app/routers/parametros.py")]
+    assert "biometric_setup.annex_block_reason(event)" in api.split("def recognize(")[1][:2500]          # el servidor no reconoce sin anexo
+    assert "annex_block_reason(event)" in con.split("def consent_click")[1][:900]
+    assert "facial-annex" in par and "def upload_facial_annex" in par and "ANNEX_MAX" in par
+    tpl = (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert 'id="annexUpload"' in tpl and "Cámara bloqueada" in tpl and 'id="pcSave"' not in tpl
+    assert "FACIAL_ANNEX_BLOCK" in (R / "templates/kiosk_registro.html").read_text(encoding="utf-8") and "FACIAL_ANNEX_BLOCK" in (R / "static/js/app.js").read_text(encoding="utf-8")

@@ -217,6 +217,14 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <button type="button" id="ccSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar y revisar</button>
             </div>
             <div id="bsSummary" class="gw-alert" role="status" aria-live="polite"></div>
+            {% if event.facial_enabled and event.client_photos_before and not local_server %}
+            <div class="gw-group__item" id="annexBox">
+              <div class="gw-item-head"><h4>Anexo firmado del cliente</h4>{% call ayuda('ay_anexo', 'Anexo firmado') %}Con fotos entregadas por el cliente, la persona entra con un solo clic en «Acepto» y su rostro se compara con esas fotos. Para eso el cliente firma un anexo con las declaraciones, garantías e indemnidad. Sin el archivo, la cámara queda bloqueada.{% endcall %}</div>
+              <div id="annexState" class="gw-alert {{ 'gw-alert--ok' if event.precalculo_anexo_ref else 'gw-alert--warn' }}" role="status">{{ ic('info') }}<div class="gw-alert__body">{% if event.precalculo_anexo_ref %}<b>Anexo cargado:</b> {{ event.precalculo_anexo_ref }} ({{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}). <a href="/api/events/{{ event.id }}/facial-annex">Descargar</a>{% else %}<b>Cámara bloqueada:</b> falta el anexo firmado. Sube el archivo para poder registrar con rostro; mientras tanto se ingresa por cédula o QR.{% endif %}</div></div>
+              <div class="gw-field"><label class="gw-label" for="annexFile">Anexo (PDF, Word, Excel o imagen; máximo 10 MB)</label><input class="gw-input" type="file" id="annexFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div>
+              <button type="button" id="annexUpload" class="gw-btn gw-btn--secondary gw-btn--sm">Subir anexo</button>
+            </div>
+            {% endif %}
           </div>
 
           {% if staff_role == "super_admin" %}
@@ -225,16 +233,6 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div data-psave="bbp">
               <label class="gw-check gw-check--top"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %}> <span>Permitir imprimir la foto del rostro en la escarapela</span></label>
               <p class="gw-hint">Apagado (recomendado): el recuadro de la foto sale vacío, en la impresa y en la digital.</p>
-            </div>
-            <div class="gw-sub gw-item-head"><h5>Pre-cálculo de vectores faciales</h5>{% call ayuda('ay_precalculo', 'Pre-cálculo de rostros') %}Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.{% endcall %}</div>
-            <div data-psave="pc" class="gw-stack">
-              <div class="gw-form-grid">
-                <div class="gw-field"><label class="gw-label" for="pcRef">Referencia del anexo firmado</label><input class="gw-input" type="text" id="pcRef" value="{{ event.precalculo_anexo_ref or '' }}"></div>
-                <div class="gw-field"><label class="gw-label" for="pcDate">Fecha del anexo</label><input class="gw-input" type="date" id="pcDate" value="{{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}"></div>
-              </div>
-              <label class="gw-check gw-check--top"><input type="checkbox" id="pcGarantia" {% if event.precalculo_garantia %}checked{% endif %}> <span>El cliente garantiza por escrito que cada titular dio su autorización previa, expresa e informada, y asume la indemnidad</span></label>
-              <label class="gw-check"><input type="checkbox" id="pcOn" {% if event.precalculo_autorizado %}checked{% endif %}> Pre-cálculo autorizado en este evento</label>
-              <button type="button" id="pcSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar pre-cálculo</button>
             </div>
           </div>
           {% endif %}
@@ -1153,13 +1151,19 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     if (bbp) GWParams.register({ key: 'bbp', label: 'Foto biométrica en la escarapela', order: 25, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/badge-bio-photo`, { enabled: bbp.checked }), 'No se pudo guardar la foto biométrica en la escarapela');
     } });
-    const pcSave = document.getElementById('pcSave');
-    if (pcSave) {
-        GWParams.register({ key: 'pc', label: 'Pre-cálculo de vectores', order: 30, save: async () => {
-            await must(await jsonPut(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value, garantia: document.getElementById('pcGarantia').checked }), 'No se pudo guardar el pre-cálculo');
-        } });
-        pcSave.addEventListener('click', () => GWParams.saveKey('pc'));
-    }
+    const annexUp = document.getElementById('annexUpload');
+    if (annexUp) annexUp.addEventListener('click', async () => {          // el anexo se sube al instante (no espera a «Guardar»)
+        const f = document.getElementById('annexFile').files[0];
+        if (!f) { showToast('Elige primero el archivo del anexo', 'error'); return; }
+        const fd = new FormData(); fd.append('file', f);
+        annexUp.disabled = true;
+        try {
+            const r = await fetch(`/api/events/${window.EVENT_ID}/facial-annex`, { method: 'POST', body: fd });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.detail || 'No se pudo subir el anexo');
+            showToast('Anexo cargado: la cámara del evento queda habilitada', 'success'); setTimeout(() => location.reload(), 700);
+        } catch (e) { showToast(e.message, 'error'); } finally { annexUp.disabled = false; }
+    });
 
     // Escarapela digital y certificados: activar/desactivar queda pendiente; al guardar se recarga la pantalla (aparece el editor del correo, el campo «Certificado», el diseñador...).
     GWParams.register({ key: 'digital', label: 'Escarapela digital', order: 36, reload: true, save: async () => {

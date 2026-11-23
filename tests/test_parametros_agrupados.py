@@ -13,7 +13,7 @@ SAVE_JS = pathlib.Path("static/js/params-save.js").read_text(encoding="utf-8")
 
 GROUPS = ["registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]
 # clave del guardado global -> (id del botón por bloque que sigue en el DOM, oculto, o None si el bloque no tenía botón propio)
-BLOCKS = {"idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "pc": "pcSave", "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
+BLOCKS = {"idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
           "mail": "mailSave", "mod_areas": None, "mod_inventory": None, "logo": None, "categories": "saveCategoriesBtn", "fields": "saveParamsBtn", "stations": None}
 
 
@@ -97,7 +97,7 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     login(client, "root")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert page.count('role="tabpanel"') == 8 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
-    for ident in ("idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "pcSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
+    for ident in ("idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
                   "printSettingsCard", "psSave", "psReset", "digitalEnabled", "privacyCard", "prTabla", "areasEnabled", "inventoryEnabled", "logoFile", "categoriesBox",
                   "saveCategoriesBtn", "paramsTableBody", "saveParamsBtn", "addOptionalFieldBtn"):
         assert f'id="{ident}"' in page, ident

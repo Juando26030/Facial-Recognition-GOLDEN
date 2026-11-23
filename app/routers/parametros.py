@@ -10,6 +10,7 @@ comportamiento tolerante de siempre; forzar esto ahí arriesgaba romper cargas r
 incompletos que hoy funcionan.
 """
 import io
+from datetime import date
 import json
 import os
 import re
@@ -443,6 +444,39 @@ def set_idle_minutes(
     event.idle_minutes = value
     db.commit()
     return {"idle_minutes": event.idle_minutes, "general_minutes": idle.general_minutes()}
+
+
+_ANNEX_ROLES = require_role_excluding("coordinador", ("comercial",))
+ANNEX_MAX = 10 * 1024 * 1024
+
+
+@router.post("/events/{event_id}/facial-annex")
+def upload_facial_annex(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(_ANNEX_ROLES)):
+    """Anexo firmado del cliente (PDF, Word, Excel o imagen). Sin él la cámara del evento queda bloqueada (`biometric_setup.annex_block_reason`)."""
+    event = get_event_for_staff(event_id, db, staff)
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(file.filename or "anexo"))[:100]
+    if not name.lower().endswith(biometric_setup.ANNEX_EXTS):
+        raise HTTPException(status_code=400, detail="El anexo debe ser PDF, Word, Excel o imagen")
+    content = file.file.read(ANNEX_MAX + 1)
+    if not content or len(content) > ANNEX_MAX:
+        raise HTTPException(status_code=400, detail="El archivo está vacío o pesa más de 10 MB")
+    old = biometric_setup.annex_key(event) if event.precalculo_anexo_ref else None
+    event.precalculo_anexo_ref, event.precalculo_anexo_fecha, event.precalculo_garantia = name, date.today(), True
+    get_storage().put(biometric_setup.annex_key(event), content)
+    if old and old != biometric_setup.annex_key(event):
+        get_storage().delete(old)
+    biometric_setup.apply_precalc_default(event)
+    db.commit()
+    return {"anexo": name, "fecha": event.precalculo_anexo_fecha.isoformat(), "bloqueado": biometric_setup.annex_block_reason(event)}
+
+
+@router.get("/events/{event_id}/facial-annex")
+def download_facial_annex(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_ANNEX_ROLES)):
+    event = get_event_for_staff(event_id, db, staff)
+    if not biometric_setup.has_annex(event) or not get_storage().exists(biometric_setup.annex_key(event)):
+        raise HTTPException(status_code=404, detail="Este evento no tiene anexo")
+    return Response(content=get_storage().get(biometric_setup.annex_key(event)), media_type="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{event.precalculo_anexo_ref}"', "Cache-Control": "private, no-store"})
 
 
 @router.put("/events/{event_id}/facial-enabled")

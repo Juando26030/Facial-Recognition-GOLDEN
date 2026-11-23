@@ -193,6 +193,10 @@
         {% if event.facial_enabled %}
         <!-- PESTAÑA: ESCÁNER Y EDICIÓN EN VIVO (solo si el evento tiene reconocimiento facial activo) -->
         <div id="scanner" class="section active">
+            {% if event.client_photos_before and not (event.precalculo_anexo_ref and event.precalculo_anexo_fecha) %}
+            <p class="gw-alert gw-alert--warn" role="alert">{{ ic('alert') }}<span class="gw-alert__body"><b>Cámara bloqueada:</b> falta el anexo firmado del cliente. Súbelo en <a href="/kiosk/{{ event.id }}/parametros">Parámetros › Reconocimiento facial</a>. Mientras tanto, ingresa por cédula o QR.</span></p>
+            <script>window.FACIAL_ANNEX_BLOCK = true;</script>
+            {% endif %}
             {% if event.face_door_enabled and event.facial_enabled %}
             <div class="gw-registro__doorlink">
                 <label class="gw-check"><input type="checkbox" id="openDoorScreen"> Pantalla de autoservicio «Entrar con mi rostro»</label>

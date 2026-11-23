@@ -78,12 +78,13 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const altLink = document.getElementById('bioAltLink');
         if (altLink) altLink.addEventListener('click', goCedula);
-        const cameraOn = () => { setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); startCamera(); };
+        const cameraOn = () => { if (window.FACIAL_ANNEX_BLOCK) { identMsg.textContent = 'Cámara bloqueada: falta el anexo firmado del cliente (Parámetros › Reconocimiento facial).'; return; } setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); startCamera(); };
         const cameraOff = () => { stopCamera(); setOff(cameraBox, true); if (scanBtn) scanBtn.disabled = true; setOff(ident, false); identInput.value = ''; clickToken = ''; };
         afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
         resetGate = () => { cameraOff(); setTimeout(startClickScreen, 0); };
         async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
             if (!gate || !eventOpen) return;
+            if (window.FACIAL_ANNEX_BLOCK) { identMsg.textContent = 'Cámara bloqueada: falta el anexo firmado del cliente. Ingresa por cédula o QR.'; return; }
             const block = await gate.loadBlock();
             if (!block || !block.click_mode) return;
             identMsg.textContent = '';

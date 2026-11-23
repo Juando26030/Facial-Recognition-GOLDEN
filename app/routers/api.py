@@ -727,6 +727,8 @@ def recognize(
     se registra solo, ni con autoregistro ni con `confirm`: el operador elige a la persona (el registro se confirma desde su ficha)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
+    if reason := biometric_setup.annex_block_reason(event):          # cámara bloqueada hasta subir el anexo
+        raise HTTPException(status_code=409, detail=reason)
     if match_token:
         payload = faces.read_match_payload(match_token, event.id, staff.id)
         user = db.get(User, (payload["u"], event.tenant_id)) if payload else None

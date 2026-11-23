@@ -54,12 +54,30 @@ def precalc_blockers(event: Event, anexo_ref: Optional[str], anexo_fecha, garant
     return out
 
 
+ANNEX_EXTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg")
+ANNEX_MISSING = "Falta el anexo firmado del cliente (declaraciones, garantías e indemnidad): súbelo en Parámetros › Reconocimiento facial para usar la cámara. Mientras tanto, ingresa por cédula o QR."
+
+
+def has_annex(event: Event) -> bool:
+    return bool((event.precalculo_anexo_ref or "").strip() and event.precalculo_anexo_fecha)
+
+
+def annex_key(event: Event) -> str:
+    """Dónde vive el archivo del anexo (nunca bajo el prefijo biométrico: no es un dato biométrico y no se purga con los rostros)."""
+    return f"{event.tenant_id}/event_annex/{event.id}/{event.precalculo_anexo_ref}"
+
+
+def annex_block_reason(event: Event) -> Optional[str]:
+    """23-nov-2026: con rostro y fotos entregadas por el cliente, la cámara queda BLOQUEADA hasta que se suba el anexo. None = no hay bloqueo."""
+    if event.facial_enabled and event.client_photos_before and not has_annex(event):
+        return ANNEX_MISSING
+    return None
+
+
 def apply_precalc_default(event: Event) -> bool:
-    """23-nov-2026 (pedido de Juan David): al activar el modo facial el «un clic y rostro» (pre-cálculo autorizado) se enciende solo, PERO únicamente si el evento ya cumple lo que exige la auditora: tercero, fotos del
-    cliente antes y el anexo firmado ya guardado (referencia, fecha y garantía). Sin anexo NO se enciende (lo fija un super_admin en Parámetros): así no se salta la compuerta legal. True si lo encendió."""
-    if event.precalculo_autorizado or not event.facial_enabled:
-        return False
-    if precalc_blockers(event, event.precalculo_anexo_ref, event.precalculo_anexo_fecha, bool(event.precalculo_garantia)):
+    """23-nov-2026 (pedido de Juan David): al activar el modo facial con fotos del cliente, el modo «acepto» de un clic (pre-cálculo autorizado) se enciende solo. Lo que lo condiciona es el archivo del anexo
+    (`annex_block_reason`): sin él la cámara no abre. True si lo encendió."""
+    if event.precalculo_autorizado or not (event.facial_enabled and event.client_photos_before):
         return False
     event.precalculo_autorizado = True
     return True
