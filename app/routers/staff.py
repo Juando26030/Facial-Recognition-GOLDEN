@@ -93,7 +93,10 @@ def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(
     """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
     poblar el selector de 'coordinador asignado' al crear/editar un evento. Incluye a quien tenga
     'coordinador' como rol PRIMARIO, SECUNDARIO o sumado (Fase 15: doble rol coordinador+comercial), al director de coordinadores y a los administradores (17-nov-2026)."""
-    coords = coordination.coordinator_candidates(db)          # el coordinador temporal (16-nov-2026) no se asigna como coordinador de un evento: se administra desde «Usuarios del evento»
+    coords = coordination.coordinator_candidates(db)
+    if staff_tenant_enforced(staff):          # 23-nov-2026 (Fase 4): una cuenta de otra empresa no ve al personal de Golden
+        coords = [c for c in coords if c.tenant_id == staff.tenant_id]
+    # el coordinador temporal (16-nov-2026) no se asigna como coordinador de un evento: se administra desde «Usuarios del evento»
     return [{"id": c.id, "username": c.username, "full_name": c.full_name, "roles": sorted(effective_roles(c))} for c in coords]
 
 
@@ -105,7 +108,10 @@ def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(r
     commercials = db.query(StaffUser).filter(
         or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
         StaffUser.is_active == True, StaffUser.archived_at.is_(None),
-    ).all()
+    )
+    if staff_tenant_enforced(staff):          # 23-nov-2026 (Fase 4): una cuenta de otra empresa no ve al personal de Golden
+        commercials = commercials.filter(StaffUser.tenant_id == staff.tenant_id)
+    commercials = commercials.all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in commercials]
 
 

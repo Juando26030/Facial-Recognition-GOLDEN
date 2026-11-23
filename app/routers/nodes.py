@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app import event_lease, node_auth, node_extra, server_keys, versioning
 from app.auth import require_role
+from app.tenant_scope import staff_tenant_enforced
 from app.database import get_db
 from app.models import AuditAction, Event, EventLocalNode, LocalNode, LocalServerKey, PersonChange, PrintLog, StaffUser, User
 from app.routers import api
@@ -30,7 +31,10 @@ def _row(n: LocalNode) -> dict:
 
 @router.get("/nodes")
 def list_nodes(db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
-    return {"nodes": [_row(n) for n in db.query(LocalNode).order_by(LocalNode.created_at.desc(), LocalNode.id.desc()).all()]}
+    q = db.query(LocalNode)
+    if staff_tenant_enforced(staff):          # 23-nov-2026 (Fase 4): una cuenta de otra empresa solo ve los servidores de su cliente
+        q = q.filter(LocalNode.tenant_id == staff.tenant_id)
+    return {"nodes": [_row(n) for n in q.order_by(LocalNode.created_at.desc(), LocalNode.id.desc()).all()]}
 
 
 @router.post("/nodes")

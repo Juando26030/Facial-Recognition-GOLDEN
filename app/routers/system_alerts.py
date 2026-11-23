@@ -6,13 +6,23 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import audit_actions, jobs, mass_delete
-from app.auth import require_role
+from app.auth import get_current_staff, require_role
+from app.tenant_scope import staff_tenant_enforced
 from app.database import get_db
 from app.models import AlertRecipient, StaffUser, SystemAlert
 from app.staff_credentials import valid_email
 from app.timeutil import utcnow
 
-router = APIRouter()
+
+
+def _solo_golden(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+    """Las alertas de borrado masivo son de toda la plataforma (destinatarios y avisos de Golden): una cuenta de otra empresa no las ve ni las cambia (23-nov-2026, Fase 4)."""
+    if staff_tenant_enforced(staff):
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+    return staff
+
+
+router = APIRouter(dependencies=[Depends(_solo_golden)])
 ELIGIBLE_ROLES = ("coordinador", "comercial", "admin", "super_admin")
 
 

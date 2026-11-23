@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import audit_actions, payment_accounts as pa, public_slug, publicurl, wompi
 from app.auth import require_role
+from app.tenant_scope import staff_tenant_enforced
 from app.database import get_db
 from app.models import Event, FormPayment, PaymentAccount, StaffUser, WebForm
 from app.timeutil import utcnow
@@ -180,9 +181,16 @@ def payment_link(account_id: int, data: dict, db: Session = Depends(get_db), sta
 def forms_overview(request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Formularios (no archivados) y su cuenta, para asignarla y sacar su QR; más los eventos, para elegir a cuál pertenece una cuenta nueva."""
     out = []
-    rows = db.query(WebForm, Event).join(Event, Event.id == WebForm.event_id).filter(WebForm.archived_at.is_(None)).order_by(Event.id.desc(), WebForm.id).limit(500).all()
+    scoped = staff_tenant_enforced(staff)          # 23-nov-2026 (Fase 4): una cuenta de otra empresa solo ve los eventos y formularios de su cliente
+    fq = db.query(WebForm, Event).join(Event, Event.id == WebForm.event_id).filter(WebForm.archived_at.is_(None))
+    if scoped:
+        fq = fq.filter(Event.tenant_id == staff.tenant_id)
+    rows = fq.order_by(Event.id.desc(), WebForm.id).limit(500).all()
     for form, ev in rows:
         out.append({"id": form.id, "event_id": ev.id, "event": ev.name, "name": form.name, "payment_account_id": form.payment_account_id,
                     "url": public_slug.form_link(str(request.base_url), ev, form)})
-    events = db.query(Event.id, Event.name).filter(Event.archived_at.is_(None)).order_by(Event.id.desc()).limit(500).all()
+    eq = db.query(Event.id, Event.name).filter(Event.archived_at.is_(None))
+    if scoped:
+        eq = eq.filter(Event.tenant_id == staff.tenant_id)
+    events = eq.order_by(Event.id.desc()).limit(500).all()
     return {"forms": out, "events": [{"id": i, "name": n} for i, n in events], "generated_at": utcnow().isoformat()}
