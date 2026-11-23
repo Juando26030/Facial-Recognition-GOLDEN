@@ -11,7 +11,7 @@ LEGAL = ["legal_base.html", "legal_privacidad.html", "legal_privacidad_v11.html"
 # Páginas que se abren sin sesión y no deben salir en buscadores.
 NOINDEX = ["login.html", "password.html", "ingreso_espera.html", "certificado_local.html", "form_public.html", "form_stats.html", "aceptar.html", "aceptar_no_disponible.html",
            "digital_badge.html", "certificate_public.html", "entrega.html", "turno_public.html", "roulette_display.html", "kiosk_autoregistro.html", "kiosk_tv.html",
-           "kiosk_turnos_tv.html", "kiosk_estadisticas.html", "instalar.html", "_contact_public_head.html"]
+           "kiosk_turnos_tv.html", "kiosk_estadisticas.html", "_contact_public_head.html"]
 
 
 def _read(name: str) -> str:

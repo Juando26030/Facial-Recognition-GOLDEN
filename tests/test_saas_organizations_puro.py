@@ -146,19 +146,15 @@ def test_platform_routes_are_sync_and_super_admin_only():
     for fn in routes:
         assert "require_super_admin" in ast.unparse(fn.args), fn.name
     main = _read("app/main.py")
-    assert "_include(platform_router.router)" in main and "_include(platform_router.pages)" in main
+    assert "_include(platform_router.router)" in main
     page = main.split('@app.get("/plataforma")')[1].split("@app.get(")[0]
     assert '_require_page_role(request, "super_admin")' in page and 'name="plataforma.html"' in page
 
 
-def test_install_route_closes_itself_and_never_opens_on_a_local_server():
-    src = _read("app/routers/platform.py")
-    fn = src.split("def _install_open")[1].split("\ndef ")[0]
-    assert "localmode.is_local_server()" in fn and "StaffUser.is_active.is_(True)" in fn
-    post = src.split('@pages.post("/instalar")')[1]
-    assert "password_problem(password, username, strict=True)" in post and "hmac.compare_digest" in post and 'role="super_admin"' in post
-    assert "LOCK TABLE staff_users IN SHARE ROW EXCLUSIVE MODE" in post          # bloqueo de transacción (pooler de Neon): nunca dos primeros dueños
-    assert "temp_password" not in post          # aquí la contraseña la escribe la persona; nunca se devuelve
+def test_install_route_was_retired():
+    """/instalar se retiró el 22-nov-2026 (decisión de Juan David): el primer super_admin se crea con scripts/create_staff_user.py."""
+    assert "/instalar" not in _read("app/routers/platform.py").replace("(/instalar) se retiró", "") and "platform_router.pages" not in _read("app/main.py")
+    assert not (ROOT / "templates/instalar.html").exists() and not (ROOT / "static/js/instalar.js").exists()
 
 
 def test_event_creation_checks_the_monthly_limit_before_creating_anything():
@@ -168,7 +164,7 @@ def test_event_creation_checks_the_monthly_limit_before_creating_anything():
     assert check < body.index("event_codes.next_code(db)") and "status_code=403, detail=limit_message" in body
 
 
-@pytest.mark.parametrize("template", ["templates/plataforma.html", "templates/instalar.html"])
+@pytest.mark.parametrize("template", ["templates/plataforma.html"])
 def test_pages_follow_the_frontend_rules(template):
     html = _read(template)
     assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), "sin scripts en línea (CSP)"
@@ -181,7 +177,7 @@ def test_pages_follow_the_frontend_rules(template):
         assert f'for="{field}"' in html, f"el campo {field} no tiene etiqueta"
 
 
-@pytest.mark.parametrize("script", ["static/js/plataforma.js", "static/js/instalar.js"])
+@pytest.mark.parametrize("script", ["static/js/plataforma.js"])
 def test_scripts_use_toast_helpers_and_never_innerhtml(script):
     js = _read(script)
     assert not re.search(r"\b(alert|confirm|prompt)\s*\(", re.sub(r"show(Confirm|Prompt)\s*\(", "", js))
@@ -208,7 +204,6 @@ def test_isolation_switches_are_written_down_as_off_with_the_warning():
     assert re.search(r"^ENFORCE_STAFF_TENANT=0$", env, re.M) and re.search(r"^ENFORCE_STAFF_EVENT_SCOPE=0$", env, re.M)
     for text in (yaml, env):
         assert re.search(r"DEBEN ir en \"?1\"? ANTES de dar una cuenta a OTRA empresa", text)
-    assert re.search(r"^# INSTALL_TOKEN=$", env, re.M)          # el código de instalación es un secreto: solo el nombre
 
 
 def test_the_event_only_coordinator_cannot_call_the_platform_api():

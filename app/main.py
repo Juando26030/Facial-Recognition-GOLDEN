@@ -490,9 +490,8 @@ _include(node_api_router.router, prefix="/api")
 
 _include(node_accounts_router.router, prefix="/api")
 _include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
-from app.routers import platform as platform_router          # SaaS, pieza 1: empresas, planes y primer arranque (/instalar); docs/27_SAAS_EMPRESAS.md
+from app.routers import platform as platform_router          # SaaS, pieza 1: empresas y planes; docs/27_SAAS_EMPRESAS.md
 _include(platform_router.router)          # /api/platform/* (solo super_admin)
-_include(platform_router.pages)           # /instalar (solo mientras no exista ninguna cuenta activa)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
 

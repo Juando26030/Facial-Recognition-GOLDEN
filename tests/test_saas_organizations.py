@@ -1,18 +1,9 @@
-"""SaaS, pieza 1 (0162, docs/27_SAAS_EMPRESAS.md): empresas, planes, primer administrador, tope de eventos del mes y primer arranque (/instalar). Pruebas CON base.
+"""SaaS, pieza 1 (0162, docs/27_SAAS_EMPRESAS.md): empresas, planes, primer administrador, tope de eventos del mes. Pruebas CON base.
 Las puras y de texto (sin base) están en tests/test_saas_organizations_puro.py."""
 import pytest
 from sqlalchemy import inspect, text
 
 from tests.conftest import login
-
-
-@pytest.fixture(autouse=True)
-def _install_door_reset():
-    """`/instalar` recuerda en el proceso que ya hay cuentas (para no consultar la base nunca más); cada prueba vacía la base, así que parte con esa memoria en blanco."""
-    from app.routers import platform
-    platform._installed["done"] = False
-    yield
-    platform._installed["done"] = False
 
 
 @pytest.fixture()
@@ -229,85 +220,3 @@ def test_usage_ignores_the_test_person_and_temporary_door_accounts(client, root,
     factory.staff("admin", "admin1")
     used = orgs.usage(db, orgs.golden(db))
     assert used["attendees_total"] == 2 and used["attendees_per_event"] == 2 and used["users"] == 1 and used["clients"] == 1 and used["events_per_month"] == 1
-
-
-# ------------------------------- /instalar: primer arranque sin scripts -------------------------------
-OWNER = {"username": "dueno.nuevo", "full_name": "Dueño De Prueba", "email": "dueno@golden.test", "password": "Arranque#2026x", "password_confirm": "Arranque#2026x"}
-
-
-def test_install_creates_the_first_super_admin_and_then_is_gone_forever(client, db):
-    from app.auth import verify_password
-    from app.models import StaffUser
-    page = client.get("/instalar")
-    assert page.status_code == 200 and "Primer arranque" in page.text and "instalar.js" in page.text
-    for bad in ({**OWNER, "password": "corta1", "password_confirm": "corta1"}, {**OWNER, "password_confirm": "otra"}, {**OWNER, "username": "x"}, {**OWNER, "email": ""},
-                {**OWNER, "full_name": ""}, {**OWNER, "password": OWNER["username"], "password_confirm": OWNER["username"]}):
-        assert client.post("/instalar", json=bad).status_code == 400, bad
-    assert db.query(StaffUser).count() == 0
-    r = client.post("/instalar", json=OWNER)
-    assert r.status_code == 200 and r.json()["redirect"] == "/login" and OWNER["password"] not in r.text
-    owner = db.query(StaffUser).one()
-    assert owner.role == "super_admin" and owner.is_active and owner.org_id == 1 and owner.tenant_id is None and owner.must_change_password is False
-    assert verify_password(OWNER["password"], owner.password_hash)
-    assert client.get("/instalar").status_code == 404
-    assert client.post("/instalar", json={**OWNER, "username": "intruso"}).status_code == 404
-    assert db.query(StaffUser).count() == 1
-    assert client.post("/login", data={"username": OWNER["username"], "password": OWNER["password"]}).status_code in (302, 303)
-    assert client.get("/api/platform/orgs").status_code == 200
-
-
-def test_install_is_closed_whenever_an_active_account_exists(client, factory, db):
-    from app.models import StaffUser
-    from app.routers import platform
-    factory.staff("digitador", "puerta1")          # cualquier cuenta activa basta
-    assert client.get("/instalar").status_code == 404 and client.post("/instalar", json=OWNER).status_code == 404
-    assert db.query(StaffUser).filter_by(role="super_admin").count() == 0
-    assert platform._installed["done"] is True          # desde aquí este proceso ya no consulta la base por esta ruta
-
-
-def test_install_checks_again_inside_the_transaction(client, factory, db):
-    """La página se abrió sin cuentas, pero al enviar ya existe una (otra persona terminó primero): 404 y nada se crea."""
-    from app.models import StaffUser
-    assert client.get("/instalar").status_code == 200
-    factory.staff("super_admin", "primero")
-    assert client.post("/instalar", json=OWNER).status_code == 404
-    assert db.query(StaffUser).count() == 1
-
-
-def test_install_reopens_only_if_every_account_is_inactive(client, factory):
-    factory.staff("coordinador", "apagada", is_active=False)
-    assert client.get("/instalar").status_code == 200
-
-
-def test_install_token_when_configured(client, db, monkeypatch):
-    from app.models import StaffUser
-    monkeypatch.setenv("INSTALL_TOKEN", "codigo-de-prueba")
-    assert "Código de instalación" in client.get("/instalar").text
-    assert client.post("/instalar", json=OWNER).status_code == 403
-    assert client.post("/instalar", json={**OWNER, "install_token": "otro"}).status_code == 403
-    assert db.query(StaffUser).count() == 0
-    assert client.post("/instalar", json={**OWNER, "install_token": "codigo-de-prueba"}).status_code == 200
-
-
-def test_a_local_server_never_offers_install(client, db, monkeypatch):
-    """Un servidor local recibe sus cuentas de la nube: recién instalado no tiene ninguna, y /instalar abierto en la red del evento sería una puerta."""
-    from app import localmode
-    from app.models import StaffUser
-    monkeypatch.setattr(localmode, "is_local_server", lambda: True)
-    assert client.get("/instalar").status_code == 404 and client.post("/instalar", json=OWNER).status_code == 404
-    assert db.query(StaffUser).count() == 0
-
-
-def test_create_org_with_admin_helper_is_one_transaction(db, monkeypatch):
-    from app import orgs
-    from app.auth import hash_password
-    from app.models import Organization, StaffUser
-    monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
-    org, admin = orgs.create_org_with_admin(db, {"name": "Ferias del Sur", "plan": "empresa"}, "admin.sur", "Ana Sur", "ana@sur.test", hash_password("Temporal#2026a"), admin_phone="+573004445566")
-    db.commit()
-    assert org.id != 1 and db.query(Organization).filter_by(id=1).one().slug == "golden"
-    assert admin.org_id == org.id and admin.role == "admin" and admin.must_change_password is True and orgs.current_org(admin).id == org.id
-    with pytest.raises(ValueError):
-        orgs.create_org_with_admin(db, {"name": "Otra del Sur", "plan": "pro"}, "admin.sur", "Repetido", None, "x")          # usuario repetido
-    db.rollback()
-    assert db.query(Organization).filter_by(slug="otra-del-sur").first() is None and db.query(StaffUser).filter_by(username="admin.sur").count() == 1

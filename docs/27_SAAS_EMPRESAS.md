@@ -13,7 +13,6 @@ Sin desplegar; rama `saas/revision-integral`.
 | Planes y límites | `app/orgs.py` (`PLANS`, `entitlement`, `check_limit`, `usage`) | Valores de fábrica por plan + límites propios por empresa (`entitlements_json`). |
 | Pantalla **Empresas (SaaS)** | `/plataforma` (menú lateral, solo Super Admin; `templates/plataforma.html`, `static/js/plataforma.js`) | Crear, editar, suspender y reactivar empresas; crear su primer administrador; ver su consumo. |
 | API | `app/routers/platform.py`, prefijo `/api/platform` (solo `super_admin`) | Lo que usa la pantalla. |
-| Primer arranque sin scripts | `/instalar` (`templates/instalar.html`, `static/js/instalar.js`) | Crear el primer Super Admin desde el navegador en una instalación nueva. |
 | Un límite aplicado de verdad | `app/routers/events.py` (`create_event`) | Tope de **eventos por mes** de la empresa dueña del cliente. Golden nunca se limita. |
 
 ### Lo que esta pieza NO hace (importante)
@@ -75,16 +74,11 @@ if not ok:
     raise HTTPException(status_code=403, detail=message)
 ```
 
-## 4. Primer arranque sin scripts (`/instalar`)
+## 4. Primer arranque (`/instalar` RETIRADO)
 
-- En una instalación nueva (ninguna cuenta activa del personal), abrir `https://<dominio>/instalar`: pide usuario, nombre, correo y la contraseña **que escribe la persona** (mínimo 10 caracteres,
-  letras y números, no común, distinta del usuario). Crea el primer Super Admin y lleva a «Ingresar».
-- En cuanto existe una cuenta activa, `/instalar` responde **404 para siempre** (GET y POST). En un servidor local nunca existe (sus cuentas llegan de la nube).
-- Recomendado en un despliegue nuevo expuesto a internet: definir el secreto `INSTALL_TOKEN` (Secret Manager o `.env`; nunca en el repo). Con él, la pantalla pide además ese código, para que nadie se adelante.
-- `scripts/create_staff_user.py` **ya no hace falta** para arrancar; se deja igual por compatibilidad (recuperación por consola si alguna vez se pierde el acceso).
-- Producción y staging ya tienen cuentas: ahí `/instalar` responde 404 desde el primer momento.
-- **Pendiente de decisión:** la prueba de seguridad `tests/test_seguridad_2026-11-22.py` (`test_rutas_sin_autenticacion_son_solo_las_publicas_conocidas`) lleva la lista de rutas que se abren sin sesión y
-  **falla a propósito** con `/instalar` (GET y POST) hasta que alguien las agregue a esa lista de forma consciente. No se agregaron en esta entrega: es una decisión de seguridad de Juan David.
+- Decisión de Juan David (22-nov-2026): la página pública `/instalar` se retiró. Producción y staging ya tienen cuentas y una puerta sin sesión que crea un Super Admin no aportaba nada hoy.
+- El primer Super Admin de una instalación nueva se crea con `python scripts/create_staff_user.py --username admin --role super_admin` (en Cloud Run, con el Job de operaciones). Si más adelante hace falta
+  un primer arranque desde el navegador para clientes SaaS, se rediseña con código de un solo uso generado por el Super Admin, no como ruta abierta.
 
 ## 5. Qué falta y en qué orden
 
@@ -108,4 +102,4 @@ Siguiente paso recomendado: **pieza 3** (filtro por `org_id` en `app/auth.py` + 
 
 ## 6. Pruebas
 - Sin base: `python3 -m pytest --noconftest -q tests/test_saas_organizations_puro.py` (planes, límites, mensajes, migración, reglas del frontend, configuración).
-- Con base: `python -m pytest -q tests/test_saas_organizations.py` (migración, empresa, administrador, límite de eventos, `/instalar`).
+- Con base: `python -m pytest -q tests/test_saas_organizations.py` (migración, empresa, administrador, límite de eventos).

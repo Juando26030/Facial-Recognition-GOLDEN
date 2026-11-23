@@ -2,23 +2,19 @@
 
 `router` (prefijo /api/platform, solo super_admin): empresas (listar, crear, editar, suspender, reactivar), su primer administrador (contraseña temporal generada aquí, mostrada una vez) y su
 consumo contra los límites del plan. La pantalla es /plataforma (app/main.py).
-`pages`: /instalar, el primer arranque sin scripts: crea el primer super_admin SOLO cuando no hay ninguna cuenta activa del personal; después responde 404 para siempre."""
-import hmac
+El primer arranque sin scripts (/instalar) se retiró el 22-nov-2026 por decisión de Juan David: el primer super_admin se crea con scripts/create_staff_user.py."""
 import json
-import os
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import audit_actions, localmode, orgs, security
+from app import audit_actions, localmode, orgs
 from app.auth import hash_password, require_super_admin
 from app.database import get_db
 from app.inputcheck import check_text, check_username
 from app.models import Organization, StaffUser
 
 router = APIRouter(prefix="/api/platform")
-pages = APIRouter()
 
 EDITABLE = ("name", "legal_name", "nit", "contact_email", "contact_phone", "notes")
 _LIMITS = {"name": 200, "legal_name": 200, "nit": 40, "contact_email": 200, "contact_phone": 40, "notes": 4000}
@@ -200,71 +196,3 @@ def org_usage(org_id: int, db: Session = Depends(get_db), staff: StaffUser = Dep
         limit = orgs.entitlement(org, key)
         lines.append({"key": key, "label": orgs.KEY_INFO[key]["label"], "used": used.get(key, 0), "limit": limit, "over": limit is not None and used.get(key, 0) >= limit})
     return {"org": orgs.serialize(org), "usage": used, "lines": lines}
-
-
-# ------------------------------- /instalar: primer arranque sin scripts -------------------------------
-_installed = {"done": False}          # en cuanto se ve una cuenta activa, este proceso deja de consultar la base (la ruta queda en 404 sin costo)
-
-
-def _install_open(db: Session) -> bool:
-    """¿Sigue abierto el primer arranque? Solo en la nube/desarrollo (un servidor local recibe sus cuentas de la nube) y solo si NO hay ninguna cuenta activa del personal."""
-    if _installed["done"] or localmode.is_local_server():
-        return False
-    if db.query(StaffUser.id).filter(StaffUser.is_active.is_(True)).first() is not None:
-        _installed["done"] = True
-        return False
-    return True
-
-
-def _not_found():
-    raise HTTPException(status_code=404, detail="Not Found")
-
-
-@pages.get("/instalar")
-def install_page(request: Request, db: Session = Depends(get_db)):
-    if not _install_open(db):
-        _not_found()
-    from app.main import templates
-    return templates.TemplateResponse(request=request, name="instalar.html", context={"needs_token": bool(os.getenv("INSTALL_TOKEN"))})
-
-
-@pages.post("/instalar")
-def install_submit(data: dict, db: Session = Depends(get_db)):
-    """Crea el primer super_admin con la contraseña que la persona escribió (mismas reglas que al crear cualquier cuenta). Con INSTALL_TOKEN definido, además hay que escribirlo."""
-    if not _install_open(db):
-        _not_found()
-    expected = os.getenv("INSTALL_TOKEN") or ""
-    if expected and not hmac.compare_digest(str(data.get("install_token") or "").encode(), expected.encode()):
-        raise HTTPException(status_code=403, detail="El código de instalación no coincide. Es el valor de INSTALL_TOKEN que se configuró al desplegar.")
-    try:
-        username = check_username(str(data.get("username") or ""))
-        check_text(data.get("full_name"), "El nombre")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    full_name = str(data.get("full_name") or "").strip()
-    if len(full_name) < 3:
-        raise HTTPException(status_code=400, detail="Escribe tu nombre completo")
-    email = str(data.get("email") or "").strip()
-    if not email or "@" not in email or " " in email:
-        raise HTTPException(status_code=400, detail="Escribe tu correo: sirve para recuperar la contraseña")
-    password = str(data.get("password") or "")
-    if password != str(data.get("password_confirm") or ""):
-        raise HTTPException(status_code=400, detail="Las dos contraseñas no coinciden")
-    problem = security.password_problem(password, username, strict=True)
-    if problem:
-        raise HTTPException(status_code=400, detail=problem)
-    if db.get_bind().dialect.name == "postgresql":          # dos personas a la vez: la segunda espera y encuentra la cuenta ya creada (bloqueo de TRANSACCIÓN, compatible con el pooler)
-        db.execute(text("LOCK TABLE staff_users IN SHARE ROW EXCLUSIVE MODE"))
-    if db.query(StaffUser.id).filter(StaffUser.is_active.is_(True)).first() is not None:
-        _installed["done"] = True
-        _not_found()
-    if db.query(StaffUser.id).filter(StaffUser.username == username).first():
-        raise HTTPException(status_code=400, detail="Ese usuario ya existe (está desactivado): elige otro")
-    orgs.golden(db)
-    owner = StaffUser(username=username, password_hash=hash_password(password), full_name=full_name, email=email, role="super_admin", org_id=orgs.GOLDEN_ID)
-    db.add(owner)
-    db.flush()
-    audit_actions.record(db, owner, "create", "first_super_admin", owner.id)
-    db.commit()
-    _installed["done"] = True
-    return {"ok": True, "redirect": "/login", "message": "Listo: ya puedes ingresar con tu usuario y tu contraseña."}
