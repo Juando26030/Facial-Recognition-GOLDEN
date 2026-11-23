@@ -76,6 +76,8 @@ MIGRATE_SECRET_FLAGS="${MIGRATE_SECRET_FLAGS:+${MIGRATE_SECRET_FLAGS},DATABASE_U
 env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del componente
   local out="$1"; shift
   cp deploy/gcp/env/common.yaml "$out"
+  # Aislamiento entre clientes ENCENDIDO solo en staging (plan segunda pasada, Fase 4, 23-nov-2026: probar con una empresa ficticia antes de dar una cuenta a otra empresa). Producción conserva lo de common.yaml ("0") hasta que Juan David lo ordene.
+  if [ "$GOLDEN_ENV" = staging ]; then sed -i -e 's/^ENFORCE_STAFF_TENANT: "0"/ENFORCE_STAFF_TENANT: "1"/' -e 's/^ENFORCE_STAFF_EVENT_SCOPE: "0"/ENFORCE_STAFF_EVENT_SCOPE: "1"/' "$out"; fi
   {
     echo "DEPLOY_ENV: \"$GOLDEN_ENV\""
     echo "PERSON_FORM_ENABLED: \"1\""   # Plan 4 (formulario de persona): encendido en staging y producción (5-nov-2026, orden de Juan David). Cada evento lo activa aparte en su diseño: sin activarlo, nada cambia.
