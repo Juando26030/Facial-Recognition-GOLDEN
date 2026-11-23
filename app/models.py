@@ -338,6 +338,7 @@ class Event(Base):
     aceptar_enabled = Column(Boolean, default=False, server_default='false', nullable=False)   # camino B: página pública /aceptar/<código del evento> para aceptar y dar la selfie desde el celular
     client_photos_before = Column(Boolean, default=False, server_default='false', nullable=False)   # el cliente entregará fotos de los asistentes ANTES del evento (paso guiado de biometría)
     precalculo_garantia = Column(Boolean, default=False, server_default='false', nullable=False)   # casilla de garantía del cliente (declaraciones, garantías e indemnidad), exigida para el pre-cálculo
+    each_accepts = Column(Boolean, default=False, server_default='false', nullable=False)   # 0165: tercer origen «cada quien acepta» (formulario/QR): escáner sin cédula, con «Acepto» y solo reconoce a quienes ya aceptaron
     precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)

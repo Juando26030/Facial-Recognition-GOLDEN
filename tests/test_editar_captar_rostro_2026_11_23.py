@@ -74,3 +74,17 @@ def test_anexo_bloquea_la_camara_y_se_sube_en_parametros():
     tpl = (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
     assert 'id="annexUpload"' in tpl and "Cámara bloqueada" in tpl and 'id="pcSave"' not in tpl
     assert "FACIAL_ANNEX_BLOCK" in (R / "templates/kiosk_registro.html").read_text(encoding="utf-8") and "FACIAL_ANNEX_BLOCK" in (R / "static/js/app.js").read_text(encoding="utf-8")
+
+
+def test_tercer_modo_cada_quien_acepta():
+    """23-nov-2026: «cada quien acepta» (formulario/QR): escáner sin cédula, con «Acepto»; solo reconoce a quienes ya aceptaron (no es `ungated`) y no exige anexo."""
+    b = (R / "app/biometric_setup.py").read_text(encoding="utf-8")
+    assert "event.each_accepts and event.facial_enabled" in b.split("def click_mode")[1][:400]
+    assert "event.facial_enabled and event.client_photos_before and not has_annex" in b          # el anexo sigue siendo solo de fotos del cliente
+    api = (R / "app/routers/api.py").read_text(encoding="utf-8")
+    assert "ungated=bool(click) and bool(event.precalculo_autorizado)" in api and "biometric_setup.click_mode(event)" in api
+    con = (R / "app/routers/consents.py").read_text(encoding="utf-8")
+    assert con.count('"each_accepts"') >= 4 and "Elige una sola fuente de fotos" in con
+    assert "each_accepts" in (R / "app/models.py").read_text(encoding="utf-8") and (R / "alembic/versions/0165_each_accepts.py").exists()
+    assert 'id="bsEach"' in (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert len("0165_each_accepts") <= 32

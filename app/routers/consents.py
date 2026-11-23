@@ -32,7 +32,7 @@ def consent_text(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     t = legal_texts.render(event)
     if t["blocked"]:
         raise HTTPException(status_code=503, detail="El texto de autorización aún tiene datos de la empresa sin completar: este evento ingresa por cédula o QR")
-    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox")}, "mode": event.consent_prompt_mode, "click_mode": bool(event.precalculo_autorizado), "every_scan": legal_texts.every_scan_prompt()}
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox")}, "mode": event.consent_prompt_mode, "click_mode": biometric_setup.click_mode(event), "every_scan": legal_texts.every_scan_prompt()}
 
 
 @router.get("/events/{event_id}/consent-status/{user_id}")
@@ -121,8 +121,8 @@ def consent_click(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     Solo existe en eventos con `precalculo_autorizado`."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    if not event.precalculo_autorizado:
-        raise HTTPException(status_code=409, detail="Este evento no tiene autorizado el pre-cálculo de vectores: identifica a la persona por cédula o QR")
+    if not biometric_setup.click_mode(event):
+        raise HTTPException(status_code=409, detail="Este evento no usa el modo «Acepto» sin cédula: identifica a la persona por cédula o QR")
     if reason := biometric_setup.annex_block_reason(event):
         raise HTTPException(status_code=409, detail=reason)
     t = legal_texts.render(event)
@@ -225,7 +225,7 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
 def _setup_config(event) -> dict:
     return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
-            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
+            "aceptar_enabled": event.aceptar_enabled, "each_accepts": bool(event.each_accepts), "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
             "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled),
             "accept_no_birth_mode": event.accept_no_birth_mode or "any", "accept_verify_photo": event.accept_verify_photo is not False}
 
@@ -246,18 +246,20 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     cur = _setup_config(event)
     new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
     if localmode.is_local_server():          # 19-nov-2026: en el servidor local NO hay rostro ni nada de su flujo (aceptación por celular, fotos previas, entrada con rostro): se rechaza activarlo y se deja apagado
-        if any(bool(data.get(k)) for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled")):
+        if any(bool(data.get(k)) for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "each_accepts", "accept_link_email", "face_door_enabled")):
             raise HTTPException(status_code=403, detail=localmode.LOCAL_NO_FACE_MSG)
-        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled"):
+        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "each_accepts", "accept_link_email", "face_door_enabled"):
             new[k] = False
     if new["biometrics_locked"] and not cur["biometrics_locked"]:      # al poner el candado, lo que no se pidió expresamente se apaga solo
-        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email", "face_door_enabled"):
+        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "each_accepts", "accept_link_email", "face_door_enabled"):
             if k not in data:
                 new[k] = False
     for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"):
         new[k] = (str(new[k] or "").strip() or None)
     errors = biometric_setup.validate(str(new["controller_mode"]), bool(new["facial_enabled"]), new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"],
                                       bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]), locked=bool(new["biometrics_locked"]), accept_link=bool(new["accept_link_email"]))
+    if new["each_accepts"] and new["client_photos_before"]:
+        errors.append("Elige una sola fuente de fotos: o las entrega el cliente, o cada quien acepta")
     if new["accept_no_birth_mode"] not in ("any", "require_personal_link"):
         errors.append("La aceptación cuando la base no trae fecha de nacimiento debe ser «cualquier fecha adulta» o «exigir el enlace personal»")
     if new["face_door_enabled"] and (not new["facial_enabled"] or new["biometrics_locked"]):
@@ -273,7 +275,7 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     if bool(new["accept_verify_photo"]) != (event.accept_verify_photo is not False):
         audit_actions.record(db, staff, "update", "event_accept_verify_photo", event.id, event.name, f"{event.accept_verify_photo is not False} -> {bool(new['accept_verify_photo'])}")
     event.accept_verify_photo = bool(new["accept_verify_photo"])
-    event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
+    event.facial_enabled, event.controller_mode, event.each_accepts = bool(new["facial_enabled"]), str(new["controller_mode"]), bool(new["each_accepts"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])
     if event.precalculo_autorizado and not (event.facial_enabled and event.client_photos_before):

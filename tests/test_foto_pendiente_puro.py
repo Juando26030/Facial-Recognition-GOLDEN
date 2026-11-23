@@ -75,7 +75,7 @@ def test_migration_compiles_chains_and_is_additive():
     assert rev == "0164_accept_verify_photo" and len(rev) <= 32 and down == "0163_local_nodes_tenant"
     assert "ADD COLUMN IF NOT EXISTS accept_verify_photo BOOLEAN NOT NULL DEFAULT TRUE" in src
     heads = [f.name for f in (ROOT / "alembic/versions").glob("*.py") if f'down_revision = "{rev}"' in f.read_text(encoding="utf-8")]
-    assert heads == []                                                                       # 0164 es la cabeza
+    assert heads == ["0165_each_accepts.py"]                                                  # 0165 (cada quien acepta) cuelga de 0164 y es la cabeza
 
 
 def test_touched_files_compile():

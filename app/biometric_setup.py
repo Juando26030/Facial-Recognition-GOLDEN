@@ -58,6 +58,11 @@ ANNEX_EXTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg")
 ANNEX_MISSING = "Falta el anexo firmado del cliente (declaraciones, garantías e indemnidad): súbelo en Parámetros › Reconocimiento facial para usar la cámara. Mientras tanto, ingresa por cédula o QR."
 
 
+def click_mode(event: Event) -> bool:
+    """¿El escáner arranca con «Acepto» en vez de pedir la cédula? Con fotos del cliente (pre-cálculo) o con «cada quien acepta». Solo con rostro activo en el segundo caso."""
+    return bool(event.precalculo_autorizado or (event.each_accepts and event.facial_enabled))
+
+
 def has_annex(event: Event) -> bool:
     return bool((event.precalculo_anexo_ref or "").strip() and event.precalculo_anexo_fecha)
 
@@ -111,11 +116,13 @@ def summary(event: Event) -> dict:
         door.append("Antes del evento, las personas ya inscritas pueden aceptar desde su celular con el QR del cartel o el enlace; en la puerta el personal confirma su identidad con el documento o el QR y desde ahí entran por rostro.")
         if event.accept_link_email:
             door.append("Quien se inscriba por formulario recibirá por correo su enlace personal para autorizar; como el correo lo escribió él mismo, su aceptación igual queda «por verificar»: el personal confirma su identidad en la puerta.")
-        if not event.client_photos_before:
+        if not event.client_photos_before and not event.each_accepts:
             door.append("Fuente de la foto: cada persona se toma una selfie desde su celular (enlace, formulario o QR); se guarda cifrada y el rostro se calcula cuando acepta. Antes de abrir la cámara se valida la fecha de nacimiento: un menor no pasa.")
         door.append("Cuando alguien acepta, recibe por correo su constancia (sin la foto) con la escarapela virtual si el evento la tiene.")
     else:
         door.append("No hay aceptación previa por celular (está apagada).")
+    if event.each_accepts and event.facial_enabled:
+        door.append("Cada quien acepta: por formulario, QR o enlace. En la puerta NO se escribe la cédula: la persona toca «Acepto», se abre la cámara y solo se reconoce a quienes ya aceptaron; quien no aparezca entra por cédula o QR.")
     if event.client_photos_before:
         if tercero and event.precalculo_autorizado:
             door.append(f"Las fotos del cliente se procesan al cargarlas (anexo {event.precalculo_anexo_ref or 's/n'}); la persona se reconoce con un clic en la pantalla.")

@@ -738,9 +738,9 @@ def recognize(
     else:
         if file is None:
             raise HTTPException(status_code=422, detail="Falta la foto")
-        click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and event.precalculo_autorizado) else None      # camino 2: UN clic válido de este quiosco
+        click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and biometric_setup.click_mode(event)) else None      # camino 2: UN clic válido de este quiosco
         try:
-            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click))
+            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click) and bool(event.precalculo_autorizado))
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -1381,7 +1381,7 @@ def consent_block(event: Event):
     if not event.facial_enabled:
         return None
     t = legal_texts.render(event)
-    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "click_mode": bool(event.precalculo_autorizado), "every_scan": legal_texts.every_scan_prompt()}
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "click_mode": biometric_setup.click_mode(event), "every_scan": legal_texts.every_scan_prompt()}
 
 
 @router.get("/events/{event_id}/local-roster")
