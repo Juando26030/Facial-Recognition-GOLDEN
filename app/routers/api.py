@@ -31,7 +31,7 @@ from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_eve
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.eventpeople import member_ids, person_of_event as _person_of_event      # nombre histórico; la regla vive en app/eventpeople.py
-from app import roster_dups, roster_text, personform, lastname, formfiles
+from app import roster_dups, roster_text, personform, lastname, formfiles, enroll as enroll_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -1521,7 +1521,7 @@ def update_user(
                                 old_value=user.birth_date.isoformat() if user.birth_date else "", new_value=new_birth.isoformat() if new_birth else ""))
             user.birth_date = new_birth
             if minors.is_minor(new_birth):            # pasó a ser menor: se retira lo biométrico (vector y foto) y solo entra por cédula/QR
-                get_storage().delete_all_versions(photo_key(event.tenant_id, user.id))
+                enroll_mod.delete_photos(event.tenant_id, user.id, all_versions=True)
                 user.face_encoding = None
                 user.biometric_consent_at = None
                 user.biometric_consent_source = None
@@ -1632,8 +1632,7 @@ def update_user_cedula(
     db.delete(user)
 
     signatures.rename_signatures(event.tenant_id, old_id, new_id)
-    if get_storage().exists(photo_key(event.tenant_id, old_id)):
-        get_storage().move(photo_key(event.tenant_id, old_id), photo_key(event.tenant_id, new_id))
+    enroll_mod.move_photos(event.tenant_id, old_id, new_id)          # la foto vigente y la pendiente siguen a la persona
 
     db.commit()
     return {"message": "Cédula actualizada correctamente", "new_id": new_id}
@@ -1709,7 +1708,7 @@ def delete_user_from_event(
     if not other_attendee and not other_log:
         for model in (PrintLog, AreaMovement, InventoryDelivery):       # lo que tenga en otros eventos YA cerrados del cliente (sin inscripción ni ingresos) también apunta a la persona
             db.query(model).filter(model.tenant_id == event.tenant_id, model.user_id == user_id).delete(synchronize_session=False)
-        get_storage().delete(photo_key(event.tenant_id, user_id))
+        enroll_mod.delete_photos(event.tenant_id, user_id)
         person_history.delete_for_person(db, event.tenant_id, user_id)          # ya no está en ningún evento: no queda historial suyo
         db.delete(user)
         fully_deleted = True
@@ -2765,7 +2764,7 @@ def _bulk_register_impl(
                             if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
                                 face_enc_json = None
                                 has_photo = False
-                                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
+                                enroll_mod.delete_photos(event.tenant_id, f"{identificador}")
                                 errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
                             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola

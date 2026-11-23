@@ -213,6 +213,7 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Esta persona no tiene una aceptación pendiente de verificar")
     if row.verified_at is None:
         row.verified_at, row.verified_by_staff_id = utcnow(), staff.id
+        enroll.promote_pending(db, event.tenant_id, uid, event.id)          # hallazgo 5: la selfie que esperaba verificación pasa a ser la foto de registro
         faces_version.bump(db, event_ids=[event.id])
         db.commit()
     return {"verified": True}
@@ -223,7 +224,7 @@ def _setup_config(event) -> dict:
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
             "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
             "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled),
-            "accept_no_birth_mode": event.accept_no_birth_mode or "any"}
+            "accept_no_birth_mode": event.accept_no_birth_mode or "any", "accept_verify_photo": event.accept_verify_photo is not False}
 
 
 @router.get("/events/{event_id}/biometric-setup")
@@ -266,6 +267,9 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     if str(new["accept_no_birth_mode"]) != (event.accept_no_birth_mode or "any"):
         audit_actions.record(db, staff, "update", "event_accept_no_birth_mode", event.id, event.name, f"{event.accept_no_birth_mode or 'any'} -> {new['accept_no_birth_mode']}")
     event.accept_no_birth_mode = str(new["accept_no_birth_mode"])
+    if bool(new["accept_verify_photo"]) != (event.accept_verify_photo is not False):
+        audit_actions.record(db, staff, "update", "event_accept_verify_photo", event.id, event.name, f"{event.accept_verify_photo is not False} -> {bool(new['accept_verify_photo'])}")
+    event.accept_verify_photo = bool(new["accept_verify_photo"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])

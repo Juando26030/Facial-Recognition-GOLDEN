@@ -358,9 +358,15 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
         wa.verified_at, wa.verified_via = now, "link"
     db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t"), {"u": uid, "t": event.tenant_id})
     if arr is not None:
-        crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
-        db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": now, "u": uid, "t": event.tenant_id})      # 0C (E5): arranca el reloj de retención aunque el vector aún no exista
-        jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "uref": jobs.person_ref(uid), "event_id": event.id}, max_attempts=3)
+        verified = trusted or wa.verified_at is not None
+        hold = bool(event.accept_verify_photo is not False) and not verified and get_storage().exists(photo_key(event.tenant_id, uid))      # hallazgo 5: no se pisa la foto de registro de alguien que no está verificado
+        crypto.save_image(Image.fromarray(arr), enroll.pending_photo_key(event.tenant_id, uid) if hold else photo_key(event.tenant_id, uid))
+        db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": now, "u": uid, "t": event.tenant_id})      # 0C (E5): arranca el reloj de retención aunque el vector aún no exista (también cubre la pendiente: la purga la encuentra)
+        if hold:
+            enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # la foto vigente (si aún no tiene vector) sí se calcula; la pendiente espera la verificación (consents.verify_web_acceptance)
+        else:
+            get_storage().delete(enroll.pending_photo_key(event.tenant_id, uid))      # una selfie verificada o sin nada que proteger deja sin efecto cualquier pendiente vieja
+            jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "uref": jobs.person_ref(uid), "event_id": event.id}, max_attempts=3)
     else:
         enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # fuente A: si el cliente ya entregó su foto, ahora sí se calcula el vector
     consent_receipt.enqueue(db, entry_id, event.tenant_id, event.id, uid, ch)

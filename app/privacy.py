@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app import mass_delete
 from app.models import Event, EventAttendee, User
-from app.storage import get_storage, photo_key
+from app.storage import get_storage
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.privacy")
@@ -51,16 +51,17 @@ def stats(db: Session, event: Event) -> dict:
     """Cuántas personas de este evento tienen datos biométricos guardados y con qué constancia de autorización."""
     people = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
               .filter(EventAttendee.event_id == event.id).all())
-    with_face = [u for u in people if u.face_encoding or get_storage().exists(photo_key(u.tenant_id, u.id))]
+    from app import enroll
+    with_face = [u for u in people if u.face_encoding or enroll.has_any_photo(u.tenant_id, u.id)]
     from app import crypto
     return {"attendees": len(people), "with_biometrics": len(with_face), "encrypted": crypto.enabled(),
             "with_consent": sum(1 for u in with_face if u.biometric_consent_at), "without_consent": sum(1 for u in with_face if not u.biometric_consent_at)}
 
 
 def _erase(user: User) -> bool:
-    key = photo_key(user.tenant_id, user.id)
-    had = bool(user.face_encoding) or get_storage().exists(key)
-    get_storage().delete(key)                                # primero la foto: si falla, el encoding sigue y se puede reintentar
+    from app import enroll
+    had = bool(user.face_encoding) or enroll.has_any_photo(user.tenant_id, user.id)
+    enroll.delete_photos(user.tenant_id, user.id)                                # primero la foto: si falla, el encoding sigue y se puede reintentar
     user.face_encoding = None
     user.biometric_consent_at = None
     user.biometric_consent_source = None
@@ -90,12 +91,13 @@ def _in_other_open_facial_event(db: Session, user: User, event_id: int):
 def purge_event(db: Session, event: Event) -> dict:
     """Borrado manual (admin+): lo biométrico de las personas de este evento, salvo quien sigue en otro evento ABIERTO con reconocimiento facial.
     Devuelve cuántas se borraron y cuántas se omitieron, con el motivo (nombres de eventos, nunca de personas)."""
+    from app import enroll
     deleted = kept = 0
     other_events = set()
     people = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
               .filter(EventAttendee.event_id == event.id).all())
     for user in people:
-        if not (user.face_encoding or get_storage().exists(photo_key(user.tenant_id, user.id))):
+        if not (user.face_encoding or enroll.has_any_photo(user.tenant_id, user.id)):
             continue
         elsewhere = _in_other_open_facial_event(db, user, event.id)
         if elsewhere:
@@ -148,6 +150,7 @@ def purge_expired(db: Session, now=None, batch: int = 200, dry_run: bool = False
     """Aplica la retención (ver el encabezado). Idempotente, por lotes y sin bloquear eventos en curso (no toma bloqueos sobre `events`).
     Por persona: PRIMERO se borra la foto del almacenamiento; si eso falla se cuenta el error y NO se toca el encoding (se reintenta en la
     siguiente corrida: nunca queda un encoding sin su foto ni al revés sin haberse contado). Solo devuelve conteos, jamás datos personales."""
+    from app import enroll
     now = now or utcnow()
     params = {"after_cut": now - timedelta(days=days_after_event()), "cap_cut": now - timedelta(days=max_days())}
     total = {"people": 0, "objects": 0, "errors": 0, "by_cap": 0}
@@ -161,12 +164,11 @@ def purge_expired(db: Session, now=None, batch: int = 200, dry_run: bool = False
             user = db.query(User).filter(User.id == user_id, User.tenant_id == tenant_id).first()
             if user is None:
                 continue
-            key = photo_key(tenant_id, user_id)
             try:
-                if get_storage().exists(key):
+                if enroll.has_any_photo(tenant_id, user_id):
                     total["objects"] += 1
                     if not dry_run:
-                        get_storage().delete(key)
+                        enroll.delete_photos(tenant_id, user_id)
             except Exception:  # noqa: BLE001 — se reintenta en la siguiente hora
                 total["errors"] += 1
                 log.error("no se pudo borrar una foto biométrica (se reintenta en la siguiente corrida)", exc_info=True)
@@ -242,14 +244,14 @@ def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
     vacía los datos de sus inscripciones (la inscripción y su pago se conservan) y deja `payer_email` en NULL, ANONIMIZA sus `access_logs` de forma irreversible (se desvincula la persona; queda
     hora, tipo de ingreso y evento) y guarda solo la huella de la cédula para no re-cargarla. NO toca `audit_consent_logs` (3 años, bloqueado) ni lo demás de `form_payments` (10 años, bloqueado).
     Devuelve conteos y lo que NO se pudo borrar al instante; nunca datos personales."""
-    from app import consent, faces_version
+    from app import consent, enroll, faces_version
     from app.models import SuppressedPerson
     tenant, uid = event.tenant_id, str(user_id)
     user = db.query(User).filter(User.id == uid, User.tenant_id == tenant).first()
     if user is None:
         return {"found": False}
     result = {"found": True, "scope": scope, "had_biometrics": bool(user.face_encoding), "versions_not_deleted": 0}
-    result["versions_not_deleted"] += get_storage().delete_all_versions(photo_key(tenant, uid))
+    result["versions_not_deleted"] += enroll.delete_photos(tenant, uid, all_versions=True)
     user.face_encoding = None
     user.biometric_consent_at = None
     user.biometric_consent_source = None

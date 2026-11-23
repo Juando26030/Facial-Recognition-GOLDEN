@@ -434,11 +434,12 @@ def list_minors() -> str:
     from app import minors
     from app.database import SessionLocal
     from app.models import User
-    from app.storage import get_storage, photo_key
+    from app import enroll
+    from app.storage import get_storage
     found = []
     with SessionLocal() as db:
         for u in db.query(User.id, User.tenant_id, User.birth_date, User.face_encoding).filter(User.birth_date.isnot(None)).yield_per(500):
-            if minors.is_minor(u.birth_date) and (u.face_encoding or get_storage().exists(photo_key(u.tenant_id, u.id))):
+            if minors.is_minor(u.birth_date) and (u.face_encoding or enroll.has_any_photo(u.tenant_id, u.id)):
                 found.append({"tenant": u.tenant_id, "id": u.id})
     if not found:
         return "0 menores con datos biométricos"
@@ -452,10 +453,9 @@ def export_person_data() -> str:
     formularios, pagos y consentimientos), SIN biometría ni valores personales. La salida es solo este texto: no se guarda en ningún archivo ni tabla y no lleva la cédula."""
     from sqlalchemy import text
 
-    from app import consent, minors
+    from app import consent, enroll, minors
     from app.database import SessionLocal
     from app.models import User
-    from app.storage import get_storage, photo_key
     cedula = os.getenv("EXPORT_CEDULA", "").strip()
     if not cedula:
         raise RuntimeError("Falta EXPORT_CEDULA")
@@ -465,7 +465,7 @@ def export_person_data() -> str:
         p = {"u": cedula}
         for u in db.query(User).filter(User.id == cedula).all():
             fields = [c for c in ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1", "opt_2", "extra_fields", "birth_date") if getattr(u, c)]
-            out["personas"].append({"campos_con_dato": fields, "tiene_vector_facial": bool(u.face_encoding), "tiene_foto": get_storage().exists(photo_key(u.tenant_id, u.id)),
+            out["personas"].append({"campos_con_dato": fields, "tiene_vector_facial": bool(u.face_encoding), "tiene_foto": enroll.has_any_photo(u.tenant_id, u.id),
                                     "es_menor": minors.is_minor(u.birth_date), "biometria_habilitada": u.is_biometric_enabled})
         count = lambda sql: db.execute(text(sql), p).scalar() or 0       # noqa: E731
         out["eventos_inscrito"] = count("SELECT count(*) FROM event_attendees WHERE user_id = :u")

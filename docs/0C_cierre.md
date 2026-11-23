@@ -25,3 +25,7 @@ C5 pago aprobado sin inscripción · E2/E3 cola sin cédulas ni errores sin enma
 
 ## Para producción
 Todo lo anterior está en `main` pero **no desplegado a producción**. Entrega con la receta habitual (copia de Neon, workflow manual, verificación y punto de retorno) solo con la autorización escrita de Juan David.
+
+
+## `/aceptar`: foto pendiente (22-nov-2026, revisión de seguridad, hallazgo 5)
+Ajuste del evento «Verificar antes de reemplazar la foto» (`events.accept_verify_photo`, por defecto activo; migración 0164). Activo: la selfie de quien no está verificada y que ya tiene foto de registro queda como «pendiente» (`enroll.pending_photo_key`) y solo reemplaza a la vigente cuando el personal verifica a la persona; el operador nunca la ve; se borra en toda purga (`enroll.delete_photos`) y no se exporta entre entornos. Apagado: la selfie reemplaza la foto como antes. Detalle en `docs/revision_2026-11-22/12_seguridad_correcciones.md` §7.

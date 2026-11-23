@@ -19,12 +19,59 @@ log = logging.getLogger("golden.enroll")
 SOURCE = "aceptacion_persona"
 
 
+PENDING_SUFFIX = ".pending.jpg"
+
+
+def pending_photo_key(tenant_id: str, user_id: str) -> str:
+    """Clave de la selfie «pendiente de verificar» (revisión de seguridad 22-nov, hallazgo 5): la misma carpeta y prefijo biométrico que la foto de registro, con sufijo `.pending.jpg`. Nunca se muestra al operador ni viaja entre entornos."""
+    return photo_key(tenant_id, str(user_id))[: -len(".jpg")] + PENDING_SUFFIX
+
+
+def photo_keys(tenant_id: str, user_id: str) -> tuple:
+    """Todas las claves biométricas de imagen de una persona: la vigente y la pendiente."""
+    return (photo_key(tenant_id, str(user_id)), pending_photo_key(tenant_id, user_id))
+
+
+def has_any_photo(tenant_id: str, user_id: str) -> bool:
+    return any(get_storage().exists(k) for k in photo_keys(tenant_id, user_id))
+
+
+def delete_photos(tenant_id: str, user_id: str, all_versions: bool = False) -> int:
+    """Borra la foto vigente Y la pendiente (helper único de todas las purgas y supresiones). Con `all_versions` también las versiones no vigentes del bucket; devuelve cuántas no se pudieron borrar."""
+    st, failed = get_storage(), 0
+    for k in photo_keys(tenant_id, user_id):
+        if all_versions:
+            failed += st.delete_all_versions(k)
+        else:
+            st.delete(k)
+    return failed
+
+
+def move_photos(tenant_id: str, old_id: str, new_id: str) -> None:
+    """Cambio de cédula: la foto vigente y la pendiente siguen a la persona."""
+    st = get_storage()
+    for old, new in zip(photo_keys(tenant_id, old_id), photo_keys(tenant_id, new_id)):
+        if st.exists(old):
+            st.move(old, new)
+
+
+def promote_pending(db, tenant_id: str, user_id: str, event_id: int) -> bool:
+    """La persona quedó verificada: la selfie pendiente sustituye a la foto de registro y, si aún no hay vector, se encola su cálculo. No hace commit. False si no había pendiente."""
+    st, pend = get_storage(), pending_photo_key(tenant_id, user_id)
+    if not st.exists(pend):
+        return False
+    st.move(pend, photo_key(tenant_id, str(user_id)))
+    db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": utcnow(), "u": str(user_id), "t": tenant_id})
+    jobs.enqueue(db, "face_enroll", {"tenant_id": tenant_id, "uref": jobs.person_ref(user_id), "event_id": int(event_id)}, max_attempts=3)      # idempotente: si ya hay vector, la tarea no hace nada
+    return True
+
+
 def status(db, tenant_id: str, user_id: str) -> str:
     """'ready' (hay vector) | 'pending' (hay foto, falta el vector) | 'none'."""
     row = db.execute(text("SELECT face_encoding IS NOT NULL FROM users WHERE id = :u AND tenant_id = :t"), {"u": str(user_id), "t": tenant_id}).first()
     if row and row[0]:
         return "ready"
-    return "pending" if get_storage().exists(photo_key(tenant_id, str(user_id))) else "none"
+    return "pending" if get_storage().exists(photo_key(tenant_id, str(user_id))) else "none"      # la pendiente NO cuenta: no es la foto de registro
 
 
 @jobs.handler("face_enroll")
@@ -38,7 +85,7 @@ def run_enroll(payload: dict) -> None:
             return                                             # idempotente: un reintento (o una tarea repetida) no recalcula ni duplica el vector
         event = db.get(Event, event_id)
         if user is None or minors.is_minor(user.birth_date) or not consent.has_acceptance(db, tenant, uid, event_id) or (event is not None and personform.user_flow(db, event, uid).get("facial_off")):
-            get_storage().delete(key)                          # sin aceptación vigente (o revocó entre tanto, o es menor, o su categoría no usa reconocimiento facial): no se calcula nada y no queda foto
+            delete_photos(tenant, uid)                         # sin aceptación vigente (o revocó entre tanto, o es menor, o su categoría no usa reconocimiento facial): no se calcula nada y no queda foto
             return
         arr = crypto.read_array(key)
         encodings = faces.extract(arr, is_registration=True) if arr is not None else None

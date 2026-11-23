@@ -9,9 +9,9 @@ from typing import List
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import testperson
+from app import enroll, testperson
 from app.models import (AcceptMailLog, AccessLog, AreaMovement, Event, EventAttendee, InventoryDelivery, PersonChange, PersonChangeLog, PrintJob, PrintLog, ReprintRequest, User)
-from app.storage import get_storage, photo_key
+from app.storage import get_storage
 
 log = logging.getLogger("golden.roster_delete")
 CHUNK = 500
@@ -86,7 +86,7 @@ def delete_loaded(db: Session, event: Event) -> dict:
                 log.warning("no se pudo borrar una firma al borrar la base cargada")
     for uid in photos:
         try:
-            st.delete(photo_key(event.tenant_id, uid))
+            enroll.delete_photos(event.tenant_id, uid)
         except Exception:  # noqa: BLE001
             log.warning("no se pudo borrar una foto al borrar la base cargada")
     return {"removed": removed, "people_removed_entirely": fully, "kept_registered": len(keep)}
