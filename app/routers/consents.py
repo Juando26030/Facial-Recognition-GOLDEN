@@ -276,6 +276,7 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])
     if event.precalculo_autorizado and not (event.facial_enabled and event.controller_mode == "tercero" and event.client_photos_before):
         event.precalculo_autorizado = False
+    biometric_setup.apply_precalc_default(event)          # modo de un clic por defecto si ya cumple todo y tiene el anexo firmado
     _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
     event_history.kick_after(_hr)

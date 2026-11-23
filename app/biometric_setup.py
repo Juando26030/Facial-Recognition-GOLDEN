@@ -54,6 +54,17 @@ def precalc_blockers(event: Event, anexo_ref: Optional[str], anexo_fecha, garant
     return out
 
 
+def apply_precalc_default(event: Event) -> bool:
+    """23-nov-2026 (pedido de Juan David): al activar el modo facial el «un clic y rostro» (pre-cálculo autorizado) se enciende solo, PERO únicamente si el evento ya cumple lo que exige la auditora: tercero, fotos del
+    cliente antes y el anexo firmado ya guardado (referencia, fecha y garantía). Sin anexo NO se enciende (lo fija un super_admin en Parámetros): así no se salta la compuerta legal. True si lo encendió."""
+    if event.precalculo_autorizado or not event.facial_enabled:
+        return False
+    if precalc_blockers(event, event.precalculo_anexo_ref, event.precalculo_anexo_fecha, bool(event.precalculo_garantia)):
+        return False
+    event.precalculo_autorizado = True
+    return True
+
+
 def facial_blockers(event: Event) -> List[str]:
     """Por qué NO se puede activar el rostro en este evento ahora mismo (para la carga masiva y el interruptor)."""
     return tercero_missing(event.controller_mode, event.organizer_name, event.organizer_nit, event.organizer_privacy_email)

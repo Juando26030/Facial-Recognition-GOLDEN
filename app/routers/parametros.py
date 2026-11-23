@@ -466,6 +466,7 @@ def set_facial_enabled(
             raise HTTPException(status_code=400, detail="Para activar el reconocimiento facial en un evento de un tercero falta: " + ", ".join(blockers))
     _hb = event_history.snapshot(db, event)          # Fase 5: historial por campo
     event.facial_enabled = bool(data.get("enabled"))
+    biometric_setup.apply_precalc_default(event)          # modo de un clic por defecto si ya tiene el anexo firmado
     _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
     event_history.kick_after(_hr)

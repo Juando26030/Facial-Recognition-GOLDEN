@@ -60,3 +60,10 @@ def test_historial_de_fotos_se_conservan_las_dos():
     assert "which == \"selfie\"" in (R / "app/routers/api.py").read_text(encoding="utf-8")
     d = (R / "static/js/directory.js").read_text(encoding="utf-8")
     assert "editModalSelfiePhoto" in d and "which=${which}" in d
+
+
+def test_modo_un_clic_por_defecto_solo_con_anexo():
+    b = (R / "app/biometric_setup.py").read_text(encoding="utf-8").split("def apply_precalc_default")[1].split("def facial_blockers")[0]
+    assert "precalc_blockers(event, event.precalculo_anexo_ref, event.precalculo_anexo_fecha, bool(event.precalculo_garantia))" in b and "return False" in b          # sin anexo/tercero/fotos no se enciende
+    assert "apply_precalc_default(event)" in (R / "app/routers/parametros.py").read_text(encoding="utf-8")
+    assert "apply_precalc_default(event)" in (R / "app/routers/consents.py").read_text(encoding="utf-8")
