@@ -85,6 +85,15 @@ if [ -z "${FIREBASE_SITE_SITIO:-}" ]; then
 fi
 PUB="$WORK/publicar"; rm -rf "$PUB"; mkdir -p "$PUB"
 cp "$ROOT/deploy/sitio/firebase.json" "$PUB/firebase.json"; cp -r "$DIST" "$PUB/dist"
+# Formulario de cotización (22-nov-2026): /api/public/** del sitio llega al servicio público de GoldenWeb de ESTE proyecto (producción: golden-publico; staging: golden-publico-staging).
+SERVICIO_PUBLICO="${SERVICIO_PUBLICO:-golden-publico$([[ "$PROJECT_ID" == *staging* ]] && echo -staging || true)}"
+python3 - "$PUB/firebase.json" "$SERVICIO_PUBLICO" "${REGION:-us-east4}" <<'PY'
+import json, sys
+path, service, region = sys.argv[1:4]
+cfg = json.load(open(path))
+cfg["hosting"]["rewrites"] = [{"source": "/api/public/**", "run": {"serviceId": service, "region": region}}]
+json.dump(cfg, open(path, "w"), indent=2)
+PY
 cd "$PUB"
 fb() { npx -y firebase-tools@13 "$@" --project "$PROJECT_ID" --non-interactive; }
 fb hosting:sites:get "$FIREBASE_SITE_SITIO" >/dev/null 2>&1 || fail "no existe el sitio de Hosting «$FIREBASE_SITE_SITIO» en $PROJECT_ID. Créalo una vez (docs/26, paso 1): npx -y firebase-tools@13 hosting:sites:create $FIREBASE_SITE_SITIO --project $PROJECT_ID --non-interactive"
