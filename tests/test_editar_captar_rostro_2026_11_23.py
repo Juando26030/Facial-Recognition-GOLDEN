@@ -10,3 +10,10 @@ def test_boton_en_editar_y_camino_unico():
     assert "editModalFace" in d and "window.GoldenFace" in d          # el botón solo existe si el escáner facial está en la página
     assert "window.GoldenFace = {" in a and "identify()" in a          # reutiliza identify(): la aceptación de la persona sigue siendo obligatoria
     assert "enroll-face" in a                                          # y la foto se guarda por el endpoint que exige aceptación
+
+
+def test_setoff_se_define_antes_de_apagar_la_camara():
+    """Regresión: `cameraOff()` corre al cargar y usa setOff/setResult; si se definen después, app.js se detiene (TDZ) y la cámara nunca enciende."""
+    a = (R / "static/js/app.js").read_text(encoding="utf-8")
+    assert a.index("const setOff =") < a.index("if (video) {") < a.index("        cameraOff();")
+    assert a.index("const resTexto =") < a.index("const setResult =") < a.index("if (video) {")

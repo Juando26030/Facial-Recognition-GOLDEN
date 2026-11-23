@@ -55,6 +55,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
         if (video) video.srcObject = null;
     }
+    const resTexto = document.getElementById('resultadoTexto');
+    /* Mostrar / ocultar sin estilos en línea: la clase gw-registro__off (registro.css) esconde; quitarla devuelve el aspecto normal del elemento. */
+    const setOff = (el, off) => { if (el) el.classList.toggle('gw-registro__off', !!off); };
+    /* Resultado del escáner: el color lo da la clase (ok / warn / err / gold), siempre acompañado de las palabras. */
+    const setResult = (text, tone) => { if (!resTexto) return; resTexto.innerText = text; resTexto.className = 'gw-registro__result' + (tone ? ' gw-registro__result--' + tone : ''); };
+
     // Autorización biométrica (L1): la cámara solo se enciende con una aceptación de la PERSONA registrada (static/js/consent-gate.js). Camino 1: cédula/QR primero; camino 2 (eventos con
     // pre-cálculo autorizado): la pantalla se muestra a quien se acerca y un clic da un token válido para UNA comparación. Tras cada intento la cámara vuelve a apagarse.
     let clickToken = '';
@@ -114,12 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const escanearBtn = document.getElementById('escanearBtn');
-    const resTexto = document.getElementById('resultadoTexto');
     const printScanBtn = document.getElementById('printScanBtn');
-    /* Mostrar / ocultar sin estilos en línea: la clase gw-registro__off (registro.css) esconde; quitarla devuelve el aspecto normal del elemento. */
-    const setOff = (el, off) => { if (el) el.classList.toggle('gw-registro__off', !!off); };
-    /* Resultado del escáner: el color lo da la clase (ok / warn / err / gold), siempre acompañado de las palabras. */
-    const setResult = (text, tone) => { if (!resTexto) return; resTexto.innerText = text; resTexto.className = 'gw-registro__result' + (tone ? ' gw-registro__result--' + tone : ''); };
     /* Acción con rueda (GW.busy): sin el ayudante (pruebas) solo corre la acción. Arranca de inmediato, dentro del gesto del usuario. */
     const busyRun = (btn, work) => (window.GW && window.GW.busy && btn && btn.setAttribute ? window.GW.busy(btn, work) : new Promise((resolve) => resolve(work())));
 
