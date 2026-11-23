@@ -34,7 +34,7 @@ Usa un evento de prueba (nombre «PRUEBA …») y la persona de prueba (cédula 
 ## E. Sitio web en staging (después de montarlo, `docs/26` parte A0)
 18. Se ve igual que antes; la letra (Poppins) se ve bien en celular y computador; teléfono +57 318 098 1752 y correo soporteit@goldenlogisticas.com en el pie y la cabecera.
 19. El sitio pide «no indexar» (`/robots.txt` en el sitio de staging).
-20. **Cotización:** llenar y enviar. *Debe:* «Recibimos su solicitud…». En staging el correo NO sale (no hay credenciales de correo); lo que se comprueba es el mensaje. La entrega real a la comercial solo se prueba en producción, con el secreto `quote-to-email` creado.
+20. **Cotización:** llenar y enviar. *Debe:* «Recibimos su solicitud…» (requiere el secreto `quote-to-email` en staging, con una dirección inventada; sin él responde 503 — comprobado el 23-nov). En staging el correo NO sale (no hay credenciales de correo); lo que se comprueba es el mensaje. La entrega real a la comercial solo se prueba en producción, con el secreto `quote-to-email` creado.
 
 ## F. Salud general
 21. `/health` de los tres servicios responde 200; en Configuración › Sistema no hay alertas rojas nuevas.

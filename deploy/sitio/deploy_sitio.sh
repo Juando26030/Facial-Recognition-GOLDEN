@@ -47,8 +47,10 @@ for p in "${PARCHES[@]}"; do
   git -C "$SRC" apply "$p"; echo "aplicado: $(basename "$p")"
 done
 
-say "3. COMPILAR (npm ci && npm run build, con PUBLIC_INDEXAR=1)"
-( cd "$SRC" && npm ci --no-audit --no-fund && PUBLIC_INDEXAR=1 npm run build ) || fail "no compiló; no se publica nada"
+# Staging (el ID del proyecto lleva «staging») se compila SIN PUBLIC_INDEXAR: el sitio de ensayo pide no ser indexado (noindex + robots Disallow) para que Google no lo confunda con golden-eventos.com. Producción: indexable.
+if [[ "$PROJECT_ID" == *staging* ]]; then INDEXAR=0; else INDEXAR=1; fi
+say "3. COMPILAR (npm ci && npm run build, con PUBLIC_INDEXAR=$INDEXAR)"
+( cd "$SRC" && npm ci --no-audit --no-fund && if [ "$INDEXAR" = 1 ]; then PUBLIC_INDEXAR=1 npm run build; else npm run build; fi ) || fail "no compiló; no se publica nada"
 DIST="$SRC/dist"
 
 say "4. COMPROBAR dist/"
@@ -67,10 +69,16 @@ for f in robots.txt sitemap.xml site.webmanifest favicon.ico favicon.png apple-t
 has index.html "rel=\"canonical\" href=\"${SITIO_DOMINIO}/\"" "canónica ${SITIO_DOMINIO}/"
 has index.html 'application/ld+json' 'datos estructurados'
 has index.html 'property="og:image"' 'og:image'
-has robots.txt '^Allow: /' 'Allow: /'
-has robots.txt "^Sitemap: ${SITIO_DOMINIO}/sitemap.xml" 'Sitemap'
-has sitemap.xml "<loc>${SITIO_DOMINIO}/</loc>" 'la portada'
-if grep -q 'name="robots" content="noindex"' "$DIST/index.html"; then echo "  MAL  la portada pide noindex (¿faltó PUBLIC_INDEXAR=1?)" >&2; MAL=1; else echo "  ok  la portada no pide noindex"; fi
+if [ "$INDEXAR" = 1 ]; then has robots.txt '^Allow: /' 'Allow: /'; else has robots.txt '^Disallow: /' 'Disallow: / (staging no se indexa)'; fi
+if [ "$INDEXAR" = 1 ]; then
+  has robots.txt "^Sitemap: ${SITIO_DOMINIO}/sitemap.xml" 'Sitemap'
+  has sitemap.xml "<loc>${SITIO_DOMINIO}/</loc>" 'la portada'
+fi
+if [ "$INDEXAR" = 1 ]; then
+  if grep -q 'name="robots" content="noindex"' "$DIST/index.html"; then echo "  MAL  la portada pide noindex (¿faltó PUBLIC_INDEXAR=1?)" >&2; MAL=1; else echo "  ok  la portada no pide noindex"; fi
+else
+  if grep -q 'name="robots" content="noindex' "$DIST/index.html"; then echo "  ok  la portada de staging pide noindex"; else echo "  MAL  la portada de staging NO pide noindex" >&2; MAL=1; fi
+fi
 hasnt 'pages\.dev' 'pages.dev (dirección de la vista previa)'
 hasnt 'localhost' 'localhost'
 [ "$MAL" = 0 ] || fail "dist/ no es lo esperado; NO se publica. Corrige y vuelve a correr el mismo comando."

@@ -54,4 +54,4 @@ La ruta pública `POST /api/public/quote-request` (servicio `golden-publico`, si
 ```bash
 read -rsp "Correo de quien responde las cotizaciones: " Q; echo; printf %s "$Q" | gcloud secrets create quote-to-email --data-file=- --project <proyecto>; unset Q
 ```
-Después hay que volver a desplegar para que los servicios lo lean. **Staging nunca manda correos reales** (no lleva las credenciales de Microsoft), así que allí el formulario valida y encola pero el correo no sale: la entrega real solo se prueba en producción.
+Después hay que volver a desplegar para que los servicios lo lean. **Staging nunca manda correos reales** (no lleva las credenciales de Microsoft). OJO (corregido 23-nov-2026): sin el secreto `quote-to-email` el formulario responde 503 también en staging (se comprobó); para ensayar el mensaje «Recibimos su solicitud» en staging hay que crear allí el secreto con una dirección inventada (p. ej. `staging@example.invalid`) y redesplegar; el correo no sale y la tarea falla tras sus reintentos, sin efecto. La entrega real solo se prueba en producción.

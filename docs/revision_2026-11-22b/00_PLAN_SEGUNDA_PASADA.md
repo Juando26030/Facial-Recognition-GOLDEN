@@ -108,7 +108,7 @@ Cada agente lee código (grep + rangos), **no** da por cierto lo que dice el rep
 ## 5. Lo pendiente que solo Juan David puede hacer
 - Aprobar «Authorize Cloud Shell» (o pegar los comandos de staging).
 - Iniciar sesión en staging en el navegador integrado.
-- Crear en producción, cuando llegue el momento, el secreto de cotización con lectura a ciegas (el comando está en `deploy/gcp/README.md` §7; proyecto `goldenweb-prod`). En staging no hace falta: allí no se envían correos reales.
+- Crear en producción, cuando llegue el momento, el secreto de cotización con lectura a ciegas (el comando está en `deploy/gcp/README.md` §7; proyecto `goldenweb-prod`). En staging, solo para ensayar el mensaje de éxito, un secreto `quote-to-email` con dirección inventada (sin él la cotización responde 503; comprobado 23-nov).
 - Responder a la auditora y dar el visto bueno a los textos de IA/privacidad.
 - Probar `autodestruir.ps1`/BitLocker/plazo de gracia en un portátil de prueba **con llave de prueba**.
 - Revisar la propuesta financiera.
