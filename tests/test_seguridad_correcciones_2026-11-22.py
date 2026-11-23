@@ -215,3 +215,18 @@ def test_grace_period_is_wired_into_the_middleware_and_the_banner():
     assert mid.index("is_locked()") < mid.index("grace_state()") < mid.index("is_catalog_write")
     assert '"grace"' in _read("app/routers/ops.py")
     assert "s.grace.message" in _read("static/js/version-banner.js")
+
+
+def test_disabling_a_key_triggers_the_automatic_wipe_and_asks_to_type_the_word():
+    upd = _read("deploy/windows/updater-service.ps1")
+    assert "SERVER_DISABLED" in upd and "LOCAL_WIPE_ON_DISABLE" in upd and "SERVER_WIPE_STARTED" in upd and "autodestruir.ps1" in upd
+    wipe = _read("deploy/windows/autodestruir.ps1")
+    assert "borrar-datos.ps1" in wipe and "-Yes" in wipe and "unins000.exe" in wipe and "rmdir /s /q" in wipe and "Unregister-ScheduledTask" in wipe
+    card = _read("static/js/server-keys-card.js")
+    assert "GWConfirm.typed(" in card and "'DESHABILITAR'" in card and "DESHABILITAR" in _read("static/js/gw-confirm-typed.js")
+
+
+def test_bitlocker_script_never_buys_never_stores_the_key_on_the_encrypted_disk_and_asks_for_tpm():
+    ps = _read("deploy/windows/proteger-disco.ps1")
+    assert "Get-BitLockerVolume" in ps and "TpmPresent" in ps and "StartsWith($mount" in ps and "-RecoveryKeyFolder" in ps
+    assert "Write-Log" not in ps and "Add-Content" not in ps          # la clave no va a ningún registro

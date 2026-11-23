@@ -126,7 +126,7 @@
     }
     const btn = e.target.closest('button[data-disable]');
     if (!btn) return;
-    const ok = await showConfirm(`¿Deshabilitar la llave ${btn.dataset.code}? El servidor que la usa dejará de funcionar apenas vuelva a tener internet y la llave no se podrá reutilizar. Para instalar de nuevo habrá que crear otra.`, { confirmLabel: 'Deshabilitar' });
+    const ok = window.GWConfirm ? await GWConfirm.typed(GWConfirm.fill(GWConfirm.TEXT.disableKey, { code: btn.dataset.code }), 'DESHABILITAR', { title: 'Deshabilitar un servidor local', confirmLabel: 'Deshabilitar y dar de baja' }) : false;          // confirmación FUERTE (22-nov-2026): escribir DESHABILITAR
     if (!ok) return;
     btn.disabled = true;
     try { await api(`/api/server-keys/${encodeURIComponent(btn.dataset.disable)}/disable`, 'POST', {}); if (window.showToast) showToast('Llave deshabilitada', 'success'); await load(); }

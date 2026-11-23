@@ -109,11 +109,18 @@ Detalle y hallazgos en [`revision_2026-11-22/04_seguridad_servidor_local.md`](re
   paquete que baja un servidor local nunca trae biometría y el servidor no tiene `FACE_ENCRYPTION_KEY`.
 - **Los permisos de carpeta (solo SYSTEM y Administradores) protegen frente a otras cuentas de Windows, NO frente a quien se lleve el portátil** (se saca el disco o se arranca desde un USB y se lee
   todo). Por eso el portátil servidor DEBE llevar **BitLocker** encendido (Windows 10/11 Pro: Panel de control › Cifrado de unidad BitLocker; la clave de recuperación se guarda en la cuenta de la
-  empresa, nunca en el portátil) y una cuenta de Windows con contraseña. El instalador todavía no lo comprueba (propuesto: aviso en la verificación final).
+  empresa, nunca en el portátil) y una cuenta de Windows con contraseña. Hay un script que lo hace sin costo: `scripts\proteger-disco.ps1 -RecoveryKeyFolder E:\` (PowerShell como administrador; E:\ = memoria USB o carpeta de red, NUNCA el mismo disco). Solo usa BitLocker si Windows ya lo trae
+  (Pro/Enterprise/Education, o «Cifrado de dispositivo» en algunos Home) y el equipo tiene TPM; si no, lo dice y NO hace nada (nunca compra ni instala). Con `-StatusOnly` solo informa. La clave de recuperación se guarda en la carpeta indicada y se muestra
+  una vez en pantalla; no queda en registros ni en el repositorio. Sin probar en Windows real. El instalador todavía no lo corre solo.
 - **Protocolo de pérdida o robo (lo primero, antes de cualquier otra cosa):** en la nube, Configuración › Servidor local › Llaves de producto › **Deshabilitar** la llave de ese equipo. Con eso el
   token del servidor deja de servir en el momento (la nube responde 403 a todo) y el equipo se cierra en cuanto vuelva a tener internet. Mientras no se deshabilite, ese token puede: listar todos los
   eventos de la nube, tomar cualquier evento y bajar su base de personas, subir datos al evento que tenga, y bajar la lista de cuentas (con hashes). Sin internet el equipo robado sigue abriendo la
   app con cualquier cuenta cuya contraseña conozca el ladrón (por eso las contraseñas del personal deben ser fuertes y cambiarse en la nube tras un robo: al vincular otro servidor llegan las nuevas).
+- **Baja automática al deshabilitar la llave (22-nov-2026, decisión de Juan David):** cuando el servidor se entera de que su llave fue deshabilitada (la nube respondió «servidor deshabilitado»; un 401 o la falta
+  de internet NO la disparan), el servicio actualizador de Windows lanza UNA vez `scripts\autodestruir.ps1` en una tarea programada aparte (`GoldenLocalBaja`, como SYSTEM): borra datos, copias, secretos y certificados
+  (`borrar-datos.ps1 -Yes`), corre el desinstalador y borra `C:\GoldenLocal`; deja una línea con la fecha en `C:\ProgramData\GoldenLocal-baja.log`. **Lo que no se haya subido se pierde**: por eso «Deshabilitar» pide
+  escribir `DESHABILITAR`. Se apaga con `LOCAL_WIPE_ON_DISABLE=0` en `config\local.env`. Un equipo robado SIN internet no se entera: lo cubren el plazo de gracia (solo lectura tras `LOCAL_GRACE_DAYS`, 14 por
+  defecto) y BitLocker. Sin probar en Windows real.
 - **Devolver, prestar o dar de baja el portátil (`scripts\borrar-datos.ps1`, sin probar en Windows real):** 1) en Sincronización, «Pasar a internet» en cada evento (0 pendientes); 2) deshabilitar la
   llave en la nube si el equipo no seguirá siendo servidor; 3) PowerShell como administrador:
   `powershell -NoProfile -ExecutionPolicy Bypass -File C:\GoldenLocal\scripts\borrar-datos.ps1 -Overwrite` (pide escribir `BORRAR`; detiene los servicios; elimina base, archivos, copias,

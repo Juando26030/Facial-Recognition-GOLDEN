@@ -9,6 +9,15 @@ while ($true) {
     try {
         $req = Join-Path $UpdateDir 'update-request.json'
         if (Test-Path $req) { & (Join-Path $ScriptsDir 'run-update.ps1') }
+        # Llave deshabilitada en la nube (la app escribe SERVER_DISABLED=1 solo cuando la nube lo confirmó): baja automática, una sola vez (docs/17_SERVIDOR_LOCAL.md § Llaves)
+        $envNow = Read-EnvFile
+        if (("$($envNow['SERVER_DISABLED'])" -match '^(1|true|yes|si)$') -and ("$($envNow['LOCAL_WIPE_ON_DISABLE'])" -ne '0') -and -not $envNow['SERVER_WIPE_STARTED']) {
+            Set-EnvKey 'SERVER_WIPE_STARTED' (Get-Date).ToString('s')
+            Write-Log 'Llave deshabilitada en la nube: se inicia la baja automática (borrado de datos y desinstalación)' 'actualizador.log'
+            $act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $ScriptsDir 'autodestruir.ps1')`""
+            Register-ScheduledTask -TaskName 'GoldenLocalBaja' -Action $act -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+            Start-ScheduledTask -TaskName 'GoldenLocalBaja'
+        }
         $now = Get-Date
         if (($now - $lastCertCheck).TotalSeconds -ge 60) {          # cada minuto: ¿cambió la IP del equipo? (no toca la base; solo lee los adaptadores y el certificado)
             $lastCertCheck = $now
