@@ -43,3 +43,9 @@ def test_staging_enciende_el_aislamiento_y_produccion_no():
     assert 'if [ "$GOLDEN_ENV" = staging ]; then sed -i' in d and "ENFORCE_STAFF_TENANT" in d
     c = _src("deploy/gcp/env/common.yaml")
     assert 'ENFORCE_STAFF_TENANT: "0"' in c and 'ENFORCE_STAFF_EVENT_SCOPE: "0"' in c
+
+
+def test_evento_no_acepta_coordinador_ni_comercial_de_otra_empresa():
+    s = _src("app/routers/events.py")
+    assert s.count("staff_tenant_enforced(staff) and commercial.tenant_id != staff.tenant_id") == 2
+    assert s.count("staff_tenant_enforced(staff) and coord.tenant_id != staff.tenant_id") == 2

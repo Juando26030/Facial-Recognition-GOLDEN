@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Uplo
 from pydantic import BaseModel, field_validator
 
 from app.inputcheck import check_text, check_username, text_validator
-from app.tenant_scope import assert_same_tenant
+from app.tenant_scope import assert_same_tenant, staff_tenant_enforced
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
@@ -482,12 +482,12 @@ def create_event(
             or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
             StaffUser.is_active == True,
         ).first()
-        if not commercial:
+        if not commercial or (staff_tenant_enforced(staff) and commercial.tenant_id != staff.tenant_id):          # 23-nov-2026 (Fase 4): una cuenta de otra empresa no asigna personal de Golden
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
     if data.coordinator_staff_id is not None:      # 0C (N3): debe ser un coordinador activo (igual que en la creación); 17-nov: también el director de coordinadores y los administradores (app/coordination.py)
         coord = coordination.find_coordinator(db, data.coordinator_staff_id)
-        if not coord:
+        if not coord or (staff_tenant_enforced(staff) and coord.tenant_id != staff.tenant_id):          # 23-nov-2026 (Fase 4): idem
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
 
     event_types_router.check_assignable(db, data.event_type_id)
@@ -610,7 +610,7 @@ def update_event(
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
     if data.coordinator_staff_id is not None and data.coordinator_staff_id != event.coordinator_staff_id:      # P8: misma validación que al crear (0C, N3)
         coord = coordination.find_coordinator(db, data.coordinator_staff_id)
-        if not coord:
+        if not coord or (staff_tenant_enforced(staff) and coord.tenant_id != staff.tenant_id):          # 23-nov-2026 (Fase 4): idem
             raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
     if data.commercial_staff_id is not None:
         # Reasignar la comercial es decisión de comercial+ — un coordinador "puro" puede editar el
@@ -623,7 +623,7 @@ def update_event(
             or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
             StaffUser.is_active == True,
         ).first()
-        if not commercial:
+        if not commercial or (staff_tenant_enforced(staff) and commercial.tenant_id != staff.tenant_id):          # 23-nov-2026 (Fase 4): una cuenta de otra empresa no asigna personal de Golden
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
     event_types_router.check_assignable(db, data.event_type_id, event.event_type_id)
