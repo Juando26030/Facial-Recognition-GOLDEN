@@ -8,6 +8,11 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-23 — Hotfix: estadísticas por estado de registro (rama `hotfix/estadisticas-registro-2026-11-23` sobre `main`; también en `saas/revision-integral`) — sin migración
+- Parámetros › Campos: al activar «Estadística» se elige sobre quién se cuenta (toda la base / solo registrados / solo no registrados); viaja en `default_chart_type` como `<gráfico>@<alcance>`.
+- Estadísticas: selector por gráfica para cambiarlo solo por el momento (al recargar manda lo de Campos); también en el enlace de solo lectura. Zonas, inventario y dependientes no lo llevan.
+- Barras de categorías de un color por categoría (panel y Excel). Excel: hojas «Gráficos registrados» y «Gráficos no registrados».
+
 ## Sin publicar (rama `saas/revision-integral`, 22-nov-2026)
 - Revisión integral del repositorio por roles (`docs/revision_2026-11-22/`); documento consolidado de reglas inamovibles (`docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md`).
 - `CHANGELOG.md`, `CONTRIBUTING.md`, plantilla de PR y README raíz al día (esta revisión).
