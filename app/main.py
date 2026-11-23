@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs, quote_core
 from app import node_sync, local_installer
-from app import bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
+from app import external_scope, bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import SessionLocal, get_db
 from app.models import Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -180,6 +180,22 @@ async def event_only_gate(request, call_next):
             if not event_only.api_allowed(request.method, path):
                 return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
         elif not event_only.page_allowed(path):
+            if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
+                return RedirectResponse("/", status_code=302)
+            return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def external_gate(request, call_next):
+    """Cuenta de otra empresa (SaaS, app/external_scope.py): sin CRM ni Estado del sistema (decisión del 23-nov-2026). Va con lo que hay en la sesión; las rutas de la API además se protegen por su cuenta."""
+    session = request.scope.get("session")
+    if session and session.get("staff_external"):
+        path = request.url.path
+        if path.startswith("/api/"):
+            if external_scope.api_blocked(path):
+                return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
+        elif external_scope.page_blocked(path):
             if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
                 return RedirectResponse("/", status_code=302)
             return JSONResponse({"detail": "No tienes permiso para esta acción"}, status_code=403)
@@ -386,6 +402,7 @@ def _crm_nav_visible(request) -> bool:
 
 
 templates.env.globals["crm_nav_visible"] = _crm_nav_visible
+templates.env.globals["external_session"] = lambda request: bool(request.session.get("staff_external")) if request.scope.get("session") is not None else False          # cuenta de otra empresa (SaaS): el menú no ofrece CRM ni Estado del sistema
 templates.env.globals["event_only_session"] = lambda request: bool(request.session.get("staff_event_only")) if request.scope.get("session") is not None else False          # coordinador temporal: el menú lateral solo ofrece Eventos y Calendario
 templates.env.globals["local_server"] = __import__("app.localmode", fromlist=["is_local_server"]).is_local_server()          # Fase 6: en un servidor local las pantallas no ofrecen cambiar contraseñas
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook

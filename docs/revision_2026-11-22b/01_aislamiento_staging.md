@@ -28,7 +28,8 @@ Pruebas de texto: `tests/test_aislamiento_listas_2026_11_23.py` (6).
 **Re-verificado en staging (`b0cc145`, misma cuenta ficticia):** coordinadores 1 (solo ella misma), comerciales 0, servidores 0, formularios/eventos 1/1 (los propios), alertas 403. Las filtraciones 1-5 quedaron cerradas. La 6 (asignar comercial de Golden) no se pudo repetir en vivo porque el plan Básico ya agotó su evento del mes; queda cubierta solo por la prueba de texto.
 
 ## Lo que sigue abierto (plan, no improvisado)
-- **Catálogos globales sin dueño por empresa:** almacén (productos, unidades, novedades), catálogo de inventario, tipos de evento, estados y plantilla de evento se ven iguales para todas las empresas. Decidir si son de la plataforma (compartidos) o de cada empresa.
+- **Catálogos globales sin dueño por empresa** (almacén, inventario, tipos de evento, estados, plantilla de evento): decisión de Juan David del 23-nov: **propios de cada empresa**. Obra pendiente (cada catálogo necesita su `org_id`, migración y filtro); plan en el reporte final.
+- **Hecho el 23-nov por esa decisión:** cuentas de otra empresa sin CRM ni «Estado del sistema» (`app/external_scope.py`, menú y rutas).
 - **Una empresa nueva no puede crear eventos si la plantilla exige «comercial asignada»** hasta que cree su propia cuenta comercial (con la corrección 6 ya no puede usar la de Golden). Falta una guía en pantalla (`¿Qué sigue?`).
 - El barrido por rutas fue manual (~120 rutas GET sin parámetro + ~15 con id de evento). El filtro por empresa en TODAS las consultas y RLS sigue siendo la obra grande (160-220 h, reporte 01 Anexo A.3).
 - No probado: rutas POST/PUT/DELETE cruzadas entre empresas; solo lectura.

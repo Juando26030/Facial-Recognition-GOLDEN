@@ -1,6 +1,7 @@
 import os
 import secrets
 from datetime import datetime
+from app.tenant_scope import staff_tenant_enforced
 from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -64,6 +65,8 @@ def complete_login(request: Request, db: Session, staff: StaffUser, prev_sid=Non
     request.session["staff_role"] = staff.role
     if getattr(staff, "event_only", False):
         request.session["staff_event_only"] = True          # coordinador temporal (app/event_only.py): main.py y el menú lateral lo leen sin consultar la base
+    if staff_tenant_enforced(staff):
+        request.session["staff_external"] = True          # cuenta de OTRA empresa (SaaS): app/external_scope.py cierra CRM y Estado del sistema; el menú lateral lo lee sin consultar la base
     request.session["staff_secondary_role"] = ",".join(all_extra_roles(staff)) or None  # Fase 15 + 0103: los roles que se suman al principal (coma); las páginas lo leen con auth.split_roles
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username

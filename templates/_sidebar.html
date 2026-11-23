@@ -17,9 +17,10 @@
 <aside class="golden-sidebar" id="gwSidebar">
   <button type="button" class="golden-sidebar-hide" id="sidebarHideBtn" aria-label="Ocultar el menú lateral" title="Ocultar el menú"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chevron"/></svg> Ocultar menú</button>
   <nav>
+    {% set ext = external_session is defined and external_session(request) %}{# cuenta de otra empresa (SaaS): sin CRM ni Estado del sistema (app/external_scope.py) #}
     {% set eo = event_only_session is defined and event_only_session(request) %}{# coordinador temporal: solo Eventos y Calendario (app/event_only.py) #}
     {% if not eo %}<a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>{% endif %}
-    {% if crm_nav_visible is defined and crm_nav_visible(request) and not eo %}<a href="/crm"{% if sidebar_active == "crm" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/></svg> CRM</a>{% endif %}
+    {% if crm_nav_visible is defined and crm_nav_visible(request) and not eo and not ext %}<a href="/crm"{% if sidebar_active == "crm" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/></svg> CRM</a>{% endif %}
     <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Eventos</a>
     <a href="/calendario"{% if sidebar_active == "calendario" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Calendario</a>
     {# Bug real corregido (2026-09-16, pedido explícito): el link SIEMPRE estuvo oculto para
@@ -32,7 +33,7 @@
     <a href="/sincronizacion"{% if sidebar_active == "sincronizacion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg> Sincronización</a>{% endif %}
     {% if not eo and not local_server %}{% if staff_role in ["admin", "super_admin"] %}<a href="/cuentas-de-cobro"{% if sidebar_active == "cuentas_cobro" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sheet"/></svg> Cuentas de cobro</a>{% endif %}{% endif %}
     {% if not eo %}<a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg> Configuración</a>{% endif %}
-    {% if not eo %}{% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}{% endif %}
+    {% if not eo and not ext %}{% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-health"/></svg> Estado del sistema</a>{% endif %}{% endif %}
     {% if not eo and not local_server %}{% if staff_role in ["admin", "super_admin", "contabilidad"] %}<a href="/gastos"{% if sidebar_active == "gastos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-chart"/></svg> Gastos</a>{% endif %}{% endif %}
     {% if not eo and not local_server %}{% if staff_role == "super_admin" %}<a href="/plataforma"{% if sidebar_active == "plataforma" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Empresas (SaaS)</a>{% endif %}{% endif %}
   </nav>
