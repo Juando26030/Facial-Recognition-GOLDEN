@@ -201,11 +201,11 @@ def test_solo_lectura_deja_entrar_y_subir_lo_pendiente():
 
 
 def test_pendiente_4_no_se_implemento_a_medias():
-    """03 #4 (/aceptar, foto pendiente) NO se tocó: hace falta cambiar la purga biométrica (app/privacy.py) en la misma pieza. Si alguien lo implementa, esta prueba le recuerda la regla."""
+    """03 #4 (/aceptar, foto pendiente; hecho el 22-nov, configurable): hace falta cambiar la purga biométrica (app/privacy.py) en la misma pieza. Si alguien lo implementa, esta prueba le recuerda la regla."""
     src = _read("app/routers/aceptar.py")
     if "pending" in src:
         privacy = _read("app/privacy.py")
-        assert "pending" in privacy, "una foto pendiente de /aceptar debe borrarse en TODA purga biométrica (retención de 7 días)"
+        assert "pending" in privacy or "enroll.delete_photos" in privacy or "delete_photos(" in privacy, "una foto pendiente de /aceptar debe borrarse en TODA purga biométrica (retención de 7 días)"
 
 
 def test_grace_period_is_wired_into_the_middleware_and_the_banner():
