@@ -1,0 +1,38 @@
+name: Pruebas E2E en staging
+
+# Manual. Corre tests/e2e (Playwright) contra STAGING con una cuenta de pruebas. Los secretos E2E_BASE_URL, E2E_USER y E2E_PASSWORD
+# se crean en GitHub (Settings > Secrets). El candado de tests/e2e/conftest.py se niega a correr contra producción.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+      E2E_USER: ${{ secrets.E2E_USER }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar Playwright
+        run: |
+          pip install pytest playwright
+          playwright install --with-deps chromium
+      - name: Correr las pruebas E2E
+        run: python -m pytest -v tests/e2e
+      - name: Subir capturas y video de los fallos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-fallos
+          path: |
+            test-results/
+            tests/e2e/artefactos/
+          if-no-files-found: ignore
