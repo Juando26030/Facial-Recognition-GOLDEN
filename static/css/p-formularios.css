@@ -72,3 +72,13 @@
   #body .gw-card-row__actions { gap: var(--gw-sp-1); }
   #body .gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
 }
+/* 22-nov-2026 (barrido ancho por ancho): en la lista de una fila, el nombre del formulario, su dirección y la nota de pruebas se ven completos (bajan de línea); y los botones bajan
+   a una segunda línea antes que salirse de la pantalla (a 1536 px de ventana se salían 61 px). */
+@container forms (min-width: 1240px) {
+  #body .gw-card-row__title { display: block; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; -webkit-line-clamp: none; line-clamp: none; line-height: var(--gw-lh-tight); }
+  #body .gw-card-row__meta { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+  #body .gw-card-row .gw-stat { flex-wrap: wrap; white-space: normal; overflow: visible; }
+  #body .gw-card-row .gw-stat__hint { overflow: visible; text-overflow: clip; }
+  #body .gw-card-row { grid-template-columns: minmax(9rem, 2.4fr) 6.5rem minmax(3.5rem, 1.1fr) minmax(9.5rem, 1.4fr) minmax(9.5rem, 0.6fr) minmax(0, auto); }
+  #body .gw-card-row__actions { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+}

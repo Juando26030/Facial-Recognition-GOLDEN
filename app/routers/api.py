@@ -106,6 +106,11 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
     "obligatorio" (`_missing_required_fields`)."""
     problems = []
     for cfg in field_configs:
+        if cfg["field_type"] == "number":          # 21-nov-2026: tipo «Número» (Parámetros › Campos): solo cifras, con signo y decimales opcionales
+            value = str(values.get(cfg["key"]) or "").strip()
+            if value and not NUMBER_RE.match(value):
+                problems.append(f"{cfg['label']}: «{value}» {NUMBER_ONLY}")
+            continue
         if cfg["field_type"] != "email":
             continue
         value = str(values.get(cfg["key"]) or "").strip()
@@ -115,6 +120,18 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
         if not ok:
             problems.append(f"{cfg['label']}: «{value}» {reason}")
     return problems
+
+
+NUMBER_RE = re.compile(r"^-?\d+([.,]\d+)?$")
+NUMBER_ONLY = "no es un número (este campo solo acepta números)"
+
+
+def _bad_value_prefix(problems: list) -> str:
+    """«Correo no válido — » de siempre; si TODO lo que falla son campos de número, «Número no válido — »; si se mezclan, «Dato no válido — »."""
+    nums = [p for p in problems if p.endswith(NUMBER_ONLY)]
+    if not nums:
+        return "Correo no válido — "
+    return "Número no válido — " if len(nums) == len(problems) else "Dato no válido — "
 
 
 def _cell_text(cell) -> str:
@@ -515,6 +532,8 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         att_q, log_q = att_q.filter(EventAttendee.user_id.in_(ids)), log_q.filter(AccessLog.user_id.in_(ids))
     attendees = {a.user_id: a for a in att_q}
     counts = {uid: (real, new) for uid, real, new in log_q.group_by(AccessLog.user_id)}
+    from app import dependents as deps_mod          # 0161: cuántos dependientes trae cada persona (campo «Dependientes»; solo si el evento tiene esa base)
+    dep_counts = deps_mod.counts_by_holder(db, event) if deps_mod.has_dependents(db, event.id) else None
 
     result = []
     for u in users:
@@ -538,6 +557,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "birth_date": u.birth_date.isoformat() if (u.birth_date and event.facial_enabled) else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
+            **({"dependents": dep_counts.get(u.id, 0)} if dep_counts is not None else {}),
             "categories": att.get_categories() if att else [],
             "certificate": bool(att.certificate) if att else False,
             "digital_contact": (att.digital_contact or "") if att else "",
@@ -566,7 +586,8 @@ def get_all_users(
         raise HTTPException(status_code=403, detail=event_archive.DATA_ARCHIVED_MSG)
     headers = {"Cache-Control": "private, no-cache"}
     masked = staff.role == "cliente"          # E4: el cliente recibe otra versión del directorio: no comparte la huella (ni la caché del navegador) con el personal
-    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}")}"'
+    dep_sig = db.execute(text("SELECT count(*), coalesce(max(id), 0) FROM event_dependents WHERE event_id = :e"), {"e": event.id}).one()          # 0161: el conteo «Dependientes» viaja en cada fila: si cambia la base de dependientes, cambia la huella
+    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}|dep{tuple(dep_sig)}")}"'
     headers["ETag"] = etag
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
@@ -1164,7 +1185,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
             return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
         bad = _invalid_email_fields(field_configs, values)
         if bad:
-            return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+            return {"op_id": op_id, "result": "error", "detail": _bad_value_prefix(bad) + "; ".join(bad)}
         kind = "Nuevo"
     try:
         with db.begin_nested():
@@ -1241,7 +1262,7 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     touched = set(changes) | set(extras)
     bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
     if bad:
-        return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+        return {"op_id": op_id, "result": "error", "detail": _bad_value_prefix(bad) + "; ".join(bad)}
     missing = _missing_required_fields(field_configs, final)
     if _last_name_error(field_configs, changes.get("last_name") or user.last_name):
         missing = missing + [_last_name_label(field_configs)]
@@ -1526,7 +1547,7 @@ def update_user(
             raise HTTPException(status_code=400, detail=last_error)
         bad_emails = [] if testperson.is_test(user.id) else _invalid_email_fields(field_configs, final_values)
         if bad_emails:
-            raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
+            raise HTTPException(status_code=400, detail=_bad_value_prefix(bad_emails) + "; ".join(bad_emails))
 
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado",
@@ -1670,6 +1691,8 @@ def delete_user_from_event(
         db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
     person_history.delete_for_person(db, event.tenant_id, user_id, event_id)          # el historial de cambios de la persona en este evento (el de otros eventos se queda con ellos)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
+    from app import dependents
+    dependents.delete_for_holders(db, event_id, [user_id])          # 0161: sus dependientes se van con ella
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
     log.info("persona eliminada del evento %s por el usuario %s (se borran también su historial de impresión y sus permisos de reimpresión)", event_id, staff.id)      # sin datos personales
     signatures.delete_signatures(event.tenant_id, event_id, user_id)
@@ -1910,7 +1933,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         raise HTTPException(status_code=400, detail=last_error)
     bad_emails = _invalid_email_fields(field_configs, final_values)
     if bad_emails:
-        raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
+        raise HTTPException(status_code=400, detail=_bad_value_prefix(bad_emails) + "; ".join(bad_emails))
 
     face_enc_json = None
     img_array = None
@@ -2058,24 +2081,32 @@ def bulk_roster(
 @router.post("/bulk_roster/preview")
 def bulk_roster_preview(
     event_id: int = Form(...), roster_file: UploadFile = File(None), roster_upload: str = Form(None), keep_duplicates: str = Form(None), text_case: str = Form(None),
+    mode: str = Form("append"),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
-    """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
-    la carga real lo vuelve a usar."""
+    """Vista previa de una carga de la base, SIN escribir nada: «solo agregar personas nuevas» (`mode=append`, app/roster_append.py) o la carga normal (`mode=normal`, 0161). Lee y valida la
+    hoja, cuenta qué pasaría, muestra hasta 10 personas repartidas por el archivo tal como se verían en «Editar persona» y cómo cambia la base del evento (app/roster_preview.py).
+    Mismos permisos que la carga. No borra el archivo subido: la carga real lo vuelve a usar."""
     event = get_event_for_staff(event_id, db, staff)
     event_lease.assert_writable_by(event, staff)          # un solo escritor: con el evento en un servidor local, la nube solo lo ve
     event_archive.require_data_open(event, staff)
-    if blocked := event_rules.roster_block_reason(event, append_only=True):
+    if mode not in ("append", "normal"):
+        raise HTTPException(status_code=400, detail="Tipo de carga no válido")
+    append = mode == "append"
+    if blocked := event_rules.roster_block_reason(event, append_only=append):
         raise HTTPException(status_code=400, detail=blocked)
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
     content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
     if content is None:
         raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
     name = roster_up.filename if roster_up else roster_file.filename
-    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare", "preview": True}, append_only=True,
+    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare", "preview": True}, append_only=append,
                            keep_duplicates=_truthy(keep_duplicates), text_case=_text_case_or_400(text_case))
     db.rollback()          # nada se escribe; si algo quedó abierto, se descarta
-    return roster_append.preview(db, event, res["prepared"])
+    from app import roster_preview
+    out = roster_append.preview(db, event, res["prepared"]) if append else {}
+    out.update(roster_preview.build(db, event, res["prepared"], mode))
+    return out
 
 
 @router.post("/bulk_register")
@@ -2332,6 +2363,7 @@ def _bulk_register_impl(
     # Carga POR PASOS (24-oct-2026, app/bulk_steps.py): `step={"phase": "prepare"}` hace todo lo previo a las filas y devuelve lo preparado; `step={"phase": "rows", ...}` procesa SOLO el siguiente grupo
     # de filas (cada paso dentro de su propia petición, reanudable e idempotente). Sin `step`, una carga completa como siempre.
     resume = bool(step and step.get("phase") == "rows")
+    preview = bool(step and step.get("preview"))          # vista previa (0161: también de la carga normal): no escribe NADA
     phases = _Phases()
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
@@ -2448,7 +2480,7 @@ def _bulk_register_impl(
                     used_optional_keys.add(norm)
 
         missing = used_optional_keys - set(known_labels.keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
-        if missing and not field_labels:
+        if missing and not field_labels and not preview:          # en la vista previa no se pregunta: esas columnas se muestran como «campo nuevo sin nombre» (se pregunta al cargar)
             # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
             # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
             # Excel — ej. si "opcional_1" trae "Talla M"/"Talla L", eso mismo se muestra al preguntar.
@@ -2467,11 +2499,11 @@ def _bulk_register_impl(
                 labels_to_apply = {}
         for slot, title in auto_labels.items():
             labels_to_apply.setdefault(slot, title)
-        if fresh_event:
+        if fresh_event and not preview:
             _reset_event_fields(db, event, header_columns, known_labels)          # Plan 5: etiquetas viejas fuera y campos fijos sin columna ocultos (solo en un evento sin personas)
-        if labels_to_apply and not (step and step.get("preview")):          # la vista previa de «solo agregar» no escribe NADA
+        if labels_to_apply and not preview:          # la vista previa no escribe NADA
             _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
-        if labels_to_apply or fresh_event:
+        if (labels_to_apply or fresh_event) and not preview:
             db.commit()
 
         source_name = ""
@@ -2570,7 +2602,8 @@ def _bulk_register_impl(
             phases.mark("prescan")
             phases.emit(len(rows))
             return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows,
-                                 **({"dup_rows": roster_append.duplicate_rows(row_infos)} if append_only else {})},
+                                 **({"dup_rows": roster_append.duplicate_rows(row_infos)} if append_only else {}),
+                                 **({"labels": {**known_labels, **labels_to_apply}, "fresh_event": fresh_event, "unnamed": sorted(missing - set(labels_to_apply))} if preview else {})},
                     "state": {**({"append_only": True, "append": {**roster_append.new_state(), "messages": list(errors)}} if append_only else {}), "pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
                               "carried_ids": sorted(carried_ids), "source_name": source_name, "overwrite_birth": bool(overwrite_birth)}}
     else:

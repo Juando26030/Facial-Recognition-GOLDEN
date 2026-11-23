@@ -6,6 +6,18 @@
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
   let users = [], person = null, items = [], delivering = false, lastBatches = new Set();
   const AUTOSCAN = !!window.AUTOSCAN;          // Fase 10: «escanear / Enter = entrega automática» (Parámetros): al leer a la persona se entrega lo que esté marcado, sin pulsar «Entregar»
+  const ASSIGNED = !!window.INV_ASSIGNED;          // 0161: «La base lo define»: no se elige; static/js/inventario-asignado.js muestra lo que le toca a cada persona
+  /* 0161: lo marcado se recuerda en esta tableta; con «Bloquear configuración» (Parámetros) el digitador no lo puede cambiar sin la contraseña. */
+  const SEL_KEY = 'gw-inv-sel:' + window.EVENT_ID;
+  const LOCK = window.GWConfigLock || { isLocked: () => false, banner: () => {}, onChange: () => {} };
+  const locked = () => !ASSIGNED && LOCK.isLocked('inventory');
+  function saveSel() { try { localStorage.setItem(SEL_KEY, JSON.stringify(selection())); } catch (e) { /* sin almacenamiento: no se recuerda */ } }
+  function readSel() { try { return JSON.parse(localStorage.getItem(SEL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function paintLock() {
+    const on = locked();
+    document.querySelectorAll('#itemsList .qty, #itemsList .qty-check').forEach(el => { if (on) { el.dataset.gwWasDisabled = el.disabled ? '1' : ''; el.disabled = true; } else if (el.dataset.gwWasDisabled !== undefined) { el.disabled = el.dataset.gwWasDisabled === '1'; delete el.dataset.gwWasDisabled; } });
+    document.getElementById('itemsList').classList.toggle('gw-locked-ctl', on);
+  }
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
   const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
   function verdict(cls, title, html) {
@@ -41,7 +53,9 @@
       return;
     }
     $('itemsLoading').hidden = true;
-    const keep = AUTOSCAN ? selection() : {};          // con entrega automática lo marcado se conserva entre personas
+    // Lo marcado se conserva entre personas con entrega automática o con la configuración bloqueada (0161: también entre recargas); si no, como siempre, la lista vuelve en blanco.
+    const sticky = AUTOSCAN || !!(LOCK.state && LOCK.state.inventory);
+    const keep = !sticky ? {} : (document.querySelector('.item-row') ? selection() : readSel());
     const real = items.filter(i => !i.is_group);
     $('statStock').textContent = real.filter(i => i.available > 0).length;
     $('statOut').textContent = real.filter(i => i.available <= 0).length;
@@ -73,8 +87,14 @@
     const loose = items.filter(i => !i.is_group && !grouped.has(i.id)).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
     html += loose.map(i => row(Object.assign({}, i, { multi: multiOk(i, i.parent_id ? byId[i.parent_id] : null) }), i.name, '')).join('');
     box.innerHTML = html || `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
-    if (AUTOSCAN) restore(keep);
+    restore(keep);
+    if (!ASSIGNED) {
+      paintLock();
+      LOCK.banner($('lockBar'), 'inventory', () => { const sel = selection(); const names = items.filter(i => sel[i.id]).map(i => `${sel[i.id]} × ${i.name}`); return names.length ? 'se entrega ' + names.join(', ') : 'no hay nada marcado'; });
+    }
   }
+  document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('#itemsList')) saveSel(); });
+  LOCK.onChange((scope) => { if (scope === 'inventory') paintLock(); });
   /* Tope por persona de un grupo (Máx. > 1): al pasarse, se deshace lo último marcado y se avisa. Con el máximo en 1 son botones de opción y no hace falta. */
   document.addEventListener('change', (e) => {
     const fs = e.target.closest && e.target.closest('fieldset[data-group]'); if (!fs) return;
@@ -124,21 +144,22 @@
     b.innerHTML = `<div class="gw-person__photo" aria-hidden="true">${esc((String(u.first_name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--ok">${icon('check')} Entregando a esta persona</span></div>`;
     b.hidden = false;
     $('suggest').innerHTML = ''; $('suggest').hidden = true;
+    if (ASSIGNED && window.GWInvAssigned) window.GWInvAssigned.show(u, { auto: AUTOSCAN && !!u.__auto });
   }
   function byId(id, auto) {
     // Primero identificación y, si el evento usa código, el código (0140)
     const low = String(id || '').trim().toLowerCase();
     const u = users.find(x => x.id === id) || (low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null);
     if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
-    setPerson(u);
-    if (auto && AUTOSCAN) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
+    setPerson(Object.assign({}, u, { __auto: !!auto }));
+    if (auto && AUTOSCAN && !ASSIGNED) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
     return true;
   }
 
   // Buscador único (static/js/person-finder.js): cédula, nombre, empresa o código con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano.
   PersonFinder.attach({
     input: $('scanInput'), box: $('suggest'), users: () => users, purpose: 'inventory',
-    onPick: (u) => { setPerson(u); if (AUTOSCAN) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
+    onPick: (u) => { setPerson(Object.assign({}, u, { __auto: true })); if (AUTOSCAN && !ASSIGNED) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
     onRaw: () => showToast('Esa persona no está en la base de este evento', 'error'),
   });
   // Cámara del dispositivo: el MISMO escáner del Registro y de Control de áreas (selector «Cédula vieja · Cédula nueva · QR»); cada lectura elige a la persona a la que se le entrega.
@@ -179,6 +200,7 @@
     if (data.batch_id && !lastBatches.has(data.batch_id)) verdict('err', 'Revisa esta entrega', `No aparece en el registro del evento. Recarga la página y comprueba antes de volver a entregar: <strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>.`);
   }
   $('deliverBtn').addEventListener('click', (e) => busy(e.currentTarget, deliver));
+  window.GWInv = { verdict, esc, icon, busy, reload: async () => { await loadItems(); await loadDeliveries(); }, pickById: (id) => byId(id, false), lastBatches: () => lastBatches };
 
   init();
 })();

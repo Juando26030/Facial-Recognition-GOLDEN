@@ -52,6 +52,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
+{% include "_config_lock.html" %}
 <script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if (event.auto_register or event.areas_autoscan) else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
@@ -89,6 +90,7 @@
 
       <section class="gw-card gw-stack" aria-labelledby="areasMovTitle">
         <h2 class="gw-card__title" id="areasMovTitle">Registrar un movimiento</h2>
+        <div id="lockBar" role="status" hidden></div>
         <div class="gw-field" data-gw-tour-step="1" data-gw-tour-title="1. Elige la zona" data-gw-tour-text="Escoge la zona donde estás. Entre paréntesis ves cuántas personas hay adentro.">
           <label class="gw-label" for="areaSelect" id="zoneLabel">Zona</label>
           <div class="gw-segment gw-segment--lg" id="zoneSeg" role="group" aria-labelledby="zoneLabel" hidden></div>

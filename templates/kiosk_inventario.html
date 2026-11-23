@@ -52,7 +52,8 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }}; window.AUTOSCAN = {{ "true" if event.inventory_autoscan else "false" }};</script>
+{% include "_config_lock.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }}; window.AUTOSCAN = {{ "true" if event.inventory_autoscan else "false" }}; window.INV_ASSIGNED = {{ "true" if inventory_assigned else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-inv" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
@@ -110,13 +111,35 @@
         <article class="gw-person gw-person--ok gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
       </section>
 
-      <section class="gw-card gw-stack" aria-labelledby="invWhatTitle" data-gw-tour-step="2" data-gw-tour-title="2. Marca qué se entrega" data-gw-tour-text="Pon la cantidad o marca «Entregar 1» en cada ítem. Puedes combinar varios.">
+      {% if inventory_assigned %}
+      <section class="gw-card gw-stack" aria-labelledby="invDepTitle">
+        <h2 class="gw-card__title" id="invDepTitle">¿No aparece? Busca al dependiente</h2>
+        <p class="gw-hint">Si la persona dice que trae a alguien más (por ejemplo un hijo) y no le aparece, escribe el nombre o el documento de ese dependiente: verás a qué titular quedó asociado. Si quedó registrado aparte, con su propio documento, búscalo arriba como a cualquier persona.</p>
+        <div class="gw-actions">
+          <div class="gw-field gw-field--grow"><label class="gw-label" for="depSearchInput">Nombre o documento del dependiente</label><input type="text" id="depSearchInput" class="gw-input" autocomplete="off" placeholder="Mínimo 3 letras o números"></div>
+          <button type="button" id="depSearchBtn" class="gw-btn gw-btn--secondary">{{ ic('search', 'gw-icon--sm') }} Buscar</button>
+        </div>
+        <div id="depSearchResults" class="gw-cards" role="status" aria-live="polite"></div>
+      </section>
+      {% endif %}
+
+      <section class="gw-card gw-stack" aria-labelledby="invWhatTitle" data-gw-tour-step="2" data-gw-tour-title="2. Marca qué se entrega" data-gw-tour-text="{% if inventory_assigned %}Aparece lo que la base dice que le toca a esta persona (y a sus dependientes). Pulsa «Entregar» en cada uno o «Entregar todo».{% else %}Pon la cantidad o marca «Entregar 1» en cada ítem. Puedes combinar varios.{% endif %}">
+        {% if inventory_assigned %}
+        <h2 class="gw-card__title" id="invWhatTitle">2. Lo que le corresponde <span class="gw-hint">(lo define la base de datos: no se elige)</span></h2>
+        <p class="gw-hint">Solo se entrega a personas <b>registradas</b>. Puedes entregar cada cosa por separado (hoy una, mañana otra) o todo junto; lo ya entregado no se repite.</p>
+        <div id="assignedBox" class="gw-assign" role="status" aria-live="polite"><div class="gw-state gw-empty--hero"><p class="gw-state__title">Escanea o busca a la persona para ver lo que le corresponde.</p></div></div>
+        <div id="itemsLoading" hidden></div>
+        <div class="gw-cards" id="itemsList" hidden></div>
+        <div class="gw-ai__foot" hidden><button type="button" id="deliverBtn" class="gw-btn gw-btn--primary gw-btn--xl" hidden>{{ ic('check-lg') }} Entregar</button></div>
+        {% else %}
         <h2 class="gw-card__title" id="invWhatTitle">2. ¿Qué se le entrega? <span class="gw-hint">(uno o varios a la vez, combos)</span></h2>
+        <div id="lockBar" role="status" hidden></div>
         <div id="itemsLoading">{{ skeleton('list', rows=4, label='Cargando el inventario…') }}</div>
         <div class="gw-cards" id="itemsList"></div>
         <div class="gw-ai__foot" data-gw-tour-step="3" data-gw-tour-title="3. Confirma" data-gw-tour-text="Pulsa «Entregar»: se descuenta del inventario y queda en la lista de abajo.">
           <button type="button" id="deliverBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} Entregar</button>
         </div>
+        {% endif %}
         <div class="gw-verdict" id="resultBanner" role="status" aria-live="polite" hidden></div>
       </section>
 
@@ -134,5 +157,6 @@
   </div>
 </main>
 <script src="{{ url_for('static', path='js/inventario.js') }}"></script>
+{% if inventory_assigned %}<script src="{{ url_for('static', path='js/inventario-asignado.js') }}"></script>{% endif %}
 </body>
 </html>

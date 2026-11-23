@@ -73,7 +73,12 @@ def area_row(r: AreaMovement, area_names: dict) -> Optional[dict]:
 
 def delivery_row(r: InventoryDelivery, items: dict) -> Optional[dict]:
     it = items.get(r.item_id)
-    return {"cedula": r.user_id, "item": it[0], "parent": it[1], "batch": r.batch_id, "qty": r.qty, "at": _iso(r.delivered_at)} if it else None
+    if not it:
+        return None
+    out = {"cedula": r.user_id, "item": it[0], "parent": it[1], "batch": r.batch_id, "qty": r.qty, "at": _iso(r.delivered_at)}
+    if r.assignment_key:          # 0161: «la base lo define»: qué asignación se entregó ('h' o 'd<uid>', estable entre servidores)
+        out["akey"] = r.assignment_key
+    return out
 
 
 def turn_row(r: QueueTurn) -> dict:
@@ -197,7 +202,8 @@ def apply_deliveries(db: Session, event: Event, items: list, from_peer=None) -> 
             qty = max(1, int(r.get("qty") or 1))
         except (TypeError, ValueError):
             qty = 1
-        db.add(InventoryDelivery(event_id=event.id, item_id=iid, batch_id=batch, user_id=uid, tenant_id=event.tenant_id, qty=qty, delivered_at=at, from_peer=from_peer))
+        db.add(InventoryDelivery(event_id=event.id, item_id=iid, batch_id=batch, user_id=uid, tenant_id=event.tenant_id, qty=qty, delivered_at=at, from_peer=from_peer,
+                                 assignment_key=_s(r.get("akey"), 40) or None))
         n += 1
     return n
 

@@ -115,6 +115,17 @@ def node_abort(event_id: int, db: Session = Depends(get_db), node: LocalNode = D
     return event_lease.serialize(event)
 
 
+@router.post("/node/events/{event_id}/precheck")
+def node_precheck(event_id: int, body: dict, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
+    """Evento COMPARTIDO (0161): antes de entregar o de dejar entrar a una zona sin reingreso, el servidor local pregunta qué tiene ya la nube de esa persona (lo suyo y lo que
+    subieron los demás). Solo conteos de esa persona; solo para servidores del grupo."""
+    from app import node_precheck as precheck
+    event = _event(db, event_id)
+    if not event_lease.is_shared(event) or not event_lease.is_writer(event, node.name):
+        raise HTTPException(status_code=409, detail="Este evento no es compartido o no está en este servidor local")
+    return precheck.cloud_answer(db, event, body or {})
+
+
 @router.get("/node/events/{event_id}/changes")
 def node_changes(event_id: int, request: Request, db: Session = Depends(get_db), node: LocalNode = Depends(require_node)):
     """Evento COMPARTIDO (0160): lo que hay en la nube DESPUÉS del cursor del servidor (un número por sección, claves `peer_changes.KEYS`: `l` registros, `a` personas, `p` impresiones, `c` cambios, `e` ediciones, `m` áreas, `d` entregas, `t` turnos, `q` llamados, `r` ruleta, `x` contactos), para que cada

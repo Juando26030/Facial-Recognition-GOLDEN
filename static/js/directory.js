@@ -396,6 +396,7 @@
       <form id="editModalForm">
         ${configuredHtml}
       </form>
+      <div id="editModalDeps" hidden></div>
       ${canManageStatus ? `
       <hr class="gw-registro__editsep">
       <div class="gw-field gw-registro__editfield">
@@ -415,6 +416,25 @@
       </div>
     `;
     overlay.appendChild(box);
+    {                                                                   // 0161: campo «Dependientes» (base de dependientes): cuántos y, al desplegarlo, quiénes y sus datos. Solo se ve: se cambia volviendo a cargar esa base
+      let depCfg = null;
+      try { const el = document.getElementById('gwDependentsCfg'); depCfg = el ? JSON.parse(el.textContent || 'null') : null; } catch (e) { depCfg = null; }
+      const depBox = box.querySelector('#editModalDeps');
+      if (depCfg && depBox && user.id) (async () => {
+        try {
+          const r = await fetch(`/api/events/${window.EVENT_ID}/dependents?holder=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+          const d = await r.json();
+          if (!r.ok) return;
+          const people = d.people || [];
+          const rowsHtml = (rows) => rows.map(rw => Object.keys(rw).map(k => `<span class="gw-badge">${esc(k)}: ${esc(rw[k])}</span>`).join(' ')).join('<br>');
+          depBox.innerHTML = `<div class="gw-field gw-registro__editfield"><span class="gw-label">${esc(depCfg.label || 'Dependientes')}</span>
+            <details class="gw-form-group"><summary class="gw-form-group__summary">${people.length} ${people.length === 1 ? 'dependiente' : 'dependientes'}${people.length ? ' · ver quiénes' : ''}</summary>
+            <div class="gw-form-group__body gw-deps">${people.length ? people.map(p => `<div class="gw-deps__person"><strong>${esc(p.label)}</strong>${p.doc ? ` · ${esc(p.doc)}` : ''}<div class="gw-hint">${rowsHtml(p.rows || [])}</div></div>`).join('') : '<p class="gw-hint">Esta persona no tiene dependientes en la base de dependientes.</p>'}</div></details>
+            <p class="gw-hint">Sale de la base de dependientes del evento (Adjuntar base de datos). Para cambiarlo, vuelve a cargar esa base.</p></div>`;
+          depBox.hidden = false;
+        } catch (e) { /* sin red: el campo no se muestra */ }
+      })();
+    }
     {                                                                   // Archivos subidos en un formulario (PDF, imágenes): se ven como archivo descargable, no como texto (digitador o superior, temporales incluidos; si no hay archivo, queda el texto)
       (async () => {
         try {
@@ -709,6 +729,7 @@
   /* La cédula se MUESTRA sin ceros a la izquierda («0000349220» -> «349220»); el valor guardado y el que se usa para buscar o editar no cambian. Un documento con letras no se toca. */
   function shownId(v) { const t = String(v == null ? '' : v); return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t; }
   function buildRow(user) {
+    syncCardHeader();          // el directorio en vivo dibuja con drawRows (no renderRows): el encabezado se ajusta aquí (una sola vez por tabla)
     const tr = document.createElement('tr');
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
     tr.dataset.userId = user.id;
@@ -749,10 +770,16 @@
 
     tr.appendChild(actionTd);
 
+    /* 0161 (21-nov-2026): la tarjeta de Registro muestra SOLO los campos marcados «Mostrar en el registro» (Parámetros › Campos; de fábrica cédula, nombres y apellidos). Los que no se marcan
+       quedan en la fila pero ocultos en la tarjeta (data-card-hidden); los demás marcados van debajo, con su nombre, y la tarjeta crece hacia abajo. Sin la lista (otras pantallas) nada cambia. */
+    const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
+    const ALWAYS = ['id', 'first_name', 'last_name'];          // cédula, nombres y apellidos: siempre (22-nov-2026)
+    const inCard = (key) => !CARD || ALWAYS.includes(key) || (key !== 'opt_1' && key !== 'entity' && CARD.some((c) => c.key === key));          // con la lista, tipo y empresa van como columna elegida (cardx)
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
       td.innerText = field === 'id' ? shownId(user[field]) : (user[field] || '');
+      if (!inCard(field)) td.dataset.cardHidden = '1';
       tr.appendChild(td);
     });
 
@@ -765,7 +792,35 @@
     entityTd.dataset.field = 'entity';
     entityTd.className = 'touch-only';
     entityTd.innerText = user.entity || '';
+    if (!inCard('entity')) entityTd.dataset.cardHidden = '1';
     tr.appendChild(entityTd);
+    if (CARD) {
+      const SHOWN = ALWAYS;
+      const extras = user.extra_fields || {};
+      const valueOf = (c) => {
+        if (c.key === 'categories') return (user.categories || []).join(', ');
+        if (c.key === 'certificate') return user.certificate ? 'Sí' : 'No';
+        if (c.key === 'dependents') return user.dependents != null ? String(user.dependents) : '';
+        if (c.type === 'signature') return '';
+        const raw = Object.prototype.hasOwnProperty.call(user, c.key) && c.key.indexOf('opcional_') !== 0 ? user[c.key] : extras[c.key];
+        const t = String(raw == null ? '' : raw).trim();
+        if (c.type === 'boolean' || c.type === 'consent') return t.toLowerCase() === 'true' ? 'Sí' : (t.toLowerCase() === 'false' ? 'No' : '');
+        return t;
+      };
+      /* Cada campo elegido es UNA columna (en escritorio, alineada con su título en el encabezado: syncCardHeader); vacía conserva su lugar. En la tarjeta del celular lleva su nombre delante. */
+      CARD.filter((c) => !SHOWN.includes(c.key)).forEach((c) => {
+        const v = valueOf(c);
+        const td = document.createElement('td');
+        td.dataset.field = 'cardx'; td.className = 'touch-only'; td.dataset.cardKey = c.key;
+        if (v) {
+          const l = document.createElement('span'); l.className = 'gw-reg-cardx__l'; l.textContent = c.label + ': ';
+          const val = document.createElement('span'); val.className = 'gw-reg-cardx__v'; val.textContent = v;
+          td.title = c.label + ': ' + v;
+          td.append(l, val);
+        }
+        tr.appendChild(td);
+      });
+    }
 
     /* Casillas propias de la tarjeta (cada una es una pieza suelta, sin insignias anidadas dentro de otra): origen de carga (B1: aparte del estado, no cambia al registrar o quitar el registro),
        «Recién registrado/creado» (la pone drawRows junto al nombre) y el motivo de la búsqueda unificada (drawRows). Vacías no se ven. */
@@ -788,7 +843,54 @@
     return q || Array.prototype.find.call(tr.children || [], (c) => c.dataset && c.dataset.field === name) || null;
   }
 
+  /* 0161 (22-nov-2026): el encabezado de la tabla de Registro (escritorio) lleva UNA columna por cada campo marcado «Mostrar en el registro», con el nombre del campo, en el mismo orden que
+     las filas. Tipo y Empresa fijos se ocultan (si se eligieron, salen como columna elegida). Orden: Nombres | Apellidos | Cédula | campos elegidos | Estado | Origen | Recién | Acción. */
+  function syncCardHeader() {
+    const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : null;
+    if (!CARD || !document.querySelectorAll) return;
+    bindFit();
+    document.querySelectorAll('.golden-table thead tr').forEach((tr) => {
+      const idTh = tr.querySelector('th[data-col="id"]');
+      if (!idTh || tr.dataset.cardSynced) return;
+      tr.dataset.cardSynced = '1';
+      tr.querySelectorAll('th[data-col="opt_1"], th[data-col="entity"]').forEach((th) => { th.dataset.cardHidden = '1'; });
+      let after = idTh;
+      CARD.filter((c) => ['id', 'first_name', 'last_name'].indexOf(c.key) < 0).forEach((c) => {
+        const th = document.createElement('th');
+        th.scope = 'col'; th.dataset.col = 'cardx'; th.dataset.cardKey = c.key; th.textContent = c.label; th.title = c.label;
+        after.after(th); after = th;
+      });
+    });
+  }
+
+  /* 22-nov-2026: lo elegido para verse se ve COMPLETO. En escritorio la tabla de columnas necesita un ancho mínimo por columna; si la lista no lo tiene (laptop angosta, muchos campos
+     elegidos, ventana achicada), la pantalla pasa a «dos renglones por persona» (.gw-reg--stack, static/css/p-registro-puerta.css). Se recalcula al cambiar el tamaño de la ventana. */
+  function fitRegLayout() {
+    try {
+      const CARD = Array.isArray(window.REG_CARD_FIELDS) ? window.REG_CARD_FIELDS : [];
+      const lists = document.querySelectorAll('.gw-reg__list');
+      let width = 0;
+      lists.forEach((l) => { width = Math.max(width, l.clientWidth || 0); });
+      if (!width) return;
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const vw = window.innerWidth || width;
+      const extra = CARD.filter((c) => ['id', 'first_name', 'last_name'].indexOf(c.key) < 0).length;
+      const fixed = 7.5 + 7.75 + (vw >= 1600 ? 8.5 : 0) + 8.75 + (vw >= 1500 ? 27.5 : 18.5) + 6;          // cédula, estado, origen, «recién», acciones, separaciones y relleno (rem)
+      const need = (fixed + 2 * 9 + extra * 10) * rem;          // nombres y apellidos: 9rem cada uno; cada campo elegido: 10rem
+      document.body.classList.toggle('gw-reg--stack', width < need);
+    } catch (e) { /* DOM de pruebas sin medidas: se queda la tabla */ }
+  }
+  let fitBound = false;
+  function bindFit() {
+    if (fitBound || typeof window === 'undefined' || !window.addEventListener) return;
+    fitBound = true;
+    let t = null;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fitRegLayout, 80); });
+    fitRegLayout();
+  }
+
   function renderRows(tbodyId, users) {
+    syncCardHeader();
     const tbody = document.getElementById(tbodyId);
     tbody.innerHTML = '';
     if (users.length === 0) {

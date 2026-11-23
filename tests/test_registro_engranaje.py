@@ -1,4 +1,4 @@
-"""Plan 7 (Registro limpio): el engranaje «Configuración del registro» y quién lo ve (coordinador+ siempre; digitador solo con la opción de Parámetros). Es solo visual."""
+"""Plan 7 (Registro limpio): el engranaje «Configuración del registro» y quién lo usa (coordinador+ siempre; el digitador lo ve siempre y, con la opción de Parámetros apagada, bloqueado con contraseña: 0161)."""
 from tests.conftest import login
 
 GEAR = 'id="gwRegCfgBtn"'
@@ -18,16 +18,24 @@ def test_coordinator_always_sees_the_gear_with_the_whole_config_inside_the_panel
     assert 'id="autoRegisterBtn"' in html and 'id="autoPrintBtn"' in html
 
 
-def test_digitador_does_not_see_the_gear_until_the_option_is_on_and_loses_it_when_turned_off(client, factory, db):
+def _lock(html):
+    import json
+    return json.loads(html.split('id="gwConfigLock">')[1].split("</script>")[0])
+
+
+def test_digitador_always_sees_the_gear_but_locked_until_the_option_is_on(client, factory, db):
+    """21-nov-2026 (0161): el digitador VE el engranaje siempre; con la opción apagada queda bloqueado (pide la contraseña de desbloqueo, app/config_lock.py)."""
     ev = _ev(client, factory, "digitador", "dig1")
-    assert GEAR not in client.get(f"/kiosk/{ev.id}/registro").text
+    html = client.get(f"/kiosk/{ev.id}/registro").text
+    assert GEAR in html and _lock(html)["registro"] is True
     from app import registro_gear
     registro_gear.set_digitadores_enabled(db, ev.id, True)
     db.commit()
-    assert GEAR in client.get(f"/kiosk/{ev.id}/registro").text
+    html = client.get(f"/kiosk/{ev.id}/registro").text
+    assert GEAR in html and _lock(html)["registro"] is False
     registro_gear.set_digitadores_enabled(db, ev.id, False)
     db.commit()
-    assert GEAR not in client.get(f"/kiosk/{ev.id}/registro").text
+    assert _lock(client.get(f"/kiosk/{ev.id}/registro").text)["registro"] is True
 
 
 def test_option_endpoint_is_coordinator_only_validates_and_defaults_off(client, factory, db):

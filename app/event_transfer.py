@@ -50,7 +50,7 @@ FILE_NAME_RE = re.compile(r"^files/[0-9a-f]{64}$")
 KDF_ITERATIONS = int(os.getenv("EVENT_TRANSFER_KDF_ITERATIONS", "600000"))
 BIO_CHECK = b"goldenweb-biometria"
 MIN_PASSPHRASE = 8
-OPTIONAL_TABLES = ("event_documents", "event_expenses", "event_legalizations")          # los paquetes de la fase F1 no las traen
+OPTIONAL_TABLES = ("event_documents", "event_expenses", "event_legalizations", "event_dependents")          # los paquetes de la fase F1 no las traen (ni los anteriores a 0161, los dependientes)
 BIOMETRIC_USER_COLUMNS = ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source", "is_biometric_enabled")
 
 
@@ -74,6 +74,7 @@ TABLES = [
     {"name": "form_events", "kind": "form", "remap": {"form_id": "web_forms"}},
     {"name": "users", "kind": "people"},
     {"name": "event_attendees", "kind": "event", "unique": {"digital_token": "null", "accept_token": "null"}, "user": "user_id"},
+    {"name": "event_dependents", "kind": "event", "user": "holder_id"},          # 0161: base de dependientes (su uid viaja igual: las entregas lo usan)
     {"name": "form_submissions", "kind": "event", "remap": {"form_id": "web_forms", "invite_id": "form_invites?", "discount_code_id": "form_discount_codes?"},
      "set": {"source": "importado"}, "user": "person_id"},
     {"name": "form_payments", "kind": "event", "remap": {"form_id": "web_forms", "submission_id": "form_submissions?"}, "unique": {"reference": "skip"},

@@ -85,9 +85,55 @@ def _configurable_fields(event: Event):
     return fields
 
 
-def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
+# Hotfix 23-nov-2026 (sin migración, para no chocar con la numeración de staging): el alcance por defecto de la estadística de un campo
+# (toda la base / solo registrados / solo no registrados) viaja en la misma columna `default_chart_type` como «<gráfico>@<alcance>».
+# «all» se guarda sin sufijo, así que las filas viejas quedan igual. Leer y escribir SOLO con estas dos funciones.
+STAT_SCOPES = ("all", "registered", "unregistered")
+
+
+def split_chart_scope(raw) -> tuple:
+    """`'bar@registered'` → `('bar', 'registered')`; `'pie'` → `('pie', 'all')`; vacío → `(None, 'all')`."""
+    if not raw:
+        return None, "all"
+    chart, _, scope = str(raw).partition("@")
+    return (chart or None), (scope if scope in STAT_SCOPES else "all")
+
+
+def join_chart_scope(chart, scope) -> "str | None":
+    if not chart:
+        return None
+    return chart if scope in (None, "", "all") else f"{chart}@{scope}"
+
+
+CARD_DEFAULT_KEYS = ("id", "first_name", "last_name")          # 21-nov-2026: lo que la tarjeta de Registro muestra de fábrica (la entidad ya no)
+
+
+ALWAYS_IN_CARD = CARD_DEFAULT_KEYS          # 22-nov-2026 (Juan David): cédula, nombres y apellidos SIEMPRE se ven en Registro; la casilla solo elige los demás campos
+
+
+def _show_in_card(key: str, row) -> bool:
+    if key in ALWAYS_IN_CARD:
+        return True
+    if row is not None and row.show_in_card is not None:
+        return bool(row.show_in_card)
+    return key in CARD_DEFAULT_KEYS
+
+
+def _with_card(cfg: dict, row) -> dict:
+    cfg["show_in_card"] = _show_in_card(cfg["key"], row)
+    return cfg
+
+
+DEPENDENTS_KEY = "dependents"          # 0161: campo «Dependientes» (cuántos y quiénes, de la base de dependientes): solo existe con esa base cargada; nombre, posición y estadística
+
+
+def _serialize_base(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
     """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
     defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
+    if key == DEPENDENTS_KEY:
+        return {"key": key, "label": (row.label if row and row.label else default_label), "default_label": default_label, "locked": False, "virtual": True,
+                "required": False, "field_type": "dependents", "options": [], "help_text": "",
+                "default_stat_enabled": bool(row and row.default_stat_enabled), "default_chart_type": (row.default_chart_type if row and row.default_stat_enabled else None)}
     locked = key in LOCKED_KEYS
     label = default_label if key == "certificate" else (row.label if row and row.label else default_label)
     if row is None or locked:
@@ -97,29 +143,46 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
             "required": bool(row.required) if (row and key in ("certificate", "digital_contact")) else False,
             "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact", "birth_date": "date"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
-            "default_stat_enabled": False, "default_chart_type": None,
+            "default_stat_enabled": False, "default_chart_type": None, "default_stat_scope": "all",
         }
     return {
         "key": key, "label": label, "default_label": default_label, "locked": False,
         "required": row.required, "field_type": row.field_type,
         "options": row.get_options(), "help_text": row.help_text or "",
         "default_stat_enabled": row.default_stat_enabled,
-        "default_chart_type": row.default_chart_type,
+        "default_chart_type": split_chart_scope(row.default_chart_type)[0],
+        "default_stat_scope": split_chart_scope(row.default_chart_type)[1],
     }
 
 
-def field_configs_for_event(db: Session, event: Event) -> list:
+def _fields_with_virtual(db: Session, event: Event, include_virtual: bool):
+    fields = _configurable_fields(event)
+    if include_virtual:
+        from app import dependents
+        if dependents.has_dependents(db, event.id):
+            fields = fields + [(DEPENDENTS_KEY, "Dependientes")]
+    return fields
+
+
+def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
+    """La configuración de un campo + `show_in_card` (0161: se ve en la tarjeta de la persona en Registro)."""
+    return _with_card(_serialize_base(key, default_label, row, categories), row)
+
+
+def field_configs_for_event(db: Session, event: Event, include_virtual: bool = False) -> list:
     """Lista completa de campos configurables de este evento, cada uno con su config real si
     existe o los valores por defecto si todavía no se guardó nada — así quien consuma esto
     (frontend, o la validación de manual_register/update_user) siempre ve la lista completa sin
     filas 'faltantes'. Usado también por stats.py para saber qué gráficos generar solos.
 
     Viene ORDENADA (ítem 4): por `sort_order` si alguien reordenó; los campos sin posición guardada
-    (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto."""
+    (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto.
+    `include_virtual` (0161): agrega el campo «Dependientes» si el evento tiene base de dependientes. Solo lo piden Parámetros, «Editar persona» y Estadísticas: el resto
+    (formularios, escarapelas, validación de lo obligatorio…) nunca lo ve, porque no es un dato que se escriba."""
     rows = {r.field_key: r for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event.id)}
     last_required = lastname.is_required(db, event.id)          # Fase 2: el apellido es obligatorio si la base lo usa (automático) o si se eligió a mano
     ordered = []
-    for idx, (key, label) in enumerate(_configurable_fields(event)):
+    for idx, (key, label) in enumerate(_fields_with_virtual(db, event, include_virtual)):
         row = rows.get(key)
         if row is not None and row.field_type == DELETED_TYPE:       # B2: campo borrado en este evento (no aparece en ningún lado)
             continue
@@ -484,7 +547,7 @@ def list_field_configs(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    return field_configs_for_event(db, event)
+    return field_configs_for_event(db, event, include_virtual=True)
 
 
 @router.put("/events/{event_id}/field-configs/{field_key}")
@@ -493,7 +556,7 @@ def upsert_field_config(
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    valid_keys = {k for k, _ in _configurable_fields(event)}
+    valid_keys = {k for k, _ in _fields_with_virtual(db, event, True)}
     if field_key not in valid_keys:
         raise HTTPException(status_code=400, detail="Ese campo no existe o no es configurable en este evento")
     gone = db.query(EventFieldConfig).filter_by(event_id=event.id, field_key=field_key, field_type=DELETED_TYPE).first()
@@ -511,6 +574,20 @@ def upsert_field_config(
         db.add(row)
     row.label = None if field_key == "certificate" else label  # "Certificado": ni nombre ni tipo editables
     row.sort_order = sort_order
+    if "show_in_card" in data:          # 0161: mostrarlo en la tarjeta de la persona en Registro (cualquier campo, también los de identidad)
+        if not isinstance(data["show_in_card"], bool):
+            raise HTTPException(status_code=400, detail="show_in_card debe ser verdadero o falso")
+        row.show_in_card = True if field_key in ALWAYS_IN_CARD else data["show_in_card"]
+
+    if field_key == DEPENDENTS_KEY:          # 0161: nombre, posición y estadística; nunca obligatorio ni de otro tipo (no se escribe: sale de la base de dependientes)
+        stat = bool(data.get("default_stat_enabled", False))
+        chart = data.get("default_chart_type") if stat else None
+        if stat and chart not in CHART_TYPES:
+            raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
+        row.required, row.field_type, row.default_stat_enabled, row.default_chart_type = False, "text_short", stat, chart
+        row.set_options([])
+        db.commit()
+        return _serialize(field_key, "Dependientes", row)
 
     if field_key in LOCKED_KEYS:
         # Identidad y Categoría: solo etiqueta y posición. Certificado: solo posición y obligatorio.
@@ -539,13 +616,16 @@ def upsert_field_config(
     default_chart_type = data.get("default_chart_type") if default_stat_enabled else None
     if default_stat_enabled and default_chart_type not in CHART_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
+    default_stat_scope = data.get("default_stat_scope") or "all"
+    if default_stat_scope not in STAT_SCOPES:
+        raise HTTPException(status_code=400, detail="Alcance de la estadística inválido: general, registrados o no registrados")
 
     row.help_text = help_text if field_type in ("consent", "signature") else None
     row.required = bool(data.get("required", False))
     row.field_type = field_type
     row.set_options(options if field_type == "select" else [])
     row.default_stat_enabled = default_stat_enabled
-    row.default_chart_type = default_chart_type
+    row.default_chart_type = join_chart_scope(default_chart_type, default_stat_scope if default_stat_enabled else "all")
     db.commit()
 
     return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)

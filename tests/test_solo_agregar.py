@@ -134,7 +134,10 @@ def test_preview_counts_and_writes_nothing(client, live, db):
     assert (db.query(User).count(), db.query(EventAttendee).count()) == (n_users, n_att)
     ev2 = db.get(type(ev), ev.id)
     assert (ev2.roster_uploaded, str(ev2.get_optional_labels()), str(ev2.get_categories())) == ev_row
-    assert "@" not in json.dumps(p) and "1001" not in json.dumps(p)
+    # 21-nov-2026 (0161, pedido de Juan David): la vista previa muestra hasta 10 personas del PROPIO archivo como en «Editar persona» (`samples`); el resumen sigue sin datos personales
+    summary = {k: v for k, v in p.items() if k != "samples"}
+    assert "@" not in json.dumps(summary) and "1001" not in json.dumps(summary)
+    assert p["samples"] and all("fields" in s and "status" in s for s in p["samples"])
     assert client.get("/api/bulk_jobs/x").status_code in (404, 403, 401)          # (no dejó ninguna tarea abierta que consultar)
 
 

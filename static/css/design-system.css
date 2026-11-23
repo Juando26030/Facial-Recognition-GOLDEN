@@ -1246,3 +1246,26 @@
 
 /* Servidor local: las secciones del reconocimiento facial se ven apagadas y no se pueden tocar (el rostro solo existe en internet). */
 .gw-page [data-local-nofacial] > :not(.gw-tabpanel__head):not(.gw-alert) { opacity: .5; pointer-events: none; }
+
+/* 0161: inventario «lo define la base», dependientes y bloqueo de la configuración del digitador (docs/25_INVENTARIO_POR_BASE.md). Solo tokens. */
+.gw-lockbar { align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.gw-lockbar > div { flex: 1 1 16rem; }
+.gw-locked-ctl { opacity: .55; pointer-events: none; }
+.gw-assign { display: grid; gap: var(--gw-sp-3); }
+.gw-assign__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-assign__row--done { background: var(--gw-ok-bg); border-color: var(--gw-ok-line); }
+.gw-assign__row--problem { background: var(--gw-warn-bg); border-color: var(--gw-warn-line); }
+.gw-assign__who { display: block; color: var(--gw-text-muted); }
+.gw-preview { display: grid; gap: var(--gw-sp-4); }
+.gw-preview__cards { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.gw-preview__card { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-3); background: var(--gw-surface); display: grid; gap: var(--gw-sp-2); }
+.gw-preview__field { display: grid; gap: var(--gw-sp-1); }
+.gw-preview__field .gw-input { background: var(--gw-surface-2); }
+.gw-preview__field--changed .gw-input { border-color: var(--gw-warn-line); }
+.gw-preview__old { color: var(--gw-text-muted); text-decoration: line-through; }
+.gw-deps { display: grid; gap: var(--gw-sp-2); }
+.gw-deps__person { border-left: 4px solid var(--gw-info-line); padding-left: var(--gw-sp-3); }
+/* 22-nov-2026 (barrido ancho por ancho): en celular el TÍTULO de la página se ve completo (baja de línea) en vez de terminar en «…» */
+@media (max-width: 600px) {
+  .gw-page .gw-page-head__title, .gw-page h1.gw-title, .gw-page .golden-section-title h2 { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+}

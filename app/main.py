@@ -22,7 +22,7 @@ from app import report_jobs
 from app import node_sync, local_installer
 from app import bodylimit, nextpage, mass_delete, form_client, appmode, bulk_jobs, crypto, event_only, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import SessionLocal, get_db
-from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
+from app.models import Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app import preprint as preprint_mod
@@ -32,6 +32,7 @@ from app.routers import public_link as public_link_router
 from app.routers import contacts as contacts_router      # Fase 8: contactos para expositores
 from app.routers import event_lease as event_lease_router
 from app.routers import selfreg as selfreg_router
+from app.routers import inv_base as inv_base_router      # 0161: inventario «lo define la base», dependientes y bloqueo de la configuración del digitador
 from app.routers import node_sync as node_sync_router      # Fase 6: panel de sincronización del servidor local
 from app.routers import payment_accounts as payment_accounts_router      # Fase 8: cuentas de cobro de Wompi de terceros
 from app.routers import nodes as nodes_router      # Fase 6: servidores locales (token) y lo que suben
@@ -50,7 +51,7 @@ from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_i
 from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, preprint as preprint_router, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, almacen_novedades as almacen_novedades_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
-from app import brandcolor, lastname, personform, registro_gear
+from app import brandcolor, config_lock, inv_assign, lastname, personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
@@ -435,6 +436,7 @@ _include(event_acts_router.router, prefix="/api")      # Fase 10: acta de noveda
 _include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
+_include(inv_base_router.router, prefix="/api")
 _include(areas_dwell_router.router, prefix="/api")      # Fase 10: permanencia en zonas, premio por porcentaje de estadía y su lista descargable
 _include(queue_router.router, prefix="/api")
 _include(queue_router.public_router)   # Fase 8: turnos y filas (personal) — las rutas públicas /turno/... van en el mismo router
@@ -1059,8 +1061,10 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     # este evento, calculado acá mismo (no vía fetch aparte) para que el alta manual/edición y el
     # cálculo de estadísticas por defecto lo tengan disponible sin un viaje de red extra — mismo
     # patrón que optional_labels_json arriba.
-    field_configs = parametros.field_configs_for_event(db, event)
-    field_configs_json = json.dumps(field_configs).replace("</", "<\\/")
+    field_configs_all = parametros.field_configs_for_event(db, event, include_virtual=True)          # 0161: con el campo «Dependientes» si el evento tiene esa base
+    field_configs = [c for c in field_configs_all if not c.get("virtual")]          # alta, edición, formulario de persona y escarapelas: solo campos que se escriben
+    dependents_cfg = next((c for c in field_configs_all if c.get("virtual")), None)
+    field_configs_json = json.dumps(field_configs_all if template_name == "kiosk_parametros.html" else field_configs).replace("</", "<\\/")
     person_form = personform.active(db, event, field_configs)          # None con PERSON_FORM_ENABLED apagado o el evento sin él: todo se ve y funciona como siempre
     context = {
         "person_form_json": json.dumps(person_form).replace("</", "<\\/") if person_form else "null",
@@ -1078,6 +1082,10 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "sidebar_active": "eventos",
         "contingency_enabled": contingency_enabled(),
         "registro_gear": registro_gear.can_see_gear(db, event.id, staff_roles),        # Plan 7: engranaje «Configuración del registro» (solo visual)
+        "config_lock_json": json.dumps(config_lock.state_for(db, event, staff_roles)),        # 0161: qué pantallas tiene bloqueadas este digitador (app/config_lock.py)
+        "dependents_cfg_json": json.dumps(dependents_cfg).replace("</", "<\\/") if dependents_cfg else "null",        # 0161: campo «Dependientes» en «Editar persona»
+        "reg_card_fields_json": json.dumps([{"key": c["key"], "label": c["label"], "type": c.get("field_type")} for c in field_configs_all if c.get("show_in_card")]).replace("</", "<\\/"),        # 0161: lo que se ve en la tarjeta de la persona en Registro
+        "inventory_assigned": inv_assign.is_assigned(event),
         "search_unified": os.getenv("SEARCH_UNIFIED", "1") != "0",       # Fase 1A: buscador único en el directorio; SEARCH_UNIFIED=0 vuelve a las 3 cajas
     }
     if extra_context:
@@ -1130,7 +1138,10 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
                                extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL,
                                               "code_enabled": bool(event_obj is not None and event_obj.code_enabled), "code_required": bool(event_obj is not None and event_obj.code_required),
                                               # «Solo agregar personas nuevas»: con el evento en proceso, o con la base ya cargada (nunca finalizado)
-                                              "append_available": event_obj is not None and not event_rules.roster_block_reason(event_obj, append_only=True) and (event_obj.status == "en_proceso" or bool(event_obj.roster_uploaded))})
+                                              "append_available": event_obj is not None and not event_rules.roster_block_reason(event_obj, append_only=True) and (event_obj.status == "en_proceso" or bool(event_obj.roster_uploaded)),
+                                              # 0161: base de dependientes: solo DESPUÉS de la base de registro (el evento ya tiene personas) y nunca con el evento finalizado
+                                              "dependents_available": event_obj is not None and event_obj.status != "finalizado" and db.query(EventAttendee.id).filter(EventAttendee.event_id == event_obj.id, EventAttendee.user_id != "PRUEBA").first() is not None,
+                                              "event_finalized": event_obj is not None and event_obj.status == "finalizado"})
 
 
 @app.get("/kiosk/{event_id}/usuarios")

@@ -4,7 +4,7 @@ name: Diagnóstico de pruebas (corto)
 # (las pruebas viejas solo dicen «KeyError»). Sirve para arreglar muchas pruebas de una vez y dejar una sola corrida completa al final.
 on:
   push:
-    branches: ["diag/**"]
+    branches: ["diag/**", "!diag/inventario-base"]          # 21-nov-2026: en esta rama NO corre nada hasta que Juan David apruebe en staging (luego, UNA sola corrida completa)
 
 permissions:
   contents: read
@@ -60,7 +60,7 @@ jobs:
           PY
       - name: Pruebas que se están limpiando
         run: |
-          F=$(for f in turnos cuentas_cobro cobros_gastos_f10b event_acts analitica_eventos gastos_infra tipos_evento seguridad_f5_9_c rendimiento parametros_visual impresion_compartida design_system alertas_borrado trabajos_huerfanos ruleta_fase10 roulette roster_visual roles_almacen_contabilidad registro_visual observability instalador_local_descarga historial_personas forms fase10_a_texto event_transfer evento_desde_eventos entrega_encuesta base_archivada_guard autorregistro_kiosco; do echo tests/test_$f.py; done)
+          F=$(for f in inventario_por_base inventario_por_base_puro registro_engranaje solo_agregar carga_flexible carga_por_pasos event_transfer inventario_elegir_una inventario_unificado event_inventory subcategorias base_archivada_guard csp_trinquete design_system cadena_migraciones parametros_visual parametros_agrupados roster_visual registro_visual stats_links privacy purge_data reporte_limpio reporte_portada_graficos_db nodos_subida servidor_local_descarga evento_compartido decisiones_d7 codigo_campo persona_prueba alertas_borrado historial_personas roster_columns; do echo tests/test_$f.py; done)
           PYTHONPATH=/tmp python -m pytest -q -p diagplug -p no:logging -rf --tb=short $F
       - name: Dependencias de las pruebas de JS
         if: always()          # aunque las pruebas de Python hayan fallado

@@ -100,9 +100,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 
           <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
           <div class="gw-group__item" data-psave="reggear">
-            <div class="gw-item-head"><h4>Configuración del registro</h4>{% call ayuda('ay_gear', 'Engranaje del registro') %}Apagada por defecto: en la pantalla de Registro, el coordinador y los administradores siempre ven el engranaje (impresora, autoregistro e impresión automática); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.{% endcall %}</div>
+            <div class="gw-item-head"><h4>Configuración del registro</h4>{% call ayuda('ay_gear', 'Engranaje del registro') %}<b>Qué es:</b> el engranaje de la pantalla de Registro (impresora, autoregistro e impresión automática). <b>Si la activas:</b> el digitador abre y cambia esa configuración. <b>Si la dejas apagada</b> (así viene): el digitador VE el engranaje, pero al tocarlo le pide la <b>contraseña de desbloqueo</b> del evento (pestaña Zonas e inventario › Bloquear la configuración del digitador). <b>Qué NO hace:</b> no frena al coordinador ni a los administradores, y lo ya configurado se conserva.{% endcall %}</div>
             <label class="gw-check"><input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar la configuración del registro a los digitadores</label>
-            <p class="gw-hint">Apagada: solo coordinador y administradores ven el engranaje.</p>
+            <p class="gw-hint">Apagada: el digitador ve el engranaje pero necesita la contraseña de desbloqueo para cambiar algo.</p>
           </div>
 
           <!-- Fase 8: autorregistro sin base de datos (app/selfreg.py): la persona se crea sola en una pantalla aparte; no capta rostro. -->
@@ -414,6 +414,20 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         <section class="gw-tabpanel" role="tabpanel" id="grp_zonas" data-group="zonas" aria-labelledby="tab_zonas" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Zonas e inventario</h2><p class="gw-tabpanel__lead">Control de entrada y salida por zonas, y reparto de insumos.</p></div>
 
+          <!-- 0161: asistente corto «¿Qué necesito?»: con tres preguntas recomienda qué activar (static/js/inventory-assign-admin.js). No guarda nada. -->
+          <details class="gw-form-group" id="invWizard" data-pnodirty>
+            <summary class="gw-form-group__summary">¿Qué necesito? Responde 3 preguntas y te digo qué activar</summary>
+            <div class="gw-form-group__body gw-stack">
+              <fieldset class="gw-fieldset"><legend class="gw-label">1. ¿Vas a repartir algo en el evento (comida, regalos, kits, dotación)?</legend>
+                <label class="gw-check"><input type="radio" name="wzRepartir" value="si"> Sí</label> <label class="gw-check"><input type="radio" name="wzRepartir" value="no"> No</label></fieldset>
+              <fieldset class="gw-fieldset"><legend class="gw-label">2. ¿La base de datos ya dice qué le toca a cada persona?</legend>
+                <label class="gw-check"><input type="radio" name="wzBase" value="si"> Sí, cada persona tiene su producto en el archivo</label> <label class="gw-check"><input type="radio" name="wzBase" value="no"> No, la persona escoge al llegar</label></fieldset>
+              <fieldset class="gw-fieldset"><legend class="gw-label">3. ¿Las personas vienen con otras (hijos, acompañantes) que también cuentan o reciben algo?</legend>
+                <label class="gw-check"><input type="radio" name="wzDeps" value="si"> Sí</label> <label class="gw-check"><input type="radio" name="wzDeps" value="no"> No</label></fieldset>
+              <div id="invWizardOut" class="gw-alert gw-alert--info" role="status" aria-live="polite" hidden></div>
+            </div>
+          </details>
+
           <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
           <div class="gw-group__item">
             <div class="gw-item-head"><h4>Control de áreas</h4>{% call ayuda('ay_areas', 'Control de áreas') %}Con «permitir reingresos» apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula, QR o rostro) usa el «Modo autoregistro» del evento.{% endcall %}</div>
@@ -443,6 +457,31 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <label class="gw-check"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %}> Activar el control de inventario (repartir insumos)</label>
             </div>
             <div id="inventoryConfig" class="gw-stack" {% if not event.inventory_enabled %}hidden{% endif %}>
+              <!-- 0161: ¿quién decide qué recibe cada persona? (app/inv_assign.py, static/js/inventory-assign-admin.js) -->
+              <div class="gw-card gw-stack" data-psave="inv_mode" id="invModeBox" data-event="{{ event.id }}">
+                <div class="gw-item-head"><h5>¿Quién decide qué se le entrega a cada persona?</h5>{% call ayuda('ay_invmode', 'Quién decide qué se entrega') %}<b>La persona elige</b> (lo de siempre): llega, escoge y el digitador marca lo que escogió; tú creas los ítems en la tabla de abajo. <b>La base lo define:</b> el archivo de personas ya dice qué le toca a cada quien (un campo como «Producto»); los productos se crean solos con el stock igual a lo asignado y en el puesto solo se confirma la entrega, sin poder cambiarla. <b>Ejemplo:</b> regalos asignados por la empresa, dotación por cargo, kits por tipo de asistente. <b>Qué NO hace:</b> no entrega a personas que no estén registradas ni cambia el producto que dice la base.{% endcall %}</div>
+                <label class="gw-check gw-check--top"><input type="radio" name="invMode" value="choose" {% if not inventory_assigned and event.inventory_mode != 'assigned' %}checked{% endif %}> <span><b>La persona elige</b> — llega, escoge, y el digitador marca lo que escogió. <span class="gw-hint">Ejemplo: almuerzo, bebidas, souvenirs.</span></span></label>
+                <label class="gw-check gw-check--top"><input type="radio" name="invMode" value="assigned" {% if event.inventory_mode == 'assigned' %}checked{% endif %}> <span><b>La base lo define</b> — el archivo de personas ya dice qué le toca a cada quien; el digitador solo confirma la entrega y no puede cambiarla. <span class="gw-hint">Ejemplo: regalos, dotación, kits por cargo.</span></span></label>
+                <div id="invAssignCfg" class="gw-stack" {% if event.inventory_mode != 'assigned' %}hidden{% endif %}>
+                  <div class="gw-form-grid">
+                    <div class="gw-field"><label class="gw-label" for="invHolderProduct">Campo de la base de registro que dice el producto del titular</label><select class="gw-select" id="invHolderProduct"><option value="">— Ninguno (el titular no recibe nada propio) —</option></select>
+                      <p class="gw-hint">Cada valor distinto se vuelve un producto del inventario. Ejemplo: el campo «Producto» con «Kit A» o «Kit B».</p></div>
+                    <div class="gw-field"><label class="gw-label" for="invHolderQty">Campo con la cantidad del titular (opcional)</label><select class="gw-select" id="invHolderQty"><option value="">— Sin campo: 1 unidad por persona —</option></select>
+                      <p class="gw-hint">Si lo dejas vacío, a cada persona le toca 1 unidad de su producto.</p></div>
+                    <div class="gw-field"><label class="gw-label" for="invDepProduct">Columna de la base de dependientes que dice el producto de cada dependiente</label><select class="gw-select" id="invDepProduct"><option value="">— Ninguna (los dependientes no reciben) —</option></select>
+                      <p class="gw-hint" id="invDepHint">Sale de la base de dependientes (Adjuntar base de datos › Base de dependientes). Si todavía no la cargaste, carga primero y vuelve aquí.</p></div>
+                    <div class="gw-field"><label class="gw-label" for="invDepQty">Columna con la cantidad de cada dependiente (opcional)</label><select class="gw-select" id="invDepQty"><option value="">— Sin columna: cada fila es 1 unidad —</option></select>
+                      <p class="gw-hint">Si la dejas vacía, cada fila del archivo es una unidad más del producto de esa fila (dos filas de la misma persona con el mismo producto = 2 unidades).</p></div>
+                  </div>
+                  <div id="invAssignSummary" class="gw-stack" data-pnodirty aria-live="polite"></div>
+                  <div class="gw-actions" data-pnodirty>
+                    <button type="button" id="invAssignSync" class="gw-btn gw-btn--secondary">Actualizar productos desde la base</button>
+                    <button type="button" id="invAssignMatch" class="gw-btn gw-btn--secondary">Igualar el stock a lo asignado</button>
+                  </div>
+                  <p class="gw-hint"><b>Actualizar productos desde la base:</b> crea los productos nuevos que aparezcan en la base (el stock de los que ya existen no se toca). <b>Igualar el stock:</b> sube la cantidad de los productos que tienen menos de lo asignado; nunca la baja. El stock también se edita a mano en la tabla de abajo y puede quedar por debajo de lo asignado (solo verás la alerta).</p>
+                  <div id="invOverBox" data-pnodirty aria-live="polite"></div>
+                </div>
+              </div>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
               <p class="gw-hint">«Repetir la entrega a la misma persona» apagado: el sistema no entrega dos veces el mismo ítem a una misma persona (útil para insumos de una por persona, y frena el doble clic). Los ítems nuevos nacen apagados; los que ya existían quedan como estaban (permitido).</p>
               {% if can_archive %}<div data-pnodirty><label class="gw-check"><input type="checkbox" id="showArchivedItems"> Ver ítems archivados</label></div>{% endif %}
@@ -461,6 +500,17 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint"><strong>Subcategorías:</strong> por ejemplo «Comida» con Hamburguesa, Perro y Comida china dentro (elige «Dentro de»). El «Máx. por persona» del ítem principal manda sobre todas sus subcategorías juntas (Comida = 1 por persona, sea cual sea); cada subcategoría puede tener además el suyo (si quieres que una repita, activa «Permitir repetir la entrega»). La cantidad inicial se define en cada subcategoría. En el puesto, quien entrega elige qué subcategoría reparte.</p>
               <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
             </div>
+          </div>
+
+          <!-- 0161: bloquear la configuración del digitador (app/config_lock.py): zonas e inventario aquí; el registro, con su opción de la pestaña «Registro y pantalla». -->
+          <div class="gw-group__item" data-psave="cfg_lock" id="cfgLockBox" data-event="{{ event.id }}">
+            <div class="gw-item-head"><h4>Bloquear la configuración del digitador</h4>{% call ayuda('ay_cfglock', 'Bloquear la configuración del digitador') %}<b>Qué es:</b> deja fija la configuración que la tableta tiene elegida en ese momento (por ejemplo «entregar Perro» o «zona Entrada principal · Entrada») para que el digitador no la cambie por accidente. <b>Si lo activas:</b> los controles se ven pero no se pueden tocar; para cambiarlos hay que escribir la contraseña de desbloqueo. <b>Si lo apagas:</b> el digitador cambia todo libremente. <b>Ejemplo:</b> un puesto que solo reparte perros calientes y otro que solo reparte papas. <b>Qué NO hace:</b> no frena al coordinador ni a los administradores; en «La base lo define» casi no aplica, porque lo que se entrega lo decide la base.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="lockAreas" {% if event.areas_config_locked %}checked{% endif %}> Bloquear la configuración de control de zonas (zona y movimiento elegidos)</label>
+            <label class="gw-check"><input type="checkbox" id="lockInventory" {% if event.inventory_config_locked %}checked{% endif %}> Bloquear la configuración de control de inventario (lo marcado para entregar)</label>
+            <div class="gw-field"><label class="gw-label" for="lockPassword">Contraseña de desbloqueo {% if event.config_unlock_hash %}<span class="gw-badge gw-badge--ok">{{ ic('check') }}Ya hay una definida</span>{% else %}<span class="gw-badge gw-badge--warn">Sin definir</span>{% endif %}</label>
+              <input class="gw-input" type="password" id="lockPassword" autocomplete="new-password" placeholder="{{ 'Escribe una nueva solo si quieres cambiarla' if event.config_unlock_hash else 'Mínimo 4 caracteres' }}">
+              <p class="gw-hint">La misma contraseña sirve para el registro, las zonas y el inventario. Compártela solo con quien pueda cambiar la configuración. Sin contraseña, solo un coordinador puede desbloquear (apagando la casilla).</p></div>
+            {% if event.config_unlock_hash %}<label class="gw-check"><input type="checkbox" id="lockClearPw"> Quitar la contraseña</label>{% endif %}
           </div>
 
           <!-- Permanencia en zonas, premio por porcentaje de estadía y escaneo automático (Fase 10): se guarda con el «Guardar cambios» general (clave «dwell» de GWParams); «Calcular» y la lista van aparte (data-pnodirty). -->
@@ -565,6 +615,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                     <th scope="col"><span class="gw-sr-only">Mover</span></th>
                     <th scope="col">Campo (nombre en este evento)</th>
                     <th scope="col">Obligatorio</th>
+                    <th scope="col">Mostrar en el registro {% call ayuda('ay_showcard', 'Mostrar en el registro') %}<b>Qué es:</b> qué datos se ven en la tarjeta de cada persona en la pantalla de Registro, sin abrir «Editar». <b>De fábrica:</b> cédula, nombres y apellidos. <b>Si marcas más:</b> aparecen debajo, cada uno con su nombre; la tarjeta crece hacia abajo y nada se corta. <b>Qué NO hace:</b> no cambia lo que se guarda ni lo que se pide al registrar.{% endcall %}</th>
                     <th scope="col">Tipo de campo</th>
                     <th scope="col">Opciones</th>
                     <th scope="col">Estadística</th>
@@ -652,12 +703,19 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         { value: 'select', label: 'Lista desplegable' },
         { value: 'boolean', label: 'Booleano (Sí/No/sin elegir)' },
         { value: 'email', label: 'Correo (se verifica que exista)' },
+        { value: 'number', label: 'Número (solo acepta números)' },
     ];
     const CHART_TYPE_OPTIONS = [
         { value: 'bar', label: 'Barras' },
         { value: 'pie', label: 'Circular' },
         { value: 'histogram', label: 'Histograma' },
         { value: 'line', label: 'Líneas' },
+    ];
+    // Hotfix 23-nov-2026: sobre quién se cuenta la estadística al abrir Estadísticas (en el panel se puede cambiar solo por el momento).
+    const STAT_SCOPE_OPTIONS = [
+        { value: 'all', label: 'Toda la base' },
+        { value: 'registered', label: 'Solo registrados' },
+        { value: 'unregistered', label: 'Solo no registrados' },
     ];
     // Solo para campos opcionales (opcional_N) — el backend también lo exige.
     const EXTRA_TYPE_OPTIONS = [
@@ -842,6 +900,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     });
     const failBox = (id) => () => { const b = document.getElementById(id); if (b && b.querySelector('[data-gw-sk]') && window.GW && GW.skeleton) GW.skeleton.error(b, { text: 'Recarga la página para intentarlo de nuevo.' }); };
     loadAreas().catch(failBox('areasBody')); loadItems().catch(failBox('itemsBody'));
+    window.GWParamsItemsReload = () => loadItems().catch(failBox('itemsBody'));          // 0161: «La base lo define» crea productos: la tabla se vuelve a leer
 
 
 
@@ -1196,21 +1255,28 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
             <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
             <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date', 'last_name', 'code'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-show-card" ${cfg.show_in_card ? 'checked' : ''} ${cfg.field_type === 'signature' || ['id', 'first_name', 'last_name'].includes(cfg.key) ? 'disabled' : ''} ${['id', 'first_name', 'last_name'].includes(cfg.key) ? 'title="Siempre se muestra"' : ''} aria-label="Mostrar ${esc(defaultLabel)} en la tarjeta de Registro"></label></td>
             <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>
                 <select class="gw-select cfg-tpl" aria-label="Insertar un texto de autorización tipo"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
             <td><label class="gw-check"><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} aria-label="Generar estadística de ${esc(defaultLabel)}"></label></td>
-            <td><select class="gw-select cfg-chart-type" aria-label="Tipo de gráfico de ${esc(defaultLabel)}">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+            <td><select class="gw-select cfg-chart-type" aria-label="Tipo de gráfico de ${esc(defaultLabel)}">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select>
+                <select class="gw-select cfg-stat-scope" title="Sobre quién se cuenta" aria-label="Contar la estadística de ${esc(defaultLabel)} sobre">${optionsHtml(STAT_SCOPE_OPTIONS, cfg.default_stat_scope || 'all')}</select></td>
             <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm cfg-delete" aria-label="Borrar el campo ${esc(defaultLabel)}">${gwIcon('trash')} Borrar campo</button>` : ''}</td>
         `;
         const shown = (sel, on) => { const el = tr.querySelector(sel); if (el) el.style.display = on ? '' : 'none'; };      // se muestra solo lo que aplica al tipo de campo
         shown('.cfg-options', cfg.field_type === 'select'); shown('.cfg-help', ['consent', 'signature'].includes(cfg.field_type));
-        shown('.cfg-tpl', cfg.field_type === 'consent'); shown('.cfg-chart-type', !!cfg.default_stat_enabled);
+        shown('.cfg-tpl', cfg.field_type === 'consent'); shown('.cfg-chart-type', !!cfg.default_stat_enabled); shown('.cfg-stat-scope', !!cfg.default_stat_enabled);
         const del = tr.querySelector('.cfg-delete');
         if (del) del.addEventListener('click', () => deleteField(cfg, tr));
         if (locked) {
-            tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type').forEach(el => { el.disabled = true; });
+            tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type, .cfg-stat-scope').forEach(el => { el.disabled = true; });
+        }
+        if (cfg.field_type === 'dependents') {          // 0161: «Dependientes» sale de la base de dependientes: nombre, posición y estadística (cuenta a los dependientes de los registrados)
+            tr.querySelectorAll('.cfg-field-type, .cfg-required, .cfg-options').forEach(el => { el.disabled = true; });
+            const typeCell = tr.querySelector('.cfg-field-type');
+            typeCell.innerHTML = '<option value="text_short">Dependientes (de la base de dependientes)</option>';
         }
         const handle = tr.querySelector('.drag-handle');
         handle.addEventListener('mousedown', () => { tr.draggable = true; });
@@ -1235,8 +1301,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         });
         const statCheck = tr.querySelector('.cfg-stat-enabled');
         const chartSelect = tr.querySelector('.cfg-chart-type');
+        const scopeSelect = tr.querySelector('.cfg-stat-scope');
         statCheck.addEventListener('change', () => {
             chartSelect.style.display = statCheck.checked ? '' : 'none';
+            scopeSelect.style.display = statCheck.checked ? '' : 'none';
         });
         return tr;
     }
@@ -1270,7 +1338,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
             tbody.appendChild(buildRow({
                 key: data.key, label: data.label, default_label: data.label, help_text: '', required: false, field_type: 'text_short',
-                options: [], default_stat_enabled: false, default_chart_type: null,
+                options: [], default_stat_enabled: false, default_chart_type: null, default_stat_scope: 'all',
             }));
             input.value = '';
             showToast(`Campo "${data.label}" agregado — si le cambias el tipo u obligatoriedad, pulsa «Guardar»`, 'success');
@@ -1297,6 +1365,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                     help_text: tr.querySelector('.cfg-help').value.trim(),
                     default_stat_enabled: statEnabled,
                     default_chart_type: statEnabled ? tr.querySelector('.cfg-chart-type').value : null,
+                    show_in_card: !!(tr.querySelector('.cfg-show-card') && tr.querySelector('.cfg-show-card').checked),
+                    default_stat_scope: statEnabled ? tr.querySelector('.cfg-stat-scope').value : 'all',
                 };
                 const res = await fetch(`/api/events/${window.EVENT_ID}/field-configs/${encodeURIComponent(key)}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -1533,5 +1603,6 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
   load();
 })();
 </script>
+<script src="{{ url_for('static', path='js/inventory-assign-admin.js') }}"></script>
 </body>
 </html>

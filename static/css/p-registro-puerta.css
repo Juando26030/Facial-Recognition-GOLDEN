@@ -60,6 +60,11 @@ html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=origin] .g
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 7; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); white-space: nowrap; }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 8; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] { order: 9; flex: 1 1 100%; }
+/* 0161: campos elegidos en Parámetros › Campos «Mostrar en el registro»: los no elegidos se ocultan; los demás van debajo, cada uno en su línea, sin cortarse (la tarjeta crece hacia abajo) */
+html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden],
+html body.gw-registro .gw-reg__list .golden-table tbody tr td.touch-only[data-card-hidden] { display: none; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] { order: 8; flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; font-size: var(--gw-fs-sm); color: var(--gw-text); }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=reason] .gw-reason { margin-top: 0; }
 /* última fila: acciones. Una sola línea, nada se sale: Acreditar toma el espacio sobrante; Imprimir, Editar y «⋯» al tamaño del contenido */
 html body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { order: 10; flex: 1 1 100%; display: flex; flex-wrap: nowrap; align-items: stretch; gap: var(--gw-sp-2); margin-top: var(--gw-sp-1); min-width: 0; width: auto; white-space: nowrap; }
@@ -365,6 +370,17 @@ body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manip
   body.gw-registro #editModalForm > .gw-alert { grid-column: 1 / -1; }
   body.gw-registro #regExtras .gw-form-group__body { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0 var(--gw-sp-4); }
 }
+/* 0161 (22-nov-2026): columnas elegidas en Parámetros › Campos «Mostrar en el registro»: en escritorio cada una es una columna con su título en el encabezado (directory.js, syncCardHeader),
+   entre la cédula y el estado; el origen y «Recién registrado» quedan al final, junto a las acciones. Vacía conserva su lugar; el nombre del campo solo va en la tarjeta del celular. */
+@media (min-width: 901px) {
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-card-hidden] { display: none; }
+  html body.gw-registro .gw-reg__list .golden-table thead th[data-col=cardx] { order: 4; flex: 1.5 1 0; min-width: 0; white-space: normal; overflow-wrap: break-word; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: block; order: 4; flex: 1.5 1 0; min-width: 0; font-size: var(--gw-fs-sm); white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; hyphens: auto; line-height: var(--gw-lh-tight); }          /* lo largo baja a 2 o 3 líneas: la fila crece hacia abajo */
+  html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=cardx] .gw-reg-cardx__l { display: none; }
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden],
+  html body.gw-registro .gw-reg__list .golden-table tbody tr td[data-card-hidden]:empty { display: none; }
+}
 /* con pantalla de 1500 px o más sobra lugar: Imprimir y Editar vuelven a decir su nombre */
 @media (min-width: 1500px) {
   html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela'],
@@ -457,4 +473,51 @@ html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-tabl
 @media (min-width: 721px) and (pointer: fine) and (max-height: 800px) {
   .gw-registro .gw-steps--compact { display: none; }
   .gw-registro .golden-event-strip { font-size: var(--gw-fs-sm); }
+}
+
+/* ================= 22-nov-2026 · Nada de lo que se eligió ver se corta (pedido de Juan David) =================
+   Lo que la persona marcó para verse en Registro se ve COMPLETO en cualquier ancho: nombres, apellidos, cédula y campos elegidos bajan a 2 o 3 líneas (la fila crece hacia abajo) en vez de
+   terminar en «…». El detalle sigue estando en «Editar». Reglas al final del archivo a propósito: corrigen a las de arriba sin tocarlas. */
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name],
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name],
+html body.gw-registro .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { max-width: 100%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1],
+html body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  /* contadores del celular: completos, en las líneas que hagan falta (antes «Total: 0 registrados de 4…») */
+  .gw-registro .gw-workarea__summary { flex-wrap: wrap; }
+  .gw-registro .gw-workarea__summary .gw-chip { white-space: normal; overflow: visible; text-overflow: clip; }
+}
+/* Escritorio SIN ancho para todas las columnas (directory.js, fitRegLayout, pone .gw-reg--stack): la persona pasa a dos renglones. Renglón 1: nombre, cédula, estado, origen y los botones a la
+   derecha. Renglón 2: los campos elegidos, cada uno con su nombre delante. Así una laptop angosta nunca deja columnas de 40 px. Con ancho de sobra sigue la tabla de columnas con encabezado. */
+@media (min-width: 901px) {
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table thead { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-registrado,
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-noregistrado { flex-wrap: wrap; row-gap: var(--gw-sp-1); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-2); }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=first_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=last_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=first_name],
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr[data-recent] td[data-field=last_name] { order: 1; flex: 0 1 auto; font-size: var(--gw-fs-lg); }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=id] { order: 2; flex: 0 1 auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=id]::before { content: "C.C. "; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=status] { order: 2; flex: 0 0 auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=origin] { order: 2; flex: 0 0 auto; display: block; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=origin]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=recent] { order: 2; flex: 0 0 auto; width: auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=recent]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td.action-cell { order: 3; flex: 0 0 auto; margin-left: auto; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-registrado::after,
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr.row-noregistrado::after { display: block; content: ''; order: 4; flex: 1 0 100%; height: 0; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx] { order: 5; flex: 0 1 auto; max-width: 100%; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx]:empty { display: none; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=cardx] .gw-reg-cardx__l { display: inline; }
+  html body.gw-registro.gw-reg--stack .gw-reg__list .golden-table tbody tr td[data-field=reason] { order: 6; }
+}
+/* celular muy angosto (320 px): los pasos y «Acreditado» se ven completos */
+@media (max-width: 359px) {
+  .gw-registro .gw-steps--compact .gw-steps__text { white-space: normal; overflow: visible; text-overflow: clip; -webkit-line-clamp: none; line-clamp: none; font-size: calc(var(--gw-fs-sm) * 0.9); }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-act__t { overflow: visible; text-overflow: clip; }
+  html body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .btn-accredit-row { padding: 0 var(--gw-sp-2) !important; gap: var(--gw-sp-1); }
 }
