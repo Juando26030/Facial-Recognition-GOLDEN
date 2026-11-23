@@ -270,10 +270,14 @@
       document.getElementById('passValue').textContent = '';          // la contraseña no queda en la página
       close(passModal);
     } else if (action === 'copy-pass') {
-      const value = document.getElementById('passValue').textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(value).then(() => showToast('Contraseña copiada.', 'success'), () => showToast('No se pudo copiar: selecciónala y cópiala a mano.', 'error'));
-      } else showToast('Selecciona la contraseña y cópiala a mano.', 'info');
+      const box = document.getElementById('passValue');
+      const value = box.textContent;
+      (window.copyText ? window.copyText(value) : Promise.resolve(false)).then((ok) => {          // 23-nov-2026: mismo método que el resto de la app (con respaldo si el navegador niega el portapapeles)
+        if (ok) { showToast('Contraseña copiada.', 'success'); return; }
+        const sel = window.getSelection(), range = document.createRange();          // último recurso: la deja seleccionada para Ctrl+C
+        range.selectNodeContents(box); sel.removeAllRanges(); sel.addRange(range);
+        showToast('No se pudo copiar solo: ya quedó seleccionada, pulsa Ctrl+C.', 'info');
+      });
     }
   });
 
