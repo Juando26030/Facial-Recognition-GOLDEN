@@ -11,6 +11,8 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 ## Sin publicar (rama `saas/revision-integral`, 22-nov-2026)
 - Revisión integral del repositorio por roles (`docs/revision_2026-11-22/`); documento consolidado de reglas inamovibles (`docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md`).
 - `CHANGELOG.md`, `CONTRIBUTING.md`, plantilla de PR y README raíz al día (esta revisión).
+- 22-nov (segunda tanda, decisiones de Juan David): `/instalar` retirado; plazo de gracia del servidor local conectado (`LOCAL_GRACE_DAYS`); al deshabilitar una llave el servidor se da de baja solo (`deploy/windows/autodestruir.ps1`, apagable con `LOCAL_WIPE_ON_DISABLE=0`; deshabilitar pide escribir la palabra); `deploy/windows/proteger-disco.ps1` (BitLocker gratuito, solo si Windows lo trae); sitio: fuente libre Poppins, contacto de la plataforma y cotización con envío real (`POST /api/public/quote-request`, variables `QUOTE_TO_EMAIL` y `QUOTE_ALLOWED_ORIGINS`); `docs/PROPUESTA_FINANCIERA_SAAS_2026-11-22.md`.
+- 22-nov: `main` puesto al día con la línea de producción (fusión de `prod/llaves-escaner-2026-11-20`, `hotfix/subida-formulario-2026-11-21` y `feat/evento-compartido-nube`; sin conflictos; árbol idéntico a `feat/evento-compartido-nube`).
 
 ## 2026-11-22 — Registro: lo elegido se ve completo en cualquier ancho (Staging, rama `feat/inventario-base`)
 - Cédula, nombres y apellidos siempre visibles; «Mostrar en el registro» elige los demás campos, cada uno como columna con su nombre;
