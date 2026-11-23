@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import audit_actions, crm_inventory
+from app.tenant_scope import staff_tenant_enforced
 from app.crm.errors import CrmError
 from app.database import get_db
 from app.models import CrmProduct, EventInventoryAlert, StaffUser
@@ -13,6 +14,8 @@ router = APIRouter(tags=["crm-inventory"])
 
 
 def _guard(db: Session, event_id: int, staff: StaffUser, *, edit: bool):
+    if staff_tenant_enforced(staff):          # 23-nov (E2): el catálogo CRM es solo de Golden; una cuenta de otra empresa no lo ve ni lo cambia
+        raise HTTPException(status_code=404, detail="No encontrado")
     event = inv_router._event(db, event_id, staff, lock=edit)
     if edit:
         if event.archived_at is not None:

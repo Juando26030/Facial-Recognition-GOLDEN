@@ -104,7 +104,7 @@ def enroll_node(data: dict, request: Request, db: Session = Depends(get_db)):
 @router.post("/nodes/{node_id}/revoke")
 def revoke_node(node_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     node = db.get(LocalNode, node_id)
-    if node is None:
+    if node is None or (staff_tenant_enforced(staff) and node.tenant_id != staff.tenant_id):          # 23-nov (E3): una cuenta de otra empresa no revoca servidores ajenos
         raise HTTPException(status_code=404, detail="Servidor local no encontrado")
     if node.revoked_at is None:
         node.revoked_at = utcnow()

@@ -218,5 +218,5 @@ def test_usage_ignores_the_test_person_and_temporary_door_accounts(client, root,
     factory.staff("digitador", "puerta1")
     factory.staff("coordinador", "coord", is_active=False)
     factory.staff("admin", "admin1")
-    used = orgs.usage(db, orgs.golden(db))
-    assert used["attendees_total"] == 2 and used["attendees_per_event"] == 2 and used["users"] == 1 and used["clients"] == 1 and used["events_per_month"] == 1
+    used = orgs.usage(db, orgs.golden(db))          # cuentan el super_admin del fixture `root` y «admin1»; no el digitador, ni la coordinadora inactiva
+    assert used["attendees_total"] == 2 and used["attendees_per_event"] == 2 and used["users"] == 2 and used["clients"] == 1 and used["events_per_month"] == 1

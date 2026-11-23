@@ -1994,6 +1994,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
 
     if img_array is not None:
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
+        get_storage().delete(enroll_mod.pending_photo_key(event.tenant_id, id))          # foto nueva de registro: una pendiente vieja ya no aplica (revisión 23-nov, A5)
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo.", **person_flags(db, event, id)}
     if img_array is not None and not face_enc_json:
@@ -2564,7 +2565,7 @@ def _bulk_register_impl(
                                 continue
                             zip_encodings[os.path.splitext(basename)[0]] = encodings
                         zip_photos.add(os.path.splitext(basename)[0])
-                        crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
+                        crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0])); get_storage().delete(enroll_mod.pending_photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
 
             if photo_entries and not precalc:
                 errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")

@@ -178,7 +178,7 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
 
     from app import crypto
     from app.biometrics import BiometricEngine
-    from app.storage import photo_key
+    from app.storage import get_storage, photo_key
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
     uid = re.sub(r"[\s.]", "", user_id)
@@ -193,6 +193,7 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
     except Exception:  # noqa: BLE001 — imagen ilegible
         raise HTTPException(status_code=400, detail="La imagen no es válida")
     crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
+    get_storage().delete(enroll.pending_photo_key(event.tenant_id, uid))          # una selfie pendiente vieja no debe pisar esta foto al verificar a la persona (revisión 23-nov, A5)
     db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": utcnow(), "u": uid, "t": event.tenant_id})      # 0C (E5): arranca el reloj de retención aunque el vector aún no exista
     jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "uref": jobs.person_ref(uid), "event_id": event.id}, max_attempts=3)
     db.commit()

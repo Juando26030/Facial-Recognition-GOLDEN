@@ -6,7 +6,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Body, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app import jobs, quote_core
@@ -32,7 +32,8 @@ def _reply(request: Request, body: dict, status: int = 200) -> JSONResponse:
 
 @router.options("/api/public/quote-request")
 def quote_preflight(request: Request):
-    return JSONResponse({}, status_code=204 if quote_core.origin_allowed(request.headers.get("origin")) else 403, headers=quote_core.cors_headers(request.headers.get("origin")))
+    ok = quote_core.origin_allowed(request.headers.get("origin"))
+    return Response(status_code=204 if ok else 403, headers=quote_core.cors_headers(request.headers.get("origin")))          # 204 SIN cuerpo (un «{}» con 204 rompe detrás de uvicorn/h11)
 
 
 @router.post("/api/public/quote-request")

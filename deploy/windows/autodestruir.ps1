@@ -6,6 +6,12 @@
 . "$PSScriptRoot\config.ps1"
 $ErrorActionPreference = 'Continue'
 $ledger = 'C:\ProgramData\GoldenLocal-baja.log'
+# Candado (revisión 23-nov, L2): solo corre si la nube confirmó la baja (SERVER_DISABLED) y no está apagada (LOCAL_WIPE_ON_DISABLE=0). Ejecutado a mano o por error, NO borra nada.
+$envChk = Read-EnvFile
+if (-not ("$($envChk['SERVER_DISABLED'])" -match '^(1|true|yes|si)$') -or "$($envChk['LOCAL_WIPE_ON_DISABLE'])" -eq '0') {
+    Write-Log 'Baja automática NO ejecutada: la llave no está deshabilitada en la nube (o la baja está apagada).'
+    exit 0
+}
 Write-Log '== Baja automática: la llave fue deshabilitada en la nube =='
 try {
     & (Join-Path $ScriptsDir 'borrar-datos.ps1') -Yes
