@@ -22,6 +22,14 @@ Archivos: `deploy/sitio/` (ver `deploy/sitio/LEEME.md`) y `.github/workflows/sit
 
 ---
 
+## PARTE A0 · ENSAYO en staging (primero aquí, luego producción)
+Mismo procedimiento de la Parte A pero contra el proyecto de staging, SIN tocar el dominio `golden-eventos.com` ni `goldenlogisticas.com`:
+1. Paso 1 con `goldenweb-staging` en vez de `goldenweb-prod` (crea `golden-sitio-<número de staging>`).
+2. Paso 2 (ensayo sin publicar) y Paso 3 con `bash deploy/sitio/deploy_sitio.sh goldenweb-staging` (agrega solo la reescritura hacia `golden-publico-staging`). Se ve en la dirección `https://golden-sitio-….web.app`.
+3. En staging pon `QUOTE_TO_EMAIL` y `QUOTE_ALLOWED_ORIGINS=https://golden-sitio-<número>.web.app` (ver Parte C) y envía una cotización de prueba: debe llegar el correo.
+4. Opcional, dominio de ensayo: en Firebase → Agregar dominio personalizado `sitio-staging.golden-eventos.com` y crear en Cloudflare solo el registro que Firebase muestre (nube gris). Cada paso de DNS se da uno por uno, con su orden escrito, y los ejecuta Juan David.
+5. Comprobar: se ve igual que el prototipo, la fuente (Poppins) se ve bien en celular y computador, `/robots.txt` pide no indexar (en staging NO se compila con `PUBLIC_INDEXAR=1`), la cotización llega.
+
 ## PARTE A · Montaje la primera vez (Juan David)
 
 Cada bloque es UN comando para pegar en **Cloud Shell** (console.cloud.google.com → icono `>_` arriba a la derecha), salvo donde dice «en el navegador». Orden recomendado: 1 → 2 → 3 (mirar el sitio en la dirección de Firebase) → 4 (dominio) → 5 a 9.
@@ -189,13 +197,14 @@ Compara capturas de `/`, `/cotizar` y `/terminos` en 9 anchos (320 a 3440 px) y 
 
 ---
 
-## PARTE C · Formulario de cotización (NO incluido: propuesta)
+## PARTE C · Formulario de cotización (HECHO el 22-nov-2026; sin probar con base)
 
-Hoy `/cotizar` solo valida y muestra «el envío se activará pronto». No se activó en este montaje porque necesita un servidor que reciba los datos. Diseño propuesto (4-6 h, lo hace el agente de plataforma, con autorización de Juan David):
-- **Recibe la plataforma:** `POST https://app.golden-eventos.com/api/cotizaciones-web` en el servicio `publico` (endpoint `def`), que crea un prospecto en el CRM interno (`crm_leads`) y avisa por correo a `info@`. El prospecto queda donde Golden ya trabaja.
-- **Protecciones:** `Origin` permitido solo `https://golden-eventos.com`; campo trampa oculto (honeypot); límite por IP (tabla existente de límites, sin tocar la base con frecuencia); tamaño máximo; nada de datos personales en logs.
-- **En el sitio:** el `fetch` al endpoint, mensaje claro de éxito/error, y encima del botón el **aviso de privacidad** (texto A del reporte 08, pendiente de la asesora) con casilla obligatoria sin marcar.
-- **Mientras tanto:** el botón de WhatsApp y el correo del pie sí funcionan. **No hacer campaña ni anunciar el sitio hasta activar el envío.**
+`/cotizar` envía de verdad: el navegador hace `POST /api/public/quote-request` en el MISMO dominio del sitio; `deploy_sitio.sh` agrega a Firebase Hosting la reescritura `/api/public/**` → servicio Cloud Run `golden-publico` (en staging, `golden-publico-staging`; variable `SERVICIO_PUBLICO` para cambiarlo). La plataforma (`app/routers/quote_request.py`) valida, aplica un límite por IP (5 intentos cada 10 minutos), descarta lo que traiga el campo trampa y **encola un correo** a quien responde las cotizaciones. No guarda la solicitud en la base: el correo es el registro.
+**Lo que pone Juan David (una sola vez por entorno; ver `deploy/gcp/README.md` §7):**
+- `QUOTE_TO_EMAIL`: el correo de la persona que responde (hoy: la comercial). Es un dato de una persona: va en Secret Manager, nunca en el repositorio, y debe estar en **`golden-publico` y en `golden-web`** (el primero valida, el segundo envía).
+- `QUOTE_ALLOWED_ORIGINS`: `https://golden-eventos.com,https://www.golden-eventos.com` (en staging, el dominio donde se vea el ensayo). Con la reescritura de Hosting el origen es el del sitio.
+- Si `QUOTE_TO_EMAIL` falta, el formulario responde «No se pudo enviar ahora, escríbanos por WhatsApp» y no pasa nada más.
+**Falta:** el aviso de privacidad (texto A del reporte 08) encima del botón y su casilla; está en borrador a la espera de la auditora. **No anunciar el sitio hasta probarlo en staging con un envío real.**
 
 ## PARTE D · Qué cambia el parche (y qué no)
 
