@@ -135,6 +135,13 @@
   /* ID del servidor (morado claro, a la derecha de «Al día» y de la IP): es la llave de producto con la que se instaló; la ven los administradores en Configuración › Servidor local. Clic = copia. */
   fetch('/api/ops/server-id').then((r) => (r.ok ? r.json() : null)).then((s) => {
     if (!s || !s.configured || !s.id) return;
+    if (s.grace && s.grace.state && s.grace.state !== 'ok' && s.grace.message) {          // plazo de gracia: aviso visible en todas las pantallas (la regla vive en app/server_lock.py)
+      const warn = document.createElement('div');
+      warn.className = 'gw-alert ' + (s.grace.state === 'readonly' ? 'gw-alert--err' : 'gw-alert--warn');
+      warn.setAttribute('role', 'alert');
+      warn.textContent = s.grace.message;
+      document.body.insertBefore(warn, document.body.firstChild);
+    }
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'gw-versionbar gw-versionbar--id';

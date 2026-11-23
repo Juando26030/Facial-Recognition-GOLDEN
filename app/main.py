@@ -240,6 +240,9 @@ async def local_catalog_readonly(request, call_next):
             if request.url.path.startswith("/api/") or "application/json" in request.headers.get("accept", ""):
                 return JSONResponse(status_code=403, content={"detail": server_lock.LOCKED_MSG})
             return HTMLResponse(f"<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Servidor deshabilitado</title><body style='font-family:system-ui;max-width:34rem;margin:15vh auto;padding:0 1rem'><h1>Servidor deshabilitado</h1><p>{server_lock.LOCKED_MSG}</p></body></html>", status_code=403)
+        grace = server_lock.grace_state()          # plazo de gracia: muchos días sin la nube, o acceso revocado → solo lectura con aviso (entrar, salir y sincronizar siguen permitidos)
+        if grace["state"] == "readonly" and server_lock.write_blocked(request.method, request.url.path, grace["state"]):
+            return JSONResponse(status_code=403, content={"detail": grace["message"]})
         if localmode.is_catalog_write(request.method, request.url.path):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
         if localmode.is_face_call(request.method, request.url.path):

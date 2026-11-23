@@ -206,3 +206,12 @@ def test_pendiente_4_no_se_implemento_a_medias():
     if "pending" in src:
         privacy = _read("app/privacy.py")
         assert "pending" in privacy, "una foto pendiente de /aceptar debe borrarse en TODA purga biométrica (retención de 7 días)"
+
+
+def test_grace_period_is_wired_into_the_middleware_and_the_banner():
+    main = _read("app/main.py")
+    mid = main.split("async def local_catalog_readonly")[1].split("@app.middleware")[0]
+    assert "server_lock.grace_state()" in mid and "server_lock.write_blocked(request.method, request.url.path, grace[\"state\"])" in mid
+    assert mid.index("is_locked()") < mid.index("grace_state()") < mid.index("is_catalog_write")
+    assert '"grace"' in _read("app/routers/ops.py")
+    assert "s.grace.message" in _read("static/js/version-banner.js")

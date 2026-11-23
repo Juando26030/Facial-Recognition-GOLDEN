@@ -141,7 +141,8 @@ def server_id(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="No autenticado")
     local_env.refresh()
     code = (os.getenv("SERVER_KEY") or "").strip()
-    return {"configured": bool(code), "id": code, "disabled": server_lock.is_locked()}
+    grace = server_lock.grace_state()
+    return {"configured": bool(code), "id": code, "disabled": server_lock.is_locked(), "grace": {"state": grace["state"], "reason": grace["reason"], "days_left": grace["days_left"], "message": grace["message"]}}
 
 
 @router.get("/api/ops/update-manifest")
