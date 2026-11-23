@@ -407,6 +407,7 @@
       <div id="editModalDeps" hidden></div>
       ${window.GoldenFace && user.id ? `<div class="gw-field gw-registro__editfield" id="editModalFaceBox">
         <span class="gw-label">Reconocimiento facial</span>
+        <figure id="editModalFacePhoto" class="gw-registro__editphoto" hidden><img id="editModalFaceImg" alt="Foto de registro de la persona"><figcaption>Foto de registro actual</figcaption></figure>
         <button type="button" id="editModalFace" class="gw-btn gw-btn--secondary gw-btn--block">Captar rostro de esta persona</button>
         <p class="gw-hint">La persona primero acepta en la pantalla completa (es voluntario); luego se capta su rostro. Si es menor de 18 años o no acepta, sigue por cédula o QR. Si ya tenía rostro, se actualiza.</p>
       </div>` : ''}
@@ -521,7 +522,18 @@
     // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
     const faceBtn = box.querySelector('#editModalFace');
-    if (faceBtn) faceBtn.addEventListener('click', () => { close(); window.GoldenFace.enrollFor(user.id); });
+    if (faceBtn) {
+      faceBtn.addEventListener('click', () => { close(); window.GoldenFace.enrollFor(user.id); });
+      // 23-nov: si ya hay foto de registro se muestra aquí y el botón pasa a «Retomar»; si no hay, sigue «Captar».
+      fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/registration-photo`, { cache: 'no-store' }).then(async (r) => {
+        if (!r.ok || !box.isConnected) return;
+        const url = URL.createObjectURL(await r.blob());
+        box.querySelector('#editModalFaceImg').src = url; box.querySelector('#editModalFacePhoto').hidden = false;
+        faceBtn.textContent = 'Retomar la foto de esta persona';
+        const rev = new MutationObserver(() => { if (!box.isConnected) { URL.revokeObjectURL(url); rev.disconnect(); } });
+        rev.observe(document.body, { childList: true, subtree: true });
+      }).catch(() => {});
+    }
 
     const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;

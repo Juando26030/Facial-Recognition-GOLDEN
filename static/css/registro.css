@@ -221,9 +221,11 @@ html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[da
 .gw-registro .camera-wrapper { background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); padding: var(--gw-sp-4); }
 .gw-registro #video { display: block; margin-bottom: var(--gw-sp-3); border: 3px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-navy-deep); }
 .gw-registro__result { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
-.gw-registro__result--ok { color: var(--gw-ok-text); }
-.gw-registro__result--warn { color: var(--gw-warn-text); }
-.gw-registro__result--err { color: var(--gw-err-text); }
+/* 23-nov-2026: el resultado del escáner va en un recuadro con el mismo código de color que la fila: verde = ya consta o quedó acreditada (aunque sea doble), amarillo = no se detectó bien y hay que repetir, rojo = no está en la base. */
+.gw-registro__result--ok, .gw-registro__result--warn, .gw-registro__result--err { padding: var(--gw-sp-3) var(--gw-sp-4); border: 1px solid; border-radius: var(--gw-radius-md); }
+.gw-registro__result--ok { color: var(--gw-ok-text); background: var(--gw-ok-bg); border-color: var(--gw-ok-line); }
+.gw-registro__result--warn { color: var(--gw-warn-text); background: var(--gw-warn-bg); border-color: var(--gw-warn-line); }
+.gw-registro__result--err { color: var(--gw-err-text); background: var(--gw-err-bg); border-color: var(--gw-err-line); }
 .gw-registro__result--gold { color: var(--gw-gold-text); }
 .gw-registro .scan-compare figure { margin: 0; text-align: center; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-registro .scan-compare img { background: var(--gw-surface-2); border: 1px solid var(--gw-border); }
@@ -262,3 +264,6 @@ body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-orig
 .gw-notfound { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-6); width: min(44rem, 100%); padding: var(--gw-sp-8); text-align: center; background: var(--gw-err-bg); color: var(--gw-err-text); border: 0.4rem solid var(--gw-err-line); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-lg); }
 .gw-notfound__title { margin: 0; font-size: var(--gw-fs-3xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
 .gw-notfound__text { margin: 0; font-size: var(--gw-fs-xl); overflow-wrap: anywhere; }
+.gw-registro__editphoto { margin: 0 0 var(--gw-sp-2); text-align: center; }
+.gw-registro__editphoto img { max-width: 160px; max-height: 200px; border-radius: var(--gw-radius-md); border: 1px solid var(--gw-border); object-fit: cover; }
+.gw-registro__editphoto figcaption { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }

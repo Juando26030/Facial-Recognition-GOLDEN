@@ -144,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const scanEls = scanResult ? {
         title: document.getElementById('scanTitle'), main: document.getElementById('scanMain'), live: document.getElementById('scanLive'),
         reg: document.getElementById('scanReg'), regCap: document.getElementById('scanRegCap'), info: document.getElementById('scanInfo'),
-        open: document.getElementById('scanOpenBtn'), more: document.getElementById('scanMoreBtn'), cands: document.getElementById('scanCands'),
+        open: document.getElementById('scanOpenBtn'), accredit: document.getElementById('scanAccreditBtn'), more: document.getElementById('scanMoreBtn'), cands: document.getElementById('scanCands'),
     } : null;
     let scanToken = null, captureUrl = null, photoUrls = [];
 
@@ -252,6 +252,8 @@ document.addEventListener("DOMContentLoaded", () => {
         scanEls.cands.replaceChildren();
         setOff(scanEls.more, !data.has_candidates);
         setOff(scanEls.open, data.result === 'SÍ');
+        scanEls.accredit.disabled = false; scanEls.accredit.dataset.uid = data.result === 'MATCH_PENDING' && data.data ? String(data.data.id) : '';
+        setOff(scanEls.accredit, data.result !== 'MATCH_PENDING');          // 23-nov: la foto de registro y la captura van lado a lado y aquí mismo se acredita (sin abrir «Editar»)
         if (doubtful) {
             renderCandidates(data.candidates);
             const p = document.createElement('p');
@@ -274,6 +276,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (scanResult) {
         scanEls.open.addEventListener('click', () => openPerson(0));
+        scanEls.accredit.addEventListener('click', async () => {
+            const uid = scanEls.accredit.dataset.uid; if (!uid) return;
+            scanEls.accredit.disabled = true;
+            try {
+                const res = await fetch(`/api/events/${EVENT_ID}/users/${encodeURIComponent(uid)}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: 'biometrico' }) });
+                const out = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    hideScanResult(); setResult('ACREDITADO(A): ingreso registrado', 'ok'); offerPrint(printScanBtn, uid);
+                    if (window.directorySearch) window.directorySearch.reload();
+                    return;
+                }
+                const d = out && out.detail;
+                if (res.status === 409 && d && d.code === 'missing_required') {          // le falta un obligatorio: se completa en «Editar persona» y ahí se acredita
+                    showToast(d.message || 'Falta un campo obligatorio', 'warning'); openPerson(0); return;
+                }
+                showToast((typeof d === 'string' ? d : d && d.message) || 'No se pudo acreditar', 'error');
+            } catch (e) { showToast('Error de red', 'error'); }
+            scanEls.accredit.disabled = false;
+        });
         scanEls.more.addEventListener('click', (e) => showCandidates(e.currentTarget));
         scanEls.cands.addEventListener('click', (e) => {
             const btn = e.target.closest('.scan-pick');
@@ -294,7 +315,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.match_token) scanToken = data.match_token;
 
             if (data.result === 'DUPLICADO') {                   // ya constaba como acreditada: se dice y NO pasa nada más (sin pregunta ni segundo botón; pedido de Juan David, 23-nov-2026)
-                setResult("Ya estaba acreditado(a): no se volvió a acreditar", 'warn');
+                const who = data.data ? `${data.data.first_name || ''} ${data.data.last_name || ''}`.trim() : '';
+                setResult((who ? who + ' · ' : '') + 'Ya estaba acreditado(a): no se volvió a acreditar', 'ok');          // verde: salió bien, solo era un segundo escaneo
                 return;
             }
 
@@ -322,7 +344,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (window.directorySearch) window.directorySearch.reload();
             } else {
                 setOff(printScanBtn, true);
-                setResult(data.details, 'err');
+                // amarillo = no se logró detectar bien la cara (repetir); rojo = se detectó pero no está en la base
+                setResult(data.reason === 'no_face' ? 'No se logró detectar el rostro: vuelve a intentarlo' : data.details, data.reason === 'no_face' ? 'warn' : 'err');
             }
         } catch (e) {
             setResult("Error de conexión con el servidor", 'err');

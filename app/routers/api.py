@@ -744,12 +744,12 @@ def recognize(
         except UnidentifiedImageError:
             raise HTTPException(status_code=400, detail="La imagen no es válida")
         if status == "NO_FACE":
-            return {"result": "NO", "details": "Rostro no detectado"}
+            return {"result": "NO", "reason": "no_face", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "details": NOT_FOUND_FACE}
+            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE}
         user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
-            return {"result": "NO", "details": NOT_FOUND_FACE}
+            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE}
         doubtful = faces.is_doubtful(ranked)
         if click and not doubtful and not consent_mod.has_acceptance(db, event.tenant_id, user.id, event.id):
             # Coincidencia con un clic válido: AHORA sí consta la aceptación de la persona identificada (hora del clic, hash del texto exhibido). Sin coincidencia no se atribuye nada a nadie.
@@ -812,6 +812,21 @@ def recognize_photo(event_id: int = Form(...), match_token: str = Form(...), ind
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     key = photo_key(event.tenant_id, ranked[index][0])
     content = crypto.read_bytes(key) if get_storage().exists(key) else None       # la foto puede estar cifrada en reposo
+    if content is None:
+        raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/events/{event_id}/users/{user_id}/registration-photo")
+def registration_photo(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """23-nov-2026: la foto de registro de la persona, para verla en «Editar persona» (y decidir si se retoma). Solo personas de ESTE evento, sin guardar copia
+    (`no-store`), 404 si no tiene (menores y quien no aceptó no tienen). La foto pendiente de verificación NO se muestra aquí: solo la vigente."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if not _person_of_event(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    key = photo_key(event.tenant_id, user_id)
+    content = crypto.read_bytes(key) if get_storage().exists(key) else None
     if content is None:
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
     return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})

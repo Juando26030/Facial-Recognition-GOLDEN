@@ -28,3 +28,17 @@ def test_un_solo_boton_y_acreditada_no_pregunta():
     assert "confirmDuplicateRegistration" not in d[i:i + 400]
     j = a.index("if (data.result === 'DUPLICADO') {                   // ya constaba")
     assert "confirmDuplicateRegistration" not in a[j:j + 400]
+
+
+def test_recuadros_de_resultado_foto_en_editar_y_acreditar_en_el_escaner():
+    """23-nov-2026 (pedido de Juan David): ya acreditado = recuadro verde; no se detectó la cara = amarillo (repetir); no está en la base = rojo; Editar muestra la foto de
+    registro y pasa a «Retomar»; el panel de comparación del escáner trae «Acreditar a esta persona» (PATCH de estado con método biométrico)."""
+    css = (R / "static/css/registro.css").read_text(encoding="utf-8")
+    assert "background: var(--gw-ok-bg)" in css and "background: var(--gw-warn-bg)" in css and "background: var(--gw-err-bg)" in css
+    a = (R / "static/js/app.js").read_text(encoding="utf-8")
+    assert "no_face" in a and "'warn'" in a and "Ya estaba acreditado(a): no se volvió a acreditar', 'ok'" in a
+    assert "method: 'biometrico'" in a and "scanAccreditBtn" in (R / "templates/kiosk_registro.html").read_text(encoding="utf-8")
+    d = (R / "static/js/directory.js").read_text(encoding="utf-8")
+    assert "registration-photo" in d and "Retomar la foto" in d
+    api = (R / "app/routers/api.py").read_text(encoding="utf-8")
+    assert '"reason": "no_face"' in api and '"reason": "no_match"' in api and "def registration_photo" in api

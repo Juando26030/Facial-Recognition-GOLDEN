@@ -8,6 +8,13 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-23 — Registro y escáner facial: pruebas en staging de `saas/revision-integral` (Rama; sin migración)
+- **Arreglo:** la cámara del escáner no encendía (`setOff` se usaba antes de definirse y detenía `app.js` al cargar). El mismo error está en `main` y en producción; hoy esa pantalla no se usa allí. Pendiente de subir con el paquete de producción.
+- «Editar persona»: botón «Captar rostro» (mismo camino con aceptación de la persona); si ya hay foto de registro, se muestra y el botón pasa a «Retomar la foto» (`GET /api/events/{id}/users/{uid}/registration-photo`, digitador o más, `no-store`).
+- Un solo botón por persona: una persona ya acreditada solo se avisa (recuadro verde), sin segundo botón ni pregunta (en línea; sin conexión sigue preguntando). Resultado del escáner en recuadro: verde = ya consta/acreditada, amarillo = no se logró detectar el rostro (repetir), rojo = no está en la base (`reason: no_face | no_match`).
+- Panel de comparación del escáner (foto de registro y captura lado a lado): botón «Acreditar a esta persona» (acreditación con método biométrico), sin pasar por «Editar».
+- Revisión de la Fase 5 (`docs/revision_2026-11-22b/03` a `05`): foto nueva borra la pendiente, catálogo CRM y revocar servidor cerrados a cuentas de otra empresa, `autodestruir.ps1` con candado, 204 de cotización sin cuerpo.
+
 ## 2026-11-23 — Hotfix: estadísticas por estado de registro (rama `hotfix/estadisticas-registro-2026-11-23` sobre `main`; también en `saas/revision-integral`) — sin migración
 - Parámetros › Campos: al activar «Estadística» se elige sobre quién se cuenta (toda la base / solo registrados / solo no registrados); viaja en `default_chart_type` como `<gráfico>@<alcance>`.
 - Estadísticas: selector por gráfica para cambiarlo solo por el momento (al recargar manda lo de Campos); también en el enlace de solo lectura. Zonas, inventario y dependientes no lo llevan.
