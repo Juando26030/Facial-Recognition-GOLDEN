@@ -84,6 +84,8 @@
     categorical: [{ value: 'bar', label: 'Barras' }, { value: 'pie', label: 'Circular (pie)' }],
     numeric: [{ value: 'bar', label: 'Histograma (barras)' }, { value: 'line', label: 'Líneas' }],
   };
+  /* Hotfix 23-nov-2026: sobre quién se cuenta cada gráfica. Lo configurado en Parámetros › Campos manda al abrir la página; cambiarlo aquí es solo por el momento (no se guarda). */
+  var SCOPES = [{ value: 'all', label: 'Todos (base completa)' }, { value: 'registered', label: 'Registrados' }, { value: 'unregistered', label: 'No registrados' }];
   var chartInstances = {};   // clave de variable -> instancia de Chart.js, para destruirla si se quita la tarjeta
   var cache = {};            // clave -> { result, select, canvas }, para volver a dibujar al cambiar de tema
 
@@ -103,7 +105,9 @@
     if (chartType === 'bar' && viz.rowBars && (narrow || n > 8 || longest > 18)) {
       var list = buckets.slice();
       if (dataType !== 'numeric' && n > 5) list.sort(function (a, b) { return b.count - a.count; });
-      var built = viz.rowBars(list.map(function (b) { return b.label; }), list.map(function (b) { return b.count; }), { width: Math.max(240, (box.parentNode && box.parentNode.clientWidth || window.innerWidth) - 34), showPct: dataType !== 'numeric', seriesLabel: 'Personas' });
+      var colors = viz.palette();          // un color por categoría (hotfix 23-nov-2026); el histograma numérico sigue de un solo color
+      var built = viz.rowBars(list.map(function (b) { return b.label; }), list.map(function (b) { return b.count; }), { width: Math.max(240, (box.parentNode && box.parentNode.clientWidth || window.innerWidth) - 34), showPct: dataType !== 'numeric', seriesLabel: 'Personas',
+        color: dataType !== 'numeric' ? list.map(function (_, i) { return colors[i % colors.length]; }) : undefined });
       return built;
     }
     var cfg = buildChartConfig(chartType, buckets);
@@ -152,11 +156,11 @@
       variableSelect.textContent = '';
       list.forEach(function (v) { var o = el('option', null, v.label); o.value = v.key; variableSelect.appendChild(o); });
       // Las variables marcadas «Generar estadística» en Parámetros aparecen solas; el selector sigue sirviendo para agregar cualquier otra.
-      list.filter(function (v) { return v.default_stat_enabled; }).forEach(function (v) { addVariableChart(v.key, v.label, v.default_chart_type); });
+      list.filter(function (v) { return v.default_stat_enabled; }).forEach(function (v) { addVariableChart(v.key, v.label, v.default_chart_type, v.default_stat_scope); });
     }).catch(function () { toast('No se pudieron cargar las variables', 'error'); });
   }
 
-  function addVariableChart(key, label, preferred) {
+  function addVariableChart(key, label, preferred, scope) {
     if ($('stats-card-' + key)) { toast('Esa variable ya está agregada', 'error'); return Promise.resolve(); }
     var card = el('div', 'gw-chart-card'); card.id = 'stats-card-' + key;
     var head = el('div', 'gw-chart-card__head'); head.appendChild(el('h3', 'gw-chart-card__title', label));
@@ -164,6 +168,11 @@
     var select = el('select', 'gw-select chart-type-select'); select.setAttribute('aria-label', 'Tipo de gráfico de ' + label);
     var rm = el('button', 'gw-btn gw-btn--secondary gw-btn--sm remove-chart-btn'); rm.type = 'button'; rm.setAttribute('aria-label', 'Quitar el gráfico de ' + label); rm.title = 'Quitar';
     rm.innerHTML = '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + (container.dataset.icons || '') + '#i-close"/></svg>';
+    var scoped = !/^(zona|inv):|^dependents$/.test(key);          // zonas, inventario y dependientes ya se cuentan sobre quien entró, recibió o está registrado: no aplica
+    var scopeSel = el('select', 'gw-select chart-scope-select'); scopeSel.setAttribute('aria-label', 'Contar ' + label + ' sobre'); scopeSel.title = 'Sobre quién se cuenta (solo por ahora; al recargar vuelve a lo configurado en Campos)';
+    SCOPES.forEach(function (o) { var op = el('option', null, o.label); op.value = o.value; scopeSel.appendChild(op); });
+    scopeSel.value = SCOPES.some(function (o) { return o.value === scope; }) ? scope : 'all';
+    if (scoped) tools.append(scopeSel);
     tools.append(select, rm); head.appendChild(tools);
     var msg = el('div', 'gw-chart-card__msg chart-loading'); msg.setAttribute('role', 'status');
     if (window.GW && window.GW.skeleton) msg.innerHTML = window.GW.skeleton.html({ kind: 'block', label: 'Cargando ' + label + '…' }); else msg.textContent = 'Cargando…';
@@ -174,19 +183,37 @@
       if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
       delete cache[key]; card.remove(); updateEmptyMsg();
     });
-    return fetch(BASE + '/stats/data?variable=' + encodeURIComponent(key)).then(function (res) {
-      return res.json().then(function (result) { if (!res.ok) throw new Error(result.detail || 'Error'); return result; });
-    }).then(function (result) {
-      var options = CHART_TYPES[result.type] || CHART_TYPES.categorical;
-      options.forEach(function (o) { var op = el('option', null, o.label); op.value = o.value; select.appendChild(op); });
-      if (!result.buckets.length) { msg.textContent = 'Sin datos suficientes para graficar esta variable todavía.'; select.hidden = true; return; }
-      if (preferred) select.value = resolveChartType(preferred, result.type);
-      msg.hidden = true; box.hidden = false;
-      if (result.summary) { var sum = el('p', 'gw-hint gw-chart-card__summary', result.summary); card.appendChild(sum); }          // 0161: p. ej. «Dependientes»: registrados + dependientes asociados
-      cache[key] = { result: result, select: select, canvas: canvas };
-      render(key, label);
-      select.addEventListener('change', function () { render(key, label); });
-    }).catch(function () { msg.textContent = 'No se pudo cargar esta variable. Quítala y vuelve a agregarla.'; select.hidden = true; });
+    var filledType = null, summary = null;
+    function load() {
+      var url = BASE + '/stats/data?variable=' + encodeURIComponent(key) + (scoped ? '&scope=' + encodeURIComponent(scopeSel.value) : '');
+      return fetch(url).then(function (res) {
+        return res.json().then(function (result) { if (!res.ok) throw new Error(result.detail || 'Error'); return result; });
+      }).then(function (result) {
+        if (filledType !== result.type) {          // primera carga, o el subconjunto cambió de tipo (números ↔ categorías): se rehacen los tipos de gráfico válidos
+          var wanted = filledType === null ? preferred : select.value;
+          select.textContent = '';
+          (CHART_TYPES[result.type] || CHART_TYPES.categorical).forEach(function (o) { var op = el('option', null, o.label); op.value = o.value; select.appendChild(op); });
+          select.value = resolveChartType(wanted || '', result.type);
+          if (filledType === null) select.addEventListener('change', function () { render(key, label); });
+          filledType = result.type;
+        }
+        if (!result.buckets.length) {
+          if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
+          delete cache[key];
+          if (summary) { summary.remove(); summary = null; }
+          msg.textContent = scopeSel.value === 'registered' ? 'Todavía no hay personas registradas con este dato.' : scopeSel.value === 'unregistered' ? 'No quedan personas sin registrar con este dato.' : 'Sin datos suficientes para graficar esta variable todavía.';
+          msg.hidden = false; box.hidden = true; select.hidden = true; return;
+        }
+        select.hidden = false; msg.hidden = true; box.hidden = false;
+        if (summary) summary.remove();
+        summary = result.summary ? el('p', 'gw-hint gw-chart-card__summary', result.summary) : null;          // 0161: p. ej. «Dependientes»: registrados + dependientes asociados
+        if (summary) card.appendChild(summary);
+        cache[key] = { result: result, select: select, canvas: canvas };
+        render(key, label);
+      }).catch(function () { msg.textContent = 'No se pudo cargar esta variable. Quítala y vuelve a agregarla.'; msg.hidden = false; box.hidden = true; select.hidden = true; });
+    }
+    scopeSel.addEventListener('change', function () { scopeSel.disabled = true; load().then(function () { scopeSel.disabled = false; }); });
+    return load();
   }
 
   addBtn.addEventListener('click', function () {

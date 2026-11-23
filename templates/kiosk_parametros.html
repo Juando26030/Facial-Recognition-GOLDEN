@@ -726,6 +726,12 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         { value: 'histogram', label: 'Histograma' },
         { value: 'line', label: 'Líneas' },
     ];
+    // Hotfix 23-nov-2026: sobre quién se cuenta la estadística al abrir Estadísticas (en el panel se puede cambiar solo por el momento).
+    const STAT_SCOPE_OPTIONS = [
+        { value: 'all', label: 'Toda la base' },
+        { value: 'registered', label: 'Solo registrados' },
+        { value: 'unregistered', label: 'Solo no registrados' },
+    ];
     // Solo para campos opcionales (opcional_N) — el backend también lo exige.
     const EXTRA_TYPE_OPTIONS = [
         { value: 'consent', label: 'Consentimiento (check + política)' },
@@ -1270,16 +1276,17 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>
                 <select class="gw-select cfg-tpl" aria-label="Insertar un texto de autorización tipo"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
             <td><label class="gw-check"><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} aria-label="Generar estadística de ${esc(defaultLabel)}"></label></td>
-            <td><select class="gw-select cfg-chart-type" aria-label="Tipo de gráfico de ${esc(defaultLabel)}">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+            <td><select class="gw-select cfg-chart-type" aria-label="Tipo de gráfico de ${esc(defaultLabel)}">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select>
+                <select class="gw-select cfg-stat-scope" title="Sobre quién se cuenta" aria-label="Contar la estadística de ${esc(defaultLabel)} sobre">${optionsHtml(STAT_SCOPE_OPTIONS, cfg.default_stat_scope || 'all')}</select></td>
             <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm cfg-delete" aria-label="Borrar el campo ${esc(defaultLabel)}">${gwIcon('trash')} Borrar campo</button>` : ''}</td>
         `;
         const shown = (sel, on) => { const el = tr.querySelector(sel); if (el) el.style.display = on ? '' : 'none'; };      // se muestra solo lo que aplica al tipo de campo
         shown('.cfg-options', cfg.field_type === 'select'); shown('.cfg-help', ['consent', 'signature'].includes(cfg.field_type));
-        shown('.cfg-tpl', cfg.field_type === 'consent'); shown('.cfg-chart-type', !!cfg.default_stat_enabled);
+        shown('.cfg-tpl', cfg.field_type === 'consent'); shown('.cfg-chart-type', !!cfg.default_stat_enabled); shown('.cfg-stat-scope', !!cfg.default_stat_enabled);
         const del = tr.querySelector('.cfg-delete');
         if (del) del.addEventListener('click', () => deleteField(cfg, tr));
         if (locked) {
-            tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type').forEach(el => { el.disabled = true; });
+            tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type, .cfg-stat-scope').forEach(el => { el.disabled = true; });
         }
         if (cfg.field_type === 'dependents') {          // 0161: «Dependientes» sale de la base de dependientes: nombre, posición y estadística (cuenta a los dependientes de los registrados)
             tr.querySelectorAll('.cfg-field-type, .cfg-required, .cfg-options').forEach(el => { el.disabled = true; });
@@ -1309,8 +1316,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         });
         const statCheck = tr.querySelector('.cfg-stat-enabled');
         const chartSelect = tr.querySelector('.cfg-chart-type');
+        const scopeSelect = tr.querySelector('.cfg-stat-scope');
         statCheck.addEventListener('change', () => {
             chartSelect.style.display = statCheck.checked ? '' : 'none';
+            scopeSelect.style.display = statCheck.checked ? '' : 'none';
         });
         return tr;
     }
@@ -1344,7 +1353,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
             tbody.appendChild(buildRow({
                 key: data.key, label: data.label, default_label: data.label, help_text: '', required: false, field_type: 'text_short',
-                options: [], default_stat_enabled: false, default_chart_type: null,
+                options: [], default_stat_enabled: false, default_chart_type: null, default_stat_scope: 'all',
             }));
             input.value = '';
             showToast(`Campo "${data.label}" agregado — si le cambias el tipo u obligatoriedad, pulsa «Guardar»`, 'success');
@@ -1372,6 +1381,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                     default_stat_enabled: statEnabled,
                     default_chart_type: statEnabled ? tr.querySelector('.cfg-chart-type').value : null,
                     show_in_card: !!(tr.querySelector('.cfg-show-card') && tr.querySelector('.cfg-show-card').checked),
+                    default_stat_scope: statEnabled ? tr.querySelector('.cfg-stat-scope').value : 'all',
                 };
                 const res = await fetch(`/api/events/${window.EVENT_ID}/field-configs/${encodeURIComponent(key)}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

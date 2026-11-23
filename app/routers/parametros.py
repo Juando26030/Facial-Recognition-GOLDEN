@@ -85,6 +85,26 @@ def _configurable_fields(event: Event):
     return fields
 
 
+# Hotfix 23-nov-2026 (sin migración, para no chocar con la numeración de staging): el alcance por defecto de la estadística de un campo
+# (toda la base / solo registrados / solo no registrados) viaja en la misma columna `default_chart_type` como «<gráfico>@<alcance>».
+# «all» se guarda sin sufijo, así que las filas viejas quedan igual. Leer y escribir SOLO con estas dos funciones.
+STAT_SCOPES = ("all", "registered", "unregistered")
+
+
+def split_chart_scope(raw) -> tuple:
+    """`'bar@registered'` → `('bar', 'registered')`; `'pie'` → `('pie', 'all')`; vacío → `(None, 'all')`."""
+    if not raw:
+        return None, "all"
+    chart, _, scope = str(raw).partition("@")
+    return (chart or None), (scope if scope in STAT_SCOPES else "all")
+
+
+def join_chart_scope(chart, scope) -> "str | None":
+    if not chart:
+        return None
+    return chart if scope in (None, "", "all") else f"{chart}@{scope}"
+
+
 CARD_DEFAULT_KEYS = ("id", "first_name", "last_name")          # 21-nov-2026: lo que la tarjeta de Registro muestra de fábrica (la entidad ya no)
 
 
@@ -123,14 +143,15 @@ def _serialize_base(key: str, default_label: str, row: Optional[EventFieldConfig
             "required": bool(row.required) if (row and key in ("certificate", "digital_contact")) else False,
             "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact", "birth_date": "date"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
-            "default_stat_enabled": False, "default_chart_type": None,
+            "default_stat_enabled": False, "default_chart_type": None, "default_stat_scope": "all",
         }
     return {
         "key": key, "label": label, "default_label": default_label, "locked": False,
         "required": row.required, "field_type": row.field_type,
         "options": row.get_options(), "help_text": row.help_text or "",
         "default_stat_enabled": row.default_stat_enabled,
-        "default_chart_type": row.default_chart_type,
+        "default_chart_type": split_chart_scope(row.default_chart_type)[0],
+        "default_stat_scope": split_chart_scope(row.default_chart_type)[1],
     }
 
 
@@ -595,13 +616,16 @@ def upsert_field_config(
     default_chart_type = data.get("default_chart_type") if default_stat_enabled else None
     if default_stat_enabled and default_chart_type not in CHART_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
+    default_stat_scope = data.get("default_stat_scope") or "all"
+    if default_stat_scope not in STAT_SCOPES:
+        raise HTTPException(status_code=400, detail="Alcance de la estadística inválido: general, registrados o no registrados")
 
     row.help_text = help_text if field_type in ("consent", "signature") else None
     row.required = bool(data.get("required", False))
     row.field_type = field_type
     row.set_options(options if field_type == "select" else [])
     row.default_stat_enabled = default_stat_enabled
-    row.default_chart_type = default_chart_type
+    row.default_chart_type = join_chart_scope(default_chart_type, default_stat_scope if default_stat_enabled else "all")
     db.commit()
 
     return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)

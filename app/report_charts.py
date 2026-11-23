@@ -28,6 +28,8 @@ SKIP_HEADERS = {"Cédula", "Nombres", "Apellidos", "Teléfono", "Correo Electró
 SKIP_TYPES = {"signature"}
 YES_NO = {"sí", "si", "no", "true", "false"}
 SHEET = "Gráficos"
+SHEET_REGISTERED = "Gráficos registrados"          # hotfix 23-nov-2026: las mismas gráficas, solo con las personas registradas
+SHEET_NOT_REGISTERED = "Gráficos no registrados"   # … y solo con las no registradas
 DATA_COL = 27                    # AA: datos de apoyo (columnas ocultas)
 CHART_W, CHART_H = 16.5, 8.6     # cm
 ROWS_PER_CHART = 19
@@ -214,7 +216,15 @@ def _make_chart(spec: dict, cats_ref, vals_ref):
             pt = DataPoint(idx=i)
             pt.graphicalProperties = GraphicalProperties(solidFill=OTHER_GRAY if cat == "Otros" else PALETTE[i % len(PALETTE)])
             s.dPt.append(pt)
-    elif kind in ("barh", "col"):
+    elif kind == "barh":          # categorías: un color por barra (hotfix 23-nov-2026), «Otros» en gris
+        s.graphicalProperties = GraphicalProperties(solidFill=GOLD)
+        s.graphicalProperties.line.solidFill = NAVY
+        for i, cat in enumerate(spec["cats"]):
+            pt = DataPoint(idx=i)
+            pt.graphicalProperties = GraphicalProperties(solidFill=OTHER_GRAY if cat == "Otros" else PALETTE[i % len(PALETTE)])
+            pt.graphicalProperties.line.solidFill = NAVY
+            s.dPt.append(pt)
+    elif kind == "col":
         s.graphicalProperties = GraphicalProperties(solidFill=GOLD)
         s.graphicalProperties.line.solidFill = NAVY
         if spec["cats"] and spec["cats"][-1] == "Otros":
@@ -231,9 +241,9 @@ def _make_chart(spec: dict, cats_ref, vals_ref):
     return ch
 
 
-def build_sheet(wb, specs: list, index: Optional[int] = None):
-    """Crea la hoja «Gráficos» en `wb` (openpyxl) con los `specs`. Devuelve la hoja. Sin specs deja un aviso claro."""
-    ws = wb.create_sheet(SHEET, index) if index is not None else wb.create_sheet(SHEET)
+def build_sheet(wb, specs: list, index: Optional[int] = None, name: str = SHEET, title: str = "Gráficos del reporte", empty_text: str = "Todavía no hay datos suficientes para graficar."):
+    """Crea una hoja de gráficos (por defecto «Gráficos») en `wb` (openpyxl) con los `specs`. Devuelve la hoja. Sin specs deja un aviso claro."""
+    ws = wb.create_sheet(name, index) if index is not None else wb.create_sheet(name)
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.tabColor = GOLD
     ws.column_dimensions["A"].width = 2.5
@@ -241,7 +251,7 @@ def build_sheet(wb, specs: list, index: Optional[int] = None):
         ws.column_dimensions[get_column_letter(c)].width = 9.5
     navy = PatternFill(start_color=NAVY, end_color=NAVY, fill_type="solid")
     ws.merge_cells("A1:T1")
-    ws["A1"] = "Gráficos del reporte"
+    ws["A1"] = title
     ws["A1"].font = Font(name="Calibri", size=20, bold=True, color="FFFFFF")
     ws["A1"].fill = navy
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
@@ -251,7 +261,7 @@ def build_sheet(wb, specs: list, index: Optional[int] = None):
     ws["A2"].font = Font(name="Calibri", size=9, italic=True, color="5B6078")
     ws["A2"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
     if not specs:
-        ws["B4"] = "Todavía no hay datos suficientes para graficar."
+        ws["B4"] = empty_text
         ws["B4"].font = Font(name="Calibri", size=12, color="5B6078")
         return ws
     ws.column_dimensions[get_column_letter(DATA_COL)].hidden = True
