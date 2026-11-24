@@ -105,20 +105,23 @@ def test_deshabilitar_llave_pide_escribir_la_palabra(admin):
 
 
 def test_reabrir_evento_pide_escribir_la_palabra(admin, evento):
+    """Reabrir un finalizado se hace cambiando el estado en la tarjeta del evento (desplegable). Sin escribir REABRIR: la ventana sigue abierta con el aviso
+    EN SU LUGAR (no se cierra en silencio) y el evento sigue finalizado."""
     req = admin.context.request
     post_json(req, f"/api/events/{evento['id']}", {"status": "en_proceso"}, "patch")
     post_json(req, f"/api/events/{evento['id']}", {"status": "finalizado"}, "patch")
     admin.goto("/eventos")
     admin.wait_for_load_state("networkidle")
-    fila = admin.locator(f"tr:has-text('{evento['name']}'), .gw-card:has-text('{evento['name']}')").first
-    boton = fila.get_by_role("button", name=re.compile("Reabrir", re.I))
-    if not boton.count():
-        pytest.skip("No se encontró el botón «Reabrir» del evento en esta versión de staging.")
-    boton.first.click()
+    selector = admin.locator(f"select[data-status-select][data-event-id='{evento['id']}']")
+    if not selector.count():
+        pytest.skip("No se encontró el desplegable de estado del evento sintético en /eventos (¿la lista oculta los finalizados por defecto?).")
+    selector.first.select_option("en_proceso")
     dialogo = admin.locator("[role=dialog]:visible").last
-    if not dialogo.locator("input[type=text]").count():
-        pytest.skip("Esta versión de staging todavía no pide escribir la palabra para reabrir un evento.")
+    dialogo.wait_for(state="visible", timeout=5000)
+    assert dialogo.locator("input[type=text]").count(), "Reabrir un finalizado no pide escribir la palabra"
     dialogo.get_by_role("button", name=re.compile("Reabrir", re.I)).click()
+    assert dialogo.is_visible(), "Sin escribir la palabra, la ventana se cerró y siguió adelante"
+    assert dialogo.locator("#toastPromptErr").is_visible(), "Sin escribir la palabra no salió el aviso dentro de la ventana"
     estado = como_json(req.get(f"/api/events/{evento['id']}"))
     assert estado.get("status", "finalizado") == "finalizado", "El evento se reabrió sin escribir la palabra"
 
