@@ -20,7 +20,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45          # revisión 22-nov-2026: una prueba colgada (base que no responde) no retiene el runner las 6 h por defecto
+    timeout-minutes: 75          # revisión 22-nov-2026: una prueba colgada no retiene el runner 6 h. 24-nov: 45 no alcanzó (máquina lenta: la suite va en ~42-60 min)
     services:
       postgres:
         image: postgres:16
