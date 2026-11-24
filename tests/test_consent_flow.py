@@ -346,7 +346,7 @@ def test_no_match_message_and_nothing_is_stored(client, factory, db, monkeypatch
     scan.face = _vec(9)                                                                   # un rostro que no corresponde a nadie de la lista
     before = set(get_storage().list(""))
     r = _scan(client, ev)
-    assert r == {"result": "NO", "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
+    assert r == {"result": "NO", "reason": "no_match", "compared": 0, "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
     assert set(get_storage().list("")) == before                                          # ni la foto en vivo ni el vector temporal se guardaron
 
 

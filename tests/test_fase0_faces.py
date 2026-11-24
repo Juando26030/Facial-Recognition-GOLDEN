@@ -68,7 +68,7 @@ def test_recognize_uses_only_people_of_the_event_and_returns_a_match_token(clien
     assert r["result"] == "MATCH_PENDING" and r["data"]["id"] == "1001" and r["match_token"]
 
     scan.face = _vec(2)                                                    # una persona del cliente, pero de OTRO evento: no se reconoce
-    assert _post_scan(client, ev).json() == {"result": "NO", "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
+    assert _post_scan(client, ev).json() == {"result": "NO", "reason": "no_match", "compared": 1, "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
 
     scan.face = None
     assert _post_scan(client, ev).json()["details"] == "Rostro no detectado"

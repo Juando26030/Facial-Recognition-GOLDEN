@@ -57,8 +57,10 @@ def test_precalculation_needs_third_party_photos_annex_and_guarantee_and_only_a_
     assert client.put(url(third), json=full).json()["precalculo_autorizado"] is True
     db.refresh(third)
     assert third.precalculo_garantia is True
-    # cambiar a evento propio (o quitar las fotos previas) apaga el pre-cálculo solo
-    r = _put(client, third, controller_mode="golden")
+    # 23-nov-2026 (Juan David): con rostro y fotos del cliente el modo de un clic queda encendido (lo condiciona el anexo firmado, biometric_setup.apply_precalc_default);
+    # pasar a evento propio ya no lo apaga, quitar las fotos previas sí
+    assert _put(client, third, controller_mode="golden").json()["config"]["precalculo_autorizado"] is True
+    r = _put(client, third, client_photos_before=False)
     assert r.json()["config"]["precalculo_autorizado"] is False
 
 

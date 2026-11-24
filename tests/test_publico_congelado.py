@@ -26,8 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # la persona (digital_badge.html, badge-render.js); solo se imprime a quien ya está registrado salvo preimpresión y certificados, y sin hojas en blanco (badge_print.html,
 # badge-render.js; parámetros de impresión intactos: los fija tests/test_impresion_parametros_fijos.py); Términos y Reembolsos aprobados por la auditora sin marcas de borrador
 # y con quién cobra (legal_terminos.html, legal_reembolsos.html). Huellas renovadas.
+# 24-nov-2026, HOTFIX con orden expresa de Juan David (eventos 14 y 15: varias personas inscritas desde el mismo celular se perdían): form_public.html renueva la clave
+# de envío cada vez que una inscripción queda confirmada. Mismo flujo y mismos textos. Huella renovada.
 FROZEN = {
-    "templates/form_public.html": "2fe3e8bd0da2dae66341232eaa5211900793a9ee4dfb933689fe866ee4421172",
+    "templates/form_public.html": "afabbec3576e870743f416bef2ca940f55d303d3a501b60aa2ad264277bfe8c7",
     "templates/aceptar.html": "a5331fff1d3c6a4056db7474136ec3133fdd0bf8620875664b489ca402af567d",
     "templates/aceptar_no_disponible.html": "a8de359cc787156269fb23be9d91729a0e1cf977168d1a4c7b5ee2131b2b01e4",
     "templates/digital_badge.html": "2bd1688a415cc438b66c98ee67a5c379725136d356eb9675d3dfd1674206d3e9",
