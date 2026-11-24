@@ -34,7 +34,7 @@ _FIXED_VARIABLES = [
     ("origin", "Origen de carga"),          # B1 (0073): Base (Excel) / Creado nuevo / Autoregistro / Desconocido, aparte del estado
 ]
 
-_MAX_CATEGORIES = 15  # más allá de esto, se agrupa en "Otros" para que el gráfico siga siendo legible
+# Hotfix 24-nov-2026: ninguna variable agrupa categorías en «Otros»; salen TODAS (de mayor a menor). El panel dibuja las muchas opciones en filas (static/js/stats-event.js).
 _NUMERIC_BINS = 8
 
 
@@ -191,11 +191,7 @@ def data_for(db: Session, event, variable: str, staff_view: bool = False, scope:
 
     counts = Counter({"true": "Sí", "false": "No"}.get(v, v) for v in non_empty)  # campos booleanos guardan "true"/"false"
     ordered = counts.most_common()
-    top = ordered[:_MAX_CATEGORIES]
-    rest_count = sum(c for _, c in ordered[_MAX_CATEGORIES:])
-    buckets = [{"label": label, "count": count} for label, count in top]
-    if rest_count:
-        buckets.append({"label": "Otros", "count": rest_count})
+    buckets = [{"label": label, "count": count} for label, count in ordered]
     return {"type": "categorical", "buckets": buckets}
 
 

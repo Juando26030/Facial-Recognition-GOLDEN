@@ -26,10 +26,12 @@ def test_time_series_widens_buckets_for_long_spans_and_handles_empty():
     assert an.time_series("t", "T", []) is None and an.hour_histogram("h", "H", []) is None and an.peak_hour([]) is None
 
 
-def test_counter_chart_groups_the_tail_into_others():
+def test_counter_chart_shows_every_category_and_groups_only_on_request():
     from app import analytics as an
 
     values = [f"E{i}" for i in range(15) for _ in range(15 - i)] + ["", None]
+    all_ = an.counter_chart("c", "C", values)          # hotfix 24-nov-2026: sin «Otros»
+    assert len(all_["labels"]) == 15 and "Otros" not in all_["labels"] and all_["labels"][0] == "E0"
     c = an.counter_chart("c", "C", values, top=5)
     assert len(c["labels"]) == 6 and c["labels"][-1] == "Otros" and c["labels"][0] == "E0"
     assert sum(c["datasets"][0]["data"]) == sum(15 - i for i in range(15))       # vacíos no cuentan, nada se pierde

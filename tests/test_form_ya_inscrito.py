@@ -388,3 +388,32 @@ def test_resubmission_is_marked_in_answers_and_the_registry_keeps_the_latest_ver
     subs = db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).order_by(FormSubmission.id).all()
     assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[1], formsvc.sub_person_id(formsvc.get_design(form), subs[1])) is True
     assert formsvc.is_resubmission(db, form, formsvc.get_design(form), subs[0], formsvc.sub_person_id(formsvc.get_design(form), subs[0])) is False
+
+
+def test_allow_repeats_two_different_people_from_the_same_phone_are_both_saved(client, factory, db):
+    """Hotfix 24-nov-2026 (eventos 14/15): mismo celular (misma `sid`, sobrevive al refrescar), cédulas distintas. Antes la segunda recibía «inscripción exitosa» (replayed) y NO
+    se guardaba: con «Permitir que la misma persona vuelva a enviar» la cédula no llegaba a la comprobación de reintento de `form_reserve_slot`."""
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    login(client, "coord1")
+    assert _put(client, ev, f, settings={"allow_repeats": True}).status_code == 200
+    _open(client, ev, f)
+    a = _person_values()
+    b = {**_person_values(), "cedula": "2002", "nombres": "Beto", "correo": "beto@example.com"}
+    assert _id_submit(client, ev, f, a, sid="celular").status_code == 200
+    second = _id_submit(client, ev, f, b, sid="celular")
+    assert second.status_code == 200 and not second.json().get("replayed")
+    assert _id_submit(client, ev, f, b, sid="celular").json().get("replayed") is True          # el reintento real de la MISMA persona sigue sin duplicar
+    subs = db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).all()
+    assert sorted(s.person_id for s in subs) == ["1001", "2002"]
+
+
+def test_default_form_two_people_from_the_same_phone_are_both_saved(client, factory, db):
+    """Sin «volver a enviar» (por defecto) ya funcionaba: se deja fijado."""
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    _open(client, ev, f)
+    b = {**_person_values(), "cedula": "2002", "nombres": "Beto", "correo": "beto@example.com"}
+    assert _id_submit(client, ev, f, _person_values(), sid="celular").status_code == 200
+    assert not _id_submit(client, ev, f, b, sid="celular").json().get("replayed")
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], is_test=False).count() == 2

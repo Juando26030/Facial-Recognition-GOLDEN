@@ -32,6 +32,10 @@
     return lines.length ? lines : [''];
   });
   const ROW_BAR = 24, ROW_LINE = 18;
+  /* Hotfix 24-nov-2026: sin tope de 1600 px. Con muchas categorías (p. ej. 150 empresas) el lienzo quedaba fijo y las filas se encimaban. Ahora crece con cada opción;
+     solo se limita por el máximo de un <canvas> del navegador (~32.000 px): por encima de 8.000 px se dibuja a 1x para no pasarse. */
+  const MAX_CANVAS_PX = 30000;
+  GWViz.fitDpr = GWViz.fitDpr || ((height) => (height * (window.devicePixelRatio || 1) > MAX_CANVAS_PX ? Math.max(1, Math.floor(MAX_CANVAS_PX / height)) : undefined));
   /* Plan de filas: alto del lienzo y relleno para `labels` en un ancho disponible `width` (px). */
   GWViz.rowPlan = GWViz.rowPlan || ((labels, texts, width) => {
     const perLine = Math.max(12, Math.floor((width - 8) / 7.8));
@@ -39,7 +43,7 @@
     const rowH = ROW_BAR + ROW_LINE * lines + 12;
     const padTop = Math.max(0, ROW_LINE * lines + 4 - Math.round((rowH - ROW_BAR) / 2));
     const padRight = Math.max.apply(null, texts.map((t) => String(t).length)) * 9 + 14;
-    return { lines, rowH, padTop, padRight, height: Math.min(1600, labels.length * rowH + padTop + 10) };
+    return { lines, rowH, padTop, padRight, height: Math.min(MAX_CANVAS_PX, labels.length * rowH + padTop + 10) };
   });
   /* Dibuja, por barra, el nombre (arriba) y el valor (al final). Opciones en plugins.gwRows = { labels, texts, lines }. */
   GWViz.rowsPlugin = GWViz.rowsPlugin || {
@@ -72,7 +76,7 @@
     return { height: plan.height, config: {
       type: 'bar',
       data: { labels, datasets: [{ label: o.seriesLabel || 'Cantidad', data: values, backgroundColor: o.color || palette()[0], borderRadius: 4, barThickness: ROW_BAR }] },
-      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { top: plan.padTop, right: plan.padRight, bottom: 4, left: 0 } },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, devicePixelRatio: GWViz.fitDpr(plan.height), layout: { padding: { top: plan.padTop, right: plan.padRight, bottom: 4, left: 0 } },
         plugins: { legend: { display: false }, gwRows: { labels, texts, lines: plan.lines }, tooltip: { titleFont: { size: 14 }, bodyFont: { size: 14 } } },
         scales: { x: { display: false, beginAtZero: true, grid: { display: false } }, y: { display: false, grid: { display: false } } } },
       plugins: [GWViz.rowsPlugin],
@@ -172,8 +176,8 @@
         if (n > 5 && !dated) idx.sort((a, b) => (Number(spec.datasets[0].data[b]) || 0) - (Number(spec.datasets[0].data[a]) || 0));        // muchas opciones: de mayor a menor
         return { kind: 'rows', idx, width: w };
       }
-      if (spec.type === 'bar' && spec.horizontal) return { kind: 'hwrap', height: Math.min(1600, n * 58 + 120) };
-      if (spec.type === 'pie') return { kind: 'pie', height: Math.min(1000, 250 + n * 34) };
+      if (spec.type === 'bar' && spec.horizontal) return { kind: 'hwrap', height: Math.min(MAX_CANVAS_PX, n * 58 + 120) };
+      if (spec.type === 'pie') return { kind: 'pie', height: Math.min(MAX_CANVAS_PX, 250 + n * 34) };
       if (spec.type === 'line') return { kind: 'line', height: 280 };
       return null;
     }
