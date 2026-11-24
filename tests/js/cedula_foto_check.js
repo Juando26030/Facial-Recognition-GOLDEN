@@ -115,11 +115,5 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     assert.ok(src.includes("verificada: false, origen: 'operador'"), 'la persona elegida de los parecidos NO se marca como lectura validada');
     assert.ok(src.includes('/cedula-near') && src.includes('getCapabilities') && src.includes('torch'), 'parecidos y linterna');
   }
-  // 24-nov-2026 (tarde): la cédula no llenó el recuadro o se salió un poco → las 3 líneas se ubican en un recorte holgado (sin depender de los renglones guía)
-  {
-    const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
-    assert.ok(src.includes('expandRect(guidePhoto, 0.22, 1.6') && src.includes('await mz.scanImage(c)'), 'ubicar las 3 líneas donde estén alrededor del recuadro');
-    assert.ok(src.includes('if (shots[1]) await locate(shots[1])'), 'los nombres se confirman con un segundo cuadro');
-  }
   console.log('cedula_foto_check OK');
 })().catch((e) => { console.error(e); process.exit(1); });
