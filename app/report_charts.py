@@ -14,6 +14,7 @@ from typing import Optional
 
 from openpyxl.chart import BarChart, DoughnutChart, LineChart, Reference
 from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.marker import DataPoint, Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -33,15 +34,16 @@ SHEET_NOT_REGISTERED = "Gráficos no registrados"   # … y solo con las no regi
 DATA_COL = 27                    # AA: datos de apoyo (columnas ocultas)
 CHART_W, CHART_H = 16.5, 8.6     # cm
 ROWS_PER_CHART = 19
-BAR_CM = 0.55                    # alto por barra en los gráficos de categorías con muchas opciones
+BAR_CM = 0.6                     # alto por barra en los gráficos de categorías con muchas opciones
 MANY_CATS = 12                   # desde aquí el gráfico de barras ocupa el ancho de la hoja y crece de alto (cabe cada categoría, sin «Otros»)
+TITLE_CM = 1.6                   # espacio reservado arriba para el título (cm)
 ROW_CM = 0.53                    # alto de una fila de Excel (15 pt)
 
 
 def chart_height(spec: dict) -> float:
-    """Alto en cm del gráfico: el normal, o más alto si es de barras con muchas categorías (todas deben verse; máx. 60 cm)."""
+    """Alto en cm del gráfico: el normal, o más alto si es de barras con muchas categorías (todas deben verse; máx. 400 cm)."""
     if spec.get("kind") == "barh" and len(spec["cats"]) > MANY_CATS:
-        return min(60.0, max(CHART_H, BAR_CM * len(spec["cats"]) + 2.5))
+        return min(400.0, max(CHART_H, BAR_CM * len(spec["cats"]) + 3.5))          # Excel admite gráficos de hasta ~430 cm
     return CHART_H
 
 
@@ -221,6 +223,12 @@ def _make_chart(spec: dict, cats_ref, vals_ref):
     ch.add_data(vals_ref, titles_from_data=True)
     ch.set_categories(cats_ref)
     ch.title = spec["title"]
+    # Hotfix 24-nov-2026: en Excel de escritorio el título quedaba ENCIMA del gráfico (openpyxl no escribe <c:overlay>, y Excel lo toma como «superpuesto»).
+    # Título fuera del área de dibujo y el área de dibujo empieza debajo de él (posición manual, en fracción del alto del gráfico).
+    ch.title.overlay = False
+    top = TITLE_CM / chart_height(spec)
+    ch.plot_area.layout = Layout(manualLayout=ManualLayout(xMode="edge", yMode="edge", x=0.03, y=top,
+                                                         w=(0.62 if kind == "doughnut" else 0.94), h=max(0.3, 0.97 - top)))
     ch.width, ch.height = (CHART_W * 2 + 1.2 if is_tall(spec) else CHART_W), chart_height(spec)          # las de muchas categorías ocupan las dos columnas
     ch.visible_cells_only = False                              # los datos de apoyo están en columnas ocultas: igual se dibujan
     s = ch.series[0]
