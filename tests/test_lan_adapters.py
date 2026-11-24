@@ -76,3 +76,15 @@ def test_local_server_does_not_create_events_or_clients():
     assert localmode.is_creation_call("GET", "/eventos/nuevo") and localmode.is_creation_call("GET", "/clientes/acme/nuevo-evento")
     assert not localmode.is_creation_call("POST", "/api/events/12/register") and not localmode.is_creation_call("PUT", "/api/tenants/acme")
     assert not localmode.is_creation_call("GET", "/eventos") and not localmode.is_creation_call("POST", "/api/events/12/staff-users")
+
+
+def test_configuracion_solo_nube_bloqueada_en_local():
+    from app import localmode as lm
+    assert lm.is_cloud_config_call("PUT", "/api/event-template")
+    assert lm.is_cloud_config_call("POST", "/api/event-states")
+    assert lm.is_cloud_config_call("DELETE", "/api/event-types/3")
+    assert lm.is_cloud_config_call("PUT", "/api/system-alerts/settings")
+    assert lm.is_cloud_config_call("GET", "/api/server-keys")
+    assert lm.is_cloud_config_call("GET", "/configuracion/plantilla-evento")
+    assert not lm.is_cloud_config_call("GET", "/api/event-states")
+    assert not lm.is_cloud_config_call("GET", "/configuracion")
