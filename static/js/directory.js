@@ -1120,8 +1120,9 @@
         if (!td) return;
         const b = document.createElement('span');
         const created = u.origin === 'manual';                         // alta manual («Registrar nuevo»): «Recién creado» (azul); acreditar a alguien de la base: «Recién registrado» (verde)
+        const edited = !created && u.status === 'No registrado';        // 24-nov-2026: «Guardar sin registrar» deja a la persona No registrada: no puede decir «Recién registrado»
         b.className = created ? 'gw-badge gw-recent-tag gw-recent-tag--new' : 'gw-badge gw-recent-tag';
-        b.textContent = created ? 'Recién creado' : 'Recién registrado';
+        b.textContent = created ? 'Recién creado' : (edited ? 'Recién editado' : 'Recién registrado');
         td.appendChild(b);
       });
       if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)

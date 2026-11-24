@@ -11,6 +11,7 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 ## 2026-11-23 (noche) — Confirmaciones con palabra y coordinador del evento nuevo (Rama; sin migración)
 - **Arreglo (pedido de Juan David):** en TODAS las pantallas que piden escribir una palabra para borrar o confirmar (REABRIR, ELIMINAR, SUPRIMIR, REVOCAR, REEMBOLSAR, DESHABILITAR, BORRAR, CARGAR, nombre del evento, nombre del campo), si la palabra está mal o vacía el cuadro ya NO se cierra en silencio (parecía que se había borrado y no): muestra ahí mismo el aviso rojo «No se hizo nada…» y deja corregir o cancelar. Se hizo en `showPrompt` (opción `validate`) y lo usan todos los llamadores.
 - **Arreglo:** el desplegable «Coordinador» del evento nuevo ya no ofrece coordinadores temporales (ni archivados): usa la misma lista que valida el servidor. Antes el servidor respondía «El coordinador asignado no es válido». Archivos: `static/js/toast.js`, `static/js/gw-confirm-typed.js`, `app/event_template_svc.py`.
+- **Arreglo:** en el directorio, quien se edita con «Guardar sin registrar» y sigue «No registrado» ya no muestra «Recién registrado»: dice «Recién editado» (`static/js/directory.js`).
 
 ## 2026-11-23 — Registro y escáner facial: pruebas en staging de `saas/revision-integral` (Rama; sin migración)
 - **Arreglo:** la cámara del escáner no encendía (`setOff` se usaba antes de definirse y detenía `app.js` al cargar). El mismo error está en `main` y en producción; hoy esa pantalla no se usa allí. Pendiente de subir con el paquete de producción.

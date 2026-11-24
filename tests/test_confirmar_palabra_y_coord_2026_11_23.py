@@ -29,3 +29,8 @@ def test_coordinador_del_evento_nuevo_sin_temporales():
     s = _t("app/event_template_svc.py")
     assert "coordination.coordinator_candidates(db)" in s
     assert "StaffUser.event_only.is_(False)" in s
+
+
+def test_recien_editado_si_sigue_no_registrada():
+    s = _t("static/js/directory.js")
+    assert "'Recién editado'" in s and "u.status === 'No registrado'" in s
