@@ -53,7 +53,7 @@
         <p class="gw-page-head__sub">Busca un evento, mira en qué estado está y entra a trabajarlo.</p>
       </div>
       <div class="gw-page-head__actions">
-        {% if not (event_only_session is defined and event_only_session(request)) %}<a href="/eventos/nuevo" class="gw-btn gw-btn--primary" data-new-event>{{ ic('plus', 'gw-icon--sm') }} Nuevo evento</a>{% endif %}
+        {% if not (event_only_session is defined and event_only_session(request)) and not local_server %}<a href="/eventos/nuevo" class="gw-btn gw-btn--primary" data-new-event>{{ ic('plus', 'gw-icon--sm') }} Nuevo evento</a>{% endif %}
         {% if staff_role == "super_admin" %}
         <button type="button" class="gw-btn gw-btn--secondary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">{{ ic('upload', 'gw-icon--sm') }} Importar evento</button>
         {% endif %}
@@ -186,7 +186,7 @@ function eventCard(e) {
 }
 
 const STAFF_ROLE = {{ staff_role|tojson }};
-const CAN_DUP = ["coordinador", "comercial", "admin", "super_admin"].includes(STAFF_ROLE) && !{{ 'true' if (event_only_session is defined and event_only_session(request)) else 'false' }};      // duplicar un evento: igual que crearlos (el servidor lo vuelve a exigir)
+const CAN_DUP = ["coordinador", "comercial", "admin", "super_admin"].includes(STAFF_ROLE) && !{{ 'true' if (event_only_session is defined and event_only_session(request)) else 'false' }} && !{{ 'true' if local_server else 'false' }};          // servidor local: no duplica (los eventos bajan de la nube)      // duplicar un evento: igual que crearlos (el servidor lo vuelve a exigir)
 const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin";      // devolver «En proceso» a «Creado»: solo admin y super_admin
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 
