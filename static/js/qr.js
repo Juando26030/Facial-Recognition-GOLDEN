@@ -127,7 +127,7 @@
 
   // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
   const READERS_URL = '/static/js/cedula-readers.js?v=1';
-  const FOTO_URL = '/static/js/cedula-foto.js?v=1';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
+  const FOTO_URL = '/static/js/cedula-foto.js?v=2';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
   const MODE_KEY = 'gw_scan_mode';
   let readersPromise = null, fotoPromise = null;
   function loadFoto() {
@@ -184,14 +184,14 @@
     const MODE_LABEL = { old: 'Cédula vieja', new: 'Cédula nueva', qr: 'QR' };
     const modes = Array.isArray(opts.modes) ? opts.modes.filter((m) => MODE_LABEL[m]) : [];
     const modesHtml = modes.length > 1 ? `<div class="gw-segment gw-cam__modes" role="group" aria-label="¿Qué vas a escanear?">${modes.map((m) => `<button type="button" class="gw-segment__opt" data-mode="${m}" aria-pressed="false">${MODE_LABEL[m]}</button>`).join('')}</div><canvas hidden></canvas>` : (modes.length ? '<canvas hidden></canvas>' : '');
-    const videoHtml = modes.length ? '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas class="gw-cam__overlay" aria-hidden="true"></canvas></div>'
+    const videoHtml = modes.length ? '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas class="gw-cam__overlay" aria-hidden="true"></canvas>'
+        + (modes.some((m) => m !== 'qr') ? '<button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-cam__shoot" hidden>Tomar foto</button>' : '') + '</div>'
       : '<video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas hidden></canvas>';
     box.innerHTML = `
       <div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>
       <div class="gw-modal__body">
         ${modesHtml}
         ${videoHtml}
-        ${modes.some((m) => m !== 'qr') ? '<button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-cam__shoot" hidden>Tomar foto</button>' : ''}
         <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
       </div>
       <div class="gw-modal__foot">
@@ -307,6 +307,7 @@
       if (modes.length > 1) { try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* sin almacenamiento: no se recuerda */ } }      // con un solo modo (Inventario, Almacén, Expositor) no se toca lo recordado por el Registro
       const isQr = m === 'qr';
       if (overlayCv) overlayCv.hidden = isQr;
+      box.classList.toggle('gw-cam--photo', !isQr);          // cédula: todo en una pantalla, cámara grande y «Tomar foto» encima de la parte baja del video (fuera del recuadro)
       if (isQr) { status.classList.remove('gw-cam__status--err'); status.textContent = qrMsg(); await start(); } else await startCedula(m, my);
     }
 

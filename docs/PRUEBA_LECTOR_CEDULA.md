@@ -63,3 +63,7 @@ Control de Áreas y Control de Inventario; todas usan `QrScanner.open` de `stati
 - **Falla:** «No se pudo leer la cédula: acérquela, evite reflejos y tome otra foto.» (la cámara sigue abierta para otra foto).
 - **Pruebas:** `node tests/js/cedula_foto_check.js` (lógica pura) y `tests/test_cedula_camara_busqueda.py`. La lectura real se valida con cédulas físicas en el celular y el computador.
 - La página de prueba `/pruebas/lector-cedula` y `cedula-readers.js` NO cambiaron (su huella sigue igual).
+
+### Ajuste del 24-nov-2026 (tarde): una sola pantalla y más rápido
+- **Pantalla:** en modo cédula, en celular y tableta la ventana ocupa el alto visible y la cámara llena el espacio libre; «Tomar foto» va encima de la parte baja del video (el recuadro guía queda centrado y no se tapa). En computador el botón también va encima del video.
+- **Rapidez:** si el video ya es HD (lado corto ≥ 1080 px) se usa su cuadro en vez de `takePhoto()` (en Android tardaba 1-3 s). Cédula vieja: 2,5 s sobre el recuadro y 3 s sobre la foto completa (antes 7 s + 9 s). Cédula nueva: si el navegador no la leyó en 1,2 s, el servidor arranca en paralelo y gana el primero que la valide; con servidor disponible el navegador ya no hace el OCR lento de la foto completa. Sin conexión: solo el navegador, como antes.

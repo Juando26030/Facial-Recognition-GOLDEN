@@ -83,5 +83,20 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
   // el componente usa métodos de los lectores generados: si se regeneran con otro nombre, esto avisa
   const readers = fs.readFileSync(path.join(ROOT, 'static/js/cedula-readers.js'), 'utf8');
   for (const m of ['async scanImage(file, { budgetMs = 15000 } = {})', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
+  // 24-nov-2026 (rapidez): carrera navegador/servidor de la cédula nueva → gana la PRIMERA lectura no vacía; si todas fallan, null
+  {
+    const api = require(path.join(ROOT, 'static/js/cedula-foto.js'));
+    const later = (v, ms) => new Promise((ok) => setTimeout(() => ok(v), ms));
+    assert.deepStrictEqual(await api.firstFound([later(null, 5), later({ cedula: '1' }, 20), later({ cedula: '2' }, 40)]), { cedula: '1' });
+    assert.deepStrictEqual(await api.firstFound([later({ cedula: '2' }, 30), Promise.reject(new Error('x')), later(null, 1)]), { cedula: '2' });
+    assert.strictEqual(await api.firstFound([later(null, 1), Promise.reject(new Error('x'))]), null);
+    assert.strictEqual(await api.firstFound([]), null);
+    const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
+    assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_BUDGET_MS'), 'atajos de rapidez');
+    const qr = fs.readFileSync(path.join(ROOT, 'static/js/qr.js'), 'utf8');
+    const stage = qr.slice(qr.indexOf('gw-cam__stage'), qr.indexOf("+ '</div>'"));
+    assert.ok(stage.includes('gw-cam__shoot'), '«Tomar foto» va dentro del recuadro de la cámara (encima del video)');
+    assert.ok(qr.includes("classList.toggle('gw-cam--photo'"), 'modo cédula: todo en una pantalla');
+  }
   console.log('cedula_foto_check OK');
 })().catch((e) => { console.error(e); process.exit(1); });

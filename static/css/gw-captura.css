@@ -10,5 +10,14 @@
 .gw-cam__overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: var(--gw-radius-md); }
 .gw-cam__overlay[hidden] { display: none; }
 /* Cédula por foto (qr.js + cedula-foto.js, 24-nov-2026): botón «Tomar foto» debajo del video, solo en los modos de cédula */
-.gw-cam__shoot { margin-top: var(--gw-sp-3); }
+/* 24-nov-2026 (Juan David): solo importa el recuadro guía, así que «Tomar foto» va ENCIMA de la parte baja del video (el recuadro queda centrado, sin tapar)
+   y en celular/tableta todo cabe en una pantalla: la ventana ocupa el alto visible y la cámara llena el espacio libre (sin bajar para ver el botón). */
+.gw-cam__shoot { position: absolute; left: var(--gw-sp-3); right: var(--gw-sp-3); bottom: var(--gw-sp-3); width: auto; margin: 0; box-shadow: var(--gw-shadow-lg); }
 .gw-cam__shoot[hidden] { display: none; }
+@media (max-width: 1024px), (pointer: coarse) {
+  .gw-modal.gw-cam--photo { display: flex; flex-direction: column; max-width: 720px; height: calc(100vh - 2 * var(--gw-sp-4)); height: calc(100dvh - 2 * var(--gw-sp-4)); overflow: hidden; }
+  .gw-cam--photo .gw-modal__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .gw-cam--photo .gw-cam__stage { flex: 1; min-height: 0; }
+  .gw-cam--photo .gw-cam__video, .gw-cam--photo .gw-cam__overlay { width: 100%; height: 100%; object-fit: cover; }
+  .gw-cam--photo .gw-cam__status { flex: none; }
+}

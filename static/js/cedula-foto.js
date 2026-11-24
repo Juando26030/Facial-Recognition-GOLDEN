@@ -32,6 +32,9 @@
   const MRZ_CROP_W = 1800;                   // ancho de trabajo del recorte de las 3 líneas (≈60 px por carácter)
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
   const SERVER_TIMEOUT_MS = 25000;
+  const HD_SHORT_SIDE = 1080;                 // video con lado corto ≥ 1080 px: su cuadro ya es alta definición (no hace falta takePhoto)
+  const OLD_BUDGET_MS = [2500, 3000];        // cédula vieja: recuadro guía, luego foto completa (antes 7 s + 9 s: lo que no sale en ~5 s no sale con más tiempo; mejor otra foto)
+  const SERVER_HEAD_START_MS = 1200;         // cédula nueva: si el navegador no la leyó en este tiempo, el servidor arranca EN PARALELO (gana el primero que la valide)
 
   /* ---------------------------------------------------------------- funciones puras (también en Node) */
   /** Recuadro guía en px del video, sobre la parte VISIBLE del elemento (bw×bh en pantalla; con object-fit: cover se recorta). Igual que _guideRect de los lectores. */
@@ -128,6 +131,9 @@
 
   /** Toma la foto: ImageCapture.takePhoto() a resolución máxima; si no se puede, el cuadro actual del video a resolución completa. → { img, w, h, source } */
   async function takeStill(track, video) {
+    // 24-nov-2026 (rapidez): si el video ya es HD (lado corto ≥ 1080 px) se usa su cuadro: es inmediato y basta para el recuadro guía. takePhoto() solo
+    // cuando la cámara no da video HD (en Android reenfoca y decodifica un JPEG de 12 MP: 1-3 s de espera).
+    if (Math.min(video.videoWidth || 0, video.videoHeight || 0) >= HD_SHORT_SIDE) return frameOf(video);
     if (track && typeof ImageCapture !== 'undefined' && track.readyState === 'live') {
       try {
         const ic = new ImageCapture(track);
@@ -137,6 +143,9 @@
         if (bmp.width && bmp.height) return { img: bmp, w: bmp.width, h: bmp.height, source: 'still' };
       } catch (e) { /* algunos celulares no la dan (o la cámara está ocupada): se usa el cuadro del video */ }
     }
+    return frameOf(video);
+  }
+  function frameOf(video) {
     const c = canvasOf(video.videoWidth, video.videoHeight);
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
     return { img: c, w: c.width, h: c.height, source: 'frame' };
@@ -147,8 +156,8 @@
     let unknown = false;
     sc.onResult = () => {}; sc.onStatus = () => {}; sc.onUnknown = () => { unknown = true; };
     const sources = [];
-    if (guidePhoto) sources.push([cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), 7000]);     // el recuadro con margen (la cédula rara vez queda exacta)
-    sources.push([shot.img, 9000]);                                                                                   // la foto completa: el localizador busca el código en cualquier parte y ángulo
+    if (guidePhoto) sources.push([cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_BUDGET_MS[0]]);     // el recuadro con margen (la cédula rara vez queda exacta)
+    sources.push([shot.img, OLD_BUDGET_MS[1]]);                                                                                   // la foto completa: el localizador busca el código en cualquier parte y ángulo
     for (const [src, budgetMs] of sources) {
       if (!alive()) return { datos: null };
       const datos = await sc.scanImage(src, { budgetMs });
@@ -157,7 +166,7 @@
     return { datos: null, unknown };
   }
 
-  async function decodeNew(R, shot, guidePhoto, alive) {
+  async function decodeNew(R, shot, guidePhoto, alive, withFull = true) {
     const mz = await decoder(R, 'new');
     mz.onStatus = () => {};
     const reads = [];
@@ -169,6 +178,7 @@
       const got = pickMrz(reads, R.mrzStrong, false); if (got) return got.datos;
     }
     if (!alive()) return null;
+    if (!withFull) { const g2 = pickMrz(reads, R.mrzStrong, true); return g2 ? g2.datos : null; }   // con servidor disponible, él lee la foto completa (más rápido que el OCR del celular)
     let full = null; mz.onResult = (d) => { full = d; };                                                          // la foto completa: las 3 líneas en cualquier parte y orientación
     await mz.scanImage(shot.img);                                                                                 // lienzo o ImageBitmap: el lector hace su propia copia
     mz.onResult = () => {};
@@ -178,9 +188,33 @@
   }
 
   /** Respaldo: el servidor lee las 3 líneas (Tesseract). Solo con red, con evento y fuera del modo sin conexión. La copia se envía y se descarta; el servidor tampoco la guarda. */
+  function serverUsable(eventId) {
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || (typeof window !== 'undefined' && window.GoldenContingency && window.GoldenContingency.instance && window.GoldenContingency.instance.active && window.GoldenContingency.instance.active());
+    return !!eventId && !offline;
+  }
+  /** El primero de las promesas que entregue algo (no null); null si ninguna. Las demás se ignoran. */
+  function firstFound(promises) {
+    return new Promise((done) => {
+      let left = promises.length; if (!left) { done(null); return; }
+      promises.forEach((p) => Promise.resolve(p).catch(() => null).then((v) => { if (v) { done(v); done = () => {}; } else if (--left === 0) done(null); }));
+    });
+  }
+  /** Cédula nueva: navegador y servidor en carrera. El servidor arranca a los SERVER_HEAD_START_MS (o antes, si el navegador ya se rindió); gana el primero
+   *  que entregue una lectura validada y el otro se corta (alive). Sin red / sin evento / modo sin conexión: solo el navegador, con su lectura de la foto completa. */
+  async function decodeNewRace(R, shot, guidePhoto, alive, eventId) {
+    const useServer = serverUsable(eventId);
+    if (!useServer) return R ? decodeNew(R, shot, guidePhoto, alive, true) : null;
+    let won = false, kick = null;
+    const still = () => alive() && !won;
+    const startServer = new Promise((ok) => { kick = ok; setTimeout(ok, SERVER_HEAD_START_MS); });
+    const local = R ? decodeNew(R, shot, guidePhoto, still, false).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
+    const server = startServer.then(() => (still() ? serverMrz(shot, eventId, still) : null));
+    const d = await firstFound([local, server]);
+    won = true;
+    return d;
+  }
   async function serverMrz(shot, eventId, alive) {
-    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || (window.GoldenContingency && window.GoldenContingency.instance && window.GoldenContingency.instance.active && window.GoldenContingency.instance.active());
-    if (!eventId || offline || !alive()) return null;
+    if (!serverUsable(eventId) || !alive()) return null;
     const k = Math.min(1, SERVER_MAX / Math.max(shot.w, shot.h)), c = cropCanvas(shot.img, { x: 0, y: 0, w: shot.w, h: shot.h }, shot.w * k);
     let blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
     if (!blob || !alive()) return null;
@@ -263,10 +297,10 @@
         if (R && !dead) {
           try {
             if (kind === 'old') { const out = await decodeOld(R, shot, guidePhoto, alive); datos = out.datos; unknown = !!out.unknown; }
-            else datos = await decodeNew(R, shot, guidePhoto, alive);
+            else datos = await decodeNewRace(R, shot, guidePhoto, alive, o.eventId);
           } catch (e) { readerErr = e; }
         }
-        if (!datos && kind === 'new' && !dead) { say(MSG.server, 'warn'); datos = await serverMrz(shot, o.eventId, alive); }
+        if (!datos && kind === 'new' && !R && !dead) datos = await decodeNewRace(null, shot, guidePhoto, alive, o.eventId);   // el lector del navegador no cargó: solo el servidor
         if (dead) return;
         if (datos) { say('Cédula leída.', 'ok'); setBusy(false); o.onResult(datos, kind); resumePreview(); return; }
         say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : MSG.fail, 'err');
@@ -300,7 +334,7 @@
     };
   }
 
-  const api = { attach, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
+  const api = { attach, firstFound, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
   if (typeof window !== 'undefined') window.CedulaFoto = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();
