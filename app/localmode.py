@@ -45,6 +45,22 @@ def is_creation_call(method: str, path: str) -> bool:
     return method.upper() == "POST" and bool(re.match(r"^/api/(events|events/\d+/duplicate|tenants|crm/accounts)/?$", path))
 
 
+LOCAL_CLOUD_CONFIG_MSG = "Esto solo se configura en internet: el servidor local recibe esa configuración desde la nube."
+LOCAL_CLOUD_CONFIG_PAGES = ("/configuracion/plantilla-evento",)
+
+
+def is_cloud_config_call(method: str, path: str) -> bool:
+    """¿Es configuración que solo se maneja en la nube (plantilla, estados y tipos de evento, alertas del sistema, llaves de producto)?
+    En un servidor local (24-nov-2026, Juan David) no se ve ni se cambia: las escrituras se rechazan y las llaves se rechazan siempre."""
+    import re
+    m = method.upper()
+    if m == "GET" and path in LOCAL_CLOUD_CONFIG_PAGES:
+        return True
+    if re.match(r"^/api/server-keys(/|$)", path):
+        return True
+    return m in ("POST", "PUT", "PATCH", "DELETE") and bool(re.match(r"^/api/(event-template|event-states|event-types|system-alerts/(settings|recipients))(/|$)", path))
+
+
 LOCAL_NO_FACE_MSG = "El reconocimiento facial no está disponible en el servidor local: aquí se registra por cédula, QR o búsqueda."
 LOCAL_NO_MODULE_PAGES = ("/inventario", "/cuentas-de-cobro", "/gastos")          # solo existen en internet; el inventario del EVENTO (lo alistado) se consulta desde el quiosco del evento
 
