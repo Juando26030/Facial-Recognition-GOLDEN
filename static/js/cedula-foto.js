@@ -34,6 +34,7 @@
   };
   const SIZES = [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}];
   const STILL_MAX = 4600;                    // lado mayor máximo pedido a takePhoto (más no aporta y pesa en memoria)
+  const LOCATE_W = 2400;                     // recorte holgado alrededor del recuadro para ubicar las 3 líneas donde estén (el lector lo lleva a ≤ 2400 px)
   const MRZ_CROP_W = 1800;                   // ancho de trabajo del recorte de las 3 líneas (≈60 px por carácter)
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
   const SERVER_TIMEOUT_MS = 25000;
@@ -206,11 +207,27 @@
       plan.push([shot, expandRect(guidePhoto, 0.03, 0.08, shot.w, shot.h)]);                   // ajustado al recuadro
       if (k === 0) plan.push([shot, expandRect(guidePhoto, 0.08, 0.45, shot.w, shot.h)]);      // holgado (las líneas quedaron un poco fuera), solo en el primero
     });
-    for (const [shot, r] of plan) {
+    const locate = async (shot) => {                                                          // las 3 líneas DONDE ESTÉN cerca del recuadro: más pequeñas, corridas o un poco fuera
+      if (!guidePhoto || !alive()) return;
+      const c = cropCanvas(shot.img, expandRect(guidePhoto, 0.22, 1.6, shot.w, shot.h), LOCATE_W);
+      let found = null; mz.onResult = (d) => { found = d; };
+      try { await mz.scanImage(c); } finally { mz.onResult = () => {}; }
+      if (found) reads.push({ parsed: found, conf: null });
+    };
+    for (const [idx, [shot, r]] of plan.entries()) {
       if (!alive()) return null;
       const c = cropCanvas(shot.img, r, MRZ_CROP_W), g = grayOf(c);
       await readMrzCrop((flip, attempt) => mz._read(g, c.width, c.height, { flip, attempt }), R.parseMrz, R.mrzStrong, reads, alive);
-      const got = pickMrz(reads, R.mrzStrong, false); if (got) return got.datos;
+      let got = pickMrz(reads, R.mrzStrong, false); if (got) return got.datos;
+      if (idx === 0) {                                                                         // 24-nov: la cédula no llenó el recuadro (o se salió un poco)
+        const before = reads.length;
+        await locate(shot);
+        if (reads.length > before && R.mrzStrong(reads[reads.length - 1].parsed)) {           // número validado: se confirma con el 2.º cuadro (los nombres no tienen dígito de control)
+          if (shots[1]) await locate(shots[1]);
+          got = pickMrz(reads, R.mrzStrong, false) || pickMrz(reads, R.mrzStrong, true);      // sin segunda coincidencia: entra con la cédula validada y sin nombres (como siempre)
+          if (got) return got.datos;
+        }
+      }
     }
     if (!alive()) return null;
     if (!withFull) { const g2 = pickMrz(reads, R.mrzStrong, true); return g2 ? g2.datos : null; }   // con servidor disponible, él lee la foto completa (más rápido que el OCR del celular)
