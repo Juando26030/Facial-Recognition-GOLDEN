@@ -60,6 +60,16 @@ _ADAPTERS_PS = ("Get-NetIPConfiguration | ForEach-Object { $g = if ($_.IPv4Defau
 _adapters_cache: dict = {"at": 0.0, "rows": None}
 
 
+def rank_adapter_details(rows: list) -> list:
+    """FUNCIÓN PURA. Igual que `rank_adapters`, pero cada dirección con su tipo de conexión: [{ip, kind: "cable"|"wifi"|"otro"}] (24-nov-2026: la pantalla dice por dónde va la dirección y
+    avisa cuando solo hay Wi‑Fi, porque ese Wi‑Fi suele ser el de la casa/el lugar y no el router del evento)."""
+    kinds = {}
+    for r in rows:
+        name = f'{r.get("alias", "")} {r.get("desc", "")}'
+        kinds.setdefault(r.get("ip"), "otro" if _VIRTUAL_ADAPTER.search(name) else ("wifi" if _WIFI_ADAPTER.search(name) else "cable"))
+    return [{"ip": ip, "kind": kinds.get(ip, "otro")} for ip in rank_adapters(rows)]
+
+
 def rank_adapters(rows: list) -> list:
     """FUNCIÓN PURA. `rows`: [{ip, alias, gateway(bool), desc}] de los adaptadores con IPv4 en este momento (no importa si la dirección es fija o automática: es la que está usando).
     Devuelve las IP en el orden en que se deben mostrar: primero las del adaptador real que tiene salida (puerta de enlace), cable antes que Wi‑Fi; los adaptadores virtuales (Hyper‑V, WSL, VirtualBox, VMware, VPN…) solo
@@ -107,6 +117,14 @@ def _windows_adapters(ttl_s: float = 15.0) -> Optional[list]:
     if rows:
         _adapters_cache.update(at=now, rows=rows)
     return rows or None
+
+
+def lan_address_details() -> list:
+    """[{ip, kind}] en el mismo orden que `lan_addresses`. Fuera de Windows no se sabe el tipo: «otro»."""
+    rows = _windows_adapters() or []
+    if rank_adapters(rows):
+        return rank_adapter_details(rows)
+    return [{"ip": ip, "kind": "otro"} for ip in lan_addresses()]
 
 
 def lan_addresses() -> list:

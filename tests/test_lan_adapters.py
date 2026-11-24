@@ -36,3 +36,19 @@ def test_discards_loopback_link_local_and_garbage():
 def test_not_windows_falls_back_to_socket_probe_without_crashing():
     assert localmode._windows_adapters() is None or isinstance(localmode._windows_adapters(), list)
     assert isinstance(localmode.lan_addresses(), list)
+
+
+def test_details_say_which_connection_each_address_uses():
+    """24-nov-2026: cable + Wi‑Fi de otra red (caso real del evento): la del cable primero y cada una con su tipo."""
+    rows = [R("192.168.0.33", "Wi-Fi 2", True, "Intel Wireless"), R("192.168.1.127", "Ethernet", True, "Realtek PCIe GbE"),
+            R("172.28.208.1", "vEthernet (WSL)", False, "Hyper-V Virtual Ethernet Adapter")]
+    assert localmode.rank_adapter_details(rows) == [{"ip": "192.168.1.127", "kind": "cable"}, {"ip": "192.168.0.33", "kind": "wifi"}]
+    assert localmode.rank_adapter_details([R("192.168.0.33", "Wi-Fi 2", True, "Intel Wireless")]) == [{"ip": "192.168.0.33", "kind": "wifi"}]
+    assert [d["ip"] for d in localmode.rank_adapter_details(rows)] == localmode.rank_adapters(rows)
+    assert isinstance(localmode.lan_address_details(), list)
+
+
+def test_banner_shows_connection_kind_and_warns_without_cable():
+    import pathlib
+    js = (pathlib.Path(__file__).resolve().parents[1] / "static/js/version-banner.js").read_text(encoding="utf-8")
+    assert "Sin cable al router" in js and "a.details" in js and "gw-vb-more" in js
