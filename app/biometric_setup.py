@@ -115,7 +115,7 @@ def summary(event: Event) -> dict:
     if event.aceptar_enabled:
         door.append("Antes del evento, las personas ya inscritas pueden aceptar desde su celular con el QR del cartel o el enlace; en la puerta el personal confirma su identidad con el documento o el QR y desde ahí entran por rostro.")
         if event.accept_link_email:
-            door.append("Quien se inscriba por formulario recibirá por correo su enlace personal para autorizar; como el correo lo escribió él mismo, su aceptación igual queda «por verificar»: el personal confirma su identidad en la puerta.")
+            door.append("Quien se inscriba por formulario recibirá por correo su enlace personal para autorizar. Quien acepta desde el enlace queda aceptado de inmediato.")
         if not event.client_photos_before and not event.each_accepts:
             door.append("Fuente de la foto: cada persona se toma una selfie desde su celular (enlace, formulario o QR); se guarda cifrada y el rostro se calcula cuando acepta. Antes de abrir la cámara se valida la fecha de nacimiento: un menor no pasa.")
         door.append("Cuando alguien acepta, recibe por correo su constancia (sin la foto) con la escarapela virtual si el evento la tiene.")

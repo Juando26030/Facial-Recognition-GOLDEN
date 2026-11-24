@@ -67,23 +67,12 @@ SELECT user_id FROM (
   SELECT DISTINCT ON (user_id) user_id, reason, accepted_biometric, confirmed_adult
   FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e
   ORDER BY user_id, consent_timestamp_utc DESC, id DESC) last
-WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult
-  AND user_id NOT IN (SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL)""")
+WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult""")          # 23-nov-2026: ya no existe «por verificar»: quien aceptó (en puerta, formulario, QR o enlace) se reconoce
 
 
-_ACCEPTED_ANY_SQL = text("""
-SELECT user_id FROM (
-  SELECT DISTINCT ON (user_id) user_id, reason, accepted_biometric, confirmed_adult
-  FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e
-  ORDER BY user_id, consent_timestamp_utc DESC, id DESC) last
-WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult""")
-
-
-def accepted_user_ids(db: Session, tenant_id: str, event_id: int, include_unverified: bool = False) -> set:
-    """Cédulas con aceptación VIGENTE en este evento (la misma regla de `has_acceptance`, en una sola consulta). Solo estas personas pueden ser reconocidas por su rostro. `include_unverified`
-    (modo «cada quien acepta», con un clic de la persona frente a la cámara) también trae a quien aceptó desde el celular y aún no verificó su documento: el resultado queda SIEMPRE «pendiente»
-    hasta que el personal confirme el documento (ver `/recognize`)."""
-    return {r[0] for r in db.execute(_ACCEPTED_ANY_SQL if include_unverified else _ACCEPTED_SQL, {"t": tenant_id, "e": event_id})}
+def accepted_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
+    """Cédulas con aceptación VIGENTE en este evento (la misma regla de `has_acceptance`, en una sola consulta). Solo estas personas pueden ser reconocidas por su rostro."""
+    return {r[0] for r in db.execute(_ACCEPTED_SQL, {"t": tenant_id, "e": event_id})}
 
 
 _DENIED_SQL = text("""
@@ -100,8 +89,8 @@ def denied_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
 
 
 def web_pending(db: Session, tenant_id: str, user_id: str, event_id: int) -> bool:
-    """¿Aceptó desde el celular (/aceptar) y falta que el personal confirme su identidad en puerta?"""
-    return db.execute(text("SELECT 1 FROM web_acceptances WHERE tenant_id = :t AND user_id = :u AND event_id = :e AND verified_at IS NULL"), {"t": tenant_id, "u": str(user_id), "e": event_id}).first() is not None
+    """23-nov-2026 (decisión de Juan David): ya NO hay aceptaciones «por verificar»; como en un formulario abierto, quien acepta queda aceptado. Siempre False (se conserva por compatibilidad)."""
+    return False
 
 
 def biometric_blocked(db: Session, tenant_id: str, user_id: str) -> bool:

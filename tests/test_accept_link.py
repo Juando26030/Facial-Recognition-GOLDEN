@@ -144,20 +144,20 @@ def test_a_trusted_link_acceptance_is_born_verified_and_enters_the_matrix(client
     assert log.reason == "consent" and log.ip_or_device_id == "web-link"
 
 
-def test_an_untrusted_link_from_an_open_form_stays_pending_verification(client, factory, db, engine):
+def test_an_untrusted_link_from_an_open_form_is_accepted_right_away(client, factory, db, engine):
     ev, _u, token = _setup(factory, db, trusted=False)
     r = _accept(client, ev, token)
-    assert r.json()["verified"] is False
+    assert r.json()["verified"] is True
     db.expire_all()
     wa = db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id))
-    assert wa.verified_at is None and wa.verified_via is None
-    assert "1001" not in consent.accepted_user_ids(db, ev.tenant_id, ev.id)                                # "por verificar": todavía no se reconoce
+    assert wa.verified_at is not None and wa.verified_via == "auto"
+    assert "1001" in consent.accepted_user_ids(db, ev.tenant_id, ev.id)                                    # 23-nov: sin «por verificar», se reconoce de inmediato
 
 
-def test_the_document_flow_never_verifies_even_if_the_person_has_a_trusted_link(client, factory, db, engine):
+def test_the_document_flow_is_accepted_right_away_too(client, factory, db, engine):
     ev, _u, _token = _setup(factory, db, trusted=True)
     r = _accept(client, ev, "", cedula="1001")
-    assert r.json()["verified"] is False and db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).verified_at is None
+    assert r.json()["verified"] is True and db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).verified_at is not None
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------ B2c: fuente de la foto
@@ -321,7 +321,7 @@ def test_the_guided_step_stores_the_link_switch_and_explains_the_photo_source(cl
     ok = client.put(url, json={"facial_enabled": True, "aceptar_enabled": True, "accept_link_email": True, "client_photos_before": False})
     assert ok.status_code == 200 and ok.json()["config"]["accept_link_email"] is True
     door = " ".join(ok.json()["door"])
-    assert "selfie" in door and "«por verificar»" in door and "constancia" in door
+    assert "selfie" in door and "aceptado de inmediato" in door and "constancia" in door
     a = client.put(url, json={"client_photos_before": True}).json()
     assert "Fuente de la foto: cada persona se toma una selfie" not in " ".join(a["door"]) and "Las fotos que cargues se guardan cifradas" in " ".join(a["door"])
     locked = client.put(url, json={"biometrics_locked": True}).json()["config"]

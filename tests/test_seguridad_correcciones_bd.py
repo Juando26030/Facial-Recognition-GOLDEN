@@ -99,7 +99,7 @@ def test_uploads_only_touch_attendees_of_the_leased_event(client, factory, db):
     assert db.query(User).filter_by(id="3003").one().birth_date is None and db.query(User).filter_by(id="1001").one().birth_date is not None
 
 
-def test_biometric_consent_from_a_node_stays_unverified_until_staff_confirms(client, factory, db):
+def test_biometric_consent_from_a_node_is_recognized_without_verification(client, factory, db):
     from app import consent
     admin = factory.staff("admin", "adm_c")
     ev = factory.event("en_proceso")
@@ -118,12 +118,7 @@ def test_biometric_consent_from_a_node_stays_unverified_until_staff_confirms(cli
     saved = client.post(f"/api/node/events/{ev.id}/extra", json=body, headers=_hdr(token)).json()["saved"]
     assert saved["consents"] == 2
     db.expire_all()
-    assert db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).verified_at is None                 # la marca «sin verificar» de /aceptar
-    assert consent.accepted_user_ids(db, ev.tenant_id, ev.id) == {"1002"}                           # 1001 todavía NO puede ser reconocida
-    login(client, "adm_c")
-    assert client.post(f"/api/events/{ev.id}/web-acceptance/1001/verify").json() == {"verified": True}
-    db.expire_all()
-    assert consent.accepted_user_ids(db, ev.tenant_id, ev.id) == {"1001", "1002"}
+    assert consent.accepted_user_ids(db, ev.tenant_id, ev.id) == {"1001", "1002"}                   # 23-nov: ya no hay «por verificar»: las dos aceptaciones valen
 
 
 # ------------------------------------------------------------------ 3. servidor vinculado por un coordinador

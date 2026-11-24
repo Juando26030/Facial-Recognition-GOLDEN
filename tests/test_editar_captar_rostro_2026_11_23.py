@@ -44,13 +44,6 @@ def test_recuadros_de_resultado_foto_en_editar_y_acreditar_en_el_escaner():
     assert '"reason": "no_face"' in api and '"reason": "no_match"' in api and "def registration_photo" in api
 
 
-def test_aceptar_dice_con_claridad_que_la_foto_nueva_quedo_pendiente():
-    """23-nov-2026: si la selfie queda pendiente (ya había foto de registro y la persona no está verificada), el mensaje no dice solo «Listo»: dice que la anterior sigue vigente."""
-    s = (R / "app/routers/aceptar.py").read_text(encoding="utf-8")
-    assert "held = hold" in s and '"photo_held": True' in s and "no reemplaza a la anterior" in s
-    assert s.index('"photo_held": True') < s.index('"message": "¡Gracias! Cuando llegues,')
-
-
 def test_historial_de_fotos_se_conservan_las_dos():
     """23-nov-2026: al verificar a la persona NO se reemplaza la foto de registro: la selfie se conserva como segunda foto, cubierta por toda purga (`photo_keys`), y «Editar» muestra las dos."""
     e = (R / "app/enroll.py").read_text(encoding="utf-8")
@@ -113,14 +106,12 @@ def test_parametros_importa_response_para_descargar_el_anexo():
     assert "from fastapi.responses import FileResponse, Response" in (R / "app/routers/parametros.py").read_text(encoding="utf-8")
 
 
-def test_cada_quien_acepta_incluye_pendientes_de_verificar_pero_nunca_los_acredita_solo_y_continuar():
+def test_sin_por_verificar_y_boton_continuar():
+    """23-nov-2026: se eliminó «por verificar» (quien acepta queda aceptado, como en un formulario abierto) y el escáner con «Acepto» arranca con «Continuar»."""
     c = (R / "app/consent.py").read_text(encoding="utf-8")
-    assert "include_unverified" in c.split("def accepted_user_ids")[1][:400] and "_ACCEPTED_ANY_SQL" in c
-    f = (R / "app/faces.py").read_text(encoding="utf-8")
-    assert "key = (event.id, bool(ungated), bool(include_unverified))" in f and "def index_size(db: Session, event: Event, ungated: bool = False, include_unverified: bool = False)" in f
-    a = (R / "app/routers/api.py").read_text(encoding="utf-8")
-    assert "include_unverified=bool(click) and bool(event.each_accepts)" in a
-    assert "needs_verify = bool(event.each_accepts) and consent_mod.web_pending(" in a and "or needs_verify:" in a and '"verify_pending": True' in a          # la verificación del documento es obligatoria
+    assert "NOT IN (SELECT user_id FROM web_acceptances" not in c and "return False" in c.split("def web_pending")[1][:500]
+    a = (R / "app/routers/aceptar.py").read_text(encoding="utf-8")
+    assert "wa.verified_at, wa.verified_via = now, (\"link\" if trusted else \"auto\")" in a and "hold = False" in a
     j = (R / "static/js/app.js").read_text(encoding="utf-8")
-    assert "dataset.verify === '1'" in j and "/web-acceptance/" in j and "resetGate = () => { cameraOff(); };" in j and "bioNextBtn" in j
+    assert "dataset.verify" not in j and "resetGate = () => { cameraOff(); };" in j and "bioNextBtn" in j
     assert 'id="bioNextBtn"' in (R / "templates/kiosk_registro.html").read_text(encoding="utf-8")

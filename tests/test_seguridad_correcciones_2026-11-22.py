@@ -103,7 +103,7 @@ def test_aceptacion_biometrica_de_un_nodo_queda_por_verificar_con_la_marca_exist
     assert "hold = (from_peer is None and reason == \"consent\" and row[\"accepted_biometric\"]" in body
     assert "not consent.has_acceptance(db, event.tenant_id, uid, event.id)" in body          # quien ya tenía una vigente no se «des-verifica»
     assert "WebAcceptance(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, created_at=at, verified_at=None)" in body
-    assert "verified_at IS NULL" in _read("app/consent.py")          # la marca que excluye del reconocimiento ya existía: no se inventó otra
+    assert "NOT IN (SELECT user_id FROM web_acceptances" not in _read("app/consent.py")          # 23-nov-2026: ya no existe «por verificar»: la marca no excluye del reconocimiento
     all_ = _body("app/node_extra.py", "apply_all")
     assert all_.index("apply_acceptances(") < all_.index("apply_consents(")          # primero la verificación que subió el mismo servidor
 

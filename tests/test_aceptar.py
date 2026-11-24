@@ -73,7 +73,7 @@ def test_only_people_already_registered_can_accept_and_nothing_is_revealed(clien
     assert _post(client, ev, "1002", selfie=False).status_code == 400                                       # quien aún no acepta sí necesita la selfie
 
 
-def test_accepting_from_the_phone_is_pending_until_staff_verifies_identity(client, factory, db, env, engine):
+def test_accepting_from_the_phone_is_recognized_right_away_without_verification(client, factory, db, env, engine):
     ev = _event(factory)
     factory.person(ev, "1001", "Ana", "Mora")
     factory.staff("digitador", "9990001")
@@ -85,18 +85,15 @@ def test_accepting_from_the_phone_is_pending_until_staff_verifies_identity(clien
     assert log.consent_version == "v1.1_web" and log.legal_text_hash == legal_texts.render(ev, web=True)["hash"] and log.accepted_biometric and log.confirmed_adult and log.reason == "consent"
     db.expire_all()
     assert db.query(User).filter_by(id="1001").one().face_encoding                                      # el vector se calculó DESPUÉS de aceptar, por tarea
-    assert db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).verified_at is None
+    assert db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).verified_at is not None                 # 23-nov: ya no hay «por verificar»
     db.refresh(ev)
     faces.clear_cache()
-    assert faces.event_index(db, ev).ids == []                                                          # por verificar: todavía NO se reconoce su rostro
+    assert faces.event_index(db, ev).ids == ["1001"]                                                    # quien aceptó se reconoce de inmediato
     login(client, "9990001")
     st = client.get(f"/api/events/{ev.id}/consent-status/1001").json()
-    assert st["accepted"] and st["verify"] is True and st["face"] == "ready"
+    assert st["accepted"] and st["verify"] is False and st["face"] == "ready"
     people = {p["n"]: p for p in client.get(f"/api/events/{ev.id}/local-roster").json()["people"]}
-    assert people["Ana Mora"]["v"] == 1 and people["Ana Mora"]["a"] == 0                               # aparece en el roster de contingencia, marcada «por verificar»
-    assert client.post(f"/api/events/{ev.id}/web-acceptance/1001/verify").json() == {"verified": True}
-    db.refresh(ev)
-    assert faces.event_index(db, ev).ids == ["1001"]                                                    # verificada: desde aquí entra por rostro
+    assert people["Ana Mora"]["v"] == 0 and people["Ana Mora"]["a"] == 1                               # en el roster de contingencia consta como aceptada
     assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["verify"] is False
     people = {p["n"]: p for p in client.get(f"/api/events/{ev.id}/local-roster").json()["people"]}
     assert people["Ana Mora"]["v"] == 0 and people["Ana Mora"]["a"] == 1

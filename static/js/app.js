@@ -262,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
         scanEls.cands.replaceChildren();
         setOff(scanEls.more, !data.has_candidates);
         setOff(scanEls.open, data.result === 'SÍ');
-        scanEls.accredit.disabled = false; scanEls.accredit.dataset.uid = data.result === 'MATCH_PENDING' && data.data ? String(data.data.id) : ''; scanEls.accredit.dataset.verify = data.verify_pending ? '1' : '';
+        scanEls.accredit.disabled = false; scanEls.accredit.dataset.uid = data.result === 'MATCH_PENDING' && data.data ? String(data.data.id) : '';
         setOff(scanEls.accredit, data.result !== 'MATCH_PENDING');          // 23-nov: la foto de registro y la captura van lado a lado y aquí mismo se acredita (sin abrir «Editar»)
         if (doubtful) {
             renderCandidates(data.candidates);
@@ -290,12 +290,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const uid = scanEls.accredit.dataset.uid; if (!uid) return;
             scanEls.accredit.disabled = true;
             try {
-                if (scanEls.accredit.dataset.verify === '1') {          // aceptó desde el celular: el personal confirma su identidad con el documento físico o el QR antes de acreditar
-                    const okId = await showConfirm('Esta persona aceptó el reconocimiento facial desde su celular. Confirma su identidad con el documento físico o el QR: ¿coincide con quien está en la puerta?');
-                    const vr = okId ? await fetch(`/api/events/${EVENT_ID}/web-acceptance/${encodeURIComponent(uid)}/verify`, { method: 'POST' }) : null;
-                    if (!vr || !vr.ok) { setResult(okId ? 'No se pudo verificar: acredítala por cédula o QR' : 'Sin verificar: no se acreditó', 'warn'); scanEls.accredit.disabled = false; return; }
-                    scanEls.accredit.dataset.verify = '';
-                }
                 const res = await fetch(`/api/events/${EVENT_ID}/users/${encodeURIComponent(uid)}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: 'biometrico' }) });
                 const out = await res.json().catch(() => ({}));
                 if (res.ok) {

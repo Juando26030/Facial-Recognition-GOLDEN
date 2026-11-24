@@ -50,20 +50,13 @@ def test_the_operator_screens_only_use_the_current_photo():
     assert "def status(" in _read("app/enroll.py") and "no es la foto de registro" in _read("app/enroll.py")
 
 
-def test_aceptar_holds_the_selfie_when_not_verified_and_the_default_is_active():
+def test_aceptar_ya_no_retiene_la_selfie_y_el_interruptor_no_esta_en_pantalla():
+    """23-nov-2026 (decisión de Juan David): se eliminó «por verificar»: la selfie de quien acepta reemplaza la foto directamente y no hay interruptor en Parámetros."""
     src = _read("app/routers/aceptar.py")
-    assert "accept_verify_photo is not False" in src and "enroll.pending_photo_key(" in src and "trusted or wa.verified_at is not None" in src
-    assert "get_storage().exists(photo_key(event.tenant_id, uid))" in src                  # sin foto previa se guarda directo
-    model = _read("app/models.py")
-    assert re.search(r"accept_verify_photo = Column\(Boolean, default=True, server_default='true', nullable=False\)", model)
-    assert "enroll.promote_pending(" in _read("app/routers/consents.py")                  # al verificar, la pendiente se conserva como segunda foto
-    assert "accept_verify_photo" in _read("app/routers/consents.py")
-
-
-def test_parametros_screen_has_the_switch_with_help():
+    assert "hold = False" in src and "accept_verify_photo is not False" not in src
     html = _read("templates/kiosk_parametros.html")
-    assert 'id="ccVerifyPhoto"' in html and "ay_verfoto" in html and "accept_verify_photo" in html
-    assert "Verificar antes de reemplazar la foto" in html and "como antes" in html
+    assert 'id="ccVerifyPhoto"' not in html and "ay_verfoto" not in html
+    assert "NOT IN (SELECT user_id FROM web_acceptances" not in _read("app/consent.py")
 
 
 def test_migration_compiles_chains_and_is_additive():

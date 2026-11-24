@@ -176,14 +176,14 @@ def _lock_for(event_id: int) -> threading.Lock:
         return _locks.setdefault(event_id, threading.Lock())
 
 
-def _build(db: Session, event: Event, version: int, ungated: bool = False, include_unverified: bool = False) -> _Index:
+def _build(db: Session, event: Event, version: int, ungated: bool = False) -> _Index:
     rows = (db.query(User.id, User.face_encoding)
             .join(EventAttendee, and_(EventAttendee.user_id == User.id, EventAttendee.tenant_id == User.tenant_id))
             .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None, User.is_biometric_enabled.is_(True))  # noqa: E711   (menores: nunca)
             .all())
     # NADIE se reconoce por su rostro sin una aceptación registrada para este evento (aunque ya tenga vector). Única excepción, `ungated` (camino 2: evento con pre-cálculo autorizado
     # y UN clic válido del quiosco): también entran quienes aún no han decidido, pero NUNCA quien ya rechazó o revocó en este evento.
-    allowed = consent.accepted_user_ids(db, event.tenant_id, event.id, include_unverified)
+    allowed = consent.accepted_user_ids(db, event.tenant_id, event.id)
     no_facial = personform.facial_off_user_ids(db, event)          # categorías sin reconocimiento facial (formulario por categoría): nunca entran al índice
     denied = consent.denied_user_ids(db, event.tenant_id, event.id) if ungated else None
     ids, vectors, dim = [], [], None
@@ -210,17 +210,17 @@ def _build(db: Session, event: Event, version: int, ungated: bool = False, inclu
     return _Index(version, ids, matrix)
 
 
-def event_index(db: Session, event: Event, ungated: bool = False, include_unverified: bool = False) -> _Index:
+def event_index(db: Session, event: Event, ungated: bool = False) -> _Index:
     """Matriz vigente del evento. `event.faces_version` ya viene cargado con el evento (sin una consulta extra por escaneo)."""
     version = event.faces_version or 0
-    key = (event.id, bool(ungated), bool(include_unverified))
+    key = -event.id if ungated else event.id
     idx = _indexes.get(key)
     if idx is not None and idx.version >= version:
         return idx
     with _lock_for(key):                           # varios escaneos a la vez tras un cambio: uno reconstruye, los demás esperan y reutilizan
         idx = _indexes.get(key)
         if idx is None or idx.version < version:
-            idx = _build(db, event, version, ungated, include_unverified)
+            idx = _build(db, event, version, ungated)
             _indexes[key] = idx
         return idx
 
@@ -242,12 +242,12 @@ def is_doubtful(ranked: List[Tuple[str, float]]) -> bool:
     return len(ranked) >= 2 and (ranked[1][1] - ranked[0][1]) < MATCH_MARGIN
 
 
-def index_size(db: Session, event: Event, ungated: bool = False, include_unverified: bool = False) -> int:
+def index_size(db: Session, event: Event, ungated: bool = False) -> int:
     """Cuántos rostros hay hoy en la matriz con la que se compara (solo un número, sin datos de nadie): ayuda a entender un «no está en la lista»."""
-    return len(event_index(db, event, ungated, include_unverified).ids)
+    return len(event_index(db, event, ungated).ids)
 
 
-def recognize(db: Session, event: Event, image_bytes: bytes, ungated: bool = False, include_unverified: bool = False) -> Tuple[str, List[Tuple[str, float]]]:
+def recognize(db: Session, event: Event, image_bytes: bytes, ungated: bool = False) -> Tuple[str, List[Tuple[str, float]]]:
     """Devuelve ("NO_FACE", []) | ("NO_MATCH", []) | ("MATCH", ranked) con `ranked` = los TOP_CANDIDATES más cercanos (el primero está dentro de la tolerancia).
     Levanta `Busy` si la cola de cálculo facial está saturada. Un solo cálculo facial y una sola operación numpy: los candidatos no cuestan más."""
     from app.biometrics import BiometricEngine    # import tardío: PIL/numpy solo hacen falta aquí (dlib vive en el proceso hijo)
@@ -256,7 +256,7 @@ def recognize(db: Session, event: Event, image_bytes: bytes, ungated: bool = Fal
     encoding = extract(image, jitters=RECOGNITION_JITTERS, max_side=RECOGNITION_MAX_SIDE, largest_face=True)
     if not encoding:
         return "NO_FACE", []
-    ranked = event_index(db, event, ungated, include_unverified).top(encoding)
+    ranked = event_index(db, event, ungated).top(encoding)
     if ranked and ranked[0][1] < FACE_TOLERANCE:
         return "MATCH", ranked
     return "NO_MATCH", []
