@@ -17,15 +17,13 @@ def _s(path):
     return (ROOT / "static" / path).read_text(encoding="utf-8")
 
 
-def test_editar_avisa_que_guardar_registra_y_ofrece_guardar_sin_registrar():
+def test_editar_avisa_que_guardar_registra_y_no_existe_guardar_sin_registrar():
     js = _s("js/directory.js")
     assert "Al guardar, esta persona queda Registrada" in js and "y se imprime su escarapela" in js and "window.EVENT_AUTO_PRINT ?" in js
     assert 'id="editModalRegNote"' in js and "'Guardar y registrar'" in js
-    # el digitador puede corregir un dato sin registrar: botón aparte que NO llama al cambio de estado
-    assert 'id="editModalSaveOnly"' in js and "Guardar sin registrar" in js
-    assert "if (!canManageStatus && !isRegistered && !skipRegister) {" in js
-    # el botón aparte solo existe para quien no maneja el estado y solo si la persona no está registrada
-    assert "${!canManageStatus && !isRegistered ? '<button type=\"button\" id=\"editModalSaveOnly\"" in js
+    # 24-nov-2026 (Juan David): «Guardar sin registrar» no existe para nadie; corregir un dato sin registrar = coordinador+ cambiando el estado
+    assert "editModalSaveOnly" not in js and 'Guardar sin registrar</button>' not in js and "skipRegister" not in js
+    assert "if (!canManageStatus && !isRegistered) {" in js
     # coordinador o superior: el aviso y el nombre del botón siguen al selector de estado; el valor por defecto (23-sep-2026) no cambia
     assert "const defaultStatus = 'registrado';" in js and "regNote.hidden = !will;" in js
 

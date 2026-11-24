@@ -80,7 +80,7 @@ const sortedServed = order.map((idx) => 'P' + String(idx).padStart(2, '0'));    
   const tagOf = (i) => slot(rows()[i], 'recent').children.find((c) => c.className.includes('gw-recent-tag'));
   assert.strictEqual(tagOf(0).textContent, 'Recién creado'); assert.ok(tagOf(0).className.includes('gw-recent-tag--new'), 'la píldora de «Recién creado» es la azul');
   assert.strictEqual(tagOf(1).textContent, 'Recién registrado'); assert.ok(!tagOf(1).className.includes('gw-recent-tag--new'), 'la de «Recién registrado» sigue verde');
-  // 24-nov-2026: «Guardar sin registrar» deja a la persona No registrada → «Recién editado», nunca «Recién registrado»
+  // 24-nov-2026: guardar cambiando el estado a «No registrado» (coordinador+) deja a la persona No registrada → «Recién editado», nunca «Recién registrado»
   users.find((u) => u.id === rows()[1].dataset.userId).status = 'No registrado';
   await d.reload();
   assert.strictEqual(tagOf(1).textContent, 'Recién editado');

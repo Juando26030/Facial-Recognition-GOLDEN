@@ -72,7 +72,8 @@ def test_digitador_edita_no_registrada_avisa_queda_registrada(digitador, evento_
     boton.first.click()
     cuerpo = digitador.locator("body")
     cuerpo.get_by_text(re.compile("queda Registrada", re.I)).first.wait_for(timeout=5000)
-    assert digitador.get_by_role("button", name=re.compile("Guardar sin registrar", re.I)).count() >= 1
+    assert digitador.get_by_role("button", name=re.compile("Guardar sin registrar", re.I)).count() == 0      # 24-nov-2026: ese botón ya no existe para nadie
+    assert digitador.get_by_role("button", name=re.compile("Guardar y registrar", re.I)).count() >= 1
 
 
 # (d) tabla de Registro sin desplazamiento horizontal y con encabezados con el nombre del campo

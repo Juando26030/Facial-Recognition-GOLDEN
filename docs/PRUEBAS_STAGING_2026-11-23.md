@@ -15,7 +15,7 @@ Usa un evento de prueba (nombre «PRUEBA …») y la persona de prueba (cédula 
 
 ## B. Con cuenta de digitador
 6. **Menú:** en Inventario, Áreas y Turnos NO se ve el menú de administrador.
-7. **Editar a alguien no registrado:** abrir Editar. *Debe:* aviso «Al guardar, esta persona queda Registrada…» y dos botones «Guardar y registrar» / «Guardar sin registrar». Con «sin registrar» sigue como No registrada.
+7. **Editar a alguien no registrado:** abrir Editar. *Debe:* aviso «Al guardar, esta persona queda Registrada…» y el botón «Guardar y registrar» (NO existe «Guardar sin registrar» para nadie desde el 24-nov). Un coordinador o superior que solo corrige un dato cambia «Estado de registro» a «No registrado» y la persona sigue No registrada.
 8. **Tabla de Registro:** achica la ventana del navegador de ancha a angosta. *Debe:* nada cortado con «…», sin barra de desplazamiento horizontal, encabezados con el nombre del campo, nombres y apellidos siempre visibles, el origen y «Recién registrado» junto a Acreditar.
 
 ## C. Foto pendiente (la prueba más importante de seguridad)
