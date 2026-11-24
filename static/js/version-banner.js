@@ -113,7 +113,13 @@
     chip.type = 'button';
     chip.className = 'gw-versionbar gw-versionbar--info';
     chip.title = 'Desde otro computador o celular de ESTA misma red, abre ' + a.addresses.map(url).join('  o  ') + ' en el navegador Para que no salga «No seguro», cada equipo instala una vez el certificado desde ' + url(a.addresses[0]) + '/certificado. Clic para copiar el enlace.';
-    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">Conectar: </strong>' + esc(a.addresses[0] + ':' + a.port) + '</span>';
+    /* 24-nov-2026: por dónde va cada dirección (cable / Wi‑Fi) y TODAS si hay varias. Si solo hay Wi‑Fi, aviso: ese Wi‑Fi suele ser el de la casa o del lugar, no el router del evento
+       (caso real: el cable no estaba puesto y se recomendó la red de la casa; los demás equipos, en el router, no entraban). */
+    const KIND = { cable: 'cable', wifi: 'Wi‑Fi', otro: '' };
+    const det = Array.isArray(a.details) && a.details.length ? a.details : a.addresses.map((ip) => ({ ip, kind: 'otro' }));
+    const tag = (d) => (KIND[d.kind] ? ' (' + KIND[d.kind] + ')' : '');
+    if (det.length > 1) chip.title = 'Direcciones de este servidor: ' + det.map((d) => url(d.ip) + tag(d)).join(' · ') + '. Usa la de la red a la que están conectados los demás equipos (la primera es la recomendada: el cable al router del evento). ' + chip.title;
+    chip.innerHTML = '<span class="gw-versionbar__txt"><strong class="gw-vb-lbl">Conectar' + esc(tag(det[0])) + ': </strong>' + esc(a.addresses[0] + ':' + a.port) + (det.length > 1 ? ' <span class="gw-vb-more">+' + (det.length - 1) + '</span>' : '') + '</span>';
     chip.addEventListener('click', () => {
       const text = url(a.addresses[0]);
       const done = () => { if (window.showToast) window.showToast('Enlace copiado: ' + text, 'success'); };
@@ -122,6 +128,13 @@
     });
     const last = Array.from(document.querySelectorAll('.golden-header-container .gw-versionbar')).pop();
     if (last && last.parentNode) last.parentNode.insertBefore(chip, last.nextSibling); else place(chip);
+    if (det.length && !det.some((d) => d.kind === 'cable') && det[0].kind === 'wifi') {          // solo Wi‑Fi: probablemente NO es la red del router del evento
+      const warn = document.createElement('div');
+      warn.className = 'gw-versionbar gw-versionbar--info gw-versionbar--err';
+      warn.title = 'Este servidor solo está conectado por Wi‑Fi. Si los computadores y celulares del evento se conectan al router del evento, conecta el cable del router a este servidor: la dirección de «Conectar» cambiará sola a la del cable. El Wi‑Fi puede seguir encendido para tener internet.';
+      warn.innerHTML = '<span class="gw-versionbar__txt"><strong>Sin cable al router</strong></span>';
+      chip.parentNode ? chip.parentNode.insertBefore(warn, chip.nextSibling) : place(warn);
+    }
     const cert = document.createElement('a');          // instrucciones para quitar el aviso «No seguro» en los demás equipos (instalar la autoridad del servidor una vez)
     cert.className = 'gw-versionbar gw-versionbar--info';
     cert.href = '/certificado';

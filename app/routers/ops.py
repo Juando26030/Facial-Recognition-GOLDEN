@@ -128,7 +128,8 @@ def local_address(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="No autenticado")
     host = (request.headers.get("host") or "").rsplit(":", 1)
     port = int(host[1]) if len(host) == 2 and host[1].isdigit() else int(os.getenv("LOCAL_APP_PORT", "8443"))
-    return {"configured": True, "port": port, "addresses": localmode.lan_addresses()}
+    details = localmode.lan_address_details()          # [{ip, kind: cable|wifi|otro}], la recomendada primero (cable antes que Wi‑Fi)
+    return {"configured": True, "port": port, "addresses": [d["ip"] for d in details], "details": details}
 
 
 @router.get("/api/ops/server-id")
