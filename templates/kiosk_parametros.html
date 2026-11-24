@@ -220,18 +220,18 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <label class="gw-label" for="ccPrompt">Cuándo se pide la autorización</label>
                 <select class="gw-select" id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select>
               </div>
+              <div class="gw-field">
+                <h5 class="gw-label">Foto del rostro en la escarapela</h5>
+            <div data-psave="bbp">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %}> <span>Permitir imprimir la foto del rostro en la escarapela</span></label>
+              <p class="gw-hint">Apagado (recomendado): el recuadro de la foto sale vacío, en la impresa y en la digital.</p>
+            </div>
+              </div>
               <button type="button" id="ccSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar y revisar</button>
             </div>
             <div id="bsSummary" class="gw-alert" role="status" aria-live="polite"></div>
           </div>
 
-          <div class="gw-group__item">
-            <div class="gw-item-head"><h4>Foto del rostro en la escarapela</h4></div>
-            <div data-psave="bbp">
-              <label class="gw-check gw-check--top"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %}> <span>Permitir imprimir la foto del rostro en la escarapela</span></label>
-              <p class="gw-hint">Apagado (recomendado): el recuadro de la foto sale vacío, en la impresa y en la digital.</p>
-            </div>
-          </div>
         </section>
 
         {# ====================================================================================== INVITACIONES #}
