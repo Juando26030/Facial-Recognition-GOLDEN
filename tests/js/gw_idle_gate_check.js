@@ -49,6 +49,7 @@ const ALLOWED = {
   'static/js/outbox-ui.js': 'vacía la cola sin conexión: solo consulta al servidor si hay altas pendientes',
   'static/js/shared-print.js': 'impresión compartida: anfitrión que atiende a otros equipos; no se pausa',
   'static/js/toast.js': 'puerta de inactividad y ping de sesión (por GW.poll)',
+  'static/js/cedula-foto.js': 'aviso de brillo en vivo de la cámara de cédula: solo mira el video en el navegador (no llama al servidor) y se apaga al cerrar la cámara',
   'templates/digital_badge.html': 'pantalla de exhibición del carné digital',
   'templates/roulette_display.html': 'pantalla de exhibición de la ruleta',
   'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health (sin base) y contador, que solo consulta tras un intento reciente (5 min)',

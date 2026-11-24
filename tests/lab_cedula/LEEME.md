@@ -1,0 +1,21 @@
+# Banco de pruebas del escáner de cédula (sin celular)
+
+Corre el código REAL del escáner (`static/js/cedula-foto.js` + `static/js/cedula-readers.js`) en Chrome sin pantalla, con una foto como cámara simulada.
+Todo es sintético: la «cédula» la dibuja `gen.py` con datos inventados. No va en el CI (necesita Chrome, `tesseract`, OpenCV, Pillow y Playwright).
+
+```bash
+python tests/lab_cedula/gen.py                       # 16 casos con nombre + 60 al azar en /tmp/lab_cedula (LAB_OUT)
+CONF=70 python tests/lab_cedula/srv.py &             # http://127.0.0.1:8765  (CONF=70: obliga a confirmar con 2 lecturas, como pasa en un celular)
+python tests/lab_cedula/run.py /tmp/lab_cedula/img   # un renglón por foto: OK/FALLA, segundos y lecturas de OCR
+python tests/lab_cedula/run.py /tmp/lab_cedula/rnd
+```
+
+- **Comparar con otra versión:** `REPO=/ruta/a/otra/copia python tests/lab_cedula/srv.py` (esa carpeta debe tener `static/js/`).
+- **Camino del servidor** (`/cedula-mrz-scan` con el preprocesado real de `app/mrz_ocr.py`): `curl "http://127.0.0.1:8765/mode?real,badocr"` y `EV=1 python tests/lab_cedula/run.py …`
+  (`badocr` hace fallar el OCR del navegador para que decida el servidor).
+- **Cédula vieja:** `KIND=old` recorre el flujo con un zxing de reemplazo que no lee nada (sirve para ver tiempos y errores, no la lectura).
+
+Límites: el OCR es el `tesseract` del sistema (no tesseract.js), la letra es Liberation Mono (no OCR-B) y no hay plástico, hologramas ni manos. Sirve para la GEOMETRÍA
+(ubicar, enderezar, recortar, tiempos y flujo); la última palabra la tiene la prueba con cédulas reales.
+
+Resultado del 24-nov-2026 (60 fotos al azar, solo navegador): versión anterior 27/60 · con recorte automático 58/60 (las 2 que fallan: letras de 15–19 px de alto y desenfocadas).

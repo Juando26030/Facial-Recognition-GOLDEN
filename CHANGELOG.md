@@ -8,6 +8,14 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-24 (tarde) — Escáner de cédula: recorte automático (rama `feat/cedula-recorte-auto`, sin desplegar)
+
+- La foto de la cédula ya no depende de encuadrar exacto: la cédula nueva se ubica en toda la foto (`CedulaReaders.mrzFind`), se endereza y se lee solo la zona de las 3 líneas;
+  la vieja pasa la foto completa de cada cuadro al localizador del código. Segundo intento con foto fija a resolución máxima cuando la cédula se vio pero sin detalle.
+- Al servidor va solo el recorte de las 3 líneas. Sin migraciones. `cedula-foto.js?v=5`, `cedula-readers.js?v=2`.
+- Banco de pruebas en Chrome con cámara simulada (`tests/lab_cedula/`): 27/60 → 58/60 en fotos al azar. Detalle: `docs/PRUEBA_LECTOR_CEDULA.md` § Recorte automático.
+- Arreglo de CI: el aviso de brillo en vivo (`setInterval` de `cedula-foto.js`) queda en la lista justificada de `tests/js/gw_idle_gate_check.js` (el CI de `main` e75977a7 falló solo por eso).
+
 ## 2026-11-23 (noche) — Confirmaciones con palabra y coordinador del evento nuevo (Rama; sin migración)
 
 - **Staging (24-nov):** sitio web republicado con el arreglo de tableta (`39e4c6f`); pruebas E2E contra staging: 12 pasan, 6 se saltan por falta de datos o impresora. Informe de la segunda pasada: `docs/revision_2026-11-22b/README.md`.

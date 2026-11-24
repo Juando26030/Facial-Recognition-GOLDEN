@@ -67,6 +67,6 @@ const built = execFileSync('python3', ['-c', "import sys; sys.path.insert(0, 'sc
 const shipped = fs.readFileSync(path.join(__dirname, '..', '..', 'static', 'js', 'cedula-readers.js'), 'utf8');
 assert.strictEqual(shipped, built, 'static/js/cedula-readers.js quedó desactualizado: corre python scripts/build_cedula_readers.py');
 const win = {}; new Function('window', shipped)(win);
-assert.deepStrictEqual(Object.keys(win.CedulaReaders).sort(), ['CedulaScanner', 'MrzScanner', 'formatBirth', 'mrzStrong', 'parseCedula', 'parseMrz']);
+assert.deepStrictEqual(Object.keys(win.CedulaReaders).sort(), ['CedulaScanner', 'MrzScanner', 'formatBirth', 'mrzFind', 'mrzStrong', 'parseCedula', 'parseMrz']);
 assert.strictEqual(win.CedulaReaders.parseMrz(L).cedula, '52123456');
 console.log('mrz_parser_check OK');

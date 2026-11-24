@@ -850,7 +850,7 @@ const MRZ_CAP = 36;                                                 // altura de
 function mrzCrops(g, w, h, info, cap = MRZ_CAP) {
   const out = [], PAD = 20;
   for (const b of info.bands) {
-    const bh = b.y1 - b.y0 + 1, sc = Math.min(3.2, Math.max(.4, cap / bh)), pv = Math.round(bh * .55), ph = Math.round(bh * 1.0);
+    const bh = b.y1 - b.y0 + 1, sc = Math.min(3.2, Math.max(.4, cap / bh)), pv = Math.round(bh * (info.pv || .55)), ph = Math.round(bh * 1.0);
     const cy0 = Math.max(0, b.y0 - pv), cy1 = Math.min(h - 1, b.y1 + pv), cx0 = Math.max(0, info.x0 - ph), cx1 = Math.min(w - 1, info.x1 + ph), cw = cx1 - cx0 + 1, ch = cy1 - cy0 + 1;
     const sub = new Uint8Array(cw * ch); for (let y = 0; y < ch; y++) sub.set(g.subarray((cy0 + y) * w + cx0, (cy0 + y) * w + cx0 + cw), y * cw);
     const nw = Math.max(8, Math.round(cw * sc)), nh = Math.max(8, Math.round(ch * sc)), rs = mrzResize(sub, cw, ch, nw, nh);
@@ -868,7 +868,7 @@ function mrzScan(g, w, h) {
 }
 /** Recortes para el OCR a partir de la imagen COMPLETA ya enderezada (gRot, W×H); `info` viene de mrzScan sobre una versión reducida k veces. */
 function mrzMakeCrops(gRot, W, H, info, k, cap) {
-  const s = { bands: info.bands.map(b => ({ y0: Math.max(0, Math.round(b.y0 * k)), y1: Math.min(H - 1, Math.round(b.y1 * k)) })), x0: Math.max(0, Math.round(info.x0 * k)), x1: Math.min(W - 1, Math.round(info.x1 * k)) };
+  const s = { pv: info.pv, bands: info.bands.map(b => ({ y0: Math.max(0, Math.round(b.y0 * k)), y1: Math.min(H - 1, Math.round(b.y1 * k)) })), x0: Math.max(0, Math.round(info.x0 * k)), x1: Math.min(W - 1, Math.round(info.x1 * k)) };
   return mrzCrops(gRot, W, H, s, cap);
 }
 /** Localiza las 3 líneas dentro de una foto cualquiera (otra orientación, la cédula en cualquier parte): 3 bloques de texto alargados, apilados y del mismo ancho. */
@@ -901,6 +901,60 @@ function mrzLocate(g, w, h) {
   const X0 = Math.max(0, Math.floor((best.x0 - mx) * R.w)), X1 = Math.min(R.w, Math.ceil((best.x1 + mx) * R.w)), Y0 = Math.max(0, Math.floor((best.y0 - my) * R.h)), Y1 = Math.min(R.h, Math.ceil((best.y1 + my) * R.h));
   const cw = X1 - X0, ch = Y1 - Y0, sub = new Uint8Array(cw * ch); for (let y = 0; y < ch; y++) sub.set(R.g.subarray((Y0 + y) * R.w + X0, (Y0 + y) * R.w + X0 + cw), y * cw);
   return { g: sub, w: cw, h: ch, rot: best.rot, score: best.sc, flip: () => { const f = mrzRot90(sub, cw, ch, 2); return { g: f.g, w: f.w, h: f.h, rot: best.rot + 2, score: best.sc }; } };
+}
+
+/** RECORTE AUTOMÁTICO (24-nov-2026, pedido de Juan David: «como CamScanner, pero solo las 3 líneas»). Encuentra las 3 líneas en CUALQUIER parte de la foto
+ *  (cédula pequeña, corrida, girada hasta ~±25° o de lado) y devuelve SOLO esa zona ya enderezada, con la posición exacta de cada línea: el OCR no vuelve
+ *  a buscarlas (buscarlas de nuevo en el recorte fallaba con el borde de la cédula o el fondo). Cada línea se reconoce como un bloque alargado (letras unidas
+ *  por un cierre horizontal) y se mide con sus ejes principales (centro, ángulo, largo y grosor): 3 bloques paralelos, del mismo largo, alineados y a la misma
+ *  distancia. → { g, w, h, info:{ok,bands,x0,x1,angle:0}, score, rot, angle, box:{cx,cy,L,H} (fracciones de la foto), flip() } | null */
+function mrzFind(g, w, h) {
+  let best = null;
+  for (let rot = 0; rot < 2; rot++) {                              // 0 y 90°: al revés (180°/270°) lo prueba quien llama con flip()
+    const R = mrzRot90(g, w, h, rot), nw = Math.min(900, R.w), nh = Math.max(8, Math.round(R.h * nw / R.w)), s = mrzResize(R.g, R.w, R.h, nw, nh), bin = binarGray(s, nw, nh);
+    for (const gapK of [.006, .011, .02]) {
+      const G = Math.max(2, Math.round(nw * gapK)), cl = new Uint8Array(bin);
+      for (let y = 0; y < nh; y++) { let last = -1e9; const row = y * nw; for (let x = 0; x < nw; x++) if (!bin[row + x]) { if (x - last <= G) for (let q = last + 1; q < x; q++) cl[row + q] = 0; last = x; } }
+      const lab = new Uint8Array(nw * nh), st = [], L = [];
+      for (let i = 0; i < nw * nh; i++) if (!cl[i] && !lab[i]) {
+        let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0; lab[i] = 1; st.push(i);
+        while (st.length) { const j = st.pop(), x = j % nw, y = (j / nw) | 0; n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+          if (x > 0 && !cl[j - 1] && !lab[j - 1]) { lab[j - 1] = 1; st.push(j - 1); } if (x < nw - 1 && !cl[j + 1] && !lab[j + 1]) { lab[j + 1] = 1; st.push(j + 1); }
+          if (y > 0 && !cl[j - nw] && !lab[j - nw]) { lab[j - nw] = 1; st.push(j - nw); } if (y < nh - 1 && !cl[j + nw] && !lab[j + nw]) { lab[j + nw] = 1; st.push(j + nw); } }
+        if (n < nw * .12 * 3) continue;
+        const cx = sx / n, cy = sy / n, a = sxx / n - cx * cx, c = syy / n - cy * cy, b = sxy / n - cx * cy, tr = a + c, df = Math.sqrt(Math.max(0, (a - c) * (a - c) / 4 + b * b));
+        const len = Math.sqrt(12 * Math.max(1e-6, tr / 2 + df)), th = Math.sqrt(12 * Math.max(1e-6, tr / 2 - df)), ang = .5 * Math.atan2(2 * b, a - c);
+        if (len < nw * .12 || th < 3 || len / th < 9 || len / th > 48 || Math.abs(ang) > .45 || n / (len * th) < .45) continue;
+        L.push({ cx, cy, len, th, ang });
+      }
+      for (let i = 0; i < L.length; i++) for (let j = 0; j < L.length; j++) for (let k = 0; k < L.length; k++) {
+        if (i === j || j === k || i === k) continue;
+        const A = L[i], B = L[j], C = L[k], ang = (A.ang + B.ang + C.ang) / 3, ca = Math.cos(ang), sa = Math.sin(ang), T = (A.th + B.th + C.th) / 3, len = (A.len + B.len + C.len) / 3;
+        if (Math.max(Math.abs(A.ang - ang), Math.abs(B.ang - ang), Math.abs(C.ang - ang)) > .07) continue;
+        if (Math.max(A.len, B.len, C.len) / Math.min(A.len, B.len, C.len) > 1.22 || Math.max(A.th, B.th, C.th) / Math.min(A.th, B.th, C.th) > 1.7) continue;
+        const u = P => (P.cx - A.cx) * ca + (P.cy - A.cy) * sa, v = P => -(P.cx - A.cx) * sa + (P.cy - A.cy) * ca, d1 = v(B), d2 = v(C) - v(B);
+        if (d1 < T * .9 || d1 > T * 3 || d2 < T * .9 || d2 > T * 3 || Math.max(d1, d2) / Math.min(d1, d2) > 1.35) continue;
+        if (Math.abs(u(B)) > len * .1 || Math.abs(u(C)) > len * .1) continue;
+        const sc = (len / nw) * (1 - Math.abs(d1 - d2) / (d1 + d2)) * (1 - Math.abs(ang));
+        if (!best || sc > best.sc) best = { sc, rot, R, nw, ang, T, lines: [A, B, C], u: [0, u(B), u(C)], v: [0, d1, d1 + d2] };
+      }
+    }
+  }
+  if (!best) return null;
+  const { R, nw, ang, T } = best, K = R.w / nw, ca = Math.cos(ang), sa = Math.sin(ang), A = best.lines[0];
+  let u0 = 1e9, u1 = -1e9; best.lines.forEach((P, i) => { u0 = Math.min(u0, best.u[i] - P.len / 2); u1 = Math.max(u1, best.u[i] + P.len / 2); });
+  const mX = T * .7, mY = T * .6, W = Math.max(8, Math.round((u1 - u0 + 2 * mX) * K)), H = Math.max(8, Math.round((best.v[2] + T + 2 * mY) * K)), out = new Uint8Array(W * H), sw = R.w, sh = R.h, src = R.g;
+  const ox = (A.cx + .5) * K - .5, oy = (A.cy + .5) * K - .5;       // centro de la línea 1 en px de la foto completa
+  for (let y = 0; y < H; y++) { const vv = y - (mY + T / 2) * K;
+    for (let x = 0; x < W; x++) { const uu = x + (u0 - mX) * K, fx = Math.min(sw - 1, Math.max(0, ox + uu * ca - vv * sa)), fy = Math.min(sh - 1, Math.max(0, oy + uu * sa + vv * ca));
+      const x0 = fx | 0, y0 = fy | 0, x1 = Math.min(sw - 1, x0 + 1), y1 = Math.min(sh - 1, y0 + 1), wx = fx - x0, wy = fy - y0;
+      out[y * W + x] = (src[y0 * sw + x0] * (1 - wx) + src[y0 * sw + x1] * wx) * (1 - wy) + (src[y1 * sw + x0] * (1 - wx) + src[y1 * sw + x1] * wx) * wy + .5; } }
+  const bands = best.lines.map((P, i) => { const yc = (mY + T / 2 + best.v[i]) * K, hh = Math.max(P.th, T * .85) * K * .46; return { y0: Math.max(0, Math.round(yc - hh)), y1: Math.min(H - 1, Math.round(yc + hh)) }; });
+  const info = { ok: true, bands, x0: Math.round(mX * K), x1: Math.min(W - 1, Math.round((u1 - u0 + mX) * K)), angle: 0, w: W, h: H, sharp: 1, located: true, pv: .34 };   // pv: margen vertical corto (la posición ya es exacta y así no entran las líneas vecinas)
+  const mk2 = (gg, inf, r) => ({ g: gg, w: W, h: H, info: inf, rot: r, score: best.sc, angle: ang * 180 / Math.PI });
+  const res = mk2(out, info, best.rot);
+  res.flip = () => { const f = mrzRot90(out, W, H, 2); return mk2(f.g, { ...info, bands: bands.slice().reverse().map(b => ({ y0: H - 1 - b.y1, y1: H - 1 - b.y0 })), x0: W - 1 - info.x1, x1: W - 1 - info.x0 }, best.rot + 2); };
+  return res;
 }
 
 /* ---------- del resultado del OCR a una línea de 30 columnas ---------- */
@@ -1033,7 +1087,7 @@ class MrzScanner {
       if (opts.fromCanvas) { const { rot, rctx } = this; rot.width = W; rot.height = H; rctx.fillStyle = '#c8c8c8'; rctx.fillRect(0, 0, W, H); rctx.save(); rctx.translate(W / 2, H / 2); rctx.rotate(-info.angle * Math.PI / 180); rctx.drawImage(this.work, -W / 2, -H / 2); rctx.restore(); gr = toGray(rctx.getImageData(0, 0, W, H)); }
       else gr = mrzRotate(gray, W, H, info.angle);
     }
-    let crops = mrzMakeCrops(gr, W, H, info, W / sw, MRZ_CAPS[(opts.attempt || 0) % MRZ_CAPS.length]);
+    let crops = mrzMakeCrops(gr, W, H, info, opts.info && opts.info.located ? 1 : W / sw, MRZ_CAPS[(opts.attempt || 0) % MRZ_CAPS.length]);   // info de mrzFind: ya viene en px del recorte
     if (opts.flip) crops = crops.reverse().map(c => { const f = mrzRot90(c.g, c.w, c.h, 2); return { g: f.g, w: f.w, h: f.h }; });   // cédula al revés: se leen las líneas giradas 180°
     const texts = await this.ocr.read(crops); return { info, texts, crops };
   }
@@ -1099,7 +1153,17 @@ class MrzScanner {
     await this.ocr.load();
     const bmp = await createImageBitmap(file), k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height)), W = Math.round(bmp.width * k), H = Math.round(bmp.height * k);
     this.work.width = W; this.work.height = H; this.wctx.drawImage(bmp, 0, 0, W, H); if (bmp.close) bmp.close();
-    const gray = toGray(this.wctx.getImageData(0, 0, W, H)), loc = mrzLocate(gray, W, H);
+    const gray = toGray(this.wctx.getImageData(0, 0, W, H));
+    const found = mrzFind(gray, W, H);                               // 24-nov: recorte automático (las 3 líneas donde estén, ya enderezadas y con su posición exacta)
+    if (found) for (const v of [found, found.flip()]) {
+      let parsedAny = false;
+      for (const attempt of [0, 1, 2]) {
+        const r = await this._read(v.g, v.w, v.h, { info: v.info, attempt }), p = r.texts ? parseMrz(r.texts.map(t => t.text)) : null; if (p) parsedAny = true;
+        if (mrzStrong(p)) { this.lastDebug = { source: 'foto', w: W, h: H, located: true, auto: true, tries: [{ flip: v !== found, found: true, lines: r.texts.map(t => t.text), conf: r.texts.map(t => t.conf), parsed: p }] }; this.onResult({ ...p, verificada: true, aproximado: false }); return p; }
+      }
+      if (parsedAny) break;                                          // la orientación era la correcta: al revés no ayuda
+    }
+    const loc = mrzLocate(gray, W, H);
     const variants = loc ? [loc, loc.flip()] : [0, 1, 2, 3].map(r => mrzRot90(gray, W, H, r));
     let best = null, dbg = { source: 'foto', w: W, h: H, tries: [], located: !!loc };
     for (const v of variants) {
@@ -1112,5 +1176,5 @@ class MrzScanner {
   }
 }
 
-window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth };
+window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth, mrzFind };
 })();

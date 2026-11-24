@@ -93,6 +93,9 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     assert.strictEqual(await api.firstFound([]), null);
     const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
     assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_BUDGET_MS'), 'atajos de rapidez');
+    // 24-nov-2026 (tarde): recorte automático → primero las 3 líneas donde estén (mrzFind), el recuadro queda de respaldo; al servidor va solo el recorte; segundo intento con foto fija
+    assert.ok(src.includes('R.mrzFind(') && src.includes('readFound(k)') && src.indexOf('await readFound(k)') < src.indexOf('await readGuide(shots[k]'), 'recorte automático antes del recuadro');
+    assert.ok(src.includes('foundCanvas(found, SERVER_CROP_PAD)') && src.includes('takeStill(track, video, true)') && src.includes('shots.slice(0, 3).forEach((shot, k) => sources.push([() => shot.img'), 'servidor con recorte, foto con más detalle y foto completa en la cédula vieja');
     const qr = fs.readFileSync(path.join(ROOT, 'static/js/qr.js'), 'utf8');
     const stage = qr.slice(qr.indexOf('gw-cam__stage'), qr.indexOf("+ '</div>'"));
     assert.ok(stage.includes('gw-cam__shoot'), '«Tomar foto» va dentro del recuadro de la cámara (encima del video)');

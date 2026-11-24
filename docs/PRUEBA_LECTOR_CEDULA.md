@@ -74,3 +74,22 @@ Regla de oro: **«Está» y «No está» solo salen de una lectura VALIDADA** (d
 - **Brillo en vivo:** cada 0,5 s se mira el recuadro; si más del 1,2 % está quemado (blanco en los tres colores), el recuadro se pone ámbar y sale «Hay un brillo sobre la cédula: inclínela un poco…». Si la lectura falla con brillo, el mensaje lo dice.
 - **Linterna:** botón arriba a la derecha solo si el celular la ofrece (Android Chrome). En cédulas plastificadas a veces causa el brillo: el aviso pide apagarla.
 - **Lectura a medias (cédula nueva):** si nada quedó validado pero se leyó parte del número o del nombre, `POST /api/events/{id}/cedula-near` (app/cedula_near.py) busca cédulas a UN error de lectura (un dígito cambiado, de más, de menos o dos vecinos intercambiados) y nombres parecidos (app/name_index.py), y la ventana pregunta «No se leyó completa. ¿Es alguna de estas personas?». El operador elige y la persona entra por el camino exacto de siempre; nada se acredita solo. La cédula vieja no tiene lectura parcial posible (su código o se recupera entero o no sale): ahí ayudan la ráfaga, el aviso de brillo y la linterna.
+
+## Recorte automático «como CamScanner» (24-nov-2026, tarde)
+
+Pedido de Juan David: que la foto funcione aunque la cédula no quede exactamente en el recuadro. El recuadro pasa a ser una ayuda, no un requisito.
+
+- **Cédula nueva:** `CedulaReaders.mrzFind` (fuente: `app/pruebas/lector_cedula.html`) busca las 3 líneas en TODA la foto. Cada línea se reconoce como un bloque alargado y se mide con
+  sus ejes principales (centro, ángulo, largo y grosor); se aceptan 3 bloques paralelos, del mismo largo, alineados y a la misma distancia. Entrega SOLO esa zona, enderezada, a la
+  resolución de la foto y con la posición exacta de cada línea (el OCR ya no las vuelve a buscar: eso era lo que fallaba con el borde de la cédula o el fondo). Tolera la cédula
+  pequeña (desde ~1/7 del ancho de la foto), corrida, girada hasta ~±25°, de lado o al revés. Después se limpia el fondo de cada línea (alto contraste) y se lee como siempre.
+- **Servidor:** cuando el navegador ya ubicó las 3 líneas, a `/cedula-mrz-scan` va solo ese recorte (más liviano y sin el resto de la cédula).
+- **Cédula vieja:** tras el recuadro de la primera foto se pasa la foto COMPLETA de cada cuadro de la ráfaga; `CedulaScanner.scanImage` ubica el código por textura, lo endereza y lo recorta.
+- **Segundo intento con más detalle:** si la cédula se vio (líneas o código ubicados) pero no se pudo leer en el cuadro del video, se toma una foto fija a la resolución máxima del sensor y se repite.
+- **Regla de oro intacta:** solo se entrega una lectura validada (dígitos de control en la nueva, corrección de errores en la vieja).
+- **Por qué falló el intento anterior (242fa6bd):** usaba el localizador viejo (`mrzLocate`), que encontraba la zona pero luego volvía a buscar las líneas dentro del recorte y se
+  confundía con el borde de la cédula. Se comprobó en el banco de pruebas.
+- **Banco de pruebas:** `tests/lab_cedula/` corre el escáner real en Chrome sin pantalla con cámara simulada (fotos sintéticas). 60 fotos al azar, solo navegador: antes 27/60, ahora 58/60;
+  16 casos con nombre: 15/16 (el que falla tiene las 3 líneas fuera de la foto). Camino del servidor con recorte: 9/9. Prueba automática del localizador: `tests/js/mrz_find_check.js`.
+- **Falta:** probar con cédulas reales y celular (plástico, hologramas, letra OCR-B). La cédula vieja no se pudo leer en el banco (no hay zxing sin red): solo se verificó que el flujo corre sin errores.
+

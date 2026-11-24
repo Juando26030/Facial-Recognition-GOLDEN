@@ -16,7 +16,7 @@ HEAD = """/* GENERADO por scripts/build_cedula_readers.py desde app/pruebas/lect
 'use strict';
 """
 TAIL = """
-window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth };
+window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth, mrzFind };
 })();
 """
 
