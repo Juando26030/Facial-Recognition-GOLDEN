@@ -186,23 +186,20 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled or local_server %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
               </fieldset>
 
-              <div class="gw-field">
-                <label class="gw-label" for="ccMode">¿Quién es el responsable de los datos?</label>
-                <select class="gw-select" id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select>
-              </div>
-              <div id="ccOrg" class="gw-form-grid" {% if event.controller_mode != 'tercero' %}hidden{% endif %}>
+              <fieldset class="gw-fieldset">
+                <legend class="gw-label">¿Quién se hace cargo de las fotos y de la aceptación?</legend>
+                <input type="hidden" id="ccMode" value="{{ event.controller_mode }}" data-orig="{{ event.controller_mode }}">
+                <label class="gw-choice"><input type="radio" name="bsSource" id="bsSourceSelfie" value="selfie" {% if not event.client_photos_before and not event.each_accepts %}checked{% endif %}> <span class="gw-choice__text"><b>Golden se hace cargo.</b><span>Cada persona se toma una selfie. En la puerta se escribe primero la cédula o el QR; luego la persona acepta y se capta su rostro.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsSource" id="bsPhotos" value="client" {% if event.client_photos_before %}checked{% endif %}> <span class="gw-choice__text"><b>La empresa (el cliente) se hace cargo de las fotos.</b><span>Las entrega antes del evento en el zip de la carga y firma un anexo: sin el anexo la cámara queda bloqueada. En la puerta la persona toca «Acepto», sin cédula.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsSource" id="bsEach" value="each" {% if event.each_accepts %}checked{% endif %}> <span class="gw-choice__text"><b>Cada quien acepta (formulario, QR o enlace).</b><span>En la puerta no se escribe la cédula: la persona toca «Acepto», se abre la cámara y solo se reconoce a quienes ya aceptaron. No necesita anexo.</span></span></label>
+                {% call ayuda('ay_fotos', 'Quién se hace cargo') %}Con «Golden se hace cargo» y «Cada quien acepta» la foto es la selfie de la persona. Con «La empresa» las fotos llegan en el zip y el anexo firmado respalda que cada titular autorizó. Las dos últimas opciones son de un evento de un tercero: se piden los datos del organizador.{% endcall %}
+              </fieldset>
+              <div id="ccOrg" class="gw-form-grid" {% if event.controller_mode != 'tercero' and not event.client_photos_before and not event.each_accepts %}hidden{% endif %}>
                 <div class="gw-field"><label class="gw-label" for="ccName">Razón social del organizador</label><input class="gw-input" type="text" id="ccName" value="{{ event.organizer_name or '' }}"></div>
                 <div class="gw-field"><label class="gw-label" for="ccNit">NIT del organizador</label><input class="gw-input" type="text" id="ccNit" value="{{ event.organizer_nit or '' }}"></div>
                 <div class="gw-field"><label class="gw-label" for="ccEmail">Correo de privacidad del organizador</label><input class="gw-input" type="email" id="ccEmail" value="{{ event.organizer_privacy_email or '' }}"></div>
               </div>
 
-              <fieldset class="gw-fieldset">
-                <legend class="gw-label">¿De dónde salen las fotos de los asistentes?</legend>
-                <label class="gw-choice"><input type="radio" name="bsSource" id="bsSourceSelfie" value="selfie" {% if not event.client_photos_before and not event.each_accepts %}checked{% endif %}> <span class="gw-choice__text"><b>Golden se hace cargo: cada persona se toma una selfie.</b><span>En la puerta se escribe primero la cédula o el QR; luego la persona acepta y se capta su rostro.</span></span></label>
-                <label class="gw-choice"><input type="radio" name="bsSource" id="bsPhotos" value="client" {% if event.client_photos_before %}checked{% endif %}> <span class="gw-choice__text"><b>El cliente entrega las fotos antes del evento.</b><span>Vienen en el zip de la carga; no se pide selfie. Exige subir el anexo firmado: sin él la cámara queda bloqueada.</span></span></label>
-                <label class="gw-choice"><input type="radio" name="bsSource" id="bsEach" value="each" {% if event.each_accepts %}checked{% endif %}> <span class="gw-choice__text"><b>Cada quien acepta (formulario, QR o enlace).</b><span>En la puerta no se escribe la cédula: la persona toca «Acepto», se abre la cámara y solo se reconoce a quienes ya aceptaron.</span></span></label>
-                {% call ayuda('ay_fotos', 'De dónde salen las fotos') %}Con selfie, la foto se guarda cifrada y el rostro se calcula cuando la persona acepta. Con fotos del cliente, se guardan cifradas y el rostro también se calcula solo cuando la persona acepta.{% endcall %}
-              </fieldset>
 
               <div class="gw-setting"><div class="gw-setting__main">
                 <label class="gw-check"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %}> Entrada con rostro sin ayuda («Entrar con mi rostro»)</label>
@@ -218,8 +215,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <button type="button" id="ccSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar y revisar</button>
             </div>
             <div id="bsSummary" class="gw-alert" role="status" aria-live="polite"></div>
-            {% if event.facial_enabled and event.client_photos_before and not local_server %}
-            <div class="gw-group__item" id="annexBox">
+            {% if not local_server %}
+            <div class="gw-group__item" id="annexBox"{% if not (event.facial_enabled and event.client_photos_before) %} hidden{% endif %}>
               <div class="gw-item-head"><h4>Anexo firmado del cliente</h4>{% call ayuda('ay_anexo', 'Anexo firmado') %}Con fotos entregadas por el cliente, la persona entra con un solo clic en «Acepto» y su rostro se compara con esas fotos. Para eso el cliente firma un anexo con las declaraciones, garantías e indemnidad. Sin el archivo, la cámara queda bloqueada.{% endcall %}</div>
               <div id="annexState" class="gw-alert {{ 'gw-alert--ok' if event.precalculo_anexo_ref else 'gw-alert--warn' }}" role="status">{{ ic('info') }}<div class="gw-alert__body">{% if event.precalculo_anexo_ref %}<b>Anexo cargado:</b> {{ event.precalculo_anexo_ref }} ({{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}). <a href="/api/events/{{ event.id }}/facial-annex">Descargar</a>{% else %}<b>Cámara bloqueada:</b> falta el anexo firmado. Sube el archivo para poder registrar con rostro; mientras tanto se ingresa por cédula o QR.{% endif %}</div></div>
               <div class="gw-field"><label class="gw-label" for="annexFile">Anexo (PDF, Word, Excel o imagen; máximo 10 MB)</label><input class="gw-input" type="file" id="annexFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div>
@@ -228,15 +225,13 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             {% endif %}
           </div>
 
-          {% if staff_role == "super_admin" %}
           <div class="gw-group__item">
-            <div class="gw-item-head"><h4>Opciones solo para el súper administrador</h4></div>
+            <div class="gw-item-head"><h4>Foto del rostro en la escarapela</h4></div>
             <div data-psave="bbp">
               <label class="gw-check gw-check--top"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %}> <span>Permitir imprimir la foto del rostro en la escarapela</span></label>
               <p class="gw-hint">Apagado (recomendado): el recuadro de la foto sale vacío, en la impresa y en la digital.</p>
             </div>
           </div>
-          {% endif %}
         </section>
 
         {# ====================================================================================== INVITACIONES #}
@@ -1069,7 +1064,15 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     // Autorización del reconocimiento facial (L1).
     const ccMode = document.getElementById('ccMode');
     if (ccMode) {
-        ccMode.addEventListener('change', () => { document.getElementById('ccOrg').hidden = ccMode.value !== 'tercero'; });
+        const syncSource = () => {              // un solo selector: Golden = conserva el responsable guardado; empresa y «cada quien» = evento de un tercero
+            const src = (document.querySelector('input[name="bsSource"]:checked') || {}).value || 'selfie';
+            ccMode.value = src === 'selfie' ? ccMode.dataset.orig : 'tercero';
+            document.getElementById('ccOrg').hidden = ccMode.value !== 'tercero';
+            const ax = document.getElementById('annexBox'), face = document.getElementById('bsFacial');
+            if (ax) ax.hidden = !(src === 'client' && face && face.checked);
+        };
+        document.querySelectorAll('input[name="bsSource"], input[name="bsUse"]').forEach((r) => r.addEventListener('change', syncSource));
+        syncSource();
         const lockBox = document.getElementById('bsLocked');
         const applyUse = () => {                 // «No usa rostro (bloqueado)»: lo biométrico se apaga en pantalla, como antes con la casilla del candado
             if (!lockBox || !lockBox.checked) return;

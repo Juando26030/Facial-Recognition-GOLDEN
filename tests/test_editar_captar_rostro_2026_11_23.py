@@ -88,3 +88,13 @@ def test_tercer_modo_cada_quien_acepta():
     assert "each_accepts" in (R / "app/models.py").read_text(encoding="utf-8") and (R / "alembic/versions/0165_each_accepts.py").exists()
     assert 'id="bsEach"' in (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
     assert len("0165_each_accepts") <= 32
+
+
+def test_un_solo_selector_de_modo_anexo_visible_y_foto_escarapela_para_coordinador():
+    t = (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert t.count('name="bsSource"') >= 3 and '<select class="gw-select" id="ccMode"' not in t and 'type="hidden" id="ccMode"' in t          # un solo selector (ya no «responsable» + «origen»)
+    assert "¿De dónde salen las fotos de los asistentes?" not in t and "syncSource" in t
+    assert 'id="annexBox"' in t and "{% if not local_server %}\n            <div class=\"gw-group__item\" id=\"annexBox\"" in t          # el campo del anexo siempre está en la página
+    assert "Opciones solo para el súper administrador" not in t and 'id="badgeBioPhoto"' in t
+    c = (R / "app/routers/consents.py").read_text(encoding="utf-8")
+    assert "def set_badge_bio_photo(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD))" in c

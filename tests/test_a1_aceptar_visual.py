@@ -78,7 +78,7 @@ def test_the_biometric_photo_is_not_printed_unless_a_super_admin_allows_it(clien
     data = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").json()
     assert data["has_photo"] is False                                                                      # apagado por defecto: recuadro vacío
     assert client.get(f"/api/users/1001/photo?event_id={ev.id}").status_code == 404
-    assert client.put(f"/api/events/{ev.id}/badge-bio-photo", json={"enabled": True}).status_code == 403    # un coordinador no puede encenderlo
+    assert client.put(f"/api/events/{ev.id}/badge-bio-photo", json={"enabled": True}).json() == {"badge_bio_photo_allowed": True}    # 23-nov-2026: cualquier coordinador puede encenderlo
     client.cookies.clear()
     factory.staff("super_admin", "super1")
     login(client, "super1")
