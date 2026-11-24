@@ -56,7 +56,7 @@
 const BASE = "/f/{{ event_id }}/{{ slug }}";
 const qs = new URLSearchParams(location.search);
 const K = qs.get("k"), D = qs.get("d") || "", INVITE = qs.get("i"), SOURCE = qs.get("utm_source") || qs.get("src") || "";
-const SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s) { s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("sid_" + BASE, s); } return s; } catch (e) { return Math.random().toString(36).slice(2); } })();
+let SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s) { s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("sid_" + BASE, s); } return s; } catch (e) { return Math.random().toString(36).slice(2); } })();
 const app = document.getElementById("app");
 let token = qs.get("t") || null, theme = null;      // `t`: token de etapa que ya identifica a la persona (compromiso del digitador al ingresar con su cédula); el servidor lo valida
 
@@ -366,6 +366,10 @@ async function boot() {
 }
 
 function done(thanks) {
+  // Hotfix 24-nov-2026: inscripción confirmada → clave de envío NUEVA. Quien inscribe a otra persona desde el mismo celular (refrescando) no reutiliza la anterior,
+  // que el servidor tomaría por un reintento. Los reintentos por red caída siguen con la misma clave: solo se cambia al recibir la confirmación.
+  try { sessionStorage.removeItem("sid_" + BASE); } catch (e) { /* sin almacenamiento: la clave ya era de esta carga */ }
+  SID = Math.random().toString(36).slice(2) + Date.now().toString(36);
   if (thanks.mode === "redirect" && thanks.url) { location.href = thanks.url; return; }
   box(templateHtml(thanks));
 }

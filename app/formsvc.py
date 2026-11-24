@@ -686,7 +686,12 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
     now = now_local()          # calendario propio de cada cupo: uno cerrado por fecha se manda con máximo 0 (= «cerrado»)
-    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id if dedupe else None, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
+    # Hotfix 24-nov-2026 (eventos 14/15): con «Permitir que la misma persona vuelva a enviar» (dedupe=False) la cédula NO se manda a la función para que no rechace la repetida,
+    # pero la función usa ese MISMO parámetro para el reintento: con cédula nula, CUALQUIER inscripción confirmada con la misma `sid` contaba como «reintento». La `sid` vive en el
+    # sessionStorage del navegador y sobrevive al refrescar: la segunda persona inscrita desde el mismo celular recibía «inscripción exitosa» y NO se guardaba. Ahora, en ese caso,
+    # el reintento se comprueba aquí abajo POR CÉDULA y con la fila del formulario ya bloqueada por la función (misma atomicidad), sin migración.
+    own_retry = (not dedupe) and bool(person_id) and bool(sid)
+    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id if dedupe else None, "sid": None if own_retry else sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
               "matched": json.dumps([{"sig": rule_sig(r), "limit": formlib.rule_limit_now(r, now), "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
@@ -696,7 +701,15 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
         hit = next((r for r in rules if r["label"] == res.get("label") and quota_match(r, values)), None)
         res["message"] = (hit or {}).get("message", "")
         res["closed"] = bool(hit) and formlib.rule_limit_now(hit, now) == 0
+    if res.get("ok") and own_retry and confirmed_retry(db, form, sid, person_id, is_test):
+        return {"ok": False, "reason": "retry"}
     return res
+
+
+def confirmed_retry(db: Session, form: WebForm, sid: str, person_id: str, is_test: bool) -> bool:
+    """¿Ya hay una inscripción confirmada con esta `sid` Y esta cédula (un reintento real del navegador)? Se llama con la fila del formulario bloqueada."""
+    return db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.person_id == person_id,
+                                              FormSubmission.is_test == is_test, FormSubmission.status == "confirmed").first() is not None
 
 
 def has_live_payment(db: Session, sub: FormSubmission) -> bool:
