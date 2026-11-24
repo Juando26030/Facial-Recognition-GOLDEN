@@ -14,7 +14,7 @@ from app.models import Event, FormEvent, FormSubmission, WebForm
 from app.timeutil import utcnow
 
 CHOICE_TYPES = ("select", "radio", "multiselect", "checkbox")
-MAX_ITEMS = 25                     # opciones mostradas por variable; el resto se agrupa en «Otros»
+# Hotfix 24-nov-2026: se muestran TODAS las opciones de cada variable (antes las menos frecuentes se agrupaban en «Otros»).
 _STATUS_LABELS = {"activo": "Abierto", "pruebas": "En pruebas", "cerrado": "Cerrado", "finalizado": "Finalizado", "cupo_lleno": "Cupo lleno"}
 _OP_TEXT = {"equals": "es", "not_equals": "no es", "contains": "contiene", "in": "es alguno de", "filled": "está respondido"}
 
@@ -83,11 +83,7 @@ def _distributions(design: dict, subs: list) -> list:
         if not counts:
             continue
         ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        head, tail = ordered[:MAX_ITEMS], ordered[MAX_ITEMS:]
-        items = [{"label": k, "count": n, "pct": _pct(n, answered)} for k, n in head]
-        if tail:
-            n = sum(x for _, x in tail)
-            items.append({"label": f"Otros ({len(tail)} opciones)", "count": n, "pct": _pct(n, answered)})
+        items = [{"label": k, "count": n, "pct": _pct(n, answered)} for k, n in ordered]
         out.append({"id": fid, "label": f.get("label") or fid, "answered": answered, "featured": bool(f.get("stats")), "items": items})
     out.sort(key=lambda d: not d["featured"])           # primero las marcadas «genera estadísticas»; el orden del formulario se conserva dentro de cada grupo
     return out

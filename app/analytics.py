@@ -52,13 +52,13 @@ def fmt_duration(seconds: float) -> str:
     return f"{minutes // 60} h {minutes % 60:02d} min"
 
 
-def counter_chart(chart_id: str, title: str, values: Iterable, kind="bar", top: int = 10, label="Personas", other_label="Otros") -> Optional[dict]:
-    """Conteo por categoría; más de `top` categorías se agrupan en «Otros» para que siga siendo legible."""
+def counter_chart(chart_id: str, title: str, values: Iterable, kind="bar", top: Optional[int] = None, label="Personas", other_label="Otros") -> Optional[dict]:
+    """Conteo por categoría, TODAS (hotfix 24-nov-2026: ya no se agrupan en «Otros»). Solo si quien llama pasa `top` se agrupa el resto."""
     counts = Counter(v for v in values if v not in (None, ""))
     if not counts:
         return None
     ordered = counts.most_common()
-    head, tail = ordered[:top], ordered[top:]
+    head, tail = (ordered, []) if top is None else (ordered[:top], ordered[top:])
     labels, data = [k for k, _ in head], [n for _, n in head]
     if tail:
         labels.append(other_label)

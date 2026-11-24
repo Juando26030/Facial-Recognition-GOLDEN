@@ -137,7 +137,7 @@ def test_chart_type_by_variable():
     assert sp["Estado: proporción de personas"]["kind"] == "doughnut"
     assert sp["Edad: distribución de valores"]["kind"] == "col"                              # numérica: histograma
     ent = next(s for t, s in sp.items() if t.startswith("Entidad"))
-    assert ent["kind"] == "barh" and len(ent["cats"]) == 11 and ent["cats"][-1] == "Otros" and sum(ent["vals"]) == 60          # top 10 + Otros, sin perder a nadie
+    assert ent["kind"] == "barh" and len(ent["cats"]) == 14 and "Otros" not in ent["cats"] and sum(ent["vals"]) == 60          # hotfix 24-nov-2026: TODAS las categorías, nunca «Otros»
     assert sp["Registros por hora del día"]["kind"] == "col" and sp["Registros por día"]["kind"] == "line"
     assert sp["Cambios de datos por campo"]["kind"] == "barh" and sp["Cambios de datos por campo"]["vals"] == [2, 1]
     assert sp["Cambios de datos por día"]["kind"] == "col" and sp["Cambios de datos por día"]["cats"] == ["10/11", "11/11"]
@@ -198,8 +198,10 @@ def test_histogram_and_top_helpers():
     cats, counts = report_charts.histogram(list(range(0, 100)))
     assert sum(counts) == 100 and len(cats) == 8
     from collections import Counter
-    cats, vals = report_charts.top_with_others(Counter({f"c{i}": i + 1 for i in range(15)}), 10)
+    cats, vals = report_charts.top_with_others(Counter({f"c{i}": i + 1 for i in range(15)}), 10)          # agrupar solo si se pide a propósito
     assert cats[-1] == "Otros" and sum(vals) == sum(range(1, 16)) and len(cats) == 11
+    cats, vals = report_charts.top_with_others(Counter({f"c{i}": i + 1 for i in range(15)}))              # por defecto salen TODAS, de mayor a menor
+    assert len(cats) == 15 and "Otros" not in cats and vals == sorted(vals, reverse=True)
     assert report_charts.top_with_others(Counter({"a": 2}), 10) == (["a"], [2])
 
 
@@ -214,7 +216,7 @@ def test_registered_and_not_registered_chart_sheets_count_only_their_people():
     def entity_total(sheet):
         ws = wb[sheet]
         titles = {ws.cell(row=r, column=report_charts.DATA_COL).value: r for r in range(1, ws.max_row + 1)}
-        r = titles["Entidad: personas (principales y «Otros»)"]
+        r = titles["Entidad: personas"]
         total = 0
         while ws.cell(row=r + 1, column=report_charts.DATA_COL).value is not None:
             r += 1
