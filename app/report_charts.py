@@ -2,7 +2,7 @@
 (openpyxl.chart), que se pueden editar.
 
 1) `build_specs(df, field_types, changes)` decide, por cada variable del reporte, el gráfico adecuado (pura, se prueba sin Excel):
-   * sí/no  -> dona;  pocas categorías (hasta 6) -> dona;  muchas (ciudad, empresa, cargo…) -> barras horizontales con las 10 principales y «Otros»;
+   * sí/no  -> dona;  pocas categorías (hasta 6) -> dona;  muchas (ciudad, empresa, cargo…) -> barras horizontales con TODAS las categorías (el gráfico crece de alto; nunca se agrupa en «Otros»);
    * numéricas -> histograma (columnas por rangos);  registro por hora -> columnas;  registro por día -> línea (columnas si hay un solo día);
    * historial de cambios -> barras por campo y columnas por día.
    Se omiten las columnas que identifican a una persona (cédula, nombres, correo, teléfono), las firmas y los textos casi únicos (no hay nada que contar).
@@ -22,7 +22,7 @@ from openpyxl.worksheet.properties import PageSetupProperties
 
 NAVY, GOLD, OTHER_GRAY, LIGHT = "0A0E2E", "D4AF37", "9AA0B5", "E6E8F0"
 PALETTE = ["D4AF37", "5B7DB1", "2E9AA0", "D98C4A", "8FB04C", "B77FA3", "7F9BA6", "E0C98A", "C86A6A", "A0A0A0"]          # claros: la etiqueta (texto oscuro) se lee sobre cualquier porción
-TOP_N = 10
+TOP_N = 10          # solo lo usa quien pida agrupar a propósito (`top_with_others(counter, TOP_N)`); los gráficos del reporte muestran todas las categorías
 DONUT_MAX = 6
 SKIP_HEADERS = {"Cédula", "Nombres", "Apellidos", "Teléfono", "Correo Electrónico", "Hora de Registro", "Fecha de Registro"}
 SKIP_TYPES = {"signature"}
@@ -33,6 +33,20 @@ SHEET_NOT_REGISTERED = "Gráficos no registrados"   # … y solo con las no regi
 DATA_COL = 27                    # AA: datos de apoyo (columnas ocultas)
 CHART_W, CHART_H = 16.5, 8.6     # cm
 ROWS_PER_CHART = 19
+BAR_CM = 0.55                    # alto por barra en los gráficos de categorías con muchas opciones
+MANY_CATS = 12                   # desde aquí el gráfico de barras ocupa el ancho de la hoja y crece de alto (cabe cada categoría, sin «Otros»)
+ROW_CM = 0.53                    # alto de una fila de Excel (15 pt)
+
+
+def chart_height(spec: dict) -> float:
+    """Alto en cm del gráfico: el normal, o más alto si es de barras con muchas categorías (todas deben verse; máx. 60 cm)."""
+    if spec.get("kind") == "barh" and len(spec["cats"]) > MANY_CATS:
+        return min(60.0, max(CHART_H, BAR_CM * len(spec["cats"]) + 2.5))
+    return CHART_H
+
+
+def is_tall(spec: dict) -> bool:
+    return chart_height(spec) > CHART_H
 LEFT_COL, RIGHT_COL = 2, 11      # B y K
 
 
@@ -41,10 +55,10 @@ def _label(v, n=40) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def top_with_others(counter: Counter, top: int = TOP_N) -> tuple:
-    """([etiquetas], [valores]) con las `top` más frecuentes y el resto sumado en «Otros» (solo si sobra algo)."""
+def top_with_others(counter: Counter, top: Optional[int] = None) -> tuple:
+    """([etiquetas], [valores]) de MÁS a MENOS frecuente. Hotfix 24-nov-2026: salen TODAS las categorías; solo si se pasa `top` el resto se suma en «Otros»."""
     ordered = sorted(counter.items(), key=lambda kv: (-kv[1], str(kv[0])))
-    head, rest = ordered[:top], ordered[top:]
+    head, rest = (ordered, []) if top is None else (ordered[:top], ordered[top:])
     cats = [_label(k) for k, _ in head]
     vals = [v for _, v in head]
     if rest:
@@ -104,8 +118,7 @@ def column_spec(label: str, raw: list, hint: Optional[str] = None) -> Optional[d
         cats, nums = top_with_others(counter, DONUT_MAX)
         return {"section": "Variables del reporte", "kind": "doughnut", "title": f"{label}: proporción de personas", "cats": cats, "vals": nums}
     cats, nums = top_with_others(counter)
-    suffix = " (principales y «Otros»)" if cats[-1] == "Otros" else ""
-    return {"section": "Variables del reporte", "kind": "barh", "title": f"{label}: personas{suffix}", "cats": cats, "vals": nums}
+    return {"section": "Variables del reporte", "kind": "barh", "title": f"{label}: personas", "cats": cats, "vals": nums}
 
 
 def time_specs(hours: list, days: list) -> list:
@@ -208,7 +221,7 @@ def _make_chart(spec: dict, cats_ref, vals_ref):
     ch.add_data(vals_ref, titles_from_data=True)
     ch.set_categories(cats_ref)
     ch.title = spec["title"]
-    ch.width, ch.height = CHART_W, CHART_H
+    ch.width, ch.height = (CHART_W * 2 + 1.2 if is_tall(spec) else CHART_W), chart_height(spec)          # las de muchas categorías ocupan las dos columnas
     ch.visible_cells_only = False                              # los datos de apoyo están en columnas ocultas: igual se dibujan
     s = ch.series[0]
     if kind == "doughnut":
@@ -294,6 +307,13 @@ def build_sheet(wb, specs: list, index: Optional[int] = None, name: str = SHEET,
         vals_ref = Reference(ws, min_col=DATA_COL + 1, min_row=data_row, max_row=data_row + n)
         data_row += n + 2
         chart = _make_chart(spec, cats_ref, vals_ref)
+        if is_tall(spec):          # barras con muchas categorías: solas, a todo el ancho y con el alto que pidan (no se pisan con el siguiente)
+            if slot == 1:
+                row += ROWS_PER_CHART
+                slot = 0
+            ws.add_chart(chart, f"{get_column_letter(LEFT_COL)}{row}")
+            row += int(chart_height(spec) / ROW_CM) + 3
+            continue
         ws.add_chart(chart, f"{get_column_letter(LEFT_COL if slot == 0 else RIGHT_COL)}{row}")
         if slot == 1:
             row += ROWS_PER_CHART
