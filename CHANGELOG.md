@@ -10,6 +10,8 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 
 ## 2026-11-23 (noche) — Confirmaciones con palabra y coordinador del evento nuevo (Rama; sin migración)
 
+- **Staging (24-nov):** sitio web republicado con el arreglo de tableta (`39e4c6f`); pruebas E2E contra staging: 12 pasan, 6 se saltan por falta de datos o impresora. Informe de la segunda pasada: `docs/revision_2026-11-22b/README.md`.
+
 - **Pruebas E2E:** `tests/e2e/conftest.py` anula los preparativos automáticos del `conftest.py` general (Postgres local, migraciones, dobles). Las E2E ya corren en cualquier máquina (p. ej. Cloud Shell) con solo `playwright` + `pytest`, sin base de datos local.
 - **Pruebas E2E:** el evento sintético completa solo lo que exija la plantilla de staging (país, ciudad, horas, coordinador, comercial, categoría, campos personalizados…), leyendo `/api/event-template`; antes el servidor lo rechazaba (400) y 8 pruebas se saltaban.
 - **Arreglo (pedido de Juan David):** en TODAS las pantallas que piden escribir una palabra para borrar o confirmar (REABRIR, ELIMINAR, SUPRIMIR, REVOCAR, REEMBOLSAR, DESHABILITAR, BORRAR, CARGAR, nombre del evento, nombre del campo), si la palabra está mal o vacía el cuadro ya NO se cierra en silencio (parecía que se había borrado y no): muestra ahí mismo el aviso rojo «No se hizo nada…» y deja corregir o cancelar. Se hizo en `showPrompt` (opción `validate`) y lo usan todos los llamadores.
