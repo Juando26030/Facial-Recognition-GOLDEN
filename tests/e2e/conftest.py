@@ -16,6 +16,49 @@ import pytest
 if not os.environ.get("E2E_BASE_URL"):
     collect_ignore_glob = ["test_*.py"]
 
+# Las pruebas E2E hablan con STAGING por navegador: no necesitan base de datos local ni importar la app. El conftest general de tests/
+# trae preparativos automáticos (autouse) que sí los usan (Postgres local, migraciones, dobles del motor facial…); aquí se anulan por
+# nombre para que esta carpeta corra en cualquier máquina (p. ej. Cloud Shell) con solo playwright + pytest.
+@pytest.fixture(scope="session", autouse=True)
+def _database():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clean_tables():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _server_never_left_locked():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_wompi_status_network():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_wompi_reference_network():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _fresh_public_limiter():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _jobs_inline():
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _good_face_analysis():
+    yield
+
+
 PROHIBIDO = "app.golden-eventos.com"
 PERMITIDOS = ("staging", "localhost", "127.0.0.1")
 
