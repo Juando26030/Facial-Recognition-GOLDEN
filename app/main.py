@@ -242,6 +242,10 @@ async def local_catalog_readonly(request, call_next):
             return HTMLResponse(f"<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Servidor deshabilitado</title><body style='font-family:system-ui;max-width:34rem;margin:15vh auto;padding:0 1rem'><h1>Servidor deshabilitado</h1><p>{server_lock.LOCKED_MSG}</p></body></html>", status_code=403)
         if localmode.is_catalog_write(request.method, request.url.path):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
+        if localmode.is_cloud_config_call(request.method, request.url.path):          # plantilla/estados/tipos de evento, alertas y llaves: solo en la nube (24-nov-2026)
+            if request.method.upper() == "GET" and not request.url.path.startswith("/api/"):
+                return RedirectResponse("/configuracion", status_code=302)
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_CLOUD_CONFIG_MSG})
         if localmode.is_face_call(request.method, request.url.path):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_NO_FACE_MSG})
         if localmode.is_creation_call(request.method, request.url.path):          # eventos, duplicados, clientes y cuentas: se crean en la nube y se bajan (24-nov-2026)

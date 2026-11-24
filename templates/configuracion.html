@@ -72,15 +72,15 @@
     <div class="gw-tabs" id="paramsRoot" data-tabs-key="configuracion">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de configuración" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la pestaña" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves de qué trata.">
         <button type="button" class="gw-tab" role="tab" id="tab_apariencia" data-tab="apariencia" aria-controls="apariencia" aria-selected="true">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Apariencia</span><span class="gw-tab__sum">Color y tipografía de este computador</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        {% if can_local_installer %}<button type="button" class="gw-tab" role="tab" id="tab_servidor" data-tab="servidor" aria-controls="servidor" aria-selected="false" tabindex="-1">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Servidor local</span><span class="gw-tab__sum">Instalar el programa para trabajar sin internet</span></button>{% endif %}
+        {% if can_local_installer %}<button type="button" class="gw-tab" role="tab" id="tab_servidor" data-tab="servidor" aria-controls="servidor" aria-selected="false" tabindex="-1">{{ ic('settings', 'gw-tab__icon') }}<span class="gw-tab__name">Servidor local</span><span class="gw-tab__sum">{% if local_server %}Datos de este servidor{% else %}Instalar el programa para trabajar sin internet{% endif %}</span></button>{% endif %}
         {% if is_admin_plus %}
         <button type="button" class="gw-tab" role="tab" id="tab_sesion" data-tab="sesion" aria-controls="sesion" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Sesiones</span><span class="gw-tab__sum">Una sola sesión por cuenta operativa</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>
-        {% if is_super %}<button type="button" class="gw-tab" role="tab" id="tab_tipos" data-tab="tipos" aria-controls="tipos" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Tipos de evento</span><span class="gw-tab__sum">Categorías del calendario</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>{% endif %}
-        {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
-        {% if is_admin_plus %}<button type="button" class="gw-tab" role="tab" id="tab_copias" data-tab="copias" aria-controls="copias" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Copias de seguridad</span><span class="gw-tab__sum">Dónde está la copia semanal</span></button>{% endif %}
-        <button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        {% if not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_plantilla" data-tab="plantilla" aria-controls="plantilla" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Plantilla de eventos</span><span class="gw-tab__sum">Diseñar plantilla para eventos</span></button>{% endif %}
+        {% if not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_estados" data-tab="estados" aria-controls="estados" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Estados de evento</span><span class="gw-tab__sum">Crear, renombrar y archivar estados</span></button>{% endif %}
+        {% if is_super and not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_tipos" data-tab="tipos" aria-controls="tipos" aria-selected="false" tabindex="-1">{{ ic('flag-start', 'gw-tab__icon') }}<span class="gw-tab__name">Tipos de evento</span><span class="gw-tab__sum">Categorías del calendario</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>{% endif %}
+        {% if is_admin_plus and not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_inventario" data-tab="inventario" aria-controls="inventario" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Inventario</span><span class="gw-tab__sum">Categorías y productos del catálogo</span></button>{% endif %}
+        {% if is_admin_plus and not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_copias" data-tab="copias" aria-controls="copias" aria-selected="false" tabindex="-1">{{ ic('sheet', 'gw-tab__icon') }}<span class="gw-tab__name">Copias de seguridad</span><span class="gw-tab__sum">Dónde está la copia semanal</span></button>{% endif %}
+        {% if not local_server %}<button type="button" class="gw-tab" role="tab" id="tab_alertas" data-tab="alertas" aria-controls="alertas" aria-selected="false" tabindex="-1">{{ ic('bell', 'gw-tab__icon') }}<span class="gw-tab__name">Alertas del sistema</span><span class="gw-tab__sum">Quién recibe el aviso de borrado masivo</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>{% endif %}
         <button type="button" class="gw-tab" role="tab" id="tab_staff" data-tab="staff" aria-controls="staff" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Staff y permisos</span><span class="gw-tab__sum">Cuentas, roles y accesos del personal</span></button>
         {% endif %}
       </div>
@@ -133,7 +133,13 @@
 
         {% if can_local_installer %}
         <section class="gw-tabpanel" role="tabpanel" id="servidor" aria-labelledby="tab_servidor" hidden>
-          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Servidor local</h2><p class="gw-tabpanel__lead">Un programa que se instala en un computador con Windows para atender un evento aunque se caiga el internet.</p></div>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">{% if local_server %}Este servidor{% else %}Servidor local{% endif %}</h2><p class="gw-tabpanel__lead">{% if local_server %}Datos de este servidor local. El instalador, las llaves de producto y la creación de eventos se manejan solo desde la nube.{% else %}Un programa que se instala en un computador con Windows para atender un evento aunque se caiga el internet.{% endif %}</p></div>
+          {% if local_server %}
+          <div class="gw-group__item" data-pnodirty id="serverInfoCard">
+            <div class="gw-item-head"><h4>Información de este servidor</h4></div>
+            <dl class="gw-stack" id="serverInfoBody" aria-live="polite">{{ skeleton('block', label='Leyendo los datos de este servidor…') }}</dl>
+          </div>
+          {% else %}
           <div class="gw-group__item" data-pnodirty id="localInstallerCard">
             <div class="gw-item-head"><h4>Descargar el instalador</h4></div>
             <div id="localInstallerBody" aria-live="polite">{{ skeleton('block', label='Revisando si el instalador está disponible…') }}</div>
@@ -210,6 +216,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
             </div>
             <p class="gw-hint">Una explicación más larga, sin términos técnicos, está en el documento «Explicación del servidor local».</p>
           </div>
+          {% endif %}
         </section>
         {% endif %}
 
@@ -224,6 +231,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           </div>
         </section>
 
+        {% if not local_server %}
         <section class="gw-tabpanel" role="tabpanel" id="plantilla" aria-labelledby="tab_plantilla" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Plantilla de eventos</h2><p class="gw-tabpanel__lead">Define qué pide «Nuevo evento» y qué se ve en la tarjeta del calendario. Los eventos que ya existen no cambian.</p></div>
           <div class="gw-group__item" data-pnodirty>
@@ -247,8 +255,9 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           <label class="gw-check"><input type="checkbox" id="showArchivedStates"> Ver archivados</label>
           <div class="gw-cards gw-estado__list" id="estadosList" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando estados…') }}</div>
         </section>
+        {% endif %}
 
-        {% if is_super %}<section class="gw-tabpanel" role="tabpanel" id="tipos" aria-labelledby="tab_tipos" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
+        {% if is_super and not local_server %}<section class="gw-tabpanel" role="tabpanel" id="tipos" aria-labelledby="tab_tipos" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Tipos de evento</h2><p class="gw-tabpanel__lead">La lista de categorías (Feria, Congreso…) que se elige al crear o editar un evento y con la que el calendario filtra. Agregar, renombrar y archivar actúan al instante; el color se guarda con «Guardar cambios».</p></div>
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Agregar un tipo</h4>{% call ayuda('ay_tipos', 'Archivar un tipo') %}Archivar deja de ofrecer el tipo al crear o editar eventos, pero los eventos que ya lo tienen lo conservan y el calendario lo sigue mostrando. Se puede restaurar. El color es opcional: sale en el calendario junto al nombre.{% endcall %}</div>
@@ -262,7 +271,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           <div class="gw-cards gw-estado__list" id="tiposList" data-psave="tipos" aria-live="polite">{{ skeleton('cards', rows=3, label='Cargando tipos de evento…') }}</div>
         </section>{% endif %}
 
-        {% if is_admin_plus %}
+        {% if is_admin_plus and not local_server %}
         <section class="gw-tabpanel" role="tabpanel" id="copias" aria-labelledby="tab_copias" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Copias de seguridad</h2><p class="gw-tabpanel__lead">Cada semana el sistema toma el respaldo más reciente de la base, lo cifra y lo guarda en una carpeta de Microsoft 365, fuera de Google. Solo se puede abrir con la llave de cifrado.</p></div>
           <div class="gw-group__item" data-pnodirty>
@@ -277,6 +286,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
         </section>
         {% endif %}
 
+        {% if not local_server %}
         <section class="gw-tabpanel" role="tabpanel" id="alertas" aria-labelledby="tab_alertas" data-icons="{{ url_for('static', path='img/icons.svg') }}" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Alertas del sistema</h2><p class="gw-tabpanel__lead">Si alguien borra muchos registros de golpe (eventos, formularios, inscripciones, personas, archivos), el sistema envía un correo al instante. El correo dice quién, qué, cuántos y cuándo, y <strong>nunca</strong> incluye datos de los asistentes. La limpieza automática de privacidad no cuenta como alerta.</p></div>
 
@@ -313,8 +323,9 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
             <div class="gw-cards" id="alRecent" aria-live="polite">{{ skeleton('cards', rows=2, label='Cargando alertas enviadas…') }}</div>
           </div>
         </section>
+        {% endif %}
 
-        {% if is_admin_plus %}
+        {% if is_admin_plus and not local_server %}
         {% include "_inventory_catalog_admin.html" %}
         {% endif %}
 
@@ -342,12 +353,13 @@ window.gwFontsSelect = GoldenFontPicker.mount(document.getElementById('themeFont
 });
 </script>
 <script src="{{ url_for('static', path='js/gw-configuracion.js') }}"></script>
-{% if can_local_installer %}<script src="{{ url_for('static', path='js/local-installer-card.js') }}"></script>{% endif %}
-{% if can_local_installer and is_admin_plus %}<script src="{{ url_for('static', path='js/server-keys-card.js') }}"></script>{% endif %}
-{% if is_admin_plus %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
+{% if can_local_installer and not local_server %}<script src="{{ url_for('static', path='js/local-installer-card.js') }}"></script>{% endif %}
+{% if can_local_installer and local_server %}<script src="{{ url_for('static', path='js/server-info-card.js') }}"></script>{% endif %}
+{% if can_local_installer and is_admin_plus and not local_server %}<script src="{{ url_for('static', path='js/server-keys-card.js') }}"></script>{% endif %}
+{% if is_admin_plus and not local_server %}<script src="{{ url_for('static', path='js/archive-rules.js') }}"></script>
 <script src="{{ url_for('static', path='js/event-states-admin.js') }}"></script>
 <script src="{{ url_for('static', path='js/system-alerts-admin.js') }}"></script>{% endif %}
-{% if is_admin_plus %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
-{% if is_super %}<script src="{{ url_for('static', path='js/event-types-admin.js') }}"></script>{% endif %}
+{% if is_admin_plus and not local_server %}<script src="{{ url_for('static', path='js/inventory-catalog-admin.js') }}"></script>{% endif %}
+{% if is_super and not local_server %}<script src="{{ url_for('static', path='js/event-types-admin.js') }}"></script>{% endif %}
 </body>
 </html>
