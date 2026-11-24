@@ -112,7 +112,7 @@
     }
     var cfg = buildChartConfig(chartType, buckets);
     var height = null;
-    if (narrow && chartType === 'pie') height = Math.min(1000, 250 + n * 34);
+    if (chartType === 'pie' && (narrow || n > 8)) height = Math.min(30000, 250 + n * 34);          // la leyenda de la circular crece con TODAS las opciones (sin «Otros»)
     else if (narrow) height = 280;
     if (narrow && chartType === 'line') cfg.options.scales.x.ticks = Object.assign(cfg.options.scales.x.ticks, { maxRotation: 0, maxTicksLimit: 6 });
     return { config: cfg, height: height };

@@ -22,3 +22,14 @@ def test_excel_charts_list_every_category_and_tall_bars_grow():
     spec = {"kind": "barh", "cats": cats}
     assert rc.is_tall(spec) and rc.chart_height(spec) > rc.CHART_H and rc.chart_height(spec) <= 60
     assert not rc.is_tall({"kind": "barh", "cats": cats[:8]}) and not rc.is_tall({"kind": "doughnut", "cats": cats})
+
+
+def test_panel_canvas_grows_with_every_category():
+    js = read("static/js/analytics-dashboard.js")
+    assert "Math.min(1600" not in js and "Math.min(1000" not in js                  # antes: tope fijo, las filas se encimaban con muchas empresas
+    assert "const MAX_CANVAS_PX = 30000;" in js and "devicePixelRatio: GWViz.fitDpr(plan.height)" in js
+
+
+def test_excel_chart_title_does_not_overlap_the_plot():
+    src = read("app/report_charts.py")
+    assert "ch.title.overlay = False" in src and "ManualLayout(" in src and "TITLE_CM" in src
