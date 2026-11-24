@@ -52,3 +52,27 @@ def test_banner_shows_connection_kind_and_warns_without_cable():
     import pathlib
     js = (pathlib.Path(__file__).resolve().parents[1] / "static/js/version-banner.js").read_text(encoding="utf-8")
     assert "Sin cable al router" in js and "a.details" in js and "gw-vb-more" in js
+
+
+def test_event_router_network_always_first_even_over_cable_or_wifi_with_internet(monkeypatch):
+    """24-nov-2026 (Juan David): la red de los routers del evento (192.168.1.x) SIEMPRE primero, aunque el otro Wi‑Fi (192.168.0.x) tenga internet o sea cable."""
+    monkeypatch.delenv("LOCAL_PREFERRED_SUBNET", raising=False)
+    rows = [R("192.168.0.33", "Ethernet 2", True, "USB GbE"), R("192.168.1.127", "Wi-Fi", True, "Intel Wireless")]
+    assert localmode.rank_adapters(rows) == ["192.168.1.127", "192.168.0.33"]
+    monkeypatch.setenv("LOCAL_PREFERRED_SUBNET", "10.0.0.")
+    assert localmode.rank_adapters(rows + [R("10.0.0.9", "Wi-Fi 3", True, "Realtek Wireless")])[0] == "10.0.0.9"
+
+
+def test_installer_orders_addresses_with_event_network_first():
+    import pathlib
+    ps = (pathlib.Path(__file__).resolve().parents[1] / "deploy/windows/config.ps1").read_text(encoding="utf-8")
+    body = ps.split("function Get-LanAddresses {")[1].split("\n}\n")[0]
+    assert "$pref = '192.168.1.'" in body and "LOCAL_PREFERRED_SUBNET" in body and "StartsWith($pref)" in body
+
+
+def test_local_server_does_not_create_events_or_clients():
+    assert localmode.is_creation_call("POST", "/api/events") and localmode.is_creation_call("POST", "/api/events/12/duplicate")
+    assert localmode.is_creation_call("POST", "/api/tenants") and localmode.is_creation_call("POST", "/api/crm/accounts")
+    assert localmode.is_creation_call("GET", "/eventos/nuevo") and localmode.is_creation_call("GET", "/clientes/acme/nuevo-evento")
+    assert not localmode.is_creation_call("POST", "/api/events/12/register") and not localmode.is_creation_call("PUT", "/api/tenants/acme")
+    assert not localmode.is_creation_call("GET", "/eventos") and not localmode.is_creation_call("POST", "/api/events/12/staff-users")
