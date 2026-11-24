@@ -9,10 +9,12 @@
      `isQr` = true solo cuando trae `|` (un ID suelto no se distingue de una cédula escrita a mano).
 
    QrScanner.open({ title, onCode(texto, formato), cooldownMs, formats, modes, onCedula })
-     `formats` (por defecto solo QR; el Registro pide también 'pdf417'). (19-nov-2026: se retiró «Foto del reverso (cédula nueva)»: no funcionó; la cédula nueva se lee en vivo con el modo 'new'.)
+     `formats` (por defecto solo QR; el Registro pide también 'pdf417'). (19-nov-2026: se retiró «Foto del reverso (cédula nueva)»: no funcionó; la cédula nueva se lee con el modo 'new' —desde el 24-nov-2026 con foto guiada, ver abajo—.)
      `modes` (opcional, p. ej. ['old','new','qr']; con UN solo modo, ['qr'], es la misma ventana nueva sin selector: Inventario, Almacén y Expositores): la ventana muestra un selector «Cédula vieja · Cédula nueva · QR» y se prepara para lo que se elija (el Registro lo usa). 'qr' = el comportamiento de siempre (onCode);
      'old' = código de barras PDF417 de la cédula vieja y 'new' = las 3 líneas de la cédula nueva: ambos con los lectores de static/js/cedula-readers.js (se cargan al elegirlos) y entregan `onCedula(datos, 'old'|'new')`
      con { cedula, nombre1, nombre2, apellido1, apellido2, nacimiento, … }. Sin `modes` todo funciona exactamente como antes.
+     24-nov-2026: la CÉDULA ya no se lee cuadro a cuadro en vivo (a veces tardaba o fallaba). Misma ventana y mismo recuadro guía, con el botón «Tomar foto»: se toma una foto en la mayor
+     resolución posible y esa foto se decodifica (static/js/cedula-foto.js, CedulaFoto.attach). El QR sigue EXACTAMENTE igual, en vivo.
      Abre la cámara del dispositivo (celular, tablet o computador) y lee QR en vivo. Usa BarcodeDetector si el
      navegador lo tiene (Chrome/Edge/Android) y, si no, jsQR (copia propia en /static/vendor/jsqr, se carga bajo demanda). Se queda abierto para
      escanear varias personas seguidas; ignora el mismo código durante `cooldownMs` (3 s por defecto). */
@@ -125,8 +127,22 @@
 
   // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
   const READERS_URL = '/static/js/cedula-readers.js?v=1';
+  const FOTO_URL = '/static/js/cedula-foto.js?v=1';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
   const MODE_KEY = 'gw_scan_mode';
-  let readersPromise = null;
+  let readersPromise = null, fotoPromise = null;
+  function loadFoto() {
+    if (window.CedulaFoto) return Promise.resolve(window.CedulaFoto);
+    if (!fotoPromise) {
+      fotoPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = FOTO_URL;
+        s.onload = () => resolve(window.CedulaFoto);
+        s.onerror = () => { fotoPromise = null; reject(new Error('No se pudo cargar el lector de cédulas (sin conexión).')); };
+        document.head.appendChild(s);
+      });
+    }
+    return fotoPromise;
+  }
   function loadReaders() {
     if (window.CedulaReaders) return Promise.resolve(window.CedulaReaders);
     if (window.CEDULA_VENDOR === undefined) window.CEDULA_VENDOR = '/static/vendor/cedula';        // copia propia de zxing/tesseract si se generó (scripts/vendor_cedula_readers.sh); si no, los lectores usan el CDN
@@ -149,7 +165,7 @@
     let m = null; try { m = localStorage.getItem(MODE_KEY); } catch (e) { /* sin almacenamiento */ }
     if ((m !== 'old' && m !== 'new') || warmPromise) return;
     const run = () => {
-      warmPromise = loadReaders().then((R) => (m === 'old' ? new R.CedulaScanner({}).init() : null)).catch(() => { warmPromise = null; });
+      warmPromise = Promise.all([loadReaders(), loadFoto()]).then(([R]) => (m === 'old' ? new R.CedulaScanner({}).init() : null)).catch(() => { warmPromise = null; });
     };
     const idle = window.requestIdleCallback ? (f) => window.requestIdleCallback(f, { timeout: 8000 }) : (f) => setTimeout(f, 1500);
     setTimeout(() => idle(run), 3000);
@@ -175,6 +191,7 @@
       <div class="gw-modal__body">
         ${modesHtml}
         ${videoHtml}
+        ${modes.some((m) => m !== 'qr') ? '<button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-cam__shoot" hidden>Tomar foto</button>' : ''}
         <p class="gw-cam__status qr-status" role="status" aria-live="polite">Apunta la cámara al código QR.</p>
       </div>
       <div class="gw-modal__foot">
@@ -189,13 +206,15 @@
     const canvas = box.querySelector('canvas');
     const status = box.querySelector('.qr-status');
     const overlayCv = box.querySelector('.gw-cam__overlay');
-    let stream = null, stopped = false, last = { text: '', at: 0 }, loopId = 0, epoch = 0, reader = null, mode = null, lastCed = { id: '', at: 0 };
+    const shootBtn = box.querySelector('.gw-cam__shoot');
+    let stream = null, stopped = false, last = { text: '', at: 0 }, loopId = 0, epoch = 0, reader = null, mode = null;
     const qrMsg = () => (opts.formats && opts.formats.includes('pdf417') ? 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.' : 'Apunta la cámara al código QR.');
     status.textContent = qrMsg();
 
     function stopQr() { loopId++; if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
     function stopReader() {
       if (reader) { try { reader.stop(); } catch (e) { /* ya detenido */ } reader = null; }
+      if (shootBtn) shootBtn.hidden = true;
       if (overlayCv) overlayCv.getContext('2d').clearRect(0, 0, overlayCv.width, overlayCv.height);
     }
     function close() {
@@ -260,40 +279,26 @@
       tick();
     }
 
-    /* ---- Cédula vieja / nueva (solo con `modes`): lectores de static/js/cedula-readers.js ---- */
+    /* ---- Cédula vieja / nueva (solo con `modes`): cámara con el recuadro guía y «Tomar foto» (static/js/cedula-foto.js); la foto se lee con static/js/cedula-readers.js ---- */
     function failStatus(msg) { status.classList.add('gw-cam__status--err'); status.textContent = msg; }
     function onCedulaRead(d, kind, my) {
       if (stopped || my !== epoch) return;
       status.classList.remove('gw-cam__status--err');
-      if (!(d.cedula === lastCed.id && Date.now() - lastCed.at < Math.max(cooldown, 4000))) {      // la misma cédula quieta frente a la cámara no se envía dos veces
-        lastCed = { id: d.cedula, at: Date.now() };
-        status.textContent = 'Cédula leída.';
-        try { if (opts.onCedula) opts.onCedula(d, kind); } catch (e) { console.error(e); }
-      }
-      setTimeout(() => { if (!stopped && my === epoch && reader) reader.resume(); }, 2500);          // sigue con la siguiente persona
+      status.textContent = 'Cédula leída.';                       // sin eco del contenido: es un dato personal
+      try { if (opts.onCedula) opts.onCedula(d, kind); } catch (e) { console.error(e); }
     }
     async function startCedula(kind, my) {
       status.classList.remove('gw-cam__status--err'); status.textContent = 'Cargando el lector…';
-      let R;
-      if (warmPromise) await warmPromise;                          // si la precarga va a mitad, se espera a ella (no se baja ni compila dos veces)
-      try { R = await loadReaders(); } catch (e) { if (my === epoch) failStatus(e.message); return; }
+      let F;
+      try { F = await loadFoto(); } catch (e) { if (my === epoch) failStatus(e.message); return; }
       if (stopped || my !== epoch) return;
-      const common = { onStatus: (m, k) => { if (!stopped && my === epoch) { status.textContent = m; status.classList.toggle('gw-cam__status--err', k === 'err'); } } };
-      try {
-        const rd = kind === 'old'
-          ? new R.CedulaScanner({ ...common, onResult: (d) => onCedulaRead(d, 'old', my),
-              onUnknown: () => { if (my !== epoch) return; status.textContent = 'Se leyó un código, pero no tiene el formato de la cédula.'; setTimeout(() => { if (!stopped && my === epoch && reader) reader.resume(); }, 1500); } })
-          : new R.MrzScanner({ ...common, onlyVerified: true, onResult: (d) => onCedulaRead(d, 'new', my) });          // acreditar a alguien exige lectura verificada con los dígitos de control
-        if (kind === 'old') await rd.init();
-        if (stopped || my !== epoch) return;
-        reader = rd;
-        await rd.startCamera(video, overlayCv);
-        if (stopped || my !== epoch) rd.stop();
-      } catch (e) {
-        if (my !== epoch) return;
-        failStatus(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).'
-          : e && e.name === 'NotFoundError' ? 'No se encontró ninguna cámara.' : 'No se pudo iniciar el lector: ' + ((e && e.message) || 'error desconocido'));
-      }
+      if (shootBtn) shootBtn.hidden = false;
+      reader = F.attach({
+        kind, video, overlay: overlayCv, button: shootBtn, eventId: opts.eventId != null ? opts.eventId : window.EVENT_ID,
+        readers: async () => { if (warmPromise) await warmPromise; return loadReaders(); },          // si la precarga va a mitad, se espera a ella (no se baja ni compila dos veces)
+        onStatus: (m, k) => { if (!stopped && my === epoch) { status.textContent = m; status.classList.toggle('gw-cam__status--err', k === 'err'); } },
+        onResult: (d) => onCedulaRead(d, kind, my),
+      });
     }
     async function setMode(m) {
       const my = ++epoch;
@@ -313,6 +318,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, warm, loadJsQr, JSQR_URL, READERS_URL }; }
+  if (typeof window !== 'undefined') { window.QrCode = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect }; window.QrScanner = { open, warm, loadJsQr, JSQR_URL, READERS_URL, FOTO_URL }; }
   if (typeof module !== 'undefined') module.exports = { parse, classify, parsePdf417Cedula, isDynamic, resolveDynamic, unwrap, collect };  // para las pruebas en Node
 })();

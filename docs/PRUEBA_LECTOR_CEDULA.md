@@ -45,3 +45,21 @@ El botón **Escanear** (junto a «Registrar nuevo» en `/kiosk/<evento>/registro
   una copia propia en `static/vendor/cedula/` que los lectores usan primero. **Ese script no se ha ejecutado** (el entorno de desarrollo no tiene red). Sin esa copia, el modo cédula necesita internet la primera vez en cada dispositivo;
   el modo QR sigue funcionando sin red como siempre.
 - **CSP:** la política «Report-Only» del panel ahora lista `cdn.jsdelivr.net`/`unpkg.com` (script/connect) y `'wasm-unsafe-eval'`; no bloquea nada.
+
+
+## Cédula por FOTO con guía (en vez de leer en vivo) — 24-nov-2026
+Pedido de Juan David: leer la cédula cuadro a cuadro a veces tardaba o fallaba. Ahora, en el modo **Cédula vieja** o **Cédula nueva** de la ventana «Escanear» (Registro, alta manual,
+Control de Áreas y Control de Inventario; todas usan `QrScanner.open` de `static/js/qr.js`), la cámara muestra el MISMO recuadro guía y un botón **«Tomar foto»**. **El QR no cambia: sigue en vivo.**
+
+- **Componente único:** `static/js/cedula-foto.js` (`CedulaFoto.attach`), lo carga `qr.js` bajo demanda (y el service worker del quiosco lo guarda, `QrScanner.FOTO_URL`).
+- **Foto:** `ImageCapture.takePhoto()` a la resolución máxima del sensor (Chrome/Edge en Android y computador); si no existe (iOS Safari, Firefox) o falla, el cuadro del video a resolución completa
+  (el video se pide a 4K → 1440p → 1080p → lo que dé la cámara). Mientras se procesa, la imagen queda congelada y sale «Procesando la foto…».
+- **Cédula vieja (PDF417):** recorte del recuadro (con margen) y, si no, la foto completa, con `CedulaScanner.scanImage` (plan «deep»: contraste, binarizado, enfoque, enderezado, giros, 180°, escalas).
+- **Cédula nueva (3 líneas):** recorte ajustado, recorte holgado y la foto completa (`MrzScanner`); cada recorte con 3 tamaños de letra y, si hace falta, girado 180°. La cédula sale siempre validada
+  por los dígitos de control; los nombres solo si dos lecturas coinciden o la confianza es alta (si no, se entrega la cédula sin nombres y el flujo sigue por cédula).
+  **Respaldo:** si el navegador no la lee (o no pudo cargar el OCR) y hay red, la foto reducida (≤ 2400 px) va a `POST /api/events/<id>/cedula-mrz-scan` (Tesseract del servidor, solo responde con dígitos de control en regla).
+  En modo sin conexión no se envía nada.
+- **Datos personales:** la foto no se guarda en el navegador ni en el servidor y no se escribe en registros; se descarta en memoria al terminar. La cámara se libera al cerrar la ventana o cambiar de modo.
+- **Falla:** «No se pudo leer la cédula: acérquela, evite reflejos y tome otra foto.» (la cámara sigue abierta para otra foto).
+- **Pruebas:** `node tests/js/cedula_foto_check.js` (lógica pura) y `tests/test_cedula_camara_busqueda.py`. La lectura real se valida con cédulas físicas en el celular y el computador.
+- La página de prueba `/pruebas/lector-cedula` y `cedula-readers.js` NO cambiaron (su huella sigue igual).
