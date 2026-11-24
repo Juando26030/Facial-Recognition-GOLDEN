@@ -42,7 +42,7 @@ const base = Date.parse('2026-11-04T15:00:00Z');
 const iso = (minAgo) => new Date(base - minAgo * 60000).toISOString().replace('.000Z', 'Z');
 let users = [];
 let delta = [];
-for (let i = 0; i < 30; i++) users.push({ id: 'P' + String(i).padStart(2, '0'), first_name: 'Persona' + i, last_name: 'X', entity: 'E', status: 'No registrado', recent_at: null });
+for (let i = 0; i < 30; i++) users.push({ id: 'P' + String(i).padStart(2, '0'), first_name: 'Persona' + i, last_name: 'X', entity: 'E', status: 'Registrado', recent_at: null });
 // 25 con recent_at distintos (en desorden); P25..P29 sin acción
 const order = [...Array(25).keys()].sort((a, b) => ((a * 7) % 25) - ((b * 7) % 25));
 order.forEach((idx, k) => { users[idx].recent_at = iso(k * 2); });         // k=0 la más nueva; k*2 min hacia atrás
@@ -80,6 +80,10 @@ const sortedServed = order.map((idx) => 'P' + String(idx).padStart(2, '0'));    
   const tagOf = (i) => slot(rows()[i], 'recent').children.find((c) => c.className.includes('gw-recent-tag'));
   assert.strictEqual(tagOf(0).textContent, 'Recién creado'); assert.ok(tagOf(0).className.includes('gw-recent-tag--new'), 'la píldora de «Recién creado» es la azul');
   assert.strictEqual(tagOf(1).textContent, 'Recién registrado'); assert.ok(!tagOf(1).className.includes('gw-recent-tag--new'), 'la de «Recién registrado» sigue verde');
+  // 24-nov-2026: «Guardar sin registrar» deja a la persona No registrada → «Recién editado», nunca «Recién registrado»
+  users.find((u) => u.id === rows()[1].dataset.userId).status = 'No registrado';
+  await d.reload();
+  assert.strictEqual(tagOf(1).textContent, 'Recién editado');
 
   // con consulta: manda SearchCore, no la recencia
   type(els.cedula, 'persona');
