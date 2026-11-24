@@ -180,6 +180,79 @@ def digitador(browser, base_url):
     ctx.close()
 
 
+# Columnas de siempre de «Nuevo evento» (van en el nivel superior); cualquier otra clave de la plantilla es un campo personalizado y va en `extra`.
+_BASE_TOP = {"event_code", "name", "location", "address", "country", "city", "start_date", "end_date", "setup_date", "event_time_start", "event_time_end",
+             "setup_time_start", "setup_time_end", "coordinator_staff_id", "commercial_staff_id", "super_event_id", "event_type_id", "notes"}
+_HORAS = {"event_time_start": "09:00", "event_time_end": "18:00", "setup_time_start": "06:00", "setup_time_end": "08:00"}
+
+
+def _campos_obligatorios(req, hoy: str) -> dict:
+    """Lo que la PLANTILLA de staging exige para crear un evento (país, ciudad, horas, coordinador, comercial, categoría, campos personalizados…), con valores
+    sintéticos según el tipo de cada campo. Si la plantilla cambia, la prueba se adapta sola. Lo que no se puede inventar (p. ej. un superevento obligatorio) se omite
+    y el servidor dirá qué falta (la prueba se salta con ese motivo)."""
+    r = req.get("/api/event-template")
+    if not r.ok:
+        return {}
+    tpl = como_json(r)
+    personas = tpl.get("people") or {}
+    en_vista = {k for sec in (tpl.get("creation_layout") or {}).get("sections", []) for k in sec.get("keys", [])}
+    tipos = []
+    if any(f.get("type") == "event_type" and f.get("required") and f["key"] in en_vista for f in tpl.get("fields", [])):
+        rt = req.get("/api/event-types")
+        datos = como_json(rt)
+        tipos = datos.get("items", datos.get("types", [])) if isinstance(datos, dict) else datos
+    top, extra = {}, {}
+    for f in tpl.get("fields", []):
+        k, t = f["key"], f.get("type")
+        if f.get("retired") or not f.get("required") or k not in en_vista or t in ("switch", "workday", "client"):
+            continue
+        if k in ("name", "event_code", "start_date", "end_date", "setup_date"):
+            continue
+        valor = None
+        if t == "country":
+            valor = "Colombia"
+        elif t == "city":
+            valor = "Bogotá"
+        elif t in ("text_short", "text_long"):
+            valor = "Prueba E2E"
+        elif t == "select":
+            valor = (f.get("options") or [None])[0]
+        elif t in ("money", "number"):
+            valor = 1
+        elif t == "time":
+            valor = _HORAS.get(k, "09:00")
+        elif t == "date":
+            valor = hoy
+        elif t == "datetime":
+            valor = f"{hoy}T09:00"
+        elif t == "coordinator":
+            valor = (personas.get("coordinator") or [{}])[0].get("id")
+        elif t == "commercial":
+            valor = (personas.get("commercial") or [{}])[0].get("id")
+        elif t == "event_type":
+            valor = (tipos or [{}])[0].get("id")
+        elif t == "address_map":
+            valor = {"text": "Calle 1 # 2-3", "lat": None, "lng": None}
+        elif t == "contact":
+            valor = {"name": "Prueba E2E", "phone": "3001234567"}
+        elif t == "bandana_colors":
+            valor = [{"name": "Rojo", "hex": "#c0392b"}]
+        if valor is None:
+            continue
+        if k == "address" and isinstance(valor, dict):
+            valor = valor["text"]
+        if k in _BASE_TOP:
+            top[k] = valor
+        elif k == "bandana":
+            top["bandana_color"], top["bandana_color_name"] = valor[0]["hex"], valor[0]["name"]
+        else:
+            extra[k] = valor
+    if extra:
+        top["extra"] = extra
+    return top
+
+
+
 @pytest.fixture
 def evento(admin):
     """Evento sintético «E2E-<fecha>-<sufijo>» (trae la persona PRUEBA). Al terminar lo finaliza, archiva y, si la cuenta es super_admin, lo borra."""
@@ -194,7 +267,9 @@ def evento(admin):
         tenant = str(lista[0].get("id"))
     nombre = f"E2E-{datetime.date.today().isoformat()}-{uuid.uuid4().hex[:6]}"
     hoy = datetime.date.today().isoformat()
-    r = post_json(req, "/api/events", {"tenant_id": tenant, "name": nombre, "start_date": hoy, "end_date": hoy, "setup_date": hoy})
+    cuerpo = {"tenant_id": tenant, "name": nombre, "start_date": hoy, "end_date": hoy, "setup_date": hoy}
+    cuerpo.update(_campos_obligatorios(req, hoy))
+    r = post_json(req, "/api/events", cuerpo)
     if not r.ok:
         pytest.skip(f"No se pudo crear el evento sintético ({r.status}). La plantilla de eventos de staging quizá pide más campos: {r.text()[:200]}")
     ev = como_json(r)
