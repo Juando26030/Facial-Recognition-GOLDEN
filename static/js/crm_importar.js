@@ -66,7 +66,7 @@
     fd.append("mode", mode);
     if (mode === "apply") {
       if (!lastDry) { say("Primero termina una prueba completa con estos mismos archivos."); return; }
-      const word = await showPrompt("Para cargar de verdad escribe CARGAR.", { title: "Confirmar la carga", confirmLabel: "Cargar" });
+      const word = await showPrompt("Para cargar de verdad escribe CARGAR.", { title: "Confirmar la carga", confirmLabel: "Cargar", validate: (v) => (v.toUpperCase() === "CARGAR" ? "" : "Hay que escribir CARGAR.") });
       if (word == null) return; fd.append("confirm", word); fd.append("dry_run_id", String(lastDry));
     }
     say("Enviando…");
@@ -97,7 +97,7 @@
       else if (t.dataset.act === "pairs") await pairs(t.dataset.run, root.querySelector('[data-pairs="' + t.dataset.run + '"]'));
       else if (t.dataset.act === "decide") { await api("POST", "/api/crm/import/runs/" + t.dataset.run + "/pairs/decide", { pair_ids: [Number(t.dataset.pair)], decision: t.dataset.dec }); await pairs(t.dataset.run, t.closest("[data-pairs]")); }
       else if (t.dataset.act === "applypairs") {
-        const word = await showPrompt("Para aplicar las parejas aprobadas escribe CARGAR.", { title: "Confirmar", confirmLabel: "Aplicar" }); if (word == null) return;
+        const word = await showPrompt("Para aplicar las parejas aprobadas escribe CARGAR.", { title: "Confirmar", confirmLabel: "Aplicar", validate: (v) => (v.toUpperCase() === "CARGAR" ? "" : "Hay que escribir CARGAR.") }); if (word == null) return;
         const fd = new FormData(); fd.append("confirm", word);
         const r = await fetch("/api/crm/import/runs/" + t.dataset.run + "/pairs/apply", { method: "POST", body: fd }), d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.detail || "No se pudo aplicar.");

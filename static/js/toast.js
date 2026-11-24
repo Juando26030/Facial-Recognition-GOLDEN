@@ -153,7 +153,9 @@
      usaba prompt() para "Guardar como plantilla" y el navegador lo rechazaba — "prompt() is not
      supported" — rompiendo la convención del proyecto de no usar diálogos nativos). Mismo patrón
      visual que showConfirm, pero con un campo de texto. Devuelve una Promise<string|null> (null
-     si cancela o si el campo queda vacío). opts: { defaultValue, placeholder, confirmLabel }. */
+     si cancela o si el campo queda vacío). opts: { defaultValue, placeholder, confirmLabel, validate }.
+     `validate(texto)` (23-nov-2026): para las confirmaciones de «escribe la palabra»; si devuelve un texto (el motivo), el cuadro NO se cierra: muestra ese aviso rojo ahí mismo y deja
+     reintentar. Antes se cerraba en silencio y parecía que la acción se había hecho. Vacío cuenta como error cuando hay validate. */
   window.showPrompt = function (message, opts) {
     opts = opts || {};
     return new Promise((resolve) => {
@@ -162,7 +164,8 @@
       d = openDialog({
         title: opts.title || "Escribe un dato",
         bodyHtml: '<div class="gw-field"><label class="gw-label" for="toastPromptInput">' + message + '</label>' +
-                  '<input id="toastPromptInput" class="gw-input" type="text"></div>',
+                  '<input id="toastPromptInput" class="gw-input" type="text">' +
+                  '<div id="toastPromptErr" class="gw-alert gw-alert--err" role="alert" style="display:none;margin-top:8px"></div></div>',
         buttons: [
           { id: "toastPromptCancel", cls: "gw-btn--secondary", label: "Cancelar" },
           { id: "toastPromptOk", cls: "gw-btn--primary", label: opts.confirmLabel || "Guardar" },
@@ -172,7 +175,17 @@
       const input = d.dlg.querySelector("#toastPromptInput");
       input.value = opts.defaultValue || "";
       input.placeholder = opts.placeholder || "";
-      const ok = () => done(input.value.trim() || null);
+      const errBox = d.dlg.querySelector("#toastPromptErr");
+      const showErr = (t) => { errBox.textContent = t; errBox.style.display = t ? "" : "none"; };
+      const ok = () => {
+        const v = input.value.trim();
+        if (typeof opts.validate === "function") {
+          const problem = opts.validate(v);
+          if (problem) { showErr(problem); input.focus(); input.select(); return; }
+        }
+        done(v || null);
+      };
+      input.addEventListener("input", () => showErr(""));
       d.dlg.querySelector("#toastPromptCancel").addEventListener("click", () => done(null));
       d.dlg.querySelector("#toastPromptOk").addEventListener("click", ok);
       input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ok(); } });

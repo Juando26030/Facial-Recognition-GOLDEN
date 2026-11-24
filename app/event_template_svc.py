@@ -9,7 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import event_template as et
+from app import coordination, event_template as et
 from app.models import EventFieldConfig, EventTemplate, EventTemplateRevision, StaffUser
 from app.timeutil import utcnow
 
@@ -46,14 +46,16 @@ def load(db: Session, scope: str = et.SCOPE_GLOBAL) -> dict:
 
 def people(db: Session) -> dict:
     """Personal activo que se puede elegir en los campos «Comercial» y «Coordinador» (solo id y nombre): sirve a quien crea el evento y al calendario para escribir el nombre de un id.
-    Es lo mismo que ya se ve en cada evento (nombre del coordinador y de la comercial)."""
+    Es lo mismo que ya se ve en cada evento (nombre del coordinador y de la comercial).
+    Coordinador (23-nov-2026): la MISMA lista que valida el servidor al guardar (`coordination.coordinator_candidates`: sin archivados y SIN coordinadores temporales, que viven en
+    «Usuarios del evento» y no se asignan a un evento al crearlo). Antes el desplegable los ofrecía y el servidor los rechazaba con «El coordinador asignado no es válido»."""
     out = {}
-    for role in ("commercial", "coordinator"):
-        db_role = "comercial" if role == "commercial" else "coordinador"
-        rows = (db.query(StaffUser.id, StaffUser.full_name, StaffUser.username)
-                .filter(StaffUser.is_active == True, or_(StaffUser.role == db_role, StaffUser.secondary_role == db_role))      # noqa: E712
-                .order_by(StaffUser.full_name, StaffUser.username).limit(500).all())
-        out[role] = [{"id": r[0], "name": r[1] or r[2]} for r in rows]
+    rows = (db.query(StaffUser.id, StaffUser.full_name, StaffUser.username)
+            .filter(StaffUser.is_active == True, StaffUser.event_only.is_(False), StaffUser.archived_at.is_(None),      # noqa: E712
+                    or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"))
+            .order_by(StaffUser.full_name, StaffUser.username).limit(500).all())
+    out["commercial"] = [{"id": r[0], "name": r[1] or r[2]} for r in rows]
+    out["coordinator"] = [{"id": s.id, "name": s.full_name or s.username} for s in coordination.coordinator_candidates(db)]
     return out
 
 

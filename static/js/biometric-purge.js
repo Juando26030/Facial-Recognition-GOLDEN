@@ -9,7 +9,7 @@
       `<b>Borrar fotos del evento</b><br><br>Se borrarán <b>de forma definitiva</b> las <b>fotos y los vectores del rostro</b> de las personas de este evento (${info.with_biometrics} con rostro guardado).<br>` +
       `<b>No</b> se borra nada más: nombres, cédulas, registros de ingreso y formularios se conservan. Quien también esté en otro evento abierto con reconocimiento facial se omite.<br><br>` +
       `Para confirmar escribe el nombre del evento:<br><b>${esc(info.event_name)}</b>`,
-      { placeholder: 'Nombre del evento', confirmLabel: 'Borrar fotos' });
+      { placeholder: 'Nombre del evento', confirmLabel: 'Borrar fotos', validate: (v) => (String(v).trim().toLowerCase() === String(info.event_name).trim().toLowerCase() ? '' : 'El nombre no coincide: no se borró nada. Escríbelo igual o cancela.') });
     if (typed === null) return null;
     const r = await fetch(`${base}/biometrics/purge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm_name: typed }) });
     const data = await r.json().catch(() => ({}));

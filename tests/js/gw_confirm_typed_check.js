@@ -15,7 +15,11 @@ assert.strictEqual(G.fill('a {id}', {}), 'a {id}');
   answer = null; assert.strictEqual(await G.typed('x', 'ELIMINAR'), false); assert.strictEqual(toasts.length, 0);          // cancelar: no hace nada ni regaña
   answer = 'borrar'; assert.strictEqual(await G.typed('x', 'ELIMINAR'), false); assert.ok(/hay que escribir ELIMINAR/.test(toasts[0][0]) && toasts[0][1] === 'error');
   answer = 'eliminar'; assert.strictEqual(await G.typed('x', 'ELIMINAR', { title: 'T', confirmLabel: 'L' }), true);
-  assert.deepStrictEqual(prompts[2].opts, { title: 'T', placeholder: 'ELIMINAR', confirmLabel: 'L' });
+  const o2 = prompts[2].opts;
+  assert.deepStrictEqual({ title: o2.title, placeholder: o2.placeholder, confirmLabel: o2.confirmLabel }, { title: 'T', placeholder: 'ELIMINAR', confirmLabel: 'L' });
+  // 23-nov-2026: el cuadro valida ahí mismo (no se cierra en silencio): palabra mal o vacía → aviso; bien → vacío
+  assert.ok(o2.validate('eliminar ya').includes('ELIMINAR') && o2.validate('').includes('ELIMINAR'));
+  assert.strictEqual(o2.validate('  eliminar '), '');
   answer = 'reabrir'; assert.strictEqual(await G.reopenEvent('En Proceso'), true);
   const re = prompts[prompts.length - 1].html; assert.ok(/7 días/.test(re) && /empieza de cero/.test(re) && /no vuelven/.test(re) && /REABRIR/.test(re));
   // cuenta que cobra

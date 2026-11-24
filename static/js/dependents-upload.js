@@ -58,7 +58,7 @@
   });
 
   if ($('depWipe')) $('depWipe').addEventListener('click', async () => {
-    const typed = await showPrompt('Se borrará la base de dependientes de este evento (lo ya entregado se conserva). No se puede deshacer. Para confirmar escribe BORRAR.', { title: 'Borrar la base de dependientes', confirmLabel: 'Borrar', placeholder: 'BORRAR' });
+    const typed = await showPrompt('Se borrará la base de dependientes de este evento (lo ya entregado se conserva). No se puede deshacer. Para confirmar escribe BORRAR.', { title: 'Borrar la base de dependientes', confirmLabel: 'Borrar', placeholder: 'BORRAR', validate: (v) => (String(v).trim().toUpperCase() === 'BORRAR' ? '' : 'No se borró nada: hay que escribir BORRAR.') });
     if (typed == null) return;
     if (String(typed).trim().toUpperCase() !== 'BORRAR') { showToast('No se borró nada: hay que escribir BORRAR.', 'error'); return; }
     try {

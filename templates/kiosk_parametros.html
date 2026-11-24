@@ -1254,7 +1254,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             `• Formularios que lo usan: ${u.forms.length ? esc(u.forms.join(', ')) : 'ninguno'} (la pregunta deja de alimentar la base).`,
             'Desaparece de formularios, edición, directorio, reporte y escarapela. No se puede deshacer.',
             `Escribe <b>${esc(u.label)}</b> para confirmar:`];
-        const typed = await showPrompt(lines.join('<br>'), { confirmLabel: 'Borrar campo', placeholder: u.label });
+        const typed = await showPrompt(lines.join('<br>'), { confirmLabel: 'Borrar campo', placeholder: u.label, validate: (v) => (String(v).trim().toLowerCase() === String(u.label).trim().toLowerCase() ? '' : 'El nombre no coincide: no se borró nada. Escríbelo igual o cancela.') });
         if (typed === null || typed === undefined) return;
         if (String(typed).trim().toLowerCase() !== String(u.label).trim().toLowerCase()) { showToast('El nombre no coincide: no se borró nada.', 'error'); return; }
         const res = await fetch(base, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: typed }) });

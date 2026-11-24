@@ -307,7 +307,7 @@ useSourceEvent.addEventListener("change", async () => {
     }
     btn.addEventListener("click", async () => {
         const n = btn.dataset.n || "0";
-        const typed = await showPrompt(`Se borrarán ${n} persona(s) de este evento. No se puede deshacer. Para confirmar escribe BORRAR.`, { title: "Borrar la base cargada", confirmLabel: "Borrar", placeholder: "BORRAR" });
+        const typed = await showPrompt(`Se borrarán ${n} persona(s) de este evento. No se puede deshacer. Para confirmar escribe BORRAR.`, { title: "Borrar la base cargada", confirmLabel: "Borrar", placeholder: "BORRAR", validate: (v) => (String(v).trim().toUpperCase() === "BORRAR" ? "" : "No se borró nada: hay que escribir BORRAR.") });
         if (typed == null) return;
         if (String(typed).trim().toUpperCase() !== "BORRAR") { showToast("No se borró nada: hay que escribir BORRAR.", "error"); return; }
         btn.disabled = true;

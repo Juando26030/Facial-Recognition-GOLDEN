@@ -25,7 +25,8 @@
   function typed(html, word, opts) {
     opts = opts || {};
     if (typeof root.showPrompt !== 'function') return Promise.resolve(false);
-    var pending = root.showPrompt(html, { title: opts.title || 'Confirma escribiendo', placeholder: word, confirmLabel: opts.confirmLabel || 'Confirmar' });
+    var pending = root.showPrompt(html, { title: opts.title || 'Confirma escribiendo', placeholder: word, confirmLabel: opts.confirmLabel || 'Confirmar',
+      validate: function (v) { return matches(v, word) ? '' : 'No se hizo nada: hay que escribir ' + word + ' tal cual. Corrígelo o cancela.'; } });
     // showPrompt arma el cuadro en el acto: el botón de confirmar de una acción que no se deshace va en ROJO (regla de oro 3), no en dorado.
     var okBtn = typeof document !== 'undefined' && document.getElementById ? document.getElementById('toastPromptOk') : null;
     if (okBtn && okBtn.classList) { okBtn.classList.remove('gw-btn--primary'); okBtn.classList.add('gw-btn--danger'); }
