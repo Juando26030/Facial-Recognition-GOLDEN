@@ -78,18 +78,22 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const altLink = document.getElementById('bioAltLink');
         if (altLink) altLink.addEventListener('click', goCedula);
-        const cameraOn = () => { if (window.FACIAL_ANNEX_BLOCK) { identMsg.textContent = 'Cámara bloqueada: falta el anexo firmado del cliente (Parámetros › Reconocimiento facial).'; return; } setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); startCamera(); };
-        const cameraOff = () => { stopCamera(); setOff(cameraBox, true); if (scanBtn) scanBtn.disabled = true; setOff(ident, false); identInput.value = ''; clickToken = ''; };
+        let clickMode = false;          // evento con «Acepto» sin cédula: en vez de pedir la cédula se muestra «Continuar»; la pantalla de autorización solo sale cuando llega una persona
+        const nextBox = document.getElementById('bioNext'), nextBtn = document.getElementById('bioNextBtn'), nextMsg = document.getElementById('bioNextMsg');
+        const say = (t) => { identMsg.textContent = t; if (nextMsg) nextMsg.textContent = t; };
+        const showEntry = () => { setOff(ident, clickMode); setOff(nextBox, !clickMode); };
+        const cameraOn = () => { if (window.FACIAL_ANNEX_BLOCK) { say('Cámara bloqueada: falta el anexo firmado del cliente (Parámetros › Reconocimiento facial).'); return; } setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); setOff(nextBox, true); startCamera(); };
+        const cameraOff = () => { stopCamera(); setOff(cameraBox, true); if (scanBtn) scanBtn.disabled = true; showEntry(); identInput.value = ''; clickToken = ''; };
         afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
-        resetGate = () => { cameraOff(); setTimeout(startClickScreen, 0); };
+        resetGate = () => { cameraOff(); };          // el siguiente turno empieza con «Continuar», no con la pantalla de autorización
         async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
             if (!gate || !eventOpen) return;
-            if (window.FACIAL_ANNEX_BLOCK) { identMsg.textContent = 'Cámara bloqueada: falta el anexo firmado del cliente. Ingresa por cédula o QR.'; return; }
+            if (window.FACIAL_ANNEX_BLOCK) { say('Cámara bloqueada: falta el anexo firmado del cliente. Ingresa por cédula o QR.'); return; }
             const block = await gate.loadBlock();
             if (!block || !block.click_mode) return;
-            identMsg.textContent = '';
+            say('');
             const token = await gate.clickFlow();
-            if (token) { clickToken = token; clickAt = Date.now(); clickRetries = 0; cameraOn(); } else { identMsg.textContent = 'Sin reconocimiento facial: ingresa por cédula o QR.'; }
+            if (token) { clickToken = token; clickAt = Date.now(); clickRetries = 0; cameraOn(); } else { say('Sin reconocimiento facial: ingresa por cédula o QR.'); }
         }
         async function identify() {                              // camino 1
             const cedula = (identInput.value || '').trim();
@@ -116,8 +120,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (identInput) { identInput.value = String(cedula || ''); identify(); }
         } };
         if (identInput) identInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); identify(); } });
+        if (nextBtn) nextBtn.addEventListener('click', () => { startClickScreen(); });
         cameraOff();
-        startClickScreen();
+        (async () => {                                           // ¿este evento usa «Acepto» sin cédula? Entonces se muestra «Continuar» en lugar de la cédula
+            if (!gate || !eventOpen || window.FACIAL_ANNEX_BLOCK) return;
+            const block = await gate.loadBlock();
+            clickMode = !!(block && block.click_mode); showEntry();
+        })();
     }
 
     const escanearBtn = document.getElementById('escanearBtn');
@@ -253,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
         scanEls.cands.replaceChildren();
         setOff(scanEls.more, !data.has_candidates);
         setOff(scanEls.open, data.result === 'SÍ');
-        scanEls.accredit.disabled = false; scanEls.accredit.dataset.uid = data.result === 'MATCH_PENDING' && data.data ? String(data.data.id) : '';
+        scanEls.accredit.disabled = false; scanEls.accredit.dataset.uid = data.result === 'MATCH_PENDING' && data.data ? String(data.data.id) : ''; scanEls.accredit.dataset.verify = data.verify_pending ? '1' : '';
         setOff(scanEls.accredit, data.result !== 'MATCH_PENDING');          // 23-nov: la foto de registro y la captura van lado a lado y aquí mismo se acredita (sin abrir «Editar»)
         if (doubtful) {
             renderCandidates(data.candidates);
@@ -281,6 +290,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const uid = scanEls.accredit.dataset.uid; if (!uid) return;
             scanEls.accredit.disabled = true;
             try {
+                if (scanEls.accredit.dataset.verify === '1') {          // aceptó desde el celular: el personal confirma su identidad con el documento físico o el QR antes de acreditar
+                    const okId = await showConfirm('Esta persona aceptó el reconocimiento facial desde su celular. Confirma su identidad con el documento físico o el QR: ¿coincide con quien está en la puerta?');
+                    const vr = okId ? await fetch(`/api/events/${EVENT_ID}/web-acceptance/${encodeURIComponent(uid)}/verify`, { method: 'POST' }) : null;
+                    if (!vr || !vr.ok) { setResult(okId ? 'No se pudo verificar: acredítala por cédula o QR' : 'Sin verificar: no se acreditó', 'warn'); scanEls.accredit.disabled = false; return; }
+                    scanEls.accredit.dataset.verify = '';
+                }
                 const res = await fetch(`/api/events/${EVENT_ID}/users/${encodeURIComponent(uid)}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: 'biometrico' }) });
                 const out = await res.json().catch(() => ({}));
                 if (res.ok) {

@@ -111,3 +111,16 @@ def test_reintento_sin_volver_a_aceptar_diagnostico_y_copiar_enlace():
 
 def test_parametros_importa_response_para_descargar_el_anexo():
     assert "from fastapi.responses import FileResponse, Response" in (R / "app/routers/parametros.py").read_text(encoding="utf-8")
+
+
+def test_cada_quien_acepta_incluye_pendientes_de_verificar_pero_nunca_los_acredita_solo_y_continuar():
+    c = (R / "app/consent.py").read_text(encoding="utf-8")
+    assert "include_unverified" in c.split("def accepted_user_ids")[1][:400] and "_ACCEPTED_ANY_SQL" in c
+    f = (R / "app/faces.py").read_text(encoding="utf-8")
+    assert "key = (event.id, bool(ungated), bool(include_unverified))" in f and "def index_size(db: Session, event: Event, ungated: bool = False, include_unverified: bool = False)" in f
+    a = (R / "app/routers/api.py").read_text(encoding="utf-8")
+    assert "include_unverified=bool(click) and bool(event.each_accepts)" in a
+    assert "needs_verify = bool(event.each_accepts) and consent_mod.web_pending(" in a and "or needs_verify:" in a and '"verify_pending": True' in a          # la verificación del documento es obligatoria
+    j = (R / "static/js/app.js").read_text(encoding="utf-8")
+    assert "dataset.verify === '1'" in j and "/web-acceptance/" in j and "resetGate = () => { cameraOff(); };" in j and "bioNextBtn" in j
+    assert 'id="bioNextBtn"' in (R / "templates/kiosk_registro.html").read_text(encoding="utf-8")

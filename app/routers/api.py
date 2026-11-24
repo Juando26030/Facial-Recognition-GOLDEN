@@ -740,7 +740,7 @@ def recognize(
             raise HTTPException(status_code=422, detail="Falta la foto")
         click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and biometric_setup.click_mode(event)) else None      # camino 2: UN clic válido de este quiosco
         try:
-            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click) and bool(event.precalculo_autorizado))
+            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click) and bool(event.precalculo_autorizado), include_unverified=bool(click) and bool(event.each_accepts))
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -748,7 +748,7 @@ def recognize(
         if status == "NO_FACE":
             return {"result": "NO", "reason": "no_face", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE, "compared": faces.index_size(db, event, bool(click) and bool(event.precalculo_autorizado))}
+            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE, "compared": faces.index_size(db, event, bool(click) and bool(event.precalculo_autorizado), bool(click) and bool(event.each_accepts))}
         user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
             return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE}
@@ -772,8 +772,9 @@ def recognize(
         "role": user.role, "entity": user.entity, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
-    if not event.auto_register and not confirm:
-        return _private_json({"result": "MATCH_PENDING", "data": data, **extra})
+    needs_verify = bool(event.each_accepts) and consent_mod.web_pending(db, event.tenant_id, user.id, event.id)          # aceptó desde el celular y falta confirmar su documento: NUNCA se acredita sola
+    if (not event.auto_register and not confirm) or needs_verify:
+        return _private_json({"result": "MATCH_PENDING", "data": data, **({"verify_pending": True} if needs_verify else {}), **extra})
     missing = person_missing_required(db, event, user)
     if missing:                                         # A3: reconocida, pero no se acredita hasta completar el obligatorio
         return _private_json({"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing), **extra})
