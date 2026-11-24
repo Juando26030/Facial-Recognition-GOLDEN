@@ -107,3 +107,7 @@ def test_reintento_sin_volver_a_aceptar_diagnostico_y_copiar_enlace():
     assert '"compared": faces.index_size(' in a and "def index_size" in (R / "app/faces.py").read_text(encoding="utf-8")
     t = (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
     assert 'id="aceptarCopy"' in t and "window.copyText(aceptarUrl)" in t
+
+
+def test_parametros_importa_response_para_descargar_el_anexo():
+    assert "from fastapi.responses import FileResponse, Response" in (R / "app/routers/parametros.py").read_text(encoding="utf-8")
