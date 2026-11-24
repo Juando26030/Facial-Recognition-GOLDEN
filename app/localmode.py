@@ -33,6 +33,18 @@ def is_catalog_write(method: str, path: str) -> bool:
     return method.upper() in ("POST", "PUT", "PATCH", "DELETE") and bool(CATALOG_WRITE_RE.match(path))
 
 
+LOCAL_NO_CREATE_MSG = "En el servidor local no se crean eventos ni clientes: se crean en la nube y se bajan desde «Servidor local» › «Descargar a local»."
+LOCAL_NO_CREATE_PAGES = ("/eventos/nuevo", "/crm/cuentas/nueva")
+
+
+def is_creation_call(method: str, path: str) -> bool:
+    """¿Crea un evento (nuevo o duplicado), un cliente o una cuenta del CRM? En un servidor local no (24-nov-2026, Juan David): todo eso baja de la nube."""
+    import re
+    if method.upper() == "GET":
+        return path in LOCAL_NO_CREATE_PAGES or bool(re.match(r"^/clientes/[^/]+/nuevo-evento/?$", path))
+    return method.upper() == "POST" and bool(re.match(r"^/api/(events|events/\d+/duplicate|tenants|crm/accounts)/?$", path))
+
+
 LOCAL_NO_FACE_MSG = "El reconocimiento facial no está disponible en el servidor local: aquí se registra por cédula, QR o búsqueda."
 LOCAL_NO_MODULE_PAGES = ("/inventario", "/cuentas-de-cobro", "/gastos")          # solo existen en internet; el inventario del EVENTO (lo alistado) se consulta desde el quiosco del evento
 
@@ -60,6 +72,11 @@ _ADAPTERS_PS = ("Get-NetIPConfiguration | ForEach-Object { $g = if ($_.IPv4Defau
 _adapters_cache: dict = {"at": 0.0, "rows": None}
 
 
+def preferred_subnet() -> str:
+    """Red de los routers del evento (24-nov-2026, decisión de Juan David): sus direcciones van SIEMPRE primero, aunque el equipo también esté en otro Wi‑Fi (p. ej. 192.168.0.x de la casa)."""
+    return (os.getenv("LOCAL_PREFERRED_SUBNET") or "192.168.1.").strip()
+
+
 def rank_adapter_details(rows: list) -> list:
     """FUNCIÓN PURA. Igual que `rank_adapters`, pero cada dirección con su tipo de conexión: [{ip, kind: "cable"|"wifi"|"otro"}] (24-nov-2026: la pantalla dice por dónde va la dirección y
     avisa cuando solo hay Wi‑Fi, porque ese Wi‑Fi suele ser el de la casa/el lugar y no el router del evento)."""
@@ -75,6 +92,7 @@ def rank_adapters(rows: list) -> list:
     Devuelve las IP en el orden en que se deben mostrar: primero las del adaptador real que tiene salida (puerta de enlace), cable antes que Wi‑Fi; los adaptadores virtuales (Hyper‑V, WSL, VirtualBox, VMware, VPN…) solo
     se incluyen si no hay ninguno real."""
     import ipaddress
+    pref = preferred_subnet()
     good = []
     for r in rows:
         try:
@@ -84,11 +102,11 @@ def rank_adapters(rows: list) -> list:
         if a.version != 4 or a.is_loopback or a.is_link_local or a.is_unspecified or a.is_multicast:
             continue
         name = f'{r.get("alias", "")} {r.get("desc", "")}'
-        good.append((bool(_VIRTUAL_ADAPTER.search(name)), not r.get("gateway"), bool(_WIFI_ADAPTER.search(name)), r["ip"]))
+        good.append((bool(_VIRTUAL_ADAPTER.search(name)), not r["ip"].startswith(pref), not r.get("gateway"), bool(_WIFI_ADAPTER.search(name)), r["ip"]))
     real = [g for g in good if not g[0]]
     chosen = real or good
     out = []
-    for _, _, _, ip in sorted(chosen, key=lambda g: (g[0], g[1], g[2])):          # real primero, con salida primero, cable primero (orden estable)
+    for *_, ip in sorted(chosen, key=lambda g: (g[0], g[1], g[2], g[3])):          # real primero, la red del evento (192.168.1.x) primero, con salida primero, cable primero (orden estable)
         if ip not in out:
             out.append(ip)
     return out
@@ -158,7 +176,7 @@ def lan_addresses() -> list:
             add(info[4][0])
     except OSError:
         pass
-    found.sort(key=lambda i: not ipaddress.ip_address(i).is_private)          # las privadas primero
+    found.sort(key=lambda i: (not i.startswith(preferred_subnet()), not ipaddress.ip_address(i).is_private))          # la red del evento primero, luego las privadas
     return found
 
 

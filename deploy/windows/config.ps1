@@ -84,9 +84,14 @@ function Write-UpdateStatus([string]$State, [string]$Message, [hashtable]$Extra 
 }
 
 function Get-LanAddresses {
-    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    # 24-nov-2026 (decisión de Juan David): la dirección principal SIEMPRE es la de la red de los routers del evento (192.168.1.x) aunque el equipo también esté en otro Wi‑Fi (p. ej. 192.168.0.x con internet).
+    # Antes salía en el orden que diera Windows y el instalador podía guardar la del Wi‑Fi de la casa como PUBLIC_BASE_URL. Otra red: variable LOCAL_PREFERRED_SUBNET en local.env (p. ej. 10.0.0.).
+    $all = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.PrefixOrigin -ne 'WellKnown' } |
-        ForEach-Object { $_.IPAddress }
+        ForEach-Object { $_.IPAddress })
+    $pref = '192.168.1.'
+    try { $e = Read-EnvFile; if ($e['LOCAL_PREFERRED_SUBNET']) { $pref = $e['LOCAL_PREFERRED_SUBNET'] } } catch { }
+    @($all | Where-Object { $_.StartsWith($pref) }) + @($all | Where-Object { -not $_.StartsWith($pref) })
 }
 
 function Update-RouteMetrics {

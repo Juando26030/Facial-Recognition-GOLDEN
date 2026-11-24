@@ -52,7 +52,7 @@
       </div>
       <div class="gw-page-head__actions">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="crm_cuentas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
-        <a class="gw-btn gw-btn--primary" href="/crm/cuentas/nueva">{{ ic('plus', 'gw-icon--sm') }} Nueva cuenta</a>
+        {% if not local_server %}<a class="gw-btn gw-btn--primary" href="/crm/cuentas/nueva">{{ ic('plus', 'gw-icon--sm') }} Nueva cuenta</a>{% endif %}
       </div>
     </div>
 

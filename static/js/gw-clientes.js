@@ -13,7 +13,7 @@
   const canEdit = ['comercial', 'admin', 'super_admin'].includes(role);          // Fase 3: crea y edita comercial+; archiva admin+; borrado definitivo solo super_admin
   let showArchived = false;                                                      // «Ver archivados» (admin+)
   // 4-nov-2026 (decisión del dueño): el coordinador también crea EVENTOS (en su cliente); crear CLIENTES sigue siendo comercial+ (el grupo de crear cliente no se pinta para el coordinador).
-  const canCreate = true;
+  const canCreate = document.body.dataset.localServer !== '1';          // servidor local: no crea eventos (bajan de la nube; el servidor también lo rechaza)
   const STATUS_LABELS = { creado: 'Creado', en_proceso: 'En Proceso', finalizado: 'Finalizado' };
   const STATUS_BADGE = { creado: 'gw-badge--info', en_proceso: 'gw-badge--ok', finalizado: '' };
 
