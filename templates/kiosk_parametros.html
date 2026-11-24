@@ -266,6 +266,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Cartel con código QR</h4><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span>{% call ayuda('ay_cartel', 'Cartel con QR') %}El QR lleva a la página pública de aceptación de este evento. Se imprime en un cartel para que cada persona lo escanee con su celular.{% endcall %}</div>
             <p class="gw-hint">Enlace para el correo: <b id="aceptarUrl"></b></p>
+            <button type="button" id="aceptarCopy" class="gw-btn gw-btn--secondary gw-btn--sm">Copiar enlace</button>
             <div id="aceptarQr" class="gw-pm-qr"></div>
             <button type="button" id="aceptarPrint" class="gw-btn gw-btn--secondary">{{ ic('printer', 'gw-icon--sm') }} Imprimir cartel con el QR</button>
           </div>
@@ -1142,6 +1143,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     const aceptarUrl = `${window.PUBLIC_BASE || location.origin}/aceptar/{{ event.event_code }}`;          // el QR del cartel lleva la dirección PÚBLICA, no la del panel desde el que se abrió
     if (document.getElementById('aceptarUrl')) {
         document.getElementById('aceptarUrl').textContent = aceptarUrl;
+        document.getElementById('aceptarCopy').addEventListener('click', async () => { showToast((await window.copyText(aceptarUrl)) ? 'Enlace copiado' : 'No se pudo copiar: selecciónalo y cópialo a mano', 'success'); });
         const drawQr = () => { try { const qr = qrcode(0, 'M'); qr.addData(aceptarUrl + '?c=qr'); qr.make(); document.getElementById('aceptarQr').innerHTML = qr.createSvgTag({ scalable: true }); } catch (e) { /* sin QR: queda el enlace */ } };
         if (typeof qrcode !== 'undefined') drawQr();
         document.getElementById('ccAceptar').addEventListener('change', (e) => { document.getElementById('aceptarBox').hidden = !e.target.checked; });

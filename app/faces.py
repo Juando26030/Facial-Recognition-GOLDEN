@@ -242,6 +242,11 @@ def is_doubtful(ranked: List[Tuple[str, float]]) -> bool:
     return len(ranked) >= 2 and (ranked[1][1] - ranked[0][1]) < MATCH_MARGIN
 
 
+def index_size(db: Session, event: Event, ungated: bool = False) -> int:
+    """Cuántos rostros hay hoy en la matriz con la que se compara (solo un número, sin datos de nadie): ayuda a entender un «no está en la lista»."""
+    return len(event_index(db, event, ungated).ids)
+
+
 def recognize(db: Session, event: Event, image_bytes: bytes, ungated: bool = False) -> Tuple[str, List[Tuple[str, float]]]:
     """Devuelve ("NO_FACE", []) | ("NO_MATCH", []) | ("MATCH", ranked) con `ranked` = los TOP_CANDIDATES más cercanos (el primero está dentro de la tolerancia).
     Levanta `Busy` si la cola de cálculo facial está saturada. Un solo cálculo facial y una sola operación numpy: los candidatos no cuestan más."""

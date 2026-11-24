@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Autorización biométrica (L1): la cámara solo se enciende con una aceptación de la PERSONA registrada (static/js/consent-gate.js). Camino 1: cédula/QR primero; camino 2 (eventos con
     // pre-cálculo autorizado): la pantalla se muestra a quien se acerca y un clic da un token válido para UNA comparación. Tras cada intento la cámara vuelve a apagarse.
-    let clickToken = '';
+    let clickToken = '', clickAt = 0, clickRetries = 0, scanFailed = false;          // un fallo del escaneo (no se detectó / no está) deja reintentar sin volver a «Acepto» mientras el clic siga vigente
     let enrollCedula = '';                                   // camino A: la persona acaba de aceptar y aún no tiene vector: se capta su rostro y el vector se calcula aparte
     let afterEnroll = () => {};
     let resetGate = () => {};
@@ -89,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!block || !block.click_mode) return;
             identMsg.textContent = '';
             const token = await gate.clickFlow();
-            if (token) { clickToken = token; cameraOn(); } else { identMsg.textContent = 'Sin reconocimiento facial: ingresa por cédula o QR.'; }
+            if (token) { clickToken = token; clickAt = Date.now(); clickRetries = 0; cameraOn(); } else { identMsg.textContent = 'Sin reconocimiento facial: ingresa por cédula o QR.'; }
         }
         async function identify() {                              // camino 1
             const cedula = (identInput.value || '').trim();
@@ -344,12 +344,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 offerPrint(printScanBtn, data.data.id);
                 if (window.directorySearch) window.directorySearch.reload();
             } else {
-                setOff(printScanBtn, true);
+                setOff(printScanBtn, true); scanFailed = true;
                 // amarillo = no se logró detectar bien la cara (repetir); rojo = se detectó pero no está en la base
-                setResult(data.reason === 'no_face' ? 'No se logró detectar el rostro: vuelve a intentarlo' : data.details, data.reason === 'no_face' ? 'warn' : 'err');
+                setResult(data.reason === 'no_face' ? 'No se logró detectar el rostro: pulsa «Escanear» otra vez' : (data.details + (data.compared !== undefined ? ` (se comparó con ${data.compared} rostros listos)` : '')), data.reason === 'no_face' ? 'warn' : 'err');
             }
         } catch (e) {
-            setResult("Error de conexión con el servidor", 'err');
+            scanFailed = true; setResult("Error de conexión con el servidor", 'err');
         }
     }
 
@@ -378,7 +378,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 formData.append('event_id', EVENT_ID);
                 if (clickToken) formData.append('click_token', clickToken);
-                submitRecognize(formData).finally(() => { if (video) resetGate(); });
+                scanFailed = false;
+                submitRecognize(formData).finally(() => {
+                    if (!video) return;
+                    if (scanFailed && clickToken && clickRetries < 3 && Date.now() - clickAt < 100000) { clickRetries++; return; }          // la cámara sigue abierta: «Escanear» de nuevo, sin volver a «Acepto»
+                    resetGate();
+                });
             }, 'image/jpeg', 0.85);
         });
     }

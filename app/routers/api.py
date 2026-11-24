@@ -748,7 +748,7 @@ def recognize(
         if status == "NO_FACE":
             return {"result": "NO", "reason": "no_face", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE}
+            return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE, "compared": faces.index_size(db, event, bool(click) and bool(event.precalculo_autorizado))}
         user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
             return {"result": "NO", "reason": "no_match", "details": NOT_FOUND_FACE}

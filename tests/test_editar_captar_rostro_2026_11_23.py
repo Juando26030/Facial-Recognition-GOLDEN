@@ -98,3 +98,12 @@ def test_un_solo_selector_de_modo_anexo_visible_y_foto_escarapela_para_coordinad
     assert "Opciones solo para el súper administrador" not in t and 'id="badgeBioPhoto"' in t
     c = (R / "app/routers/consents.py").read_text(encoding="utf-8")
     assert "def set_badge_bio_photo(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD))" in c
+
+
+def test_reintento_sin_volver_a_aceptar_diagnostico_y_copiar_enlace():
+    j = (R / "static/js/app.js").read_text(encoding="utf-8")
+    assert "scanFailed && clickToken && clickRetries < 3 && Date.now() - clickAt < 100000" in j and "se comparó con" in j
+    a = (R / "app/routers/api.py").read_text(encoding="utf-8")
+    assert '"compared": faces.index_size(' in a and "def index_size" in (R / "app/faces.py").read_text(encoding="utf-8")
+    t = (R / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert 'id="aceptarCopy"' in t and "window.copyText(aceptarUrl)" in t
