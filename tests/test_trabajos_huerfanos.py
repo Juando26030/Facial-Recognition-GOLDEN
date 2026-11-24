@@ -20,8 +20,12 @@ def _declared_kinds() -> set:
     for f in pathlib.Path("app").rglob("*.py"):
         text = f.read_text(encoding="utf-8")
         kinds |= set(re.findall(r'@jobs\.handler\("([^"]+)"\)', text))
-        if "@jobs.handler(MAIL_KIND)" in text:          # app/mass_delete.py declara el tipo en una constante
-            kinds |= set(re.findall(r'^MAIL_KIND\s*=\s*"([^"]+)"', text, re.M))
+        if "@jobs.handler(MAIL_KIND)" in text:          # app/mass_delete.py declara el tipo en una constante; app/quote_mail.py la importa de app/quote_core.py
+            src = text
+            imp = re.search(r"^from app\.(\w+) import .*\bMAIL_KIND\b", text, re.M)
+            if imp:
+                src = pathlib.Path("app", imp.group(1) + ".py").read_text(encoding="utf-8")
+            kinds |= set(re.findall(r'^MAIL_KIND\s*=\s*"([^"]+)"', src, re.M))
     return kinds
 
 

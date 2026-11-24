@@ -36,8 +36,8 @@ def test_the_template_has_eight_tab_sections_and_only_the_first_is_visible_by_de
 def test_every_block_registers_its_save_in_the_global_save_with_the_existing_endpoints():
     for key in BLOCKS:
         assert f"key: '{key}'" in TEMPLATE or (key.startswith("mod_") and "key: 'mod_' + mod" in TEMPLATE), key
-    # mismas rutas de siempre (sin API nueva)
-    for route in ("idle-minutes", "biometric-setup", "badge-bio-photo", "precalculo-autorizado", "certificates-enabled", "digital-badge-enabled",
+    # mismas rutas de siempre (sin API nueva). 23-nov-2026: el pre-cálculo ya no se activa desde aquí (selector de tres modos + anexo firmado: «facial-annex»)
+    for route in ("idle-minutes", "biometric-setup", "badge-bio-photo", "facial-annex", "certificates-enabled", "digital-badge-enabled",
                   "/categories", "/modules", "/logo", "field-configs/", "digital-email", "shared-print", "print-settings", "print-stations/"):
         assert route in TEMPLATE, route
     order = [int(n) for n in re.findall(r"key: '[\w]+', label: '[^']+', order: (\d+)", TEMPLATE)]

@@ -1,3 +1,5 @@
+/* Cámara bloqueada por falta del anexo firmado (FACIAL_ANNEX_BLOCK): la plantilla marca el aviso con data-facial-annex-block (sin código en línea, CSP). */
+function facialAnnexBlocked() { return !!document.querySelector("[data-facial-annex-block]"); }
 document.addEventListener("DOMContentLoaded", () => {
 
     const EVENT_ID = window.EVENT_ID;
@@ -82,13 +84,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const nextBox = document.getElementById('bioNext'), nextBtn = document.getElementById('bioNextBtn'), nextMsg = document.getElementById('bioNextMsg');
         const say = (t) => { identMsg.textContent = t; if (nextMsg) nextMsg.textContent = t; };
         const showEntry = () => { setOff(ident, clickMode); setOff(nextBox, !clickMode); };
-        const cameraOn = () => { if (window.FACIAL_ANNEX_BLOCK) { say('Cámara bloqueada: falta el anexo firmado del cliente (Parámetros › Reconocimiento facial).'); return; } setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); setOff(nextBox, true); startCamera(); };
+        const cameraOn = () => { if (facialAnnexBlocked()) { say('Cámara bloqueada: falta el anexo firmado del cliente (Parámetros › Reconocimiento facial).'); return; } setOff(cameraBox, false); if (scanBtn) scanBtn.disabled = !eventOpen; setOff(ident, true); setOff(nextBox, true); startCamera(); };
         const cameraOff = () => { stopCamera(); setOff(cameraBox, true); if (scanBtn) scanBtn.disabled = true; showEntry(); identInput.value = ''; clickToken = ''; };
         afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
         resetGate = () => { cameraOff(); };          // el siguiente turno empieza con «Continuar», no con la pantalla de autorización
         async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
             if (!gate || !eventOpen) return;
-            if (window.FACIAL_ANNEX_BLOCK) { say('Cámara bloqueada: falta el anexo firmado del cliente. Ingresa por cédula o QR.'); return; }
+            if (facialAnnexBlocked()) { say('Cámara bloqueada: falta el anexo firmado del cliente. Ingresa por cédula o QR.'); return; }
             const block = await gate.loadBlock();
             if (!block || !block.click_mode) return;
             say('');
@@ -123,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (nextBtn) nextBtn.addEventListener('click', () => { startClickScreen(); });
         cameraOff();
         (async () => {                                           // ¿este evento usa «Acepto» sin cédula? Entonces se muestra «Continuar» en lugar de la cédula
-            if (!gate || !eventOpen || window.FACIAL_ANNEX_BLOCK) return;
+            if (!gate || !eventOpen || facialAnnexBlocked()) return;
             const block = await gate.loadBlock();
             clickMode = !!(block && block.click_mode); showEntry();
         })();

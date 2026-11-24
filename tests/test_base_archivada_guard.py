@@ -114,6 +114,7 @@ def test_digital_badge_does_not_expose_contact_data(client, factory, db):
 # Rutas con `get_event_for_staff` que NO tocan personas, respuestas ni pagos (configuración, plantillas, archivos del evento, personal, derechos de privacidad…).
 # Mantener corta y revisada: una ruta nueva obliga a decidir entre `event_archive.require_data_open` o añadirse aquí con su porqué.
 ALLOW = {
+    "nodes.py": {"_upload_staff"},          # solo comprueba que la cuenta del servidor local vea el evento; la subida va a un evento PRESTADO al nodo (_leased_event)
     "contacts.py": {"list_exhibitors", "create_exhibitor", "update_exhibitor", "rotate_exhibitor", "delete_exhibitor"},          # expositores: empresas y su enlace, no las personas registradas
     "public_link.py": {"get_link", "update_link"},          # enlace público del evento: solo su configuración
     "qr_resolve.py": {"resolve_qr"},          # ya rechaza por su cuenta los eventos archivados o con la base archivada
@@ -144,7 +145,8 @@ ALLOW = {
     "parametros.py": {"get_event_logo", "set_event_logo_mode", "set_event_brand_color", "upload_event_logo", "set_digital_badge_enabled", "get_digital_badge_fields", "put_digital_badge_fields", "set_directory_page_size", "get_registro_gear_digitadores",
                       "set_registro_gear_digitadores", "get_last_name_required", "set_last_name_required", "set_idle_minutes", "set_facial_enabled", "set_certificates_enabled",
                       "get_event_categories", "set_event_categories", "add_optional_field", "list_field_configs", "upsert_field_config", "get_digital_email", "put_digital_email",
-                      "preview_digital_email", "test_digital_email", "upload_email_image", "field_usage", "delete_field"},
+                      "preview_digital_email", "test_digital_email", "upload_email_image", "field_usage", "delete_field",
+                      "upload_facial_annex", "download_facial_annex"},          # anexo firmado del cliente: documento del EVENTO (sin personas, respuestas ni pagos)
     "person_form.py": {"get_person_form", "put_person_form"},
     "pledge.py": {"get_pledge", "create_link", "revoke_link", "set_enabled", "pledge_state"},          # compromiso del digitador: administrar el enlace y las banderas (el documento y lo sensible sí exigen datos abiertos)
     "print_settings.py": {"get_settings", "put_settings"},

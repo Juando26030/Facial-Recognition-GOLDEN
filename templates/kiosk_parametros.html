@@ -700,6 +700,8 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 </main>
 
 <script>
+    // El único recargar «solo» de Parámetros: tras subir una imagen o el anexo, y SOLO si no hay otros cambios sin guardar (se perderían). True si recargó.
+    window.gwReloadIfClean = () => { if (!GWParams.hasDirty()) { location.reload(); return true; } return false; };
 (function () {
     const FIELD_TYPE_OPTIONS = [
         { value: 'text_short', label: 'Texto corto' },
@@ -1161,7 +1163,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             const r = await fetch(`/api/events/${window.EVENT_ID}/facial-annex`, { method: 'POST', body: fd });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j.detail || 'No se pudo subir el anexo');
-            showToast('Anexo cargado: la cámara del evento queda habilitada', 'success'); setTimeout(() => location.reload(), 700);
+            showToast('Anexo cargado: la cámara del evento queda habilitada', 'success'); setTimeout(() => window.gwReloadIfClean(), 700);          // con otros cambios sin guardar no se recarga (se perderían)
         } catch (e) { showToast(e.message, 'error'); } finally { annexUp.disabled = false; }
     });
 
@@ -1230,7 +1232,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         const fd = new FormData(); fd.append('file', e.target.files[0]);
         const res = await fetch(`/api/events/${window.EVENT_ID}/logo/upload`, { method: 'POST', body: fd });
         if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error'); return; }
-        if (!GWParams.hasDirty()) { location.reload(); return; }
+        if (window.gwReloadIfClean()) return;
         // Hay otros cambios sin guardar: no se recarga (se perderían). El servidor ya dejó «logo propio»; se refleja aquí y se recarga tras el próximo «Guardar».
         const custom = document.querySelector('input[name="logoMode"][value="custom"]');
         if (custom) { custom.disabled = false; custom.checked = true; }
