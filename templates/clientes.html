@@ -26,7 +26,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
 </head>
-<body class="gw-page gw-shell has-sidebar">
+<body class="gw-page gw-shell has-sidebar"{% if local_server %} data-local-server="1"{% endif %}>
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
@@ -77,7 +77,7 @@
     <label class="gw-check"><input type="checkbox" id="showArchived"> Ver archivados</label>
     {% endif %}
 
-    {% if staff_role not in ("coordinador", "digitador", "cliente") %}
+    {% if staff_role not in ("coordinador", "digitador", "cliente") and not local_server %}
     <details class="gw-group" id="newTenantGroup">
       <summary class="gw-group__sum p-cli__sum">{{ ic('plus', 'gw-icon--sm') }} Nuevo cliente/cuenta</summary>
       <div class="gw-group__body">
