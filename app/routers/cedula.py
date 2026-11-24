@@ -1,12 +1,13 @@
 import numpy as np
 import pytesseract
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role
 from app.biometrics import BiometricEngine
 from app.database import get_db
-from app.models import StaffUser
+from app import cedula_near, event_archive, name_index
+from app.models import EventAttendee, StaffUser, User
 from app.mrz_ocr import VARIANTS, extract_mrz_lines
 from app.mrz_parser import parse_mrz_td1
 
@@ -74,3 +75,32 @@ def scan_cedula_mrz(
         )
 
     return {"id": best_result["id"], "first_name": best_result["first_name"], "last_name": best_result["last_name"]}
+
+
+NEAR_LIMIT = 6
+
+
+@router.post("/events/{event_id}/cedula-near")
+def cedula_near_candidates(event_id: int, data: dict = Body(...), db: Session = Depends(get_db),
+                           staff: StaffUser = Depends(require_role("digitador"))):
+    """24-nov-2026: la cámara leyó la cédula A MEDIAS (reflejo, poca luz) → personas PARECIDAS para que el operador elija. NUNCA acredita: la elegida
+    entra por `checkin-cedula` (coincidencia exacta). Por número: a un error de lectura (app/cedula_near.py), por igualdad sobre el índice. Por nombre:
+    el mismo índice del «cédula no encontrada» (app/name_index.py). Nada de lo leído va a los registros."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)          # lee personas del cliente: con la base archivada, solo super_admin
+    read = cedula_near.clean(data.get("cedula"))
+    name = f"{str(data.get('first_name') or '')} {str(data.get('last_name') or '')}".strip()[:200]
+    by_number = []
+    options = cedula_near.variants(read)
+    if options:
+        rows = (db.query(User.id, User.first_name, User.last_name, User.entity)
+                .filter(User.tenant_id == event.tenant_id, User.id.in_(options)).limit(50).all())
+        in_event = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id,
+                                                                              EventAttendee.user_id.in_([r[0] for r in rows])).all()} if rows else set()
+        rank = {v: i for i, v in enumerate(options)}
+        rows = sorted(rows, key=lambda r: (r[0] not in in_event, rank.get(r[0], 9999)))          # primero las del evento, luego las más parecidas
+        by_number = [{"id": r[0], "first_name": r[1], "last_name": r[2], "entity": r[3], "in_event": r[0] in in_event} for r in rows[:NEAR_LIMIT]]
+    by_name = name_index.find(db, event.tenant_id, name, NEAR_LIMIT)[0] if name else []
+    seen = {c["id"] for c in by_number}
+    by_name = [c for c in by_name if c["id"] not in seen]
+    return {"by_number": by_number, "by_name": by_name}

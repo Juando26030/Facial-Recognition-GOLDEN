@@ -98,5 +98,22 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     assert.ok(stage.includes('gw-cam__shoot'), '«Tomar foto» va dentro del recuadro de la cámara (encima del video)');
     assert.ok(qr.includes("classList.toggle('gw-cam--photo'"), 'modo cédula: todo en una pantalla');
   }
+  // 24-nov-2026: brillo y lectura a medias
+  {
+    const api = require(path.join(ROOT, 'static/js/cedula-foto.js'));
+    const px = (n, v) => { const d = new Uint8ClampedArray(n * 4); for (let i = 0; i < d.length; i += 4) { d[i] = v[0]; d[i + 1] = v[1]; d[i + 2] = v[2]; d[i + 3] = 255; } return d; };
+    assert.strictEqual(api.glareRatio(px(100, [250, 250, 250])), 1, 'todo quemado = brillo');
+    assert.strictEqual(api.glareRatio(px(100, [250, 250, 120])), 0, 'un color fuerte no es brillo');
+    const mix = new Uint8ClampedArray([...px(98, [120, 130, 140]), ...px(2, [255, 255, 255])]);
+    assert.ok(Math.abs(api.glareRatio(mix) - 0.02) < 1e-9);
+    assert.strictEqual(api.partialFrom([]), null);
+    assert.strictEqual(api.partialFrom([{ parsed: null }]), null);
+    const weak = { cedula: '1020457789', nombre1: 'ANA', nombre2: '', apellido1: 'GARCIA', apellido2: 'ROJAS', checks: { birth: true, expiry: false, composite: false } };
+    const worse = { cedula: '10204', nombre1: '', apellido1: '', checks: {} };
+    assert.deepStrictEqual(api.partialFrom([{ parsed: worse }, { parsed: weak }]), { cedula: '1020457789', first_name: 'ANA', last_name: 'GARCIA ROJAS' });
+    const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
+    assert.ok(src.includes("verificada: false, origen: 'operador'"), 'la persona elegida de los parecidos NO se marca como lectura validada');
+    assert.ok(src.includes('/cedula-near') && src.includes('getCapabilities') && src.includes('torch'), 'parecidos y linterna');
+  }
   console.log('cedula_foto_check OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -21,3 +21,8 @@
   .gw-cam--photo .gw-cam__video, .gw-cam--photo .gw-cam__overlay { width: 100%; height: 100%; object-fit: cover; }
   .gw-cam--photo .gw-cam__status { flex: none; }
 }
+/* 24-nov-2026: linterna (solo si el celular la ofrece) arriba a la derecha del video, y «¿Es alguna de estas personas?» cuando la cédula se leyó a medias */
+.gw-cam__torch { position: absolute; top: var(--gw-sp-3); right: var(--gw-sp-3); box-shadow: var(--gw-shadow-lg); }
+.gw-cam__choices { display: flex; flex-direction: column; gap: var(--gw-sp-2); margin-top: var(--gw-sp-3); max-height: 40vh; overflow: auto; flex: none; }
+.gw-cam__choices-head { margin: 0; font-weight: var(--gw-fw-bold); }
+.gw-cam__choice { justify-content: flex-start; text-align: left; }

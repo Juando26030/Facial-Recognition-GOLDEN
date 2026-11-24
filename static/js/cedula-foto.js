@@ -26,6 +26,11 @@
     noReader: 'No se pudo cargar el lector de cédulas (sin conexión). Escriba la cédula o use el lector de mano.',
     camPerm: 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).',
     camNone: 'No se encontró ninguna cámara.',
+    glare: 'Hay un brillo sobre la cédula: inclínela un poco o aléjela de la luz directa.',
+    glareTorch: 'Hay un brillo sobre la cédula: apague la linterna o incline un poco la cédula.',
+    failGlare: 'No se pudo leer por un brillo sobre la cédula: inclínela un poco (o apague la linterna) y tome otra foto.',
+    partial: 'No se leyó completa. ¿Es alguna de estas personas? Confírmelo con el documento.',
+    torchOn: 'Linterna', torchOff: 'Apagar linterna',
   };
   const SIZES = [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}];
   const STILL_MAX = 4600;                    // lado mayor máximo pedido a takePhoto (más no aporta y pesa en memoria)
@@ -33,10 +38,33 @@
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
   const SERVER_TIMEOUT_MS = 25000;
   const HD_SHORT_SIDE = 1080;                 // video con lado corto ≥ 1080 px: su cuadro ya es alta definición (no hace falta takePhoto)
-  const OLD_BUDGET_MS = [2500, 3000];        // cédula vieja: recuadro guía, luego foto completa (antes 7 s + 9 s: lo que no sale en ~5 s no sale con más tiempo; mejor otra foto)
+  const OLD_BUDGET_MS = [2000, 1000, 1000, 2000];   // cédula vieja: recuadro de la foto 1, de la 2 y de la 3 (ráfaga), y foto 1 completa: ≈6 s en el peor caso
+  const BURST = 3, BURST_GAP_MS = 110;       // ráfaga: 3 cuadros seguidos (≈0,25 s). Lo que un brillo o el pulso arruinan en uno suele verse en otro
+  const GLARE_LEVEL = 245, GLARE_RATIO = 0.012;   // brillo: más del 1,2 % del recuadro casi blanco en los tres colores (el fondo de la cédula no llega a eso)        // cédula vieja: recuadro guía, luego foto completa (antes 7 s + 9 s: lo que no sale en ~5 s no sale con más tiempo; mejor otra foto)
   const SERVER_HEAD_START_MS = 1200;         // cédula nueva: si el navegador no la leyó en este tiempo, el servidor arranca EN PARALELO (gana el primero que la valide)
 
   /* ---------------------------------------------------------------- funciones puras (también en Node) */
+  /** Fracción de píxeles casi blancos (R, G y B ≥ GLARE_LEVEL) en una imagen RGBA: el reflejo «quema» el color; la cédula impresa no. */
+  function glareRatio(data) {
+    let hot = 0; const n = Math.floor(data.length / 4) || 1;
+    for (let i = 0; i < data.length; i += 4) if (data[i] >= GLARE_LEVEL && data[i + 1] >= GLARE_LEVEL && data[i + 2] >= GLARE_LEVEL) hot++;
+    return hot / n;
+  }
+  /** Lo que SÍ se alcanzó a leer de la cédula nueva cuando ninguna lectura quedó validada → {cedula, first_name, last_name} para buscar parecidas, o null.
+   *  Se queda con la lectura que más controles pasa (y, a igualdad, la que trae más dígitos). Nunca se usa para acreditar: solo para proponer. */
+  function partialFrom(reads) {
+    let best = null, bestScore = -1;
+    for (const r of reads || []) {
+      const p = r && r.parsed; if (!p) continue;
+      const digits = String(p.cedula || '').replace(/\D/g, '');
+      if (digits.length < 5 && !p.apellido1) continue;
+      const c = p.checks || {};
+      const score = (c.birth ? 4 : 0) + (c.expiry ? 4 : 0) + (c.composite === true ? 4 : 0) + digits.length / 100 + (p.apellido1 ? 0.5 : 0);
+      if (score > bestScore) { bestScore = score; best = p; }
+    }
+    if (!best) return null;
+    return { cedula: String(best.cedula || '').replace(/\D/g, ''), first_name: [best.nombre1, best.nombre2].filter(Boolean).join(' '), last_name: [best.apellido1, best.apellido2].filter(Boolean).join(' ') };
+  }
   /** Recuadro guía en px del video, sobre la parte VISIBLE del elemento (bw×bh en pantalla; con object-fit: cover se recorta). Igual que _guideRect de los lectores. */
   function guideRect(vw, vh, bw, bh, ar, fill) {
     let visW = vw, visH = vh;
@@ -151,27 +179,34 @@
     return { img: c, w: c.width, h: c.height, source: 'frame' };
   }
 
-  async function decodeOld(R, shot, guidePhoto, alive) {
+  /** Cédula vieja sobre la RÁFAGA: el recuadro de cada cuadro (lo que un brillo o el pulso arruinan en uno suele verse en otro) y al final la foto completa. */
+  async function decodeOld(R, shots, guidePhoto, alive) {
     const sc = await decoder(R, 'old');
     let unknown = false;
     sc.onResult = () => {}; sc.onStatus = () => {}; sc.onUnknown = () => { unknown = true; };
     const sources = [];
-    if (guidePhoto) sources.push([cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_BUDGET_MS[0]]);     // el recuadro con margen (la cédula rara vez queda exacta)
-    sources.push([shot.img, OLD_BUDGET_MS[1]]);                                                                                   // la foto completa: el localizador busca el código en cualquier parte y ángulo
+    shots.forEach((shot, k) => { if (guidePhoto && k < 3) sources.push([() => cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_BUDGET_MS[k]]); });   // el recuadro con margen
+    sources.push([() => shots[0].img, OLD_BUDGET_MS[3]]);                                                              // la foto completa: el localizador busca el código en cualquier parte y ángulo
     for (const [src, budgetMs] of sources) {
       if (!alive()) return { datos: null };
-      const datos = await sc.scanImage(src, { budgetMs });
+      const datos = await sc.scanImage(src(), { budgetMs });
       if (datos) return { datos };
     }
     return { datos: null, unknown };
   }
 
-  async function decodeNew(R, shot, guidePhoto, alive, withFull = true) {
+  /** Cédula nueva sobre la ráfaga. `reads` se comparte con quien llama: si nada queda validado, de ahí sale lo que SÍ se leyó (partialFrom). La votación
+   *  (pickMrz) junta las lecturas de los tres cuadros: dos lecturas iguales de cuadros distintos valen como confirmación de los nombres. */
+  async function decodeNew(R, shots, guidePhoto, alive, withFull = true, reads = []) {
     const mz = await decoder(R, 'new');
     mz.onStatus = () => {};
-    const reads = [];
-    const crops = guidePhoto ? [expandRect(guidePhoto, 0.03, 0.08, shot.w, shot.h), expandRect(guidePhoto, 0.08, 0.45, shot.w, shot.h)] : [];
-    for (const r of crops) {
+    const plan = [];
+    shots.forEach((shot, k) => {
+      if (!guidePhoto) return;
+      plan.push([shot, expandRect(guidePhoto, 0.03, 0.08, shot.w, shot.h)]);                   // ajustado al recuadro
+      if (k === 0) plan.push([shot, expandRect(guidePhoto, 0.08, 0.45, shot.w, shot.h)]);      // holgado (las líneas quedaron un poco fuera), solo en el primero
+    });
+    for (const [shot, r] of plan) {
       if (!alive()) return null;
       const c = cropCanvas(shot.img, r, MRZ_CROP_W), g = grayOf(c);
       await readMrzCrop((flip, attempt) => mz._read(g, c.width, c.height, { flip, attempt }), R.parseMrz, R.mrzStrong, reads, alive);
@@ -180,7 +215,7 @@
     if (!alive()) return null;
     if (!withFull) { const g2 = pickMrz(reads, R.mrzStrong, true); return g2 ? g2.datos : null; }   // con servidor disponible, él lee la foto completa (más rápido que el OCR del celular)
     let full = null; mz.onResult = (d) => { full = d; };                                                          // la foto completa: las 3 líneas en cualquier parte y orientación
-    await mz.scanImage(shot.img);                                                                                 // lienzo o ImageBitmap: el lector hace su propia copia
+    await mz.scanImage(shots[0].img);                                                                             // lienzo o ImageBitmap: el lector hace su propia copia
     mz.onResult = () => {};
     if (full) reads.push({ parsed: full, conf: null });
     const got = pickMrz(reads, R.mrzStrong, true);
@@ -201,13 +236,14 @@
   }
   /** Cédula nueva: navegador y servidor en carrera. El servidor arranca a los SERVER_HEAD_START_MS (o antes, si el navegador ya se rindió); gana el primero
    *  que entregue una lectura validada y el otro se corta (alive). Sin red / sin evento / modo sin conexión: solo el navegador, con su lectura de la foto completa. */
-  async function decodeNewRace(R, shot, guidePhoto, alive, eventId) {
+  async function decodeNewRace(R, shots, guidePhoto, alive, eventId, reads) {
+    const shot = shots[0];
     const useServer = serverUsable(eventId);
-    if (!useServer) return R ? decodeNew(R, shot, guidePhoto, alive, true) : null;
+    if (!useServer) return R ? decodeNew(R, shots, guidePhoto, alive, true, reads) : null;
     let won = false, kick = null;
     const still = () => alive() && !won;
     const startServer = new Promise((ok) => { kick = ok; setTimeout(ok, SERVER_HEAD_START_MS); });
-    const local = R ? decodeNew(R, shot, guidePhoto, still, false).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
+    const local = R ? decodeNew(R, shots, guidePhoto, still, false, reads).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
     const server = startServer.then(() => (still() ? serverMrz(shot, eventId, still) : null));
     const d = await firstFound([local, server]);
     won = true;
@@ -230,7 +266,7 @@
   function attach(o) {
     const kind = o.kind === 'new' ? 'new' : 'old', G = GUIDE[kind], video = o.video, overlay = o.overlay, btn = o.button;
     const say = (m, k) => { if (!dead && o.onStatus) o.onStatus(m, k || ''); };
-    let dead = false, stream = null, track = null, busy = false, raf = 0, R = null, frozen = false;
+    let dead = false, stream = null, track = null, busy = false, raf = 0, R = null, frozen = false, glare = false, torchOn = false, glareTimer = 0, torchBtn = null, choices = null;
     const alive = () => !dead;
     const label = btn ? btn.textContent : '';
 
@@ -239,7 +275,7 @@
       if (dead || !overlay || !video.videoWidth) return;
       const vw = video.videoWidth, vh = video.videoHeight, r = video.getBoundingClientRect(), g = guideRect(vw, vh, r.width, r.height, G.ar, G.fill), x = overlay.getContext('2d');
       if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
-      const line = busy ? tok(overlay, '--gw-gold-2', '#e8c25a') : tok(overlay, '--gw-ok-line', '#1f8a4c');
+      const line = busy ? tok(overlay, '--gw-gold-2', '#e8c25a') : glare ? tok(overlay, '--gw-warn-line', '#c98a00') : tok(overlay, '--gw-ok-line', '#1f8a4c');
       x.clearRect(0, 0, vw, vh);
       x.fillStyle = tok(overlay, '--gw-overlay', 'rgba(0,0,0,.45)');                   // oscurece lo que queda fuera del recuadro
       x.beginPath(); x.rect(0, 0, vw, vh); x.rect(g.x, g.y, g.w, g.h); x.fill('evenodd');
@@ -261,6 +297,67 @@
       redraw();
     }
     function resumePreview() { if (frozen && !dead && stream) { frozen = false; video.play().catch(() => {}); } }
+    const aimMsg = () => (kind === 'old' ? MSG.aimOld : MSG.aimNew);
+
+    /* Brillo EN VIVO: cada 0,5 s se mira el recuadro (en pequeño) y, si hay reflejo, se avisa ANTES de tomar la foto y el recuadro se pone ámbar. */
+    const probe = canvasOf(240, 60);
+    function checkGlare() {
+      if (dead || busy || frozen || !video.videoWidth) return;
+      const vw = video.videoWidth, vh = video.videoHeight, r = video.getBoundingClientRect(), g = guideRect(vw, vh, r.width, r.height, G.ar, G.fill);
+      probe.height = Math.max(8, Math.round(probe.width / G.ar));
+      const x = probe.getContext('2d', { willReadFrequently: true });
+      try { x.drawImage(video, g.x, g.y, g.w, g.h, 0, 0, probe.width, probe.height); } catch (e) { return; }
+      const now = glareRatio(x.getImageData(0, 0, probe.width, probe.height).data) > GLARE_RATIO;
+      if (now !== glare) { glare = now; redraw(); if (!busy) say(glare ? (torchOn ? MSG.glareTorch : MSG.glare) : aimMsg(), glare ? 'warn' : ''); }
+    }
+
+    /* Linterna: solo si el celular la ofrece (Android Chrome). En cédulas plastificadas a veces CAUSA el brillo: por eso el aviso pide apagarla. */
+    function setupTorch() {
+      let caps = {}; try { caps = track && track.getCapabilities ? track.getCapabilities() : {}; } catch (e) { caps = {}; }
+      if (!caps.torch || !video.parentElement) return;
+      torchBtn = document.createElement('button');
+      torchBtn.type = 'button'; torchBtn.className = 'gw-btn gw-btn--secondary gw-btn--sm gw-cam__torch'; torchBtn.textContent = MSG.torchOn; torchBtn.setAttribute('aria-pressed', 'false');
+      torchBtn.addEventListener('click', async () => {
+        const want = !torchOn;
+        try { await track.applyConstraints({ advanced: [{ torch: want }] }); torchOn = want; } catch (e) { return; }
+        torchBtn.textContent = torchOn ? MSG.torchOff : MSG.torchOn; torchBtn.setAttribute('aria-pressed', String(torchOn));
+      });
+      video.parentElement.appendChild(torchBtn);
+    }
+
+    /* Lectura a medias (cédula nueva) → personas PARECIDAS de la base. NUNCA acredita sola: el operador elige y la elegida sigue el camino EXACTO de siempre. */
+    function clearChoices() { if (choices) { choices.remove(); choices = null; } }
+    async function offerNear(partial) {
+      if (!partial || !o.eventId || !serverUsable(o.eventId) || dead) return false;
+      let j = null;
+      try {
+        const res = await fetch(`/api/events/${encodeURIComponent(o.eventId)}/cedula-near`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(partial) });
+        if (res.ok) j = await res.json();
+      } catch (e) { j = null; }
+      const list = j ? [...(j.by_number || []), ...(j.by_name || [])] : [];
+      if (!list.length || dead) return false;
+      clearChoices();
+      choices = document.createElement('div');
+      choices.className = 'gw-cam__choices gw-alert gw-alert--warn'; choices.setAttribute('role', 'group');
+      const head = document.createElement('p'); head.className = 'gw-cam__choices-head'; head.textContent = MSG.partial; choices.appendChild(head);
+      list.forEach((c) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'gw-btn gw-btn--secondary gw-btn--block gw-cam__choice';
+        b.textContent = `${[c.first_name, c.last_name].filter(Boolean).join(' ') || 'Sin nombre'} · ${c.id}${c.in_event ? ' · en este evento' : ''}${c.entity ? ' · ' + c.entity : ''}`;
+        b.addEventListener('click', () => {
+          const d = { cedula: String(c.id), nombre1: c.first_name || '', nombre2: '', apellido1: c.last_name || '', apellido2: '', nacimiento: '', verificada: false, origen: 'operador' };
+          clearChoices(); say('Cédula elegida por el operador.', 'ok'); o.onResult(d, kind);
+        });
+        choices.appendChild(b);
+      });
+      const none = document.createElement('button');
+      none.type = 'button'; none.className = 'gw-btn gw-btn--ghost gw-btn--block'; none.textContent = 'Ninguna: tomar otra foto';
+      none.addEventListener('click', () => { clearChoices(); say(aimMsg()); });
+      choices.appendChild(none);
+      const host = (o.status && o.status.parentElement) || (video.parentElement && video.parentElement.parentElement);
+      if (host) host.appendChild(choices);
+      return true;
+    }
 
     async function openCamera() {
       let last = null, s = null;
@@ -278,37 +375,45 @@
       if (dead) return;
       if (btn) btn.disabled = busy;
       redraw(); setTimeout(redraw, 300);
-      if (!busy) say(kind === 'old' ? MSG.aimOld : MSG.aimNew);
+      setupTorch();
+      glareTimer = setInterval(checkGlare, 500);
+      if (!busy) say(aimMsg());
     }
 
     async function shoot() {
       if (busy || dead || !stream || !video.videoWidth) return;
+      clearChoices();
       setBusy(true); say(MSG.processing, 'warn');
-      let shot = null;
+      let shots = [];
+      const reads = [];
+      const hadGlare = glare;
       try {
         const vw = video.videoWidth, vh = video.videoHeight, r = video.getBoundingClientRect(), g = guideRect(vw, vh, r.width, r.height, G.ar, G.fill);
-        shot = await takeStill(track, video);
+        shots.push(await takeStill(track, video));
+        if (shots[0].source === 'frame') for (let k = 1; k < BURST && !dead; k++) { await new Promise((ok) => setTimeout(ok, BURST_GAP_MS)); shots.push(frameOf(video)); }   // ráfaga del video (mismo encuadre que el primer cuadro)
         if (dead) return;
         video.pause(); frozen = true;                                                   // lo que se ve es lo que se está procesando
         await new Promise((ok) => setTimeout(ok, 30));                                  // deja pintar «Procesando la foto…» antes del cálculo pesado
+        const shot = shots[0];
         const guidePhoto = photoRect(g, vw, vh, shot.w, shot.h);
         let datos = null, unknown = false, readerErr = null;
         if (!R) { try { R = await o.readers(); } catch (e) { readerErr = e; } }
         if (R && !dead) {
           try {
-            if (kind === 'old') { const out = await decodeOld(R, shot, guidePhoto, alive); datos = out.datos; unknown = !!out.unknown; }
-            else datos = await decodeNewRace(R, shot, guidePhoto, alive, o.eventId);
+            if (kind === 'old') { const out = await decodeOld(R, shots, guidePhoto, alive); datos = out.datos; unknown = !!out.unknown; }
+            else datos = await decodeNewRace(R, shots, guidePhoto, alive, o.eventId, reads);
           } catch (e) { readerErr = e; }
         }
-        if (!datos && kind === 'new' && !R && !dead) datos = await decodeNewRace(null, shot, guidePhoto, alive, o.eventId);   // el lector del navegador no cargó: solo el servidor
+        if (!datos && kind === 'new' && !R && !dead) datos = await decodeNewRace(null, shots, guidePhoto, alive, o.eventId, reads);   // el lector del navegador no cargó: solo el servidor
         if (dead) return;
         if (datos) { say('Cédula leída.', 'ok'); setBusy(false); o.onResult(datos, kind); resumePreview(); return; }
-        say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : MSG.fail, 'err');
+        if (kind === 'new' && await offerNear(partialFrom(reads))) { say(MSG.partial, 'warn'); return; }
+        say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : (hadGlare || glare) ? MSG.failGlare : MSG.fail, 'err');
       } catch (e) {
         say(MSG.fail, 'err');
       } finally {
-        if (shot && shot.img && shot.img.close) shot.img.close();                       // la foto se descarta en memoria: no se guarda en ningún lado
-        shot = null;
+        shots.forEach((x) => { if (x && x.img && x.img.close) x.img.close(); });       // las fotos se descartan en memoria: no se guardan en ningún lado
+        shots = [];
         if (!dead) { setBusy(false); resumePreview(); }
       }
     }
@@ -324,6 +429,9 @@
       stop() {
         dead = true;
         if (raf) cancelAnimationFrame(raf);
+        if (glareTimer) clearInterval(glareTimer);
+        if (torchBtn) torchBtn.remove();
+        clearChoices();
         window.removeEventListener('resize', redraw);
         if (btn) { btn.removeEventListener('click', shoot); btn.disabled = false; btn.textContent = label; btn.removeAttribute('aria-busy'); }
         if (stream) stream.getTracks().forEach((t) => t.stop());                        // libera la cámara (se apaga la luz del celular/computador)
@@ -334,7 +442,7 @@
     };
   }
 
-  const api = { attach, firstFound, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
+  const api = { attach, firstFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
   if (typeof window !== 'undefined') window.CedulaFoto = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

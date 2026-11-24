@@ -127,7 +127,7 @@
 
   // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
   const READERS_URL = '/static/js/cedula-readers.js?v=1';
-  const FOTO_URL = '/static/js/cedula-foto.js?v=2';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
+  const FOTO_URL = '/static/js/cedula-foto.js?v=3';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
   const MODE_KEY = 'gw_scan_mode';
   let readersPromise = null, fotoPromise = null;
   function loadFoto() {
@@ -294,7 +294,7 @@
       if (stopped || my !== epoch) return;
       if (shootBtn) shootBtn.hidden = false;
       reader = F.attach({
-        kind, video, overlay: overlayCv, button: shootBtn, eventId: opts.eventId != null ? opts.eventId : window.EVENT_ID,
+        kind, video, overlay: overlayCv, button: shootBtn, status, eventId: opts.eventId != null ? opts.eventId : window.EVENT_ID,
         readers: async () => { if (warmPromise) await warmPromise; return loadReaders(); },          // si la precarga va a mitad, se espera a ella (no se baja ni compila dos veces)
         onStatus: (m, k) => { if (!stopped && my === epoch) { status.textContent = m; status.classList.toggle('gw-cam__status--err', k === 'err'); } },
         onResult: (d) => onCedulaRead(d, kind, my),
