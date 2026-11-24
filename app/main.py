@@ -266,6 +266,10 @@ async def local_catalog_readonly(request, call_next):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_READONLY_MSG})
         if localmode.is_face_call(request.method, request.url.path):
             return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_NO_FACE_MSG})
+        if localmode.is_creation_call(request.method, request.url.path):          # eventos, duplicados, clientes y cuentas: se crean en la nube y se bajan (24-nov-2026)
+            if request.method.upper() == "GET":
+                return RedirectResponse("/servidor-local", status_code=302)
+            return JSONResponse(status_code=403, content={"detail": localmode.LOCAL_NO_CREATE_MSG})
         if localmode.is_cloud_only_page(request.method, request.url.path):          # inventario global, cuentas de cobro y gastos: solo en internet (ni el menú los ofrece)
             return RedirectResponse("/clientes", status_code=302)
     return await call_next(request)
