@@ -1380,7 +1380,7 @@ def kiosk_inventory(event_id: int, request: Request, db: Session = Depends(get_d
 @app.get("/kiosk/{event_id}/alistamiento")
 def kiosk_checklist(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Tarjeta «Inventario» (18-nov-2026): lo alistado según el checklist de inventario del evento, solo para consultar (en un servidor local, la foto guardada al descargar el evento)."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_alistamiento.html", min_role="digitador", exclude_roles=["comercial"])
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_alistamiento.html", min_role="digitador", exclude_roles=["comercial", "digitador"])      # 24-nov-2026: el digitador no ve el material de Golden
 
 
 @app.get("/kiosk/{event_id}/certificado")

@@ -364,7 +364,7 @@ def list_inventory_events(q: str = "", db: Session = Depends(get_db), staff: Sta
 
 
 @router.get("/events/{event_id}/inventory-checklist")
-def get_checklist(event_id: int, refresh: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+def get_checklist(event_id: int, refresh: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):      # 24-nov-2026 (Juan David): el digitador no ve el material de Golden (computadores, equipos)
     """Lo que se alistó para el evento según el checklist de inventario, SOLO PARA CONSULTAR en el quiosco (tarjeta «Inventario»). En la nube sale de la base; en un servidor local, de la
     foto que se guardó al descargar el evento (con `refresh=1` y conexión se vuelve a pedir a la nube). Sin datos de personas."""
     event = get_event_for_staff(event_id, db, staff)

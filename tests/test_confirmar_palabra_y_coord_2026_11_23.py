@@ -34,3 +34,13 @@ def test_coordinador_del_evento_nuevo_sin_temporales():
 def test_recien_editado_si_sigue_no_registrada():
     s = _t("static/js/directory.js")
     assert "'Recién editado'" in s and "u.status === 'No registrado'" in s
+
+
+def test_material_de_golden_no_es_del_digitador():
+    """24-nov-2026 (Juan David): el material de Golden (computadores, equipos) no le sale al digitador: ni la tarjeta, ni la página, ni el API. «Control de inventario» (entregas a personas) sí sigue."""
+    assert 'staff_role not in ("comercial", "digitador")' in _t("templates/kiosk_select.html")
+    main = _t("app/main.py")
+    assert 'kiosk_alistamiento.html", min_role="digitador", exclude_roles=["comercial", "digitador"]' in main
+    inv = _t("app/routers/inventory.py")
+    assert 'def get_checklist(' in inv and 'Depends(require_role("coordinador"))' in inv.split("def get_checklist(")[1].split("\n")[0]
+    assert 'tile("/kiosk/%s/inventario" % event.id' in _t("templates/kiosk_select.html")

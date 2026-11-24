@@ -106,7 +106,7 @@
         {% if event.inventory_enabled and staff_role != "comercial" %}
         {{ tile("/kiosk/%s/inventario" % event.id, "inbox", "Control de inventario", "Entregar a cada persona lo que le toca (kits, regalos, combos), con lo que queda disponible") }}
         {% endif %}
-        {% if staff_role != "comercial" %}
+        {% if staff_role not in ("comercial", "digitador") %}{# 24-nov-2026 (Juan David): el material de Golden (computadores, equipos) no es del digitador #}
         {{ tile("/kiosk/%s/alistamiento" % event.id, "inbox", "Material de Golden", "Solo consulta: equipos y materiales de Golden alistados para este evento (no es lo que se reparte a los asistentes)") }}
         {% endif %}
         {% if staff_role != "digitador" %}{# el digitador no tiene acceso a /estadisticas (main.py: exclude_roles): no se le dibuja una puerta cerrada #}
