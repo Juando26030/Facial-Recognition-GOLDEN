@@ -74,7 +74,7 @@ def images_signature(db: Session, product_ids: Iterable[Optional[int]]) -> str:
         return ""
     keys = [k for (k,) in db.query(CrmProduct.image_key).filter(CrmProduct.id.in_(ids), CrmProduct.image_key.isnot(None)).order_by(CrmProduct.id).all()]
     import hashlib
-    return hashlib.sha1("|".join(keys).encode()).hexdigest()[:6] if keys else ""
+    return hashlib.sha1("|".join(keys).encode(), usedforsecurity=False).hexdigest()[:6] if keys else ""
 
 
 def copy_layout(src: CrmDocTemplate, dst: CrmDocTemplate) -> Optional[dict]:

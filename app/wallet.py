@@ -130,7 +130,7 @@ def apple_pkpass(*, att_id: int, person_name: str, event_name: str, code: str) -
         raise RuntimeError("Apple Wallet no está configurado")
     files = {"pass.json": json.dumps(apple_pass_json(att_id=att_id, person_name=person_name, event_name=event_name, code=code), ensure_ascii=False).encode("utf-8")}
     files.update(_icons())
-    manifest = json.dumps({name: hashlib.sha1(data).hexdigest() for name, data in files.items()}).encode()
+    manifest = json.dumps({name: hashlib.sha1(data, usedforsecurity=False).hexdigest() for name, data in files.items()}).encode()
     password = _env("WALLET_APPLE_KEY_PASSWORD").encode() or None
     cert = x509.load_pem_x509_certificate(_pem("WALLET_APPLE_CERT_PEM"))
     key = serialization.load_pem_private_key(_pem("WALLET_APPLE_KEY_PEM"), password=password)

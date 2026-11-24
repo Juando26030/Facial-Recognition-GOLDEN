@@ -58,7 +58,7 @@ def diff_products(before: Dict[int, dict], after: Dict[int, dict]) -> List[dict]
 
 def snap_hash(products: Dict[int, dict]) -> str:
     canon = json.dumps({str(k): v["qty"] for k, v in sorted(products.items())}, separators=(",", ":"))
-    return hashlib.sha1(canon.encode()).hexdigest()
+    return hashlib.sha1(canon.encode(), usedforsecurity=False).hexdigest()
 
 
 # Las categorías que un producto del CRM puede implicar (decisión de Juan David, 19-nov-2026). Nacieron de las filas del checklist de Almacén, pero el CRM las separa más: monitores y semáforos, tablets y iPads

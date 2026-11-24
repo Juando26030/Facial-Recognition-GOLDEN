@@ -1,0 +1,8 @@
+# Falsos positivos de gitleaks REVISADOS el 24-nov-2026 (huella exacta, no un patrón amplio). Los 6 están en archivos de pruebas y son cadenas inventadas:
+# claves «prod_…» de 21 a 24 caracteres (las reales de Wompi tienen ~47) y una contraseña de prueba. No son claves de ningún sistema.
+0b7785dbe313ebcdce24a5fd2b1074fe74bf826c:tests/test_cuentas_cobro.py:generic-api-key:15
+0b669be7a26c232cbffeecdc6dbb2330f20e27ed:tests/test_cuentas_cobro.py:generic-api-key:15
+494d7164acdc57bb9bc8f6053d0b0f406c7cc98b:tests/test_seguridad_f5_9_c.py:generic-api-key:16
+494d7164acdc57bb9bc8f6053d0b0f406c7cc98b:tests/test_seguridad_f5_9_c.py:generic-api-key:105
+5edbab659ce2bf73506f273406a658465ba23c61:tests/test_cuentas_cobro.py:generic-api-key:15
+8c83288fc88780442ca32a518f7e4985f7820b7b:tests/test_fase4_credenciales.py:generic-api-key:109

@@ -134,7 +134,7 @@ def template_sig(tpl: Optional[dict], extra: str = "") -> str:
     import hashlib
     import json
     raw = json.dumps([(tpl or {}).get(k) for k in ("id", "header_text", "greeting_text", "footer_text", "layout")], sort_keys=True, ensure_ascii=False) + "|" + extra
-    return hashlib.sha1(raw.encode()).hexdigest()[:8]
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:8]
 
 
 def quote_key(q, sig: str = "") -> str:

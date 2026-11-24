@@ -752,7 +752,7 @@ def parse_csv(text: str, trm_default: Optional[Decimal] = None) -> tuple:
         except InfraError as e:
             warns.append(f"Fila {n}: {e}")
             continue
-        key = "archivo:%s:%s:%s" % (entry["month"], entry["provider"], hashlib.sha1(entry["concept"].lower().encode()).hexdigest()[:20])
+        key = "archivo:%s:%s:%s" % (entry["month"], entry["provider"], hashlib.sha1(entry["concept"].lower().encode(), usedforsecurity=False).hexdigest()[:20])
         if key in seen:
             warns.append(f"Fila {n}: {entry['month']} {entry['concept']} está repetida; se usó la última")
             items[seen[key]] = {**entry, "source_key": key}
