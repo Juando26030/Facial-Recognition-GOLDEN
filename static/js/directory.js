@@ -528,8 +528,10 @@
       // 23-nov: si ya hay foto de registro se muestra aquí y el botón pasa a «Retomar»; si no hay, sigue «Captar».
       // Historial: la foto de registro y, si la hay, la selfie verificada (se conservan las dos; nada se reemplaza).
       const urls = [];
-      const rev = new MutationObserver(() => { if (!box.isConnected) { urls.forEach((u) => URL.revokeObjectURL(u)); rev.disconnect(); } });
-      rev.observe(document.body, { childList: true, subtree: true });
+      if (typeof MutationObserver !== 'undefined') {
+        const rev = new MutationObserver(() => { if (!box.isConnected) { urls.forEach((u) => URL.revokeObjectURL(u)); rev.disconnect(); } });
+        rev.observe(document.body, { childList: true, subtree: true });
+      }
       [['registro', 'editModalFaceImg', 'editModalFacePhoto'], ['selfie', 'editModalSelfieImg', 'editModalSelfiePhoto']].forEach(([which, imgId, figId]) => {
         fetch(`/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/registration-photo?which=${which}`, { cache: 'no-store' }).then(async (r) => {
           if (!r.ok || !box.isConnected) return;
