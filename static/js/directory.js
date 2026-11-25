@@ -327,7 +327,7 @@
     try {
       const res = await xfetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' }, `Eliminar: ${whoOf(user)}`);
       if (res.ok) {
-        if (res.queued && GCd.peopleRemove) await GCd.peopleRemove(user.id);
+        if (res.queued && GCd && GCd.peopleRemove) await GCd.peopleRemove(user.id);
         showToast(res.queued ? 'Persona eliminada en este dispositivo: se envía al volver la red' : 'Persona eliminada', 'success');
         if (done) done();
         if (window.directorySearch) window.directorySearch.reload();
@@ -566,7 +566,7 @@
 
     const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
-      const off = !!(GCs && GCs.active());
+      let off = !!(GCs && GCs.active());                                  // pasa a true también si una petición de este guardado quedó en la bandeja (la red se cayó en ese instante)
       if (off && !canWorkOffline(user)) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto y sin copia completa: aviso claro, no «Error de red»
       const who = whoOf(user); let localStatus = null;
       const form = box.querySelector('#editModalForm');
@@ -606,7 +606,7 @@
             saveBtn.disabled = false;
             return;
           }
-          if (cedulaRes.queued && GCs.peopleRemove) await GCs.peopleRemove(user.id, newId);
+          if (cedulaRes.queued) { off = true; if (GCs && GCs.peopleRemove) await GCs.peopleRemove(user.id, newId); }
           currentId = newId;
         } catch (e) {
           showToast('Error de red', 'error');
@@ -670,6 +670,9 @@
             if (newStatus === 'registrado' && window.RegTimer) RegTimer.done();
             if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
           } catch (e) {
+            if (!off && GCs && canWorkOffline(user)) {                    // la red se cayó justo al cambiar el estado: se guarda en el dispositivo como el resto
+              try { off = true; if (GCs.noteNetFail) GCs.noteNetFail(); if (await offlineStatus(newStatus)) return true; } catch (e2) { /* cae al aviso */ }
+            }
             showToast('Error de red', 'error');
             saveBtn.disabled = false;
             return false;
@@ -704,6 +707,7 @@
         const res = dataChanged ? await xfetch(withEvent(`/api/users/${currentId}`), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         }, `Edición: ${who}`) : { ok: true, clone: () => ({ json: async () => ({}) }) };          // solo cambió el estado: no se reenvían los datos (no los bloquea un obligatorio vacío)
+        if (res.queued) off = true;
         if (res.ok && !(await applyStatus())) return;                    // los datos quedaron guardados; el estado se aplica DESPUÉS (con su propio aviso si no se pudo)
         if (res.ok) {
           try {
@@ -722,10 +726,14 @@
               });
               if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print, skip: sd.auto_print_skip }); }
               else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
-            } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
+            } catch (e) {
+              let done = false;
+              if (GCs && canWorkOffline(user)) { try { off = true; done = await offlineStatus('registrado'); } catch (e2) { done = false; } }          // sin red en ese instante: queda en el dispositivo
+              if (!done) showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
+            }
           }
-          if (off && GCs.peopleApply) {                                   // la copia del dispositivo queda igual a lo que se guardó (la lista sin red sale de ahí)
-            const { send_digital_now: _s, ...patch } = payload;
+          if (off && GCs && GCs.peopleApply) {                            // la copia del dispositivo queda igual a lo que se guardó (la lista sin red sale de ahí)
+            const { send_digital_now: _s, id: _id, ...patch } = payload;          // la cédula nunca se pisa desde aquí (su cambio va aparte)
             if (!dataChanged) Object.keys(patch).forEach((k) => delete patch[k]);
             if (localStatus) patch.status = localStatus;
             await GCs.peopleApply(currentId, patch);

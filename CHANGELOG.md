@@ -16,6 +16,7 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 - **Cómo:** copia completa cifrada (las mismas filas que ya se bajaban), peticiones guardadas que se repiten contra las rutas de siempre y service worker. Ruta nueva
   `GET /api/events/{id}/offline-pack` (una vez al abrir); `POST …/movement` acepta `client_time`. Sin migración.
 - **Contingencia encendida por defecto** (`CONTINGENCY_ENABLED=0` la apaga). El escáner de cédula funciona sin red si ya se usó una vez con conexión en ese equipo.
+- **Arreglos tras la prueba en staging (25-nov):** guardar en Editar justo al caerse la red ya no da «Error de red» (va a la bandeja); lo pendiente se reintenta solo aunque se recargue sin red; el letrero rojo y el aviso de la bandeja ya no tapan nada en ningún tamaño de pantalla. Laboratorio en Chrome real: `tests/lab_contingencia/`.
 - Detalle, límites y pendientes (prueba en tableta, texto legal de la auditora, copia propia de las librerías del escáner): `docs/28_CONTINGENCIA_COMPLETA.md`.
 
 ## 2026-11-24 (tarde) — Escáner de cédula: recorte automático (rama `feat/cedula-recorte-auto`, sin desplegar)

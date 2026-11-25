@@ -562,7 +562,8 @@
         GoldenOutbox.init({ eventId: window.EVENT_ID }).then((box) => {
             if (!box.supported || !window.GoldenOutboxUI) return;
             const ui = GoldenOutboxUI.mount({ outbox: box });
-            GoldenContingency.instance.onChange((st) => { if (st === 'normal') { const gc = GoldenContingency.instance; Promise.resolve(gc.syncQueue ? gc.syncQueue(true) : null).catch(() => {}).then(() => ui.sync(false)); } });          // primero los ingresos (por huella), después la bandeja (puede traer cambios de cédula)
+            GoldenContingency.instance.onChange((st) => { if (st === 'normal') { const gc = GoldenContingency.instance; Promise.resolve(gc.syncQueue ? gc.syncQueue(true) : null).catch(() => {}).then(() => ui.sync(false)); } });
+                { const gc = GoldenContingency.instance; let last = 0; if (gc.onHealth) gc.onHealth((ok) => { if (!ok || gc.active() || ui.syncing || Date.now() - last < 30000) return; box.stats().then((st) => { if (st.pending) { last = Date.now(); ui.sync(false); } }).catch(() => {}); }); }          // reintento solo (máx. cada 30 s) mientras quede algo pendiente: p. ej. tras recargar sin red          // primero los ingresos (por huella), después la bandeja (puede traer cambios de cédula)
             ui.tick();
         });
     }

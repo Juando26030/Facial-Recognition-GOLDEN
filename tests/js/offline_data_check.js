@@ -42,6 +42,26 @@ const D = require('../../static/js/offline-data.js');
   answers.push({ status: 404, body: { detail: 'No existe' } }, { status: 503, body: {} });
   sum = await box.sync(); assert.strictEqual(sum.error, 1); assert.strictEqual(sum.stopped, 'servidor'); assert.strictEqual((await box.stats()).pending, 1);
 
+  // ---------- gwFetch: con red es fetch; si la red se cae JUSTO en ese instante (aún sin modo contingencia) el cambio va a la bandeja, sin «Error de red» (25-nov-2026)
+  {
+    const idb2 = fakeIndexedDB(); let m = 0, mode = 'ok', poked = 0; const seen = [];
+    const box2 = O.create({ idb: idb2, subtle: crypto.subtle, random: (k) => crypto.getRandomValues(new Uint8Array(k)), now: () => now++, fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }), eventId: 9, uuid: () => `g-${++m}` });
+    await box2.init();
+    const keep = { fetch: globalThis.fetch, box: globalThis.GoldenOutbox, gc: globalThis.GoldenContingency };
+    globalThis.GoldenOutbox = { instance: box2 }; globalThis.GoldenContingency = { instance: { active: () => false, noteNetFail: () => { poked++; } } };
+    globalThis.fetch = async (url, init) => { seen.push(url); if (mode === 'caida') throw new TypeError('Failed to fetch'); if (mode === 'otro') throw new RangeError('otra cosa'); return { ok: true, status: 200, json: async () => ({ real: true }) }; };
+    try {
+      let r = await O.gwFetch('/api/users/1?event_id=9', { method: 'PATCH', body: '{}' }, 'Edición');
+      assert.ok(r.ok && !r.queued && (await box2.stats()).pending === 0, 'con red: fetch de siempre');
+      mode = 'caida'; r = await O.gwFetch('/api/users/1?event_id=9', { method: 'PATCH', body: '{"phone":"1"}' }, 'Edición');
+      assert.ok(r.ok && r.queued && r.status === 202, 'la red se cayó en ese instante: a la bandeja'); assert.strictEqual((await box2.stats()).pending, 1); assert.strictEqual(poked, 1, 'y se avisa para pasar ya a contingencia');
+      await assert.rejects(O.gwFetch('/api/users?event_id=9'), TypeError, 'una lectura (GET) nunca se encola');
+      mode = 'otro'; await assert.rejects(O.gwFetch('/api/users/1', { method: 'PATCH', body: '{}' }, 'x'), RangeError, 'un error que no es de red no se disfraza');
+      globalThis.GoldenContingency.instance.active = () => true; mode = 'ok'; const before = seen.length;
+      r = await O.gwFetch('/api/users/2?event_id=9', { method: 'DELETE' }, 'Eliminar'); assert.ok(r.queued && seen.length === before, 'en contingencia ni se intenta la red');
+    } finally { globalThis.fetch = keep.fetch; globalThis.GoldenOutbox = keep.box; globalThis.GoldenContingency = keep.gc; }
+  }
+
   // ---------- Áreas sin red: mismas respuestas que el servidor para lo que el dispositivo puede comprobar
   const u = { id: '100', first_name: 'Ana', last_name: 'Ruiz' };
   const libre = { id: 1, name: 'Salón', allow_reentry: true }, unica = { id: 2, name: 'Almuerzo', allow_reentry: false };

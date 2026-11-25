@@ -43,6 +43,17 @@ con `If-None-Match` responde 304. Único cambio en una ruta existente: `POST …
 - Las horas de las entregas de inventario y de las ediciones quedan con la hora de envío; la de ingresos y movimientos de zona, con la hora real.
 - Los datos que no estaban en el dispositivo antes de caerse la red no aparecen (hay que haber abierto la pantalla con conexión ese día).
 
+## Arreglos del 25-nov-2026 tras la primera prueba en staging
+
+- **«Error de red» al guardar en Editar.** Pasaba cuando la red se caía y se guardaba ENSEGUIDA: el quiosco tarda unos 10 s en pasar a contingencia y en ese lapso la pantalla todavía
+  intentaba la red. Ahora cualquier cambio cuya petición falle por red va a la bandeja de salida (`gwFetch`) y se adelanta el chequeo de salud (`noteNetFail`).
+- **Lo pendiente no se enviaba si se recargaba la página sin red** (no había un «volvió la red» que escuchar). Ahora la bandeja reintenta sola con cada chequeo de salud bueno (máx. cada 30 s).
+- **El letrero rojo tapaba «Guardar» en el celular.** Ya no tapa nada: reserva su espacio (`--gw-banner-h`) y baja la página, las ventanas, el menú y las barras pegadas; en pantallas
+  pequeñas el texto es corto. Lo mismo el aviso de la bandeja abajo (`--gw-outbox-h`), que además dice «cambios sin enviar» (antes «personas nuevas», que confundía).
+- **Protección de la copia local:** una respuesta 200 que no es la lista (portal de una red wifi) ya no la reemplaza.
+- **Pruebas:** laboratorio en Chrome real (`tests/lab_contingencia/`, 7 casos, 5 tamaños de pantalla) + `tests/js/contingency_banner_check.js` y el bloque `gwFetch` de
+  `tests/js/offline_data_check.js`.
+
 ## Pendientes
 
 1. **Probar en una tableta real y en staging** (nada de esto se ha probado en un equipo físico): apagar el wifi con el Registro abierto y recorrer la tabla de arriba.

@@ -233,6 +233,7 @@
       }
       if (!res.ok) return 'error';
       const body = await res.json();
+      if (!body || !Array.isArray(body.people) || !body.salt) return 'error';          // una respuesta 200 que no es la lista (p. ej. una página de un portal de red): la copia buena no se toca
       await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s, consent: body.consent || null,
         event_id: body.event && body.event.id, auto_register: !!(body.event && body.event.auto_register), fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
       if (d.personForm) await c.refreshPersonForm();
@@ -467,14 +468,36 @@
 
     /* --- señales desde directory.js --- */
     c.noteScanExhausted = () => { if (c.supported && c.machine) c.machine.scanExhausted(); };
+    /* Una petición de la pantalla acaba de fallar por red: se comprueba la salud YA (sin esperar al siguiente ciclo) para pasar antes al modo contingencia. */
+    c.noteNetFail = () => { if (c.supported && c.machine && !c.checking) { c.checking = true; Promise.resolve().then(() => c.checkHealth()).catch(() => {}).then(() => { c.checking = false; }); } };
     c.noteAuthGood = () => { if (c.supported && c.machine) c.machine.authGood(); };
 
     /* --- franja visible --- */
+    /* La franja NO tapa nada (25-nov-2026, pedido de Juan David: en el celular tapaba «Guardar»): reserva su propio espacio. Publica su alto en --gw-banner-h y una hoja de estilos baja
+       el contenido de la página y todo lo que ocupa la pantalla completa (ventanas, bandeja, menú lateral, recorrido). En pantallas angostas el texto es corto para que ocupe poco. */
+    const win = () => (d.document && d.document.defaultView) || (typeof window !== 'undefined' ? window : null);
+    const narrow = () => { const w = win(); return !!(w && w.innerWidth && (w.innerWidth < 900 || (w.innerHeight && w.innerHeight < 560))); };          // celular o tableta pequeña, en cualquier posición
+    const SPACE_CSS = 'html body{padding-top:var(--gw-banner-h,0px)}'
+      + '.gw-modal-backdrop,.gw-registro__overlay,.gw-outbox__modal,.gw-tour,.gwe-preview,.gw-gx__dialog,.golden-sidebar,.golden-sidebar-backdrop{top:var(--gw-banner-h,0px)!important}'
+      + '.golden-sidebar{height:calc(100% - var(--gw-banner-h,0px))!important}'
+      + '.gw-nav,.gw-search,.golden-header{top:var(--gw-banner-h,0px)!important}'
+      + '.gw-workarea__bar{top:calc(3.4rem + var(--gw-banner-h,0px))!important}'
+      + '.gw-modal-backdrop .gw-modal,.gw-registro__overlay>*{max-height:calc(100dvh - var(--gw-banner-h,0px) - var(--gw-outbox-h,0px))}';
+    function space() {
+      const doc = d.document;
+      if (!doc || !doc.documentElement || !doc.documentElement.style || !doc.documentElement.style.setProperty) return;
+      let h = 0;
+      try { if (c.banner && c.banner.getBoundingClientRect) h = Math.ceil(c.banner.getBoundingClientRect().height || 0); } catch (e) { h = 0; }
+      doc.documentElement.style.setProperty('--gw-banner-h', h + 'px');
+      if (h && doc.head && doc.getElementById && !doc.getElementById('gw-banner-space')) { const st = doc.createElement('style'); st.id = 'gw-banner-space'; st.textContent = SPACE_CSS; doc.head.appendChild(st); }
+    }
+    c.space = space;
     function banner() {
       if (!c.supported) return c.lastError ? { st: 'unsupported', text: 'Este navegador no permite el modo contingencia: sin conexión no se podrá acreditar.' } : null;
       const n = c.queueSize, st = c.machine.state;
       if (c.sessionExpired && (st === 'contingency' || n > 0)) return { st: 'session', text: `Sesión vencida: inicia sesión de nuevo; ${n} ingreso(s) guardados se sincronizarán.`, link: true };
-      if (st === 'contingency') return { st: 'contingency', text: `MODO CONTINGENCIA (sin conexión): se admite por cédula/QR con la copia local y se sincroniza al volver la red${n ? ` · ${n} en cola` : ''}. Quien no esté en la copia: verificar manualmente.` };
+      if (st === 'contingency') return { st: 'contingency', text: narrow() ? `Sin conexión: todo se guarda aquí y se envía al volver la red${n ? ` · ${n} en cola` : ''}.`
+        : `MODO CONTINGENCIA (sin conexión): sigue trabajando; todo se guarda en este dispositivo y se envía solo al volver la red${n ? ` · ${n} en cola` : ''}. Quien no esté en la copia: verificar manualmente.` };
       if (c.notice) return { st: 'notice', text: c.notice.text(n), dismiss: true };
       if ((n > 0 || c.consentSize > 0) && c.oldestAgeMs >= WARN_AGE_MS) {      // lo guardado envejece: avisar ANTES de que se elimine (día 3 amarillo, día 6 rojo)
         const days = Math.floor(c.oldestAgeMs / DAY_MS), left = Math.max(0, 7 - days);
@@ -494,12 +517,12 @@
       if (sig === c.bannerSig) return;
       c.bannerSig = sig;
       if (c.banner) { c.banner.remove(); c.banner = null; }
-      if (!b) return;
+      if (!b) { space(); return; }
       const el = doc.createElement('div');
       const palette = { degraded: ['#fff8e1', '#7a5b00', '#f0ad4e'], contingency: ['#fbe9ea', '#a12631', '#dc3545'], session: ['#fbe9ea', '#a12631', '#dc3545'], notice: ['#fff8e1', '#7a5b00', '#f0ad4e'],
         syncing: ['#e8f1fb', '#1d4f87', '#4a90d9'], review: ['#fff8e1', '#7a5b00', '#f0ad4e'], aging: ['#fff8e1', '#7a5b00', '#f0ad4e'], aging2: ['#fbe9ea', '#a12631', '#dc3545'], unsupported: ['#eef1f5', '#44505c', '#8a96a3'] }[b.st];
       el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
-      el.style.cssText = `position:fixed; top:0; left:0; right:0; z-index:10000; padding:8px 14px; text-align:center; font-size:.9rem; font-weight:600; background:${palette[0]}; color:${palette[1]}; border-bottom:3px solid ${palette[2]};`;
+      el.style.cssText = `position:fixed; top:0; left:0; right:0; z-index:10000; box-sizing:border-box; padding:${narrow() ? '5px 10px' : '8px 14px'}; text-align:center; font-size:${narrow() ? '.8rem' : '.9rem'}; line-height:1.3; font-weight:600; background:${palette[0]}; color:${palette[1]}; border-bottom:3px solid ${palette[2]};`;
       el.dataset.state = b.st;
       el.setAttribute('data-golden-banner', '1');          // toast.js desplaza los avisos bajo esta franja
       el.textContent = b.text;
@@ -509,6 +532,7 @@
       if (c.reviewCount > 0) button(`Revisar (${c.reviewCount})`, () => c.openReview());
       doc.body.appendChild(el);
       c.banner = el;
+      space();
     }
     c.render = render;
 
@@ -532,6 +556,7 @@
       try { const r = await d.fetch('/health', { cache: 'no-store', signal: ctl ? ctl.signal : undefined }); ok = !!(r && r.ok); } catch (e) { ok = false; } finally { if (timer) d.clearTimeout(timer); }
       T('contingency:health', { ok, ms: d.now() - h0 });
       c.machine.health(ok);
+      c.healthListeners.forEach((f) => { try { f(ok); } catch (e) { /* un oyente no tumba el chequeo */ } });
       if (c.machine.readyToProbe() && d.now() >= c.probeAfter) {          // 2 chequeos buenos: falta UNA petición autenticada buena
         const r = await c.probe();
         if (r === 'ok') { c.sessionExpired = false; c.machine.authGood(); render(); }
@@ -539,6 +564,9 @@
       } else if (ok && c.machine.state !== 'contingency' && (c.queueSize > 0 || c.consentSize > 0)) c.syncQueue();
     };
     c.checkHealth = checkHealth;
+    /* Avisa el resultado de cada chequeo de salud (lo usa la bandeja de salida para reintentar sola lo pendiente: p. ej. tras recargar la página sin red, donde no hay «volvió la red» que escuchar). */
+    c.healthListeners = [];
+    c.onHealth = (f) => { c.healthListeners.push(f); };
     const T = (n, x) => { if (root.GoldenTrace) root.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
     c.start = async (opts) => {
       T('contingency:start');
@@ -548,6 +576,7 @@
         render(); c.listeners.forEach((f) => f(s));
         if (s === 'normal' && from === 'contingency') { c.refreshRoster(); c.syncQueue(true); }       // volvió la red: copia al día y cola al servidor
       });
+      { const w = win(); if (w && w.addEventListener) w.addEventListener('resize', () => { c.bannerSig = ''; render(); }); }          // al girar o cambiar el tamaño: texto corto/largo y espacio reservado al día
       if (!c.isSupported()) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       c.supported = true;

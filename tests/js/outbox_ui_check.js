@@ -37,7 +37,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 
   // aviso por nivel
   items = [{ op_id: 'a', status: 'pendiente', label: 'Nora <b>x</b>', detail: null, days_old: 1, days_left: 6, level: 'ok' }]; unsent = 1; await ui.refresh();
-  assert.strictEqual(btn.style.display, 'inline-flex'); assert.strictEqual(btn.textContent, 'Bandeja (1)'); assert.ok(/1 persona nueva sin enviar/.test(banner.textContent));
+  assert.strictEqual(btn.style.display, 'inline-flex'); assert.strictEqual(btn.textContent, 'Bandeja (1)'); assert.ok(/1 cambio sin enviar/.test(banner.textContent));
   items[0].days_old = 3.2; items[0].days_left = 3.8; await ui.refresh(); assert.ok(/hace 3 días; caduca en 4 días/.test(banner.textContent)); assert.ok(/gw-alert--warn/.test(banner.className), 'amarillo desde el día 3');
   items[0].days_old = 6.5; items[0].days_left = 0.5; await ui.refresh(); assert.ok(/gw-alert--err/.test(banner.className), 'rojo desde el día 6');
   items[0].status = 'caducada'; items[0].level = 'expired'; await ui.refresh(); assert.ok(/CADUCÓ/.test(banner.textContent));

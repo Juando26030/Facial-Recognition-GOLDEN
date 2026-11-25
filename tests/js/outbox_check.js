@@ -62,7 +62,7 @@ const okAll = async (body) => json(200, { results: body.ops.map((o) => ({ op_id:
   const oldId = (await box.enqueue(fields('B1'), 'Beatriz Antigua')).op_id;
   assert.strictEqual((await box.stats()).level, 'ok');
   now += 2 * DAY; assert.strictEqual((await box.stats()).level, 'ok');
-  now += DAY; st = await box.stats(); assert.strictEqual(st.level, 'warn'); assert.ok(/1 persona nueva sin enviar \(la más antigua, hace 3 días; caduca en 4 días\)/.test(st.banner), st.banner);
+  now += DAY; st = await box.stats(); assert.strictEqual(st.level, 'warn'); assert.ok(/1 cambio sin enviar \(la más antigua, hace 3 días; caduca en 4 días\)/.test(st.banner), st.banner);
   now += 3 * DAY; st = await box.stats(); assert.strictEqual(st.level, 'urgent'); assert.ok(/hace 6 días; caduca en 1 día\)/.test(st.banner), st.banner);
   now += 2 * DAY; calls = []; st = await box.stats();
   assert.ok(!(await box.list()).some((i) => i.op_id === oldId), 'a los 7 días se eliminó del dispositivo'); assert.strictEqual(calls.length, 0, 'y no se envió');

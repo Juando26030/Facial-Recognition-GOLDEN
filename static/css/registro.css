@@ -268,3 +268,12 @@ body.gw-registro:not(.touch-mode) .golden-table td[data-field="status"] .gw-orig
 .gw-registro__editphoto img { max-width: 160px; max-height: 200px; border-radius: var(--gw-radius-md); border: 1px solid var(--gw-border); object-fit: cover; }
 .gw-registro__editphoto figcaption { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-registro__editphotos { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); justify-content: center; }
+/* El aviso de la bandeja y su botón no tapan nada (25-nov-2026): outbox-ui.js publica el alto que ocupan en --gw-outbox-h; la página y las ventanas dejan ese espacio libre abajo. */
+html body { padding-bottom: var(--gw-outbox-h, 0px); }
+.gw-modal-backdrop, .gw-registro__overlay { bottom: var(--gw-outbox-h, 0px); }
+.gw-modal-backdrop .gw-modal, .gw-registro__overlay > * { max-height: calc(100dvh - var(--gw-banner-h, 0px) - var(--gw-outbox-h, 0px)); }
+.gw-outbox__btn { bottom: calc(var(--gw-outbox-bar-h, 0px) + var(--gw-sp-2)); }
+html body .gw-bell, html body .gw-registro__retry, html body .golden-env-badge { bottom: calc(var(--gw-outbox-h, 0px) + var(--gw-sp-4)); }
+/* En pantallas pequeñas el aviso de la bandeja es compacto, y mientras está visible sobra el botón flotante (el aviso ya abre la bandeja). */
+.gw-outbox__banner:not([style*="display: none"]) ~ .gw-outbox__btn { display: none !important; }
+@media (max-width: 900px), (max-height: 560px) { .gw-outbox__banner { padding: var(--gw-sp-1) var(--gw-sp-3); font-size: var(--gw-fs-sm); line-height: 1.25; } }

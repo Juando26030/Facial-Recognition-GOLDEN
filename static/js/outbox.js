@@ -43,11 +43,11 @@
   function bannerText(stats) {
     if (!stats.unsent && !stats.expired && !stats.pruned) return '';
     const parts = [];
-    if (stats.pruned) parts.push(`${stats.pruned} ${stats.pruned === 1 ? 'persona nueva llevaba' : 'personas nuevas llevaban'} ${TTL_DAYS} días sin enviarse y se eliminaron de este dispositivo, como indica la política de privacidad: vuelve a registrarlas`);
-    if (stats.expired) parts.push(`${stats.expired} ${stats.expired === 1 ? 'persona nueva CADUCÓ' : 'personas nuevas CADUCARON'} sin enviarse (pasaron ${TTL_DAYS} días): no se envían solas; revísalas en la bandeja`);
+    if (stats.pruned) parts.push(`${stats.pruned} ${stats.pruned === 1 ? 'cambio llevaba' : 'cambios llevaban'} ${TTL_DAYS} días sin enviarse y se eliminaron de este dispositivo, como indica la política de privacidad: vuelve a registrarlas`);
+    if (stats.expired) parts.push(`${stats.expired} ${stats.expired === 1 ? 'cambio CADUCÓ' : 'cambios CADUCARON'} sin enviarse (pasaron ${TTL_DAYS} días): no se envían solos; revísalos en la bandeja`);
     if (stats.unsent) {
       const left = Math.max(0, Math.ceil(stats.min_days_left));
-      parts.push(`${stats.unsent} ${stats.unsent === 1 ? 'persona nueva sin enviar' : 'personas nuevas sin enviar'} (la más antigua, hace ${Math.floor(stats.oldest_days)} ${Math.floor(stats.oldest_days) === 1 ? 'día' : 'días'}; caduca${stats.unsent === 1 ? '' : 'n'} en ${left} ${left === 1 ? 'día' : 'días'})`);
+      parts.push(`${stats.unsent} ${stats.unsent === 1 ? 'cambio sin enviar' : 'cambios sin enviar'} (la más antigua, hace ${Math.floor(stats.oldest_days)} ${Math.floor(stats.oldest_days) === 1 ? 'día' : 'días'}; caduca${stats.unsent === 1 ? '' : 'n'} en ${left} ${left === 1 ? 'día' : 'días'})`);
     }
     return parts.join(' · ');
   }
@@ -213,20 +213,27 @@
     return o;
   }
 
-  /* gwFetch (docs/28): un `fetch` que SIN RED guarda la petición en la bandeja de salida y responde «aceptado» (202) para que la pantalla siga igual que con conexión; con red es el fetch de
-     siempre. Solo para cambios (nunca GET). `fake` = lo que la pantalla leería de la respuesta. Sin bandeja disponible, falla como un fetch sin red. */
+  /* gwFetch (docs/28): un `fetch` que SIN RED (o si la red falla en ese mismo instante) guarda la petición en la bandeja de salida y responde «aceptado» (202) para que la pantalla siga
+     igual que con conexión; con red es el fetch de siempre. Solo para cambios (nunca GET). `fake` = lo que la pantalla leería de la respuesta. Sin bandeja disponible, falla como un fetch sin red. */
   function offlineNow() { const gc = root.GoldenContingency && root.GoldenContingency.instance; return !!(gc && gc.active && gc.active()); }
   function fakeResponse(data) { const r = { ok: true, status: 202, queued: true, headers: { get: () => null }, json: async () => data || {}, text: async () => JSON.stringify(data || {}), clone: () => r }; return r; }
   async function gwFetch(url, opts, label, fake) {
     const box = root.GoldenOutbox && root.GoldenOutbox.instance;
     const method = String((opts && opts.method) || 'GET').toUpperCase();
-    if (method === 'GET' || !offlineNow() || !box || !box.supported) return root.fetch(url, opts);
-    await box.enqueueHttp(url, opts, label || 'Cambio hecho sin conexión');
-    return fakeResponse(fake);
+    if (method === 'GET' || !box || !box.supported) return root.fetch(url, opts);
+    const queue = async () => { await box.enqueueHttp(url, opts, label || 'Cambio hecho sin conexión'); return fakeResponse(fake); };
+    if (offlineNow()) return queue();
+    try { return await root.fetch(url, opts); }
+    catch (e) {                                                           // la red se cayó JUSTO ahora (el quiosco aún no ha pasado a contingencia): el cambio no se pierde ni da «Error de red»
+      if (e && e.name !== 'TypeError' && e.name !== 'AbortError') throw e;
+      const gc = root.GoldenContingency && root.GoldenContingency.instance;
+      if (gc && gc.noteNetFail) gc.noteNetFail();
+      return queue();
+    }
   }
   if (typeof window !== 'undefined') { root.gwFetch = gwFetch; root.gwOffline = offlineNow; }
 
-  const api = { create, effectiveStatus, levelOf, bannerText, statusLabel, TTL_DAYS, WARN_DAY, URGENT_DAY };
+  const api = { create, effectiveStatus, gwFetch, levelOf, bannerText, statusLabel, TTL_DAYS, WARN_DAY, URGENT_DAY };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GoldenOutbox = Object.assign(api, { instance: null, async init(opts) { this.instance = create(opts); return this.instance.init(); } });
 })(typeof window !== 'undefined' ? window : globalThis);

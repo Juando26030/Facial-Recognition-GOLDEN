@@ -11,6 +11,15 @@
     const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const el = (tag, cls, text) => { const e = doc.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };      // Plan 8: solo clases (registro.css), nada de colores en el código
 
+    /* Ni el aviso de abajo ni el botón «Bandeja» tapan nada (25-nov-2026): publican el alto que ocupan en --gw-outbox-h y las hojas de estilo (registro.css / gw-offline.css) dejan ese
+       espacio libre al final de la página y de las ventanas. */
+    const reserve = () => {
+      const root = doc.documentElement; if (!root || !root.style || !root.style.setProperty) return;
+      const hOf = (e) => { try { return e.style.display !== 'none' && e.getBoundingClientRect ? Math.ceil(e.getBoundingClientRect().height || 0) : 0; } catch (x) { return 0; } };
+      const hb = hOf(banner), hbtn = hOf(btn);
+      root.style.setProperty('--gw-outbox-bar-h', hb + 'px');                 // el aviso de abajo
+      root.style.setProperty('--gw-outbox-h', (hb + (hbtn ? hbtn + 16 : 0)) + 'px');          // aviso + botón «Bandeja» encima de él
+    };
     const banner = el('div', 'gw-alert gw-alert--warn gw-outbox__banner'); banner.style.display = 'none';
     banner.setAttribute('role', 'status'); banner.setAttribute('tabindex', '0'); banner.setAttribute('aria-live', 'polite'); banner.setAttribute('data-golden-banner', 'outbox');
     const btn = el('button', 'gw-btn gw-btn--secondary gw-outbox__btn'); btn.style.display = 'none';
@@ -28,6 +37,7 @@
       btn.textContent = attention ? `Bandeja (${attention})` : 'Bandeja';
       banner.style.display = st.banner ? 'flex' : 'none';
       if (st.banner) { banner.className = LEVEL_CLASS[st.level] || LEVEL_CLASS.warn; banner.textContent = st.banner + ' — toca para abrir la bandeja'; }
+      reserve();
       if (modal.style.display !== 'none') await renderPanel(st);
       return st;
     }

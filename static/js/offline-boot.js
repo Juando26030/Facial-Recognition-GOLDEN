@@ -11,6 +11,8 @@
     if (!box.supported || !window.GoldenOutboxUI) return;
     const ui = window.GoldenOutboxUI.mount({ outbox: box });
     gc.onChange((st) => { if (st === 'normal') Promise.resolve(gc.syncQueue ? gc.syncQueue(true) : null).catch(() => {}).then(() => ui.sync(false)); });          // primero los ingresos, después la bandeja
+    let last = 0;
+    if (gc.onHealth) gc.onHealth((ok) => { if (!ok || gc.active() || ui.syncing || Date.now() - last < 30000) return; box.stats().then((st) => { if (st.pending) { last = Date.now(); ui.sync(false); } }).catch(() => {}); });          // reintento solo (máx. cada 30 s) mientras quede algo pendiente
     ui.tick();
   });
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
