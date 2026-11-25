@@ -93,3 +93,19 @@ Pedido de Juan David: que la foto funcione aunque la cédula no quede exactament
   16 casos con nombre: 15/16 (el que falla tiene las 3 líneas fuera de la foto). Camino del servidor con recorte: 9/9. Prueba automática del localizador: `tests/js/mrz_find_check.js`.
 - **Falta:** probar con cédulas reales y celular (plástico, hologramas, letra OCR-B). La cédula vieja no se pudo leer en el banco (no hay zxing sin red): solo se verificó que el flujo corre sin errores.
 
+## Al revés, torcida y chequeo previo (24-nov-2026, noche)
+
+Pedido de Juan David tras probar el recorte automático en el celular: la cédula vieja al revés no leía, y con brillo o torcida se quedaba pensando ~15 s antes de decir que no.
+
+- **Cédula vieja al revés:** `PLANS.photo` alterna derecho / girado 180° desde el primer intento (en `deep` los giros llegaban tras ~27 decodificaciones y el tiempo no alcanzaba).
+  `scanImage(file, { plan: 'photo', cropsOnly })`. Torcida ya la cubría el localizador (rectángulo orientado).
+- **Cédula nueva torcida:** si no se ubican las 3 líneas, se repite la búsqueda sobre la foto girada 45°: entre las dos se cubre cualquier ángulo. Se LEE, no se rechaza.
+- **Chequeo previo (`washedCells`)**: las zonas donde debe haber tinta en todo el ancho (las 3 líneas; el código) se parten en celdas; una celda con < 40 % del contraste típico está
+  «lavada». Más claras que lo normal = brillo; si no, sombra u objeto. Cédula nueva: ≥ 3 celdas lavadas → se avisa SIN procesar; 1–2 → se intenta el primer cuadro y, si no sale, se avisa.
+  Cédula vieja: tras el primer cuadro, ≥ 4 de 48 → se avisa. Sin líneas / sin código a la vista → se avisa de una vez (ya no se manda la foto completa al servidor, que tardaba en decir que no).
+- **Topes de tiempo:** cédula nueva 5,5 s por foto (navegador y servidor); cédula vieja ≈ 4,6 s. La foto fija «con más detalle» solo cuando la cédula se vio, sin brillo, pero lejos.
+- **Mensajes con motivo:** brillo, algo la tapa, no se ven las líneas / el código, quedó muy lejos.
+- **Banco (`tests/lab_cedula`, carpetas `img2/` y `old/`):** nueva a 45°, 60°, −40° y 135°: 4/4; brillo sobre las letras: aviso en 0,6 s; sin cédula: aviso en ~1 s. Vieja (con un decodificador
+  de reemplazo que solo «lee» el código derecho): derecho, al revés, pequeña al revés, torcida, torcida al revés y de lado: 8/8; sin cédula: aviso en 1,4 s.
+  El chequeo de brillo de la cédula vieja solo quedó probado como función (`tests/js/cedula_foto_check.js`), no en el banco.
+

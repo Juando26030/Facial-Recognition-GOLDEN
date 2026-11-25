@@ -348,8 +348,24 @@ const PLANS = {
     { mult: 1,   flip: false, pad: .08, variants: ['stretch', 'bandA'], rot: 4 },
     // barrido de giro: el localizador puede errar el ángulo unos grados y un código inclinado en el recorte no se lee
     ...[-5, 5, -10, 10, -16, 16].map(rot => ({ mult: 1, flip: false, rot, variants: ['stretch', 'bandA', 'binar'] })),
-  ],
-};
+  ],};
+/* «Tomar foto» del quiosco (24-nov-2026): la cédula puede venir AL REVÉS tan a menudo como al derecho, y el tiempo por foto es corto. En `deep` los intentos
+   girados 180° llegan después de ~27 decodificaciones y con 1–2 s nunca se alcanzaban: aquí se alternan desde el principio (derecho, al revés, derecho…). */
+PLANS.photo = [
+  { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'] },
+  { mult: 1,   flip: true,  variants: ['raw', 'stretch', 'bandA'] },
+  { mult: 1,   flip: false, variants: ['binar', 'bandB', 'denoise', 'sharp'] },
+  { mult: 1,   flip: true,  variants: ['binar', 'bandB', 'denoise', 'sharp'] },
+  { mult: 1,   flip: false, variants: ['dewarp', 'dewarpA', 'bandC', 'bandAb'] },
+  { mult: 1,   flip: true,  variants: ['dewarp', 'dewarpA', 'bandC', 'bandAb'] },
+  { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
+  { mult: 1,   flip: true,  variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
+  { mult: .65, flip: false, variants: ['raw', 'stretch', 'binar'] },
+  { mult: .65, flip: true,  variants: ['raw', 'stretch', 'binar'] },
+  { mult: 1.5, flip: false, variants: ['raw', 'stretch', 'bandA'] },
+  { mult: 1.5, flip: true,  variants: ['raw', 'stretch', 'bandA'] },
+  ...[-5, 5, -10, 10].flatMap(rot => [false, true].map(flip => ({ mult: 1, flip, rot, variants: ['stretch', 'bandA'] }))),
+];
 
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d', { willReadFrequently: true })]; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -468,7 +484,7 @@ class CedulaScanner {
   }
 
   /* ---------- foto / galería ---------- */
-  async scanImage(file, { budgetMs = 15000 } = {}) {
+  async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {}) {   // plan 'photo': alterna derecho / al revés; cropsOnly: solo los recortes ubicados (sin barrer la imagen completa)
     const t0 = performance.now(), deadline = t0 + budgetMs;
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const dbg = this.lastDebug = { w: bmp.width, h: bmp.height, cands: [], how: '', ms: 0, ppm: null, hint: '', preview: null };
@@ -477,9 +493,10 @@ class CedulaScanner {
     const cands = dbg.cands = this.findCandidates(bmp, bmp.width, bmp.height);
     if (cands.length) dbg.ppm = +(cands[0].L / 1.28 / MODULES_EST).toFixed(2);
     for (const c of cands.slice(0, 3)) {
-      const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS.deep, this.legacy ? Infinity : deadline);
+      const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS[plan] || PLANS.deep, this.legacy ? Infinity : deadline);
       if (r) return done(r.hit, 'recorte ' + r.how);
     }
+    if (cropsOnly) { dbg.ms = Math.round(performance.now() - t0); if (bmp.close) bmp.close(); return null; }
     for (const side of [2800, 1800, 1100]) {                                    // imagen completa a varias escalas
       if (performance.now() > deadline) break;
       const k = Math.min(1, side / Math.max(bmp.width, bmp.height));

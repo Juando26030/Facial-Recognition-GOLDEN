@@ -8,12 +8,15 @@ python tests/lab_cedula/gen.py                       # 16 casos con nombre + 60 
 CONF=70 python tests/lab_cedula/srv.py &             # http://127.0.0.1:8765  (CONF=70: obliga a confirmar con 2 lecturas, como pasa en un celular)
 python tests/lab_cedula/run.py /tmp/lab_cedula/img   # un renglón por foto: OK/FALLA, segundos y lecturas de OCR
 python tests/lab_cedula/run.py /tmp/lab_cedula/rnd
+python tests/lab_cedula/run.py /tmp/lab_cedula/img2  # torcida 45°/60°, brillo sobre las letras, sin cédula
+KIND=old python tests/lab_cedula/run.py /tmp/lab_cedula/old   # cédula vieja: derecho, al revés, torcida, de lado
 ```
 
 - **Comparar con otra versión:** `REPO=/ruta/a/otra/copia python tests/lab_cedula/srv.py` (esa carpeta debe tener `static/js/`).
 - **Camino del servidor** (`/cedula-mrz-scan` con el preprocesado real de `app/mrz_ocr.py`): `curl "http://127.0.0.1:8765/mode?real,badocr"` y `EV=1 python tests/lab_cedula/run.py …`
   (`badocr` hace fallar el OCR del navegador para que decida el servidor).
-- **Cédula vieja:** `KIND=old` recorre el flujo con un zxing de reemplazo que no lee nada (sirve para ver tiempos y errores, no la lectura).
+- **Cédula vieja:** `KIND=old` usa un decodificador de REEMPLAZO (no hay zxing sin red) que solo «lee» el código de mentira de `gen.py` cuando le llega derecho y nítido:
+  prueba ubicar, enderezar, girar y los tiempos; no la decodificación real del PDF417.
 
 Límites: el OCR es el `tesseract` del sistema (no tesseract.js), la letra es Liberation Mono (no OCR-B) y no hay plástico, hologramas ni manos. Sirve para la GEOMETRÍA
 (ubicar, enderezar, recortar, tiempos y flujo); la última palabra la tiene la prueba con cédulas reales.

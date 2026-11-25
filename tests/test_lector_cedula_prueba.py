@@ -8,7 +8,7 @@ from tests.conftest import login
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "app" / "pruebas" / "lector_cedula.html"
 # Huella de la página tal como se entregó (lector de cédula vieja PDF417 + pestaña de cédula nueva con las 3 líneas MRZ, 19-nov-2026; 24-nov-2026: + recorte automático mrzFind). Si se cambia a propósito, se actualiza aquí.
-PAGE_SHA256 = "d1ceef8c2f7f37b3cf245475eda9e24ff42fe77a75de1998d413040b40a135c4"
+PAGE_SHA256 = "99106825fe04bcd08b2987e656b072d4ea95bb5b53f24fed9926692a3f2b3d1b"
 
 
 def test_the_page_is_the_delivered_file_unchanged():

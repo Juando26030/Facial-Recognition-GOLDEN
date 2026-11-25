@@ -82,7 +82,7 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
   assert.ok(!/\b(alert|confirm|prompt)\(/.test(src) && !/console\.(log|info)\(/.test(src) && !/localStorage|indexedDB/.test(src), 'sin diálogos nativos, sin registros ni almacenamiento de la foto');
   // el componente usa métodos de los lectores generados: si se regeneran con otro nombre, esto avisa
   const readers = fs.readFileSync(path.join(ROOT, 'static/js/cedula-readers.js'), 'utf8');
-  for (const m of ['async scanImage(file, { budgetMs = 15000 } = {})', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
+  for (const m of ["async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {})", 'PLANS.photo = [', '_cropCandidate(src, c, flip, mult = 1', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown', 'function mrzFind(g, w, h)']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
   // 24-nov-2026 (rapidez): carrera navegador/servidor de la cédula nueva → gana la PRIMERA lectura no vacía; si todas fallan, null
   {
     const api = require(path.join(ROOT, 'static/js/cedula-foto.js'));
@@ -94,8 +94,25 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
     assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_BUDGET_MS'), 'atajos de rapidez');
     // 24-nov-2026 (tarde): recorte automático → primero las 3 líneas donde estén (mrzFind), el recuadro queda de respaldo; al servidor va solo el recorte; segundo intento con foto fija
-    assert.ok(src.includes('R.mrzFind(') && src.includes('readFound(k)') && src.indexOf('await readFound(k)') < src.indexOf('await readGuide(shots[k]'), 'recorte automático antes del recuadro');
-    assert.ok(src.includes('foundCanvas(found, SERVER_CROP_PAD)') && src.includes('takeStill(track, video, true)') && src.includes('shots.slice(0, 3).forEach((shot, k) => sources.push([() => shot.img'), 'servidor con recorte, foto con más detalle y foto completa en la cédula vieja');
+    assert.ok(src.includes('R.mrzFind(') && src.indexOf('await readFound(0)') > 0 && src.indexOf('await readFound(0)') < src.indexOf('await readGuide(shots[0]'), 'recorte automático antes del recuadro');
+    assert.ok(src.includes('foundCanvas(found, SERVER_CROP_PAD)') && src.includes('takeStill(track, video, true)'), 'servidor con recorte y foto con más detalle');
+    // 24-nov-2026 (noche): cédula vieja derecho/al revés alternados (plan 'photo'), cédula torcida (búsqueda girada 45°), chequeo previo y tope de tiempo
+    assert.ok(src.includes("plan: 'photo'") && src.includes('cropsOnly: true') && src.includes('x.rotate(Math.PI / 4)') && src.includes('NEW_DEADLINE_MS'), 'al revés, torcida y tope de tiempo');
+    assert.ok(src.includes("reads.reason = 'nolines'") && src.includes("reason: 'nocode'") && src.includes('if (ws && ws.low >= 3)'), 'chequeo previo: avisa de una vez');
+    {
+      // washedCells: 3 filas × 30 celdas de «letras»; una mancha clara (brillo) sobre 4 celdas → 4 lavadas y claras; sin mancha → 0; las celdas de los extremos no cuentan
+      const W = 600, H = 90, mk = (spot, dark) => { const g = new Uint8Array(W * H).fill(210);
+        for (let r = 0; r < 3; r++) for (let y = 5 + r * 30; y < 25 + r * 30; y++) for (let x = 0; x < W; x++) if (x % 20 < 12 && (x + y) % 3) g[y * W + x] = 30;
+        if (spot) for (let y = 0; y < H; y++) for (let x = 200; x < 280; x++) g[y * W + x] = dark ? 20 : 250;
+        return g; };
+      const rects = [0, 1, 2].map((r) => ({ x0: 0, x1: W - 1, y0: 5 + r * 30, y1: 24 + r * 30 }));
+      assert.deepStrictEqual(api.washedCells(mk(false), W, H, rects, 30), { n: 90, low: 0, bright: 0 });
+      assert.deepStrictEqual(api.washedCells(mk(true), W, H, rects, 30), { n: 90, low: 12, bright: 12 });           // brillo
+      const sh = api.washedCells(mk(true, true), W, H, rects, 30); assert.strictEqual(sh.low, 12); assert.strictEqual(sh.bright, 0);   // sombra / objeto
+      const ends = mk(false); for (let y = 0; y < H; y++) for (let x = 0; x < 20; x++) ends[y * W + x] = 210;
+      assert.strictEqual(api.washedCells(ends, W, H, rects, 30).low, 0);
+      assert.ok(api.MSG.noLines && api.MSG.noCode && api.MSG.covered && api.MSG.small);
+    }
     const qr = fs.readFileSync(path.join(ROOT, 'static/js/qr.js'), 'utf8');
     const stage = qr.slice(qr.indexOf('gw-cam__stage'), qr.indexOf("+ '</div>'"));
     assert.ok(stage.includes('gw-cam__shoot'), '«Tomar foto» va dentro del recuadro de la cámara (encima del video)');

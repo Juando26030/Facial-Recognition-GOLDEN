@@ -8,7 +8,18 @@ PAGE='''<!doctype html><meta charset=utf8><body>
 <div class="stage" style="position:relative;width:WWpx;height:HHpx"><video id=v style="width:100%;height:100%;object-fit:cover"></video><canvas id=o style="position:absolute;inset:0;width:100%;height:100%"></canvas></div>
 <button id=b>Tomar foto</button><p id=s></p>
 <script>
-window.LOG=[]; window.RESULT=undefined; window.ZXN=0; window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async()=>{window.ZXN++; return [];}};
+window.LOG=[]; window.RESULT=undefined; window.ZXN=0;
+// Decodificador de REEMPLAZO de la cédula vieja (no hay zxing sin red): «lee» solo si le llega el código de gen.py DERECHO (bloque macizo a la izquierda, rayas a la
+// derecha), nítido y sin zonas lavadas; tarda ~60 ms como un intento real en un celular. Sirve para probar ubicar/enderezar/girar/tiempos, no la decodificación.
+window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN++; await new Promise(r=>setTimeout(r,60));
+  const w=im.width,h=im.height,d=im.data; if(w<500||w/h<2.4||w/h>9) return [];
+  const mean=(u0,u1)=>{let s=0,n=0;for(let y=(h*.25)|0;y<h*.75;y+=2)for(let x=(w*u0)|0;x<w*u1;x+=2){s+=d[(y*w+x)*4];n++;}return s/n;};
+  const sd=(u0,u1)=>{let s=0,q=0,n=0;for(let y=(h*.25)|0;y<h*.75;y+=2)for(let x=(w*u0)|0;x<w*u1;x++){const v=d[(y*w+x)*4];s+=v;q+=v*v;n++;}return Math.sqrt(Math.max(0,q/n-(s/n)*(s/n)));};
+  let dark=1e9,bright=0; for(let u=.02;u<.14;u+=.01){const m=mean(u,u+.02); if(m<dark)dark=m;} for(let u=.86;u<.98;u+=.01){const m=mean(u,u+.012); if(m>bright)bright=m;}
+  if(!(dark<70)) return []; let darkR=1e9; for(let u=.86;u<.98;u+=.01){const m=mean(u,u+.02); if(m<darkR)darkR=m;} if(darkR<70) return [];
+  for(let c=0;c<12;c++) if(sd(.18+c*.055,.18+(c+1)*.055)<45) return [];
+  const f=(t)=>(t+'\0'.repeat(23)).slice(0,23), txt='X'.repeat(48)+'1013259208'+f('RAMIREZ')+f('TORRES')+f('JUAN')+f('DAVID')+'0M19900515'+'150001'+'O+';
+  return [{text:txt,bytes:Uint8Array.from([...txt].map(ch=>ch.charCodeAt(0)))}]; }};
 window.Tesseract={createWorker: async()=>{ let wl=''; return { setParameters: async(p)=>{ wl=p.tessedit_char_whitelist||''; }, recognize: async(cv)=>{
   const blob=await new Promise(r=>cv.toBlob(r,'image/png')); const res=await fetch('/ocr?wl='+encodeURIComponent(wl),{method:'POST',body:blob}); window.OCRN=(window.OCRN||0)+1; return {data: await res.json()}; } }; }};
 </script>
@@ -26,6 +37,7 @@ class Hd(BaseHTTPRequestHandler):
         self.send_response(code); self.send_header('Content-Type',ct); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         u=urllib.parse.urlparse(self.path)
+        if u.path=='/favicon.ico': return self._send(204,b'','image/x-icon')
         if u.path=='/page':
             q=urllib.parse.parse_qs(u.query); return self._send(200,PAGE.replace('WW',q.get('w',['400'])[0]).replace('HH',q.get('h',['700'])[0]).encode(),'text/html; charset=utf-8')
         if u.path.startswith('/static/'):

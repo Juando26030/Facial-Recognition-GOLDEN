@@ -27,6 +27,10 @@
     server: 'Procesando la foto… (revisión en el servidor)',
     fail: 'No se pudo leer la cédula: acérquela, evite reflejos y tome otra foto.',
     detail: 'Procesando… tomando una foto con más detalle.',
+    noLines: 'No se ven las 3 líneas de la cédula: que queden completas dentro de la foto, sin brillo, y tome otra foto.',
+    noCode: 'No se ve el código de barras: que quede completo dentro de la foto, sin brillo, y tome otra foto.',
+    covered: 'Parte de la cédula no se ve (un brillo, una sombra o un dedo la tapa): déjela completa a la vista y tome otra foto.',
+    small: 'La cédula quedó muy lejos: acérquela y tome otra foto.',
     unknown: 'Se leyó un código, pero no tiene el formato de la cédula. Tome otra foto del reverso.',
     noReader: 'No se pudo cargar el lector de cédulas (sin conexión). Escriba la cédula o use el lector de mano.',
     camPerm: 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).',
@@ -43,8 +47,11 @@
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
   const SERVER_TIMEOUT_MS = 25000;
   const HD_SHORT_SIDE = 1080;                 // video con lado corto ≥ 1080 px: su cuadro ya es alta definición (no hace falta takePhoto)
-  const OLD_BUDGET_MS = [1200, 2200, 1300, 1300];   // cédula vieja: recuadro de la foto 1 y luego la foto COMPLETA de cada cuadro de la ráfaga (el código donde esté): ≈6 s en el peor caso
+  const OLD_BUDGET_MS = [1000, 1800, 900, 900];   // cédula vieja: recuadro de la foto 1 y luego la foto COMPLETA de cada cuadro de la ráfaga (el código donde esté): ≈4,6 s en el peor caso
   const FIND_MAX = 3200;                     // lado mayor de la copia en gris donde se buscan las 3 líneas (recorte automático)
+  const NEW_DEADLINE_MS = 5500;              // cédula nueva: tope de espera por foto (navegador y servidor); pasado esto se pide otra foto
+  const SMALL_LETTER_PX = 24, SMALL_PPM = 2.2;   // letras de menos de 24 px de alto / código con menos de 2,2 px por módulo: «muy lejos» (vale la pena la foto fija)
+  const WASH_K = 0.4;                        // una celda está «lavada» si su contraste es < 40 % del contraste típico de las demás
   const SERVER_CROP_PAD = 36;                // borde blanco alrededor del recorte que va al servidor
   const BURST = 3, BURST_GAP_MS = 110;       // ráfaga: 3 cuadros seguidos (≈0,25 s). Lo que un brillo o el pulso arruinan en uno suele verse en otro
   const GLARE_LEVEL = 245, GLARE_RATIO = 0.012;   // brillo: más del 1,2 % del recuadro casi blanco en los tres colores (el fondo de la cédula no llega a eso)        // cédula vieja: recuadro guía, luego foto completa (antes 7 s + 9 s: lo que no sale en ~5 s no sale con más tiempo; mejor otra foto)
@@ -56,6 +63,32 @@
     let hot = 0; const n = Math.floor(data.length / 4) || 1;
     for (let i = 0; i < data.length; i += 4) if (data[i] >= GLARE_LEVEL && data[i + 1] >= GLARE_LEVEL && data[i + 2] >= GLARE_LEVEL) hot++;
     return hot / n;
+  }
+  /** CHEQUEO PREVIO (24-nov-2026, pedido de Juan David: avisar de una vez en lugar de dejar pensando). Zonas donde DEBE haber tinta en todo el ancho (cada una de las
+   *  3 líneas; las filas del código de barras) partidas en `cols` celdas: una celda con mucho menos contraste que las demás está «lavada» (brillo) o tapada.
+   *  g: gris w×h; rects: [{x0,x1,y0,y1}] → { n, low, bright } (bright = lavadas MÁS claras que lo normal: eso es brillo; si no, sombra u objeto). */
+  function washedCells(g, w, h, rects, cols) {
+    const cells = [], hist = new Uint32Array(256); let rowN = 0;
+    for (const r of rects) {
+      const x0 = Math.max(0, r.x0 | 0), x1 = Math.min(w - 1, r.x1 | 0), y0 = Math.max(0, r.y0 | 0), y1 = Math.min(h - 1, r.y1 | 0);
+      if (x1 - x0 < cols * 2 || y1 - y0 < 2) continue;
+      const row = rowN++;
+      for (let c = 0; c < cols; c++) {
+        const a = x0 + Math.round((x1 - x0 + 1) * c / cols), b = x0 + Math.round((x1 - x0 + 1) * (c + 1) / cols); let sum = 0, n = 0; hist.fill(0);
+        for (let y = y0; y <= y1; y++) { const o = y * w; for (let x = a; x < b; x++) { const v = g[o + x]; hist[v]++; sum += v; n++; } }
+        if (!n) continue;
+        let lo = 0, hi = 255, acc = 0; const cut = n * 0.06;
+        for (acc = 0; lo < 255 && (acc += hist[lo]) <= cut; lo++);
+        for (acc = 0; hi > 0 && (acc += hist[hi]) <= cut; hi--);
+        cells.push({ contrast: Math.max(0, hi - lo), mean: sum / n, row, end: c === 0 || c === cols - 1 });
+      }
+    }
+    if (cells.length < 8) return { n: cells.length, low: 0, bright: 0 };
+    const med = (arr) => { const a = arr.slice().sort((p, q) => p - q); return a[a.length >> 1]; };
+    const mc = med(cells.map((c) => c.contrast)), mm = med(cells.map((c) => c.mean));
+    let low = 0, bright = 0;
+    for (const c of cells) if (!c.end && c.contrast < mc * WASH_K) { low++; if (c.mean > mm) bright++; }   // la primera y la última celda de cada fila no cuentan: el borde de la zona no es exacto
+    return { n: cells.length, low, bright };
   }
   /** Lo que SÍ se alcanzó a leer de la cédula nueva cuando ninguna lectura quedó validada → {cedula, first_name, last_name} para buscar parecidas, o null.
    *  Se queda con la lectura que más controles pasa (y, a igualdad, la que trae más dígitos). Nunca se usa para acreditar: solo para proponer. */
@@ -191,8 +224,28 @@
     if (!R || !R.mrzFind || !shot) return null;
     try {
       const k = Math.min(1, FIND_MAX / Math.max(shot.w, shot.h)), c = cropCanvas(shot.img, { x: 0, y: 0, w: shot.w, h: shot.h }, shot.w * k);
-      return R.mrzFind(grayOf(c), c.width, c.height);
+      const f = R.mrzFind(grayOf(c), c.width, c.height);
+      if (f) return f;
+      // Torcida (entre ~25° y ~65°): la misma búsqueda sobre la foto girada 45°. Entre las dos se cubre cualquier ángulo.
+      const k2 = Math.min(1, FIND_MAX / 1.42 / Math.max(shot.w, shot.h)), W = shot.w * k2, H = shot.h * k2, D = Math.ceil(Math.hypot(W, H)), t = canvasOf(D, D), x = t.getContext('2d', { willReadFrequently: true });
+      x.fillStyle = '#808080'; x.fillRect(0, 0, D, D); x.imageSmoothingQuality = 'high'; x.translate(D / 2, D / 2); x.rotate(Math.PI / 4); x.drawImage(shot.img, -W / 2, -H / 2, W, H);
+      return R.mrzFind(grayOf(t), D, D);
     } catch (e) { return null; }
+  }
+  /** Chequeo previo de la cédula nueva sobre el recorte ya ubicado → { low, bright, small }. */
+  function checkFound(f) {
+    const I = f.info, ws = washedCells(f.g, f.w, f.h, I.bands.map((b) => ({ x0: I.x0, x1: I.x1, y0: b.y0, y1: b.y1 })), 30);
+    return { ...ws, small: Math.min(...I.bands.map((b) => b.y1 - b.y0 + 1)) < SMALL_LETTER_PX };
+  }
+  const washReason = (ws) => (ws.bright * 2 >= ws.low ? 'glare' : 'covered');
+  /** Chequeo previo de la cédula vieja: el código ya ubicado (candidato del lector), enderezado, partido en 3 filas × 16 celdas. */
+  function checkCode(sc, shot, cand) {
+    try {
+      const im = sc._cropCandidate(shot.img, cand, false, 0.5), w = im.width, h = im.height, d = im.data, g = new Uint8Array(w * h);
+      for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+      const rows = [0, 1, 2].map((r) => ({ x0: w * 0.13, x1: w * 0.87, y0: h * (0.12 + r * 0.26), y1: h * (0.12 + (r + 1) * 0.26) - 1 }));
+      return washedCells(g, w, h, rows, 16);
+    } catch (e) { return { n: 0, low: 0, bright: 0 }; }
   }
   /** El recorte (gris) como lienzo con borde blanco: es lo que se le manda al servidor cuando el navegador ya ubicó las 3 líneas. */
   function foundCanvas(f, pad) {
@@ -205,22 +258,34 @@
   /** Cédula vieja sobre la RÁFAGA: el recuadro de cada cuadro (lo que un brillo o el pulso arruinan en uno suele verse en otro) y al final la foto completa. */
   async function decodeOld(R, shots, guidePhoto, alive) {
     const sc = await decoder(R, 'old');
-    let unknown = false;
+    let unknown = false, located = false, small = false;
     sc.onResult = () => {}; sc.onStatus = () => {}; sc.onUnknown = () => { unknown = true; };
-    const sources = [];
-    if (guidePhoto) sources.push([() => cropCanvas(shots[0].img, expandRect(guidePhoto, 0.06, 0.9, shots[0].w, shots[0].h)), OLD_BUDGET_MS[0]]);   // el recuadro con margen (lo más rápido cuando quedó encuadrada)
-    shots.slice(0, 3).forEach((shot, k) => sources.push([() => shot.img, OLD_BUDGET_MS[k + 1]]));                      // 24-nov: la foto COMPLETA de cada cuadro: el localizador busca el código donde esté (pequeño, corrido o girado), lo endereza y lo recorta
-    for (const [src, budgetMs] of sources) {
-      if (!alive()) return { datos: null };
-      const datos = await sc.scanImage(src(), { budgetMs });
+    const cands = () => (sc.lastDebug && sc.lastDebug.cands) || [];
+    // plan 'photo': derecho y AL REVÉS alternados desde el primer intento (antes los giros de 180° llegaban al final y el tiempo no alcanzaba).
+    if (guidePhoto) {                                                                                                  // 1) el recuadro con margen: lo más rápido cuando quedó encuadrada
+      const datos = await sc.scanImage(cropCanvas(shots[0].img, expandRect(guidePhoto, 0.06, 0.9, shots[0].w, shots[0].h)), { budgetMs: OLD_BUDGET_MS[0], plan: 'photo' });
       if (datos) return { datos };
+      located = cands().length > 0;
     }
-    return { datos: null, unknown, located: !!(sc.lastDebug && sc.lastDebug.cands && sc.lastDebug.cands.length) };   // located: se vio un código pero no se pudo leer (pequeño o borroso)
+    for (let k = 0; k < Math.min(3, shots.length); k++) {                                                              // 2) la foto COMPLETA de cada cuadro: el código donde esté, enderezado y recortado
+      if (!alive()) return { datos: null };
+      const datos = await sc.scanImage(shots[k].img, { budgetMs: OLD_BUDGET_MS[k + 1], plan: 'photo', cropsOnly: true });
+      if (datos) return { datos };
+      if (k > 0) continue;
+      const c = cands()[0];                                                                                            // chequeo tras el primer cuadro: ¿vale la pena seguir?
+      if (!c && !located) return { datos: null, unknown, reason: 'nocode' };                                           // no hay código a la vista: se avisa ya
+      if (c) {
+        located = true; small = !!(sc.lastDebug.ppm && sc.lastDebug.ppm < SMALL_PPM);
+        const ws = checkCode(sc, shots[0], c);
+        if (ws.low >= 4) return { datos: null, unknown, located, reason: washReason(ws) };                             // brillo o algo tapa el código: otro cuadro igual no lo arregla
+      }
+    }
+    return { datos: null, unknown, located, small, reason: small ? 'small' : '' };
   }
 
   /** Cédula nueva sobre la ráfaga. `reads` se comparte con quien llama: si nada queda validado, de ahí sale lo que SÍ se leyó (partialFrom). La votación
    *  (pickMrz) junta las lecturas de los tres cuadros: dos lecturas iguales de cuadros distintos valen como confirmación de los nombres. */
-  async function decodeNew(R, shots, guidePhoto, alive, withFull = true, reads = [], finds = []) {
+  async function decodeNew(R, shots, guidePhoto, alive, reads = [], finds = []) {
     const mz = await decoder(R, 'new');
     mz.onStatus = () => {};
     // 24-nov (recorte automático): primero las 3 líneas DONDE ESTÉN en la foto (R.mrzFind las ubica, las endereza y entrega solo esa zona con la posición
@@ -245,21 +310,32 @@
       await readMrzCrop((flip, attempt) => mz._read(g, c.width, c.height, { flip, attempt }), R.parseMrz, R.mrzStrong, reads, alive);
       return pickMrz(reads, R.mrzStrong, false);
     };
-    for (let k = 0; k < shots.length; k++) {
-      if (!alive()) return null;
-      let got = await readFound(k); if (got) return got.datos;
-      if (!guidePhoto || (k > 0 && finds[k])) continue;                                // en los cuadros 2 y 3, si ya se ubicaron las líneas, el recuadro no aporta nada nuevo
-      got = await readGuide(shots[k], expandRect(guidePhoto, 0.03, 0.08, shots[k].w, shots[k].h)); if (got) return got.datos;                    // ajustado al recuadro
-      if (k === 0) { got = await readGuide(shots[k], expandRect(guidePhoto, 0.08, 0.45, shots[k].w, shots[k].h)); if (got) return got.datos; }   // holgado, solo en el primero
+    // CHEQUEO PREVIO sobre el primer cuadro: sin las 3 líneas a la vista, o con varias letras lavadas por un brillo, se avisa de una vez (no se queda pensando).
+    if (finds[0] === undefined) finds[0] = findMrz(R, shots[0]);
+    const f0 = finds[0], ws = f0 ? checkFound(f0) : null;
+    if (f0) { reads.located = true; reads.small = ws.small; }
+    if (ws && ws.low >= 3) { reads.reason = washReason(ws); return null; }
+    if (f0) { const got = await readFound(0); if (got) return got.datos; }
+    if (guidePhoto && alive()) {                                                        // el recuadro, como siempre (respaldo del recorte automático)
+      let got = await readGuide(shots[0], expandRect(guidePhoto, 0.03, 0.08, shots[0].w, shots[0].h)); if (got) return got.datos;
+      got = await readGuide(shots[0], expandRect(guidePhoto, 0.08, 0.45, shots[0].w, shots[0].h)); if (got) return got.datos;
     }
+    if (!f0) {                                                                          // no se ubicaron: el localizador anterior, por si acaso (si tampoco las ve, responde enseguida)
+      let full = null; mz.onResult = (d) => { full = d; };
+      try { if (alive()) await mz.scanImage(shots[0].img); } finally { mz.onResult = () => {}; }
+      if (full) reads.push({ parsed: full, conf: null });
+      const g0 = pickMrz(reads, R.mrzStrong, true); if (!g0) reads.reason = 'nolines';
+      return g0 ? g0.datos : null;
+    }
+    if (ws.low >= 1) { reads.reason = washReason(ws); const g0 = pickMrz(reads, R.mrzStrong, true); return g0 ? g0.datos : null; }   // una o dos letras lavadas y no se leyó: es el brillo
+    for (let k = 1; k < shots.length; k++) {                                            // los otros cuadros de la ráfaga
+      if (!alive()) return null;
+      const got = await readFound(k); if (got) return got.datos;
+    }
+    if (ws.small) reads.reason = 'small';
     if (!alive()) return null;
-    if (!withFull) { const g2 = pickMrz(reads, R.mrzStrong, true); return g2 ? g2.datos : null; }   // con servidor disponible, él lee la foto completa (más rápido que el OCR del celular)
-    let full = null; mz.onResult = (d) => { full = d; };                                                          // la foto completa: las 3 líneas en cualquier parte y orientación
-    await mz.scanImage(shots[0].img);                                                                             // lienzo o ImageBitmap: el lector hace su propia copia
-    mz.onResult = () => {};
-    if (full) reads.push({ parsed: full, conf: null });
-    const got = pickMrz(reads, R.mrzStrong, true);
-    return got ? got.datos : null;
+    const g2 = pickMrz(reads, R.mrzStrong, true);
+    return g2 ? g2.datos : null;
   }
 
   /** Respaldo: el servidor lee las 3 líneas (Tesseract). Solo con red, con evento y fuera del modo sin conexión. La copia se envía y se descarta; el servidor tampoco la guarda. */
@@ -277,29 +353,28 @@
   /** Cédula nueva: navegador y servidor en carrera. El servidor arranca a los SERVER_HEAD_START_MS (o antes, si el navegador ya se rindió); gana el primero
    *  que entregue una lectura validada y el otro se corta (alive). Sin red / sin evento / modo sin conexión: solo el navegador, con su lectura de la foto completa. */
   async function decodeNewRace(R, shots, guidePhoto, alive, eventId, reads) {
-    const shot = shots[0];
-    const useServer = serverUsable(eventId);
-    const finds = [];
-    if (R) finds[0] = findMrz(R, shot);                                             // se busca UNA vez: lo usan el navegador y el servidor
-    if (finds[0]) reads.located = true;                                             // se vieron las 3 líneas (si no se leen, vale la pena una foto con más detalle)
-    if (!useServer) return R ? decodeNew(R, shots, guidePhoto, alive, true, reads, finds) : null;
+    const shot = shots[0], finds = [], deadline = performance.now() + NEW_DEADLINE_MS;
+    if (R) finds[0] = findMrz(R, shot);                                             // se busca UNA vez: lo usan el chequeo previo, el navegador y el servidor
+    const useServer = serverUsable(eventId) && (!R || !!finds[0]);                  // sin las 3 líneas ubicadas no se manda nada: el servidor tardaba mucho en decir que no
     let won = false, kick = null;
-    const still = () => alive() && !won;
+    const still = () => alive() && !won && performance.now() < deadline;
+    if (!useServer) return R ? decodeNew(R, shots, guidePhoto, still, reads, finds) : null;
+    if (finds[0] && checkFound(finds[0]).low >= 3) return decodeNew(R, shots, guidePhoto, still, reads, finds);   // brillo fuerte: decodeNew lo anota y devuelve null al instante
     const startServer = new Promise((ok) => { kick = ok; setTimeout(ok, SERVER_HEAD_START_MS); });
-    const local = R ? decodeNew(R, shots, guidePhoto, still, false, reads, finds).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
-    const server = startServer.then(() => (still() ? serverMrz(shot, eventId, still, finds[0]) : null));
+    const local = R ? decodeNew(R, shots, guidePhoto, still, reads, finds).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
+    const server = startServer.then(() => (still() ? Promise.race([serverMrz(shot, eventId, still, finds[0], Math.max(500, deadline - performance.now())), new Promise((ok) => setTimeout(() => ok(null), Math.max(0, deadline - performance.now())))]) : null));
     const d = await firstFound([local, server]);
     won = true;
     return d;
   }
-  async function serverMrz(shot, eventId, alive, found) {
+  async function serverMrz(shot, eventId, alive, found, timeoutMs) {
     if (!serverUsable(eventId) || !alive()) return null;
     const k = Math.min(1, SERVER_MAX / Math.max(shot.w, shot.h));
     const c = found ? foundCanvas(found, SERVER_CROP_PAD) : cropCanvas(shot.img, { x: 0, y: 0, w: shot.w, h: shot.h }, shot.w * k);   // con las 3 líneas ya ubicadas va SOLO ese recorte (más liviano y sin el resto de la cédula)
     let blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
     if (!blob || !alive()) return null;
     const fd = new FormData(); fd.append('file', blob, 'reverso.jpg'); blob = null;
-    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, t = ctl ? setTimeout(() => ctl.abort(), SERVER_TIMEOUT_MS) : 0;
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, t = ctl ? setTimeout(() => ctl.abort(), Math.min(SERVER_TIMEOUT_MS, timeoutMs || SERVER_TIMEOUT_MS)) : 0;
     try {
       const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/cedula-mrz-scan`, { method: 'POST', body: fd, credentials: 'same-origin', signal: ctl ? ctl.signal : undefined });
       if (!res.ok) return null;
@@ -440,27 +515,29 @@
         await new Promise((ok) => setTimeout(ok, 30));                                  // deja pintar «Procesando la foto…» antes del cálculo pesado
         const shot = shots[0];
         const guidePhoto = photoRect(g, vw, vh, shot.w, shot.h);
-        let datos = null, unknown = false, readerErr = null, located = false;
+        let datos = null, unknown = false, readerErr = null, retake = false, reason = '';
         if (!R) { try { R = await o.readers(); } catch (e) { readerErr = e; } }
         const run = async (list, gp) => {
-          if (kind === 'old') { const out = await decodeOld(R, list, gp, alive); unknown = unknown || !!out.unknown; located = !!out.located; return out.datos; }
-          const d = await decodeNewRace(R, list, gp, alive, o.eventId, reads); located = !!reads.located; return d;
+          reads.reason = ''; reads.located = false; reads.small = false;
+          if (kind === 'old') { const out = await decodeOld(R, list, gp, alive); unknown = unknown || !!out.unknown; reason = out.reason || ''; retake = !!out.located && !!out.small; return out.datos; }
+          const d = await decodeNewRace(R, list, gp, alive, o.eventId, reads); reason = reads.reason || ''; retake = !!reads.located && !!reads.small && reason !== 'glare' && reason !== 'covered'; return d;
         };
-        if (R && !dead) { try { datos = await run(shots, guidePhoto); } catch (e) { readerErr = e; } }
+        if (R && !dead) { try { datos = await run(shots, guidePhoto); } catch (e) { readerErr = e; try { console.warn('[cedula-foto] fallo interno del lector:', e && e.message); } catch (_) { /* sin consola */ } } }
         if (!datos && kind === 'new' && !R && !dead) datos = await decodeNewRace(null, shots, guidePhoto, alive, o.eventId, reads);   // el lector del navegador no cargó: solo el servidor
-        // 24-nov: la cédula SÍ se vio pero quedó pequeña o sin detalle en el cuadro del video → una foto fija con toda la resolución del sensor y se repite el recorte automático.
-        if (!datos && R && !dead && located && shot.source === 'frame' && track && typeof ImageCapture !== 'undefined') {
+        // La cédula SÍ se vio, sin brillo, pero quedó lejos (letras o código muy pequeños en el cuadro del video) → una foto fija con toda la resolución del sensor y se repite.
+        if (!datos && R && !dead && retake && shot.source === 'frame' && track && typeof ImageCapture !== 'undefined') {
           say(MSG.detail, 'warn');
           try {
             const hd = await takeStill(track, video, true);
-            if (hd.source === 'still' && !dead) { shots.push(hd); datos = await run([hd], photoRect(g, vw, vh, hd.w, hd.h)); }
+            if (hd.source === 'still' && !dead && Math.max(hd.w, hd.h) > Math.max(shot.w, shot.h) * 1.2) { shots.push(hd); datos = await run([hd], photoRect(g, vw, vh, hd.w, hd.h)); }
             else if (hd.img && hd.img.close) hd.img.close();
           } catch (e) { /* sin foto fija: queda el resultado del primer intento */ }
         }
         if (dead) return;
         if (datos) { say('Cédula leída.', 'ok'); setBusy(false); o.onResult(datos, kind); resumePreview(); return; }
         if (kind === 'new' && await offerNear(partialFrom(reads))) { say(MSG.partial, 'warn'); return; }
-        say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : (hadGlare || glare) ? MSG.failGlare : MSG.fail, 'err');
+        const why = { glare: MSG.failGlare, covered: MSG.covered, nolines: MSG.noLines, nocode: MSG.noCode, small: MSG.small }[reason];
+        say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : why || ((hadGlare || glare) ? MSG.failGlare : MSG.fail), 'err');
       } catch (e) {
         say(MSG.fail, 'err');
       } finally {
@@ -494,7 +571,7 @@
     };
   }
 
-  const api = { attach, firstFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
+  const api = { attach, firstFound, washedCells, findMrz, checkFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
   if (typeof window !== 'undefined') window.CedulaFoto = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();
