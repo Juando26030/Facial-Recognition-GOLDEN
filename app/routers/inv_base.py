@@ -2,10 +2,10 @@
 La lógica vive en app/inv_assign.py, app/dependents.py y app/config_lock.py; aquí solo permisos, validación de entrada y respuestas."""
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app import config_lock, dependents, event_archive, event_lease, inv_assign, node_precheck, uploads
+from app import config_lock, dependents, event_archive, event_lease, inv_assign, node_precheck, offline_pack, uploads
 from app import inv_assign_core as core
 from app.auth import effective_roles, get_event_for_staff, require_event_in_progress, require_role_excluding
 from app.database import get_db
@@ -121,6 +121,20 @@ def deliver_assigned(event_id: int, data: dict, db: Session = Depends(get_db), s
     if warning:
         out["warning"] = warning
     return out
+
+
+@router.get("/events/{event_id}/offline-pack")
+def offline_pack_view(event_id: int, request: Request, response: Response, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+    """Paquete para trabajar SIN RED (docs/28): los dependientes de cada titular y, en el modo «la base lo define», lo que le toca a cada persona. El quiosco lo pide UNA vez al abrir la
+    pantalla (y al volver la red) y lo guarda cifrado; con `If-None-Match` igual responde 304 sin cuerpo. Mismos permisos que las consultas persona por persona."""
+    event = _event(db, event_id, staff)
+    pack = offline_pack.build(db, event)
+    etag = f'"{pack["v"]}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-store"})
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = "private, no-store"
+    return pack
 
 
 # ------------------------------------------------------------------------------------------------ base de dependientes

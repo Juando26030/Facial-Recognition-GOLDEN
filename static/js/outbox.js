@@ -104,6 +104,7 @@
     o.enqueueHttp = async (url, opts, label) => {
       const spec = { method: String((opts && opts.method) || 'GET').toUpperCase(), url: String(url) };
       const body = opts && opts.body;
+      if (opts && Array.isArray(opts.expect)) spec.expect = opts.expect;          // respuestas 200 que traen `result`: solo estos valores cuentan como hecho
       if (typeof body === 'string') spec.json = body;
       else if (body && typeof body.entries === 'function') {
         spec.form = [];
@@ -121,6 +122,10 @@
       if (res.status === 401) { summary.stopped = 'sesion'; return; }
       if (res.status >= 500 || res.status === 429) { summary.stopped = 'servidor'; return; }
       summary.sent++;
+      if (res.ok && spec.expect) {                                          // p. ej. un movimiento de zona que el servidor contestó «ya había entrado»: no quedó hecho
+        let body = null; try { body = await res.json(); } catch (e) { body = null; }
+        if (!body || !spec.expect.includes(body.result)) { await o.db.put('ops', { ...rec, status: 'error', result: String((body && (body.details || body.detail)) || 'El servidor no aplicó el cambio'), attempts: rec.attempts + 1 }); summary.error++; return; }
+      }
       if (res.ok) { await o.db.put('ops', { ...rec, status: 'ok', result: null, expires_at: d.now() + OK_KEEP_MS, blob: await enc({ fields: null, label }) }); summary.ok++; return; }
       let detail = '';
       try { const data = await res.json(); detail = data && data.detail && typeof data.detail === 'object' ? (data.detail.message || '') : ((data && data.detail) || ''); } catch (e) { /* sin detalle */ }

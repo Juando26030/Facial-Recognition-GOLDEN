@@ -298,3 +298,29 @@ def test_reload_never_duplicates_a_delivered_row_when_other_columns_change_or_ro
     two = "cedula_titular,nombre_dependiente,producto\n1002,Luz,Kit escolar\n1002,Luz,Kit escolar\n"
     _upload(client, ev, two, mode="append", what="load")
     assert count() == 4
+
+
+def test_offline_pack_equals_the_per_person_answers_and_answers_304(client, ev):
+    """docs/28: el paquete sin red trae, de una vez, lo mismo que el servidor responde persona por persona (dependientes y lo asignado), también después de una entrega."""
+    assert _upload(client, ev, what="load").status_code == 200
+    assert _assign(client, ev, dep_product="producto", dep_qty="cantidad").status_code == 200
+
+    def check():
+        r = client.get(f"/api/events/{ev.id}/offline-pack")
+        assert r.status_code == 200, r.text
+        pack = r.json()
+        for cedula in ("1001", "1002"):
+            one = client.get(f"/api/events/{ev.id}/inventory/assigned", params={"cedula": cedula}).json()["lines"]
+            assert pack["assigned"].get(cedula, []) == one
+            deps = client.get(f"/api/events/{ev.id}/dependents", params={"holder": cedula}).json()["people"]
+            assert pack["dependents"].get(cedula, []) == deps
+        return r
+
+    first = check()
+    again = client.get(f"/api/events/{ev.id}/offline-pack", headers={"If-None-Match": first.headers["etag"]})
+    assert again.status_code == 304 and not again.content
+    lines = client.get(f"/api/events/{ev.id}/inventory/assigned", params={"cedula": "1001"}).json()["lines"]
+    ok = next((ln for ln in lines if ln["pending"] > 0 and not ln["problem"]), None)
+    if ok is not None:
+        assert client.post(f"/api/events/{ev.id}/inventory/deliver-assigned", json={"cedula": "1001", "keys": [ok["key"]]}).status_code == 200
+        assert check().headers["etag"] != first.headers["etag"]

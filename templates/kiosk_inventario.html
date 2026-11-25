@@ -158,6 +158,7 @@
     </div>
   </div>
 </main>
+{% include "_offline_boot.html" %}
 <script src="{{ url_for('static', path='js/inventario.js') }}"></script>
 {% if inventory_assigned %}<script src="{{ url_for('static', path='js/inventario-asignado.js') }}"></script>{% endif %}
 </body>

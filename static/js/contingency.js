@@ -47,12 +47,12 @@
   /* ------------------------------------------------------------------------------------------------------------------ almacén IndexedDB */
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
   const done = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb')); tx.onabort = () => rej(tx.error || new Error('idb abort')); });
-  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id', keys: 'k', people: 'k' };
+  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id', keys: 'k', people: 'k', cache: 'k' };
   const PEOPLE_CHUNK = 400;                    // personas por bloque cifrado de la copia completa
 
   function openStore(idb, name) {
     return new Promise((resolve, reject) => {
-      const r = idb.open(name, 5);
+      const r = idb.open(name, 6);
       r.onupgradeneeded = () => {
         const db = r.result;
         Object.keys(STORES).forEach((s) => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: STORES[s] }); });
@@ -204,8 +204,8 @@
         return body.definition;
       } catch (e) { return null; }
     };
-    c.wipeRoster = async () => { if (!c.db) return; const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'people']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); };           // al cerrar sesión, al finalizar el evento y al vencer
-    c.wipeAll = async () => { if (c.db) { const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'queue', 'people']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
+    c.wipeRoster = async () => { if (!c.db) return; const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'people', 'cache']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); };           // al cerrar sesión, al finalizar el evento y al vencer
+    c.wipeAll = async () => { if (c.db) { const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'queue', 'people', 'cache']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
 
     /* Descarga/valida el roster (`If-None-Match`: 304 = nada cambió, solo se renueva la vigencia). Devuelve 'ok' | 'unauth' (sesión vencida) | 'denied' (evento finalizado o sin
        permiso: se borra la copia y se avisa) | 'error'. Un 429 cuenta como respuesta buena (el servidor contestó) pero no renueva nada. */
@@ -245,7 +245,7 @@
        sesión, al finalizar el evento, al perder el permiso y al vencer (24 h sin refrescar). Sin fotos ni vectores biométricos (el directorio no los trae). --- */
     c.peopleIdx = null;                                                           // Map(cédula → nº de bloque), en memoria
     const cidIds = new Map();                                                     // client_id → cédula de lo acreditado sin red en esta sesión (solo memoria)
-    const sealBlock = async (k, rows) => { const iv = randomIv(); const ct = await d.subtle.encrypt({ name: 'AES-GCM', iv }, await getKey(), new TextEncoder().encode(JSON.stringify(rows))); return { k, n: rows.length, enc: { iv, ct: new Uint8Array(ct) } }; };
+    const sealBlock = async (k, rows) => { const iv = randomIv(); const ct = await d.subtle.encrypt({ name: 'AES-GCM', iv }, await getKey(), new TextEncoder().encode(JSON.stringify(rows))); return { k, n: Array.isArray(rows) ? rows.length : 1, enc: { iv, ct: new Uint8Array(ct) } }; };
     const openBlock = async (rec) => { try { return JSON.parse(new TextDecoder().decode(await d.subtle.decrypt({ name: 'AES-GCM', iv: rec.enc.iv }, await getKey(), rec.enc.ct))); } catch (e) { return null; } };
     const clean = (u) => { const o = {}; Object.keys(u).forEach((k) => { if (k.slice(0, 2) !== '__') o[k] = u[k]; }); return o; };          // sin marcas internas de la pantalla
     c.peopleMeta = async () => { try { return c.db ? await c.db.get('meta', 'people') : null; } catch (e) { return null; } };
@@ -299,6 +299,10 @@
         return rows[i];
       } catch (e) { return null; }
     };
+    /* Copias de LECTURAS del servidor para trabajar sin red en Áreas e Inventario (docs/28): zonas, quién está adentro, productos, entregas, lo asignado y los dependientes. Cada una
+       va cifrada (misma clave), se reemplaza cada vez que la red responde y se borra con la lista local. `cacheGet` devuelve null si no hay copia. */
+    c.cachePut = async (key, data) => { if (!c.supported || !c.db) return false; try { const rec = await sealBlock(String(key), data); rec.at = d.now(); await c.db.put('cache', rec); return true; } catch (e) { return false; } };
+    c.cacheGet = async (key) => { if (!c.supported || !c.db) return null; try { const rec = await c.db.get('cache', String(key)); return rec ? await openBlock(rec) : null; } catch (e) { return null; } };
     /* Quita a una persona de la copia (eliminada sin red) o le cambia la cédula (corrección sin red). */
     c.peopleRemove = async (id, newId) => {
       if (!c.supported || !c.db || id == null || id === '') return false;

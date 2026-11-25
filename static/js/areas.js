@@ -27,10 +27,47 @@
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
   const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${sprite()}#i-${name}"/></svg>`;
 
+  /* Sin red (docs/28, static/js/offline-data.js): las lecturas salen de la última copia cifrada del dispositivo y cada entrada/salida se guarda y se envía al volver la conexión. */
+  const OFF = window.GWOff || null;
+  let allAreas = [];
   async function getJson(url) {
+    if (OFF) return OFF.json(url);
     const res = await fetch(url);
     if (!res.ok) throw new Error('http ' + res.status);
     return res.json();
+  }
+  const presUrl = (id) => `/api/events/${window.EVENT_ID}/areas/${id}/presence`;
+  const areasUrl = () => `/api/events/${window.EVENT_ID}/areas`;
+  /* Con red y en reposo: deja guardado quién está en CADA zona, para poder aplicar «sin reingresos» si después se cae la red. */
+  async function warmPresence() {
+    if (!OFF || OFF.off()) return;
+    for (const a of allAreas.filter(x => !x.is_group).slice(0, 40)) { if (String(a.id) === String(areaId())) continue; try { await OFF.json(presUrl(a.id)); } catch (e) { return; } }
+  }
+  async function registerOffline(cedula, confirm, forcedDirection, method) {
+    const low = String(cedula || '').trim().toLowerCase();
+    const u = users.find(x => x.id === cedula) || (low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null);
+    if (!u) { show('err', 'No encontrado', 'Esa persona no está en la copia de este dispositivo'); return false; }
+    const byId = {}; allAreas.forEach(a => { byId[a.id] = a; });
+    const area = byId[areaId()];
+    if (!area) { show('warn', 'No se pudo registrar', 'La zona no está en la copia de este dispositivo'); return false; }
+    const parent = area.parent_id ? byId[area.parent_id] : null;
+    const siblings = parent ? allAreas.filter(a => a.parent_id === parent.id) : [area];
+    const presence = {}, rowsBy = {};
+    for (const a of siblings) { const rows = (await OFF.get(presUrl(a.id))) || []; rowsBy[a.id] = rows; presence[a.id] = {}; rows.forEach(r => { presence[a.id][String(r.id)] = r.direction; }); }
+    const r = OFF.areaDecide({ area, parent, siblings, presence, user: u, direction: forcedDirection || direction, confirm: !!confirm, autoRegister: !!window.AUTOREG, autoScan: false });
+    if (r.result === 'OK') {
+      const who = `${u.first_name || ''} ${u.last_name || ''}`.trim();
+      const res = await OFF.send(`/api/events/${window.EVENT_ID}/areas/${area.id}/movement`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cedula: u.id, direction: r.direction, confirm: true, method, client_time: r.time }) }, `${r.direction === 'in' ? 'Entrada' : 'Salida'} a ${r.area}: ${who}`, null, ['OK']);
+      if (!res.queued) { const data = await res.json().catch(() => ({})); if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return false; } await handle(data, (c, d) => register(cedula, c, d, method)); return FOUND.includes(data.result); }
+      await OFF.put(presUrl(area.id), [{ id: u.id, name: who, direction: r.direction, time: r.time }].concat(rowsBy[area.id].filter(x => String(x.id) !== String(u.id))));
+      const delta = r.direction === 'in' ? 1 : -1;
+      allAreas = allAreas.map(a => (a.id === area.id ? Object.assign({}, a, { inside: Math.max(0, (a.inside || 0) + delta) }) : a));
+      await OFF.put(areasUrl(), allAreas);
+      r.details = 'Sin conexión: queda guardado en este dispositivo y se envía solo al volver la red';
+    }
+    await handle(r, (c, d) => registerOffline(cedula, c, d, method));
+    return FOUND.includes(r.result);
   }
 
   async function init() {
@@ -41,8 +78,9 @@
     const sel = readSel();
     if (sel.dir) setDirection(sel.dir);
     try {
-      users = await getJson(`/api/users?event_id=${window.EVENT_ID}`);
+      users = OFF ? await OFF.users() : await getJson(`/api/users?event_id=${window.EVENT_ID}`);
       await loadAreas(sel.zone);
+      warmPresence();
     } catch (e) {
       showState('No se pudo cargar la información. Revisa la conexión y recarga la página.', true);
     }
@@ -50,7 +88,8 @@
   }
 
   async function loadAreas(keep) {
-    const all = await getJson(`/api/events/${window.EVENT_ID}/areas`);
+    const all = await getJson(areasUrl());
+    allAreas = all;
     // Subcategorías: solo se elige una zona «hoja» (suelta o subcategoría); la principal con subcategorías no recibe movimientos y se muestra como «Salón A › Entrada A».
     const byId = {}; all.forEach(a => { byId[a.id] = a; });
     const areas = all.filter(a => !a.is_group).map(a => (a.parent_id && byId[a.parent_id] ? Object.assign({}, a, { name: byId[a.parent_id].name + ' › ' + a.name }) : a));
@@ -92,7 +131,7 @@
     }
     $('presLoading').hidden = false;
     let rows;
-    try { rows = await getJson(`/api/events/${window.EVENT_ID}/areas/${areaId()}/presence`); }
+    try { rows = await getJson(presUrl(areaId())); }
     catch (e) { $('presLoading').hidden = true; showState('No se pudo cargar quién está en la zona. Cambia de zona o recarga la página.', true); return; }
     $('presLoading').hidden = true;
     setCounts(rows);
@@ -121,7 +160,7 @@
   async function handle(result, retry) {
     const who = result.data ? `${esc(result.data.first_name)} ${esc(result.data.last_name)}` : '';
     if (result.result === 'OK') {
-      show('ok', result.direction === 'in' ? 'Entró' : 'Salió', `<strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}`);
+      show('ok', result.direction === 'in' ? 'Entró' : 'Salió', `<strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}${result.details ? ' · ' + esc(result.details) : ''}`);
       await loadAreas(areaId());
     } else if (result.result === 'FOUND_PENDING') {
       show('warn', 'Falta confirmar', `<strong>${who}</strong>. Se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="gw-btn gw-btn--primary gw-btn--xl">Acreditar</button>`);
@@ -140,6 +179,7 @@
   async function register(cedula, confirm, forcedDirection, method) {
     if (!areaId()) { showToast('Primero elige una zona', 'error'); return false; }
     method = method || 'cedula';
+    if (OFF && OFF.off()) return registerOffline(cedula, confirm, forcedDirection, method);
     try {
       const res = await fetch(`/api/events/${window.EVENT_ID}/areas/${areaId()}/movement`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -149,7 +189,7 @@
       if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return false; }
       await handle(data, (c, d) => register(cedula, c, d, method));
       return FOUND.includes(data.result);          // true = la persona se encontró (la cámara se cierra sola); false = el aviso queda y la cámara sigue abierta
-    } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); return false; }
+    } catch (e) { if (OFF) return registerOffline(cedula, confirm, forcedDirection, method); show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); return false; }
   }
 
   document.addEventListener('click', (e) => {

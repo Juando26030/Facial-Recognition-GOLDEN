@@ -7,6 +7,32 @@
   const G = () => window.GWInv || {};
   const esc = (v) => (G().esc ? G().esc(v) : String(v == null ? '' : v));
   let current = null, busyNow = false;
+  /* Sin red (docs/28): lo que le toca a cada persona sale del paquete guardado en el dispositivo (GET …/offline-pack, pedido una vez al abrir) y lo entregado aquí se suma encima; la entrega
+     se guarda y se envía al volver la conexión con las asignaciones exactas que se entregaron. */
+  const OFF = window.GWOff || null;
+  const packUrl = () => `/api/events/${window.EVENT_ID}/offline-pack`, doneKey = () => `inv-local-done:${window.EVENT_ID}`;
+  if (OFF) OFF.json(packUrl()).then(() => OFF.put(doneKey(), {})).catch(() => {});          // con red: paquete fresco (ya trae lo entregado) y se olvida lo local
+  async function localView(u) { const pack = await OFF.get(packUrl()); if (!pack || !pack.assigned) return null; return OFF.assignedView(pack, u, (await OFF.get(doneKey())) || {}); }
+  async function showOffline(u, opts) {
+    const view = await localView(u);
+    if (!view) { $('assignedBox').innerHTML = stateHtml('Sin conexión y sin la copia de lo asignado en este dispositivo. Abre esta pantalla una vez con conexión.', 'error'); return; }
+    render(view);
+    if (opts && opts.auto && view.registered && view.pending > 0) deliver({ all: true });
+  }
+  async function deliverOffline(body) {
+    const view = await localView(current);
+    const name = `${current.first_name || ''} ${current.last_name || ''}`.trim();
+    if (!view) { if (G().verdict) G().verdict('err', 'Sin conexión', 'No hay copia de lo asignado en este dispositivo.'); return; }
+    if (!view.registered) { if (G().verdict) G().verdict('warn', 'No se pudo entregar', `${esc(name)} aún no está registrada en el evento.`); return; }
+    const plan = OFF.assignedDeliver(view, body);
+    if (!plan.keys.length) { if (G().verdict) G().verdict('warn', 'No se pudo entregar', 'No hay nada pendiente que se pueda entregar (ya se entregó o no hay existencias).'); return; }
+    await OFF.send(`/api/events/${window.EVENT_ID}/inventory/deliver-assigned`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: current.id, keys: plan.keys }) }, `Entrega a ${name}`);
+    const done = (await OFF.get(doneKey())) || {};
+    view.lines.forEach((l) => { if (plan.keys.includes(l.key)) done[l.key] = (done[l.key] || 0) + l.pending; });
+    await OFF.put(doneKey(), done);
+    if (G().verdict) G().verdict('ok', 'Entregado', `<strong>${esc(name)}</strong>: ${plan.delivered.map(d => `${d.qty} × ${esc(d.name)}${d.who ? ` (para ${esc(d.who)})` : ''}`).join(', ')}. Sin conexión: queda guardado en este dispositivo y se envía solo al volver la red.`);
+    render(await localView(current));
+  }
 
   function stateHtml(text, kind) {
     return `<div class="gw-state gw-empty--hero${kind === 'error' ? ' gw-state--error' : ''}" role="${kind === 'error' ? 'alert' : 'status'}"><p class="gw-state__title">${esc(text)}</p></div>`;
@@ -44,11 +70,12 @@
     current = u;
     const box = $('assignedBox');
     box.innerHTML = stateHtml('Buscando lo que le corresponde…');
+    if (OFF && OFF.off()) return showOffline(u, opts);
     let res, data;
     try {
       res = await fetch(`/api/events/${window.EVENT_ID}/inventory/assigned?cedula=${encodeURIComponent(u.id)}`);
       data = await res.json().catch(() => ({}));
-    } catch (e) { box.innerHTML = stateHtml('Sin conexión con el servidor. Inténtalo de nuevo.', 'error'); return; }
+    } catch (e) { if (OFF) return showOffline(u, opts); box.innerHTML = stateHtml('Sin conexión con el servidor. Inténtalo de nuevo.', 'error'); return; }
     if (!res.ok) { box.innerHTML = stateHtml(data.detail || 'No se pudo consultar a esta persona', 'error'); return; }
     render(data);
     if (opts && opts.auto && data.registered && (data.pending || 0) > 0) deliver({ all: true });          // «escanear = entregar» (Parámetros): entrega todo lo pendiente
@@ -57,6 +84,7 @@
   async function deliver(body) {
     if (!current || busyNow) return;
     busyNow = true;
+    if (OFF && OFF.off()) { try { await deliverOffline(body); } finally { busyNow = false; } return; }
     let res, data;
     try {
       res = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliver-assigned`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ cedula: current.id }, body)) });
@@ -85,6 +113,11 @@
     if (q.length < 3) { showToast('Escribe al menos 3 letras o números', 'error'); return; }
     out.innerHTML = stateHtml('Buscando…');
     let data;
+    if (OFF && OFF.off()) {                                              // sin red: se busca en el paquete guardado (nombre o documento del dependiente)
+      const pack = await OFF.get(packUrl()), low = q.toLowerCase(), found = [];
+      Object.keys((pack && pack.dependents) || {}).forEach((h) => pack.dependents[h].forEach((p) => { if (found.length < 15 && (String(p.label || '').toLowerCase().includes(low) || String(p.doc || '').toLowerCase().includes(low))) found.push({ dependent: p.label, doc: p.doc, holder_id: h, holder_name: '' }); }));
+      data = { results: found };
+    } else
     try { const r = await fetch(`/api/events/${window.EVENT_ID}/dependents/search?q=${encodeURIComponent(q)}`); data = await r.json(); if (!r.ok) throw new Error(data.detail || 'error'); }
     catch (e) { out.innerHTML = stateHtml(e.message && e.message !== 'error' ? e.message : 'No se pudo buscar. Revisa la conexión.', 'error'); return; }
     const rows = data.results || [];

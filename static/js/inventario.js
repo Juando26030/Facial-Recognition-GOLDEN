@@ -28,7 +28,11 @@
     b.hidden = false;
   }
 
+  /* Sin red (docs/28, static/js/offline-data.js): las lecturas salen de la última copia cifrada del dispositivo y cada entrega se guarda y se envía al volver la conexión. */
+  const OFF = window.GWOff || null;
+  const itemsUrl = () => `/api/events/${window.EVENT_ID}/inventory`, delUrl = () => `/api/events/${window.EVENT_ID}/inventory/deliveries`;
   async function getJson(url) {
+    if (OFF) return OFF.json(url);
     const res = await fetch(url);
     if (!res.ok) throw new Error('http ' + res.status);
     return res.json();
@@ -37,7 +41,7 @@
   async function init() {
     if (!window.ENABLED) return;
     if (window.CAN_REPORT) $('reportBtn').hidden = false;
-    try { users = await getJson(`/api/users?event_id=${window.EVENT_ID}`); }
+    try { users = OFF ? await OFF.users() : await getJson(`/api/users?event_id=${window.EVENT_ID}`); }
     catch (e) { showToast('No se pudo cargar la base de personas. Recarga la página.', 'error'); }
     await loadItems(); loadDeliveries();
     $('scanInput').focus();
@@ -46,7 +50,7 @@
   async function loadItems() {
     const box = $('itemsList');
     $('itemsLoading').hidden = false;
-    try { items = await getJson(`/api/events/${window.EVENT_ID}/inventory`); }
+    try { items = await getJson(itemsUrl()); }
     catch (e) {
       $('itemsLoading').hidden = true;
       box.innerHTML = `<div class="gw-state gw-state--error gw-empty--hero" role="alert"><span class="gw-state__icon">${icon('error')}</span><p class="gw-state__title">No se pudo cargar el inventario. Revisa la conexión y recarga la página.</p></div>`;
@@ -125,7 +129,7 @@
 
   async function loadDeliveries() {
     let rows;
-    try { rows = await getJson(`/api/events/${window.EVENT_ID}/inventory/deliveries`); }
+    try { rows = await getJson(delUrl()); }
     catch (e) { setDelState('No se pudieron cargar las entregas. Recarga la página.', true); return; }
     lastBatches = new Set(rows.map(r => r.batch_id));
     $('statDeliveries').textContent = rows.length;
@@ -190,7 +194,28 @@
   async function doDeliver(lines) {
     let res, data;
     try {
-      res = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliver`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: person.id, items: lines }) });
+      const url = `/api/events/${window.EVENT_ID}/inventory/deliver`, opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: person.id, items: lines }) };
+      const who = `${person.first_name || ''} ${person.last_name || ''}`.trim();
+      if (OFF && OFF.off()) {                                           // sin red: lo que el dispositivo puede comprobar (existencias y «no repetir»); el resto de reglas las aplica el servidor al recibirlo
+        const byItem = {}; items.forEach(i => { byItem[i.id] = i; });
+        const prev = (await OFF.get(delUrl())) || [];
+        for (const ln of lines) {
+          const it = byItem[ln.item_id];
+          if (!it || it.available < ln.qty) { verdict('warn', 'No se pudo entregar', `No hay existencias suficientes de ${esc(it ? it.name : 'ese ítem')}.`); return; }
+          if (!it.allow_repeat_delivery && prev.some(r => r.user_id === person.id && r.item_id === it.id)) { verdict('warn', 'No se pudo entregar', `${esc(who)} ya recibió ${esc(it.name)} (este ítem no se repite).`); return; }
+        }
+      }
+      res = OFF ? await OFF.send(url, opts, `Entrega a ${who}`) : await fetch(url, opts);
+      if (res.queued) {                                                  // guardada en el dispositivo: la copia local de existencias y de entregas queda al día
+        const byItem = {}; items.forEach(i => { byItem[i.id] = i; });
+        const now = new Date().toISOString().replace(/Z$/, ''), batch = 'local-' + Date.now();
+        const mine = lines.map(ln => ({ time: now, user_id: person.id, batch_id: batch, name: who, item: (byItem[ln.item_id] || {}).name || '', item_id: ln.item_id, qty: ln.qty }));
+        await OFF.put(itemsUrl(), items.map(i => { const q = lines.filter(ln => ln.item_id === i.id || (i.is_group && (byItem[ln.item_id] || {}).parent_id === i.id)).reduce((n, ln) => n + ln.qty, 0); return q ? Object.assign({}, i, { available: i.available - q, delivered: (i.delivered || 0) + q }) : i; }));
+        await OFF.put(delUrl(), mine.concat((await OFF.get(delUrl())) || []).slice(0, 200));
+        verdict('ok', 'Entregado', `<strong>${esc(who)}</strong>: ${mine.map(d => `${d.qty} × ${esc(d.item)}`).join(', ')}. Sin conexión: queda guardado en este dispositivo y se envía solo al volver la red.`);
+        await loadItems(); await loadDeliveries();
+        return;
+      }
       data = await res.json().catch(() => ({}));
     } catch (e) { res = null; data = { detail: 'No se pudo entregar: sin conexión con el servidor. Inténtalo de nuevo.' }; }
     if (!res || !res.ok) { verdict(res ? 'warn' : 'err', res ? 'No se pudo entregar' : 'Sin conexión', esc(data.detail || 'No se pudo entregar')); return; }

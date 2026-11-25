@@ -219,7 +219,19 @@ def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staf
     return {"message": "Zona eliminada"}
 
 
-def _apply_movement(db: Session, event, area: EventArea, user: User, direction: str, confirm: bool, method: str, staff: StaffUser) -> dict:
+def _client_time(raw):
+    """Hora real de un movimiento hecho SIN RED y enviado al volver la conexión (docs/28): ISO en UTC. Solo vale si no es futura ni tiene más de 7 días (lo que dura la bandeja del quiosco); si no, None (= ahora)."""
+    try:
+        when = datetime.fromisoformat(str(raw or "").strip().replace("Z", "")[:26])
+    except ValueError:
+        return None
+    if when.tzinfo is not None:
+        return None
+    now = utcnow()
+    return when if (now - when).total_seconds() >= 0 and (now - when).days < 7 else None
+
+
+def _apply_movement(db: Session, event, area: EventArea, user: User, direction: str, confirm: bool, method: str, staff: StaffUser, when=None) -> dict:
     """Reglas de una entrada/salida. Devuelve el resultado (nunca lanza por reglas de negocio):
     OK (guardado) | FOUND_PENDING (autoregistro apagado y sin confirmar) | ALREADY_ENTERED (alerta roja:
     reingreso no permitido) | NOT_INSIDE (salida de alguien que no está adentro) | LIMIT (pasó el máximo de entradas por persona).
@@ -274,7 +286,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
     if not event.auto_register and not event.areas_autoscan and not confirm:          # Fase 10: «escanear = ingreso automático» registra sin pulsar «Acreditar»
         return {"result": "FOUND_PENDING", "direction": direction, "area": label, "data": data}
 
-    now = utcnow()
+    now = when or utcnow()
     db.add(AreaMovement(
         event_id=event.id, area_id=area.id, user_id=user.id, tenant_id=event.tenant_id, direction=direction,
         method=method, timestamp=now, registered_by_staff_id=staff.id,
@@ -291,7 +303,8 @@ def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends
     require_event_in_progress(event)
     area = _get_area(db, event, area_id, active_only=True)
     user = _find_person(db, event, str(data.get("cedula") or ""))
-    return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), "qr" if data.get("method") == "qr" else "cedula", staff)
+    return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), "qr" if data.get("method") == "qr" else "cedula", staff,
+                           when=_client_time(data.get("client_time")) if data.get("client_time") else None)
 
 
 @router.post("/events/{event_id}/areas/{area_id}/movement-face")

@@ -167,6 +167,7 @@
     </div>
   </div>
 </main>
+{% include "_offline_boot.html" %}
 <script src="{{ url_for('static', path='js/areas.js') }}"></script>
 {% if event.areas_dwell_enabled and staff_role != "digitador" %}<script src="{{ url_for('static', path='js/areas-dwell.js') }}"></script>{% endif %}
 </body>

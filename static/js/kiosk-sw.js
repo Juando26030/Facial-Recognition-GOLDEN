@@ -15,7 +15,7 @@ const BUILD = '__BUILD__';
 const CACHE_PREFIX = 'golden-kiosk-shell-';
 const CACHE = CACHE_PREFIX + BUILD;
 const NETWORK_TIMEOUT_MS = 4000;
-const KIOSK_PAGE = /^\/kiosk\/\d+\/(registro|rostro)\/?$/;       // el registro y la pantalla de la puerta (autoservicio «Entrar con mi rostro»)
+const KIOSK_PAGE = /^\/kiosk\/\d+\/(registro|rostro|areas|inventario)\/?$/;       // el registro y la pantalla de la puerta (autoservicio «Entrar con mi rostro»)
 
 /* Clave de caché: la página sin `?…` y sin «/» final; los estáticos con su `?v=` (y, sin red, cualquier versión sirve). */
 function keyOf(rawUrl, isPage) {

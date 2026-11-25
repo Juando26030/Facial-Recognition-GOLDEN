@@ -459,9 +459,9 @@
       const depBox = box.querySelector('#editModalDeps');
       if (depCfg && depBox && user.id) (async () => {
         try {
-          const r = await fetch(`/api/events/${window.EVENT_ID}/dependents?holder=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
-          const d = await r.json();
-          if (!r.ok) return;
+          let d = null;
+          if (offNow() && window.GWOff) { const pack = await window.GWOff.get(`/api/events/${window.EVENT_ID}/offline-pack`); const ppl = pack && pack.dependents ? (pack.dependents[user.id] || []) : null; if (!ppl) return; d = { people: ppl }; }          // sin red: del paquete guardado (docs/28)
+          else { const r = await fetch(`/api/events/${window.EVENT_ID}/dependents?holder=${encodeURIComponent(user.id)}`, { cache: 'no-store' }); d = await r.json(); if (!r.ok) return; }
           const people = d.people || [];
           const rowsHtml = (rows) => rows.map(rw => Object.keys(rw).map(k => `<span class="gw-badge">${esc(k)}: ${esc(rw[k])}</span>`).join(' ')).join('<br>');
           depBox.innerHTML = `<div class="gw-field gw-registro__editfield"><span class="gw-label">${esc(depCfg.label || 'Dependientes')}</span>

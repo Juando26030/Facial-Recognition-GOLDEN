@@ -417,7 +417,7 @@
 <script src="{{ url_for('static', path='js/shared-print.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
-{% if contingency_enabled %}<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
+{% if contingency_enabled %}<script src="{{ url_for('static', path='js/contingency.js') }}"></script><script src="{{ url_for('static', path='js/offline-data.js') }}"></script>
 <script src="{{ url_for('static', path='js/outbox.js') }}"></script>
 <script src="{{ url_for('static', path='js/outbox-ui.js') }}"></script>
 {% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
@@ -550,6 +550,7 @@
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
     if (canAccredit && window.GoldenContingency) {
         const contingencyReady = GoldenContingency.init({ eventId: window.EVENT_ID, personForm: !!window.PERSON_FORM });
+        if (window.GWOff && document.getElementById('gwDependentsCfg') && (document.getElementById('gwDependentsCfg').textContent || 'null').trim() !== 'null') window.GWOff.json(`/api/events/${window.EVENT_ID}/offline-pack`).catch(() => {});          // dependientes para «Editar persona» sin red (docs/28): una vez al abrir
         // Formulario de persona: se pone de acuerdo con la copia guardada en el dispositivo (la página en caché puede traer una definición más vieja); la más nueva manda.
         if (window.PERSON_FORM && window.PersonForm && contingencyReady && contingencyReady.then) contingencyReady.then(async (GC) => {
             const chosen = await PersonForm.sync(GC, window.PERSON_FORM);

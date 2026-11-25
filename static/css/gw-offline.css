@@ -1,0 +1,11 @@
+/* Bandeja de salida fuera del Registro (Control de áreas y de inventario sin red, docs/28). Mismas reglas que static/css/registro.css; solo tokens --gw-*. */
+.gw-outbox__banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998; justify-content: center; border-radius: 0; font-weight: var(--gw-fw-bold); cursor: pointer; }
+.gw-outbox__btn { position: fixed; right: var(--gw-sp-4); bottom: calc(var(--gw-sp-8) + var(--gw-sp-4)); z-index: 9999; box-shadow: var(--gw-shadow-md); }
+.gw-outbox__modal { position: fixed; inset: 0; z-index: 10000; overflow: auto; background: color-mix(in srgb, var(--gw-navy-deep) 55%, transparent); }
+.gw-outbox__panel { max-width: 48rem; margin: 5vh auto; }
+.gw-outbox__title { margin: 0; font-size: var(--gw-fs-xl); }
+.gw-outbox__table td, .gw-outbox__table th { vertical-align: top; }
+.gw-outbox__name { font-weight: var(--gw-fw-bold); }
+.gw-outbox__ok { color: var(--gw-ok-text); }
+.gw-outbox__bad { color: var(--gw-err-text); font-weight: var(--gw-fw-bold); }
+.gw-outbox__warn { color: var(--gw-warn-text); font-weight: var(--gw-fw-bold); }
