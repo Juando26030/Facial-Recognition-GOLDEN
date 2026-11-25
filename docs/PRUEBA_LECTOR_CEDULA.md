@@ -123,3 +123,32 @@ Juan David probó con una tableta que no es de última generación: al abrir la 
 - **Banco:** mismos resultados que antes (15/16, 58/60, vieja 8/9). El bajón de resolución se probó simulando 8 cuadros por segundo (4K → 1080p → 720p; vertical 1080×1920 → 720×1280).
 - **Falta:** confirmarlo en la tableta real. Si sigue trabada a 1080p, anotar modelo y navegador.
 
+## Prueba con cédulas reales y decodificador real (24-nov-2026, noche)
+
+Juan David prueba mostrando la cédula en la pantalla de un celular en horizontal (así llega la gente que olvidó el documento) y con una tableta modesta. Reportó: cédula vieja 3 de 5,
+al revés no leía, un «zoom» que no se quitaba y demora para decir que no. Entregó un PDF de una cédula vieja y la foto de una nueva; se usaron SOLO en carpeta temporal (no van al repo).
+
+**Banco con decodificador real.** `tests/lab_cedula/zx.py` usa el zxing-cpp del sistema (por el complemento de GStreamer) en lugar de zxing-wasm: `ZX=real`. Las escenas se generan
+desde la imagen real (celular con marco negro, trama de pantalla, desenfoque, giros, brillo) a 4K; con `CORES=4` el banco reproduce la tableta: vista previa 1080p y foto fija del sensor a 4K.
+
+**Causas encontradas (cédula vieja):**
+1. *Ángulo del recorte.* El localizador mide el giro por la forma de la mancha de textura y erraba 2–4° (más al revés, donde el texto vecino entra en la mancha). El decodificador
+   de PDF417 no tolera 3°: el mismo recorte no se leía a 0° y sí corrigiéndolo. → `_refineAngle`: ángulo por las barras verticales (signo verificado) y, con el recorte ya derecho,
+   límites del código por la densidad de bordes (antes a veces salía MEDIO código).
+2. *Resolución.* A 1080p el código queda en ~2 px por módulo. → cuadro del video primero y, si falta detalle, foto fija del sensor (`stillHD`).
+3. *Orden de intentos.* `PLANS.photo`: `raw`, `sharp`, `stretch`, derecho y al revés alternados (`sharp` es el que más rescata fotos de pantalla).
+
+**El «zoom»:** se quitó el cambio de resolución con la cámara abierta (recorta la imagen en algunos equipos). Si la vista previa va lenta, la SIGUIENTE apertura pide 1080p.
+Tras una foto fija se restauran zoom y resolución del video si el equipo los cambió.
+
+**Avisos rápidos (cédula vieja):** sin código → ya; brillo que lo tapa → ya; menos de 1 px por módulo → «muy lejos»; borroso (nitidez `sharpOf` < 0,3 en video con detalle, < 0,6 en la foto fija) → ya.
+**Cédula nueva:** derecho y al revés alternados desde el primer intento (al revés tardaba el triple).
+
+**Resultados (decodificador real, tableta simulada):**
+- Cédula nueva real, 44 posiciones (tamaños, 0–360°, suave): 42/44 (una es «sin cédula»; la otra, pequeña a ~200°). Lee en 1,6 s de media (máx. 2,3 s); dice que no en ~1,5 s.
+- Cédula vieja real, 69 escenas: nítida 10/10 · girada limpia (6°–270°) 12/14 · foto de pantalla con trama 6/10 · muy borrosa 0/10 · girada con trama 0/9. Antes de estos cambios: 19 de 55.
+  Lee en ~1,1 s de media; dice que no en ~1,9 s (más lo que tarde la foto fija del equipo, cuando hace falta).
+- Lo que NO se lee es límite del decodificador con esa calidad de imagen (se comprobó sin límite de tiempo: 21/55 antes de los arreglos). Las escenas «con trama» y «borrosa» son
+  simulaciones duras; no se sabe qué tan cerca están de la tableta real.
+- **Falta:** la prueba en la tableta real. Los umbrales de nitidez y brillo están calibrados con simulación.
+

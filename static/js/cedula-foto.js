@@ -29,6 +29,7 @@
     detail: 'Procesando… tomando una foto con más detalle.',
     noLines: 'No se ven las 3 líneas de la cédula: que queden completas dentro de la foto, sin brillo, y tome otra foto.',
     noCode: 'No se ve el código de barras: que quede completo dentro de la foto, sin brillo, y tome otra foto.',
+    blur: 'El código no se distingue bien (borroso o con brillo): enfoque, evite reflejos y tome otra foto.',
     covered: 'Parte de la cédula no se ve (un brillo, una sombra o un dedo la tapa): déjela completa a la vista y tome otra foto.',
     small: 'La cédula quedó muy lejos: acérquela y tome otra foto.',
     unknown: 'Se leyó un código, pero no tiene el formato de la cédula. Tome otra foto del reverso.',
@@ -43,24 +44,24 @@
   };
   const SIZES = [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}];
   // FLUIDEZ (24-nov-2026, tableta que no es de última generación: la vista previa iba trabada y con retraso). Mostrar video 4K en vivo es lo que más pesa:
-  //  · equipo modesto (≤ 4 núcleos o ≤ 3 GB): se pide 1080p de entrada; · en los demás se MIDE la vista previa y, si va a menos de FPS_MIN, se baja a 1080p (y a 720p si
-  //    ni así). La lectura no cambia: con 1080p se sigue usando el cuadro del video; con menos, la foto fija del sensor (takePhoto), igual que antes en cámaras sin HD.
-  const FPS_MIN = 18, FPS_MIN_720 = 12, FPS_WARMUP_MS = 500, FPS_WINDOW_MS = 1200, OVERLAY_DPR_MAX = 2;
+  //  · equipo modesto (≤ 4 núcleos o ≤ 3 GB): se pide 1080p de entrada; · en los demás se MIDE la vista previa y, si va a menos de FPS_MIN, la PRÓXIMA vez que se abra
+  //    la cámara se pide 1080p. La resolución NUNCA se cambia con la cámara abierta: en algunos equipos eso recortaba la imagen (se veía como un «zoom» que no se quitaba).
+  //  · El detalle que le falta al video de 1080p (sobre todo para el código de la cédula vieja) lo pone la foto fija del sensor (stillHD), solo cuando hace falta.
+  const FPS_MIN = 18, FPS_WARMUP_MS = 500, FPS_WINDOW_MS = 1200, OVERLAY_DPR_MAX = 2;
+  let slowSeen = false;                       // en esta página ya se vio la vista previa lenta a más de 1080p
   /** ¿Equipo modesto? (puro: recibe navigator) */
   function lowEnd(nav) { return !!nav && ((nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) || (nav.deviceMemory > 0 && nav.deviceMemory <= 3)); }
-  /** Resolución a la que conviene bajar según los cuadros por segundo medidos y el lado corto actual del video → {width,height} | null (quedarse como está). */
-  function stepDown(fps, shortSide, canStill) {
-    if (!(fps > 0)) return null;
-    if (shortSide > 1080 && fps < FPS_MIN) return { width: 1920, height: 1080 };
-    if (canStill && shortSide > 720 && fps < FPS_MIN_720) return { width: 1280, height: 720 };   // solo si hay foto fija (takePhoto): por debajo de 1080p el cuadro del video no alcanza para leer
-    return null;
-  }
+  /** ¿La vista previa va lenta por la resolución? (cuadros por segundo medidos y lado corto del video) */
+  function slowPreview(fps, shortSide) { return fps > 0 && shortSide > 1080 && fps < FPS_MIN; }
+  /** Píxeles por módulo del código de la cédula vieja a partir del largo del candidato (misma cuenta que el lector: L incluye 28 % de margen; ~340 módulos). */
+  function ppmOf(L) { return L / 1.28 / 340; }
   const STILL_MAX = 4600;                    // lado mayor máximo pedido a takePhoto (más no aporta y pesa en memoria)
   const MRZ_CROP_W = 1800;                   // ancho de trabajo del recorte de las 3 líneas (≈60 px por carácter)
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
   const SERVER_TIMEOUT_MS = 25000;
   const HD_SHORT_SIDE = 1080;                 // video con lado corto ≥ 1080 px: su cuadro ya es alta definición (no hace falta takePhoto)
-  const OLD_BUDGET_MS = [1000, 1800, 900, 900];   // cédula vieja: recuadro de la foto 1 y luego la foto COMPLETA de cada cuadro de la ráfaga (el código donde esté): ≈4,6 s en el peor caso
+  const OLD_FRAME_MS = 1200, OLD_FRAME_LOW_MS = 700, OLD_STILL_MS = 1600, OLD_GUIDE_MS = 700, GOOD_PPM = 3.5, MIN_PPM = 1.0;
+  const BLUR_VIDEO = 0.3, BLUR_STILL = 0.6;   // nitidez mínima del código (sharpOf) en el cuadro del video y en la foto fija: por debajo no se lee y se avisa sin gastar tiempo (calibrado en el banco de pruebas)   // cédula vieja: tiempo sobre el cuadro del video, sobre la foto fija y sobre el recuadro (respaldo); con ≥ 3 px por módulo el cuadro suele bastar
   const FIND_MAX = 3200;                     // lado mayor de la copia en gris donde se buscan las 3 líneas (recorte automático)
   const NEW_DEADLINE_MS = 5500;              // cédula nueva: tope de espera por foto (navegador y servidor); pasado esto se pide otra foto
   const SMALL_LETTER_PX = 24, SMALL_PPM = 2.2;   // letras de menos de 24 px de alto / código con menos de 2,2 px por módulo: «muy lejos» (vale la pena la foto fija)
@@ -226,6 +227,21 @@
     }
     return frameOf(video);
   }
+  /** Foto fija con TODO el detalle del sensor (takePhoto). En algunos equipos tomarla deja la cámara con otro encuadre (zoom) u otra resolución de video:
+      se anota cómo estaba y se restaura. → { img, w, h, source:'still' } | null */
+  async function stillHD(track, video) {
+    if (!track || typeof ImageCapture === 'undefined' || track.readyState !== 'live') return null;
+    let before = {}; try { before = track.getSettings ? track.getSettings() : {}; } catch (e) { before = {}; }
+    let out = null;
+    try { const hd = await takeStill(track, video, true); if (hd && hd.source === 'still') out = hd; else if (hd && hd.img && hd.img.close) hd.img.close(); } catch (e) { out = null; }
+    try {
+      const now = track.getSettings ? track.getSettings() : {}, fix = {};
+      if (before.zoom && now.zoom && now.zoom !== before.zoom) fix.advanced = [{ zoom: before.zoom }];
+      if (before.width && before.height && (now.width !== before.width || now.height !== before.height)) { fix.width = { ideal: before.width }; fix.height = { ideal: before.height }; }
+      if (Object.keys(fix).length) await track.applyConstraints(fix);
+    } catch (e) { /* no se pudo restaurar: queda como la dejó el equipo */ }
+    return out;
+  }
   function frameOf(video) {
     const c = canvasOf(video.videoWidth, video.videoHeight);
     c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
@@ -257,43 +273,55 @@
       const im = sc._cropCandidate(shot.img, cand, false, 0.5), w = im.width, h = im.height, d = im.data, g = new Uint8Array(w * h);
       for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
       const rows = [0, 1, 2].map((r) => ({ x0: w * 0.13, x1: w * 0.87, y0: h * (0.12 + r * 0.26), y1: h * (0.12 + (r + 1) * 0.26) - 1 }));
-      return washedCells(g, w, h, rows, 16);
-    } catch (e) { return { n: 0, low: 0, bright: 0 }; }
+      return { ...washedCells(g, w, h, rows, 16), sharp: sharpOf(g, w, h) };
+    } catch (e) { return { n: 0, low: 0, bright: 0, sharp: 1 }; }
   }
-  /** El recorte (gris) como lienzo con borde blanco: es lo que se le manda al servidor cuando el navegador ya ubicó las 3 líneas. */
-  function foundCanvas(f, pad) {
-    const c = canvasOf(f.w + 2 * pad, f.h + 2 * pad), x = c.getContext('2d'), im = x.createImageData(f.w, f.h), d = im.data;
-    for (let i = 0, j = 0; j < f.g.length; i += 4, j++) { d[i] = d[i + 1] = d[i + 2] = f.g[j]; d[i + 3] = 255; }
-    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.putImageData(im, pad, pad);
-    return c;
+  /** Nitidez del código (misma medida del lector en vivo): energía de los bordes horizontales a 2 px sobre la varianza, en la franja central. Borroso ≈ 0; nítido ≥ ~0,3. */
+  function sharpOf(g, w, h) {
+    const y0 = Math.floor(h * 0.25), y1 = Math.ceil(h * 0.75), x0 = Math.floor(w * 0.12), x1 = Math.ceil(w * 0.88); let s1 = 0, m = 0, n = 0;
+    for (let y = y0; y < y1; y += 2) { const o = y * w; for (let x = x0; x < x1; x++) { const a = g[o + x + 1] - g[o + x - 1]; s1 += a * a; m += g[o + x]; n++; } }
+    if (!n) return 1; m /= n; let v = 0;
+    for (let y = y0; y < y1; y += 2) { const o = y * w; for (let x = x0; x < x1; x++) { const q = g[o + x] - m; v += q * q; } }
+    return (s1 / n) / (v / n + 1);
   }
-
   /** Cédula vieja sobre la RÁFAGA: el recuadro de cada cuadro (lo que un brillo o el pulso arruinan en uno suele verse en otro) y al final la foto completa. */
-  async function decodeOld(R, shots, guidePhoto, alive) {
+  async function decodeOld(R, shots, guidePhoto, alive, getStill) {
     const sc = await decoder(R, 'old');
-    let unknown = false, located = false, small = false;
+    let unknown = false;
     sc.onResult = () => {}; sc.onStatus = () => {}; sc.onUnknown = () => { unknown = true; };
-    const cands = () => (sc.lastDebug && sc.lastDebug.cands) || [];
-    // plan 'photo': derecho y AL REVÉS alternados desde el primer intento (antes los giros de 180° llegaban al final y el tiempo no alcanzaba).
-    if (guidePhoto) {                                                                                                  // 1) el recuadro con margen: lo más rápido cuando quedó encuadrada
-      const datos = await sc.scanImage(cropCanvas(shots[0].img, expandRect(guidePhoto, 0.06, 0.9, shots[0].w, shots[0].h)), { budgetMs: OLD_BUDGET_MS[0], plan: 'photo' });
-      if (datos) return { datos };
-      located = cands().length > 0;
+    const locate = (shot) => { try { const c = sc.findCandidates(shot.img, shot.w, shot.h)[0] || null; return c && sc._refineAngle ? sc._refineAngle(shot.img, c) : c; } catch (e) { return null; } };
+    const LAB = (typeof window !== 'undefined' && window.CEDULA_LAB) || null;                                          // solo el banco de pruebas: tiempo ampliado y qué intento acertó
+    const scan = async (img, budgetMs, cropsOnly) => { const d = await sc.scanImage(img, { budgetMs: LAB && LAB.budget ? LAB.budget : budgetMs, plan: (LAB && LAB.plan) || 'photo', cropsOnly }); if (LAB && d) LAB.how = sc.lastDebug.how + ' · ' + sc.lastDebug.ms + ' ms'; return d; };   // plan 'photo': derecho y AL REVÉS alternados desde el primer intento
+    const shot = shots[0];
+    // CHEQUEO PREVIO sobre el cuadro del video: ¿hay código?, ¿lo tapa un brillo?, ¿tiene detalle suficiente?
+    const c0 = locate(shot);
+    if (!c0) {                                                                                                         // no se ve un código: el recuadro, por si acaso, y se avisa ya
+      const datos = guidePhoto && alive() ? await scan(cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_GUIDE_MS, false) : null;
+      return datos ? { datos } : { datos: null, unknown, reason: 'nocode' };
     }
-    for (let k = 0; k < Math.min(3, shots.length); k++) {                                                              // 2) la foto COMPLETA de cada cuadro: el código donde esté, enderezado y recortado
-      if (!alive()) return { datos: null };
-      const datos = await sc.scanImage(shots[k].img, { budgetMs: OLD_BUDGET_MS[k + 1], plan: 'photo', cropsOnly: true });
-      if (datos) return { datos };
-      if (k > 0) continue;
-      const c = cands()[0];                                                                                            // chequeo tras el primer cuadro: ¿vale la pena seguir?
-      if (!c && !located) return { datos: null, unknown, reason: 'nocode' };                                           // no hay código a la vista: se avisa ya
-      if (c) {
-        located = true; small = !!(sc.lastDebug.ppm && sc.lastDebug.ppm < SMALL_PPM);
-        const ws = checkCode(sc, shots[0], c);
-        if (ws.low >= 4) return { datos: null, unknown, located, reason: washReason(ws) };                             // brillo o algo tapa el código: otro cuadro igual no lo arregla
+    const ws = checkCode(sc, shot, c0); if (LAB) (LAB.log = LAB.log || []).push(['video', +ppmOf(c0.L).toFixed(2), +ws.sharp.toFixed(3), ws.low]);
+    if (ws.low >= 4) return { datos: null, unknown, located: true, reason: washReason(ws) };                           // brillo o algo lo tapa: otra toma igual no lo arregla
+    let ppm = ppmOf(c0.L);
+    if (ppm < MIN_PPM) return { datos: null, unknown, located: true, reason: 'small' };
+    if (ws.sharp < BLUR_VIDEO && ppm >= 1.8) return { datos: null, unknown, located: true, reason: 'blur' };           // con detalle de sobra y aun así sin bordes: borroso o lavado                                // tan lejos que ni la foto fija alcanzaría: se avisa ya
+    const enough = ppm >= GOOD_PPM || !getStill;                                                                       // el cuadro del video ya tiene todo el detalle útil (o no hay foto fija)
+    {                                                                                                                  // el cuadro del video primero (inmediato)
+      const datos = await scan(shot.img, enough ? OLD_FRAME_MS : OLD_FRAME_LOW_MS, true); if (datos) return { datos };
+    }
+    if (!alive()) return { datos: null };
+    if (!enough) {                                                                                                     // falta detalle: la foto fija del sensor (ahí se lee el código pequeño o de una pantalla)
+      const hd = await getStill();
+      if (hd && alive()) {
+        const c1 = locate(hd); if (c1) ppm = Math.max(ppm, ppmOf(c1.L));
+        const w1 = c1 ? checkCode(sc, hd, c1) : null; if (LAB && c1) (LAB.log = LAB.log || []).push(['foto', +ppmOf(c1.L).toFixed(2), +w1.sharp.toFixed(3), w1.low]);
+        if (w1 && w1.low >= 4) return { datos: null, unknown, located: true, reason: washReason(w1) };
+        if (w1 && w1.sharp < BLUR_STILL) return { datos: null, unknown, located: true, reason: 'blur' };                // ni la foto fija tiene bordes nítidos: no vale la pena intentar
+        const datos = await scan(hd.img, OLD_STILL_MS, true); if (datos) return { datos };
       }
+    } else if (!getStill) {
+      for (const other of shots.slice(1, 3)) { if (!alive()) break; const datos = await scan(other.img, 700, true); if (datos) return { datos }; }   // sin foto fija: los otros cuadros de la ráfaga
     }
-    return { datos: null, unknown, located, small, reason: small ? 'small' : '' };
+    return { datos: null, unknown, located: true, reason: ppm < SMALL_PPM ? 'small' : '' };
   }
 
   /** Cédula nueva sobre la ráfaga. `reads` se comparte con quien llama: si nada queda validado, de ahí sale lo que SÍ se leyó (partialFrom). La votación
@@ -303,18 +331,24 @@
     mz.onStatus = () => {};
     // 24-nov (recorte automático): primero las 3 líneas DONDE ESTÉN en la foto (R.mrzFind las ubica, las endereza y entrega solo esa zona con la posición
     // exacta de cada línea); después, como siempre, el recuadro guía. Así el recuadro es una ayuda, no un requisito.
-    let upside = false;
+    let upside = null;                                                                  // null = aún no se sabe; false = derecho; true = al revés
     const readFound = async (k) => {
       if (finds[k] === undefined) finds[k] = findMrz(R, shots[k]);
       const f = finds[k]; if (!f || !alive()) return null;
       let back = null;
-      await readMrzCrop(async (flip, attempt) => {
-        if (flip && attempt > 1) return {};                                           // la otra orientación: 2 intentos bastan
-        const useBack = flip !== upside, v = useBack ? (back || (back = f.flip())) : f;
+      // Derecho y al revés ALTERNADOS desde el primer intento (antes: 3 intentos al derecho antes de probar al revés → la cédula al revés tardaba el triple).
+      // En cuanto una orientación da la estructura de las 3 líneas, solo se sigue con esa (y los cuadros siguientes empiezan por ahí).
+      for (const [flip, attempt] of [[false, 0], [true, 0], [false, 1], [true, 1], [false, 2], [true, 2]]) {
+        if (upside !== null && flip !== upside) continue;
+        if (!alive()) return null;
+        const v = flip ? (back || (back = f.flip())) : f;
         const r = await mz._read(v.g, v.w, v.h, { info: v.info, attempt });
-        if (useBack && !upside && r && r.texts && R.parseMrz(r.texts.map((t) => t.text))) upside = true;   // la cédula está al revés: los cuadros siguientes empiezan por ahí
-        return r;
-      }, R.parseMrz, R.mrzStrong, reads, alive);
+        if (!r || !r.texts) continue;
+        const parsed = R.parseMrz(r.texts.map((t) => t.text));
+        reads.push({ parsed, conf: r.texts.map((t) => t.conf) });
+        if (parsed && upside === null) upside = flip;
+        const got = pickMrz(reads, R.mrzStrong, false); if (got) return got;
+      }
       return pickMrz(reads, R.mrzStrong, false);
     };
     const readGuide = async (shot, r) => {
@@ -464,22 +498,9 @@
         setTimeout(() => done(t0 ? n * 1000 / FPS_WINDOW_MS : 0), FPS_WARMUP_MS + FPS_WINDOW_MS * 3);       // pestaña en segundo plano: no se queda esperando
       });
     }
-    async function tunePreview() {
-      for (let round = 0; round < 2 && !dead && track; round++) {
-        const fps = await measureFps(); if (dead || busy || !track) return;
-        const to = stepDown(fps, Math.min(video.videoWidth || 0, video.videoHeight || 0), typeof ImageCapture !== 'undefined'); if (!to) return;
-        // Se conserva la FORMA del video (un celular en vertical entrega 1080×1920): se prueba ancho×alto y, si la imagen queda recortada, alto×ancho; si ninguna sirve, se deja como estaba.
-        const shape = () => Math.max(video.videoWidth, video.videoHeight) / Math.max(1, Math.min(video.videoWidth, video.videoHeight)), was = shape(), w0 = video.videoWidth, h0 = video.videoHeight;
-        let ok = false; const tall = h0 > w0;
-        for (const [w, h] of (tall ? [[to.height, to.width], [to.width, to.height]] : [[to.width, to.height], [to.height, to.width]])) {
-          try { await track.applyConstraints({ width: { ideal: w }, height: { ideal: h } }); } catch (e) { continue; }
-          await new Promise((r) => setTimeout(r, 450));
-          if (dead) return;
-          if (Math.abs(shape() - was) < was * 0.06 && (video.videoHeight > video.videoWidth) === tall) { ok = true; break; }
-        }
-        if (!ok) { try { await track.applyConstraints({ width: { ideal: w0 }, height: { ideal: h0 } }); } catch (e) { /* queda como la dejó el navegador */ } redraw(); return; }
-        redraw();
-      }
+    async function tunePreview() {                                                      // solo MIDE: si va lenta, la próxima apertura pide 1080p (nunca se cambia en caliente)
+      const fps = await measureFps(); if (dead) return;
+      if (slowPreview(fps, Math.min(video.videoWidth || 0, video.videoHeight || 0))) slowSeen = true;
     }
 
     /* Linterna: solo si el celular la ofrece (Android Chrome). En cédulas plastificadas a veces CAUSA el brillo: por eso el aviso pide apagarla. */
@@ -532,7 +553,7 @@
 
     async function openCamera() {
       let last = null, s = null;
-      for (const size of (lowEnd(navigator) ? SIZES.slice(2) : SIZES)) {                 // equipo modesto: 1080p de entrada
+      for (const size of ((slowSeen || lowEnd(navigator)) ? SIZES.slice(2) : SIZES)) {    // equipo modesto (o vista previa lenta la vez anterior): 1080p de entrada
         try { s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, ...size } }); break; }
         catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') break; }
       }
@@ -549,7 +570,7 @@
       setupTorch();
       glareTimer = setInterval(checkGlare, 500);
       if (!busy) say(aimMsg());
-      await tunePreview();                                                              // mide la fluidez y, si hace falta, baja la resolución
+      await tunePreview();                                                              // mide la fluidez (para la próxima apertura)
       preload();                                                                        // los lectores se cargan DESPUÉS: su arranque (OCR, zxing) no compite con la cámara al abrir
     }
 
@@ -571,26 +592,23 @@
         const guidePhoto = photoRect(g, vw, vh, shot.w, shot.h);
         let datos = null, unknown = false, readerErr = null, retake = false, reason = '';
         if (!R) { try { R = await o.readers(); } catch (e) { readerErr = e; } }
-        const run = async (list, gp) => {
+        const canStill = shot.source === 'frame' && !!track && typeof ImageCapture !== 'undefined';
+        const getStill = async () => { if (dead) return null; say(MSG.detail, 'warn'); const hd = await stillHD(track, video); if (hd) shots.push(hd); return hd; };   // se libera con las demás al terminar
+        const run = async (list, gp, still) => {
           reads.reason = ''; reads.located = false; reads.small = false;
-          if (kind === 'old') { const out = await decodeOld(R, list, gp, alive); unknown = unknown || !!out.unknown; reason = out.reason || ''; retake = !!out.located && !!out.small; return out.datos; }
+          if (kind === 'old') { const out = await decodeOld(R, list, gp, alive, still); unknown = unknown || !!out.unknown; reason = out.reason || ''; return out.datos; }
           const d = await decodeNewRace(R, list, gp, alive, o.eventId, reads); reason = reads.reason || ''; retake = !!reads.located && !!reads.small && reason !== 'glare' && reason !== 'covered'; return d;
         };
-        if (R && !dead) { try { datos = await run(shots, guidePhoto); } catch (e) { readerErr = e; try { console.warn('[cedula-foto] fallo interno del lector:', e && e.message); } catch (_) { /* sin consola */ } } }
+        if (R && !dead) { try { datos = await run(shots, guidePhoto, canStill ? getStill : null); } catch (e) { readerErr = e; try { console.warn('[cedula-foto] fallo interno del lector:', e && e.message); } catch (_) { /* sin consola */ } } }
         if (!datos && kind === 'new' && !R && !dead) datos = await decodeNewRace(null, shots, guidePhoto, alive, o.eventId, reads);   // el lector del navegador no cargó: solo el servidor
-        // La cédula SÍ se vio, sin brillo, pero quedó lejos (letras o código muy pequeños en el cuadro del video) → una foto fija con toda la resolución del sensor y se repite.
-        if (!datos && R && !dead && retake && shot.source === 'frame' && track && typeof ImageCapture !== 'undefined') {
-          say(MSG.detail, 'warn');
-          try {
-            const hd = await takeStill(track, video, true);
-            if (hd.source === 'still' && !dead && Math.max(hd.w, hd.h) > Math.max(shot.w, shot.h) * 1.2) { shots.push(hd); datos = await run([hd], photoRect(g, vw, vh, hd.w, hd.h)); }
-            else if (hd.img && hd.img.close) hd.img.close();
-          } catch (e) { /* sin foto fija: queda el resultado del primer intento */ }
+        // Cédula nueva que SÍ se vio, sin brillo, pero quedó lejos (letras muy pequeñas en el cuadro del video) → la foto fija del sensor y se repite.
+        if (!datos && kind === 'new' && R && !dead && retake && canStill) {
+          try { const hd = await getStill(); if (hd && !dead && Math.max(hd.w, hd.h) > Math.max(shot.w, shot.h) * 1.2) datos = await run([hd], photoRect(g, vw, vh, hd.w, hd.h), null); } catch (e) { /* sin foto fija: queda el resultado del primer intento */ }
         }
         if (dead) return;
         if (datos) { say('Cédula leída.', 'ok'); setBusy(false); o.onResult(datos, kind); resumePreview(); return; }
         if (kind === 'new' && await offerNear(partialFrom(reads))) { say(MSG.partial, 'warn'); return; }
-        const why = { glare: MSG.failGlare, covered: MSG.covered, nolines: MSG.noLines, nocode: MSG.noCode, small: MSG.small }[reason];
+        const why = { glare: MSG.failGlare, blur: MSG.blur, covered: MSG.covered, nolines: MSG.noLines, nocode: MSG.noCode, small: MSG.small }[reason];
         say(readerErr && !R ? MSG.noReader : unknown ? MSG.unknown : why || ((hadGlare || glare) ? MSG.failGlare : MSG.fail), 'err');
       } catch (e) {
         say(MSG.fail, 'err');
@@ -627,7 +645,7 @@
     };
   }
 
-  const api = { attach, firstFound, lowEnd, stepDown, washedCells, findMrz, checkFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
+  const api = { attach, firstFound, lowEnd, slowPreview, ppmOf, washedCells, findMrz, checkFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
   if (typeof window !== 'undefined') window.CedulaFoto = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

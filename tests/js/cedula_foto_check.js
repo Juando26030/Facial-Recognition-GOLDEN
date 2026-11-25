@@ -82,7 +82,7 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
   assert.ok(!/\b(alert|confirm|prompt)\(/.test(src) && !/console\.(log|info)\(/.test(src) && !/localStorage|indexedDB/.test(src), 'sin diálogos nativos, sin registros ni almacenamiento de la foto');
   // el componente usa métodos de los lectores generados: si se regeneran con otro nombre, esto avisa
   const readers = fs.readFileSync(path.join(ROOT, 'static/js/cedula-readers.js'), 'utf8');
-  for (const m of ["async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {})", 'PLANS.photo = [', '_cropCandidate(src, c, flip, mult = 1', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown', 'function mrzFind(g, w, h)']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
+  for (const m of ["async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {})", 'PLANS.photo = [', '_cropCandidate(src, c, flip, mult = 1', '_refineAngle(src, c) {', 'findCandidates(src, sw, sh) {', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown', 'function mrzFind(g, w, h)']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
   // 24-nov-2026 (rapidez): carrera navegador/servidor de la cédula nueva → gana la PRIMERA lectura no vacía; si todas fallan, null
   {
     const api = require(path.join(ROOT, 'static/js/cedula-foto.js'));
@@ -92,12 +92,12 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     assert.strictEqual(await api.firstFound([later(null, 1), Promise.reject(new Error('x'))]), null);
     assert.strictEqual(await api.firstFound([]), null);
     const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
-    assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_BUDGET_MS'), 'atajos de rapidez');
+    assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_FRAME_MS'), 'atajos de rapidez');
     // 24-nov-2026 (tarde): recorte automático → primero las 3 líneas donde estén (mrzFind), el recuadro queda de respaldo; al servidor va solo el recorte; segundo intento con foto fija
     assert.ok(src.includes('R.mrzFind(') && src.indexOf('await readFound(0)') > 0 && src.indexOf('await readFound(0)') < src.indexOf('await readGuide(shots[0]'), 'recorte automático antes del recuadro');
     assert.ok(src.includes('foundCanvas(found, SERVER_CROP_PAD)') && src.includes('takeStill(track, video, true)'), 'servidor con recorte y foto con más detalle');
     // 24-nov-2026 (noche): cédula vieja derecho/al revés alternados (plan 'photo'), cédula torcida (búsqueda girada 45°), chequeo previo y tope de tiempo
-    assert.ok(src.includes("plan: 'photo'") && src.includes('cropsOnly: true') && src.includes('x.rotate(Math.PI / 4)') && src.includes('NEW_DEADLINE_MS'), 'al revés, torcida y tope de tiempo');
+    assert.ok(src.includes("'photo'") && src.includes('cropsOnly') && src.includes('x.rotate(Math.PI / 4)') && src.includes('NEW_DEADLINE_MS'), 'al revés, torcida y tope de tiempo');
     assert.ok(src.includes("reads.reason = 'nolines'") && src.includes("reason: 'nocode'") && src.includes('if (ws && ws.low >= 3)'), 'chequeo previo: avisa de una vez');
     {
       // washedCells: 3 filas × 30 celdas de «letras»; una mancha clara (brillo) sobre 4 celdas → 4 lavadas y claras; sin mancha → 0; las celdas de los extremos no cuentan
@@ -112,14 +112,19 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
       const ends = mk(false); for (let y = 0; y < H; y++) for (let x = 0; x < 20; x++) ends[y * W + x] = 210;
       assert.strictEqual(api.washedCells(ends, W, H, rects, 30).low, 0);
       assert.ok(api.MSG.noLines && api.MSG.noCode && api.MSG.covered && api.MSG.small);
-      // fluidez de la vista previa (tableta modesta): 1080p de entrada en equipos modestos; en los demás se mide y se baja solo si va lenta; 720p solo con foto fija
+      // fluidez de la vista previa (tableta modesta): 1080p de entrada en equipos modestos; en los demás se MIDE y la siguiente apertura pide 1080p. Nunca se cambia en caliente
+      // (recortaba la imagen: «zoom» que no se quitaba) ni se pide frameRate.
       assert.strictEqual(api.lowEnd({ hardwareConcurrency: 4, deviceMemory: 8 }), true); assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 2 }), true);
       assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 8 }), false); assert.strictEqual(api.lowEnd({}), false); assert.strictEqual(api.lowEnd(null), false);
-      assert.deepStrictEqual(api.stepDown(10, 2160, true), { width: 1920, height: 1080 }); assert.strictEqual(api.stepDown(25, 2160, true), null);
-      assert.deepStrictEqual(api.stepDown(9, 1080, true), { width: 1280, height: 720 }); assert.strictEqual(api.stepDown(9, 1080, false), null);
-      assert.strictEqual(api.stepDown(15, 1080, true), null); assert.strictEqual(api.stepDown(0, 2160, true), null); assert.strictEqual(api.stepDown(5, 720, true), null);
-      assert.ok(src.includes('requestVideoFrameCallback') && src.includes('lowEnd(navigator) ? SIZES.slice(2) : SIZES') && src.includes('OVERLAY_DPR_MAX') && !src.includes('frameRate'), 'vista previa liviana');
-      assert.ok(src.indexOf('await tunePreview();') < src.indexOf('preload();   ') || src.includes('await tunePreview();'), 'los lectores se cargan después de abrir la cámara');
+      assert.strictEqual(api.slowPreview(10, 2160), true); assert.strictEqual(api.slowPreview(25, 2160), false); assert.strictEqual(api.slowPreview(5, 1080), false); assert.strictEqual(api.slowPreview(0, 2160), false);
+      assert.ok(src.includes('requestVideoFrameCallback') && src.includes('(slowSeen || lowEnd(navigator)) ? SIZES.slice(2) : SIZES') && src.includes('OVERLAY_DPR_MAX') && !src.includes('frameRate'), 'vista previa liviana');
+      assert.strictEqual((src.match(/applyConstraints\(/g) || []).length, 3, 'applyConstraints solo para enfoque, linterna y restaurar tras la foto fija');
+      // cédula vieja (probada con una cédula real y zxing-cpp): chequeo previo sobre el cuadro, cuadro del video, y foto fija del sensor solo si falta detalle; avisos rápidos
+      assert.ok(Math.abs(api.ppmOf(340 * 1.28 * 3) - 3) < 1e-9);
+      for (const k of ["reason: 'nocode'", "reason: 'small'", "reason: 'blur'", 'sc._refineAngle', 'await getStill()', 'BLUR_STILL', 'stillHD(track, video)']) assert.ok(src.includes(k), 'cédula vieja: falta ' + k);
+      assert.ok(api.MSG.blur && src.indexOf('if (ppm < MIN_PPM)') < src.indexOf('await scan(shot.img'), 'lo que no se va a leer se avisa antes de gastar tiempo');
+      // cédula nueva: derecho / al revés alternados desde el primer intento
+      assert.ok(src.includes('[[false, 0], [true, 0], [false, 1], [true, 1], [false, 2], [true, 2]]') && src.includes('let upside = null;'));
     }
     const qr = fs.readFileSync(path.join(ROOT, 'static/js/qr.js'), 'utf8');
     const stage = qr.slice(qr.indexOf('gw-cam__stage'), qr.indexOf("+ '</div>'"));

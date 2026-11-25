@@ -18,6 +18,11 @@ KIND=old python tests/lab_cedula/run.py /tmp/lab_cedula/old   # cédula vieja: d
 - **Cédula vieja:** `KIND=old` usa un decodificador de REEMPLAZO (no hay zxing sin red) que solo «lee» el código de mentira de `gen.py` cuando le llega derecho y nítido:
   prueba ubicar, enderezar, girar y los tiempos; no la decodificación real del PDF417.
 
+- **Decodificador REAL de la cédula vieja:** `ZX=real KIND=old EXPECT=<cédula esperada> python tests/lab_cedula/run.py <carpeta>` usa `zx.py` (zxing-cpp del sistema por GStreamer: `libgstzxing`).
+  `CORES=4` simula la tableta modesta (vista previa 1080p; la foto fija sale a la resolución del archivo). `BUDGET=40000 WAIT=120` quita el límite de tiempo (para saber el techo) y
+  `ZXDUMP=/carpeta` en `srv.py` guarda cada recorte que se intentó.
+- **Cédulas reales:** las escenas se generan desde una imagen propia FUERA del repositorio (nunca se suben fotos ni datos reales). Ver docs/PRUEBA_LECTOR_CEDULA.md § Prueba con cédulas reales.
+
 Límites: el OCR es el `tesseract` del sistema (no tesseract.js), la letra es Liberation Mono (no OCR-B) y no hay plástico, hologramas ni manos. Sirve para la GEOMETRÍA
 (ubicar, enderezar, recortar, tiempos y flujo); la última palabra la tiene la prueba con cédulas reales.
 

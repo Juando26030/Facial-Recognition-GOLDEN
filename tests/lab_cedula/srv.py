@@ -2,17 +2,24 @@
 """Servidor del banco de pruebas: sirve static/, una página mínima con CedulaFoto y un OCR de reemplazo (tesseract del sistema en vez de tesseract.js). Ver LEEME.md."""
 import sys, os, json, subprocess, tempfile, io, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); REPO=os.environ.get('REPO',ROOT); sys.path.insert(0, ROOT)   # REPO: otra copia de static/ para comparar versiones
+ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); sys.path.insert(0,os.path.dirname(os.path.abspath(__file__))); REPO=os.environ.get('REPO',ROOT); sys.path.insert(0, ROOT)   # REPO: otra copia de static/ para comparar versiones
 MODE={'server':'off'}
 PAGE='''<!doctype html><meta charset=utf8><body>
 <div class="stage" style="position:relative;width:WWpx;height:HHpx"><video id=v style="width:100%;height:100%;object-fit:cover"></video><canvas id=o style="position:absolute;inset:0;width:100%;height:100%"></canvas></div>
 <button id=b>Tomar foto</button><p id=s></p>
 <script>
 Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>+(new URLSearchParams(location.search).get('cores')||8)});   // el banco simula un equipo potente (cores=4 para probar el modesto)
+if(new URLSearchParams(location.search).get('swap')){ const G=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);   // cámara simulada en vertical: un celular real intercambia ancho y alto solo
+  navigator.mediaDevices.getUserMedia=(c)=>{ const v=c&&c.video; if(v&&v.width&&v.height){ const t=v.width; v.width=v.height; v.height=t; } return G(c); }; }
+{ const q=new URLSearchParams(location.search); if(q.get('budget')||q.get('plan')) window.CEDULA_LAB={budget:+q.get('budget')||0,plan:q.get('plan')||''}; else window.CEDULA_LAB={}; }
 window.LOG=[]; window.RESULT=undefined; window.ZXN=0;
 // Decodificador de REEMPLAZO de la cédula vieja (no hay zxing sin red): «lee» solo si le llega el código de gen.py DERECHO (bloque macizo a la izquierda, rayas a la
 // derecha), nítido y sin zonas lavadas; tarda ~60 ms como un intento real en un celular. Sirve para probar ubicar/enderezar/girar/tiempos, no la decodificación.
-window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN++; await new Promise(r=>setTimeout(r,60));
+const ZXREAL=new URLSearchParams(location.search).get('zx')==='real';   // zx=real: decodifica de verdad con el zxing-cpp del sistema (tests/lab_cedula/zx.py)
+window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN++;
+  if(ZXREAL){ const c=document.createElement('canvas'); c.width=im.width; c.height=im.height; c.getContext('2d').putImageData(im,0,0); const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    const j=await (await fetch('/zx',{method:'POST',body:blob})).json(); return j.bytes?[{bytes:Uint8Array.from(j.bytes),text:''}]:[]; }
+  await new Promise(r=>setTimeout(r,60));
   const w=im.width,h=im.height,d=im.data; if(w<500||w/h<2.4||w/h>9) return [];
   const mean=(u0,u1)=>{let s=0,n=0;for(let y=(h*.25)|0;y<h*.75;y+=2)for(let x=(w*u0)|0;x<w*u1;x+=2){s+=d[(y*w+x)*4];n++;}return s/n;};
   const sd=(u0,u1)=>{let s=0,q=0,n=0;for(let y=(h*.25)|0;y<h*.75;y+=2)for(let x=(w*u0)|0;x<w*u1;x++){const v=d[(y*w+x)*4];s+=v;q+=v*v;n++;}return Math.sqrt(Math.max(0,q/n-(s/n)*(s/n)));};
@@ -63,6 +70,13 @@ class Hd(BaseHTTPRequestHandler):
                         if len(p)>=5: syms.append({'text':p[0],'confidence':int(os.environ.get('CONF','88')),'bbox':{'x0':int(p[1]),'x1':int(p[3]),'y0':hgt-int(p[4]),'y1':hgt-int(p[2])}})
                 except Exception: pass
             return self._send(200,{'text':''.join(x['text'] for x in syms),'confidence':int(os.environ.get('CONF','88')),'symbols':syms})
+        if u.path=='/zx':
+            import zx
+            with tempfile.TemporaryDirectory() as d:
+                open(d+'/i.png','wb').write(body)
+                with zx.LOCK: r=zx.decode(d+'/i.png')
+                if os.environ.get('ZXDUMP'): MODE['zxn']=MODE.get('zxn',0)+1; import shutil; shutil.copy(d+'/i.png',os.path.join(os.environ['ZXDUMP'],'%03d_%s.png'%(MODE['zxn'],'OK' if r else 'no')))
+            return self._send(200,{'bytes':zx.to_bytes(r) if r else None})
         if u.path.endswith('/cedula-mrz-scan'):
             MODE['calls']=MODE.get('calls',0)+1
             if 'real' not in MODE['server']: return self._send(422,{'detail':'apagado'})

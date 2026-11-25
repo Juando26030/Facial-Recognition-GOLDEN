@@ -352,19 +352,19 @@ const PLANS = {
 /* «Tomar foto» del quiosco (24-nov-2026): la cédula puede venir AL REVÉS tan a menudo como al derecho, y el tiempo por foto es corto. En `deep` los intentos
    girados 180° llegan después de ~27 decodificaciones y con 1–2 s nunca se alcanzaban: aquí se alternan desde el principio (derecho, al revés, derecho…). */
 PLANS.photo = [
-  { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'] },
-  { mult: 1,   flip: true,  variants: ['raw', 'stretch', 'bandA'] },
-  { mult: 1,   flip: false, variants: ['binar', 'bandB', 'denoise', 'sharp'] },
-  { mult: 1,   flip: true,  variants: ['binar', 'bandB', 'denoise', 'sharp'] },
-  { mult: 1,   flip: false, variants: ['dewarp', 'dewarpA', 'bandC', 'bandAb'] },
-  { mult: 1,   flip: true,  variants: ['dewarp', 'dewarpA', 'bandC', 'bandAb'] },
+  { mult: 1,   flip: false, variants: ['raw', 'sharp', 'stretch'] },             // 'sharp' va de segundo: es el que más rescata fotos de una pantalla o algo desenfocadas
+  { mult: 1,   flip: true,  variants: ['raw', 'sharp', 'stretch'] },
+  { mult: 1,   flip: false, variants: ['bandA', 'binar', 'bandAb', 'denoise'] },
+  { mult: 1,   flip: true,  variants: ['bandA', 'binar', 'bandAb', 'denoise'] },
+  { mult: 1,   flip: false, variants: ['dewarp', 'dewarpA', 'bandB', 'bandC'] },
+  { mult: 1,   flip: true,  variants: ['dewarp', 'dewarpA', 'bandB', 'bandC'] },
+  { mult: .65, flip: false, variants: ['raw', 'sharp', 'binar'] },
+  { mult: .65, flip: true,  variants: ['raw', 'sharp', 'binar'] },
   { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
   { mult: 1,   flip: true,  variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
-  { mult: .65, flip: false, variants: ['raw', 'stretch', 'binar'] },
-  { mult: .65, flip: true,  variants: ['raw', 'stretch', 'binar'] },
-  { mult: 1.5, flip: false, variants: ['raw', 'stretch', 'bandA'] },
-  { mult: 1.5, flip: true,  variants: ['raw', 'stretch', 'bandA'] },
-  ...[-5, 5, -10, 10].flatMap(rot => [false, true].map(flip => ({ mult: 1, flip, rot, variants: ['stretch', 'bandA'] }))),
+  { mult: 1.5, flip: false, variants: ['raw', 'sharp', 'bandA'] },
+  { mult: 1.5, flip: true,  variants: ['raw', 'sharp', 'bandA'] },
+  ...[-2, 2, -5, 5].flatMap(rot => [false, true].map(flip => ({ mult: 1, flip, rot, variants: ['sharp', 'bandA'] }))),
 ];
 
 const mk = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d', { willReadFrequently: true })]; };
@@ -444,6 +444,52 @@ class CedulaScanner {
     cctx.imageSmoothingQuality = 'high'; cctx.drawImage(src, 0, 0); cctx.restore();
     return cctx.getImageData(0, 0, ow, oh);
   }
+  /* Afina el ÁNGULO del candidato (24-nov-2026). El localizador mide el giro por la forma de la mancha de textura y puede errar 2–4°; el decodificador de PDF417 no tolera
+     ni 3° de inclinación (comprobado con la cédula de prueba: el mismo recorte no se lee a 0° y sí corrigiendo 3°). El código tiene barras verticales (inicio, fin y bordes
+     de módulos): el giro correcto es el que alinea esos bordes en columnas. Se mide en un recorte pequeño y se verifica el signo repitiendo la medida. */
+  _skewOf(src, c) {
+    const im = this._cropCandidate(src, c, false, .4), w = im.width, h = im.height, g = toGray(im), xs = [], ys = [], vs = [];
+    for (let y = Math.round(h * .12); y < h * .88; y += 2) for (let x = Math.round(w * .08); x < w * .92; x++) { const v = Math.abs(g[y * w + x + 1] - g[y * w + x - 1]); if (v > 24) { xs.push(x); ys.push(y - h / 2); vs.push(v); } }
+    if (xs.length < 400) return 0;
+    const off = Math.ceil(h * .16) + 2, score = a => { const t = Math.tan(a * Math.PI / 180), bins = new Float32Array(w + 2 * off);
+      for (let i = 0; i < xs.length; i++) bins[Math.round(xs[i] - ys[i] * t) + off] += vs[i];
+      let q = 0; for (let i = 0; i < bins.length; i++) q += bins[i] * bins[i]; return q; };
+    let ba = 0, bs = score(0); for (let a = -15; a <= 15; a += 1) { const q = score(a); if (q > bs) { bs = q; ba = a; } }
+    for (let a = ba - .8; a <= ba + .8; a += .1) { const q = score(a); if (q > bs) { bs = q; ba = a; } }
+    return ba;
+  }
+  /** Candidato afinado: 1) ángulo por las barras verticales (sobre un recorte holgado, con el signo verificado); 2) con el recorte ya derecho se vuelve a ubicar el código
+      (ahí el rectángulo sale ajustado: el primer rectángulo, torcido, cortaba el código o metía el texto vecino). Si algo no cuadra, devuelve el candidato tal cual. */
+  _refineAngle(src, c) {
+    try {
+      const wide = { ...c, L: c.L * 1.9, W: c.W * 2.4 };                    // holgado: el primer rectángulo a veces es solo MEDIO código (la mancha de textura se parte con el brillo o el desenfoque)
+      let t = wide; const d0 = this._skewOf(src, wide);
+      if (Math.abs(d0) >= .3) {
+        let ok = false;
+        for (const sgn of [1, -1]) { const q = { ...wide, angle: wide.angle + sgn * d0 * Math.PI / 180 }, d1 = this._skewOf(src, q); if (Math.abs(d1) < Math.max(.4, Math.abs(d0) * .4)) { t = q; ok = true; break; } }
+        if (!ok) return c;
+      }
+      // Con el recorte ya derecho, los límites del código salen de la densidad de bordes verticales (las barras): por columnas → dónde empieza y termina; por filas → alto.
+      const im = this._cropCandidate(src, t, false, .6), w = im.width, h = im.height, k = t.L / w, ky = t.W / h, g = toGray(im);
+      const run = (prof, n, lo) => {                                  // tramo continuo ≥ lo·(percentil 90) que contiene el máximo, tolerando huecos cortos
+        const sm = new Float32Array(n), r = Math.max(2, Math.round(n / 80)); let acc = 0;
+        for (let i = 0; i < n + r; i++) { if (i < n) acc += prof[i]; if (i - 2 * r - 1 >= 0) acc -= prof[i - 2 * r - 1]; const c0 = i - r; if (c0 >= 0 && c0 < n) sm[c0] = acc / (2 * r + 1); }
+        const srt = Array.from(sm).sort((a, b) => a - b), thr = srt[Math.floor(n * .9)] * lo; let pk = 0; for (let i = 1; i < n; i++) if (sm[i] > sm[pk]) pk = i;
+        const gap = Math.max(3, Math.round(n / 40)); let a = pk, b = pk, miss = 0;
+        for (let i = pk; i >= 0; i--) { if (sm[i] >= thr) { a = i; miss = 0; } else if (++miss > gap) break; }
+        miss = 0; for (let i = pk; i < n; i++) { if (sm[i] >= thr) { b = i; miss = 0; } else if (++miss > gap) break; }
+        return [a, b];
+      };
+      const col = new Float32Array(w), row = new Float32Array(h);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if (Math.abs(g[y * w + x + 1] - g[y * w + x - 1]) > 24) col[x]++;
+      const [x0, x1] = run(col, w, .4);
+      for (let y = 1; y < h - 1; y++) { let n = 0; for (let x = Math.max(1, x0); x <= Math.min(w - 2, x1); x++) if (Math.abs(g[y * w + x + 1] - g[y * w + x - 1]) > 24) n++; row[y] = n; }
+      const [y0, y1] = run(row, h, .45);
+      if (x1 - x0 < w * .2 || y1 - y0 < 6 || (x1 - x0) / (y1 - y0 + 1) < 2 || (x1 - x0) / (y1 - y0 + 1) > 16) return { ...c, angle: t.angle };
+      const ux = ((x0 + x1) / 2 - w / 2) * k, uy = ((y0 + y1) / 2 - h / 2) * ky, ca = Math.cos(t.angle), sa = Math.sin(t.angle);
+      return { ...c, cx: t.cx + ux * ca - uy * sa, cy: t.cy + ux * sa + uy * ca, angle: t.angle, L: (x1 - x0 + 1) * k * 1.1, W: (y1 - y0 + 1) * ky * 1.18, fitted: true };
+    } catch (e) { return c; }
+  }
   /* aplica el plan de intentos a un candidato; devuelve {hit,cand,how} o null */
   async _tryCandidate(src, c, plan, deadline = Infinity) {
     const cache = new Map();
@@ -492,7 +538,8 @@ class CedulaScanner {
 
     const cands = dbg.cands = this.findCandidates(bmp, bmp.width, bmp.height);
     if (cands.length) dbg.ppm = +(cands[0].L / 1.28 / MODULES_EST).toFixed(2);
-    for (const c of cands.slice(0, 3)) {
+    for (const c0 of cands.slice(0, 3)) {
+      const c = this.legacy ? c0 : this._refineAngle(bmp, c0);
       const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS[plan] || PLANS.deep, this.legacy ? Infinity : deadline);
       if (r) return done(r.hit, 'recorte ' + r.how);
     }
