@@ -6,27 +6,5 @@
 <script src="{{ url_for('static', path='js/outbox.js') }}"></script>
 <script src="{{ url_for('static', path='js/outbox-ui.js') }}"></script>
 <script src="{{ url_for('static', path='js/offline-data.js') }}"></script>
-<script>
-(function () {
-    if (!window.GoldenContingency || !window.EVENT_ID) return;
-    window.STAFF_ROLE = window.STAFF_ROLE || "{{ staff_role }}";
-    GoldenContingency.init({ eventId: window.EVENT_ID });
-    const gc = GoldenContingency.instance;
-    if (window.GoldenOutbox) GoldenOutbox.init({ eventId: window.EVENT_ID }).then((box) => {
-        if (!box.supported || !window.GoldenOutboxUI) return;
-        const ui = GoldenOutboxUI.mount({ outbox: box });
-        gc.onChange((st) => { if (st === 'normal') Promise.resolve(gc.syncQueue ? gc.syncQueue(true) : null).catch(() => {}).then(() => ui.sync(false)); });
-        ui.tick();
-    });
-    if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
-        const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/')),
-                      ...(window.QrScanner && QrScanner.JSQR_URL ? [location.origin + QrScanner.JSQR_URL] : []),
-                      ...(window.QrScanner && QrScanner.READERS_URL ? [location.origin + QrScanner.READERS_URL] : []),
-                      ...(window.QrScanner && QrScanner.FOTO_URL ? [location.origin + QrScanner.FOTO_URL] : [])];
-        const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
-        send();
-        navigator.serviceWorker.addEventListener('controllerchange', send);
-    }).catch(() => {}));
-})();
-</script>
+<script src="{{ url_for('static', path='js/offline-boot.js') }}" data-staff-role="{{ staff_role }}"></script>
 {% endif %}

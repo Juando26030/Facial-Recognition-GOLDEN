@@ -1,5 +1,5 @@
-"""Modo contingencia del quiosco apagable (CONTINGENCY_ENABLED, docs/15 D2.5d): apagado por defecto (nada de GoldenContingency ni de service worker; el worker servido se desregistra y borra sus cachés)
-y encendido como antes. Producción lo lleva apagado desde deploy/gcp/config.sh."""
+"""Modo contingencia del quiosco apagable (CONTINGENCY_ENABLED, docs/15 D2.5d): ENCENDIDO por defecto desde el 25-nov-2026 (docs/28); con un valor explícito de apagado no hay
+GoldenContingency ni service worker (el worker servido se desregistra y borra sus cachés)."""
 import pathlib
 
 import pytest
@@ -17,8 +17,15 @@ def _page(client, factory):
     return r.text
 
 
-def test_off_by_default_the_page_loads_no_contingency_client_and_registers_no_worker(client, factory, monkeypatch):
+def test_on_by_default_since_2026_11_25(client, factory, monkeypatch):
+    """Decisión de Juan David (docs/28): sin la variable, la contingencia va encendida."""
     monkeypatch.delenv("CONTINGENCY_ENABLED", raising=False)
+    html = _page(client, factory)
+    assert "js/contingency.js" in html and "contingency-off.js" not in html and "js/offline-data.js" in html
+
+
+def test_off_the_page_loads_no_contingency_client_and_registers_no_worker(client, factory, monkeypatch):
+    monkeypatch.setenv("CONTINGENCY_ENABLED", "0")
     html = _page(client, factory)
     assert "js/contingency-off.js" in html and "js/contingency.js" not in html
     assert "&& false && 'serviceWorker' in navigator" in html

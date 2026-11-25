@@ -1005,9 +1005,9 @@ def lector_cedula_prueba_page(request: Request):
 
 
 def contingency_enabled() -> bool:
-    """Modo contingencia del quiosco (copia local de la lista + service worker `/kiosk/sw.js`). APAGADO por defecto; lo prende `CONTINGENCY_ENABLED=1` (staging, desde deploy/gcp/config.sh).
-    Encenderlo en producción exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David (docs/15, D2.5d)."""
-    return os.getenv("CONTINGENCY_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+    """Modo contingencia del quiosco (copia local cifrada + service worker `/kiosk/sw.js`; registro completo sin conexión, docs/28_CONTINGENCIA_COMPLETA.md). ENCENDIDO por defecto desde el
+    25-nov-2026 (decisión de Juan David: la auditora ya lo aprobó); `CONTINGENCY_ENABLED=0` lo apaga (el worker servido se desregistra y borra sus cachés)."""
+    return os.getenv("CONTINGENCY_ENABLED", "1").strip().lower() in ("1", "true", "yes", "on")          # 25-nov-2026 (decisión de Juan David, docs/28): encendido por defecto; solo un valor explícito lo apaga
 
 
 @app.get("/kiosk/sw.js", include_in_schema=False)

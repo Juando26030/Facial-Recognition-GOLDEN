@@ -8,11 +8,15 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
-## 2026-11-25 — Registro completo sin conexión, pieza 1 (rama `feat/contingencia-completa`, sin desplegar)
+## 2026-11-25 — Registro completo sin conexión (rama `feat/contingencia-completa`, sin desplegar; **Rama**: sin probar en equipo real)
 
-- Sin red, la lista de Registro muestra a las personas con **todos sus datos** (cédula, entidad, teléfono, correo, opcionales) y se puede buscar por cédula parcial y por entidad.
-- «Editar persona» sin red muestra los valores guardados; lo que se cambia queda en el dispositivo y se envía solo al volver la red (solo viaja lo cambiado).
-- La copia son las mismas filas que ya bajaba el directorio (ninguna petición nueva), cifrada en reposo. Sin migración. Detalle y piezas que faltan: `docs/28_CONTINGENCIA_COMPLETA.md`.
+- **Registro sin red igual que con red:** lista con todos los datos, el modal normal de Editar (todos los campos, vaciar un dato, cambiar cédula, fecha de nacimiento, firmas, estado,
+  eliminar), alta completa, dependientes e impresión de la escarapela (ventana o USB).
+- **Control de inventario y Control de áreas sin red:** entregar (elegido o «lo define la base») y registrar entradas/salidas; lo hecho se envía solo al volver la conexión.
+- **Cómo:** copia completa cifrada (las mismas filas que ya se bajaban), peticiones guardadas que se repiten contra las rutas de siempre y service worker. Ruta nueva
+  `GET /api/events/{id}/offline-pack` (una vez al abrir); `POST …/movement` acepta `client_time`. Sin migración.
+- **Contingencia encendida por defecto** (`CONTINGENCY_ENABLED=0` la apaga). El escáner de cédula funciona sin red si ya se usó una vez con conexión en ese equipo.
+- Detalle, límites y pendientes (prueba en tableta, texto legal de la auditora, copia propia de las librerías del escáner): `docs/28_CONTINGENCIA_COMPLETA.md`.
 
 ## 2026-11-24 (tarde) — Escáner de cédula: recorte automático (rama `feat/cedula-recorte-auto`, sin desplegar)
 

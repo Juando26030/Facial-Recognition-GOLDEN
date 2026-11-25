@@ -81,5 +81,13 @@ const allKeys = () => [...store.values()].flatMap((m) => [...m.keys()]);
   assert.strictEqual((await dispatch(`${O}/api/users/9999/badge-print-data?event_id=7`)).res.status, 503, 'persona que no está en el dispositivo');
   assert.strictEqual((await (await dispatch(`${O}/api/users/1001/print-count?event_id=7`)).res.json()).times_printed, 0);
   assert.ok(!allKeys().some((k) => k.includes('badge-print-data')), 'ni sin red se guardan los datos de la persona');
+  // librerías del escáner de cédula (CDN con versión fija): se guardan al primer uso y sin red salen de la copia; otro CDN u otra ruta no pasan por el worker
+  const LIB = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/iife/reader/index.js';
+  net = async () => R('// zxing', 200, 'application/javascript');
+  assert.strictEqual(await (await dispatch(LIB)).res.text(), '// zxing');
+  net = async () => { throw new TypeError('Failed to fetch'); };
+  assert.strictEqual(await (await dispatch(LIB)).res.text(), '// zxing', 'el escáner carga sin red');
+  assert.strictEqual((await dispatch('https://cdn.jsdelivr.net/npm/otra-cosa@1/x.js')).handled, false);
+  assert.strictEqual((await dispatch('https://otro.test/static/x.js')).handled, false);
   console.log('kiosk_sw_print_check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

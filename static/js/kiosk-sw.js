@@ -200,9 +200,24 @@ function offlineRoute(event, req, url) {
   return null;
 }
 
+/* ESCÁNER DE CÉDULA SIN RED (docs/28): las librerías de los lectores (zxing-wasm, tesseract.js y su idioma) vienen de un CDN mientras no exista la copia propia en /static/vendor/cedula/
+   (scripts/vendor_cedula_readers.sh). Son archivos con versión fija (no cambian) y sin datos de nadie: se guardan la primera vez que se usan y desde entonces salen de la copia, con o sin
+   red. Caché aparte y sin versión de despliegue: un despliegue nuevo no obliga a volver a bajarlas. */
+const LIB_CACHE = 'golden-kiosk-libs-v1';
+const CDN_LIB = /^https:\/\/(cdn\.jsdelivr\.net\/npm|unpkg\.com)\/(zxing-wasm@|tesseract\.js@|tesseract\.js-core@|@tesseract\.js-data\/)/;
+async function cdnLib(req) {
+  const cache = await caches.open(LIB_CACHE);
+  const hit = await cache.match(req.url, { ignoreVary: true });
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res && (res.status === 200 || res.type === 'opaque')) { try { await cache.put(req.url, res.clone()); } catch (e) { /* sin espacio: sigue desde la red */ } }
+  return res;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+  if (CDN_LIB.test(req.url)) { event.respondWith(cdnLib(req)); return; }
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   const off = offlineRoute(event, req, url);
