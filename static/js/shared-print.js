@@ -546,7 +546,8 @@
   /* PR3 (causa B): la impresión AUTOMÁTICA toma el candado de 30 s de forma provisional (`claimTicket`) y lo CONFIRMA solo cuando algo salió (trabajo aceptado por el servidor, impresión USB hecha o
      ventana abierta); si la comprobación «¿registrado?» falla, el envío no sale o el navegador bloquea la ventana, lo SUELTA y un reintento automático de la misma persona no queda bloqueado. */
   async function printFor(userId, auto, confirmed) {
-    if ((!SHARED || offline()) && !usb.ok) return auto ? original.maybeAutoPrint(userId, offline() ? { auto: !!window.EVENT_AUTO_PRINT } : undefined) : original.openPrintWindow(userId);       // compartida apagada (o sin red: no hay servidor que reparta) y sin impresora: la ventana de impresión de siempre
+    if (offline() && !usb.ok) return auto ? original.maybeAutoPrint(userId, { auto: !!window.EVENT_AUTO_PRINT }) : original.openPrintWindow(userId);       // sin red (docs/28) no hay servidor que reparta: la ventana de impresión de siempre, en este equipo
+    if (!SHARED && !usb.ok) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);       // compartida apagada y sin impresora: la ventana de impresión de siempre
     let ticket = null;
     if (auto) {                                    // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
       if (original.claimTicket) { ticket = await original.claimTicket(userId); if (!ticket) return; }
