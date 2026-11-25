@@ -582,7 +582,8 @@
                       ...(window.QrScanner && QrScanner.JSQR_URL ? [location.origin + QrScanner.JSQR_URL] : []),
                       ...(window.QrScanner && QrScanner.READERS_URL ? [location.origin + QrScanner.READERS_URL] : []),
                       ...(window.QrScanner && QrScanner.FOTO_URL ? [location.origin + QrScanner.FOTO_URL] : [])];      // cámara con guía + foto de la cédula (cedula-foto.js)      // lectores de cédula (las librerías de zxing/tesseract vienen del CDN o de /static/vendor/cedula/)
-        const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
+        const printCfg = {{ print_offline_json | default('null') | safe }};          // imprimir sin red (docs/28): el worker guarda la plantilla, sus imágenes y la ventana de impresión
+        const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) { sw.postMessage({ type: 'precache', urls }); if (printCfg) sw.postMessage({ type: 'print-cfg', eventId: window.EVENT_ID, cfg: printCfg }); } };
         send();
         navigator.serviceWorker.addEventListener('controllerchange', send);      // un despliegue nuevo cambia de worker: el nuevo vuelve a guardar el caparazón
     }).catch(() => {}));

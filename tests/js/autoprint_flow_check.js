@@ -179,7 +179,7 @@ const ok = (id, extra = {}) => (fd) => Object.assign({ result: 'SÍ', data: { id
   // ---- toda llamada de la puerta pasa la respuesta del servidor (solo el escáner facial, sin banderas, usa la de la página)
   const callsOf = (file) => (fs.readFileSync(file, 'utf8').match(/BadgePrint\.maybeAutoPrint\([^)]*\)/g) || []);
   const dir = callsOf('static/js/directory.js'), app = callsOf('static/js/app.js');
-  assert.ok(dir.length === 3 && dir.every((c) => /auto:/.test(c)), 'directory.js: ' + dir.join(' ; '));
+  assert.ok(dir.length === 4 && dir.every((c) => /auto:/.test(c)), 'directory.js: ' + dir.join(' ; '));          // 4.º: offlineAutoPrint (sin red no hay respuesta del servidor: vale la bandera de la página, docs/28)
   assert.deepStrictEqual(app.filter((c) => !/auto:/.test(c)), ['BadgePrint.maybeAutoPrint(userId)'], 'app.js: solo offerPrint (facial) sin respuesta de banderas: ' + app.join(' ; '));
   console.log('autoprint_flow OK');
   process.exit(0);

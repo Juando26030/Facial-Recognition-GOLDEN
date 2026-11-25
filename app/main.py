@@ -1126,6 +1126,8 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "inventory_assigned": inv_assign.is_assigned(event),
         "search_unified": os.getenv("SEARCH_UNIFIED", "1") != "0",       # Fase 1A: buscador único en el directorio; SEARCH_UNIFIED=0 vuelve a las 3 cajas
     }
+    if template_name == "kiosk_registro.html" and context["contingency_enabled"]:          # imprimir sin red (docs/28): datos del evento para armar la escarapela en el dispositivo
+        context["print_offline_json"] = json.dumps(badges.offline_print_cfg(db, event)).replace("</", "<\\/")
     if extra_context:
         context.update(extra_context)
     return templates.TemplateResponse(request=request, name=template_name, context=context)

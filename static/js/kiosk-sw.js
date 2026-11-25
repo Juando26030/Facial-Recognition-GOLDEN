@@ -34,7 +34,7 @@ async function keep(cache, key, res) {
     await cache.put(key, new Response(body, { status: res.status, statusText: res.statusText, headers }));
     // Un estático guardado con otro `?v=` queda viejo: se borra (así `ignoreSearch` nunca devuelve una versión vieja pudiendo servir la nueva y el caché no crece con cada despliegue).
     const u = new URL(key);
-    if (u.search) for (const old of await cache.keys()) { const o = new URL(old.url); if (o.pathname === u.pathname && o.search !== u.search) await cache.delete(old); }
+    if (u.search && u.pathname.startsWith('/static/')) for (const old of await cache.keys()) { const o = new URL(old.url); if (o.pathname === u.pathname && o.search !== u.search) await cache.delete(old); }
   } catch (e) { /* no se pudo guardar: no afecta a la respuesta en vivo */ }
 }
 
@@ -57,6 +57,31 @@ function trace(req, via, since) { TRACE.push({ path: new URL(req.url).pathname, 
 self.addEventListener('message', (event) => {
   const data = event.data || {};
   if (data.type === 'trace' && event.ports && event.ports[0]) { event.ports[0].postMessage({ log: TRACE.slice() }); return; }       // diagnóstico (boot-trace.js)
+  if (data.type === 'print-cfg' && data.eventId && data.cfg && typeof data.cfg === 'object') {          // datos del evento para armar la escarapela sin red (qué categorías tienen plantilla, nombres de los opcionales): no son datos personales
+    event.waitUntil((async () => {
+      const cache = await caches.open(CACHE);
+      await cache.put(cfgKey(String(data.eventId).replace(/\D/g, '')), jsonRes(200, data.cfg));
+      const eid = String(data.eventId).replace(/\D/g, ''), O = self.location.origin;
+      const tpls = [`${O}/api/events/${eid}/badge-template`, ...((Array.isArray(data.cfg.categories) ? data.cfg.categories : []).slice(0, 30).map((c) => `${O}/api/events/${eid}/badge-template?category=${encodeURIComponent(c)}`))];
+      for (const t of tpls) { try { const r = await fetch(t, { credentials: 'same-origin', cache: 'no-store' }); if (r.status === 200 && r.type === 'basic' && !r.redirected) { const copy = r.clone(); await keep(cache, tplKey(new URL(t)), r); await keepAssets(copy, cache); } } catch (e) { /* sin red */ } }
+      try {                                                                // la ventana de impresión y los archivos que usa (librerías, tipografías)
+        const pk = `${O}/kiosk/${eid}/escarapela/imprimir`; const r = await fetch(`${pk}/PRUEBA`, { credentials: 'same-origin' });
+        if (r.status === 200 && r.type === 'basic' && !r.redirected) {
+          const html = await r.clone().text(); await keep(cache, pk, r);
+          const statics = [...new Set((html.match(/(?:src|href)="(\/static\/[^"]+)"/g) || []).map((x) => x.replace(/^(?:src|href)="/, '').replace(/"$/, '').replace(/&amp;/g, '&')))].slice(0, 40);
+          for (const st of statics) {
+            try {
+              const u = new URL(st, O); if (await cache.match(keyOf(u.href, false), { ignoreVary: true })) continue;
+              const sr = await fetch(u.href, { credentials: 'same-origin' }); if (!(sr.status === 200 && sr.type === 'basic')) continue;
+              const css = /\.css$/.test(u.pathname) ? await sr.clone().text() : ''; await keep(cache, keyOf(u.href, false), sr);
+              for (const f of [...new Set((css.match(/url\(([^)]+)\)/g) || []).map((x) => x.slice(4, -1).replace(/['"]/g, '')))].slice(0, 40)) { try { const fu = new URL(f, u.href); if (fu.origin !== O || !fu.pathname.startsWith('/static/') || await cache.match(keyOf(fu.href, false), { ignoreVary: true })) continue; const fr = await fetch(fu.href); if (fr.status === 200) await keep(cache, keyOf(fu.href, false), fr); } catch (e) { /* una tipografía menos */ } }
+            } catch (e) { /* sin red */ }
+          }
+        }
+      } catch (e) { /* sin red */ }
+    })());
+    return;
+  }
   if (data.type !== 'precache' || !Array.isArray(data.urls)) return;
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -72,11 +97,116 @@ self.addEventListener('message', (event) => {
   })());
 });
 
+/* ------------------------------------------------------------------ IMPRIMIR SIN RED (25-nov-2026, docs/28_CONTINGENCIA_COMPLETA.md)
+   Para que la escarapela salga sin conexión por los caminos de siempre (ventana de impresión y USB), SIN tocar su código ni sus parámetros, el worker atiende SOLO estas lecturas, siempre
+   RED PRIMERO y la copia únicamente si la red falla:
+     - la plantilla de la escarapela y sus imágenes (no son datos personales): se guarda la última respuesta buena;
+     - la página de la ventana de impresión: se guarda una por evento y, sin red, se sirve con la cédula pedida;
+     - los datos de la persona para la escarapela: NUNCA se guardan aquí; sin red se arman al momento desde la copia completa CIFRADA del dispositivo (contingency.js › people);
+     - el conteo de impresiones: sin red responde «0» (no hay con quién comprobar; cada impresión se anota y se envía al volver la red).
+   Todo lo demás de la API sigue sin pasar por el worker. */
+const PRINT_PAGE = /^\/kiosk\/(\d+)\/escarapela\/imprimir\/([^/]+)\/?$/;
+const TPL_API = /^\/api\/events\/(\d+)\/badge-template$/;
+const ASSET_API = /^\/api\/badge-assets\/[^/]+\/[^/]+$/;
+const PRINT_DATA_API = /^\/api\/users\/([^/]+)\/badge-print-data$/;
+const PRINT_AUX_API = /^\/api\/users\/([^/]+)\/(print-count|print-flow)$/;
+const jsonRes = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Gw-Offline': '1' } });
+const cfgKey = (eventId) => `${self.location.origin}/__gw/print-cfg/${eventId}`;
+function tplKey(url) { const q = new URLSearchParams(); ['category', 'kind'].forEach((k) => { if (url.searchParams.get(k)) q.set(k, url.searchParams.get(k)); }); const t = q.toString(); return url.origin + url.pathname + (t ? '?' + t : ''); }
+
+/* Red primero; la copia solo si la red falla (o da 5xx). Guarda la respuesta 200. */
+async function netThenCopy(event, req, key, onFresh) {
+  const cache = await caches.open(CACHE);
+  let res;
+  try { res = (await cache.match(key, { ignoreVary: true })) ? await withTimeout(req) : await fetch(req); }
+  catch (e) { const hit = await cache.match(key, { ignoreVary: true }); if (hit) return hit; throw e; }
+  if (res && res.status === 200 && res.type === 'basic' && !res.redirected) { const copy = res.clone(); event.waitUntil(keep(cache, key, res).then(() => (onFresh ? onFresh(copy, cache) : null)).catch(() => {})); return res; }
+  if (res && res.status >= 500) { const hit = await cache.match(key, { ignoreVary: true }); if (hit) return hit; }
+  return res;
+}
+/* Al guardar una plantilla se guardan también sus imágenes (fondo y logos), para que la escarapela salga completa sin red. */
+async function keepAssets(res, cache) {
+  const tpl = await res.json();
+  const paths = new Set();
+  if (tpl && tpl.background_type === 'image' && tpl.background_value) paths.add(tpl.background_value);
+  ((tpl && tpl.elements) || []).forEach((el) => { if (el && el.storage_path) paths.add(el.storage_path); });
+  await Promise.all([...paths].slice(0, 40).map(async (p) => {
+    const u = `${self.location.origin}/api/badge-assets/${p}`;
+    try { if (await cache.match(u, { ignoreVary: true })) return; const r = await fetch(u, { credentials: 'same-origin' }); if (r.status === 200 && r.type === 'basic' && !r.redirected) await keep(cache, u, r); } catch (e) { /* sin red: en la próxima */ }
+  }));
+}
+/* La página de impresión guardada (una por evento), con la cédula de ESTA petición. */
+async function printPage(event, req, url) {
+  const m = PRINT_PAGE.exec(url.pathname), key = `${url.origin}/kiosk/${m[1]}/escarapela/imprimir`;
+  const cache = await caches.open(CACHE);
+  const fromCopy = async () => {
+    const hit = await cache.match(key, { ignoreVary: true });
+    if (!hit) return new Response('Sin conexión y sin una copia de la ventana de impresión. Abre el registro una vez con conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    const js = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+    const id = decodeURIComponent(m[2]), many = (url.searchParams.get('users') || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 50);
+    const html = (await hit.text()).replace(/^(\s*)const USER_ID = .*$/m, (_, sp) => `${sp}const USER_ID = ${js(id)};`).replace(/^(\s*)const USER_IDS = .*$/m, (_, sp) => `${sp}const USER_IDS = ${js(many.length > 1 ? many : [id])};`);
+    return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Gw-Offline': '1' } });
+  };
+  let res;
+  try { res = (await cache.match(key, { ignoreVary: true })) ? await withTimeout(req) : await fetch(req); } catch (e) { return fromCopy(); }
+  if (res && res.status === 200 && res.type === 'basic' && !res.redirected) { event.waitUntil(keep(cache, key, res)); return res; }
+  if (res && res.status >= 500) return fromCopy();
+  return res;
+}
+/* Datos de la persona para su escarapela, armados desde la copia completa cifrada (misma forma que GET /api/users/{id}/badge-print-data). Solo a quien está Registrado (o la persona de prueba). */
+const idbReq = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
+async function localPrintData(eventId, userId) {
+  const name = `golden-contingency-${eventId}`;
+  if (self.indexedDB.databases) { const all = await self.indexedDB.databases(); if (!all.some((d) => d.name === name)) return null; }          // no crear una base vacía
+  const db = await idbReq(self.indexedDB.open(name));
+  try {
+    if (!db.objectStoreNames.contains('people') || !db.objectStoreNames.contains('keys')) return null;
+    const tx = db.transaction(['people', 'keys', 'meta'], 'readonly');
+    const [blocks, keyRec, roster] = await Promise.all([idbReq(tx.objectStore('people').getAll()), idbReq(tx.objectStore('keys').get('q')), idbReq(tx.objectStore('meta').get('roster'))]);
+    if (!keyRec || !keyRec.key || !roster || !roster.expires_at || Date.now() >= roster.expires_at) return null;          // vencida la lista local, la copia ya no vale
+    for (const rec of blocks) {
+      let rows;
+      try { rows = JSON.parse(new TextDecoder().decode(await self.crypto.subtle.decrypt({ name: 'AES-GCM', iv: rec.enc.iv }, keyRec.key, rec.enc.ct))); } catch (e) { continue; }
+      const u = rows.find((x) => String(x.id) === String(userId));
+      if (u) return u;
+    }
+    return null;
+  } finally { db.close(); }
+}
+async function printData(req, url) {
+  try { return await fetch(req); } catch (netErr) {
+    const userId = decodeURIComponent(PRINT_DATA_API.exec(url.pathname)[1]), eventId = url.searchParams.get('event_id');
+    let u = null, cfg = {};
+    try { u = await localPrintData(eventId, userId); } catch (e) { u = null; }
+    if (!u) return jsonRes(503, { detail: 'Sin conexión y sin los datos de esta persona en el dispositivo.' });
+    if (u.status === 'No registrado' && String(u.id) !== 'PRUEBA') return jsonRes(403, { detail: 'Esta persona aún no está registrada en el evento: regístrala antes de imprimir su escarapela.' });
+    try { const hit = await (await caches.open(CACHE)).match(cfgKey(eventId), { ignoreVary: true }); cfg = hit ? await hit.json() : {}; } catch (e) { cfg = {}; }
+    const cats = Array.isArray(u.categories) ? u.categories : [];
+    const withTpl = Array.isArray(cfg.categories) ? cfg.categories : [];
+    return jsonRes(200, {
+      card_url: '', id: u.id, first_name: u.first_name || '', last_name: u.last_name || '', role: u.role || '', entity: u.entity || '', phone: u.phone || '', email: u.email || '',
+      opt_1: u.opt_1 || '', extra_fields: u.extra_fields || {}, optional_field_labels: cfg.labels || {}, has_photo: false, categories: cats.join(', '),
+      ...(cfg.code ? { code: u.code || '' } : {}), template_category: cfg.per_category ? (cats.find((c) => withTpl.includes(c)) || null) : null,
+    });
+  }
+}
+function offlineRoute(event, req, url) {
+  const p = url.pathname;
+  if (req.mode === 'navigate' && PRINT_PAGE.test(p)) return printPage(event, req, url);
+  if (TPL_API.test(p)) return netThenCopy(event, req, tplKey(url), keepAssets);
+  if (ASSET_API.test(p)) return netThenCopy(event, req, url.origin + p);
+  if (PRINT_DATA_API.test(p)) return printData(req, url);
+  if (PRINT_AUX_API.test(p)) return fetch(req).catch(() => jsonRes(200, p.endsWith('print-count') ? { times_printed: 0, offline: true } : { auto_print_skip: false, offline: true }));
+  return null;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  const off = offlineRoute(event, req, url);
+  if (off) { event.respondWith(off); return; }
   const isStatic = url.pathname.startsWith('/static/');
   const isPage = req.mode === 'navigate' && KIOSK_PAGE.test(url.pathname);
   if (!isStatic && !isPage) return;                    // API, roster, salud, sesión, otras páginas: nunca por el worker

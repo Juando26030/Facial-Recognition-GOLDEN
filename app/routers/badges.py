@@ -139,6 +139,12 @@ def template_category_for_user(event, db: Session, user_id: str) -> Optional[str
     return None
 
 
+def offline_print_cfg(db: Session, event) -> dict:
+    """Lo que el quiosco necesita para armar una escarapela SIN red (docs/28): qué categorías tienen plantilla propia, los nombres de los campos opcionales y si el evento usa código. Sin datos personales."""
+    cats = [c for (c,) in db.query(BadgeTemplate.category).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.kind == "badge", BadgeTemplate.category.isnot(None)).all() if c] if event.badge_per_category else []
+    return {"per_category": bool(event.badge_per_category), "categories": cats, "labels": event.get_optional_labels(), "code": bool(event.code_enabled)}
+
+
 @router.get("/events/{event_id}/badge-template")
 def get_badge_template(
     response: Response, event_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),

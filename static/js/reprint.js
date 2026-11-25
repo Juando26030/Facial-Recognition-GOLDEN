@@ -136,6 +136,7 @@
 
   async function use(userId, locked) {
     if (!locked && !root.EVENT_REPRINT_DISABLED) return true;       // habilitada: nada que gastar (el servidor lo vuelve a comprobar en la impresión compartida)
+    if (root.gwOffline && root.gwOffline()) return true;          // sin red (docs/28) no hay servidor que dé o gaste el permiso: se imprime y la impresión queda anotada para enviarse al volver la conexión
     const key = `${eid()}:${userId}`;
     if (used.has(key) && Date.now() - used.get(key) < USED_MEMO_MS) return true;
     try {

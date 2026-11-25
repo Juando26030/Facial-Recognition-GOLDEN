@@ -157,7 +157,8 @@
   const xfetch = (url, opts, label, fake) => (window.gwFetch ? window.gwFetch(url, opts, label, fake) : fetch(url, opts));
   const whoOf = (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'persona';
   let allUsersRef = () => [];          // la lista en pantalla (la fija mountSearch)
-  const offlinePrintHooks = [];          // (cédula) tras registrar sin red: quien sepa imprimir sin conexión se engancha aquí
+  /* Impresión automática SIN red (docs/28): no hay respuesta del servidor, así que vale la bandera de la página (la última que el servidor informó). El worker arma los datos desde la copia cifrada. */
+  const offlineAutoPrint = (id) => { if (id && window.BadgePrint && BadgePrint.maybeAutoPrint) return BadgePrint.maybeAutoPrint(id, { auto: !!window.EVENT_AUTO_PRINT }); return null; };
   const offlineEditHooks = [];          // (cédula, fila nueva) tras editar sin red sobre la copia completa: la tabla se repinta
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
@@ -172,6 +173,7 @@
     showToast(`Acreditado: ${found.person.n}`, 'success');
     verdict('ok', 'Acreditado(a)', `${found.person.n} · sin conexión: queda guardado y se envía solo al volver la red`);
     accreditHooks.forEach((f) => f(found));
+    if (found.cedula && (await GC.peopleMeta())) offlineAutoPrint(found.cedula);          // con la copia completa, la escarapela sale igual que con red
     return found;
   }
 
@@ -629,7 +631,7 @@
           else await send('registrado');
           if (window.RegTimer) RegTimer.done();
           localStatus = 'Registrado';
-          offlinePrintHooks.forEach((f) => f(currentId));          // impresión sin red (docs/28, pieza 3)
+          offlineAutoPrint(currentId);
           return true;
         }
         const f = currentId === user.id ? await GCs.scanLocal(user.id) : { status: 'not_found' };
@@ -756,7 +758,7 @@
       const GCw = window.GoldenContingency && window.GoldenContingency.instance;
       const statusSel = box.querySelector('#editModalStatus');
       const willRegister = canManageStatus ? !!(statusSel && statusSel.value === 'registrado' && originalStatus !== 'registrado') : !isRegistered;
-      if (willRegister && !(GCw && GCw.active())) primePrint();
+      if (willRegister && (!(GCw && GCw.active()) || canWorkOffline(user))) primePrint();          // sin red también se imprime (docs/28) cuando el dispositivo tiene la copia completa
       try { await busyBtn(box.querySelector('#editModalSave'), saveHandler); } finally { cancelPrimedPrint(); }
     });
 
@@ -850,7 +852,7 @@
        la lista local (sin red) no tiene la cédula, así que tampoco imprime. */
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
     const who = [user.first_name, user.last_name].filter(Boolean).join(' ');
-    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && (!user.__local || user.__full)) {
       const printBtn = actBtn('Imprimir', 'printer', 'gw-btn gw-btn--secondary gw-btn--xl btn-table-action', 'Imprimir escarapela', 'Imprimir escarapela' + (who ? ' de ' + who : ''));
       printBtn.addEventListener('click', () => { if (window.BadgePrint) BadgePrint.openPrintWindow(user.id); });
       actionTd.appendChild(printBtn);
@@ -859,7 +861,7 @@
       const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
       editBtn.addEventListener('click', () => buildEditModal(user));
       actionTd.appendChild(editBtn);
-      if (!user.__local && canManageStatus) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));          // eliminar es de coordinador en adelante: el digitador (temporal o no) no ve ni «Más»
+      if ((!user.__local || user.__full) && canManageStatus) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));          // eliminar es de coordinador en adelante: el digitador (temporal o no) no ve ni «Más»
     }
 
     tr.appendChild(actionTd);
@@ -1631,7 +1633,7 @@
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const GC0 = window.GoldenContingency && window.GoldenContingency.instance;
-      if (!(GC0 && GC0.active()) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
+      if ((!(GC0 && GC0.active()) || localFull) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
       try { return await fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId); } finally { cancelPrimedPrint(); }
     }
     async function fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId) {

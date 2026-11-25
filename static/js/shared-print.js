@@ -27,6 +27,7 @@
   const original = window.BadgePrint || {};
   const toast = (msg, kind) => (window.showToast ? window.showToast(msg, kind || 'info') : null);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const offline = () => !!(window.gwOffline && window.gwOffline());          // sin red (docs/28): se imprime en ESTE equipo (USB o ventana); la impresión compartida necesita al servidor
   const fetchT = (url, opts, ms) => {         // una petición que se cuelga (red suspendida) no debe detener el latido ni el sondeo para siempre
     if (typeof AbortController === 'undefined') return fetch(url, opts);
     const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms || 10000);
@@ -331,7 +332,7 @@
   }
 
   async function logPrint(userId) {
-    try { await fetch(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${EID}`, { method: 'POST' }); } catch (e) { /* no bloquea */ }
+    try { await (window.gwFetch || fetch)(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${EID}`, { method: 'POST' }, 'Impresión de escarapela'); } catch (e) { /* no bloquea */ }
   }
 
   /* ------------------------------------------------------------------ Y: atender a otros equipos */
@@ -545,7 +546,7 @@
   /* PR3 (causa B): la impresión AUTOMÁTICA toma el candado de 30 s de forma provisional (`claimTicket`) y lo CONFIRMA solo cuando algo salió (trabajo aceptado por el servidor, impresión USB hecha o
      ventana abierta); si la comprobación «¿registrado?» falla, el envío no sale o el navegador bloquea la ventana, lo SUELTA y un reintento automático de la misma persona no queda bloqueado. */
   async function printFor(userId, auto, confirmed) {
-    if (!SHARED && !usb.ok) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);       // compartida apagada y sin impresora: la ventana de impresión de siempre
+    if ((!SHARED || offline()) && !usb.ok) return auto ? original.maybeAutoPrint(userId, offline() ? { auto: !!window.EVENT_AUTO_PRINT } : undefined) : original.openPrintWindow(userId);       // compartida apagada (o sin red: no hay servidor que reparta) y sin impresora: la ventana de impresión de siempre
     let ticket = null;
     if (auto) {                                    // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
       if (original.claimTicket) { ticket = await original.claimTicket(userId); if (!ticket) return; }
@@ -558,9 +559,9 @@
   }
   async function dispatch(userId, auto, confirmed, ticket) {         // true = salió (o quedó en manos del servidor); false = no salió
     if (!auto && original.beginManual && !original.beginManual(userId)) return false;       // doble clic / doble toque en «Imprimir»: una sola
-    if (SHARED && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
+    if (SHARED && !offline() && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
     let explicit = !!confirmed;                    // reimpresión EXPLÍCITA: desde la Cola o tras confirmar «¿imprimir de nuevo?»
-    if (SHARED && route.mode === 'shared') {
+    if (SHARED && !offline() && route.mode === 'shared') {
       if (!auto && !confirmed) {                    // el botón manual conserva el aviso de reimpresión de siempre
         try {
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`);
