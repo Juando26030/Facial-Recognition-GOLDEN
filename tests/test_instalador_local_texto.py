@@ -18,7 +18,8 @@ def test_endpoints_are_protected_and_go_through_storage():
 def test_card_hidden_for_digitador_and_cliente_in_template_and_rule():
     assert 'EXCLUDED_ROLES = frozenset({"digitador", "cliente"})' in src("app/local_installer.py")
     t = src("templates/configuracion.html")
-    assert t.count("{% if can_local_installer %}") >= 3 and 'id="tab_servidor"' in t and "Aún no disponible" in src("static/js/local-installer-card.js")
+    assert t.count("{% if can_local_installer %}") >= 2 and 'id="tab_servidor"' in t and "Aún no disponible" in src("static/js/local-installer-card.js")
+    assert "{% if can_local_installer and not local_server %}" in t and "{% if can_local_installer and local_server %}" in t          # 25-nov-2026: en un servidor local, solo la tarjeta de datos de ese servidor
 
 
 def test_card_follows_frontend_rules():

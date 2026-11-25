@@ -233,7 +233,7 @@ def test_local_muestra_la_ip_para_conectar_y_apaga_el_rostro_de_eventos_ya_desca
     """19-nov-2026: «Conectar: IP:puerto» junto a la versión; el rostro de eventos descargados antes se apaga solo; el checklist de inventario se refresca con internet."""
     import pathlib
     ops = pathlib.Path("app/routers/ops.py").read_text(encoding="utf-8")
-    assert '"/api/ops/local-address"' in ops and "localmode.lan_addresses()" in ops
+    assert '"/api/ops/local-address"' in ops and "localmode.lan_address_details()" in ops          # 25-nov-2026: con el tipo de conexión (cable / Wi‑Fi)
     js = pathlib.Path("static/js/version-banner.js").read_text(encoding="utf-8")
     assert "/api/ops/local-address" in js and "Conectar:" in js and "gw-versionbar--info" in js and "gwver" in js
     main = pathlib.Path("app/main.py").read_text(encoding="utf-8")
