@@ -32,7 +32,7 @@ def test_cedula_is_read_from_a_guided_high_resolution_photo_and_the_qr_stays_liv
     qr = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
     cedula = qr[qr.index("/* ---- Cédula vieja / nueva"):qr.index("async function setMode(m)")]
     assert "F.attach(" in cedula and "startCamera" not in cedula and "resume()" not in cedula        # nada de lectura en vivo para la cédula
-    assert "FOTO_URL = '/static/js/cedula-foto.js?v=6'" in qr and "gw-cam__shoot" in qr and ">Tomar foto</button>" in qr
+    assert "FOTO_URL = '/static/js/cedula-foto.js?v=7'" in qr and "gw-cam__shoot" in qr and ">Tomar foto</button>" in qr
     live_qr = qr[qr.index("async function start() {"):qr.index("/* ---- Cédula vieja / nueva")]
     assert "await detector.detect(video)" in live_qr and "jsQR(img.data" in live_qr and "setTimeout(tick, 200)" in live_qr   # el QR, intacto y en vivo
     foto = (ROOT / "static/js/cedula-foto.js").read_text(encoding="utf-8")

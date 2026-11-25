@@ -42,6 +42,19 @@
     torchOn: 'Linterna', torchOff: 'Apagar linterna',
   };
   const SIZES = [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}];
+  // FLUIDEZ (24-nov-2026, tableta que no es de última generación: la vista previa iba trabada y con retraso). Mostrar video 4K en vivo es lo que más pesa:
+  //  · equipo modesto (≤ 4 núcleos o ≤ 3 GB): se pide 1080p de entrada; · en los demás se MIDE la vista previa y, si va a menos de FPS_MIN, se baja a 1080p (y a 720p si
+  //    ni así). La lectura no cambia: con 1080p se sigue usando el cuadro del video; con menos, la foto fija del sensor (takePhoto), igual que antes en cámaras sin HD.
+  const FPS_MIN = 18, FPS_MIN_720 = 12, FPS_WARMUP_MS = 500, FPS_WINDOW_MS = 1200, OVERLAY_DPR_MAX = 2;
+  /** ¿Equipo modesto? (puro: recibe navigator) */
+  function lowEnd(nav) { return !!nav && ((nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) || (nav.deviceMemory > 0 && nav.deviceMemory <= 3)); }
+  /** Resolución a la que conviene bajar según los cuadros por segundo medidos y el lado corto actual del video → {width,height} | null (quedarse como está). */
+  function stepDown(fps, shortSide, canStill) {
+    if (!(fps > 0)) return null;
+    if (shortSide > 1080 && fps < FPS_MIN) return { width: 1920, height: 1080 };
+    if (canStill && shortSide > 720 && fps < FPS_MIN_720) return { width: 1280, height: 720 };   // solo si hay foto fija (takePhoto): por debajo de 1080p el cuadro del video no alcanza para leer
+    return null;
+  }
   const STILL_MAX = 4600;                    // lado mayor máximo pedido a takePhoto (más no aporta y pesa en memoria)
   const MRZ_CROP_W = 1800;                   // ancho de trabajo del recorte de las 3 líneas (≈60 px por carácter)
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
@@ -392,13 +405,16 @@
     function draw() {
       raf = 0;
       if (dead || !overlay || !video.videoWidth) return;
-      const vw = video.videoWidth, vh = video.videoHeight, r = video.getBoundingClientRect(), g = guideRect(vw, vh, r.width, r.height, G.ar, G.fill), x = overlay.getContext('2d');
+      // El lienzo de la guía mide lo que mide EN PANTALLA (no la resolución del video: un lienzo 4K encima del video era parte del atasco). El recuadro es el mismo:
+      // guideRect sobre la parte visible del video equivale a guideRect sobre la caja en pantalla.
+      const r = video.getBoundingClientRect(), dpr = Math.min(OVERLAY_DPR_MAX, window.devicePixelRatio || 1), vw = Math.max(1, Math.round(r.width * dpr)), vh = Math.max(1, Math.round(r.height * dpr));
+      const g = guideRect(vw, vh, vw, vh, G.ar, G.fill), x = overlay.getContext('2d');
       if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
       const line = busy ? tok(overlay, '--gw-gold-2', '#e8c25a') : glare ? tok(overlay, '--gw-warn-line', '#c98a00') : tok(overlay, '--gw-ok-line', '#1f8a4c');
       x.clearRect(0, 0, vw, vh);
       x.fillStyle = tok(overlay, '--gw-overlay', 'rgba(0,0,0,.45)');                   // oscurece lo que queda fuera del recuadro
       x.beginPath(); x.rect(0, 0, vw, vh); x.rect(g.x, g.y, g.w, g.h); x.fill('evenodd');
-      const lw = Math.max(4, vw / 260), c = Math.min(g.h * 0.35, g.w * 0.06);
+      const lw = Math.max(1.5 * dpr, vw / 260), c = Math.min(g.h * 0.35, g.w * 0.06);
       x.lineWidth = lw; x.strokeStyle = line; x.lineCap = 'round'; x.strokeRect(g.x, g.y, g.w, g.h); x.lineWidth = lw * 1.8;
       [[g.x, g.y, 1, 1], [g.x + g.w, g.y, -1, 1], [g.x, g.y + g.h, 1, -1], [g.x + g.w, g.y + g.h, -1, -1]].forEach(([px, py, sx, sy]) => { x.beginPath(); x.moveTo(px, py + sy * c); x.lineTo(px, py); x.lineTo(px + sx * c, py); x.stroke(); });
       if (kind === 'new') {                                                             // 3 renglones de ayuda: dónde caen las 3 líneas
@@ -420,14 +436,50 @@
 
     /* Brillo EN VIVO: cada 0,5 s se mira el recuadro (en pequeño) y, si hay reflejo, se avisa ANTES de tomar la foto y el recuadro se pone ámbar. */
     const probe = canvasOf(240, 60);
-    function checkGlare() {
-      if (dead || busy || frozen || !video.videoWidth) return;
+    let probing = false;
+    async function checkGlare() {
+      if (dead || busy || frozen || probing || !video.videoWidth || document.hidden) return;
       const vw = video.videoWidth, vh = video.videoHeight, r = video.getBoundingClientRect(), g = guideRect(vw, vh, r.width, r.height, G.ar, G.fill);
       probe.height = Math.max(8, Math.round(probe.width / G.ar));
       const x = probe.getContext('2d', { willReadFrequently: true });
-      try { x.drawImage(video, g.x, g.y, g.w, g.h, 0, 0, probe.width, probe.height); } catch (e) { return; }
+      probing = true;
+      try {
+        // Recorte y reducción en la tarjeta gráfica (createImageBitmap): así no se trae a memoria el cuadro completo del video cada medio segundo.
+        let bmp = null;
+        if (typeof createImageBitmap === 'function') { try { bmp = await createImageBitmap(video, Math.round(g.x), Math.round(g.y), Math.round(g.w), Math.round(g.h), { resizeWidth: probe.width, resizeHeight: probe.height, resizeQuality: 'low' }); } catch (e) { bmp = null; } }
+        if (dead || busy || frozen) { if (bmp && bmp.close) bmp.close(); return; }
+        if (bmp) { x.drawImage(bmp, 0, 0); if (bmp.close) bmp.close(); } else x.drawImage(video, g.x, g.y, g.w, g.h, 0, 0, probe.width, probe.height);
+      } catch (e) { return; } finally { probing = false; }
       const now = glareRatio(x.getImageData(0, 0, probe.width, probe.height).data) > GLARE_RATIO;
       if (now !== glare) { glare = now; redraw(); if (!busy) say(glare ? (torchOn ? MSG.glareTorch : MSG.glare) : aimMsg(), glare ? 'warn' : ''); }
+    }
+
+    /* Fluidez: se cuentan los cuadros que la vista previa pinta de verdad; si son pocos, se baja la resolución del video (sin volver a pedir permiso). */
+    function measureFps() {
+      return new Promise((done) => {
+        if (typeof video.requestVideoFrameCallback !== 'function') { done(0); return; }
+        let n = 0, t0 = 0;
+        const tick = (now) => { if (dead) { done(0); return; } if (!t0) t0 = now; else n++; if (now - t0 >= FPS_WINDOW_MS) done(n * 1000 / (now - t0)); else video.requestVideoFrameCallback(tick); };
+        setTimeout(() => { if (dead) done(0); else video.requestVideoFrameCallback(tick); }, FPS_WARMUP_MS);
+        setTimeout(() => done(t0 ? n * 1000 / FPS_WINDOW_MS : 0), FPS_WARMUP_MS + FPS_WINDOW_MS * 3);       // pestaña en segundo plano: no se queda esperando
+      });
+    }
+    async function tunePreview() {
+      for (let round = 0; round < 2 && !dead && track; round++) {
+        const fps = await measureFps(); if (dead || busy || !track) return;
+        const to = stepDown(fps, Math.min(video.videoWidth || 0, video.videoHeight || 0), typeof ImageCapture !== 'undefined'); if (!to) return;
+        // Se conserva la FORMA del video (un celular en vertical entrega 1080×1920): se prueba ancho×alto y, si la imagen queda recortada, alto×ancho; si ninguna sirve, se deja como estaba.
+        const shape = () => Math.max(video.videoWidth, video.videoHeight) / Math.max(1, Math.min(video.videoWidth, video.videoHeight)), was = shape(), w0 = video.videoWidth, h0 = video.videoHeight;
+        let ok = false; const tall = h0 > w0;
+        for (const [w, h] of (tall ? [[to.height, to.width], [to.width, to.height]] : [[to.width, to.height], [to.height, to.width]])) {
+          try { await track.applyConstraints({ width: { ideal: w }, height: { ideal: h } }); } catch (e) { continue; }
+          await new Promise((r) => setTimeout(r, 450));
+          if (dead) return;
+          if (Math.abs(shape() - was) < was * 0.06 && (video.videoHeight > video.videoWidth) === tall) { ok = true; break; }
+        }
+        if (!ok) { try { await track.applyConstraints({ width: { ideal: w0 }, height: { ideal: h0 } }); } catch (e) { /* queda como la dejó el navegador */ } redraw(); return; }
+        redraw();
+      }
     }
 
     /* Linterna: solo si el celular la ofrece (Android Chrome). En cédulas plastificadas a veces CAUSA el brillo: por eso el aviso pide apagarla. */
@@ -480,7 +532,7 @@
 
     async function openCamera() {
       let last = null, s = null;
-      for (const size of SIZES) {
+      for (const size of (lowEnd(navigator) ? SIZES.slice(2) : SIZES)) {                 // equipo modesto: 1080p de entrada
         try { s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, ...size } }); break; }
         catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') break; }
       }
@@ -489,7 +541,7 @@
       stream = s; track = s.getVideoTracks()[0];
       try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) { /* sin control de enfoque */ }
       video.srcObject = s; video.setAttribute('playsinline', ''); video.muted = true;
-      video.addEventListener('loadedmetadata', redraw);
+      video.addEventListener('loadedmetadata', redraw); video.addEventListener('resize', redraw);                    // 'resize': cambió la resolución del video (tunePreview)
       try { await video.play(); } catch (e) { /* iOS: arranca con el primer toque */ }
       if (dead) return;
       if (btn) btn.disabled = busy;
@@ -497,6 +549,8 @@
       setupTorch();
       glareTimer = setInterval(checkGlare, 500);
       if (!busy) say(aimMsg());
+      await tunePreview();                                                              // mide la fluidez y, si hace falta, baja la resolución
+      preload();                                                                        // los lectores se cargan DESPUÉS: su arranque (OCR, zxing) no compite con la cámara al abrir
     }
 
     async function shoot() {
@@ -549,9 +603,11 @@
     if (btn) { btn.disabled = true; btn.addEventListener('click', shoot); }
 
     say(MSG.loading);
-    openCamera();
-    // Los lectores se van cargando mientras el operador encuadra (la primera vez la cédula nueva baja el OCR: unos segundos).
-    Promise.resolve().then(() => o.readers()).then((r) => { R = r; return decoder(r, kind); }).catch(() => { /* se reintenta al tomar la foto */ });
+    openCamera().catch(() => {});
+    // Los lectores se cargan mientras el operador encuadra (la primera vez la cédula nueva baja el OCR: unos segundos). Si se toma la foto antes, shoot() los espera.
+    let preloaded = false;
+    function preload() { if (preloaded || dead) return; preloaded = true; Promise.resolve().then(() => o.readers()).then((r) => { R = r; return decoder(r, kind); }).catch(() => { /* se reintenta al tomar la foto */ }); }
+    setTimeout(preload, 4000);                                                          // por si la cámara no abre o tarda: no se queda sin precargar
 
     return {
       shoot,
@@ -571,7 +627,7 @@
     };
   }
 
-  const api = { attach, firstFound, washedCells, findMrz, checkFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
+  const api = { attach, firstFound, lowEnd, stepDown, washedCells, findMrz, checkFound, glareRatio, partialFrom, guideRect, expandRect, photoRect, stillOptions, pickMrz, readMrzCrop, fromServer, MSG, GUIDE };
   if (typeof window !== 'undefined') window.CedulaFoto = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

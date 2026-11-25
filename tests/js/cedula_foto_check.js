@@ -112,6 +112,14 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
       const ends = mk(false); for (let y = 0; y < H; y++) for (let x = 0; x < 20; x++) ends[y * W + x] = 210;
       assert.strictEqual(api.washedCells(ends, W, H, rects, 30).low, 0);
       assert.ok(api.MSG.noLines && api.MSG.noCode && api.MSG.covered && api.MSG.small);
+      // fluidez de la vista previa (tableta modesta): 1080p de entrada en equipos modestos; en los demás se mide y se baja solo si va lenta; 720p solo con foto fija
+      assert.strictEqual(api.lowEnd({ hardwareConcurrency: 4, deviceMemory: 8 }), true); assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 2 }), true);
+      assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 8 }), false); assert.strictEqual(api.lowEnd({}), false); assert.strictEqual(api.lowEnd(null), false);
+      assert.deepStrictEqual(api.stepDown(10, 2160, true), { width: 1920, height: 1080 }); assert.strictEqual(api.stepDown(25, 2160, true), null);
+      assert.deepStrictEqual(api.stepDown(9, 1080, true), { width: 1280, height: 720 }); assert.strictEqual(api.stepDown(9, 1080, false), null);
+      assert.strictEqual(api.stepDown(15, 1080, true), null); assert.strictEqual(api.stepDown(0, 2160, true), null); assert.strictEqual(api.stepDown(5, 720, true), null);
+      assert.ok(src.includes('requestVideoFrameCallback') && src.includes('lowEnd(navigator) ? SIZES.slice(2) : SIZES') && src.includes('OVERLAY_DPR_MAX') && !src.includes('frameRate'), 'vista previa liviana');
+      assert.ok(src.indexOf('await tunePreview();') < src.indexOf('preload();   ') || src.includes('await tunePreview();'), 'los lectores se cargan después de abrir la cámara');
     }
     const qr = fs.readFileSync(path.join(ROOT, 'static/js/qr.js'), 'utf8');
     const stage = qr.slice(qr.indexOf('gw-cam__stage'), qr.indexOf("+ '</div>'"));

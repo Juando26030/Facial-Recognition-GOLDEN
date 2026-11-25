@@ -15,6 +15,7 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 - Al servidor va solo el recorte de las 3 líneas. Sin migraciones. `cedula-foto.js?v=5`, `cedula-readers.js?v=2`.
 - Banco de pruebas en Chrome con cámara simulada (`tests/lab_cedula/`): 27/60 → 58/60 en fotos al azar. Detalle: `docs/PRUEBA_LECTOR_CEDULA.md` § Recorte automático.
 - Noche: cédula vieja al revés (plan `photo`), cédula nueva torcida a cualquier ángulo (búsqueda girada 45°), chequeo previo de brillo / sin cédula con aviso inmediato y tope de 5,5 s por foto. `cedula-foto.js?v=6`, `cedula-readers.js?v=3`.
+- Fluidez en equipos modestos: video a 1080p (de entrada o al medir pocos cuadros por segundo), guía en un lienzo del tamaño de pantalla y lectores cargados después de abrir la cámara. `cedula-foto.js?v=7`.
 - Arreglo de CI: el aviso de brillo en vivo (`setInterval` de `cedula-foto.js`) queda en la lista justificada de `tests/js/gw_idle_gate_check.js` (el CI de `main` e75977a7 falló solo por eso).
 
 ## 2026-11-23 (noche) — Confirmaciones con palabra y coordinador del evento nuevo (Rama; sin migración)

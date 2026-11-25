@@ -109,3 +109,17 @@ Pedido de Juan David tras probar el recorte automático en el celular: la cédul
   de reemplazo que solo «lee» el código derecho): derecho, al revés, pequeña al revés, torcida, torcida al revés y de lado: 8/8; sin cédula: aviso en 1,4 s.
   El chequeo de brillo de la cédula vieja solo quedó probado como función (`tests/js/cedula_foto_check.js`), no en el banco.
 
+## Vista previa fluida en equipos modestos (24-nov-2026, noche)
+
+Juan David probó con una tableta que no es de última generación: al abrir la cámara del escáner la imagen iba trabada y con retraso, y costaba encuadrar. La lectura no cambió; solo se aligeró la vista previa.
+
+- **Resolución del video:** mostrar 4K en vivo era lo más pesado. Equipo modesto (≤ 4 núcleos o ≤ 3 GB, `lowEnd`): se pide 1080p de entrada. En los demás se MIDEN los cuadros por segundo
+  de la vista previa (`requestVideoFrameCallback`, 1,2 s) y, si van a menos de 18, se baja a 1080p con `applyConstraints` (sin volver a pedir permiso); a 720p solo si sigue a menos de 12 y
+  el navegador tiene foto fija (`takePhoto`), que es la que se usa por debajo de 1080p. Se conserva la forma y la orientación del video; si el cambio la altera, se deshace.
+- **Guía:** el lienzo del recuadro ahora mide lo que mide en pantalla (antes, la resolución del video: un lienzo 4K encima del video).
+- **Aviso de brillo:** el recorte y la reducción se hacen con `createImageBitmap` (ya no se trae a memoria el cuadro completo cada medio segundo) y no corre con la pestaña oculta.
+- **Lectores:** el OCR y el lector de códigos se cargan DESPUÉS de abrir la cámara y medir, para que su arranque no compita con ella.
+- No se pide `frameRate`: en la prueba cambiaba el formato que elegía la cámara.
+- **Banco:** mismos resultados que antes (15/16, 58/60, vieja 8/9). El bajón de resolución se probó simulando 8 cuadros por segundo (4K → 1080p → 720p; vertical 1080×1920 → 720×1280).
+- **Falta:** confirmarlo en la tableta real. Si sigue trabada a 1080p, anotar modelo y navegador.
+

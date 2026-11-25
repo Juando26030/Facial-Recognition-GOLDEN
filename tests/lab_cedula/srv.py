@@ -8,6 +8,7 @@ PAGE='''<!doctype html><meta charset=utf8><body>
 <div class="stage" style="position:relative;width:WWpx;height:HHpx"><video id=v style="width:100%;height:100%;object-fit:cover"></video><canvas id=o style="position:absolute;inset:0;width:100%;height:100%"></canvas></div>
 <button id=b>Tomar foto</button><p id=s></p>
 <script>
+Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>+(new URLSearchParams(location.search).get('cores')||8)});   // el banco simula un equipo potente (cores=4 para probar el modesto)
 window.LOG=[]; window.RESULT=undefined; window.ZXN=0;
 // Decodificador de REEMPLAZO de la cédula vieja (no hay zxing sin red): «lee» solo si le llega el código de gen.py DERECHO (bloque macizo a la izquierda, rayas a la
 // derecha), nítido y sin zonas lavadas; tarda ~60 ms como un intento real en un celular. Sirve para probar ubicar/enderezar/girar/tiempos, no la decodificación.
