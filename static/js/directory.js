@@ -149,6 +149,7 @@
   const cancelPrimedPrint = () => { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); };
   /* Veredicto grande (static/js/registro-veredicto.js, Fase 1.7): solo muestra el resultado con ícono y palabras; los avisos de siempre (toasts) y el flujo no cambian. Sin la banda, no hace nada. */
   const verdict = (kind, title, text) => { try { if (typeof window !== 'undefined' && window.GWVerdict) window.GWVerdict.show(kind, title, text); } catch (e) { /* sin banda: nada */ } };
+  const offlineEditHooks = [];          // (cédula, fila nueva) tras editar sin red sobre la copia completa: la tabla se repinta
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
     const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
@@ -219,10 +220,12 @@
     const cfgs = window.FIELD_CONFIGS || [];
     const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const blocked = (cfg) => cfg.key === 'id' || OFFLINE_BLOCKED_TYPES.includes(cfg.field_type) || cfg.key === 'birth_date';
+    const knownOf = (key) => { const v = Object.prototype.hasOwnProperty.call(user, key) ? user[key] : (user.extra_fields || {})[key]; return v == null ? '' : v; };
     const wrap = (cfg, control) => `<div class="gw-field badge-input-group" data-field-key="${esc(cfg.key)}"><label class="gw-label">${esc(cfg.label)}</label>${control}</div>`;
     const fieldsHtml = cfgs.map((cfg) => {
       if (cfg.key === 'id') return wrap(cfg, `<input type="text" name="id_readonly" class="gw-input" value="${esc(user.id || '')}" disabled>`);
       if (cfg.field_type === 'categories') return wrap(cfg, window.FieldRender.renderControl(cfg, user.categories));
+      if (user.__full && cfg.field_type !== 'signature' && cfg.field_type !== 'consent') return wrap(cfg, window.FieldRender.renderControl(cfg, knownOf(cfg.key)));          // copia completa: se ven los datos guardados
       if (cfg.field_type === 'certificate') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
       if (cfg.field_type === 'digital_contact' || cfg.field_type === 'date' || cfg.field_type === 'signature' || cfg.field_type === 'consent') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
       return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
@@ -242,7 +245,7 @@
       </div>
       <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-pf-cancel>Cancelar</button><button type="button" class="gw-btn gw-btn--primary" data-pf-save>Guardar cambios</button></div>
     </div>`;
-    overlay.querySelector('.gw-alert__body').textContent = 'Escribe solo lo que cambia: lo que dejes en blanco queda como estaba. Se guarda en este dispositivo y se envía solo al volver la red. La cédula, la fecha de nacimiento y las firmas piden conexión.';
+    overlay.querySelector('.gw-alert__body').textContent = user.__full ? 'Ves los datos guardados en este dispositivo. Lo que cambies se guarda aquí y se envía solo al volver la red. La cédula, la fecha de nacimiento y las firmas piden conexión; para dejar un dato vacío espera a que vuelva la red.' : 'Escribe solo lo que cambia: lo que dejes en blanco queda como estaba. Se guarda en este dispositivo y se envía solo al volver la red. La cédula, la fecha de nacimiento y las firmas piden conexión.';
     overlay.querySelector('[data-pf-who]').textContent = name ? `Persona: ${name}` : 'Persona de la lista local';
     document.body.appendChild(overlay);
     const form = overlay.querySelector('#offlineEditForm'), fieldsBox = overlay.querySelector('#offlineEditFields');
@@ -259,6 +262,7 @@
         const el = Array.from(form.elements).find((e) => e.name === cfg.key);
         const v = el && el.value ? String(el.value).trim() : '';
         if (!v) return;
+        if (user.__full && v === String(knownOf(cfg.key)).trim()) return;          // con la copia completa solo viaja lo que de verdad cambió (no se pisa lo que otro equipo haya editado)
         if (/^opcional_\d+$/.test(cfg.key)) extras[cfg.key] = v; else fields[cfg.key] = v;
       });
       if (Object.keys(extras).length) fields.extra_fields = extras;
@@ -278,6 +282,11 @@
           const pf = window.PERSON_FORM;
           PersonForm.applyCase(fields, pf);
           await box.enqueue(fields, `Edición: ${name || 'persona'}`, { type: 'edit_person', form_version: pf.form_version, form_sig: pf.form_sig });
+          if (user.__full && GC.peopleApply) {                                  // la copia local y la fila en pantalla quedan con lo editado
+            const { h: _h, id: _id, ...patch } = fields;
+            const row = await GC.peopleApply(user.id, patch);
+            if (row) offlineEditHooks.forEach((f) => f(user.id, row));
+          }
           showToast('Cambios guardados en este dispositivo: se envían solos al volver la red', 'success');
         }
         if (status === 'registrado') { const found = await offlineAccredit(GC, target, 'manual'); if (!found && !Object.keys(fields).length) return; }
@@ -1211,7 +1220,7 @@
         if (originSelect && originSelect.value && (u.origin || 'desconocido') !== originSelect.value) return false;
         if (!cedula && !nombre.length && !entidad.length) return true;
         const k = keysOf(u);
-        if (cedula && !(u.__local ? (wantH && u.__h === wantH) : k.id.includes(cedula))) return false;
+        if (cedula && !(u.__local && !u.__full ? (wantH && u.__h === wantH) : k.id.includes(cedula))) return false;
         if (nombre.length && !matchesWords(k.name, nombre)) return false;
         if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
@@ -1253,24 +1262,29 @@
 
     /* LISTA LOCAL (modo contingencia): sin red —o ya en contingencia— la tabla sale de la copia local del roster (static/js/contingency.js): nombre, categorías y estado (contando también lo
        encolado sin red) y los contadores de siempre. La copia NO trae cédula ni entidad: se busca por nombre y por cédula EXACTA (huella); el filtro de entidad se desactiva con un aviso. */
-    let localMode = false;
+    let localMode = false, localFull = false;          // localFull: la lista sale de la copia completa (cédula, entidad y demás campos disponibles sin red)
     const localHashes = new Map();                       // cédula escrita -> huella (se calcula una vez)
     const inflightHashes = new Set();                    // huellas que se están calculando (crypto.subtle usa hilos reales): `hashesSettled()` espera a que terminen, sin depender del tiempo
     const GCref = () => window.GoldenContingency && window.GoldenContingency.instance;
     const entidadPlaceholder = entidadInput ? entidadInput.placeholder : '';
-    function setLocalMode(on) {
-      localMode = on;
-      if (entidadInput) { entidadInput.disabled = on; entidadInput.placeholder = on ? 'No disponible sin conexión' : entidadPlaceholder; if (on) entidadInput.value = ''; }
+    function setLocalMode(on, full) {
+      localMode = on; localFull = !!(on && full);
+      if (entidadInput && localFull) { entidadInput.disabled = false; entidadInput.placeholder = entidadPlaceholder; }
+      else if (entidadInput) { entidadInput.disabled = on; entidadInput.placeholder = on ? 'No disponible sin conexión' : entidadPlaceholder; if (on) entidadInput.value = ''; }
     }
     async function loadFromLocalCopy() {
       const GC = GCref();
       if (!GC) return false;
       await GC.ready;
       if (!GC.supported || !(await GC.rosterUsable())) return false;
-      const people = await GC.localPeople();
+      const roster = await GC.localPeople();
+      let full = GC.peopleLoad ? await GC.peopleLoad() : null;          // copia COMPLETA cifrada (todos los campos): la pantalla queda igual que con red
+      if (full && full.length < roster.length) full = null;             // la copia completa trae menos gente que la lista mínima: no se confía en ella (se muestra la mínima, con su aviso)
+      const people = full || roster;
       const st = GC.serverTotal ? await GC.serverTotal() : null, meta = GC.rosterMeta ? await GC.rosterMeta() : null;
       localStats = { n: people.length, total: st ? st.n : null, at: st ? st.at : null, generated: meta && meta.generated_at ? Date.parse(meta.generated_at) : null };
-      setLocalMode(true);
+      setLocalMode(true, !!full);
+      if (full) { allUsers = full.map((u) => ({ ...u, __local: true, __full: true })); applyFilters(); return true; }
       allUsers = people.map((p) => ({ id: '', first_name: p.n, last_name: '', entity: '', opt_1: (p.c || []).join(', '), status: p.s, categories: p.c || [], __h: p.h, __local: true }));
       applyFilters();
       return true;
@@ -1293,12 +1307,21 @@
       const td = document.createElement('td'); td.colSpan = 6;
       const s = localStats, bad = !s || s.total == null || s.total !== s.n;
       td.className = 'gw-registro__localnote ' + (!s || s.total == null ? 'is-warn' : (bad ? 'is-err' : 'is-ok'));
-      td.innerText = `${localCounterText()}. Sin conexión: se muestra la copia local (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.`;
+      td.innerText = localFull ? `${localCounterText()}. Sin conexión: se muestra la copia local con todos los datos. Lo que registres o edites queda guardado en este dispositivo y se envía solo al volver la red.`
+        : `${localCounterText()}. Sin conexión: se muestra la copia local (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.`;
       tr.appendChild(td);
       return tr;
     }
 
     const T = (n, x) => { if (window.GoldenTrace) window.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
+    /* Copia completa para trabajar sin red (contingency.js › peopleSave): son las MISMAS filas que ya se bajaron, así que no cuesta ni una petición más al servidor. Se guarda cifrada y en
+       segundo plano (no frena la pantalla). El rol `cliente` recibe filas enmascaradas: no se guarda nada. */
+    function saveFullCopy() {
+      const GC = GCref();
+      if (!GC || !GC.peopleSave || window.STAFF_ROLE === 'cliente') return;
+      const rows = allUsers.slice();
+      Promise.resolve(GC.ready).then(() => GC.peopleSave(rows)).catch(() => {});
+    }
     async function fullLoad() {
       T('directory:fullLoad:begin');
       const tbody = document.getElementById(opts.tbodyId);
@@ -1328,6 +1351,7 @@
         cursor = nextCursor;
         pollSignal(true);
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal) GCt.noteServerTotal(allUsers.length); }          // total del servidor: lo usa el contador «LISTA LOCAL: N de N»
+        saveFullCopy();
       } catch (err) {
         T('directory:fetch-failed', { error: String((err && err.name) || err) });
         pollSignal(false);
@@ -1354,7 +1378,7 @@
           allUsers = [...byId.values()];
         }
         if (allUsers.length !== delta.total) return reload();
-        if (delta.users.length) applyFilters();
+        if (delta.users.length) { const GCp = GCref(); if (GCp && GCp.peoplePatch && window.STAFF_ROLE !== 'cliente') GCp.peoplePatch(delta.users); applyFilters(); }
       } catch (err) { pollSignal(false); /* sin red: se reintenta en el siguiente ciclo */ }
     }
 
@@ -1504,6 +1528,8 @@
     /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. Igual que en línea, escanear/escribir una cédula exacta SOLO acredita de inmediato si el «Modo
        autoregistro» está encendido (el valor viaja con la copia local y se guarda en IndexedDB: vale tras recargar sin red); con el modo apagado SOLO busca y resalta a la persona, con un
        botón «Acreditar» en su fila (como FOUND_PENDING). */
+    offlineEditHooks.length = 0;
+    offlineEditHooks.push((id, row) => { const i = allUsers.findIndex((x) => x.id === id); if (i >= 0) { allUsers[i] = { ...row, __local: true, __full: true }; applyFilters(); } });
     accreditHooks.push((found) => {
       const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
       if (u) { u.status = 'Registrado'; rowCache.delete(u); }

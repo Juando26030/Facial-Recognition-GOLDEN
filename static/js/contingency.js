@@ -47,11 +47,12 @@
   /* ------------------------------------------------------------------------------------------------------------------ almacén IndexedDB */
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
   const done = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb')); tx.onabort = () => rej(tx.error || new Error('idb abort')); });
-  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id', keys: 'k' };
+  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id', keys: 'k', people: 'k' };
+  const PEOPLE_CHUNK = 400;                    // personas por bloque cifrado de la copia completa
 
   function openStore(idb, name) {
     return new Promise((resolve, reject) => {
-      const r = idb.open(name, 4);
+      const r = idb.open(name, 5);
       r.onupgradeneeded = () => {
         const db = r.result;
         Object.keys(STORES).forEach((s) => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: STORES[s] }); });
@@ -65,6 +66,7 @@
           put: async (store, value) => { const t = tx([store], 'readwrite'); t.objectStore(store).put(value); return done(t); },
           del: async (store, keys) => { const t = tx([store], 'readwrite'); [].concat(keys).forEach((k) => t.objectStore(store).delete(k)); return done(t); },
           clear: async (stores) => { const t = tx(stores, 'readwrite'); stores.forEach((s) => t.objectStore(s).clear()); return done(t); },
+          putMany: async (store, values) => { const t = tx([store], 'readwrite'); const os = t.objectStore(store); values.forEach((v) => os.put(v)); return done(t); },
           replaceRoster: async (people, meta) => {                   // todo o nada: una transacción
             const t = tx(['roster', 'meta'], 'readwrite');
             const rs = t.objectStore('roster'); rs.clear(); people.forEach((p) => rs.put(p)); t.objectStore('meta').put({ k: 'roster', ...meta });
@@ -202,8 +204,8 @@
         return body.definition;
       } catch (e) { return null; }
     };
-    c.wipeRoster = async () => { if (!c.db) return; const pf = await c.personForm(); await c.db.clear(['roster', 'meta']); if (pf) await c.savePersonForm(pf); };           // al cerrar sesión, al finalizar el evento y al vencer
-    c.wipeAll = async () => { if (c.db) { const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'queue']); if (pf) await c.savePersonForm(pf); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
+    c.wipeRoster = async () => { if (!c.db) return; const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'people']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); };           // al cerrar sesión, al finalizar el evento y al vencer
+    c.wipeAll = async () => { if (c.db) { const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'queue', 'people']); c.peopleIdx = null; if (pf) await c.savePersonForm(pf); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
 
     /* Descarga/valida el roster (`If-None-Match`: 304 = nada cambió, solo se renueva la vigencia). Devuelve 'ok' | 'unauth' (sesión vencida) | 'denied' (evento finalizado o sin
        permiso: se borra la copia y se avisa) | 'error'. Un 429 cuenta como respuesta buena (el servidor contestó) pero no renueva nada. */
@@ -237,6 +239,79 @@
       return 'ok';
     };
 
+    /* --- COPIA COMPLETA de las personas del evento (25-nov-2026, «registro completo sin conexión»; aprobado por la auditora según Juan David). Son las MISMAS filas que el
+       directorio ya baja con red (`/api/users` y sus cambios): no hay descarga aparte ni consulta extra al servidor. Aquí van datos personales en claro (cédula, teléfono, correo…),
+       así que SIEMPRE cifrados en reposo (AES-GCM 256, la clave no extraíble de este equipo), en bloques de PEOPLE_CHUNK personas. Vive y muere con la lista local: se borra al cerrar
+       sesión, al finalizar el evento, al perder el permiso y al vencer (24 h sin refrescar). Sin fotos ni vectores biométricos (el directorio no los trae). --- */
+    c.peopleIdx = null;                                                           // Map(cédula → nº de bloque), en memoria
+    const cidIds = new Map();                                                     // client_id → cédula de lo acreditado sin red en esta sesión (solo memoria)
+    const sealBlock = async (k, rows) => { const iv = randomIv(); const ct = await d.subtle.encrypt({ name: 'AES-GCM', iv }, await getKey(), new TextEncoder().encode(JSON.stringify(rows))); return { k, n: rows.length, enc: { iv, ct: new Uint8Array(ct) } }; };
+    const openBlock = async (rec) => { try { return JSON.parse(new TextDecoder().decode(await d.subtle.decrypt({ name: 'AES-GCM', iv: rec.enc.iv }, await getKey(), rec.enc.ct))); } catch (e) { return null; } };
+    const clean = (u) => { const o = {}; Object.keys(u).forEach((k) => { if (k.slice(0, 2) !== '__') o[k] = u[k]; }); return o; };          // sin marcas internas de la pantalla
+    c.peopleMeta = async () => { try { return c.db ? await c.db.get('meta', 'people') : null; } catch (e) { return null; } };
+    /* Reemplaza la copia completa (carga inicial o recarga del directorio). Devuelve cuántas personas guardó (0 = no se pudo / sin soporte). */
+    c.peopleSave = async (users) => {
+      if (!c.supported || !c.db || !Array.isArray(users)) return 0;
+      try {
+        const blocks = [], idx = new Map();
+        for (let i = 0, k = 0; i < users.length; i += PEOPLE_CHUNK, k++) { const rows = users.slice(i, i + PEOPLE_CHUNK).map(clean); rows.forEach((u) => idx.set(String(u.id), k)); blocks.push(await sealBlock(k, rows)); }
+        await c.db.clear(['people']);
+        await c.db.putMany('people', blocks);
+        await c.db.put('meta', { k: 'people', n: users.length, blocks: blocks.length, saved_at: d.now(), event_id: d.eventId });
+        c.peopleIdx = idx;
+        return users.length;
+      } catch (e) { return 0; }
+    };
+    const loadIdx = async () => {
+      if (c.peopleIdx) return c.peopleIdx;
+      const idx = new Map();
+      for (const rec of await c.db.getAll('people')) { const rows = await openBlock(rec); if (rows) rows.forEach((u) => idx.set(String(u.id), rec.k)); }
+      c.peopleIdx = idx; return idx;
+    };
+    /* Aplica cambios (filas completas nuevas o cambiadas) sobre la copia: solo se reescriben los bloques tocados. Sin copia previa no hace nada (la crea la próxima carga completa). */
+    c.peoplePatch = async (users) => {
+      if (!c.supported || !c.db || !Array.isArray(users) || !users.length) return 0;
+      try {
+        const meta = await c.peopleMeta(); if (!meta) return 0;
+        const idx = await loadIdx(), byBlock = new Map(); let last = Math.max(0, meta.blocks - 1), added = 0;
+        const blockOf = async (k) => { if (!byBlock.has(k)) { const rec = await c.db.get('people', k); byBlock.set(k, (rec && await openBlock(rec)) || []); } return byBlock.get(k); };
+        for (const u of users) {
+          const id = String(u.id), row = clean(u);
+          if (idx.has(id)) { const rows = await blockOf(idx.get(id)), i = rows.findIndex((x) => String(x.id) === id); if (i >= 0) rows[i] = row; else rows.push(row); continue; }
+          let rows = await blockOf(last);
+          if (rows.length >= PEOPLE_CHUNK * 1.5) { last += 1; rows = await blockOf(last); }
+          rows.push(row); idx.set(id, last); added++;
+        }
+        const out = []; for (const [k, rows] of byBlock) out.push(await sealBlock(k, rows));
+        await c.db.putMany('people', out);
+        await c.db.put('meta', { ...meta, n: meta.n + added, blocks: Math.max(meta.blocks, last + 1), saved_at: d.now() });
+        return users.length;
+      } catch (e) { return 0; }
+    };
+    /* Cambia campos de UNA persona de la copia (acreditar, deshacer o editar sin red). `patch` puede traer `extra_fields` (se mezclan). Devuelve la fila resultante o null. */
+    c.peopleApply = async (id, patch) => {
+      if (!c.supported || !c.db || id == null || id === '') return null;
+      try {
+        const idx = await loadIdx(), k = idx.get(String(id)); if (k === undefined) return null;
+        const rec = await c.db.get('people', k), rows = (rec && await openBlock(rec)) || [], i = rows.findIndex((x) => String(x.id) === String(id)); if (i < 0) return null;
+        rows[i] = { ...rows[i], ...patch, ...(patch && patch.extra_fields ? { extra_fields: { ...(rows[i].extra_fields || {}), ...patch.extra_fields } } : {}) };
+        await c.db.put('people', await sealBlock(k, rows));
+        return rows[i];
+      } catch (e) { return null; }
+    };
+    /* Todas las personas de la copia completa, o null si no hay copia vigente de ESTE evento (vale mientras valga la lista local). */
+    c.peopleLoad = async () => {
+      if (!c.supported || !c.db) return null;
+      try {
+        const meta = await c.peopleMeta();
+        if (!meta || String(meta.event_id) !== String(d.eventId) || !(await c.rosterUsable())) return null;
+        const out = [], idx = new Map();
+        for (const rec of (await c.db.getAll('people')).sort((a, b) => a.k - b.k)) { const rows = await openBlock(rec); if (!rows) return null; rows.forEach((u) => { idx.set(String(u.id), rec.k); out.push(u); }); }          // un bloque ilegible: la copia no sirve (se usa la lista mínima)
+        c.peopleIdx = idx;
+        return out;
+      } catch (e) { return null; }
+    };
+
     /* --- registro sin red --- */
     c.queueList = async () => (c.db ? listSealed('queue') : []);
     /* «Deshacer» de una acreditación hecha SIN red que todavía no se sincronizó: se quita de la cola. Devuelve true si estaba. */
@@ -247,6 +322,8 @@
       await c.db.del('queue', clientId);
       const person = (await c.db.getAll('roster')).find((p) => p.h === q.h);
       if (person && q.prev && person.s === 'Registrado' && q.prev !== 'Registrado') await c.db.put('roster', { ...person, s: q.prev });          // la copia local vuelve a como estaba
+      const pid = cidIds.get(clientId); cidIds.delete(clientId);
+      if (pid && q.prev && q.prev !== 'Registrado') await c.peopleApply(pid, { status: q.prev });
       await c.recount();
       return true;
     };
@@ -286,6 +363,7 @@
       if (timing && Number.isFinite(timing.took_ms)) { rec.took_ms = timing.took_ms; rec.ui_flow = String(timing.ui_flow || 'v0'); }          // 1A: tiempo medido (solo una duración y una etiqueta); se envía al sincronizar          // `prev`: estado que tenía en la copia local (para «Deshacer»)
       await putSealed('queue', rec);
       await c.db.put('roster', { ...found.person, s: 'Registrado' });
+      if (found.cedula) { cidIds.set(rec.client_id, String(found.cedula)); await c.peopleApply(found.cedula, { status: 'Registrado' }); }          // la cola NUNCA guarda la cédula: el vínculo vive solo en memoria (para «Deshacer»)
       await recount();
       return rec;
     };

@@ -8,6 +8,12 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-25 — Registro completo sin conexión, pieza 1 (rama `feat/contingencia-completa`, sin desplegar)
+
+- Sin red, la lista de Registro muestra a las personas con **todos sus datos** (cédula, entidad, teléfono, correo, opcionales) y se puede buscar por cédula parcial y por entidad.
+- «Editar persona» sin red muestra los valores guardados; lo que se cambia queda en el dispositivo y se envía solo al volver la red (solo viaja lo cambiado).
+- La copia son las mismas filas que ya bajaba el directorio (ninguna petición nueva), cifrada en reposo. Sin migración. Detalle y piezas que faltan: `docs/28_CONTINGENCIA_COMPLETA.md`.
+
 ## 2026-11-24 (tarde) — Escáner de cédula: recorte automático (rama `feat/cedula-recorte-auto`, sin desplegar)
 
 - La foto de la cédula ya no depende de encuadrar exacto: la cédula nueva se ubica en toda la foto (`CedulaReaders.mrzFind`), se endereza y se lee solo la zona de las 3 líneas;
