@@ -15,14 +15,15 @@ const BUILD = '__BUILD__';
 const CACHE_PREFIX = 'golden-kiosk-shell-';
 const CACHE = CACHE_PREFIX + BUILD;
 const NETWORK_TIMEOUT_MS = 4000;
-const KIOSK_PAGE = /^\/kiosk\/\d+\/(registro|rostro|areas|inventario)\/?$/;       // el registro y la pantalla de la puerta (autoservicio «Entrar con mi rostro»)
+const KIOSK_PAGE = /^\/kiosk\/\d+\/(registro|rostro)\/?$/;       // el registro y la pantalla de la puerta (autoservicio «Entrar con mi rostro»)
+const KIOSK_MORE = /^\/kiosk\/\d+\/(areas|inventario)\/?$/;          // Control de áreas e inventario sin red (docs/28)
 
 /* Clave de caché: la página sin `?…` y sin «/» final; los estáticos con su `?v=` (y, sin red, cualquier versión sirve). */
 function keyOf(rawUrl, isPage) {
   const u = new URL(rawUrl, self.location.href);
   return isPage ? u.origin + u.pathname.replace(/\/$/, '') : u.origin + u.pathname + u.search;
 }
-function isOurPage(url) { return url.origin === self.location.origin && KIOSK_PAGE.test(url.pathname); }
+function isOurPage(url) { return url.origin === self.location.origin && (KIOSK_PAGE.test(url.pathname) || KIOSK_MORE.test(url.pathname)); }
 
 /* Copia guardable de una respuesta: sin `Vary` (si no, `match` depende de cabeceras de la petición que cambian según el navegador/CDN, y `Vary: *` ni siquiera se puede guardar) y sin las
    cabeceras de codificación (el cuerpo ya viene descomprimido) ni cookies. */
@@ -223,7 +224,7 @@ self.addEventListener('fetch', (event) => {
   const off = offlineRoute(event, req, url);
   if (off) { event.respondWith(off); return; }
   const isStatic = url.pathname.startsWith('/static/');
-  const isPage = req.mode === 'navigate' && KIOSK_PAGE.test(url.pathname);
+  const isPage = req.mode === 'navigate' && (KIOSK_PAGE.test(url.pathname) || KIOSK_MORE.test(url.pathname));
   if (!isStatic && !isPage) return;                    // API, roster, salud, sesión, otras páginas: nunca por el worker
   event.respondWith(networkFirst(event, req, isPage));
 });

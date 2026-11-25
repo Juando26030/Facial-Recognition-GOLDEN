@@ -396,7 +396,7 @@
 
   async function logPrint(userId) {
     try {
-      await (window.gwFetch || fetch)(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${window.EVENT_ID}`, { method: 'POST' }, 'Impresión de escarapela');          // sin red se anota y se envía al volver la conexión
+      await fetch(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${window.EVENT_ID}`, { method: 'POST' });
     } catch (e) { /* no bloquea la impresión si falla el registro del log */ }
   }
 

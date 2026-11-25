@@ -69,7 +69,7 @@ def test_back_to_not_registered_works_even_if_a_required_field_is_empty_and_undo
 
 def test_the_edit_modal_saves_the_data_first_and_then_the_status():
     js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
-    i_data, i_status = js.index("const res = dataChanged ? await fetch(withEvent(`/api/users/${currentId}`)"), js.index("if (res.ok && !(await applyStatus())) return;")
+    i_data, i_status = js.index("const res = dataChanged ? await xfetch(withEvent(`/api/users/${currentId}`)")          # xfetch: fetch con red; sin red, a la bandeja de salida (docs/28), js.index("if (res.ok && !(await applyStatus())) return;")
     assert i_data < i_status                                                                       # el estado ya no cambia si los datos no se pudieron guardar
 
 

@@ -530,6 +530,7 @@
   /* Orden del 22-oct-2026: SOLO se imprime a quien está «Registrado» en este evento (botón, autoimpresión, Cola; local o compartida). El servidor también lo
      valida al crear el trabajo compartido. Si no se puede comprobar, NO se imprime. */
   async function registeredOrSay(userId) {
+    if (offline()) return true;          // sin red (docs/28) no hay a quién preguntar: la regla la aplica el service worker, que solo arma la escarapela de quien está Registrado en la copia del dispositivo
     for (let i = 0; i < 2; i++) {
       try {
         const r = await fetch(`/api/events/${EID}/print-check/${encodeURIComponent(userId)}`, { cache: 'no-store' });
@@ -560,7 +561,7 @@
   }
   async function dispatch(userId, auto, confirmed, ticket) {         // true = salió (o quedó en manos del servidor); false = no salió
     if (!auto && original.beginManual && !original.beginManual(userId)) return false;       // doble clic / doble toque en «Imprimir»: una sola
-    if (SHARED && !offline() && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
+    if (SHARED && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
     let explicit = !!confirmed;                    // reimpresión EXPLÍCITA: desde la Cola o tras confirmar «¿imprimir de nuevo?»
     if (SHARED && !offline() && route.mode === 'shared') {
       if (!auto && !confirmed) {                    // el botón manual conserva el aviso de reimpresión de siempre

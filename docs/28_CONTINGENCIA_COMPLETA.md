@@ -37,7 +37,7 @@ con `If-None-Match` responde 304. Único cambio en una ruta existente: `POST …
   red el servidor acepta el primero y el otro queda en la Bandeja con el motivo. Para un evento entero sin internet la herramienta es el servidor local (docs/17).
 - **Lo biométrico no funciona sin red** (reconocimiento, captar rostro, foto en la escarapela): necesita al servidor.
 - **Impresión compartida** (mandar a la impresora de otro equipo) necesita al servidor: sin red cada equipo imprime en su propia impresora.
-- **Reimpresión controlada**: sin red no hay con quién comprobar el conteo; se imprime y la impresión queda anotada.
+- **Reimpresión controlada**: sin red no hay con quién comprobar el conteo; se imprime igual. Si sale por USB queda anotada; si sale por la ventana de impresión, la anotación de esa impresión se pierde (`badge-render.js` es un archivo congelado de la Fase 1.5 y no se tocó).
 - **QR «enlace» de la escarapela** (tarjeta pública): sin red no hay enlace; sale el resto de la escarapela.
 - **Máximo de entradas por persona** en una zona y los topes por persona del inventario los revisa el servidor al recibir (si no cumple, queda en la Bandeja).
 - Las horas de las entregas de inventario y de las ediciones quedan con la hora de envío; la de ingresos y movimientos de zona, con la hora real.
