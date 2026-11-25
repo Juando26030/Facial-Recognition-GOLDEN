@@ -561,7 +561,7 @@
         GoldenOutbox.init({ eventId: window.EVENT_ID }).then((box) => {
             if (!box.supported || !window.GoldenOutboxUI) return;
             const ui = GoldenOutboxUI.mount({ outbox: box });
-            GoldenContingency.instance.onChange((st) => { if (st === 'normal') ui.sync(false); });
+            GoldenContingency.instance.onChange((st) => { if (st === 'normal') { const gc = GoldenContingency.instance; Promise.resolve(gc.syncQueue ? gc.syncQueue(true) : null).catch(() => {}).then(() => ui.sync(false)); } });          // primero los ingresos (por huella), después la bandeja (puede traer cambios de cédula)
             ui.tick();
         });
     }

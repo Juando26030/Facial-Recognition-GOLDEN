@@ -149,6 +149,15 @@
   const cancelPrimedPrint = () => { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); };
   /* Veredicto grande (static/js/registro-veredicto.js, Fase 1.7): solo muestra el resultado con ícono y palabras; los avisos de siempre (toasts) y el flujo no cambian. Sin la banda, no hace nada. */
   const verdict = (kind, title, text) => { try { if (typeof window !== 'undefined' && window.GWVerdict) window.GWVerdict.show(kind, title, text); } catch (e) { /* sin banda: nada */ } };
+  /* Registro completo sin conexión (docs/28): con la copia completa y la bandeja de salida, Editar/Eliminar funcionan igual que con red; cada cambio se guarda en el dispositivo
+     (gwFetch, outbox.js) y se repite contra el servidor al volver la conexión. */
+  const GCnow = () => window.GoldenContingency && window.GoldenContingency.instance;
+  const offNow = () => { const g = GCnow(); return !!(g && g.active()); };
+  const canWorkOffline = (user) => { const b = window.GoldenOutbox && window.GoldenOutbox.instance; return !!(b && b.supported && window.gwFetch && user && user.id && (!user.__local || user.__full)); };
+  const xfetch = (url, opts, label, fake) => (window.gwFetch ? window.gwFetch(url, opts, label, fake) : fetch(url, opts));
+  const whoOf = (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'persona';
+  let allUsersRef = () => [];          // la lista en pantalla (la fija mountSearch)
+  const offlinePrintHooks = [];          // (cédula) tras registrar sin red: quien sepa imprimir sin conexión se engancha aquí
   const offlineEditHooks = [];          // (cédula, fila nueva) tras editar sin red sobre la copia completa: la tabla se repinta
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
@@ -308,14 +317,16 @@
   /* Eliminar a una persona del evento (con confirmación; la usan «Editar persona» y el menú «Más» de la fila). done() corre solo si se eliminó. */
   async function deletePerson(user, done) {
     const GCd = window.GoldenContingency && window.GoldenContingency.instance;
-    if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
+    const off = !!(GCd && GCd.active());
+    if (off && !canWorkOffline(user)) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
     const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
     const ok = await showConfirm(`Atención: se elimina a ${window.escapeHtml(fullName || 'esta persona')} del registro de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
     if (!ok) return;
     try {
-      const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
+      const res = await xfetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' }, `Eliminar: ${whoOf(user)}`);
       if (res.ok) {
-        showToast('Persona eliminada', 'success');
+        if (res.queued && GCd.peopleRemove) await GCd.peopleRemove(user.id);
+        showToast(res.queued ? 'Persona eliminada en este dispositivo: se envía al volver la red' : 'Persona eliminada', 'success');
         if (done) done();
         if (window.directorySearch) window.directorySearch.reload();
       } else {
@@ -327,7 +338,7 @@
 
   function buildEditModal(user, opts) {
     const GCm = window.GoldenContingency && window.GoldenContingency.instance;
-    if (GCm && GCm.active()) return buildOfflinePersonEditModal(user, GCm) || buildOfflineEditModal(user, GCm);          // sin red: con el formulario de persona se edita y se encola; si no, modal limitado (solo estado de registro)
+    if (GCm && GCm.active() && !canWorkOffline(user)) return buildOfflinePersonEditModal(user, GCm) || buildOfflineEditModal(user, GCm);          // sin red y sin copia completa: modales limitados de antes. Con copia completa: el modal de siempre (docs/28)          // sin red: con el formulario de persona se edita y se encola; si no, modal limitado (solo estado de registro)
     opts = opts || {};       // { method: 'biometrico' (el ingreso viene de una verificación facial), onSaved(id) }
     // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
     // con el tipo de control/obligatoriedad/opciones que se haya definido en
@@ -553,7 +564,9 @@
 
     const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
-      if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
+      const off = !!(GCs && GCs.active());
+      if (off && !canWorkOffline(user)) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto y sin copia completa: aviso claro, no «Error de red»
+      const who = whoOf(user); let localStatus = null;
       const form = box.querySelector('#editModalForm');
       if (pfCtl) pfCtl.applyAll();          // «Texto al escribir» también en lo que se llenó por lector o por foto de la cédula
       const dataChanged = snapshot() !== initialData || (opts && opts.missing && opts.missing.length);
@@ -581,15 +594,17 @@
         if (!ok) return;
         saveBtn.disabled = true;
         try {
-          const cedulaRes = await fetch(withEvent(`/api/users/${user.id}/cedula`), {
+          if (off && allUsersRef().some((x) => x.id === newId)) { showToast('Esa cédula ya la tiene otra persona de este evento', 'error'); saveBtn.disabled = false; return; }
+          const cedulaRes = await xfetch(withEvent(`/api/users/${user.id}/cedula`), {
             method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_id: newId }),
-          });
+          }, `Cambio de cédula: ${who}`);
           if (!cedulaRes.ok) {
             const data = await cedulaRes.json().catch(() => ({}));
             showToast(data.detail || 'No se pudo cambiar la cédula', 'error');
             saveBtn.disabled = false;
             return;
           }
+          if (cedulaRes.queued && GCs.peopleRemove) await GCs.peopleRemove(user.id, newId);
           currentId = newId;
         } catch (e) {
           showToast('Error de red', 'error');
@@ -603,6 +618,26 @@
       // "Aplicar" aparte, ahora se aplica junto con el resto de campos en un solo Guardar). Solo
       // se llama al endpoint si el valor del select realmente cambió — evitar un PATCH de estado
       // sin sentido en cada guardado normal del perfil.
+      /* Estado SIN red: «Registrado» va por la cola de ingresos de siempre (guarda la hora real); si la cédula se acaba de cambiar o la persona no está en la lista mínima, va como
+         petición guardada. «No registrado»: si el ingreso aún está en este dispositivo se retira de la cola; si no, petición guardada. */
+      async function offlineStatus(newStatus) {
+        const url = `/api/events/${window.EVENT_ID}/users/${currentId}/status`;
+        const send = (st) => xfetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st, method: opts.method }) }, `${st === 'registrado' ? 'Registrar' : 'Quitar registro'}: ${who}`);
+        if (newStatus === 'registrado') {
+          const f = currentId === user.id ? await GCs.scanLocal(user.id) : { status: 'not_found' };
+          if (f.status === 'found') { if (!f.queued) await GCs.enqueue(f, 'manual', undefined, window.RegTimer ? RegTimer.payload() : null); }
+          else await send('registrado');
+          if (window.RegTimer) RegTimer.done();
+          localStatus = 'Registrado';
+          offlinePrintHooks.forEach((f) => f(currentId));          // impresión sin red (docs/28, pieza 3)
+          return true;
+        }
+        const f = currentId === user.id ? await GCs.scanLocal(user.id) : { status: 'not_found' };
+        const q = f.status === 'found' && f.queued ? (await GCs.queueList()).find((r) => r.h === f.person.h) : null;
+        if (q) await GCs.unqueue(q.client_id); else await send('no_registrado');
+        localStatus = 'No registrado';
+        return true;
+      }
       async function applyStatus() {                // devuelve false si no se pudo (ya avisó)
       if (canManageStatus) {
         const statusSelect = box.querySelector('#editModalStatus');
@@ -615,6 +650,7 @@
           if (!ok) return false;
           saveBtn.disabled = true;
           try {
+            if (off) { if (!(await offlineStatus(newStatus))) { saveBtn.disabled = false; return false; } return true; }
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
               method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: newStatus, method: opts.method }, newStatus === 'registrado' && window.RegTimer ? RegTimer.payload() : null)),
             });
@@ -663,9 +699,9 @@
 
       saveBtn.disabled = true;
       try {
-        const res = dataChanged ? await fetch(withEvent(`/api/users/${currentId}`), {
+        const res = dataChanged ? await xfetch(withEvent(`/api/users/${currentId}`), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-        }) : { ok: true, clone: () => ({ json: async () => ({}) }) };          // solo cambió el estado: no se reenvían los datos (no los bloquea un obligatorio vacío)
+        }, `Edición: ${who}`) : { ok: true, clone: () => ({ json: async () => ({}) }) };          // solo cambió el estado: no se reenvían los datos (no los bloquea un obligatorio vacío)
         if (res.ok && !(await applyStatus())) return;                    // los datos quedaron guardados; el estado se aplica DESPUÉS (con su propio aviso si no se pudo)
         if (res.ok) {
           try {
@@ -676,7 +712,8 @@
           catch (e) { showToast(e.message, 'error'); }
           // Digitador (sin selector de estado): guardar la edición de alguien que aún no llegó lo deja
           // "Registrado", igual que el valor por defecto que ven coordinador+.
-          if (!canManageStatus && !isRegistered) {
+          if (!canManageStatus && !isRegistered && off) await offlineStatus('registrado');
+          else if (!canManageStatus && !isRegistered) {
             try {
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
@@ -685,7 +722,13 @@
               else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
-          showToast('Cambios guardados', 'success');
+          if (off && GCs.peopleApply) {                                   // la copia del dispositivo queda igual a lo que se guardó (la lista sin red sale de ahí)
+            const { send_digital_now: _s, ...patch } = payload;
+            if (!dataChanged) Object.keys(patch).forEach((k) => delete patch[k]);
+            if (localStatus) patch.status = localStatus;
+            await GCs.peopleApply(currentId, patch);
+          }
+          showToast(off ? 'Cambios guardados en este dispositivo: se envían solos al volver la red' : 'Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();
           Recent.add(currentId);
@@ -1528,7 +1571,7 @@
     /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. Igual que en línea, escanear/escribir una cédula exacta SOLO acredita de inmediato si el «Modo
        autoregistro» está encendido (el valor viaja con la copia local y se guarda en IndexedDB: vale tras recargar sin red); con el modo apagado SOLO busca y resalta a la persona, con un
        botón «Acreditar» en su fila (como FOUND_PENDING). */
-    offlineEditHooks.length = 0;
+    offlineEditHooks.length = 0; allUsersRef = () => allUsers;
     offlineEditHooks.push((id, row) => { const i = allUsers.findIndex((x) => x.id === id); if (i >= 0) { allUsers[i] = { ...row, __local: true, __full: true }; applyFilters(); } });
     accreditHooks.push((found) => {
       const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));

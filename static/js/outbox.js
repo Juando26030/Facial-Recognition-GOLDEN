@@ -96,6 +96,37 @@
       return { op_id: rec.op_id };
     };
 
+    /* PETICIONES GUARDADAS (25-nov-2026, registro completo sin conexión, docs/28): lo que la pantalla le habría pedido al servidor (editar, cambiar cédula, estado, firmas, inventario…)
+       se guarda tal cual (método, ruta y cuerpo), cifrado como todo lo demás, y al volver la red se REPITE en el mismo orden contra las mismas rutas de siempre: el servidor aplica
+       exactamente sus reglas de en línea y no hay rutas nuevas ni carga extra. `opts` es lo que se le pasaría a fetch (body: texto JSON o FormData; los archivos van en base64). */
+    const b64 = (buf) => { const u = new Uint8Array(buf); let t = ''; for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(t); };
+    const unb64 = (t) => { const bin = atob(t), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+    o.enqueueHttp = async (url, opts, label) => {
+      const spec = { method: String((opts && opts.method) || 'GET').toUpperCase(), url: String(url) };
+      const body = opts && opts.body;
+      if (typeof body === 'string') spec.json = body;
+      else if (body && typeof body.entries === 'function') {
+        spec.form = [];
+        for (const [k, v] of body.entries()) spec.form.push(typeof v === 'string' ? [k, v] : [k, { b64: b64(await v.arrayBuffer()), type: v.type || 'application/octet-stream', name: v.name || 'archivo' }]);
+      }
+      return o.enqueue(spec, label, { type: 'http' });
+    };
+    const sendHttp = async (rec, summary) => {
+      const { fields: spec, label } = await dec(rec.blob);
+      const init = { method: spec.method, headers: { 'X-Op-Id': rec.op_id } };
+      if (spec.json != null) { init.headers['Content-Type'] = 'application/json'; init.body = spec.json; }
+      else if (spec.form) { const fd = new FormData(); spec.form.forEach(([k, v]) => { if (typeof v === 'string') fd.append(k, v); else fd.append(k, new Blob([unb64(v.b64)], { type: v.type }), v.name); }); init.body = fd; }
+      let res;
+      try { res = await d.fetch(spec.url, init); } catch (e) { summary.stopped = 'red'; return; }
+      if (res.status === 401) { summary.stopped = 'sesion'; return; }
+      if (res.status >= 500 || res.status === 429) { summary.stopped = 'servidor'; return; }
+      summary.sent++;
+      if (res.ok) { await o.db.put('ops', { ...rec, status: 'ok', result: null, expires_at: d.now() + OK_KEEP_MS, blob: await enc({ fields: null, label }) }); summary.ok++; return; }
+      let detail = '';
+      try { const data = await res.json(); detail = data && data.detail && typeof data.detail === 'object' ? (data.detail.message || '') : ((data && data.detail) || ''); } catch (e) { /* sin detalle */ }
+      await o.db.put('ops', { ...rec, status: 'error', result: String(detail || `El servidor no aceptó el cambio (${res.status})`), attempts: rec.attempts + 1 }); summary.error++;
+    };
+
     /* Lista descifrada para la pantalla de la bandeja (nunca incluye la cédula: solo el nombre para mostrar y el resultado). */
     o.list = async () => {
       if (!o.supported) return [];
@@ -126,9 +157,11 @@
     o.sync = async ({ force = false } = {}) => {
       if (!o.supported) return { sent: 0 };
       const now = d.now(), summary = { sent: 0, ok: 0, revision: 0, duplicado: 0, error: 0, stopped: null };
-      const recs = (await o.db.getAll('ops')).filter((r) => r.status === 'pendiente' && (force || now <= r.expires_at));
-      for (let i = 0; i < recs.length; i += BATCH) {
-        const chunk = recs.slice(i, i + BATCH), ops = [];
+      const recs = (await o.db.getAll('ops')).filter((r) => r.status === 'pendiente' && (force || now <= r.expires_at)).sort((a, b) => a.created_at - b.created_at);          // en el orden en que se hicieron
+      for (let i = 0; i < recs.length && !summary.stopped;) {
+        if (recs[i].type === 'http') { await sendHttp(recs[i], summary); if (!summary.stopped) i++; continue; }
+        const chunk = [], ops = [];
+        while (i < recs.length && recs[i].type !== 'http' && chunk.length < BATCH) chunk.push(recs[i++]);
         for (const rec of chunk) { const { fields } = await dec(rec.blob); ops.push({ op_id: rec.op_id, type: rec.type, timestamp: new Date(rec.created_at).toISOString(), fields, ...(rec.form_version != null ? { form_version: rec.form_version, ...(rec.form_sig ? { form_sig: rec.form_sig } : {}) } : {}) }); }
         let res;
         try { res = await d.fetch(`/api/events/${d.eventId}/outbox/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops }) }); } catch (e) { summary.stopped = 'red'; break; }
@@ -174,6 +207,19 @@
     o.stop = () => { if (o.db) { o.db.close(); o.db = null; } };
     return o;
   }
+
+  /* gwFetch (docs/28): un `fetch` que SIN RED guarda la petición en la bandeja de salida y responde «aceptado» (202) para que la pantalla siga igual que con conexión; con red es el fetch de
+     siempre. Solo para cambios (nunca GET). `fake` = lo que la pantalla leería de la respuesta. Sin bandeja disponible, falla como un fetch sin red. */
+  function offlineNow() { const gc = root.GoldenContingency && root.GoldenContingency.instance; return !!(gc && gc.active && gc.active()); }
+  function fakeResponse(data) { const r = { ok: true, status: 202, queued: true, headers: { get: () => null }, json: async () => data || {}, text: async () => JSON.stringify(data || {}), clone: () => r }; return r; }
+  async function gwFetch(url, opts, label, fake) {
+    const box = root.GoldenOutbox && root.GoldenOutbox.instance;
+    const method = String((opts && opts.method) || 'GET').toUpperCase();
+    if (method === 'GET' || !offlineNow() || !box || !box.supported) return root.fetch(url, opts);
+    await box.enqueueHttp(url, opts, label || 'Cambio hecho sin conexión');
+    return fakeResponse(fake);
+  }
+  if (typeof window !== 'undefined') { root.gwFetch = gwFetch; root.gwOffline = offlineNow; }
 
   const api = { create, effectiveStatus, levelOf, bannerText, statusLabel, TTL_DAYS, WARN_DAY, URGENT_DAY };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

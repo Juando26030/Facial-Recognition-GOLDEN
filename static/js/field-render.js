@@ -143,9 +143,10 @@
       if (!wrap._dirty) continue;
       const key = wrap.dataset.sigKey;
       const empty = !wrap.querySelector('input[type="hidden"]').value;
+      const send = window.gwFetch || ((u, o) => fetch(u, o));          // sin red la firma se guarda cifrada en el dispositivo y se envía al volver la conexión (outbox.js)
       const res = empty
-        ? await fetch(base + key, { method: 'DELETE' })
-        : await fetch(base + key, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: wrap.querySelector('canvas').toDataURL('image/png') }) });
+        ? await send(base + key, { method: 'DELETE' }, 'Borrar firma')
+        : await send(base + key, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: wrap.querySelector('canvas').toDataURL('image/png') }) }, 'Firma');
       if (!res.ok) throw new Error('No se pudo guardar la firma');
       wrap._dirty = false;
     }

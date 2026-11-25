@@ -299,6 +299,18 @@
         return rows[i];
       } catch (e) { return null; }
     };
+    /* Quita a una persona de la copia (eliminada sin red) o le cambia la cédula (corrección sin red). */
+    c.peopleRemove = async (id, newId) => {
+      if (!c.supported || !c.db || id == null || id === '') return false;
+      try {
+        const idx = await loadIdx(), k = idx.get(String(id)); if (k === undefined) return false;
+        const rec = await c.db.get('people', k), rows = (rec && await openBlock(rec)) || [], i = rows.findIndex((x) => String(x.id) === String(id)); if (i < 0) return false;
+        if (newId) { rows[i] = { ...rows[i], id: String(newId) }; idx.set(String(newId), k); } else { rows.splice(i, 1); const meta = await c.peopleMeta(); if (meta) await c.db.put('meta', { ...meta, n: Math.max(0, meta.n - 1) }); }
+        idx.delete(String(id));
+        await c.db.put('people', await sealBlock(k, rows));
+        return true;
+      } catch (e) { return false; }
+    };
     /* Todas las personas de la copia completa, o null si no hay copia vigente de ESTE evento (vale mientras valga la lista local). */
     c.peopleLoad = async () => {
       if (!c.supported || !c.db) return null;

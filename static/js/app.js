@@ -563,8 +563,6 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         async function queueOffline(formData, box) {
-            const needsSignature = (window.FIELD_CONFIGS || []).filter((c) => c.required && (c.field_type === 'signature' || c.field_type === 'consent'));
-            if (needsSignature.length) { showToast(`Este evento exige ${needsSignature.map((c) => c.label || c.key).join(', ')}: no se puede registrar sin conexión. Espera a que vuelva la red.`, 'error'); return; }
             const f = {};
             for (const key of ['id', 'first_name', 'last_name', 'role', 'entity', 'phone', 'email', 'opt_1', 'certificate', 'digital_contact']) { const v = formData.get(key); if (v != null && String(v).trim() !== '') f[key] = String(v).trim(); }
             for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
@@ -577,6 +575,19 @@ document.addEventListener("DOMContentLoaded", () => {
             const tm = window.RegTimer ? RegTimer.payload() : null;          // 1A: el tiempo viaja en la bandeja y se envía al sincronizar
             if (tm) { f.took_ms = tm.took_ms; f.ui_flow = tm.ui_flow; }
             try { await box.enqueue(f, `${f.first_name} ${f.last_name || ''}`.trim(), pf ? { form_version: pf.form_version, form_sig: pf.form_sig } : undefined); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
+            /* Registro completo sin conexión (docs/28): lo que el alta de la bandeja no lleva (fecha de nacimiento, código y firmas) se guarda como peticiones que se repiten DESPUÉS del alta,
+               en orden, contra las rutas de siempre. La persona nueva entra a la copia del dispositivo para que aparezca en la lista sin red. */
+            try {
+                const more = {};
+                const birth = formData.get('birth_date'), code = formData.get('code');
+                if (birth && String(birth).trim()) more.birth_date = String(birth).trim();
+                if (code && String(code).trim()) more.code = String(code).trim();
+                if (Object.keys(more).length && window.gwFetch) await window.gwFetch(`/api/users/${encodeURIComponent(f.id)}?event_id=${window.EVENT_ID}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(more) }, `Datos de: ${f.first_name}`);
+                if (window.FieldRender && window.FieldRender.saveSignatures) await window.FieldRender.saveSignatures(regForm, f.id);
+                const gc = window.GoldenContingency.instance;
+                if (gc.peoplePatch) await gc.peoplePatch([{ id: f.id, first_name: f.first_name, last_name: f.last_name || '', role: f.role || '', entity: f.entity || '', phone: f.phone || '', email: f.email || '', opt_1: f.opt_1 || '', status: 'Registrado', origin: 'manual', categories: f.categories || [], extra_fields: f.extra_fields || {}, certificate: !!f.certificate, digital_contact: f.digital_contact || '', birth_date: more.birth_date || '', ...(more.code ? { code: more.code } : {}) }]);
+                if (window.directorySearch) window.directorySearch.reload();
+            } catch (e) { /* lo principal (el alta) ya quedó guardado */ }
             if (window.RegTimer) RegTimer.done();
             showToast(`Guardado en este dispositivo${photo && photo.size ? ' (la foto no se guarda sin conexión: agrégala después)' : ''}. Se enviará solo al volver la red.`, 'success');
             regForm.reset();
