@@ -79,10 +79,12 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
   const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
   assert.ok(src.includes('takePhoto(') && src.includes('getPhotoCapabilities') && src.includes("imageOrientation: 'from-image'"), 'foto fija de alta resolución');
   assert.ok(src.includes('getTracks().forEach((t) => t.stop())'), 'libera la cámara');
-  assert.ok(!/\b(alert|confirm|prompt)\(/.test(src) && !/console\.(log|info)\(/.test(src) && !/localStorage|indexedDB/.test(src), 'sin diálogos nativos, sin registros ni almacenamiento de la foto');
+  assert.ok(!/\b(alert|confirm|prompt)\(/.test(src) && !/console\.(log|info)\(/.test(src) && !/indexedDB|sessionStorage/.test(src), 'sin diálogos nativos, sin registros ni almacenamiento de la foto');
+  // lo ÚNICO que se guarda en el navegador es una marca del EQUIPO («la vista previa va lenta a más de 1080p»), nunca la foto ni datos de la cédula
+  assert.deepStrictEqual((src.match(/localStorage\.\w+\([^)]*\)/g) || []).sort(), ["localStorage.getItem(SLOW_KEY)", "localStorage.setItem(SLOW_KEY, '1')"]);
   // el componente usa métodos de los lectores generados: si se regeneran con otro nombre, esto avisa
   const readers = fs.readFileSync(path.join(ROOT, 'static/js/cedula-readers.js'), 'utf8');
-  for (const m of ["async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {})", 'PLANS.photo = [', '_cropCandidate(src, c, flip, mult = 1', '_refineAngle(src, c) {', 'findCandidates(src, sw, sh) {', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown', 'function mrzFind(g, w, h)']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
+  for (const m of ["async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false, maxTries = 0, minTries = 0, cand = null } = {})", 'PLANS.photo = [', '_cropCandidate(src, c, flip, mult = 1', '_refineAngle(src, c) {', '_fineAngle(src, c) {', 'findCandidates(src, sw, sh) {', 'function fixChevrons(syms, g, w, h)', 'function mrzFind(g, w, h, maxSide = 1000)', 'async _read(gray, W, H, opts = {})', 'async scanImage(file) {', 'onUnknown', 'function mrzFind(g, w, h, maxSide = 1000)']) assert.ok(readers.includes(m), 'cedula-readers.js ya no tiene ' + m);
   // 24-nov-2026 (rapidez): carrera navegador/servidor de la cédula nueva → gana la PRIMERA lectura no vacía; si todas fallan, null
   {
     const api = require(path.join(ROOT, 'static/js/cedula-foto.js'));
@@ -92,12 +94,19 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
     assert.strictEqual(await api.firstFound([later(null, 1), Promise.reject(new Error('x'))]), null);
     assert.strictEqual(await api.firstFound([]), null);
     const src = fs.readFileSync(path.join(ROOT, 'static/js/cedula-foto.js'), 'utf8');
-    assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_FRAME_MS'), 'atajos de rapidez');
+    assert.ok(src.includes('HD_SHORT_SIDE') && src.includes('SERVER_HEAD_START_MS') && src.includes('OLD_FRAME_TRIES'), 'atajos de rapidez');
     // 24-nov-2026 (tarde): recorte automático → primero las 3 líneas donde estén (mrzFind), el recuadro queda de respaldo; al servidor va solo el recorte; segundo intento con foto fija
-    assert.ok(src.includes('R.mrzFind(') && src.indexOf('await readFound(0)') > 0 && src.indexOf('await readFound(0)') < src.indexOf('await readGuide(shots[0]'), 'recorte automático antes del recuadro');
+    assert.ok(src.includes('R.mrzFind(') && src.indexOf('await readFound(0, ') > 0 && src.indexOf('await readFound(0, ') < src.indexOf('await readGuide(shots[0]'), 'recorte automático antes del recuadro');
     assert.ok(src.includes('foundCanvas(found, SERVER_CROP_PAD)') && src.includes('takeStill(track, video, true)'), 'servidor con recorte y foto con más detalle');
     // 24-nov-2026 (noche): cédula vieja derecho/al revés alternados (plan 'photo'), cédula torcida (búsqueda girada 45°), chequeo previo y tope de tiempo
-    assert.ok(src.includes("'photo'") && src.includes('cropsOnly') && src.includes('x.rotate(Math.PI / 4)') && src.includes('NEW_DEADLINE_MS'), 'al revés, torcida y tope de tiempo');
+    assert.ok(src.includes("'photo'") && src.includes('cropsOnly') && src.includes('x.rotate(Math.PI / 4)'), 'al revés y torcida');
+    // 24-nov-2026 (Lenovo Tab M11: fallaban 9 de 10): topes por TRABAJO, no por reloj. Con relojes de 1–5 s una tableta económica no alcanzaba ni el primer intento.
+    assert.ok(!/NEW_DEADLINE_MS|OLD_FRAME_MS|OLD_STILL_MS/.test(src) && src.includes('maxTries:') && src.includes('NEW_ROUNDS_FIRST') && src.includes('SERVER_GRACE_MS'), 'topes por intentos');
+    assert.ok(/const still = \(\) => alive\(\) && !won;/.test(src), 'la carrera navegador/servidor no se corta por reloj');
+    assert.ok(src.indexOf("await decoder(R, 'new')") < src.indexOf('finds[0] = findMrz(R, shot)'), 'el OCR se espera antes de empezar');
+    // el botón se habilita con el lector cargado; la foto se congela SIN pausar el video (el iPad dejaba la cámara en negro tras un intento fallido)
+    assert.ok(src.includes('MSG.preparing') && src.includes('!stream || !ready') && src.includes('function freeze()') && src.includes('if (frozenImg) x.drawImage(frozenImg'), 'lector listo y congelado en el lienzo');
+    assert.strictEqual((src.match(/video\.pause\(\);/g) || []).length, 1, 'video.pause() solo al cerrar la cámara');
     assert.ok(src.includes("reads.reason = 'nolines'") && src.includes("reason: 'nocode'") && src.includes('if (ws && ws.low >= 3)'), 'chequeo previo: avisa de una vez');
     {
       // washedCells: 3 filas × 30 celdas de «letras»; una mancha clara (brillo) sobre 4 celdas → 4 lavadas y claras; sin mancha → 0; las celdas de los extremos no cuentan
@@ -115,6 +124,7 @@ assert.deepStrictEqual(F.stillOptions({ imageWidth: {}, imageHeight: {} }), {});
       // fluidez de la vista previa (tableta modesta): 1080p de entrada en equipos modestos; en los demás se MIDE y la siguiente apertura pide 1080p. Nunca se cambia en caliente
       // (recortaba la imagen: «zoom» que no se quitaba) ni se pide frameRate.
       assert.strictEqual(api.lowEnd({ hardwareConcurrency: 4, deviceMemory: 8 }), true); assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 2 }), true);
+      assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 4 }), true);   // Lenovo Tab M11 (Helio G88, 4 GB)
       assert.strictEqual(api.lowEnd({ hardwareConcurrency: 8, deviceMemory: 8 }), false); assert.strictEqual(api.lowEnd({}), false); assert.strictEqual(api.lowEnd(null), false);
       assert.strictEqual(api.slowPreview(10, 2160), true); assert.strictEqual(api.slowPreview(25, 2160), false); assert.strictEqual(api.slowPreview(5, 1080), false); assert.strictEqual(api.slowPreview(0, 2160), false);
       assert.ok(src.includes('requestVideoFrameCallback') && src.includes('(slowSeen || lowEnd(navigator)) ? SIZES.slice(2) : SIZES') && src.includes('OVERLAY_DPR_MAX') && !src.includes('frameRate'), 'vista previa liviana');

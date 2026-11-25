@@ -352,12 +352,13 @@ const PLANS = {
 /* «Tomar foto» del quiosco (24-nov-2026): la cédula puede venir AL REVÉS tan a menudo como al derecho, y el tiempo por foto es corto. En `deep` los intentos
    girados 180° llegan después de ~27 decodificaciones y con 1–2 s nunca se alcanzaban: aquí se alternan desde el principio (derecho, al revés, derecho…). */
 PLANS.photo = [
-  { mult: 1,   flip: false, variants: ['raw', 'sharp', 'stretch'] },             // 'sharp' va de segundo: es el que más rescata fotos de una pantalla o algo desenfocadas
-  { mult: 1,   flip: true,  variants: ['raw', 'sharp', 'stretch'] },
-  { mult: 1,   flip: false, variants: ['bandA', 'binar', 'bandAb', 'denoise'] },
-  { mult: 1,   flip: true,  variants: ['bandA', 'binar', 'bandAb', 'denoise'] },
-  { mult: 1,   flip: false, variants: ['dewarp', 'dewarpA', 'bandB', 'bandC'] },
-  { mult: 1,   flip: true,  variants: ['dewarp', 'dewarpA', 'bandB', 'bandC'] },
+  { mult: 1,   flip: false, variants: ['raw', 'sharp'] },                        // 'sharp' va de segundo: es el que más rescata fotos de una pantalla, de una cámara blanda o algo desenfocadas
+  { mult: 1,   flip: true,  variants: ['raw', 'sharp'] },                        // con 4 intentos ya se probó derecho y al revés (en una tableta lenta cada intento cuesta)
+  ...[.25, -.25].flatMap(rot => [false, true].map(flip => ({ mult: 1, flip, rot, variants: ['sharp'] }))),   // micro-giros: por si el ángulo fino quedó a 0,2–0,3° (perspectiva)
+  { mult: 1,   flip: false, variants: ['stretch', 'bandA', 'binar'] },
+  { mult: 1,   flip: true,  variants: ['stretch', 'bandA', 'binar'] },
+  { mult: 1,   flip: false, variants: ['bandAb', 'denoise', 'dewarp', 'dewarpA', 'bandB', 'bandC'] },
+  { mult: 1,   flip: true,  variants: ['bandAb', 'denoise', 'dewarp', 'dewarpA', 'bandB', 'bandC'] },
   { mult: .65, flip: false, variants: ['raw', 'sharp', 'binar'] },
   { mult: .65, flip: true,  variants: ['raw', 'sharp', 'binar'] },
   { mult: 1,   flip: false, variants: ['raw', 'stretch', 'bandA'], opts: 'gh' },
@@ -487,19 +488,59 @@ class CedulaScanner {
       const [y0, y1] = run(row, h, .45);
       if (x1 - x0 < w * .2 || y1 - y0 < 6 || (x1 - x0) / (y1 - y0 + 1) < 2 || (x1 - x0) / (y1 - y0 + 1) > 16) return { ...c, angle: t.angle };
       const ux = ((x0 + x1) / 2 - w / 2) * k, uy = ((y0 + y1) / 2 - h / 2) * ky, ca = Math.cos(t.angle), sa = Math.sin(t.angle);
-      return { ...c, cx: t.cx + ux * ca - uy * sa, cy: t.cy + ux * sa + uy * ca, angle: t.angle, L: (x1 - x0 + 1) * k * 1.1, W: (y1 - y0 + 1) * ky * 1.18, fitted: true };
+      return this._fineAngle(src, { ...c, cx: t.cx + ux * ca - uy * sa, cy: t.cy + ux * sa + uy * ca, angle: t.angle, L: (x1 - x0 + 1) * k * 1.1, W: (y1 - y0 + 1) * ky * 1.18, fitted: true });
     } catch (e) { return c; }
   }
+  /** Inclinación FINA (grados) medida en las barras gruesas de inicio y de fin del código (8 y 7 módulos de ancho, rectas de arriba abajo): en cada fila se ubica
+      la barra con precisión de subpíxel y se ajusta una recta. Hace falta porque este código tiene filas muy bajas: con cámaras blandas el decodificador solo acierta
+      si el recorte queda a ±0,15° (medido en el banco: el mismo recorte falla a 0° y lee a −0,3°). null si no se ven las barras. */
+  _barSkew(src, c) {
+    const im = this._cropCandidate(src, c, false, 1), w = im.width, h = im.height, g = toGray(im);
+    const ppm = (w / 1.1) / MODULES_EST, minRun = Math.max(3, ppm * 4.5), maxRun = ppm * 11, zone = Math.round(w * .16);
+    const side = fromLeft => {
+      const ys = [], xs = [], a = fromLeft ? 0 : w - zone, b = fromLeft ? zone : w;
+      for (let y = Math.round(h * .22); y < h * .78; y++) {
+        const o = y * w; let lo = 255, hi = 0; for (let x = a; x < b; x++) { const v = g[o + x]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        if (hi - lo < 50) continue;
+        const mid = (lo + hi) / 2; let run = 0, st = -1, p = -1, q = -1;
+        for (let i = 0; i < b - a; i++) { const x = fromLeft ? a + i : b - 1 - i;            // desde el borde de afuera hacia adentro: la primera barra GRUESA
+          if (g[o + x] < mid) { if (!run) st = x; run++; } else { if (run >= minRun && run <= maxRun) { p = Math.min(st, fromLeft ? x - 1 : x + 1); q = Math.max(st, fromLeft ? x - 1 : x + 1); break; } run = 0; } }
+        if (p < 1 || q > w - 2) continue;
+        const le = (p - 1) + (g[o + p - 1] - mid) / Math.max(1, g[o + p - 1] - g[o + p]), re = q + (mid - g[o + q]) / Math.max(1, g[o + q + 1] - g[o + q]);
+        ys.push(y); xs.push((le + re) / 2);
+      }
+      if (ys.length < Math.max(20, h * .2)) return null;
+      let keep = ys.map((_, i) => i), B = 0;
+      for (let pass = 0; pass < 3; pass++) {                                                // recta x = A + B·y; se descartan las filas que se salen y se repite
+        let n = keep.length, sy = 0, sx = 0, syy = 0, sxy = 0; for (const i of keep) { sy += ys[i]; sx += xs[i]; syy += ys[i] * ys[i]; sxy += ys[i] * xs[i]; }
+        const den = n * syy - sy * sy; if (!den) return null; B = (n * sxy - sy * sx) / den; const A = (sx - B * sy) / n;
+        const res = keep.map(i => Math.abs(xs[i] - A - B * ys[i])), srt = res.slice().sort((u, v) => u - v), tol = Math.max(.6, srt[Math.floor(srt.length * .7)] * 2), nk = keep.filter((i, j) => res[j] <= tol);
+        if (nk.length < 20 || nk.length === keep.length) break; keep = nk;
+      }
+      return { slope: B, n: keep.length };
+    };
+    const L = side(true), R = side(false); if (!L && !R) return null;
+    const sl = L && R ? (Math.abs(L.slope - R.slope) < .012 ? (L.slope * L.n + R.slope * R.n) / (L.n + R.n) : (L.n >= R.n ? L.slope : R.slope)) : (L || R).slope;
+    return Math.atan(sl) * 180 / Math.PI;
+  }
+  _fineAngle(src, c) {
+    try {
+      const d0 = this._barSkew(src, c); if (d0 === null || Math.abs(d0) < .05 || Math.abs(d0) > 4) return c;
+      for (const sgn of [1, -1]) { const t = { ...c, angle: c.angle + sgn * d0 * Math.PI / 180 }, d1 = this._barSkew(src, t); if (d1 !== null && Math.abs(d1) < Math.abs(d0) * .5) return { ...t, fine: true }; }
+    } catch (e) { /* se queda con el ángulo que traía */ }
+    return c;
+  }
   /* aplica el plan de intentos a un candidato; devuelve {hit,cand,how} o null */
-  async _tryCandidate(src, c, plan, deadline = Infinity) {
-    const cache = new Map();
+  async _tryCandidate(src, c, plan, deadline = Infinity, left = null, minTries = 0) {   // minTries: intentos garantizados aunque el reloj ya se haya vencido (equipo lento)   // left: { n } intentos que quedan (tope por TRABAJO, no por reloj: en un equipo lento el reloj cortaba antes del primer intento)
+    const cache = new Map(); let made = 0;
     for (const st of plan) {
-      if (performance.now() > deadline) return null;
+      if (performance.now() > deadline && made >= minTries) return null;
       const key = st.mult + '|' + st.flip + '|' + (st.rot || 0) + '|' + (st.pad || 0); let base = cache.get(key);
       if (!base) { base = this._cropCandidate(src, c, st.flip, st.mult, (st.rot || 0) * Math.PI / 180, st.pad || 0); cache.set(key, base); }
       for (const vn of st.variants) {
-        if (performance.now() > deadline) return null;
+        if ((performance.now() > deadline && made >= minTries) || (left && left.n <= 0)) return null;
         const img = VARIANTS[vn](base); if (!img) continue;
+        if (left) left.n--; made++;
         await yieldUI();
         const hit = CedulaScanner._hit(await this._decode(img, st.opts || 'def'));
         if (hit) return { hit, cand: c, how: `${vn}@${st.mult}${st.flip ? '/180°' : ''}${st.rot ? '/rot' + st.rot : ''}${st.pad ? '/pad' : ''}${st.opts ? '/' + st.opts : ''}` };
@@ -530,17 +571,17 @@ class CedulaScanner {
   }
 
   /* ---------- foto / galería ---------- */
-  async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false } = {}) {   // plan 'photo': alterna derecho / al revés; cropsOnly: solo los recortes ubicados (sin barrer la imagen completa)
-    const t0 = performance.now(), deadline = t0 + budgetMs;
+  async scanImage(file, { budgetMs = 15000, plan = 'deep', cropsOnly = false, maxTries = 0, minTries = 0, cand = null } = {}) {   // cand: candidato YA ubicado y afinado por quien llama (no se repite ese trabajo)   // plan 'photo': alterna derecho / al revés; cropsOnly: solo los recortes ubicados (sin barrer la imagen completa)
+    const t0 = performance.now(), deadline = t0 + budgetMs, left = maxTries > 0 ? { n: maxTries } : null;
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const dbg = this.lastDebug = { w: bmp.width, h: bmp.height, cands: [], how: '', ms: 0, ppm: null, hint: '', preview: null };
     const done = (hit, how) => { dbg.how = how; dbg.ms = Math.round(performance.now() - t0); return this._handle(CedulaScanner._bytes(hit)) || null; };
 
-    const cands = dbg.cands = this.findCandidates(bmp, bmp.width, bmp.height);
+    const cands = dbg.cands = cand ? [cand] : this.findCandidates(bmp, bmp.width, bmp.height);
     if (cands.length) dbg.ppm = +(cands[0].L / 1.28 / MODULES_EST).toFixed(2);
     for (const c0 of cands.slice(0, 3)) {
-      const c = this.legacy ? c0 : this._refineAngle(bmp, c0);
-      const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS[plan] || PLANS.deep, this.legacy ? Infinity : deadline);
+      const c = this.legacy || c0 === cand ? c0 : this._refineAngle(bmp, c0);
+      const r = await this._tryCandidate(bmp, c, this.legacy ? PLANS.legacyFlip : PLANS[plan] || PLANS.deep, this.legacy ? Infinity : deadline, left, minTries);
       if (r) return done(r.hit, 'recorte ' + r.how);
     }
     if (cropsOnly) { dbg.ms = Math.round(performance.now() - t0); if (bmp.close) bmp.close(); return null; }
@@ -852,9 +893,10 @@ function mrzResize(g, w, h, nw, nh) {
 function mrzRot90(g, w, h, k) {                                     // gira k·90° en sentido horario → {g,w,h}
   k = ((k % 4) + 4) % 4; if (!k) return { g, w, h };
   const nw = k === 2 ? w : h, nh = k === 2 ? h : w, o = new Uint8Array(nw * nh);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const [X, Y] = k === 1 ? [h - 1 - y, x] : k === 2 ? [w - 1 - x, h - 1 - y] : [y, w - 1 - x]; o[Y * nw + X] = g[y * w + x];
-  }
+  if (k === 2) { for (let i = 0, n = w * h; i < n; i++) o[n - 1 - i] = g[i]; return { g: o, w: nw, h: nh }; }
+  for (let y = 0; y < h; y++) { const row = y * w;                   // sin arreglos temporales por píxel (en una tableta modesta eso era medio segundo por foto)
+    if (k === 1) { const X = h - 1 - y; for (let x = 0; x < w; x++) o[x * nw + X] = g[row + x]; }
+    else for (let x = 0; x < w; x++) o[(w - 1 - x) * nw + y] = g[row + x]; }
   return { g: o, w: nw, h: nh };
 }
 function mrzRotate(g, w, h, deg) {                                  // endereza: gira la imagen -deg (bilineal, bordes replicados)
@@ -972,10 +1014,11 @@ function mrzLocate(g, w, h) {
  *  a buscarlas (buscarlas de nuevo en el recorte fallaba con el borde de la cédula o el fondo). Cada línea se reconoce como un bloque alargado (letras unidas
  *  por un cierre horizontal) y se mide con sus ejes principales (centro, ángulo, largo y grosor): 3 bloques paralelos, del mismo largo, alineados y a la misma
  *  distancia. → { g, w, h, info:{ok,bands,x0,x1,angle:0}, score, rot, angle, box:{cx,cy,L,H} (fracciones de la foto), flip() } | null */
-function mrzFind(g, w, h) {
+function mrzFind(g, w, h, maxSide = 1000) {                          // maxSide: lado mayor de la copia donde se busca (1000 = rápido; 1600 = segunda pasada para cédulas pequeñas, oscuras o inclinadas)
   let best = null;
+  const k0 = Math.min(1, maxSide / Math.max(w, h)), s0w = Math.max(8, Math.round(w * k0)), s0h = Math.max(8, Math.round(h * k0)), s0 = k0 < 1 ? mrzResize(g, w, h, s0w, s0h) : g;   // la búsqueda se hace en una copia de ≤ 1000 px de lado
   for (let rot = 0; rot < 2; rot++) {                              // 0 y 90°: al revés (180°/270°) lo prueba quien llama con flip()
-    const R = mrzRot90(g, w, h, rot), nw = Math.min(900, R.w), nh = Math.max(8, Math.round(R.h * nw / R.w)), s = mrzResize(R.g, R.w, R.h, nw, nh), bin = binarGray(s, nw, nh);
+    const S = mrzRot90(s0, s0w, s0h, rot), nw = S.w, nh = S.h, bin = binarGray(S.g, nw, nh);                    // se gira la copia PEQUEÑA (girar y copiar la foto completa era lo más lento)
     for (const gapK of [.006, .011, .02]) {
       const G = Math.max(2, Math.round(nw * gapK)), cl = new Uint8Array(bin);
       for (let y = 0; y < nh; y++) { let last = -1e9; const row = y * nw; for (let x = 0; x < nw; x++) if (!bin[row + x]) { if (x - last <= G) for (let q = last + 1; q < x; q++) cl[row + q] = 0; last = x; } }
@@ -1000,19 +1043,20 @@ function mrzFind(g, w, h) {
         if (d1 < T * .9 || d1 > T * 3 || d2 < T * .9 || d2 > T * 3 || Math.max(d1, d2) / Math.min(d1, d2) > 1.35) continue;
         if (Math.abs(u(B)) > len * .1 || Math.abs(u(C)) > len * .1) continue;
         const sc = (len / nw) * (1 - Math.abs(d1 - d2) / (d1 + d2)) * (1 - Math.abs(ang));
-        if (!best || sc > best.sc) best = { sc, rot, R, nw, ang, T, lines: [A, B, C], u: [0, u(B), u(C)], v: [0, d1, d1 + d2] };
+        if (!best || sc > best.sc) best = { sc, rot, nw, ang, T, lines: [A, B, C], u: [0, u(B), u(C)], v: [0, d1, d1 + d2] };
       }
     }
   }
   if (!best) return null;
-  const { R, nw, ang, T } = best, K = R.w / nw, ca = Math.cos(ang), sa = Math.sin(ang), A = best.lines[0];
+  const { nw, ang, T } = best, sw = best.rot ? h : w, sh = best.rot ? w : h, K = sw / nw, ca = Math.cos(ang), sa = Math.sin(ang), A = best.lines[0];   // sw×sh: la foto completa en la orientación en que se encontró
   let u0 = 1e9, u1 = -1e9; best.lines.forEach((P, i) => { u0 = Math.min(u0, best.u[i] - P.len / 2); u1 = Math.max(u1, best.u[i] + P.len / 2); });
-  const mX = T * .7, mY = T * .6, W = Math.max(8, Math.round((u1 - u0 + 2 * mX) * K)), H = Math.max(8, Math.round((best.v[2] + T + 2 * mY) * K)), out = new Uint8Array(W * H), sw = R.w, sh = R.h, src = R.g;
-  const ox = (A.cx + .5) * K - .5, oy = (A.cy + .5) * K - .5;       // centro de la línea 1 en px de la foto completa
+  const mX = T * .7, mY = T * .6, W = Math.max(8, Math.round((u1 - u0 + 2 * mX) * K)), H = Math.max(8, Math.round((best.v[2] + T + 2 * mY) * K)), out = new Uint8Array(W * H);
+  const ox = (A.cx + .5) * K - .5, oy = (A.cy + .5) * K - .5;       // centro de la línea 1 en px de la foto completa (girada si rot = 1)
   for (let y = 0; y < H; y++) { const vv = y - (mY + T / 2) * K;
-    for (let x = 0; x < W; x++) { const uu = x + (u0 - mX) * K, fx = Math.min(sw - 1, Math.max(0, ox + uu * ca - vv * sa)), fy = Math.min(sh - 1, Math.max(0, oy + uu * sa + vv * ca));
-      const x0 = fx | 0, y0 = fy | 0, x1 = Math.min(sw - 1, x0 + 1), y1 = Math.min(sh - 1, y0 + 1), wx = fx - x0, wy = fy - y0;
-      out[y * W + x] = (src[y0 * sw + x0] * (1 - wx) + src[y0 * sw + x1] * wx) * (1 - wy) + (src[y1 * sw + x0] * (1 - wx) + src[y1 * sw + x1] * wx) * wy + .5; } }
+    for (let x = 0; x < W; x++) { const uu = x + (u0 - mX) * K, rx = Math.min(sw - 1, Math.max(0, ox + uu * ca - vv * sa)), ry = Math.min(sh - 1, Math.max(0, oy + uu * sa + vv * ca));
+      const fx = best.rot ? ry : rx, fy = best.rot ? h - 1 - rx : ry;                                          // de la foto girada 90° a la original: (X, Y) → (Y, h−1−X)
+      const x0 = fx | 0, y0 = fy | 0, x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1), wx = fx - x0, wy = fy - y0;
+      out[y * W + x] = (g[y0 * w + x0] * (1 - wx) + g[y0 * w + x1] * wx) * (1 - wy) + (g[y1 * w + x0] * (1 - wx) + g[y1 * w + x1] * wx) * wy + .5; } }
   const bands = best.lines.map((P, i) => { const yc = (mY + T / 2 + best.v[i]) * K, hh = Math.max(P.th, T * .85) * K * .46; return { y0: Math.max(0, Math.round(yc - hh)), y1: Math.min(H - 1, Math.round(yc + hh)) }; });
   const info = { ok: true, bands, x0: Math.round(mX * K), x1: Math.min(W - 1, Math.round((u1 - u0 + mX) * K)), angle: 0, w: W, h: H, sharp: 1, located: true, pv: .34 };   // pv: margen vertical corto (la posición ya es exacta y así no entran las líneas vecinas)
   const mk2 = (gg, inf, r) => ({ g: gg, w: W, h: H, info: inf, rot: r, score: best.sc, angle: ang * 180 / Math.PI });
@@ -1049,7 +1093,18 @@ const loadScript = url => new Promise((res, rej) => { const s = document.createE
 function symbolsOf(d) {                                             // símbolos {c, conf, cx} de la respuesta de tesseract.js (v5: data.symbols; si no, bloques → … → símbolos)
   let S = Array.isArray(d.symbols) ? d.symbols : null;
   if (!S && Array.isArray(d.blocks)) { S = []; for (const b of d.blocks) for (const p of b.paragraphs || []) for (const l of p.lines || []) for (const w of l.words || []) for (const s of w.symbols || []) S.push(s); }
-  return (S || []).filter(s => s && s.bbox && typeof s.text === 'string' && /^[A-Z0-9<]$/.test(s.text)).map(s => ({ c: s.text, conf: s.confidence || 0, cx: (s.bbox.x0 + s.bbox.x1) / 2 }));
+  return (S || []).filter(s => s && s.bbox && typeof s.text === 'string' && /^[A-Z0-9<]$/.test(s.text)).map(s => ({ c: s.text, conf: s.confidence || 0, cx: (s.bbox.x0 + s.bbox.x1) / 2, x0: s.bbox.x0, x1: s.bbox.x1, y0: s.bbox.y0, y1: s.bbox.y1 }));
+}
+/** El OCR confunde el relleno «<» con «K» (sobre todo con cámaras blandas): salía «JUANKDAVID». La K tiene un palo vertical a la izquierda de arriba abajo; el «<» solo
+ *  toca la izquierda en el centro. Se mira la tinta del tercio izquierdo de la caja de la letra: si cubre menos del 60 % del alto, es un «<». g: recorte de la línea (texto oscuro). */
+function fixChevrons(syms, g, w, h) {
+  for (const s of syms) {
+    if (s.c !== 'K' || !(s.x1 > s.x0 + 3) || !(s.y1 > s.y0 + 5)) continue;
+    const xa = Math.max(0, Math.floor(s.x0)), xb = Math.min(w - 1, Math.ceil(s.x0 + (s.x1 - s.x0) * .3)), ya = Math.max(0, Math.floor(s.y0)), yb = Math.min(h - 1, Math.ceil(s.y1)); let ink = 0, rows = 0;
+    for (let y = ya; y <= yb; y++) { rows++; for (let x = xa; x <= xb; x++) if (g[y * w + x] < 140) { ink++; break; } }
+    if (rows && ink / rows < .6) { s.c = '<'; s.fixed = true; }
+  }
+  return syms;
 }
 const grayCanvas = (g, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(fromGray(g, w, h), 0, 0); return c; };
 
@@ -1079,7 +1134,7 @@ class MrzOcr {
   /** crops: [{g,w,h}] (línea 1, 2 y 3) → [{text, conf}] */
   async read(crops) {
     return Promise.all(crops.map((c, i) => this.workers[i].recognize(grayCanvas(c.g, c.w, c.h)).then(r => {
-      const d = r.data || {}, raw = String(d.text || '').replace(/\s+/g, ''), syms = symbolsOf(d);
+      const d = r.data || {}, raw = String(d.text || '').replace(/\s+/g, ''), syms = fixChevrons(symbolsOf(d), c.g, c.w, c.h);
       let text = raw;
       if (syms.length >= 8) {                                        // con la posición de cada letra: se rellenan los «<» perdidos y se quitan duplicados
         text = mrzGrid(syms, c.x0, c.ext).text;
@@ -1240,5 +1295,5 @@ class MrzScanner {
   }
 }
 
-window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth, mrzFind };
+window.CedulaReaders = { CedulaScanner, MrzScanner, parseCedula, parseMrz, mrzStrong, formatBirth, mrzFind, fixChevrons };
 })();

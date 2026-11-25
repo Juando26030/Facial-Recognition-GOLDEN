@@ -21,6 +21,8 @@ KIND=old python tests/lab_cedula/run.py /tmp/lab_cedula/old   # cédula vieja: d
 - **Decodificador REAL de la cédula vieja:** `ZX=real KIND=old EXPECT=<cédula esperada> python tests/lab_cedula/run.py <carpeta>` usa `zx.py` (zxing-cpp del sistema por GStreamer: `libgstzxing`).
   `CORES=4` simula la tableta modesta (vista previa 1080p; la foto fija sale a la resolución del archivo). `BUDGET=40000 WAIT=120` quita el límite de tiempo (para saber el techo) y
   `ZXDUMP=/carpeta` en `srv.py` guarda cada recorte que se intentó.
+- **Equipo lento (tableta económica):** `THROTTLE=6` frena la CPU de Chrome; `INITMS=3000 OCRMS=500 ZXMS=200` simulan la carga del OCR, cada línea y cada intento de código
+  (eso no corre en el navegador del banco); `SRV_DELAY=1.5` en `srv.py`, un servidor que tarda. La salida trae el tiempo de cada etapa.
 - **Cédulas reales:** las escenas se generan desde una imagen propia FUERA del repositorio (nunca se suben fotos ni datos reales). Ver docs/PRUEBA_LECTOR_CEDULA.md § Prueba con cédulas reales.
 
 Límites: el OCR es el `tesseract` del sistema (no tesseract.js), la letra es Liberation Mono (no OCR-B) y no hay plástico, hologramas ni manos. Sirve para la GEOMETRÍA

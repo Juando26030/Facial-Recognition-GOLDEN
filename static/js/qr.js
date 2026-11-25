@@ -126,8 +126,8 @@
   }
 
   // Lectores de cédula (vieja: PDF417 · nueva: las 3 líneas): archivo generado desde la página de prueba (scripts/build_cedula_readers.py); se carga solo si el operador elige uno de esos modos.
-  const READERS_URL = '/static/js/cedula-readers.js?v=4';
-  const FOTO_URL = '/static/js/cedula-foto.js?v=8';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
+  const READERS_URL = '/static/js/cedula-readers.js?v=5';
+  const FOTO_URL = '/static/js/cedula-foto.js?v=9';               // cámara con guía + foto en alta resolución para la cédula (24-nov-2026)
   const MODE_KEY = 'gw_scan_mode';
   let readersPromise = null, fotoPromise = null;
   function loadFoto() {

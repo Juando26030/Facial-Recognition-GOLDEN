@@ -16,7 +16,7 @@ window.LOG=[]; window.RESULT=undefined; window.ZXN=0;
 // Decodificador de REEMPLAZO de la cédula vieja (no hay zxing sin red): «lee» solo si le llega el código de gen.py DERECHO (bloque macizo a la izquierda, rayas a la
 // derecha), nítido y sin zonas lavadas; tarda ~60 ms como un intento real en un celular. Sirve para probar ubicar/enderezar/girar/tiempos, no la decodificación.
 const ZXREAL=new URLSearchParams(location.search).get('zx')==='real';   // zx=real: decodifica de verdad con el zxing-cpp del sistema (tests/lab_cedula/zx.py)
-window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN++;
+window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN++; if(+new URLSearchParams(location.search).get('zxms')) await new Promise(r=>setTimeout(r,+new URLSearchParams(location.search).get('zxms')));
   if(ZXREAL){ const c=document.createElement('canvas'); c.width=im.width; c.height=im.height; c.getContext('2d').putImageData(im,0,0); const blob=await new Promise(r=>c.toBlob(r,'image/png'));
     const j=await (await fetch('/zx',{method:'POST',body:blob})).json(); return j.bytes?[{bytes:Uint8Array.from(j.bytes),text:''}]:[]; }
   await new Promise(r=>setTimeout(r,60));
@@ -28,7 +28,10 @@ window.ZXingWASM={prepareZXingModule(){}, readBarcodes: async(im)=>{ window.ZXN+
   for(let c=0;c<12;c++) if(sd(.18+c*.055,.18+(c+1)*.055)<45) return [];
   const f=(t)=>(t+'\0'.repeat(23)).slice(0,23), txt='X'.repeat(48)+'1013259208'+f('RAMIREZ')+f('TORRES')+f('JUAN')+f('DAVID')+'0M19900515'+'150001'+'O+';
   return [{text:txt,bytes:Uint8Array.from([...txt].map(ch=>ch.charCodeAt(0)))}]; }};
-window.Tesseract={createWorker: async()=>{ let wl=''; return { setParameters: async(p)=>{ wl=p.tessedit_char_whitelist||''; }, recognize: async(cv)=>{
+// EQUIPO LENTO (tableta de gama baja): slow=1 simula lo que el banco no ejecuta en el navegador → el OCR tarda en cargar (initms) y cada línea tarda (ocrms);
+// cada intento de zxing tarda (zxms). El resto del código SÍ corre en Chrome con la CPU frenada (THROTTLE en run.py).
+const QS=new URLSearchParams(location.search), LAG={init:+QS.get('initms')||0, ocr:+QS.get('ocrms')||0, zx:+QS.get('zxms')||0}, nap=(ms)=>new Promise(r=>setTimeout(r,ms));
+window.Tesseract={createWorker: async()=>{ let wl=''; if(LAG.init) await nap(LAG.init); return { setParameters: async(p)=>{ wl=p.tessedit_char_whitelist||''; }, recognize: async(cv)=>{ if(LAG.ocr) await nap(LAG.ocr);
   const blob=await new Promise(r=>cv.toBlob(r,'image/png')); const res=await fetch('/ocr?wl='+encodeURIComponent(wl),{method:'POST',body:blob}); window.OCRN=(window.OCRN||0)+1; return {data: await res.json()}; } }; }};
 </script>
 <script src="/static/js/cedula-readers.js"></script><script src="/static/js/cedula-foto.js"></script>
@@ -80,6 +83,7 @@ class Hd(BaseHTTPRequestHandler):
         if u.path.endswith('/cedula-mrz-scan'):
             MODE['calls']=MODE.get('calls',0)+1
             if 'real' not in MODE['server']: return self._send(422,{'detail':'apagado'})
+            import time; time.sleep(float(os.environ.get('SRV_DELAY','0')))                     # servidor que tarda (arranque en frío de Cloud Run)
             import numpy as np, cv2
             from app.mrz_ocr import VARIANTS, extract_mrz_lines
             i=body.find(b'\r\n\r\n'); j=body.rfind(b'\r\n--'); img=cv2.imdecode(np.frombuffer(body[i+4:j],np.uint8),cv2.IMREAD_COLOR); MODE['last_shape']=list(img.shape); arr=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)

@@ -152,3 +152,40 @@ Tras una foto fija se restauran zoom y resolución del video si el equipo los ca
   simulaciones duras; no se sabe qué tan cerca están de la tableta real.
 - **Falta:** la prueba en la tableta real. Los umbrales de nitidez y brillo están calibrados con simulación.
 
+## Tabletas económicas (Lenovo Tab M11) y pantalla negra en iPad (24-nov-2026, noche)
+
+Juan David probó en una **Lenovo Tab M11** (la mayoría de las tabletas de la empresa son de esa gama): fallaban 9 de cada 10 intentos, cédula nueva y vieja, con fotos en las
+que cada letra se distingue. En un celular de gama alta y en un iPad sí leía. En el iPad, después de un intento fallido, la cámara quedaba en negro.
+
+**El equipo:** MediaTek Helio G88 (2 núcleos A75 + 6 A55), 4 u 8 GB, cámara trasera de 8 o 13 MP con autoenfoque, **video de 1080p como máximo**. Es varias veces más lento que
+un celular de gama alta.
+
+**Causa principal: topes de TIEMPO.** La versión anterior daba 5,5 s por foto a la cédula nueva y 0,7–1,6 s por etapa a la vieja. En el banco, con la CPU frenada 6× y el OCR
+tardando lo que tarda en una tableta, el tiempo se acababa **antes del primer intento** («No se pudo leer», 0 lecturas de OCR; 3–4 intentos de código). Reproducido: 1 de 5 y 1 de 4.
+
+**Cambios:**
+- **Topes por trabajo, no por reloj.** Cédula nueva: hasta 4 lecturas de OCR del primer cuadro y 2 de cada cuadro siguiente; el OCR se espera ANTES de empezar; el servidor sigue
+  en carrera y se le espera hasta 6 s después de que el navegador termina. Cédula vieja: intentos por etapa (4–8 sobre el video, 8 sobre la foto fija), con 7 s de tope total de
+  decodificación y 4 intentos garantizados por etapa (`scanImage({ maxTries, minTries, cand })`).
+- **El botón «Tomar foto» se habilita cuando el lector ya cargó** («Preparando el lector…»): la primera carga del OCR en una tableta tarda varios segundos y antes se pagaba dentro del intento.
+- **Menos cálculo:** `mrzFind` busca en una copia de ≤ 1000 px (segunda pasada a 1600 px y luego girada 45° solo si no encuentra); girar 90° ya no copia la foto completa.
+  El candidato de la cédula vieja se afina UNA vez y se reutiliza.
+- **Ángulo fino de la cédula vieja (`_barSkew` / `_fineAngle`):** con cámara blanda el mismo recorte falla a 0° y lee a −0,3°. Se mide la inclinación en las barras gruesas de inicio y
+  de fin con precisión de subpíxel; además el plan prueba micro-giros de ±0,25°.
+- **«<» leído como «K»** (`fixChevrons`): salía «JUANKDAVID». La K tiene palo vertical a la izquierda; el «<» no.
+- **Equipo modesto = ≤ 4 núcleos o ≤ 4 GB** (antes ≤ 3 GB): 1080p de entrada. La marca «vista previa lenta» se recuerda en el navegador (`localStorage`, solo esa marca del equipo).
+- **Los avisos de «borroso» ya no cortan con cámaras blandas** (umbrales 0,15 / 0,25): antes una cámara económica caía en «borroso» sin intentarlo.
+- **iPad (cámara en negro tras un fallo):** se congelaba la imagen con `video.pause()` y WebKit no siempre reanuda un video de cámara. Ahora el video nunca se pausa: la foto se
+  pinta en el lienzo de la guía mientras se procesa y luego se borra.
+
+**Banco para equipos lentos** (`tests/lab_cedula`): `THROTTLE=6` frena la CPU de Chrome; `INITMS`, `OCRMS`, `ZXMS` simulan lo que tarda el OCR en cargar, cada línea y cada intento
+de código; `SRV_DELAY` un servidor en frío. Las escenas «de tableta» salen de las cédulas reales con sensor de 8 MP, lente blanda, ruido y compresión, en tres niveles.
+
+**Resultados (CPU frenada 6×, vista previa 1080p, sin servidor):**
+- Cédula nueva: 39 de 40 (buena 14/14 · normal 12/12 · mala 13/14). Antes: 1 de 5.
+- Cédula vieja: 23 de 42 (buena 14/14, incluidas inclinadas, al revés y de lado · normal 8/14 · mala 1/14). Antes: 2 de 28.
+- Lo que no lee de la vieja es por detalle (código pequeño o imagen blanda): ni con el ángulo exacto ni con filtros de nitidez lo lee el decodificador. El mensaje pide acercarla.
+
+**Límites:** los tiempos del banco no son los de la tableta (no ejecuta el OCR ni zxing en WebAssembly). No se sabe a cuál de los tres niveles se parece la cámara real de la M11.
+Falta la prueba en la tableta y en el iPad.
+

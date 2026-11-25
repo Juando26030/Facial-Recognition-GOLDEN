@@ -51,4 +51,10 @@ for (const [name, W, H, frac, dx, dy, ang] of cases) {
 assert.strictEqual(mrzFind(new Uint8Array(640 * 360).fill(128), 640, 360), null);         // sin cédula: null (nada inventado)
 { const W = 1280, H = 720, g = new Uint8Array(W * H).fill(200); for (let y = 100; y < 600; y += 40) for (let x = 100; x < 1100; x++) if (y % 80 < 12 && x % 9 < 6) g[(y + (x % 3)) * W + x] = 30;
   const f = mrzFind(g, W, H); assert.ok(!f || f.info.bands.length === 3); }                // renglones cualesquiera: no revienta
+{ // «<» leído como «K» (pasaba con cámaras blandas: «JUANKDAVID»): la K tiene palo vertical a la izquierda; el «<» no. Una K de verdad se queda.
+  const { fixChevrons } = win.CedulaReaders, W = 80, H = 40, g = new Uint8Array(W * H).fill(255);
+  for (let y = 8; y < 32; y++) { g[y * W + 10] = g[y * W + 11] = g[y * W + 12] = 0; const d = Math.abs(y - 20); for (let k = 0; k < 3; k++) g[y * W + 13 + d + k] = 0; }   // K en x 10..28
+  for (let y = 8; y < 32; y++) { const d = Math.abs(y - 20); for (let k = 0; k < 3; k++) g[y * W + 50 + d + k] = 0; }                                             // < en x 50..64
+  const out = fixChevrons([{ c: 'K', x0: 10, x1: 28, y0: 8, y1: 31 }, { c: 'K', x0: 50, x1: 64, y0: 8, y1: 31 }, { c: 'A', x0: 50, x1: 64, y0: 8, y1: 31 }], g, W, H);
+  assert.strictEqual(out.map((s) => s.c).join(''), 'K<A'); }
 console.log('mrz_find_check OK');

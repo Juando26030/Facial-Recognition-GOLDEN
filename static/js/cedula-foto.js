@@ -22,6 +22,7 @@
   const MSG = {
     aimOld: 'Apunte al código de barras del reverso (lo ideal: dentro del recuadro) y pulse «Tomar foto».',
     aimNew: 'Apunte a las 3 líneas de letras y números del reverso (lo ideal: dentro del recuadro) y pulse «Tomar foto».',
+    preparing: 'Preparando el lector… un momento.',
     loading: 'Cargando el lector…',
     processing: 'Procesando la foto…',
     server: 'Procesando la foto… (revisión en el servidor)',
@@ -44,13 +45,15 @@
   };
   const SIZES = [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 2560 }, height: { ideal: 1440 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}];
   // FLUIDEZ (24-nov-2026, tableta que no es de última generación: la vista previa iba trabada y con retraso). Mostrar video 4K en vivo es lo que más pesa:
-  //  · equipo modesto (≤ 4 núcleos o ≤ 3 GB): se pide 1080p de entrada; · en los demás se MIDE la vista previa y, si va a menos de FPS_MIN, la PRÓXIMA vez que se abra
+  //  · equipo modesto (≤ 4 núcleos o ≤ 4 GB): se pide 1080p de entrada; · en los demás se MIDE la vista previa y, si va a menos de FPS_MIN, la PRÓXIMA vez que se abra
   //    la cámara se pide 1080p. La resolución NUNCA se cambia con la cámara abierta: en algunos equipos eso recortaba la imagen (se veía como un «zoom» que no se quitaba).
   //  · El detalle que le falta al video de 1080p (sobre todo para el código de la cédula vieja) lo pone la foto fija del sensor (stillHD), solo cuando hace falta.
   const FPS_MIN = 18, FPS_WARMUP_MS = 500, FPS_WINDOW_MS = 1200, OVERLAY_DPR_MAX = 2;
-  let slowSeen = false;                       // en esta página ya se vio la vista previa lenta a más de 1080p
+  const SLOW_KEY = 'gw.cedulaFoto.previaLenta';
+  let slowSeen = false;                       // en este equipo ya se vio la vista previa lenta a más de 1080p (se recuerda en el navegador: es una preferencia del equipo, no un dato de nadie)
+  try { slowSeen = typeof localStorage !== 'undefined' && localStorage.getItem(SLOW_KEY) === '1'; } catch (e) { slowSeen = false; }
   /** ¿Equipo modesto? (puro: recibe navigator) */
-  function lowEnd(nav) { return !!nav && ((nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) || (nav.deviceMemory > 0 && nav.deviceMemory <= 3)); }
+  function lowEnd(nav) { return !!nav && ((nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) || (nav.deviceMemory > 0 && nav.deviceMemory <= 4)); }   // ≤ 4 GB: la tableta económica típica (p. ej. Lenovo Tab M11: Helio G88, 4 GB, video 1080p como máximo)
   /** ¿La vista previa va lenta por la resolución? (cuadros por segundo medidos y lado corto del video) */
   function slowPreview(fps, shortSide) { return fps > 0 && shortSide > 1080 && fps < FPS_MIN; }
   /** Píxeles por módulo del código de la cédula vieja a partir del largo del candidato (misma cuenta que el lector: L incluye 28 % de margen; ~340 módulos). */
@@ -58,18 +61,22 @@
   const STILL_MAX = 4600;                    // lado mayor máximo pedido a takePhoto (más no aporta y pesa en memoria)
   const MRZ_CROP_W = 1800;                   // ancho de trabajo del recorte de las 3 líneas (≈60 px por carácter)
   const SERVER_MAX = 2400;                   // lado mayor de la copia que va al servidor (respaldo)
-  const SERVER_TIMEOUT_MS = 25000;
+  const SERVER_TIMEOUT_MS = 15000;
   const HD_SHORT_SIDE = 1080;                 // video con lado corto ≥ 1080 px: su cuadro ya es alta definición (no hace falta takePhoto)
-  const OLD_FRAME_MS = 1200, OLD_FRAME_LOW_MS = 700, OLD_STILL_MS = 1600, OLD_GUIDE_MS = 700, GOOD_PPM = 3.5, MIN_PPM = 1.0;
-  const BLUR_VIDEO = 0.3, BLUR_STILL = 0.6;   // nitidez mínima del código (sharpOf) en el cuadro del video y en la foto fija: por debajo no se lee y se avisa sin gastar tiempo (calibrado en el banco de pruebas)   // cédula vieja: tiempo sobre el cuadro del video, sobre la foto fija y sobre el recuadro (respaldo); con ≥ 3 px por módulo el cuadro suele bastar
+  // TOPES POR TRABAJO, NO POR RELOJ (24-nov-2026, Lenovo Tab M11: fallaban 9 de 10). Con topes de 1–2 s y 5,5 s, en una tableta económica el tiempo se acababa antes del
+  // primer intento (cargar el OCR, ubicar, decodificar: todo tarda varias veces más). Ahora cada foto tiene derecho a un número de INTENTOS; el reloj solo es un seguro largo.
+  const OLD_FRAME_TRIES = 8, OLD_FRAME_LOW_TRIES = 4, OLD_STILL_TRIES = 8, OLD_BURST_TRIES = 4, OLD_GUIDE_TRIES = 4, OLD_MIN_TRIES = 4, OLD_TOTAL_MS = 7000, GOOD_PPM = 3.5, MIN_PPM = 1.0;
+  const BLUR_VIDEO = 0.15, BLUR_STILL = 0.25;   // nitidez mínima del código (sharpOf) en el cuadro del video y en la foto fija: por debajo no se lee y se avisa sin gastar tiempo (calibrado en el banco de pruebas)   // cédula vieja: tiempo sobre el cuadro del video, sobre la foto fija y sobre el recuadro (respaldo); con ≥ 3 px por módulo el cuadro suele bastar
   const FIND_MAX = 3200;                     // lado mayor de la copia en gris donde se buscan las 3 líneas (recorte automático)
-  const NEW_DEADLINE_MS = 5500;              // cédula nueva: tope de espera por foto (navegador y servidor); pasado esto se pide otra foto
-  const SMALL_LETTER_PX = 24, SMALL_PPM = 2.2;   // letras de menos de 24 px de alto / código con menos de 2,2 px por módulo: «muy lejos» (vale la pena la foto fija)
+  const NEW_ROUNDS_FIRST = 4, NEW_ROUNDS_NEXT = 2;   // cédula nueva: lecturas de OCR del primer cuadro (derecho y al revés alternados) y de cada cuadro siguiente de la ráfaga
+  const NEW_LOCAL_MS = 9000;                 // pasado esto el navegador no EMPIEZA más cuadros (lo ya empezado termina)
+  const SERVER_GRACE_MS = 6000;              // lo que se espera al servidor después de que el navegador terminó sin leer
+  const SMALL_LETTER_PX = 24, CLOSER_PPM = 3.2;   // letras de menos de 24 px de alto / código con menos de 2,2 px por módulo: «muy lejos» (vale la pena la foto fija)
   const WASH_K = 0.4;                        // una celda está «lavada» si su contraste es < 40 % del contraste típico de las demás
   const SERVER_CROP_PAD = 36;                // borde blanco alrededor del recorte que va al servidor
   const BURST = 3, BURST_GAP_MS = 110;       // ráfaga: 3 cuadros seguidos (≈0,25 s). Lo que un brillo o el pulso arruinan en uno suele verse en otro
   const GLARE_LEVEL = 245, GLARE_RATIO = 0.012;   // brillo: más del 1,2 % del recuadro casi blanco en los tres colores (el fondo de la cédula no llega a eso)        // cédula vieja: recuadro guía, luego foto completa (antes 7 s + 9 s: lo que no sale en ~5 s no sale con más tiempo; mejor otra foto)
-  const SERVER_HEAD_START_MS = 1200;         // cédula nueva: si el navegador no la leyó en este tiempo, el servidor arranca EN PARALELO (gana el primero que la valide)
+  const SERVER_HEAD_START_MS = 600;          // cédula nueva: si el navegador no la leyó en este tiempo, el servidor arranca EN PARALELO (gana el primero que la valide)
 
   /* ---------------------------------------------------------------- funciones puras (también en Node) */
   /** Fracción de píxeles casi blancos (R, G y B ≥ GLARE_LEVEL) en una imagen RGBA: el reflejo «quema» el color; la cédula impresa no. */
@@ -252,13 +259,15 @@
   function findMrz(R, shot) {
     if (!R || !R.mrzFind || !shot) return null;
     try {
-      const k = Math.min(1, FIND_MAX / Math.max(shot.w, shot.h)), c = cropCanvas(shot.img, { x: 0, y: 0, w: shot.w, h: shot.h }, shot.w * k);
-      const f = R.mrzFind(grayOf(c), c.width, c.height);
+      const k = Math.min(1, FIND_MAX / Math.max(shot.w, shot.h)), c = cropCanvas(shot.img, { x: 0, y: 0, w: shot.w, h: shot.h }, shot.w * k), g = grayOf(c);
+      // 1) búsqueda rápida (copia de ≤ 1000 px); 2) con más detalle (≤ 1600 px): cédulas pequeñas, oscuras o algo inclinadas; 3) la foto girada 45° (torcida de verdad).
+      let f = R.mrzFind(g, c.width, c.height, 1000); mark('ubicar 1000');
+      if (!f && Math.max(c.width, c.height) > 1100) { f = R.mrzFind(g, c.width, c.height, 1600); mark('ubicar 1600'); }
       if (f) return f;
-      // Torcida (entre ~25° y ~65°): la misma búsqueda sobre la foto girada 45°. Entre las dos se cubre cualquier ángulo.
       const k2 = Math.min(1, FIND_MAX / 1.42 / Math.max(shot.w, shot.h)), W = shot.w * k2, H = shot.h * k2, D = Math.ceil(Math.hypot(W, H)), t = canvasOf(D, D), x = t.getContext('2d', { willReadFrequently: true });
       x.fillStyle = '#808080'; x.fillRect(0, 0, D, D); x.imageSmoothingQuality = 'high'; x.translate(D / 2, D / 2); x.rotate(Math.PI / 4); x.drawImage(shot.img, -W / 2, -H / 2, W, H);
-      return R.mrzFind(grayOf(t), D, D);
+      f = R.mrzFind(grayOf(t), D, D, 1400); mark('ubicar 45°');
+      return f;
     } catch (e) { return null; }
   }
   /** Chequeo previo de la cédula nueva sobre el recorte ya ubicado → { low, bright, small }. */
@@ -266,6 +275,8 @@
     const I = f.info, ws = washedCells(f.g, f.w, f.h, I.bands.map((b) => ({ x0: I.x0, x1: I.x1, y0: b.y0, y1: b.y1 })), 30);
     return { ...ws, small: Math.min(...I.bands.map((b) => b.y1 - b.y0 + 1)) < SMALL_LETTER_PX };
   }
+  /** Solo el banco de pruebas (window.CEDULA_LAB): marca de tiempo de cada etapa, para ver dónde se va el tiempo en un equipo lento. */
+  function mark(name) { try { const L = typeof window !== 'undefined' && window.CEDULA_LAB; if (L) (L.t = L.t || []).push([name, Math.round(performance.now())]); } catch (e) { /* sin banco */ } }
   const washReason = (ws) => (ws.bright * 2 >= ws.low ? 'glare' : 'covered');
   /** Chequeo previo de la cédula vieja: el código ya ubicado (candidato del lector), enderezado, partido en 3 filas × 16 celdas. */
   function checkCode(sc, shot, cand) {
@@ -291,12 +302,14 @@
     sc.onResult = () => {}; sc.onStatus = () => {}; sc.onUnknown = () => { unknown = true; };
     const locate = (shot) => { try { const c = sc.findCandidates(shot.img, shot.w, shot.h)[0] || null; return c && sc._refineAngle ? sc._refineAngle(shot.img, c) : c; } catch (e) { return null; } };
     const LAB = (typeof window !== 'undefined' && window.CEDULA_LAB) || null;                                          // solo el banco de pruebas: tiempo ampliado y qué intento acertó
-    const scan = async (img, budgetMs, cropsOnly) => { const d = await sc.scanImage(img, { budgetMs: LAB && LAB.budget ? LAB.budget : budgetMs, plan: (LAB && LAB.plan) || 'photo', cropsOnly }); if (LAB && d) LAB.how = sc.lastDebug.how + ' · ' + sc.lastDebug.ms + ' ms'; return d; };   // plan 'photo': derecho y AL REVÉS alternados desde el primer intento
+    let spent = 0;                                                                                                     // tiempo gastado SOLO en decodificar (no cuenta ubicar ni tomar la foto fija)
+    // Cada etapa tiene sus intentos; el reloj (OLD_TOTAL_MS entre todas) solo recorta en equipos MUY lentos, y aun así se garantizan OLD_MIN_TRIES (derecho y al revés).
+    const scan = async (img, tries, cropsOnly, cand) => { const ts = performance.now(); const d = await sc.scanImage(img, { budgetMs: LAB && LAB.budget ? LAB.budget : Math.max(0, OLD_TOTAL_MS - spent), maxTries: LAB && LAB.budget ? 0 : tries, minTries: OLD_MIN_TRIES, plan: (LAB && LAB.plan) || 'photo', cropsOnly, cand: cand || null }); spent += performance.now() - ts; mark('zxing ' + (d ? 'ok' : 'no')); if (LAB && d) LAB.how = sc.lastDebug.how + ' · ' + sc.lastDebug.ms + ' ms'; return d; };   // plan 'photo': derecho y AL REVÉS alternados desde el primer intento
     const shot = shots[0];
     // CHEQUEO PREVIO sobre el cuadro del video: ¿hay código?, ¿lo tapa un brillo?, ¿tiene detalle suficiente?
-    const c0 = locate(shot);
+    mark('inicio'); const c0 = locate(shot); mark('ubicar');
     if (!c0) {                                                                                                         // no se ve un código: el recuadro, por si acaso, y se avisa ya
-      const datos = guidePhoto && alive() ? await scan(cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_GUIDE_MS, false) : null;
+      const datos = guidePhoto && alive() ? await scan(cropCanvas(shot.img, expandRect(guidePhoto, 0.06, 0.9, shot.w, shot.h)), OLD_GUIDE_TRIES, true) : null;
       return datos ? { datos } : { datos: null, unknown, reason: 'nocode' };
     }
     const ws = checkCode(sc, shot, c0); if (LAB) (LAB.log = LAB.log || []).push(['video', +ppmOf(c0.L).toFixed(2), +ws.sharp.toFixed(3), ws.low]);
@@ -306,22 +319,22 @@
     if (ws.sharp < BLUR_VIDEO && ppm >= 1.8) return { datos: null, unknown, located: true, reason: 'blur' };           // con detalle de sobra y aun así sin bordes: borroso o lavado                                // tan lejos que ni la foto fija alcanzaría: se avisa ya
     const enough = ppm >= GOOD_PPM || !getStill;                                                                       // el cuadro del video ya tiene todo el detalle útil (o no hay foto fija)
     {                                                                                                                  // el cuadro del video primero (inmediato)
-      const datos = await scan(shot.img, enough ? OLD_FRAME_MS : OLD_FRAME_LOW_MS, true); if (datos) return { datos };
+      const datos = await scan(shot.img, enough ? OLD_FRAME_TRIES : OLD_FRAME_LOW_TRIES, true, c0); if (datos) return { datos };
     }
     if (!alive()) return { datos: null };
     if (!enough) {                                                                                                     // falta detalle: la foto fija del sensor (ahí se lee el código pequeño o de una pantalla)
-      const hd = await getStill();
+      const hd = await getStill(); mark('foto fija');
       if (hd && alive()) {
         const c1 = locate(hd); if (c1) ppm = Math.max(ppm, ppmOf(c1.L));
         const w1 = c1 ? checkCode(sc, hd, c1) : null; if (LAB && c1) (LAB.log = LAB.log || []).push(['foto', +ppmOf(c1.L).toFixed(2), +w1.sharp.toFixed(3), w1.low]);
         if (w1 && w1.low >= 4) return { datos: null, unknown, located: true, reason: washReason(w1) };
         if (w1 && w1.sharp < BLUR_STILL) return { datos: null, unknown, located: true, reason: 'blur' };                // ni la foto fija tiene bordes nítidos: no vale la pena intentar
-        const datos = await scan(hd.img, OLD_STILL_MS, true); if (datos) return { datos };
+        const datos = c1 ? await scan(hd.img, OLD_STILL_TRIES, true, c1) : null; if (datos) return { datos };
       }
     } else if (!getStill) {
-      for (const other of shots.slice(1, 3)) { if (!alive()) break; const datos = await scan(other.img, 700, true); if (datos) return { datos }; }   // sin foto fija: los otros cuadros de la ráfaga
+      for (const other of shots.slice(1, 3)) { if (!alive()) break; const datos = await scan(other.img, OLD_BURST_TRIES, true); if (datos) return { datos }; }   // sin foto fija: los otros cuadros de la ráfaga
     }
-    return { datos: null, unknown, located: true, reason: ppm < SMALL_PPM ? 'small' : '' };
+    return { datos: null, unknown, located: true, reason: ppm < CLOSER_PPM ? 'small' : '' };                           // con poco detalle incluso en la mejor toma, el consejo útil es acercarla
   }
 
   /** Cédula nueva sobre la ráfaga. `reads` se comparte con quien llama: si nada queda validado, de ahí sale lo que SÍ se leyó (partialFrom). La votación
@@ -332,21 +345,23 @@
     // 24-nov (recorte automático): primero las 3 líneas DONDE ESTÉN en la foto (R.mrzFind las ubica, las endereza y entrega solo esa zona con la posición
     // exacta de cada línea); después, como siempre, el recuadro guía. Así el recuadro es una ayuda, no un requisito.
     let upside = null;                                                                  // null = aún no se sabe; false = derecho; true = al revés
-    const readFound = async (k) => {
+    const t0 = performance.now();                                                       // desde aquí cuenta NEW_LOCAL_MS: con el OCR ya cargado
+    const readFound = async (k, rounds) => {
       if (finds[k] === undefined) finds[k] = findMrz(R, shots[k]);
       const f = finds[k]; if (!f || !alive()) return null;
-      let back = null;
+      let back = null, done = 0, cap = rounds;
       // Derecho y al revés ALTERNADOS desde el primer intento (antes: 3 intentos al derecho antes de probar al revés → la cédula al revés tardaba el triple).
       // En cuanto una orientación da la estructura de las 3 líneas, solo se sigue con esa (y los cuadros siguientes empiezan por ahí).
       for (const [flip, attempt] of [[false, 0], [true, 0], [false, 1], [true, 1], [false, 2], [true, 2]]) {
         if (upside !== null && flip !== upside) continue;
         if (!alive()) return null;
+        if (done++ >= cap) break;
         const v = flip ? (back || (back = f.flip())) : f;
-        const r = await mz._read(v.g, v.w, v.h, { info: v.info, attempt });
+        const r = await mz._read(v.g, v.w, v.h, { info: v.info, attempt }); mark('ocr ' + k + (flip ? 'r' : 'd') + attempt);
         if (!r || !r.texts) continue;
         const parsed = R.parseMrz(r.texts.map((t) => t.text));
         reads.push({ parsed, conf: r.texts.map((t) => t.conf) });
-        if (parsed && upside === null) upside = flip;
+        if (parsed && upside === null) { upside = flip; if (flip) cap++; }               // estaba al revés: la lectura al derecho no contó
         const got = pickMrz(reads, R.mrzStrong, false); if (got) return got;
       }
       return pickMrz(reads, R.mrzStrong, false);
@@ -362,8 +377,8 @@
     const f0 = finds[0], ws = f0 ? checkFound(f0) : null;
     if (f0) { reads.located = true; reads.small = ws.small; }
     if (ws && ws.low >= 3) { reads.reason = washReason(ws); return null; }
-    if (f0) { const got = await readFound(0); if (got) return got.datos; }
-    if (guidePhoto && alive()) {                                                        // el recuadro, como siempre (respaldo del recorte automático)
+    if (f0) { const got = await readFound(0, ws.small ? NEW_ROUNDS_NEXT : NEW_ROUNDS_FIRST); if (got) return got.datos; }
+    if (!f0 && guidePhoto && alive()) {                                                 // sin las líneas ubicadas: el recuadro, como siempre (con ellas ubicadas sería releer lo mismo)
       let got = await readGuide(shots[0], expandRect(guidePhoto, 0.03, 0.08, shots[0].w, shots[0].h)); if (got) return got.datos;
       got = await readGuide(shots[0], expandRect(guidePhoto, 0.08, 0.45, shots[0].w, shots[0].h)); if (got) return got.datos;
     }
@@ -375,9 +390,10 @@
       return g0 ? g0.datos : null;
     }
     if (ws.low >= 1) { reads.reason = washReason(ws); const g0 = pickMrz(reads, R.mrzStrong, true); return g0 ? g0.datos : null; }   // una o dos letras lavadas y no se leyó: es el brillo
-    for (let k = 1; k < shots.length; k++) {                                            // los otros cuadros de la ráfaga
+    for (let k = 1; k < shots.length && !ws.small; k++) {                               // los otros cuadros de la ráfaga (con letras muy pequeñas no: sirve más la foto fija del sensor)
       if (!alive()) return null;
-      const got = await readFound(k); if (got) return got.datos;
+      if (performance.now() - t0 > NEW_LOCAL_MS) break;                                 // equipo lento: no se empiezan más cuadros (el servidor sigue en carrera)
+      const got = await readFound(k, NEW_ROUNDS_NEXT); if (got) return got.datos;
     }
     if (ws.small) reads.reason = 'small';
     if (!alive()) return null;
@@ -400,17 +416,21 @@
   /** Cédula nueva: navegador y servidor en carrera. El servidor arranca a los SERVER_HEAD_START_MS (o antes, si el navegador ya se rindió); gana el primero
    *  que entregue una lectura validada y el otro se corta (alive). Sin red / sin evento / modo sin conexión: solo el navegador, con su lectura de la foto completa. */
   async function decodeNewRace(R, shots, guidePhoto, alive, eventId, reads) {
-    const shot = shots[0], finds = [], deadline = performance.now() + NEW_DEADLINE_MS;
+    const shot = shots[0], finds = [];
+    mark('inicio'); if (R) { try { await decoder(R, 'new'); } catch (e) { /* decodeNew lo reporta */ } } mark('ocr listo');   // el OCR se espera ANTES de medir nada (la primera vez tarda en bajar y arrancar)
     if (R) finds[0] = findMrz(R, shot);                                             // se busca UNA vez: lo usan el chequeo previo, el navegador y el servidor
+    mark('ubicar');
     const useServer = serverUsable(eventId) && (!R || !!finds[0]);                  // sin las 3 líneas ubicadas no se manda nada: el servidor tardaba mucho en decir que no
     let won = false, kick = null;
-    const still = () => alive() && !won && performance.now() < deadline;
+    const still = () => alive() && !won;                                            // sin reloj: cada lado tiene su propio tope de trabajo
     if (!useServer) return R ? decodeNew(R, shots, guidePhoto, still, reads, finds) : null;
     if (finds[0] && checkFound(finds[0]).low >= 3) return decodeNew(R, shots, guidePhoto, still, reads, finds);   // brillo fuerte: decodeNew lo anota y devuelve null al instante
     const startServer = new Promise((ok) => { kick = ok; setTimeout(ok, SERVER_HEAD_START_MS); });
-    const local = R ? decodeNew(R, shots, guidePhoto, still, reads, finds).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), null);
-    const server = startServer.then(() => (still() ? Promise.race([serverMrz(shot, eventId, still, finds[0], Math.max(500, deadline - performance.now())), new Promise((ok) => setTimeout(() => ok(null), Math.max(0, deadline - performance.now())))]) : null));
-    const d = await firstFound([local, server]);
+    const local = R ? decodeNew(R, shots, guidePhoto, still, reads, finds).catch(() => null).then((d) => { if (!d) kick(); return d; }) : (kick(), Promise.resolve(null));
+    // El servidor lee SOLO el recorte (liviano): en una tableta lenta suele contestar antes que el OCR del navegador. Si el navegador ya terminó sin leer, se le espera un poco más.
+    const server = startServer.then(() => (still() ? serverMrz(shot, eventId, still, finds[0], SERVER_TIMEOUT_MS) : null));
+    const grace = local.then((d) => (d ? new Promise(() => {}) : new Promise((ok) => setTimeout(() => ok(null), SERVER_GRACE_MS))));
+    const d = await firstFound([local, Promise.race([server, grace])]); mark('fin');
     won = true;
     return d;
   }
@@ -432,7 +452,7 @@
   function attach(o) {
     const kind = o.kind === 'new' ? 'new' : 'old', G = GUIDE[kind], video = o.video, overlay = o.overlay, btn = o.button;
     const say = (m, k) => { if (!dead && o.onStatus) o.onStatus(m, k || ''); };
-    let dead = false, stream = null, track = null, busy = false, raf = 0, R = null, frozen = false, glare = false, torchOn = false, glareTimer = 0, torchBtn = null, choices = null;
+    let dead = false, stream = null, track = null, busy = false, raf = 0, R = null, frozen = false, frozenImg = null, preloading = null, ready = false, glare = false, torchOn = false, glareTimer = 0, torchBtn = null, choices = null;
     const alive = () => !dead;
     const label = btn ? btn.textContent : '';
 
@@ -446,6 +466,7 @@
       if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
       const line = busy ? tok(overlay, '--gw-gold-2', '#e8c25a') : glare ? tok(overlay, '--gw-warn-line', '#c98a00') : tok(overlay, '--gw-ok-line', '#1f8a4c');
       x.clearRect(0, 0, vw, vh);
+      if (frozenImg) x.drawImage(frozenImg, 0, 0, vw, vh);                              // la foto que se está procesando, «congelada» encima del video (ver freeze)
       x.fillStyle = tok(overlay, '--gw-overlay', 'rgba(0,0,0,.45)');                   // oscurece lo que queda fuera del recuadro
       x.beginPath(); x.rect(0, 0, vw, vh); x.rect(g.x, g.y, g.w, g.h); x.fill('evenodd');
       const lw = Math.max(1.5 * dpr, vw / 260), c = Math.min(g.h * 0.35, g.w * 0.06);
@@ -462,10 +483,25 @@
 
     function setBusy(on) {
       busy = on;
-      if (btn) { btn.disabled = on || !stream; btn.textContent = on ? 'Procesando…' : label; btn.setAttribute('aria-busy', String(on)); }
+      if (btn) { btn.disabled = on || !stream || !ready; btn.textContent = on ? 'Procesando…' : label; btn.setAttribute('aria-busy', String(on)); }
       redraw();
     }
-    function resumePreview() { if (frozen && !dead && stream) { frozen = false; video.play().catch(() => {}); } }
+    // CONGELAR sin pausar el video (24-nov-2026): con video.pause()/play() el iPad dejaba la cámara en NEGRO después de un intento fallido (WebKit no siempre reanuda un
+    // video de cámara pausado). Ahora el video nunca se pausa: la foto tomada se pinta en el lienzo de la guía, encima del video, y al terminar se borra.
+    function freeze() {
+      try {
+        const r = video.getBoundingClientRect(), dpr = Math.min(OVERLAY_DPR_MAX, window.devicePixelRatio || 1), cw = Math.max(1, Math.round(r.width * dpr)), ch = Math.max(1, Math.round(r.height * dpr));
+        const vw = video.videoWidth, vh = video.videoHeight, k = Math.max(cw / vw, ch / vh), sw = cw / k, sh = ch / k;      // la parte del video que se ve (object-fit: cover)
+        const c = canvasOf(cw, ch); c.getContext('2d').drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, cw, ch);
+        frozenImg = c;
+      } catch (e) { frozenImg = null; }
+      frozen = true; redraw();
+    }
+    function resumePreview() {
+      if (dead) return;
+      frozen = false; frozenImg = null; redraw();
+      if (stream && video.paused) video.play().catch(() => {});                        // por si el navegador lo pausó por su cuenta
+    }
     const aimMsg = () => (kind === 'old' ? MSG.aimOld : MSG.aimNew);
 
     /* Brillo EN VIVO: cada 0,5 s se mira el recuadro (en pequeño) y, si hay reflejo, se avisa ANTES de tomar la foto y el recuadro se pone ámbar. */
@@ -485,7 +521,7 @@
         if (bmp) { x.drawImage(bmp, 0, 0); if (bmp.close) bmp.close(); } else x.drawImage(video, g.x, g.y, g.w, g.h, 0, 0, probe.width, probe.height);
       } catch (e) { return; } finally { probing = false; }
       const now = glareRatio(x.getImageData(0, 0, probe.width, probe.height).data) > GLARE_RATIO;
-      if (now !== glare) { glare = now; redraw(); if (!busy) say(glare ? (torchOn ? MSG.glareTorch : MSG.glare) : aimMsg(), glare ? 'warn' : ''); }
+      if (now !== glare) { glare = now; redraw(); if (!busy && ready) say(glare ? (torchOn ? MSG.glareTorch : MSG.glare) : aimMsg(), glare ? 'warn' : ''); }
     }
 
     /* Fluidez: se cuentan los cuadros que la vista previa pinta de verdad; si son pocos, se baja la resolución del video (sin volver a pedir permiso). */
@@ -500,7 +536,7 @@
     }
     async function tunePreview() {                                                      // solo MIDE: si va lenta, la próxima apertura pide 1080p (nunca se cambia en caliente)
       const fps = await measureFps(); if (dead) return;
-      if (slowPreview(fps, Math.min(video.videoWidth || 0, video.videoHeight || 0))) slowSeen = true;
+      if (slowPreview(fps, Math.min(video.videoWidth || 0, video.videoHeight || 0))) { slowSeen = true; try { localStorage.setItem(SLOW_KEY, '1'); } catch (e) { /* sin almacenamiento: vale para esta página */ } }
     }
 
     /* Linterna: solo si el celular la ofrece (Android Chrome). En cédulas plastificadas a veces CAUSA el brillo: por eso el aviso pide apagarla. */
@@ -565,17 +601,22 @@
       video.addEventListener('loadedmetadata', redraw); video.addEventListener('resize', redraw);                    // 'resize': cambió la resolución del video (tunePreview)
       try { await video.play(); } catch (e) { /* iOS: arranca con el primer toque */ }
       if (dead) return;
-      if (btn) btn.disabled = busy;
       redraw(); setTimeout(redraw, 300);
       setupTorch();
       glareTimer = setInterval(checkGlare, 500);
-      if (!busy) say(aimMsg());
-      await tunePreview();                                                              // mide la fluidez (para la próxima apertura)
-      preload();                                                                        // los lectores se cargan DESPUÉS: su arranque (OCR, zxing) no compite con la cámara al abrir
+      // El botón se habilita cuando el lector está cargado (en una tableta lenta el OCR tarda varios segundos la primera vez): así «Tomar foto» responde enseguida
+      // en vez de quedarse en «Procesando…» mientras carga. Si la carga se demora o falla, se habilita igual a los 8 s (shoot() la espera o usa el servidor).
+      say(MSG.preparing);
+      await Promise.race([preload(), new Promise((ok) => setTimeout(ok, 8000))]);
+      if (dead) return;
+      ready = true;
+      if (btn) btn.disabled = busy;
+      if (!busy) say(glare ? (torchOn ? MSG.glareTorch : MSG.glare) : aimMsg(), glare ? 'warn' : '');
+      await tunePreview();                                                              // y después se mide la fluidez (para la próxima apertura), sin la carga de por medio
     }
 
     async function shoot() {
-      if (busy || dead || !stream || !video.videoWidth) return;
+      if (busy || dead || !ready || !stream || !video.videoWidth) return;
       clearChoices();
       setBusy(true); say(MSG.processing, 'warn');
       let shots = [];
@@ -586,7 +627,7 @@
         shots.push(await takeStill(track, video));
         if (shots[0].source === 'frame') for (let k = 1; k < BURST && !dead; k++) { await new Promise((ok) => setTimeout(ok, BURST_GAP_MS)); shots.push(frameOf(video)); }   // ráfaga del video (mismo encuadre que el primer cuadro)
         if (dead) return;
-        video.pause(); frozen = true;                                                   // lo que se ve es lo que se está procesando
+        freeze();                                                                       // lo que se ve es lo que se está procesando
         await new Promise((ok) => setTimeout(ok, 30));                                  // deja pintar «Procesando la foto…» antes del cálculo pesado
         const shot = shots[0];
         const guidePhoto = photoRect(g, vw, vh, shot.w, shot.h);
@@ -623,8 +664,7 @@
     say(MSG.loading);
     openCamera().catch(() => {});
     // Los lectores se cargan mientras el operador encuadra (la primera vez la cédula nueva baja el OCR: unos segundos). Si se toma la foto antes, shoot() los espera.
-    let preloaded = false;
-    function preload() { if (preloaded || dead) return; preloaded = true; Promise.resolve().then(() => o.readers()).then((r) => { R = r; return decoder(r, kind); }).catch(() => { /* se reintenta al tomar la foto */ }); }
+    function preload() { if (!preloading) preloading = Promise.resolve().then(() => o.readers()).then((r) => { R = r; return decoder(r, kind); }).catch(() => { /* se reintenta al tomar la foto */ }); return preloading; }
     setTimeout(preload, 4000);                                                          // por si la cámara no abre o tarda: no se queda sin precargar
 
     return {
@@ -639,6 +679,7 @@
         if (btn) { btn.removeEventListener('click', shoot); btn.disabled = false; btn.textContent = label; btn.removeAttribute('aria-busy'); }
         if (stream) stream.getTracks().forEach((t) => t.stop());                        // libera la cámara (se apaga la luz del celular/computador)
         stream = track = null;
+        frozenImg = null;
         try { video.pause(); video.srcObject = null; } catch (e) { /* ya liberado */ }
         if (overlay) overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
       },
