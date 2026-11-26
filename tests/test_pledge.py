@@ -39,7 +39,7 @@ def _png(blank=False, size=(600, 200)):
 
 def _values(ced=CED, **over):
     v = {"p_id": ced, "p_name": "Juan Pérez", "p_phone": "300 123 4567", "p_em_name": "María Pérez", "p_em_phone": "3009876543",
-         "p_q_med": "Sí", "p_q_drug": "No", "p_q_support": "No", "p_q_contract": "Sí", "p_q_attend": "Sí", "p_auth": "true", "p_decl": "true"}
+         "p_q_med": "Sí", "p_q_med_c": "Asma", "p_q_drug": "No", "p_q_support": "No", "p_q_contract": "Sí", "p_q_attend": "Sí", "p_auth": "true", "p_decl": "true"}
     v.update(over)
     return v
 
@@ -534,9 +534,28 @@ def test_recreated_account_can_sign_after_its_old_evidence_is_kept(client, facto
 
 def test_pledge_keeps_which_health_questions_were_yes_for_the_alert(client, factory, db):
     ev, path, _ = _setup(client, factory)
-    assert _send(client, path, _values(p_q_med="Sí", p_q_drug="No", p_q_support="Sí", p_q_attend="No")).status_code == 200
+    assert _send(client, path, _values(p_q_med="Sí", p_q_drug="No", p_q_support="Sí", p_q_support_c="Familiar enfermo", p_q_attend="No")).status_code == 200
     [p] = _pledges(db, ev.id)
     assert p.health_flags == "med,support" and p.has_health_info and p.attendance_confirmed is False
     login(client, "coord1")
     acct = client.get(f"/api/events/{ev.id}/pledge/state").json()["accounts"][0]
     assert acct["health_flags"] == ["med", "support"] and acct["attendance_confirmed"] is False
+
+
+def test_which_field_appears_and_is_required_only_when_the_answer_is_yes(client, factory, db):
+    """25-nov-2026: en cada pregunta de salud, «¿Cuál?» solo aparece (y es obligatorio) si respondió Sí; se guarda cifrado con lo sensible."""
+    from app import formlib, pledge
+
+    ev, path, _ = _setup(client, factory)
+    design = pledge.build_design(None, ev)
+    for q, c in (("p_q_med", "p_q_med_c"), ("p_q_drug", "p_q_drug_c"), ("p_q_support", "p_q_support_c")):
+        f = design["fields"][c]
+        assert f["required"] and f["sensitive"] and f["show_if"]["field"] == q and f["show_if"]["value"] == "Sí"
+        assert c in pledge.SENSITIVE_FIDS
+        no = {q: "No"}
+        yes = {q: "Sí"}
+        assert c not in formlib.visible_ids(design, no)
+        assert c in formlib.visible_ids(design, yes)
+    r = _send(client, path, _values(p_q_med="Sí", p_q_med_c="", p_q_drug="No", p_q_support="No"))
+    assert r.status_code == 422 and "p_q_med_c" in r.json()["errors"]                          # Sí sin escribir cuál: se pide
+    assert _send(client, path, _values(p_q_med="No", p_q_med_c="", p_q_drug="No", p_q_support="No")).status_code == 200      # No: no se pide

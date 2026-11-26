@@ -37,8 +37,9 @@ SESSION_KEY = "pledge_req"             # en la cookie firmada del navegador que 
 FID_ID, FID_NAME, FID_PHONE = "p_id", "p_name", "p_phone"
 FID_EM_NAME, FID_EM_PHONE = "p_em_name", "p_em_phone"
 FID_MED, FID_DRUG, FID_SUPPORT, FID_CONTRACT, FID_ATTEND = "p_q_med", "p_q_drug", "p_q_support", "p_q_contract", "p_q_attend"
+FID_MED_C, FID_DRUG_C, FID_SUPPORT_C = "p_q_med_c", "p_q_drug_c", "p_q_support_c"          # «¿Cuál?»: aparece y es obligatorio solo si la respuesta fue Sí (25-nov-2026)
 FID_DECL, FID_AUTH_TXT, FID_AUTH, FID_SIG = "p_decl", "t_auth", "p_auth", "p_sig"
-SENSITIVE_FIDS = (FID_EM_NAME, FID_EM_PHONE, FID_MED, FID_DRUG, FID_SUPPORT)
+SENSITIVE_FIDS = (FID_EM_NAME, FID_EM_PHONE, FID_MED, FID_DRUG, FID_SUPPORT, FID_MED_C, FID_DRUG_C, FID_SUPPORT_C)
 HEALTH_FIDS = (FID_MED, FID_DRUG, FID_SUPPORT)
 SIGNATURE_MAX_BYTES = 200 * 1024
 SIGNATURE_MAX_PIXELS = 1200 * 600
@@ -165,8 +166,9 @@ def build_design(db: Optional[Session], event: Event) -> dict:
             add(FID_EM_PHONE, "phone", label="Teléfono del familiar", required=True, sensitive=True))
     row(add("t_survey", "heading", content="Encuesta"))
     if sens:
-        for fid, q in ((FID_MED, T.Q_MEDICAL), (FID_DRUG, T.Q_MEDICATION), (FID_SUPPORT, T.Q_SUPPORT)):
+        for fid, q, fid_c in ((FID_MED, T.Q_MEDICAL, FID_MED_C), (FID_DRUG, T.Q_MEDICATION, FID_DRUG_C), (FID_SUPPORT, T.Q_SUPPORT, FID_SUPPORT_C)):
             row(add(fid, "radio", label=q, options=yes_no, required=True, sensitive=True))
+            row(add(fid_c, "text_short", label="¿Cuál?", placeholder="Escribe cuál", required=True, sensitive=True, show_if={"field": fid, "op": "equals", "value": T.YES}))          # solo si respondió Sí
     row(add("t_confirm", "paragraph", content=_p("Lee con atención y responde: ¿entendiste las condiciones del contrato y confirmas tu asistencia al evento?")))          # 25-nov-2026: resaltadas (form-render.js › .fr-pledge)
     row(add(FID_CONTRACT, "radio", label=T.Q_CONTRACT, options=yes_no, required=True))
     row(add(FID_ATTEND, "radio", label=T.Q_ATTENDANCE, options=yes_no, required=True))

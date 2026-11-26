@@ -18,6 +18,7 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 - **Compromiso del digitador habilitado (migración `0167_staff_auth_login_ok`):** la autorización de datos de salud quedó con el texto que aprobó la auditora (el mismo, sin «BORRADOR»;
   confirmado por Juan David), así que en producción ya se genera el enlace y su QR. Las preguntas «¿Tienes claras las condiciones del contrato…?» y «¿Confirmas tu asistencia?» van
   resaltadas. Un digitador ya conocido ve su cédula y nombre fijos y sus datos de contacto prellenados: solo responde salud, contrato y asistencia.
+- **Compromiso: «¿Cuál?» en las 3 preguntas de salud:** aparece y es obligatorio solo si respondió «Sí»; se guarda cifrado con lo demás sensible (se purga igual).
 - **Ingreso del digitador: el coordinador autoriza UNA vez por evento.** Los siguientes ingresos al mismo evento entran directo; si lo asignan a otro evento en proceso, el siguiente
   ingreso espera una vez la autorización de ese evento.
 

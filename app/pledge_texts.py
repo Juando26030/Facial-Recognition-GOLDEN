@@ -8,7 +8,7 @@ Dos clases de texto, con dueños distintos:
    False, el formulario con datos sensibles NO se publica en producción (ver `pledge.available`): solo en staging/pruebas o con PLEDGE_ALLOW_DRAFT_TEXT=1. Cuando la auditora entregue el texto: pegarlo
    LITERAL en `SENSITIVE_AUTH_TEXT`, poner `APPROVED = True`, `SENSITIVE_AUTH_VERSION = "<versión de la auditora>"` y subir `VERSION`. No se edita de otra forma (igual que app/legal_texts_data.py)."""
 
-VERSION = "compromiso-2026-11-25.1"          # 25-nov-2026: autorización aprobada y preguntas de contrato/asistencia resaltadas
+VERSION = "compromiso-2026-11-25.2"          # 25-nov-2026: autorización aprobada y preguntas de contrato/asistencia resaltadas
 
 TITLE = "Formato de compromiso"
 SUBTITLE = "Digitadores y personal de registro en eventos"
