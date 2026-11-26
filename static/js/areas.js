@@ -249,6 +249,7 @@
     onPick: (u, via) => register(u.id, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
     onRaw: (cedula, via) => register(cedula, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
     onMessage: (text) => show('warn', 'Búsqueda', esc(text)),
+    onTyping: (t) => { const b = $('personBanner'); if (String(t || '').trim() && b && !b.hidden) { b.hidden = true; b.innerHTML = ''; } },          // 26-nov-2026: al escribir otra búsqueda se quita la tarjeta anterior
   });
 
   // Cámara del dispositivo: el MISMO escáner del Registro (selector «Cédula vieja · Cédula nueva · QR» en la misma ventana) y escanea varias personas seguidas (cada una entra/sale según la dirección elegida).

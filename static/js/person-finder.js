@@ -6,7 +6,8 @@
    El lector de mano que escribe una vCard en VARIAS líneas se junta con QrCode.collect. Una vCard AJENA (el contacto de un celular, sin el código de Golden) se busca por su nombre (FN / N).
    Usa SearchCore (search-core.js) y QrCode (qr.js). Sin DOM propio más allá de la caja y la lista que le pasa la página.
 
-   PersonFinder.attach({ input, box, users: () => lista, purpose: 'area'|'inventory', eventId, onPick(persona, via), onRaw(cedula, via), onMessage(texto) }) -> { submit(), clear() }
+   PersonFinder.attach({ input, box, users: () => lista, purpose: 'area'|'inventory', eventId, onPick(persona, via), onRaw(cedula, via), onMessage(texto), onTyping(texto) }) -> { submit(), clear() }
+     onTyping (26-nov-2026): se llama al escribir en la caja (la página quita la tarjeta de la persona anterior para que no parezca elegida).
      via: 'qr' (QR propio / vCard / dinámico) | 'cedula' | 'lista' (la eligió quien opera de la lista). */
 (function (root) {
   'use strict';
@@ -67,10 +68,23 @@
       return { q, list };
     }
 
+    /* 26-nov-2026 (Juan David): «sin coincidencias» grande y en rojo, como el aviso de la entrega, y diciendo QUÉ se buscó (código, cédula o nombre). */
+    function noMatchHtml(q) {
+      const t = String((q && q.raw) || input.value || '').trim().slice(0, 60);
+      const hasCodes = users().some((u) => u.code);
+      const what = q.kind === 'texto' ? `el nombre «${esc(t)}»`
+        : (root.EVENT_CODE_ONLY === true ? `el código «${esc(t)}»` : (hasCodes ? `la cédula o el código «${esc(t)}»` : `la cédula «${esc(t)}»`));
+      const tip = q.kind === 'texto' ? 'Revisa cómo está escrito o búscala por cédula' + (hasCodes ? ' o código' : '') + '.'
+        : 'Revisa el número o búscala por el nombre.';
+      const u = typeof document !== 'undefined' ? document.querySelector('.gw-icon use') : null, sprite = u ? (u.getAttribute('href') || '').split('#')[0] : '';
+      return `<div class="gw-verdict gw-verdict--err gw-pf__none" role="alert"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="${esc(sprite)}#i-error"/></svg>`
+        + `<div class="gw-verdict__body"><p class="gw-verdict__title">Sin coincidencias</p><p class="gw-verdict__text">No hay nadie en la base de este evento con ${what}. ${tip}</p></div></div>`;
+    }
+
     function draw(list, q) {
       results = list.slice(0, MAX_ROWS);
       if (!results.length) {
-        box.innerHTML = q && q.kind !== 'vacio' ? '<p class="gw-hint">Sin coincidencias. Revisa la cédula o prueba con el nombre.</p>' : '';
+        box.innerHTML = q && q.kind !== 'vacio' ? noMatchHtml(q) : '';
         box.hidden = !box.innerHTML; return;
       }
       box.innerHTML = (list.length > MAX_ROWS ? `<p class="gw-hint">${list.length} coincidencias: se muestran las primeras ${MAX_ROWS}. Escribe más para afinar.</p>` : `<p class="gw-hint">${list.length} ${list.length === 1 ? 'coincidencia' : 'coincidencias'}</p>`)
@@ -83,6 +97,7 @@
     // Mientras se escribe: coincidencias en vivo (sin elegir nada). Una vCard o un enlace que llega de un lector no se busca a medias.
     input.addEventListener('input', () => {
       const raw = input.value;
+      if (cfg.onTyping) { try { cfg.onTyping(raw); } catch (e) { /* la búsqueda sigue */ } }
       if (/^\s*(BEGIN:VCARD|MECARD:|https?:\/\/)/i.test(raw) || /\n/.test(raw)) return;
       const { q, list } = find(queryText(raw));
       if (q.kind === 'vacio') { clearList(); return; }
@@ -119,8 +134,7 @@
         clear(); if (cfg.onRaw) cfg.onRaw(String(ced).replace(/[.\s]/g, ''), via); return;
       }
       input.value = text.length < 120 ? text : '';                                                         // se deja lo buscado para afinarlo
-      draw(list, q);
-      if (!list.length) say('Sin coincidencias. Revisa la cédula o prueba con el nombre.');
+      draw(list, q);          // sin coincidencias: el aviso rojo queda en la lista (no hace falta otro aviso)
     }
 
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });

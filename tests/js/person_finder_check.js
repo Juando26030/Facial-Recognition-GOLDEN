@@ -45,7 +45,10 @@ function make(extra) {
 
   // 5) cédula completa que NO está en la lista → se manda al servidor tal cual
   c = make(); await c.enter('80111222'); assert.deepStrictEqual(c.raws, [['80111222', 'cedula']]);
-  c = make(); await c.enter('xyz nadie'); assert.ok(c.msgs.length === 1 && c.picked.length === 0 && c.raws.length === 0, 'texto sin coincidencias: avisa');
+  c = make(); await c.enter('xyz nadie'); assert.ok(c.box.innerHTML.includes('gw-verdict--err') && c.box.innerHTML.includes('el nombre «xyz nadie»') && c.picked.length === 0 && c.raws.length === 0, 'texto sin coincidencias: aviso rojo con lo buscado');
+  // 26-nov-2026: con «solo código» dice «el código»; al escribir se avisa a la página (quita la tarjeta anterior)
+  global.EVENT_CODE_ONLY = true; c = make(); c.type('2021'); assert.ok(c.box.innerHTML.includes('el código «2021»'), 'solo código: dice código'); global.EVENT_CODE_ONLY = false;
+  const typed = []; c = make({ onTyping: (t) => typed.push(t) }); c.type('ju'); assert.deepStrictEqual(typed, ['ju']);
 
   // 6) vCard de Golden (varias líneas, como las manda un lector de mano) → junta las líneas y toma el código de NOTE
   c = make();

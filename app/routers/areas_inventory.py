@@ -702,6 +702,23 @@ def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: Staff
     } for r in rows]
 
 
+@router.get("/events/{event_id}/inventory/deliveries/person")
+def person_deliveries(event_id: int, cedula: str, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+    """26-nov-2026 (Juan David): el historial COMPLETO de entregas de UNA persona (buscador de «Últimas entregas»; solo coordinador en adelante).
+    `cedula` = la identificación de la persona que eligió la pantalla (o su código). Quién entregó va por su nombre de cuenta, nunca su usuario (es su cédula)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    user = _find_person(db, event, cedula)
+    item_rows = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
+    rows = (db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id, InventoryDelivery.user_id == user.id)
+            .order_by(InventoryDelivery.delivered_at.desc(), InventoryDelivery.id.desc()).all())
+    sids = {r.delivered_by_staff_id for r in rows if r.delivered_by_staff_id}
+    names = {sid: ((n or "").strip() or "Personal del evento") for sid, n in db.query(StaffUser.id, StaffUser.full_name).filter(StaffUser.id.in_(sids))} if sids else {}
+    return {"person": {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "code": person_code.code_of(db, event, user.id) or ""},
+            "deliveries": [{"time": r.delivered_at.isoformat(), "user_id": r.user_id, "batch_id": r.batch_id, "item": subcat.label_of(item_rows, item_rows[r.item_id]) if r.item_id in item_rows else "",
+                            "qty": r.qty, "by": names.get(r.delivered_by_staff_id, "")} for r in rows]}
+
+
 @router.get("/events/{event_id}/inventory-report")
 def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Hoja 'Entregas' (hora, a quién, qué se le entregó) + hoja 'Inventario' (inicial / entregado / disponible)."""

@@ -119,7 +119,7 @@
     const chosen = Object.keys(sel).map(id => byIdx[id]).filter(Boolean);
     const label = (i) => (i.parent_id && byIdx[i.parent_id] ? byIdx[i.parent_id].name + ' › ' : '') + i.name;
     box.innerHTML = chosen.length
-      ? '<p class="gw-pcard__deliver-title">Se le entrega:</p>' + chosen.map(i => `<div class="gw-pcard__cell"><span class="gw-pcard__cell-name">${esc(label(i))}</span><span class="gw-pcard__cell-qty">${sel[i.id]} unidad${sel[i.id] === 1 ? '' : 'es'}</span></div>`).join('')
+      ? '<p class="gw-pcard__deliver-title">Estás entregando:</p>' + chosen.map(i => `<div class="gw-pcard__cell"><span class="gw-pcard__cell-name">${esc(label(i))}</span><span class="gw-pcard__cell-qty">${sel[i.id]} unidad${sel[i.id] === 1 ? '' : 'es'}</span></div>`).join('')
       : '<p class="gw-alert gw-alert--warn">Todavía no has elegido qué entregar: márcalo en «2. ¿Qué se le entrega?».</p>';
     const go = $('deliverHereBtn'); if (go) go.disabled = !chosen.length;
   }
@@ -172,7 +172,41 @@
     $('statDeliveries').textContent = rows.length;
     if (!rows.length) { setDelState('Sin entregas todavía. Elige a una persona y entrega el primer ítem.', false); $('delBody').innerHTML = ''; return; }
     $('delState').hidden = true; $('delWrap').hidden = false;
-    $('delBody').innerHTML = rows.map(r => `<article class="gw-card-row"><div class="gw-card-row__head"><h3 class="gw-card-row__title">${esc(r.name)}</h3><span class="gw-badge gw-badge--ok">${r.qty} × ${esc(r.item)}</span></div><p class="gw-card-row__meta">${esc(r.user_id)} · ${new Date(r.time + 'Z').toLocaleTimeString()}</p></article>`).join('');
+    $('delBody').innerHTML = delTable(rows, false);
+  }
+  /* 26-nov-2026: tabla con columnas alineadas (fecha y hora, persona, cédula, qué se entregó y, en el historial, quién entregó). */
+  const when = (t) => { const d = new Date(String(t).replace(/Z?$/, 'Z')); return isNaN(d) ? '' : d.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  function delTable(rows, withBy) {
+    return `<div class="gw-table-wrap"><table class="gw-table gw-inv-del"><thead><tr><th scope="col">Fecha y hora</th>${withBy ? '' : '<th scope="col">Persona</th><th scope="col">Cédula</th>'}<th scope="col">Se entregó</th>${withBy ? '<th scope="col">Entregó</th>' : ''}</tr></thead><tbody>`
+      + rows.map(r => `<tr><td class="gw-inv-del__time">${esc(when(r.time))}</td>${withBy ? '' : `<td>${esc(r.name)}</td><td class="gw-inv-del__num">${esc(r.user_id)}</td>`}<td><span class="gw-badge gw-badge--ok">${esc(r.qty)} × ${esc(r.item)}</span></td>${withBy ? `<td>${esc(r.by || '—')}</td>` : ''}</tr>`).join('')
+      + '</tbody></table></div>';
+  }
+  /* Buscador del historial (solo coordinador en adelante): el MISMO buscador de arriba (cédula, nombre, código, lector o cámara), pero no toca a quién se le entrega. */
+  async function showHistory(u) {
+    const box = $('histResult'); if (!box) return;
+    box.hidden = false; box.innerHTML = `<p class="gw-hint">Buscando el historial de ${esc(u.first_name || '')} ${esc(u.last_name || '')}…</p>`;
+    let data;
+    try {
+      const r = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliveries/person?cedula=${encodeURIComponent(u.id)}`);
+      data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || 'No se pudo consultar el historial');
+    } catch (e) { box.innerHTML = `<p class="gw-alert gw-alert--err" role="alert">${esc(e.message && e.message !== 'Failed to fetch' ? e.message : 'Sin conexión: el historial de una persona necesita internet.')}</p>`; return; }
+    const p = data.person || u, rows = data.deliveries || [];
+    const head = `<div class="gw-inv-hist__head"><div><p class="gw-inv-hist__name">${esc(p.first_name || '')} ${esc(p.last_name || '')}</p><p class="gw-hint">Cédula: ${esc(p.id)}${p.code ? ' · Código: ' + esc(p.code) : ''} · ${rows.length} entrega${rows.length === 1 ? '' : 's'}</p></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="histClose">Cerrar historial</button></div>`;
+    box.innerHTML = head + (rows.length ? delTable(rows, true) : '<p class="gw-alert gw-alert--info">A esta persona todavía no se le ha entregado nada.</p>');
+  }
+  if ($('histInput')) {
+    const hist = PersonFinder.attach({
+      input: $('histInput'), box: $('histSuggest'), users: () => users, purpose: 'inventory',
+      onPick: (u) => showHistory(u),
+      onRaw: (ced) => { const u = users.find(x => x.id === ced); if (u) showHistory(u); else showToast('Esa persona no está en la base de este evento', 'error'); },
+    });
+    $('histResult').addEventListener('click', (e) => { if (e.target.closest('#histClose')) { $('histResult').hidden = true; $('histResult').innerHTML = ''; } });
+    if ($('histScanBtn')) $('histScanBtn').addEventListener('click', () => { const sc = QrScanner.open({
+      title: 'Escanear cédula o QR — Historial de entregas', formats: ['qr_code', 'pdf417'], modes: ['old', 'new', 'qr'],
+      onCedula: (d) => { $('histInput').value = d.cedula; hist.submit(); sc.close(); },
+      onCode: (text) => { $('histInput').value = text; hist.submit(); sc.close(); },
+    }); });
   }
   function setDelState(text, isError) {
     const st = $('delState'); st.innerHTML = `<span class="gw-state__icon">${icon(isError ? 'error' : 'inbox')}</span><p class="gw-state__title">${esc(text)}</p>`; st.hidden = false; st.classList.toggle('gw-state--error', !!isError); $('delWrap').hidden = true;
@@ -213,7 +247,14 @@
     input: $('scanInput'), box: $('suggest'), users: () => users, purpose: 'inventory',
     onPick: (u) => { setPerson(Object.assign({}, u, { __auto: true })); if (AUTOSCAN && !ASSIGNED) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
     onRaw: () => showToast('Esa persona no está en la base de este evento', 'error'),
+    onTyping: (t) => { if (String(t || '').trim() && person) clearPerson(); },          // 26-nov-2026: al escribir otra búsqueda se quita la tarjeta anterior (no queda «elegida»)
   });
+  function clearPerson() {
+    person = null;
+    const b = $('personBanner'); b.hidden = true; b.innerHTML = '';
+    const rb = $('resultBanner'); if (rb) rb.hidden = true;
+    if (ASSIGNED && $('assignedBox')) $('assignedBox').innerHTML = '<div class="gw-state gw-empty--hero"><p class="gw-state__title">Escanea o busca a la persona para ver lo que le corresponde.</p></div>';
+  }
   // Cámara del dispositivo: el MISMO escáner del Registro y de Control de áreas (selector «Cédula vieja · Cédula nueva · QR»); cada lectura elige a la persona a la que se le entrega.
   // Si la cámara lee el código y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
   let scanner = null;

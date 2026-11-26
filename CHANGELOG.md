@@ -8,6 +8,13 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-26 (madrugada, 2) — Inventario: historial por persona, tabla alineada y búsqueda más clara · **Rama**
+
+- «Últimas entregas»: buscador del historial de UNA persona (cédula, nombre, código, lector o cámara), aparte del de arriba; solo coordinador en adelante
+  (`GET /api/events/{id}/inventory/deliveries/person`, CONFIG_ROLE). La lista va en tabla con columnas alineadas (fecha y hora, persona, cédula, qué se entregó; en el historial, quién entregó).
+- Al escribir otra búsqueda arriba se quita la tarjeta de la persona anterior (Inventario y Zonas). «Sin coincidencias» sale grande y en rojo, como el aviso de la entrega,
+  y dice qué se buscó (código, cédula o nombre). En la tarjeta: «Estás entregando:».
+
 ## 2026-11-26 (madrugada) — Hotfix: «Solo buscar por código» y motivos reales al entregar · **Rama**
 
 - Con «Solo buscar por código», entregar / acreditar a la persona ya elegida respondía «Esa persona no está en la base de este evento»: la pantalla manda su

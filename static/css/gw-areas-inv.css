@@ -125,3 +125,15 @@
 .gw-hero--empty .gw-hero__title { font-size: var(--gw-fs-xl); color: var(--gw-text-muted); }
 @media (max-width: 480px) { .gw-hero__title { font-size: var(--gw-fs-2xl); } }
 .gw-ai__item--none { opacity: .85; }
+
+/* 26-nov-2026: «Últimas entregas» en tabla (columnas alineadas) y buscador del historial de una persona (solo coordinador en adelante). */
+.gw-inv-del td { vertical-align: middle; }
+.gw-inv-del__time, .gw-inv-del__num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gw-inv-del .gw-badge { white-space: normal; }
+.gw-inv-hist { display: grid; gap: var(--gw-sp-3); padding: var(--gw-sp-4); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-inv-hist .gw-search { position: static; margin: 0; }
+.gw-inv-hist__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-3); }
+.gw-inv-hist__name { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-inv-hist__result { display: grid; gap: var(--gw-sp-2); }
+.gw-inv-hist__result[hidden] { display: none; }
+.gw-pf__none { margin: 0; }

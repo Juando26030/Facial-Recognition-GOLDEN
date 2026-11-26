@@ -160,9 +160,26 @@
           <h2 class="gw-card__title" id="invLastTitle">Últimas entregas</h2>
           <a id="reportBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/inventory-report" hidden>{{ ic('download', 'gw-icon--sm') }} Reporte (Excel)</a>
         </div>
+        {# 26-nov-2026 (Juan David): historial de UNA persona, aparte del «¿A quién se le entrega?» de arriba. Solo coordinador en adelante (el servidor también lo exige). #}
+        {% if staff_role not in ["digitador", "cliente"] %}
+        <div class="gw-inv-hist" id="histBox">
+          <div class="gw-search">
+            <label class="gw-label" for="histInput">Buscar el historial de una persona</label>
+            <div class="gw-search__row">
+              <div class="gw-search__field">
+                {{ ic('search', 'gw-search__icon') }}
+                <input type="text" id="histInput" data-gw-clearable class="gw-input" autocomplete="off" placeholder="Cédula, nombre o código (o escanea) y presiona Enter">
+              </div>
+              <button type="button" id="histScanBtn" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear cédula o QR para ver su historial" title="Escanear cédula o QR para ver su historial">{{ ic('scan') }}</button>
+            </div>
+          </div>
+          <div class="gw-ai__suggest" id="histSuggest" role="listbox" aria-label="Coincidencias del historial" hidden></div>
+          <div id="histResult" class="gw-inv-hist__result" role="status" aria-live="polite" hidden></div>
+        </div>
+        {% endif %}
         <div id="delState" class="gw-state gw-empty--hero" role="status" hidden></div>
         <div id="delWrap">
-          <div class="gw-cards" id="delBody">{{ skeleton('cards', rows=2, label='Cargando entregas…') }}</div>
+          <div id="delBody">{{ skeleton('cards', rows=2, label='Cargando entregas…') }}</div>
         </div>
       </section>
     </div>

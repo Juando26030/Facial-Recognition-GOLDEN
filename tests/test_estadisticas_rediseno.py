@@ -159,3 +159,31 @@ def test_code_only_event_still_delivers_to_the_picked_person_and_gives_the_real_
     r = _deliver(client, ev, "1001", (muffin["id"], 1))
     assert r.status_code == 409 and "ya recibió «Muffin»" in r.json()["detail"]        # antes: 404 «no está en la base de este evento»
     assert _deliver(client, ev, "999999", (muffin["id"], 1)).status_code == 404        # quien no está inscrito sigue sin estar
+
+
+# ------------------------------------------------------------------------------------------ 26-nov-2026: historial por persona y pantalla de entrega
+
+def test_person_history_is_only_for_coordinators_and_returns_everything(client, factory):
+    ev = _setup(client, factory)
+    muffin = _item(client, ev, "Muffin", qty=10)
+    agua = _item(client, ev, "Agua", qty=10)
+    assert _deliver(client, ev, "1001", (muffin["id"], 1), (agua["id"], 1)).status_code == 200
+    assert _deliver(client, ev, "1002", (agua["id"], 1)).status_code == 200
+    r = client.get(f"/api/events/{ev.id}/inventory/deliveries/person", params={"cedula": "1001"})
+    assert r.status_code == 200 and r.json()["person"]["id"] == "1001"
+    assert sorted(d["item"] for d in r.json()["deliveries"]) == ["Agua", "Muffin"] and all(d["user_id"] == "1001" for d in r.json()["deliveries"])
+    assert client.get(f"/api/events/{ev.id}/inventory/deliveries/person", params={"cedula": "999999"}).status_code == 404
+    dig = factory.staff("digitador", "9990001")
+    factory.authorize(ev, dig)
+    client.post("/logout")
+    login(client, "9990001")
+    assert client.get(f"/api/events/{ev.id}/inventory/deliveries/person", params={"cedula": "1001"}).status_code == 403
+
+
+def test_inventory_screen_pieces():
+    tpl = (ROOT / "templates" / "kiosk_inventario.html").read_text(encoding="utf-8")
+    js = (ROOT / "static" / "js" / "inventario.js").read_text(encoding="utf-8")
+    assert '{% if staff_role not in ["digitador", "cliente"] %}' in tpl and 'id="histInput"' in tpl and 'id="histScanBtn"' in tpl
+    assert "Estás entregando:" in js and "Se le entrega:" not in js
+    assert "function delTable" in js and "<th scope=\"col\">Fecha y hora</th>" in js
+    assert "onTyping:" in js and "function clearPerson" in js
