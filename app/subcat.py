@@ -152,7 +152,8 @@ def _area_counts(db: Session, event_id: int) -> Dict[int, dict]:
 
 
 def area_variables(db: Session, event) -> List[dict]:
-    """Variables de Estadísticas para las zonas con `stats_enabled`: `zona:<id>` (la principal con subcategorías: un grupo por subcategoría; la suelta: una sola barra)."""
+    """Rediseño 26-nov-2026: ya no se agregan solas en «Gráficos por variable» (lo principal sale arriba, en Control de zonas / inventario; app/stats_control.py); siguen en la lista para elegirlas.
+    Variables de Estadísticas para las zonas con `stats_enabled`: `zona:<id>` (la principal con subcategorías: un grupo por subcategoría; la suelta: una sola barra)."""
     if not event.areas_enabled:
         return []
     areas = db.query(EventArea).filter(EventArea.event_id == event.id, EventArea.archived_at.is_(None)).order_by(EventArea.id).all()
@@ -161,10 +162,10 @@ def area_variables(db: Session, event) -> List[dict]:
     for a in areas:
         if a.parent_id or not a.stats_enabled:
             continue
-        out.append({"key": f"zona:{a.id}", "label": f"Zona: {a.name}", "default_stat_enabled": True, "default_chart_type": None})
+        out.append({"key": f"zona:{a.id}", "label": f"Zona: {a.name}", "default_stat_enabled": False, "default_chart_type": None})
     for a in areas:
         if a.parent_id and a.stats_enabled and a.parent_id in by_id:
-            out.append({"key": f"zona:{a.id}", "label": f"Zona: {label_of(by_id, a)}", "default_stat_enabled": True, "default_chart_type": None})
+            out.append({"key": f"zona:{a.id}", "label": f"Zona: {label_of(by_id, a)}", "default_stat_enabled": False, "default_chart_type": None})
     return out
 
 
@@ -213,10 +214,10 @@ def inventory_variables(db: Session, event) -> List[dict]:
     for i in items:
         if i.parent_id or not i.stats_enabled:
             continue
-        out.append({"key": f"inv:{i.id}", "label": f"Inventario: {i.name}", "default_stat_enabled": True, "default_chart_type": None})
+        out.append({"key": f"inv:{i.id}", "label": f"Inventario: {i.name}", "default_stat_enabled": False, "default_chart_type": None})
     for i in items:
         if i.parent_id and i.stats_enabled and i.parent_id in by_id:
-            out.append({"key": f"inv:{i.id}", "label": f"Inventario: {label_of(by_id, i)}", "default_stat_enabled": True, "default_chart_type": None})
+            out.append({"key": f"inv:{i.id}", "label": f"Inventario: {label_of(by_id, i)}", "default_stat_enabled": False, "default_chart_type": None})
     return out
 
 

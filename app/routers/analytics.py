@@ -6,7 +6,7 @@ from collections import Counter
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app import analytics as an, regtime
+from app import analytics as an, regtime, stats_control
 from app.auth import get_event_for_staff, require_role, require_role_or_client
 from app import event_archive
 from app.database import get_db
@@ -40,13 +40,14 @@ def registro_dashboard(db: Session, event: Event, with_origin: bool = False, wit
     ]
     if with_origin:
         kpis += _origin_kpis(attendees, ids, logs)
+    # Rediseño 26-nov-2026: lo de aquí para abajo es «Información detallada» (la pantalla lo dibuja plegado, después de inventario y zonas).
     if times:
-        kpis.append(an.kpi("Primer registro", an.fmt_local(min(times)), "hora local", icon="flag-start"))
-        kpis.append(an.kpi("Último registro", an.fmt_local(max(times)), "hora local", icon="flag-end"))
-        kpis.append(an.kpi("Hora pico", an.peak_hour(times) or "—", "más registros en una hora", icon="peak"))
+        kpis.append(an.detail(an.kpi("Primer registro", an.fmt_local(min(times)), "hora local", icon="flag-start")))
+        kpis.append(an.detail(an.kpi("Último registro", an.fmt_local(max(times)), "hora local", icon="flag-end")))
+        kpis.append(an.detail(an.kpi("Hora pico", an.peak_hour(times) or "—", "más registros en una hora", icon="peak")))
         hours = max(1 / 60, (max(times) - min(times)).total_seconds() / 3600)
         if len(times) > 1:
-            kpis.append(an.kpi("Ritmo promedio", f"{len(times) / hours:.0f} / hora", "entre el primer y el último registro", icon="gauge"))
+            kpis.append(an.detail(an.kpi("Ritmo promedio", f"{len(times) / hours:.0f} / hora", "entre el primer y el último registro", icon="gauge")))
 
     charts = [
         an.time_series("timeline", "Registros en el tiempo", times),
@@ -72,7 +73,9 @@ def registro_dashboard(db: Session, event: Event, with_origin: bool = False, wit
     if staff_ids:
         names = {s.id: ((s.full_name or "").strip() or f"Digitador {n}") for n, s in enumerate(db.query(StaffUser).filter(StaffUser.id.in_(staff_ids)).order_by(StaffUser.id), start=1)}
         charts.append(an.counter_chart("by_operator", "Registros por operador", [names.get(lg.registered_by_staff_id, "—") for lg in first.values() if lg.registered_by_staff_id], top=10, label="Registros"))
-    return an.dashboard("Registro del evento", kpis, [c for c in charts if c])
+    dash = an.dashboard("Registro del evento", kpis, [c for c in charts if c])
+    dash["control"] = stats_control.build(db, event, done)          # lo principal de Control de inventario y de zonas (None si el módulo no está activo)
+    return dash
 
 
 def _origin_kpis(attendees: dict, ids: set, logs: list) -> list:

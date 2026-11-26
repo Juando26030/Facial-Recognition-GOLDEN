@@ -3,6 +3,9 @@
 
      AnalyticsDashboard.mount(contenedor, url, { refreshSeconds: 30 })
 
+   Estadísticas del evento (rediseño 26-nov-2026) pasa además `detailHost` (las cifras marcadas `detail` y TODOS los gráficos van ahí, en el plegable
+   «Información detallada») y `onData(data)` (recibe cada respuesta: dibuja lo principal de inventario y zonas, static/js/stats-control.js).
+
    Requiere Chart.js (CDN) cargado antes. Cada gráfico se destruye y se vuelve a crear en cada refresco. */
 (function () {
   /* Colores de los gráficos: paleta de datos accesible (tokens --gw-viz-1..8 de static/css/gw-estadisticas.css, con su versión para tema oscuro). Si la pantalla
@@ -158,9 +161,12 @@
       </div>
       ${opts.stats ? '<p class="ad-state" role="status" hidden></p>' : ''}
       <div class="ad-kpis">${SK({ kind: 'stats', rows: 4, label: 'Cargando las cifras…' })}</div>
-      <div class="ad-charts${opts.large ? ' ad-charts--large' : ''}${opts.stats ? ' ad-charts--wide' : ''}">${SK({ kind: 'block', label: '' })}${SK({ kind: 'block', label: '' })}</div>
+      ${opts.detailHost ? '' : `<div class="ad-charts${opts.large ? ' ad-charts--large' : ''}${opts.stats ? ' ad-charts--wide' : ''}">${SK({ kind: 'block', label: '' })}${SK({ kind: 'block', label: '' })}</div>`}
       <p class="ad-empty" hidden>Todavía no hay datos para mostrar. Aparecen aquí apenas llegue el primer registro.</p>`;
     const q = (c) => container.querySelector(c);
+    const detail = opts.detailHost || null;
+    if (detail) detail.innerHTML = `<div class="ad-kpis ad-kpis--detail"></div><div class="ad-charts ad-charts--wide">${SK({ kind: 'block', label: '' })}${SK({ kind: 'block', label: '' })}</div>`;
+    const chartsHost = detail ? detail.querySelector('.ad-charts') : q('.ad-charts');
     const charts = {};
     let timer = null;
     let lastData = null;
@@ -226,12 +232,15 @@
     function paintStats(kpis) {
       const icon = (n) => `<svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="${esc(opts.icons || '')}#i-${n}"/></svg>`;
       const ICONS = ['users', 'check', 'clock'];
-      const big = kpis.slice(0, 3), rest = kpis.slice(3);
+      const main = detail ? kpis.filter((k) => !k.detail) : kpis, more = detail ? kpis.filter((k) => k.detail) : [];
+      const big = main.slice(0, 3), rest = main.slice(3);
+      const small = (list) => list.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}"><div class="ad-kpi__label">${k.icon ? `<svg class="gw-icon ad-kpi__icon ad-kpi__icon--${esc(k.icon)}" aria-hidden="true"><use href="${esc(opts.icons || '')}#i-${esc(k.icon)}"/></svg>` : ''}${esc(k.label)}</div><div class="ad-kpi__value">${esc(k.value)}</div><div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('');
+      if (detail) { const dk = detail.querySelector('.ad-kpis'); dk.innerHTML = small(more); dk.hidden = !more.length; }
       const cls = { good: ' gw-stat--ok', warn: ' gw-stat--warn', bad: ' gw-stat--err' };
       q('.ad-kpis').className = 'ad-kpis ad-kpis--stats';
       q('.ad-kpis').innerHTML = `<div class="gw-stats-row${big.length === 2 ? ' gw-stats-row--2' : ''}">` + big.map((k, i) => `<div class="gw-stat${cls[k.tone] || ''}">${icon(ICONS[i])}
         <div class="gw-stat__value">${esc(k.value)}</div><div class="gw-stat__label">${esc(k.label)}</div><div class="gw-stat__hint">${esc(k.hint)}</div></div>`).join('') + '</div>'
-        + (rest.length ? '<div class="ad-kpis">' + rest.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}"><div class="ad-kpi__label">${k.icon ? `<svg class="gw-icon ad-kpi__icon ad-kpi__icon--${esc(k.icon)}" aria-hidden="true"><use href="${esc(opts.icons || '')}#i-${esc(k.icon)}"/></svg>` : ''}${esc(k.label)}</div><div class="ad-kpi__value">${esc(k.value)}</div><div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('') + '</div>' : '');
+        + (rest.length ? '<div class="ad-kpis">' + small(rest) + '</div>' : '');
     }
 
     function paint(data) {
@@ -244,7 +253,7 @@
         <div class="ad-kpi__label">${esc(k.label)}</div>
         <div class="ad-kpi__value">${esc(k.value)}</div>
         <div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('');
-      const host = q('.ad-charts');
+      const host = chartsHost;
       host.querySelectorAll('[data-gw-sk]').forEach((el) => el.remove());          // fuera el esqueleto de la primera carga
       const wanted = new Set(data.charts.map((c) => c.id));
       Object.keys(charts).forEach((id) => { if (!wanted.has(id)) { charts[id].destroy(); delete charts[id]; } });
@@ -269,6 +278,8 @@
         paintChart(spec, card, np);
       });
       q('.ad-empty').hidden = !!(data.charts.length || data.kpis.some((k) => Number(k.value) > 0));
+      if (detail) { const none = detail.querySelector('.ad-detail-empty'); if (!data.charts.length && !data.kpis.some((k) => k.detail)) { if (!none) detail.insertAdjacentHTML('beforeend', '<p class="ad-empty ad-detail-empty">Todavía no hay registros: el detalle aparece con el primero.</p>'); } else if (none) none.remove(); }
+      if (typeof opts.onData === 'function') { try { opts.onData(data); } catch (e) { /* lo principal de inventario y zonas no debe tumbar el resto */ } }
     }
 
     async function load() {
@@ -284,6 +295,8 @@
     }
     const refresh = q('.ad-refresh');
     refresh.addEventListener('click', () => { if (window.GW && window.GW.busy) window.GW.busy(refresh, load).catch(() => {}); else load(); });
+    const fold = detail && detail.closest('details');
+    if (fold) fold.addEventListener('toggle', () => { if (fold.open && lastData) paint(lastData); });          // plegado, los lienzos no tienen ancho: al abrir se dibujan bien
     window.GWViz.onNarrow(() => { if (lastData && document.body.contains(container)) paint(lastData); });          // cruza el límite de celular (girar el aparato): se redibuja
     window.GWViz.onTheme(() => { if (lastData && document.body.contains(container)) paint(lastData); });          // otro tema: se vuelve a dibujar con sus colores
     load();

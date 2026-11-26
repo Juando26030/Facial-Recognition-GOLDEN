@@ -8,6 +8,16 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-26 — Rediseño del panel de Estadísticas (rama `hotfix/codigo-obligatorio-2026-11-25`; sin migración) · **Rama**
+
+- Nuevo orden (vista del cliente, enlace público y vista del personal): **1)** Registro del evento: Base, Registrados y Pendientes (el personal ve además, desde el inicio,
+  «Vienen del Excel», «Nuevos digitados a mano» y «Llegaron por formulario»); **2)** Control de inventario y **3)** Control de zonas, solo si el módulo está activo;
+  **4)** «Información detallada del registro», plegado de inicio (primer y último registro, hora pico, ritmo y todas las gráficas); **5)** Gráficos por variable.
+- Inventario: unidades entregadas, personas atendidas y lo que queda, en grande; por cada producto «X de Y entregadas · quedan Z» con una barra cuyo porcentaje es lo
+  entregado sobre lo que había de ESE producto (antes se repartía un 100 % entre producto, unidades y personas). Zonas: personas que entraron, adentro ahora, entradas
+  y salidas; por zona, personas únicas sobre los registrados. Respeta «genera estadísticas»; la persona de prueba no cuenta. Lógica: `app/stats_control.py`;
+  pantalla: `static/js/stats-control.js`. Las variables de inventario y zonas ya no se agregan solas en «Gráficos por variable» (siguen en la lista).
+
 ## 2026-11-25 (noche) — Hotfix código obligatorio + prioridad del código al buscar (rama `hotfix/codigo-obligatorio-2026-11-25`; migración `0166_code_search_first`)
 
 - **Hotfix:** con «Código de la persona» obligatorio, Editar persona y Registrar nuevo decían «Faltan campos obligatorios: Código de la persona (QR)» aunque el código estuviera

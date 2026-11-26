@@ -91,3 +91,25 @@
   .gw-share__row .gw-btn, .gw-share__line .gw-btn { width: 100%; }
   .gw-share__line .gw-input { flex: 1 1 100%; }
 }
+
+/* Rediseño 26-nov-2026: lo principal de Control de inventario y Control de zonas (static/js/stats-control.js) y el plegable «Información detallada». */
+.gw-sc .gw-stats-row { margin-top: var(--gw-sp-4); }
+.gw-sc-group { margin-top: var(--gw-sp-5); padding-top: var(--gw-sp-4); border-top: 1px solid var(--gw-border); }
+.gw-sc-group__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-sc-group__sum { margin-top: var(--gw-sp-1); font-size: var(--gw-fs-md); color: var(--gw-text); }
+.gw-sc-list { list-style: none; margin: var(--gw-sp-3) 0 0; padding: 0; display: grid; gap: var(--gw-sp-4); }
+.gw-sc-row { min-width: 0; }
+.gw-sc-row--sub { padding-left: var(--gw-sp-5); }
+.gw-sc-row__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gw-sp-3); }
+.gw-sc-row__name { font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); color: var(--gw-text); overflow-wrap: anywhere; }
+.gw-sc-row--sub .gw-sc-row__name { font-weight: var(--gw-fw-normal); }
+.gw-sc-row__pct { flex: none; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); font-variant-numeric: tabular-nums; }
+.gw-sc-bar { height: 14px; margin-top: var(--gw-sp-1); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-pill); overflow: hidden; }
+.gw-sc-bar__fill { display: block; height: 100%; width: 0; background: var(--gw-viz-1); border-radius: var(--gw-radius-pill); transition: width var(--gw-dur); }
+.gw-sc-row--sub .gw-sc-bar__fill { background: var(--gw-viz-3); }
+.gw-sc-row__meta { margin-top: var(--gw-sp-1); font-size: var(--gw-fs-sm); color: var(--gw-text-muted); font-variant-numeric: tabular-nums; }
+.gw-sc-row__meta b { color: var(--gw-text); }
+.gw-stats-detail > summary { min-height: calc(var(--gw-tap) + var(--gw-sp-2)); font-size: var(--gw-fs-lg); }
+.gw-stats-detail .gw-advanced__body { padding-top: var(--gw-sp-3); }
+.gw-stats-detail .ad-kpis[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .gw-sc-bar__fill { transition: none; } }

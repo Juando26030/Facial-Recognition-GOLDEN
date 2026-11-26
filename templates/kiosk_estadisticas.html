@@ -26,6 +26,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
+    <script src="{{ url_for('static', path='js/stats-control.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -121,6 +122,25 @@
       <div id="analyticsRegistro" class="gw-card"></div>
     </section>
 
+    {# Rediseño 26-nov-2026: lo principal de inventario y de zonas va justo debajo del registro (solo si el módulo está activo; static/js/stats-control.js lo llena con la misma respuesta). #}
+    <section class="gw-card gw-sc" id="statsInv" aria-labelledby="gwStatsInvTitle" hidden>
+      <h2 class="gw-stats__section-title" id="gwStatsInvTitle">Control de inventario</h2>
+      <p class="gw-stats__section-sub">Por cada producto: cuánto se ha entregado, de cuánto había en el inventario y cuánto queda. El porcentaje es lo entregado sobre lo que había de ese producto.</p>
+      <div data-sc-body></div>
+    </section>
+
+    <section class="gw-card gw-sc" id="statsZones" aria-labelledby="gwStatsZonesTitle" hidden>
+      <h2 class="gw-stats__section-title" id="gwStatsZonesTitle">Control de zonas</h2>
+      <p class="gw-stats__section-sub">Por cada zona: cuántas personas distintas entraron (el porcentaje es sobre los registrados del evento), cuántas siguen adentro y las entradas y salidas.</p>
+      <div data-sc-body></div>
+    </section>
+
+    {# Lo demás del registro (primer y último registro, hora pico, ritmo y las gráficas) es información adicional: plegado de inicio. #}
+    <details class="gw-advanced gw-stats-detail" id="statsDetail">
+      <summary>Información detallada del registro <span class="gw-hint">primer y último registro, hora pico, ritmo y gráficas</span></summary>
+      <div class="gw-advanced__body" id="analyticsRegistroDetail"></div>
+    </details>
+
     <section class="gw-card" aria-labelledby="gwStatsVarTitle" data-gw-tour-step="2" data-gw-tour-title="2. Elige una variable" data-gw-tour-text="Agrega el dato que quieres ver; el sistema te ofrece los gráficos que aplican.">
       <h2 class="gw-stats__section-title" id="gwStatsVarTitle">Gráficos por variable</h2>
       <p class="gw-stats__section-sub">Elige una variable de la base de este evento. El sistema detecta si es numérica o por categorías y ofrece los tipos de gráfico que aplican. Una variable a la vez.</p>
@@ -155,7 +175,8 @@
 </main>
 
 <script>
-AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `${window.STATS_BASE}/analytics/registro`, { refreshSeconds: 30, stats: true, icons: {{ url_for('static', path='img/icons.svg') | tojson }} });
+GWStatsControl.setIcons({{ url_for('static', path='img/icons.svg') | tojson }});
+AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `${window.STATS_BASE}/analytics/registro`, { refreshSeconds: 30, stats: true, icons: {{ url_for('static', path='img/icons.svg') | tojson }}, detailHost: document.getElementById('analyticsRegistroDetail'), onData: GWStatsControl.render });
 </script>
 <script src="{{ url_for('static', path='js/stats-event.js') }}" defer></script>
 </body>

@@ -26,6 +26,12 @@ def kpi(label: str, value, hint: str = "", tone: str = "", icon: str = "") -> di
     return {"label": label, "value": value, "hint": hint, "tone": tone, "icon": icon}
 
 
+def detail(k: dict) -> dict:
+    """Marca una cifra como «información detallada»: Estadísticas la dibuja en el plegable, no arriba."""
+    k["detail"] = True
+    return k
+
+
 def chart(chart_id: str, title: str, kind: str, labels: list, datasets: list, stacked=False, horizontal=False, note="") -> dict:
     return {"id": chart_id, "title": title, "type": kind, "labels": labels, "datasets": datasets, "stacked": stacked, "horizontal": horizontal, "note": note}
 
