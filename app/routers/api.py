@@ -1192,6 +1192,9 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
         kind = "Existente"
     else:
         field_configs = personform.person_configs(db, event, field_configs, categories)          # lo obligatorio de la categoría de la persona
+        if any(c["key"] == "code" and c["required"] for c in field_configs):          # la bandeja sin red no lleva el código del QR: se guarda igual y se avisa (nunca se pierde la alta)
+            warnings.append("Falta el código de la persona (QR): complétalo en Editar")
+            field_configs = [c for c in field_configs if c["key"] != "code"]
         missing = _missing_required_fields(field_configs, values)
         last_error = _last_name_error(field_configs, last)
         if last_error:
@@ -1275,6 +1278,7 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     final = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(), **{k: v for k, v in changes.items() if k in ("role", "entity", "phone", "email", "opt_1")}, **extras}
     final["certificate"] = "true" if (certificate or (attendee and attendee.certificate)) else ""
     final["digital_contact"] = contact or ((attendee.digital_contact if attendee else "") or "")
+    final["code"] = (attendee.code if attendee else "") or ""          # el código del QR ya guardado cuenta para lo obligatorio
     field_configs = personform.person_configs(db, event, field_configs, categories or (attendee.get_categories() if attendee else []))          # lo obligatorio de la categoría de la persona
     touched = set(changes) | set(extras)
     bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
@@ -1554,6 +1558,7 @@ def update_user(
         }
         attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
         final_values["certificate"] = "true" if (attendee and attendee.certificate) else ""
+        final_values["code"] = (clean_code if (code_raw is not None and event.code_enabled) else (attendee.code if attendee else "")) or ""          # el código del QR vive en EventAttendee: sin esto lo obligatorio nunca lo veía y rechazaba aunque estuviera puesto
         final_values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
         field_configs = personform.person_configs(db, event, field_configs, (attendee.get_categories() if attendee else None) or (_clean_categories(event, categories) if categories else []))          # lo obligatorio de la categoría de la persona
         missing = _missing_required_fields(field_configs, final_values)
@@ -1940,7 +1945,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         return reply
 
     field_configs = personform.person_configs(db, event, parametros.field_configs_for_event(db, event), person_categories)          # lo obligatorio de la categoría de la persona
-    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", "digital_contact": contact_clean or "", **extras}
+    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", "digital_contact": contact_clean or "", "code": code_clean or "", **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
