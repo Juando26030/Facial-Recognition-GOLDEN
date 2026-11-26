@@ -136,8 +136,27 @@ def test_the_login_waits_until_the_coordinator_allows_it_and_is_single_use(clien
     db.expire_all()
     assert db.get(StaffUser, dig.id).login_req_hash is None
 
-    client.post("/logout")                                                               # cada ingreso nuevo vuelve a pedir autorización
+    client.post("/logout")                                                               # 0167 (25-nov-2026): una vez por evento: el siguiente ingreso al MISMO evento entra directo
+    assert login(client, "80123456", "80123456").status_code == 302
+
+
+def test_a_new_event_asks_once_more_and_then_not_again(client, second, env, factory, control):
+    """0167: el coordinador autoriza una vez por digitador y por evento. Asignado a OTRO evento en proceso, el siguiente ingreso vuelve a esperar (una vez)."""
+    ev, coord, dig = env
+    login(second, "coord")
     assert login(client, "80123456", "80123456").status_code == 303
+    assert second.post(f"/api/events/{ev.id}/staff-users/{dig.id}/login-request", json={"allow": True}).status_code == 200
+    assert client.post("/api/ingreso/estado").json()["status"] == "approved"
+    client.post("/logout")
+    assert login(client, "80123456", "80123456").status_code == 302                     # mismo evento: sin esperar
+    client.post("/logout")
+    ev2 = factory.event("en_proceso")
+    factory.authorize(ev2, dig)
+    assert login(client, "80123456", "80123456").status_code == 303                     # evento nuevo: espera al coordinador
+    assert second.post(f"/api/events/{ev2.id}/staff-users/{dig.id}/login-request", json={"allow": True}).status_code == 200
+    assert client.post("/api/ingreso/estado").json()["status"] == "approved"
+    client.post("/logout")
+    assert login(client, "80123456", "80123456").status_code == 302                     # ya autorizado en los dos
 
 
 def test_the_coordinator_can_refuse_the_login(client, second, env, control):

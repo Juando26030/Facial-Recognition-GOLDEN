@@ -8,7 +8,7 @@ Dos clases de texto, con dueños distintos:
    False, el formulario con datos sensibles NO se publica en producción (ver `pledge.available`): solo en staging/pruebas o con PLEDGE_ALLOW_DRAFT_TEXT=1. Cuando la auditora entregue el texto: pegarlo
    LITERAL en `SENSITIVE_AUTH_TEXT`, poner `APPROVED = True`, `SENSITIVE_AUTH_VERSION = "<versión de la auditora>"` y subir `VERSION`. No se edita de otra forma (igual que app/legal_texts_data.py)."""
 
-VERSION = "compromiso-2026-11-08.1"
+VERSION = "compromiso-2026-11-25.1"          # 25-nov-2026: autorización aprobada y preguntas de contrato/asistencia resaltadas
 
 TITLE = "Formato de compromiso"
 SUBTITLE = "Digitadores y personal de registro en eventos"
@@ -84,10 +84,10 @@ Q_ATTENDANCE = "¿Confirmas tu asistencia al evento?"
 YES, NO = "Sí", "No"
 
 # ---------------------------------------------------------------------------------------------------- PENDIENTE_AUDITORA
-APPROVED = False                       # PENDIENTE_AUDITORA: ponerlo en True SOLO cuando SENSITIVE_AUTH_TEXT sea el texto aprobado por la auditora
-SENSITIVE_AUTH_VERSION = "borrador-sin-aprobar"
-SENSITIVE_AUTH_TEXT = (                # PENDIENTE_AUDITORA
-    "BORRADOR – pendiente de aprobación de la auditora. "
+# 25-nov-2026: Juan David confirma que la auditora APROBÓ este texto tal cual (el borrador sin el aviso «BORRADOR – pendiente de aprobación de la auditora»). No se edita.
+APPROVED = True
+SENSITIVE_AUTH_VERSION = "auditora-aprobada-2026-11-25"
+SENSITIVE_AUTH_TEXT = (
     "Autorizo a Golden Eventos y Logística S.A.S. para tratar los datos sensibles que diligencio en este formulario (condición médica, medicamentos, apoyo emocional y contacto de emergencia), "
     "únicamente para atender mi salud y seguridad durante el evento. Sé que son datos sensibles, que solo los verá el coordinador del evento y "
     "el personal autorizado de Golden, y que se eliminan 30 días después de finalizado el evento."

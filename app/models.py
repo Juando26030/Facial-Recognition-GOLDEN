@@ -512,6 +512,7 @@ class EventStaffAuthorization(Base):
     staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
     authorized_by_id = Column(Integer, ForeignKey('staff_users.id'))
     authorized_at = Column(DateTime, default=utcnow)
+    login_approved_at = Column(DateTime, nullable=True)  # 0167: el coordinador ya autorizó UNA vez el ingreso de este digitador en este evento (app/login_control.py)
 
     __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_event_staff'),)
 

@@ -50,6 +50,20 @@ def has_event_in_progress(db: Session, staff: StaffUser) -> bool:
         EventStaffAuthorization.staff_user_id == staff.id, Event.status == "en_proceso").first() is not None
 
 
+def all_events_approved(db: Session, staff: StaffUser) -> bool:
+    """0167 (25-nov-2026): el coordinador autoriza el ingreso UNA vez por digitador y por evento. True si TODOS los eventos en proceso de la cuenta ya tienen esa autorización:
+    entonces el ingreso no vuelve a esperar. Si la asignan a otro evento en proceso (aún sin autorizar), el siguiente ingreso sí espera, una vez, al coordinador de ese evento."""
+    rows = db.query(EventStaffAuthorization.login_approved_at).join(Event, Event.id == EventStaffAuthorization.event_id).filter(
+        EventStaffAuthorization.staff_user_id == staff.id, Event.status == "en_proceso").all()
+    return bool(rows) and all(r[0] is not None for r in rows)
+
+
+def mark_event_approved(db: Session, event_id: int, staff_id: int) -> None:
+    """Deja constancia de que el ingreso de ese digitador ya se autorizó en ese evento (no confirma: lo hace quien llama)."""
+    db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id, EventStaffAuthorization.staff_user_id == staff_id,
+                                             EventStaffAuthorization.login_approved_at.is_(None)).update({EventStaffAuthorization.login_approved_at: utcnow()}, synchronize_session=False)
+
+
 def is_locked(staff: Optional[StaffUser]) -> bool:
     return staff is not None and staff.locked_at is not None
 

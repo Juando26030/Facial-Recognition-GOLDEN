@@ -138,6 +138,11 @@
       .fr-pledge [data-fid^="t_k"] > * { opacity:1 !important; background:#fff7e0; border:1px solid #f0d98a; border-left:6px solid #d99a00; border-radius:14px; padding:14px 18px; font-size:.95rem; line-height:1.6; }
       .fr-pledge [data-fid="t_data"], .fr-pledge [data-fid="t_emerg"], .fr-pledge [data-fid="t_survey"] { margin-top:26px; }
       .fr-pledge [data-fid="t_data"] > *, .fr-pledge [data-fid="t_emerg"] > *, .fr-pledge [data-fid="t_survey"] > * { margin:0 !important; padding:0 0 8px; border-bottom:3px solid var(--pl-accent); font-size:1.05rem !important; }
+      .fr-pledge [data-fid="t_confirm"] { margin-top:22px; }
+      .fr-pledge [data-fid="t_confirm"] > * { opacity:1 !important; margin:0 !important; padding:14px 18px; background:var(--pl-ink); color:#fff; border-left:6px solid var(--pl-accent); border-radius:14px; font-size:1.02rem; font-weight:700; line-height:1.5; }
+      .fr-pledge [data-fid="t_confirm"] * { color:#fff !important; }
+      .fr-pledge [data-fid="p_q_contract"], .fr-pledge [data-fid="p_q_attend"] { background:#fff7e0; border:2px solid var(--pl-accent); border-radius:14px; padding:14px 18px; }
+      .fr-pledge [data-fid="p_q_contract"] label.fr-l, .fr-pledge [data-fid="p_q_attend"] label.fr-l { font-size:1.05rem; line-height:1.45; }
       .fr-pledge [data-fid="t_auth"] > * { opacity:1 !important; background:#f6f7fb; border:1px solid #e3e6ef; border-radius:14px; padding:14px 18px; font-size:.88rem; line-height:1.6; }
       .fr-pledge [data-fid="t_footer"] { text-align:center; margin-top:6px; }
       .fr-pledge [data-fid="t_footer"] > * { font-size:.82rem; opacity:.7 !important; }

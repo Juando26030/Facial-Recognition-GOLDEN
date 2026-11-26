@@ -21,4 +21,4 @@ def test_match_is_by_cedula_across_clients_and_only_for_digitadores():
 
 
 def test_only_the_cedula_is_locked_and_prefill_comes_from_the_session():
-    assert "pledge.prefill_for(db, form, who), [pledge.FID_ID]" in ROUTER
+    assert "prefill = pledge.prefill_for(db, form, who)" in ROUTER and "[pledge.FID_ID] + ([pledge.FID_NAME] if prefill.get(pledge.FID_NAME) else [])" in ROUTER          # 25-nov-2026: cédula y nombre fijos

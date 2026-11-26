@@ -15,6 +15,11 @@ Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = pr
 - **Nuevo interruptor** en Parámetros › Campos › Código de la persona: «Dar prioridad al código al buscar persona». Prendido: en el buscador del registro salen primero las
   coincidencias por código y después por cédula; al escanear, el servidor busca primero el código. Apagado: primero la cédula, pero el código también se encuentra.
 - **Lector 2D en el buscador del registro:** si lo leído (o escrito) es el código exacto de una persona, Enter la acredita como con la cédula, aunque el código sea corto o tenga letras.
+- **Compromiso del digitador habilitado (migración `0167_staff_auth_login_ok`):** la autorización de datos de salud quedó con el texto que aprobó la auditora (el mismo, sin «BORRADOR»;
+  confirmado por Juan David), así que en producción ya se genera el enlace y su QR. Las preguntas «¿Tienes claras las condiciones del contrato…?» y «¿Confirmas tu asistencia?» van
+  resaltadas. Un digitador ya conocido ve su cédula y nombre fijos y sus datos de contacto prellenados: solo responde salud, contrato y asistencia.
+- **Ingreso del digitador: el coordinador autoriza UNA vez por evento.** Los siguientes ingresos al mismo evento entran directo; si lo asignan a otro evento en proceso, el siguiente
+  ingreso espera una vez la autorización de ese evento.
 
 ## 2026-11-25 — Registro completo sin conexión (rama `feat/contingencia-completa`, sin desplegar; **Rama**: sin probar en equipo real)
 

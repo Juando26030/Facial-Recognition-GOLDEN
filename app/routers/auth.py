@@ -125,6 +125,8 @@ def login_submit(
             security.clear_events(db, "login_fail", username)
             return RedirectResponse(link, status_code=303)
         # S1 (c): la contraseña es correcta, pero la sesión NO se crea todavía: queda una solicitud que el coordinador permite o no («Usuarios del evento»).
+        # 0167 (25-nov-2026): solo la PRIMERA vez por evento; si todos sus eventos en proceso ya se autorizaron, sigue abajo al ingreso normal.
+    if login_control.applies(staff) and login_control.enabled() and not login_control.all_events_approved(db, staff):
         login_control.reset_fails(staff)
         token = login_control.new_request(staff)
         db.commit()

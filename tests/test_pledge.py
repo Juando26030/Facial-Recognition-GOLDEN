@@ -251,7 +251,8 @@ def test_link_is_valid_until_the_event_ends(client, factory, db):
 def test_not_publishable_without_approved_text(client, factory, db, monkeypatch):
     from app import pledge, pledge_texts
 
-    assert pledge_texts.APPROVED is False                                                          # el texto de la auditora sigue pendiente
+    assert pledge_texts.APPROVED is True and "BORRADOR" not in pledge_texts.SENSITIVE_AUTH_TEXT     # 25-nov-2026: la auditora aprobó el texto (Juan David)
+    monkeypatch.setattr(pledge_texts, "APPROVED", False)                                           # el mecanismo de bloqueo sigue probado por si cambia el texto
     ev, path, _ = _setup(client, factory)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.delenv("PLEDGE_ALLOW_DRAFT_TEXT", raising=False)

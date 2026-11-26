@@ -176,6 +176,7 @@ def _approve_one(db: Session, actor: StaffUser, event, target: StaffUser) -> boo
         return False
     audit_actions.record(db, actor, "approve", "login_request", target.id, None, f"evento {event.id}")
     target.login_req_status = login_control.APPROVED
+    login_control.mark_event_approved(db, event.id, target.id)          # 0167: una vez por evento; los siguientes ingresos a este evento ya no esperan
     return True
 
 

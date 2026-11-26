@@ -202,7 +202,8 @@ def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] 
     if form.kind == formsvc.PLEDGE_KIND and claims.get("pc"):          # Camino B/C: ya viene identificado por su sesión de espera (no se vuelve a pedir la cédula)
         who = db.get(StaffUser, int(claims["pc"]))
         if who is not None:
-            prefill, readonly = pledge.prefill_for(db, form, who), [pledge.FID_ID]
+            prefill = pledge.prefill_for(db, form, who)
+            readonly = [pledge.FID_ID] + ([pledge.FID_NAME] if prefill.get(pledge.FID_NAME) else [])          # 25-nov-2026: digitador ya conocido: cédula y nombre fijos; solo responde salud, contrato y asistencia (celular y familiar se pueden corregir)
     quota = formlib.freeze_conditions(formsvc.quota_public(db, form), hidden_real)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
     return {"design": formlib.freeze_conditions(formlib.public_design(design), hidden_real), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}

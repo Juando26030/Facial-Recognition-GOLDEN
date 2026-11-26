@@ -167,6 +167,7 @@ def build_design(db: Optional[Session], event: Event) -> dict:
     if sens:
         for fid, q in ((FID_MED, T.Q_MEDICAL), (FID_DRUG, T.Q_MEDICATION), (FID_SUPPORT, T.Q_SUPPORT)):
             row(add(fid, "radio", label=q, options=yes_no, required=True, sensitive=True))
+    row(add("t_confirm", "paragraph", content=_p("Lee con atención y responde: ¿entendiste las condiciones del contrato y confirmas tu asistencia al evento?")))          # 25-nov-2026: resaltadas (form-render.js › .fr-pledge)
     row(add(FID_CONTRACT, "radio", label=T.Q_CONTRACT, options=yes_no, required=True))
     row(add(FID_ATTEND, "radio", label=T.Q_ATTENDANCE, options=yes_no, required=True))
     if sens:
