@@ -595,6 +595,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div data-psave="mod_code">
               <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
               <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
+              <label class="gw-check"><input type="checkbox" id="codeSearchFirst" {% if event.code_search_first %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Dar prioridad al código al buscar persona: en el buscador del registro (y con el lector) salen primero las coincidencias por código y después por cédula. Desactivado: primero la cédula, pero también se busca por código</label>
             </div>
           </div>
 
@@ -802,10 +803,10 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     });
 
     (function () {          // 0140: código de la persona (QR)
-        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired');
-        en.addEventListener('change', () => { rq.disabled = !en.checked; if (!en.checked) rq.checked = false; });
+        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired'), sf = document.getElementById('codeSearchFirst');
+        en.addEventListener('change', () => { rq.disabled = !en.checked; sf.disabled = !en.checked; if (!en.checked) { rq.checked = false; sf.checked = false; } });
         GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, reload: true, save: async () => {
-            await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked }), 'No se pudo guardar el código del evento');
+            await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked, code_search_first: en.checked && sf.checked }), 'No se pudo guardar el código del evento');
         } });
     })();
 

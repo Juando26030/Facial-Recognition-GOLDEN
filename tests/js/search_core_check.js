@@ -172,3 +172,21 @@ assert.deepStrictEqual(exactos.map((r) => r.persona.id), ['2', '1'], 'lo escrito
 const porCedula = SC.search([{ id: '9990123', first_name: 'A', last_name: 'B', entity: '' }, { id: '1237777', first_name: 'C', last_name: 'D', entity: '' }, { id: '123', first_name: 'E', last_name: 'F', entity: '' }], '123');
 assert.deepStrictEqual(porCedula.map((r) => r.persona.id), ['123', '1237777', '9990123'], 'exacta, luego empieza por, luego contiene');
 console.log('search_core_check OK');
+
+// 0166 (25-nov-2026): código de la persona (serial del QR) en el buscador, con y sin «Dar prioridad al código al buscar persona»
+{
+  const conCodigo = { id: '1000007963', first_name: 'Briyith', last_name: 'Cicua', entity: '', code: '2020' };
+  const cedula2020 = { id: '2020555', first_name: 'Otro', last_name: 'Señor', entity: '', code: '9' };
+  const letras = { id: '52999', first_name: 'Ana', last_name: 'Lee', entity: '', code: 'GW-0012' };
+  con(conCodigo, '2020', 'Código exacto');                                         // sin la opción también se encuentra por código
+  con(conCodigo, '20', 'Código (empieza por 20…)');
+  con(letras, 'gw-0012', 'Código exacto');                                         // sin mayúsculas
+  con(letras, 'GW-0012', 'Código exacto');
+  sin({ id: '1', first_name: 'X', last_name: 'Y', entity: '' }, '2020');             // sin código (evento sin código): nada cambia
+  const order = (o) => SC.search([cedula2020, conCodigo], '2020', o).map((r) => r.persona.id);
+  assert.deepStrictEqual(order({ codeFirst: true }), ['1000007963', '2020555']);   // con prioridad: primero el código
+  assert.deepStrictEqual(order({}), ['2020555', '1000007963']);                    // sin prioridad: primero la cédula, el código después
+  assert.ok(mp(conCodigo, '2020', { codeFirst: true }).orden < 0);
+  assert.strictEqual(SC.codeKey(' GW 0012 '), 'gw0012');
+}
+console.log('search_core_check (con código 0166): OK');

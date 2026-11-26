@@ -27,7 +27,8 @@
   const MIN_PREFIX_DIGITS = 3;      // desde aquí la cédula se busca por prefijo (filas con cédula en claro)
   const MIN_CEDULA_DIGITS = 5;      // desde aquí la cédula se considera completa (huella exacta sin red)
   const MOTIVOS = { cedula: 'Cédula exacta', lector: 'Código del lector',
-    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', nombreContiene: 'Nombre (contiene lo escrito)', contiene: (digits) => 'Cédula (contiene ' + digits + ')', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
+    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', nombreContiene: 'Nombre (contiene lo escrito)', contiene: (digits) => 'Cédula (contiene ' + digits + ')', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa',
+    codigo: 'Código exacto', codigoPrefijo: (t) => 'Código (empieza por ' + t + '…)', codigoContiene: (t) => 'Código (contiene ' + t + ')' };
 
   function stripAccents(text) {
     return String(text == null ? '' : text).normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -212,10 +213,34 @@
 
   const NO = { coincide: false, motivo: '', orden: 9 };
   const hit = (motivo, orden) => ({ coincide: true, motivo, orden });
+
+  /* 0166 (25-nov-2026): CÓDIGO de la persona (serial del QR, `persona.code`; solo viene si el evento usa código). Se compara sin mayúsculas ni espacios.
+     opts.codeFirst = «Dar prioridad al código al buscar persona» (Parámetros › Campos): las coincidencias por código salen ANTES que las de cédula (orden negativo);
+     sin la opción salen después de toda coincidencia por cédula y antes del nombre. Un lector 2D que teclea el código cae aquí igual que lo digitado. */
+  function codeKey(raw) { return String(raw == null ? '' : raw).replace(/\s+/g, '').toLowerCase(); }
+  const CODE_RANK = { first: [-3, -2, -1], last: [1.6, 1.7, 1.8] };
+  function matchCode(persona, q, opts) {
+    if (!persona || !persona.code || !q || q.kind === 'vacio') return NO;
+    const typed = codeKey(q.raw);
+    if (!typed) return NO;
+    const code = codeKey(persona.code);
+    const r = (opts && opts.codeFirst) ? CODE_RANK.first : CODE_RANK.last;
+    if (code === typed) return hit(MOTIVOS.codigo, r[0]);
+    if (q.kind === 'lector' || q.kind === 'qr') return NO;                 // lo leído por lector es completo: solo cuenta el código exacto
+    if (code.startsWith(typed)) return hit(MOTIVOS.codigoPrefijo(typed), r[1]);
+    if (typed.length >= MIN_PREFIX_DIGITS && code.includes(typed)) return hit(MOTIVOS.codigoContiene(typed), r[2]);
+    return NO;
+  }
   function matchPerson(persona, consulta, opts) {
     if (!persona) return NO;
     const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
     if (q.kind === 'vacio') return NO;
+    const byCode = matchCode(persona, q, opts);
+    const other = matchPersonBase(persona, q, opts);
+    if (!byCode.coincide) return other;
+    return (!other.coincide || byCode.orden < other.orden) ? byCode : other;
+  }
+  function matchPersonBase(persona, q, opts) {
     if (q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr') {
       const motivo = q.kind === 'cedula' ? MOTIVOS.cedula : MOTIVOS.lector;
       let id;
@@ -257,5 +282,5 @@
     return out.map(({ persona, motivo, orden }) => ({ persona, motivo, orden }));
   }
 
-  return { classifyQuery, matchPerson, search, cedulaKey, normalize, wordsOf, prepare, MOTIVOS, MIN_CEDULA_DIGITS, MIN_PREFIX_DIGITS };
+  return { classifyQuery, matchPerson, search, cedulaKey, codeKey, normalize, wordsOf, prepare, MOTIVOS, MIN_CEDULA_DIGITS, MIN_PREFIX_DIGITS };
 }));

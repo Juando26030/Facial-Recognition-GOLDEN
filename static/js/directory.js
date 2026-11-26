@@ -1240,7 +1240,7 @@
         lastFiltered = orderByRecency(base);
         setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.' : '');
       } else {
-        const sopts = {};
+        const sopts = { codeFirst: window.EVENT_CODE_FIRST === true };          // 0166: prioridad al código (Parámetros › Campos)
         if (localMode && q.cedula && q.completa) {                    // lista local: la cédula se compara por huella (exacta); nunca se guarda en claro
           const h = localHashes.get(q.cedula);
           if (h !== undefined) sopts.hash = h;
@@ -1803,7 +1803,9 @@
           }
           if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
             const q = SC.classifyQuery(leido);
-            const doc = (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
+            const typedCode = SC.codeKey ? SC.codeKey(raw) : '';
+            const isCode = !!typedCode && allUsers.some((u) => u.code && SC.codeKey(u.code) === typedCode);          // 0166: código exacto de una persona (lector 2D o digitado): se acredita como la cédula, aunque sea corto o tenga letras
+            const doc = isCode || (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
               || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
           }

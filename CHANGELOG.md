@@ -8,6 +8,14 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-25 (noche) — Hotfix código obligatorio + prioridad del código al buscar (rama `hotfix/codigo-obligatorio-2026-11-25`; migración `0166_code_search_first`)
+
+- **Hotfix:** con «Código de la persona» obligatorio, Editar persona y Registrar nuevo decían «Faltan campos obligatorios: Código de la persona (QR)» aunque el código estuviera
+  escrito (el código vive en la inscripción del evento y la validación no lo veía). Sin red, el alta se guarda y avisa que falta el código.
+- **Nuevo interruptor** en Parámetros › Campos › Código de la persona: «Dar prioridad al código al buscar persona». Prendido: en el buscador del registro salen primero las
+  coincidencias por código y después por cédula; al escanear, el servidor busca primero el código. Apagado: primero la cédula, pero el código también se encuentra.
+- **Lector 2D en el buscador del registro:** si lo leído (o escrito) es el código exacto de una persona, Enter la acredita como con la cédula, aunque el código sea corto o tenga letras.
+
 ## 2026-11-25 — Registro completo sin conexión (rama `feat/contingencia-completa`, sin desplegar; **Rama**: sin probar en equipo real)
 
 - **Registro sin red igual que con red:** lista con todos los datos, el modal normal de Editar (todos los campos, vaciar un dato, cambiar cédula, fecha de nacimiento, firmas, estado,
