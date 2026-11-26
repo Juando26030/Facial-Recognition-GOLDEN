@@ -1,6 +1,6 @@
-# Ramas borradas el 2026-11-26 (ya estaban en main: sin trabajo perdido)
+# Ramas para borrar (26-nov-2026): ya están en main, no se pierde trabajo
 
-Para recuperar una: `git push origin <sha>:refs/heads/<nombre>`.
+Estado: PENDIENTE de borrar (las borra Juan David desde Cloud Shell; Claude no puede desde su sesión). Una vez borradas, para recuperar una: `git push origin <sha>:refs/heads/<nombre>`.
 
 | Rama | Último commit |
 |---|---|
