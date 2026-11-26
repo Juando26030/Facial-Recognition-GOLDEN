@@ -80,7 +80,9 @@
 /* Listas de a UNA por fila también en celular y tableta (los botones pueden ir a todo el ancho). */
 .gw-ar #presBody { grid-template-columns: minmax(0, 1fr); }
 .gw-ai__group { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); padding: var(--gw-sp-2) var(--gw-sp-3); margin: 0 0 var(--gw-sp-3); }
-.gw-ai__group legend { padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); }
+.gw-ai__group legend { padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-md); }
+/* 26-nov-2026: cuánto se le puede entregar a cada persona (límite del ítem o de su grupo). */
+.gw-ai__limit { display: block; margin-top: var(--gw-sp-1); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-info-text); }
 
 /* 25-nov-2026 (Juan David): tarjeta de la persona encontrada (static/js/person-card.js) con sus campos «Mostrar en el registro», el estado en Registro y la acción al lado;
    y el título grande de arriba («Estás entregando…» / «Estás en la zona…»). Solo tokens --gw-*. */

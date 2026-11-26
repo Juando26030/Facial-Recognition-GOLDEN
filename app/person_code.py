@@ -85,10 +85,16 @@ def find_user(db: Session, event: Event, value) -> Tuple[Optional[User], str]:
     value = normalize(value)
     if not value:
         return None, ""
-    if event.code_enabled and getattr(event, "code_search_only", False):          # 0168: solo por código: la cédula no cuenta
+    if event.code_enabled and getattr(event, "code_search_only", False):          # 0168: solo por código (lo que se ESCANEA o se escribe en el buscador)
         row = _holder(db, event, value)
         user = db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first() if row else None
-        return (user, "code") if user else (None, "")
+        if user:
+            return user, "code"
+        # Hotfix 26-nov-2026: la pantalla ya encontró a la persona por su código y al ENTREGAR / ACREDITAR / REGISTRAR manda su identificación; sin esto respondía
+        # «no está en la base» en vez del motivo real (p. ej. el límite por persona). Solo cuenta si la persona está inscrita en ESTE evento.
+        inscribed = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id == value).first()
+        user = db.query(User).filter(User.id == value, User.tenant_id == event.tenant_id).first() if inscribed else None
+        return (user, "id") if user else (None, "")
     if event.code_enabled and getattr(event, "code_search_first", False):          # 0166: prioridad al código (Parámetros › Campos)
         row = _holder(db, event, value)
         if row:

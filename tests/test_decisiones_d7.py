@@ -32,7 +32,7 @@ def test_the_second_delivery_of_the_same_item_to_the_same_person_is_a_409_and_ch
     item = client.post(f"/api/events/{ev.id}/inventory", json={"name": "Camiseta", "initial_qty": 5}).json()
     assert _deliver(client, ev, "1001", item["id"]).status_code == 200
     again = _deliver(client, ev, "1001", item["id"])
-    assert again.status_code == 409 and "Camiseta" in again.json()["detail"] and "no se puede repetir" in again.json()["detail"]
+    assert again.status_code == 409 and "Camiseta" in again.json()["detail"] and "no se le puede entregar otra vez" in again.json()["detail"]
     assert db.query(InventoryDelivery).count() == 1
     assert _deliver(client, ev, "1002", item["id"]).status_code == 200                       # otra persona sí
     stock = {i["name"]: i for i in client.get(f"/api/events/{ev.id}/inventory").json()}

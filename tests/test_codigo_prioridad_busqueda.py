@@ -58,7 +58,8 @@ def test_front_wiring():
 
 
 def test_code_only_is_exclusive_with_priority_and_ignores_the_cedula(client, factory, db):
-    """0168: «Solo buscar por código»: excluyente con «Dar prioridad al código»; el servidor ya no encuentra por cédula."""
+    """0168: «Solo buscar por código»: excluyente con «Dar prioridad al código». El buscador de la pantalla no compara la cédula; el servidor manda el código y,
+    si no hay código igual, acepta la identificación de una persona INSCRITA en el evento (hotfix 26-nov-2026: es lo que la pantalla envía al entregar ya elegida)."""
     from app.models import EventAttendee
     ev = _setup(client, factory)
     r = client.put(f"/api/events/{ev.id}/modules", json={"code_enabled": True, "code_search_first": True})
@@ -72,7 +73,8 @@ def test_code_only_is_exclusive_with_priority_and_ignores_the_cedula(client, fac
     db.query(EventAttendee).filter_by(event_id=ev.id, user_id="3001").first().code = "C-9"
     db.commit()
     db.refresh(ev)
-    assert person_code.find_user(db, ev, "3001") == (None, "")                                     # por cédula: nada
+    assert person_code.find_user(db, ev, "3001")[1] == "id"                                         # la persona ya elegida (inscrita): sí
+    assert person_code.find_user(db, ev, "999999") == (None, "")                                    # ni código ni inscrita: nada
     assert person_code.find_user(db, ev, "c-9")[0].id == "3001"
     r = client.put(f"/api/events/{ev.id}/modules", json={"code_enabled": False})
     assert r.json()["code_search_only"] is False

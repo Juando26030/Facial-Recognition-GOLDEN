@@ -142,6 +142,7 @@ def test_group_limit_applies_across_subcategories(client, factory):
     assert _deliver(client, ev, "1001", (ham["id"], 1)).status_code == 200
     r = _deliver(client, ev, "1001", (perro["id"], 1))
     assert r.status_code == 409 and "Comida" in r.json()["detail"]
+    assert "Esta persona ya recibió «Comida»: Hamburguesa" in r.json()["detail"] and "Solo se permite 1 por persona" in r.json()["detail"]      # 26-nov-2026: dice qué recibió
     assert _deliver(client, ev, "1002", (perro["id"], 1)).status_code == 200
 
 

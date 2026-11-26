@@ -69,9 +69,17 @@
     const byId = {}; items.forEach(i => { byId[i.id] = i; });
     // ¿Varias unidades de este ítem en una entrega? Igual que el servidor (multi_units_allowed): «varias a la vez», o límite propio > 1, o (sin límite propio) el grupo permite más de 1.
     const multiOk = (i, g) => !!i.allow_multiple || (i.max_per_person != null ? i.max_per_person > 1 : !!(g && g.max_per_person > 1));
-    const row = (i, label, radioName) => `
+    /* 26-nov-2026 (Juan David): cuánto se le puede entregar a cada persona, según Parámetros › Control de inventario: el límite propio del ítem o, si no tiene, el de su grupo. */
+    const unidades = (n) => `${n} unidad${n === 1 ? '' : 'es'}`;
+    const limitText = (i, g) => {
+      if (i.max_per_person != null) return `Solo se puede entregar ${i.max_per_person} por persona`;
+      if (g && g.max_per_person != null) return `Solo se puede entregar ${g.max_per_person} por persona (contando todo «${g.name}»)`;
+      if (i.allow_repeat_delivery === false) return 'Solo se entrega una vez por persona';
+      return 'Sin límite por persona';
+    };
+    const row = (i, label, radioName, g) => `
       <div class="gw-card-row gw-ai__item item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
-        <div><strong class="gw-card-row__title">${esc(label)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>
+        <div><strong class="gw-card-row__title">${esc(label)}</strong> <span class="gw-ai__avail"><span class="gw-ai__avail-num">${i.available}</span> disponibles de ${i.initial_qty}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span><span class="gw-ai__limit">${esc(limitText(i, g))}</span></div>
         <div>${radioName
           ? `<label class="gw-check"><input type="radio" name="${radioName}" class="qty-check" ${i.available <= 0 ? 'disabled' : ''}> Elegir</label>`
           : (i.multi
@@ -86,13 +94,13 @@
       if (!kids.length) return '';
       kids.forEach(k => grouped.add(k.id));
       const one = g.max_per_person === 1;
-      const rule = one ? 'Elige una opción o «Nada elegido»' : (g.max_per_person ? `Máximo ${g.max_per_person} en total por persona (entre todas las opciones)` : '');
+      const rule = one ? 'Solo se puede entregar 1 por persona: elige una opción o «Nada elegido»' : (g.max_per_person ? `Solo se puede entregar ${unidades(g.max_per_person)} en total por persona (entre todas las opciones)` : 'Sin límite por persona');
       /* 25-nov-2026: en las de elegir una, «Nada elegido» permite quitar la opción (antes, una vez marcada, siempre quedaba alguna). */
       const none = one ? `<div class="gw-card-row gw-ai__item gw-ai__item--none"><div><strong class="gw-card-row__title">Nada elegido</strong> <span class="gw-ai__avail">no se entrega nada de ${esc(g.name)}</span></div><div><label class="gw-check"><input type="radio" name="grp${g.id}" class="qty-none" checked> Elegir</label></div></div>` : '';
-      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(Object.assign({}, k, { multi: multiOk(k, g), group_max: g.max_per_person || 0 }), k.name, one ? 'grp' + g.id : '')).join('')}${none}</fieldset>`;
+      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(Object.assign({}, k, { multi: multiOk(k, g), group_max: g.max_per_person || 0 }), k.name, one ? 'grp' + g.id : '', g)).join('')}${none}</fieldset>`;
     }).join('');
     const loose = items.filter(i => !i.is_group && !grouped.has(i.id)).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
-    html += loose.map(i => row(Object.assign({}, i, { multi: multiOk(i, i.parent_id ? byId[i.parent_id] : null) }), i.name, '')).join('');
+    html += loose.map(i => row(Object.assign({}, i, { multi: multiOk(i, i.parent_id ? byId[i.parent_id] : null) }), i.name, '', i.parent_id ? byId[i.parent_id] : null)).join('');
     box.innerHTML = html || `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
     restore(keep);
     paintHero();
@@ -172,6 +180,7 @@
 
   function setPerson(u) {
     if (!u) return;
+    if (!person || person.id !== u.id) { const rb = $('resultBanner'); if (rb) rb.hidden = true; }          // el resultado anterior era de otra persona
     person = u;
     const b = $('personBanner');
     // 25-nov-2026: la tarjeta muestra lo marcado «Mostrar en el registro» y si está o no registrada (en rojo si no); el botón «Entregar» va aquí mismo, junto a la persona.

@@ -122,12 +122,37 @@ def inventory_limit_problem(db: Session, event_id: int, item: InventoryItem, qty
         members = [parent.id] + [i.id for i in locked.values() if i.parent_id == parent.id]
         used = units_of(db, event_id, members, user_id) + sum(q for iid, q in pending_by_item.items() if iid in members and iid != item.id)
         if used + qty > parent.max_per_person:
-            return f"«{parent.name}» solo permite {parent.max_per_person} por persona y ya lleva {used}"
+            return limit_message(db, event_id, parent.name, parent.max_per_person, members, user_id, used)
     if item.max_per_person is not None:
         used = units_of(db, event_id, [item.id], user_id)
         if used + qty > item.max_per_person:
-            return f"«{item.name}» solo permite {item.max_per_person} por persona y ya lleva {used}"
+            return limit_message(db, event_id, item.name, item.max_per_person, [item.id], user_id, used)
     return None
+
+
+def received_names(db: Session, event_id: int, item_ids: List[int], user_id: str) -> List[str]:
+    """Lo que la persona ya recibió de esos ítems: «Mazorcada Corferias» o «2 × Lechona» (en el orden en que se entregó)."""
+    rows = (db.query(InventoryItem.name, func.sum(InventoryDelivery.qty), func.min(InventoryDelivery.delivered_at))
+            .join(InventoryItem, InventoryItem.id == InventoryDelivery.item_id)
+            .filter(InventoryDelivery.event_id == event_id, InventoryDelivery.item_id.in_(item_ids), InventoryDelivery.user_id == user_id)
+            .group_by(InventoryItem.name).order_by(func.min(InventoryDelivery.delivered_at)).all())
+    return [(f"{int(q)} × {n}" if int(q or 0) > 1 else n) for n, q, _t in rows]
+
+
+def limit_message(db: Session, event_id: int, name: str, limit: int, item_ids: List[int], user_id: str, used: int) -> str:
+    """Hotfix 26-nov-2026 (Juan David): el motivo real y QUÉ recibió. Grupo: «Esta persona ya recibió Alimentación: Mazorcada Corferias. Solo se permite 1 por persona.»;
+    ítem suelto: «Esta persona ya recibió Postre Muffin. Solo se permite 1 por persona.»"""
+    got = received_names(db, event_id, item_ids, user_id)
+    single = len(item_ids) == 1
+    if not got:
+        what = f"«{name}»"
+    elif single:
+        what = f"«{got[0]}»" if got[0] != name else f"«{name}»"
+    else:
+        what = f"«{name}»: " + ", ".join(got)
+    if used <= 0:
+        return f"«{name}» solo permite {limit} por persona."
+    return f"Esta persona ya recibió {what}. Solo se permite {limit} por persona."
 
 
 # ------------------------------------------------------------------------------------------------ Estadísticas (solo conteos)

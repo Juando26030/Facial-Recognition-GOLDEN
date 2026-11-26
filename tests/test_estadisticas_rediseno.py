@@ -130,3 +130,32 @@ def test_public_link_gets_the_control_summary_but_not_the_origin(client, factory
     d = client.get(f"/api/ver/{token}/analytics/registro").json()
     assert d["control"]["inventory"]["items"][0]["name"] == "Muffin"
     assert not any(k["label"].startswith("Vienen del Excel") for k in d["kpis"])
+
+
+# ------------------------------------------------------------------------------------------ hotfix 26-nov-2026: motivos reales al entregar
+
+def test_limit_message_says_what_the_person_already_received(client, factory):
+    ev = _setup(client, factory)
+    comida = _item(client, ev, "Alimentación", qty=0, max_per_person=1)
+    maz = _item(client, ev, "Mazorcada", parent_id=comida["id"], qty=10, max_per_person=1)
+    lech = _item(client, ev, "Lechona", parent_id=comida["id"], qty=10, max_per_person=1)
+    muffin = _item(client, ev, "Muffin", qty=10, max_per_person=1)
+    assert _deliver(client, ev, "1001", (maz["id"], 1), (muffin["id"], 1)).status_code == 200
+    for again in (maz, lech):                                                       # la misma u otra opción del grupo: el motivo es el grupo y dice cuál recibió
+        r = _deliver(client, ev, "1001", (again["id"], 1))
+        assert r.status_code == 409 and r.json()["detail"] == "Esta persona ya recibió «Alimentación»: Mazorcada. Solo se permite 1 por persona.", r.json()
+    r = _deliver(client, ev, "1001", (muffin["id"], 1))
+    assert r.status_code == 409 and r.json()["detail"] == "Esta persona ya recibió «Muffin». Solo se permite 1 por persona."
+
+
+def test_code_only_event_still_delivers_to_the_picked_person_and_gives_the_real_reason(client, factory, db):
+    from app.models import EventAttendee
+    ev = _setup(client, factory)
+    client.put(f"/api/events/{ev.id}/modules", json={"code_enabled": True, "code_search_only": True})
+    db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").first().code = "2020"
+    db.commit()
+    muffin = _item(client, ev, "Muffin", qty=10, max_per_person=1)
+    assert _deliver(client, ev, "1001", (muffin["id"], 1)).status_code == 200          # la pantalla manda la cédula de la persona elegida por su código
+    r = _deliver(client, ev, "1001", (muffin["id"], 1))
+    assert r.status_code == 409 and "ya recibió «Muffin»" in r.json()["detail"]        # antes: 404 «no está en la base de este evento»
+    assert _deliver(client, ev, "999999", (muffin["id"], 1)).status_code == 404        # quien no está inscrito sigue sin estar

@@ -120,6 +120,8 @@
         </div>
         <div class="gw-ai__suggest" id="suggest" role="listbox" aria-label="Coincidencias" hidden></div>
         <article class="gw-person gw-person--ok gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
+        {# 26-nov-2026: el resultado de la entrega (o el motivo por el que no se pudo) sale aquí, justo debajo de la persona y antes de «2. ¿Qué se le entrega?». #}
+        <div class="gw-verdict" id="resultBanner" role="status" aria-live="polite" hidden></div>
       </section>
 
       {% if inventory_assigned %}
@@ -151,7 +153,6 @@
           <button type="button" id="deliverBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} Entregar</button>
         </div>
         {% endif %}
-        <div class="gw-verdict" id="resultBanner" role="status" aria-live="polite" hidden></div>
       </section>
 
       <section class="gw-card gw-stack" aria-labelledby="invLastTitle">

@@ -74,7 +74,7 @@
         box.hidden = !box.innerHTML; return;
       }
       box.innerHTML = (list.length > MAX_ROWS ? `<p class="gw-hint">${list.length} coincidencias: se muestran las primeras ${MAX_ROWS}. Escribe más para afinar.</p>` : `<p class="gw-hint">${list.length} ${list.length === 1 ? 'coincidencia' : 'coincidencias'}</p>`)
-        + results.map((r, i) => `<button type="button" data-pf="${i}">${esc(fullName(r.persona))} · ${esc(r.persona.id)}${r.persona.entity ? ' · ' + esc(r.persona.entity) : ''} <span class="gw-hint">${esc(r.motivo)}</span></button>`).join('');
+        + results.map((r, i) => `<button type="button" data-pf="${i}">${esc(fullName(r.persona))} · ${esc(r.persona.id)}${r.persona.code ? ' · Código: ' + esc(r.persona.code) : ''}${r.persona.entity ? ' · ' + esc(r.persona.entity) : ''} <span class="gw-hint">${esc(r.motivo)}</span></button>`).join('');
       box.hidden = false;
     }
 

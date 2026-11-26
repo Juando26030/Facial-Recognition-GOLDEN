@@ -643,8 +643,12 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
             raise HTTPException(status_code=400, detail=f"«{item.name}» tiene subcategorías: elige cuál se entrega")
         if item.parent_id and group_rows.get(item.parent_id) is not None and group_rows[item.parent_id].archived_at is not None:
             raise HTTPException(status_code=400, detail=f"«{group_rows[item.parent_id].name}» está archivado: restáuralo para entregar «{item.name}»")
+        # Hotfix 26-nov-2026: primero el límite por persona (el del grupo manda): así el motivo dice QUÉ recibió («ya recibió «Alimentación»: Mazorcada Corferias») antes que la regla de no repetir o las existencias.
+        problem = subcat.inventory_limit_problem(db, event.id, item, qty, group_rows, user.id, {k: v for k, v in wanted.items() if k != item_id})
+        if problem:
+            raise HTTPException(status_code=409, detail=problem)
         if item_id in already and item.allow_repeat_delivery is False:
-            raise HTTPException(status_code=409, detail=f"«{item.name}» ya se le entregó a esta persona y este ítem no se puede repetir. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
+            raise HTTPException(status_code=409, detail=f"Esta persona ya recibió «{item.name}» y no se le puede entregar otra vez. Si fue un error, un coordinador puede activar «Permitir repetir la entrega» en Parámetros.")
         if item.requires_dwell and area_dwell_svc.prize_active(event) and not area_dwell_svc.qualifies(db, event, user.id):
             raise HTTPException(status_code=409, detail=f"«{item.name}» solo se entrega a quien cumplió el {area_dwell_svc.threshold(event)} % de permanencia del evento y esta persona todavía no lo alcanza")
         if qty > 1 and not multi_units_allowed(item, group_rows.get(item.parent_id) if item.parent_id else None):
@@ -652,9 +656,6 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         available = item.initial_qty - delivered.get(item_id, 0)
         if qty > available:
             raise HTTPException(status_code=400, detail=f"No alcanza «{item.name}»: quedan {available} y se pidieron {qty}")
-        problem = subcat.inventory_limit_problem(db, event.id, item, qty, group_rows, user.id, {k: v for k, v in wanted.items() if k != item_id})
-        if problem:
-            raise HTTPException(status_code=409, detail=problem)
 
     missing = missing_required_choice(db, event.id, user.id, wanted, delivered)
     if missing:
@@ -668,7 +669,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         else:
             hit = next((n for n in no_repeat if (ans.get("items") or {}).get(n.strip().lower())), None)
             if hit:
-                raise HTTPException(status_code=409, detail=f"«{hit}» ya se le entregó a esta persona en otro puesto y este ítem no se puede repetir.")
+                raise HTTPException(status_code=409, detail=f"Esta persona ya recibió «{hit}» en otro puesto y no se le puede entregar otra vez.")
 
     batch, now = uuid.uuid4().hex, utcnow()
     for item_id, qty in wanted.items():
