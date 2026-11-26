@@ -55,3 +55,39 @@ def test_front_wiring():
     assert "window.EVENT_CODE_FIRST" in (ROOT / "templates/kiosk_registro.html").read_text(encoding="utf-8")
     js = (ROOT / "static/js/directory.js").read_text(encoding="utf-8")
     assert "codeFirst: window.EVENT_CODE_FIRST === true" in js and "const doc = isCode ||" in js
+
+
+def test_code_only_is_exclusive_with_priority_and_ignores_the_cedula(client, factory, db):
+    """0168: «Solo buscar por código»: excluyente con «Dar prioridad al código»; el servidor ya no encuentra por cédula."""
+    from app.models import EventAttendee
+    ev = _setup(client, factory)
+    r = client.put(f"/api/events/{ev.id}/modules", json={"code_enabled": True, "code_search_first": True})
+    assert r.json()["code_search_first"] is True and r.json()["code_search_only"] is False
+    r = client.put(f"/api/events/{ev.id}/modules", json={"code_search_only": True})
+    assert r.json()["code_search_only"] is True and r.json()["code_search_first"] is False          # una apaga la otra
+    r = client.put(f"/api/events/{ev.id}/modules", json={"code_search_first": True})
+    assert r.json()["code_search_first"] is True and r.json()["code_search_only"] is False
+    client.put(f"/api/events/{ev.id}/modules", json={"code_search_only": True})
+    factory.person(ev, "3001")
+    db.query(EventAttendee).filter_by(event_id=ev.id, user_id="3001").first().code = "C-9"
+    db.commit()
+    db.refresh(ev)
+    assert person_code.find_user(db, ev, "3001") == (None, "")                                     # por cédula: nada
+    assert person_code.find_user(db, ev, "c-9")[0].id == "3001"
+    r = client.put(f"/api/events/{ev.id}/modules", json={"code_enabled": False})
+    assert r.json()["code_search_only"] is False
+
+
+def test_inventory_and_areas_pages_wiring():
+    inv = (ROOT / "templates/kiosk_inventario.html").read_text(encoding="utf-8")
+    ar = (ROOT / "templates/kiosk_areas.html").read_text(encoding="utf-8")
+    for html in (inv, ar):
+        assert "js/person-card.js" in html and "window.EVENT_CODE_ONLY" in html and "window.REG_CARD_FIELDS" in html
+        assert 'staff_role not in ["admin", "super_admin"] %} hidden' in html          # el resumen general solo lo ve el administrador
+    assert 'id="invHero"' in inv and "Categorías o productos con existencias" in inv
+    assert 'id="areaHero"' in ar and 'id="personBanner"' in ar
+    js = (ROOT / "static/js/inventario.js").read_text(encoding="utf-8")
+    assert "deliverHereBtn" in js and "qty-none" in js and "function paintHero" in js
+    assert "showPerson(result.data" in (ROOT / "static/js/areas.js").read_text(encoding="utf-8")
+    par = (ROOT / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
+    assert 'id="codeSearchOnly"' in par and "code_search_only: en.checked && so.checked" in par

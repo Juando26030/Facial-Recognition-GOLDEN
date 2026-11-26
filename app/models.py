@@ -304,7 +304,8 @@ class Event(Base):
     areas_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter registra la entrada o salida sin pulsar «Acreditar»
     code_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # 0140: el evento usa «código» (serial del QR distinto de la cédula); al escanear se busca primero por ID y luego por código (app/person_code.py)
     code_required = Column(Boolean, default=False, server_default='false', nullable=False)
-    code_search_first = Column(Boolean, default=False, server_default='false', nullable=False)  # 0166: con el código activo, el buscador del registro y el escaneo dan prioridad al código sobre la cédula  # 0140: con el código activo, ¿es obligatorio al registrar?
+    code_search_first = Column(Boolean, default=False, server_default='false', nullable=False)
+    code_search_only = Column(Boolean, default=False, server_default='false', nullable=False)  # 0168: lo buscado en números solo se compara con el código (nunca con la cédula); excluyente con code_search_first  # 0166: con el código activo, el buscador del registro y el escaneo dan prioridad al código sobre la cédula  # 0140: con el código activo, ¿es obligatorio al registrar?
     inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     inventory_mode = Column(String(10), nullable=True)  # 0161: NULL/'choose' = la persona elige (lo de siempre) | 'assigned' = la base lo define (app/inv_assign.py)
     inventory_assign_json = Column(Text, nullable=True)  # 0161: columnas que mandan en el modo 'assigned' {holder_product, holder_qty, dep_product, dep_qty}

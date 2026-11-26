@@ -24,6 +24,7 @@
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
     <script src="{{ url_for('static', path='js/search-core.js') }}"></script>
     <script src="{{ url_for('static', path='js/person-finder.js') }}"></script>
+    <script src="{{ url_for('static', path='js/person-card.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -54,7 +55,7 @@
   </div>
 </div>
 {% include "_config_lock.html" %}
-<script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if (event.auto_register or event.areas_autoscan) else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if (event.auto_register or event.areas_autoscan) else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }}; window.EVENT_CODE_FIRST = {{ "true" if (event.code_enabled and event.code_search_first) else "false" }}; window.EVENT_CODE_ONLY = {{ "true" if (event.code_enabled and event.code_search_only) else "false" }}; window.REG_CARD_FIELDS = {{ reg_card_fields_json | safe }}; window.IS_ADMIN = {{ "true" if staff_role in ["admin", "super_admin"] else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-ar" data-gw-tour="areas"{% if event.areas_enabled %} data-gw-tour-auto{% endif %}>
@@ -76,6 +77,11 @@
     </div>
 
     <div id="mainArea" class="gw-stack-lg"{% if not event.areas_enabled %} hidden{% endif %}>
+      {# 25-nov-2026 (Juan David): lo PRIMERO es en qué zona se está registrando y sus cifras; lo llena static/js/areas.js › paintHero. #}
+      <section class="gw-hero gw-hero--empty" id="areaHero" aria-live="polite" aria-label="Zona en la que registras">
+        <p class="gw-hero__kicker">Estás registrando en</p>
+        <div class="gw-hero__row"><span class="gw-hero__title">Elige la zona abajo</span></div>
+      </section>
       <details class="gw-form-group">
         <summary class="gw-form-group__summary">Cómo se usa esta pantalla</summary>
         <div class="gw-form-group__body">
@@ -118,6 +124,7 @@
           </div>
         </div>
         <div class="gw-ai__suggest" id="suggest" role="listbox" aria-label="Coincidencias" hidden></div>
+        <article class="gw-person gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
         <div class="gw-ai__actions">
           <button type="button" id="registerBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} <span id="registerLabel">Registrar</span></button>
           <button type="button" id="faceBtn" class="gw-btn gw-btn--secondary gw-btn--xl" hidden>{{ ic('face') }} Facial</button>
@@ -128,7 +135,7 @@
         <p class="gw-hint">Registro automático: <strong id="autoregLabel"></strong>. Si dice «OFF», después de encontrar a la persona el sistema te muestra su nombre y debes pulsar «Acreditar» para confirmar la entrada o la salida; si dice «ON», se registra de una vez.{% if event.areas_autoscan %} <strong>Escaneo automático activo</strong>: escanear o dar Enter registra la entrada o salida sin pulsar «Acreditar».{% endif %}</p>
       </section>
 
-      <div class="gw-stats-row" aria-label="Resumen de la zona">
+      <div class="gw-stats-row" aria-label="Resumen de la zona"{% if staff_role not in ["admin", "super_admin"] %} hidden{% endif %}>
         <div class="gw-stat gw-stat--ok">{{ ic('users', 'gw-stat__icon') }}<span class="gw-stat__value" id="insideCount">0</span><span class="gw-stat__label">Adentro</span></div>
         <div class="gw-stat">{{ ic('arrow-out', 'gw-stat__icon') }}<span class="gw-stat__value" id="outCount">0</span><span class="gw-stat__label">Salieron</span></div>
         <div class="gw-stat">{{ ic('clock', 'gw-stat__icon') }}<span class="gw-stat__value" id="totalCount">0</span><span class="gw-stat__label">Con movimientos</span></div>

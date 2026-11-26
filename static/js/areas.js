@@ -21,6 +21,7 @@
     if (!btn) return;
     direction = dir;
     $('registerLabel').textContent = direction === 'in' ? 'Registrar entrada' : (direction === 'out' ? 'Registrar salida' : 'Registrar');
+    paintHero();
     document.querySelectorAll('.dir-btn[data-dir]').forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
   }
   const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()));
@@ -45,7 +46,8 @@
   }
   async function registerOffline(cedula, confirm, forcedDirection, method) {
     const low = String(cedula || '').trim().toLowerCase();
-    const u = users.find(x => x.id === cedula) || (low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null);
+    const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
+    const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === cedula)) : (users.find(x => x.id === cedula) || byCode));          // 0166/0168
     if (!u) { show('err', 'No encontrado', 'Esa persona no está en la copia de este dispositivo'); return false; }
     const byId = {}; allAreas.forEach(a => { byId[a.id] = a; });
     const area = byId[areaId()];
@@ -141,11 +143,33 @@
       ? `<span class="gw-badge gw-badge--ok">${icon('check')} Entró</span>` : '<span class="gw-badge">Salió</span>'}</div></article>`).join('');
   }
 
+  let counts = null;
   function setCounts(rows) {
     const inside = rows.filter(r => r.direction === 'in').length;
     $('insideCount').textContent = inside;
     $('outCount').textContent = rows.length - inside;
     $('totalCount').textContent = rows.length;
+    counts = { inside, out: rows.length - inside, total: rows.length };
+    paintHero();
+  }
+  /* 25-nov-2026 (Juan David): arriba, en grande, la zona elegida y sus cifras (adentro · salieron · con movimientos) y el movimiento. */
+  function paintHero() {
+    const hero = $('areaHero'); if (!hero) return;
+    const o = $('areaSelect') && $('areaSelect').selectedOptions && $('areaSelect').selectedOptions[0];
+    const zone = o && o.value ? o.textContent.replace(/ \(.*$/, '') : '';
+    hero.classList.toggle('gw-hero--empty', !zone);
+    const dir = { auto: 'Automático (entrada o salida)', in: 'Entrada', out: 'Salida' }[direction];
+    hero.innerHTML = '<p class="gw-hero__kicker">Estás registrando en</p>' + (zone
+      ? `<div class="gw-hero__row"><span class="gw-hero__title">${esc(zone)}</span><span class="gw-hero__stats">${counts ? `<b>${counts.inside}</b> adentro · <b>${counts.out}</b> salieron · <b>${counts.total}</b> con movimientos · ` : ''}Movimiento: <b>${esc(dir)}</b></span></div>`
+      : '<div class="gw-hero__row"><span class="gw-hero__title">Elige la zona abajo</span></div>');
+  }
+  /* 25-nov-2026: tarjeta de la persona encontrada (static/js/person-card.js): campos «Mostrar en el registro», estado en Registro (rojo si no) y «Acreditar» al lado cuando falta confirmar. */
+  function showPerson(data, actionHtml) {
+    const b = $('personBanner'); if (!b) return;
+    if (!data || !window.GWPersonCard) { b.hidden = true; b.innerHTML = ''; return; }
+    const full = users.find(x => String(x.id) === String(data.id)) || data;
+    const card = GWPersonCard.render(full, { action: actionHtml || '' });
+    b.className = card.cls + ' gw-ai__person'; b.innerHTML = card.html; b.hidden = false;
   }
 
   // Veredicto del último resultado (mismo lugar siempre). cls: ok | warn | err
@@ -159,11 +183,12 @@
 
   async function handle(result, retry) {
     const who = result.data ? `${esc(result.data.first_name)} ${esc(result.data.last_name)}` : '';
+    showPerson(result.data, result.result === 'FOUND_PENDING' ? `<button type="button" id="confirmBtn" class="gw-btn gw-btn--primary gw-btn--xl">${icon('check-lg')} Acreditar ${result.direction === 'in' ? 'entrada' : 'salida'}</button>` : '');
     if (result.result === 'OK') {
       show('ok', result.direction === 'in' ? 'Entró' : 'Salió', `<strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}${result.details ? ' · ' + esc(result.details) : ''}`);
       await loadAreas(areaId());
     } else if (result.result === 'FOUND_PENDING') {
-      show('warn', 'Falta confirmar', `<strong>${who}</strong>. Se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="gw-btn gw-btn--primary gw-btn--xl">Acreditar</button>`);
+      show('warn', 'Falta confirmar', `<strong>${who}</strong>. Se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}: pulsa «Acreditar» junto a la persona.`);
       $('confirmBtn').addEventListener('click', (e) => busy(e.currentTarget, () => retry(true, result.direction)));
     } else if (result.result === 'ALREADY_ENTERED') {
       show('err', 'Ya está adentro', esc(result.details));
@@ -197,7 +222,7 @@
     if (zoneBtn) {
       if (locked()) return;
       $('areaSelect').value = zoneBtn.dataset.zone;
-      saveSel();
+      saveSel(); paintHero();
       document.querySelectorAll('.zone-btn').forEach(b => b.setAttribute('aria-pressed', b === zoneBtn ? 'true' : 'false'));
       loadPresence();
       return;
@@ -215,7 +240,7 @@
     }
   });
 
-  $('areaSelect').addEventListener('change', () => { saveSel(); loadPresence(); });
+  $('areaSelect').addEventListener('change', () => { saveSel(); paintHero(); loadPresence(); });
   LOCK.onChange((scope) => { if (scope === 'areas') paintLock(); });
 
   // Buscador único (static/js/person-finder.js): cédula, nombre o empresa con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano. Elegir de la lista o Enter con un solo resultado exacto registra.

@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # la persona (digital_badge.html, badge-render.js); solo se imprime a quien ya está registrado salvo preimpresión y certificados, y sin hojas en blanco (badge_print.html,
 # badge-render.js; parámetros de impresión intactos: los fija tests/test_impresion_parametros_fijos.py); Términos y Reembolsos aprobados por la auditora sin marcas de borrador
 # y con quién cobra (legal_terminos.html, legal_reembolsos.html). Huellas renovadas.
+# 25-nov-2026, orden expresa de Juan David: en el compromiso del digitador (solo `.fr-pledge`) las preguntas de contrato y asistencia van resaltadas (form-render.js:
+# solo CSS del compromiso; los formularios públicos no cambian). Huella renovada.
 # 24-nov-2026, HOTFIX con orden expresa de Juan David (eventos 14 y 15: varias personas inscritas desde el mismo celular se perdían): form_public.html renueva la clave
 # de envío cada vez que una inscripción queda confirmada. Mismo flujo y mismos textos. Huella renovada.
 FROZEN = {
@@ -42,7 +44,7 @@ FROZEN = {
     "templates/roulette_display.html": "0d095afc32fda8902a50a211250475ced849be613d8b62b170f86e64d10fc9b9",
     "templates/badge_print.html": "2efb40dc61d70e449288323dc4136a10d2a8888d7f77a20744dc07cf4d953ce6",
     # 6-nov-2026, ORDEN EXPRESA de Juan David: sin asteriscos de cara al público; «(opcional)» en lo no obligatorio y aviso «Tienes que llenar este campo».
-    "static/js/form-render.js": "87efcadfa55b3a73e363fcc293fd476112e108fbb4f0b183fcd34626f3036951",
+    "static/js/form-render.js": "38371803e18350b8f34843ef900dd4e6a139b9c006a620b2695236dbd00c83c7",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
     "static/js/direct-upload.js": "a20c385146b9bc4acf209975e05c21ca2175e9a6952770461c48d910d9004e5a",
     "static/js/fonts-propias.js": "ba6dfca9f9f9dda41587f0fb04d292221b45ca0f9ba858faeb90cdec197a0498",

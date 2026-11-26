@@ -190,3 +190,15 @@ console.log('search_core_check OK');
   assert.strictEqual(SC.codeKey(' GW 0012 '), 'gw0012');
 }
 console.log('search_core_check (con código 0166): OK');
+
+// 0168 (25-nov-2026): «Solo buscar por código»: lo numérico solo se compara con el código, nunca con la cédula; los nombres siguen
+{
+  const a = { id: '1000007963', first_name: 'Briyith', last_name: 'Cicua', entity: '', code: '2020' };
+  const b = { id: '2020555', first_name: 'Otro', last_name: 'Señor', entity: '', code: '9' };
+  const only = { codeOnly: true };
+  assert.deepStrictEqual(SC.search([a, b], '2020', only).map((r) => r.persona.id), ['1000007963']);   // la cédula 2020555 ya no sale
+  assert.deepStrictEqual(SC.search([a, b], '1000007963', only).map((r) => r.persona.id), []);         // por cédula: nada
+  assert.deepStrictEqual(SC.search([a, b], 'briyith', only).map((r) => r.persona.id), ['1000007963']); // por nombre: sí
+  assert.deepStrictEqual(SC.search([a, b], '1000007963', {}).map((r) => r.persona.id), ['1000007963']); // sin la opción: como siempre
+}
+console.log('search_core_check (solo código 0168): OK');

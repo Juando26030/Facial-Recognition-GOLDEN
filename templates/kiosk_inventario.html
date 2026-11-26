@@ -24,6 +24,7 @@
     <script src="{{ url_for('static', path='js/qr.js') }}"></script>
     <script src="{{ url_for('static', path='js/search-core.js') }}"></script>
     <script src="{{ url_for('static', path='js/person-finder.js') }}"></script>
+    <script src="{{ url_for('static', path='js/person-card.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -54,7 +55,7 @@
   </div>
 </div>
 {% include "_config_lock.html" %}
-<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }}; window.AUTOSCAN = {{ "true" if event.inventory_autoscan else "false" }}; window.INV_ASSIGNED = {{ "true" if inventory_assigned else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }}; window.AUTOSCAN = {{ "true" if event.inventory_autoscan else "false" }}; window.INV_ASSIGNED = {{ "true" if inventory_assigned else "false" }}; window.EVENT_CODE_FIRST = {{ "true" if (event.code_enabled and event.code_search_first) else "false" }}; window.EVENT_CODE_ONLY = {{ "true" if (event.code_enabled and event.code_search_only) else "false" }}; window.REG_CARD_FIELDS = {{ reg_card_fields_json | safe }}; window.IS_ADMIN = {{ "true" if staff_role in ["admin", "super_admin"] else "false" }};</script>
 
 <main class="golden-main" data-gw-fold>
   <div class="gw-container gw-stack-lg gw-ai__wrap gw-inv" data-gw-tour="inventario"{% if event.inventory_enabled %} data-gw-tour-auto{% endif %}>
@@ -76,6 +77,13 @@
     </div>
 
     <div id="mainArea" class="gw-stack-lg"{% if not event.inventory_enabled %} hidden{% endif %}>
+      {% if not inventory_assigned %}
+      {# 25-nov-2026 (Juan David): lo PRIMERO de la pantalla es qué se está entregando (lo marcado abajo), con las cifras de cada cosa; lo llena static/js/inventario.js › paintHero. #}
+      <section class="gw-hero gw-hero--empty" id="invHero" aria-live="polite" aria-label="Qué estás entregando">
+        <p class="gw-hero__kicker">Estás entregando</p>
+        <div class="gw-hero__row"><span class="gw-hero__title">Todavía no has elegido qué entregar (márcalo abajo en «2. ¿Qué se le entrega?»)</span></div>
+      </section>
+      {% endif %}
       <details class="gw-form-group">
         <summary class="gw-form-group__summary">Cómo se usa esta pantalla</summary>
         <div class="gw-form-group__body">
@@ -90,9 +98,10 @@
         </div>
       </details>
 
-      <div class="gw-stats-row" aria-label="Resumen del inventario">
-        <div class="gw-stat gw-stat--ok">{{ ic('check-lg', 'gw-stat__icon') }}<span class="gw-stat__value" id="statStock">0</span><span class="gw-stat__label">Con existencias</span></div>
-        <div class="gw-stat" id="statOutBox">{{ ic('alert', 'gw-stat__icon') }}<span class="gw-stat__value" id="statOut">0</span><span class="gw-stat__label">Agotados</span></div>
+      {# 25-nov-2026: el resumen GENERAL del inventario (cuántas categorías o productos tienen existencias) es solo para el administrador; el resto ve arriba lo que entrega. #}
+      <div class="gw-stats-row" aria-label="Resumen general del inventario"{% if staff_role not in ["admin", "super_admin"] %} hidden{% endif %}>
+        <div class="gw-stat gw-stat--ok">{{ ic('check-lg', 'gw-stat__icon') }}<span class="gw-stat__value" id="statStock">0</span><span class="gw-stat__label">Categorías o productos con existencias</span></div>
+        <div class="gw-stat" id="statOutBox">{{ ic('alert', 'gw-stat__icon') }}<span class="gw-stat__value" id="statOut">0</span><span class="gw-stat__label">Categorías o productos agotados</span></div>
         <div class="gw-stat">{{ ic('clock', 'gw-stat__icon') }}<span class="gw-stat__value" id="statDeliveries">0</span><span class="gw-stat__label">Entregas recientes</span></div>
       </div>
 

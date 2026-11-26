@@ -15,7 +15,7 @@
   function readSel() { try { return JSON.parse(localStorage.getItem(SEL_KEY) || '{}') || {}; } catch (e) { return {}; } }
   function paintLock() {
     const on = locked();
-    document.querySelectorAll('#itemsList .qty, #itemsList .qty-check').forEach(el => { if (on) { el.dataset.gwWasDisabled = el.disabled ? '1' : ''; el.disabled = true; } else if (el.dataset.gwWasDisabled !== undefined) { el.disabled = el.dataset.gwWasDisabled === '1'; delete el.dataset.gwWasDisabled; } });
+    document.querySelectorAll('#itemsList .qty, #itemsList .qty-check, #itemsList .qty-none').forEach(el => { if (on) { el.dataset.gwWasDisabled = el.disabled ? '1' : ''; el.disabled = true; } else if (el.dataset.gwWasDisabled !== undefined) { el.disabled = el.dataset.gwWasDisabled === '1'; delete el.dataset.gwWasDisabled; } });
     document.getElementById('itemsList').classList.toggle('gw-locked-ctl', on);
   }
   const sprite = () => { const u = document.querySelector('.gw-icon use'); return u ? u.getAttribute('href').split('#')[0] : ''; };
@@ -58,8 +58,9 @@
     }
     $('itemsLoading').hidden = true;
     // Lo marcado se conserva entre personas con entrega automática o con la configuración bloqueada (0161: también entre recargas); si no, como siempre, la lista vuelve en blanco.
+    // 25-nov-2026: lo marcado ya no se borra después de cada entrega (arriba se ve «Estás entregando…»); entre recargas solo se recuerda con entrega automática o configuración bloqueada.
     const sticky = AUTOSCAN || !!(LOCK.state && LOCK.state.inventory);
-    const keep = !sticky ? {} : (document.querySelector('.item-row') ? selection() : readSel());
+    const keep = document.querySelector('.item-row') ? selection() : (sticky ? readSel() : {});
     const real = items.filter(i => !i.is_group);
     $('statStock').textContent = real.filter(i => i.available > 0).length;
     $('statOut').textContent = real.filter(i => i.available <= 0).length;
@@ -85,19 +86,35 @@
       if (!kids.length) return '';
       kids.forEach(k => grouped.add(k.id));
       const one = g.max_per_person === 1;
-      const rule = one ? 'Elige una opción (obligatorio)' : (g.max_per_person ? `Máximo ${g.max_per_person} en total por persona (entre todas las opciones)` : '');
-      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(Object.assign({}, k, { multi: multiOk(k, g), group_max: g.max_per_person || 0 }), k.name, one ? 'grp' + g.id : '')).join('')}</fieldset>`;
+      const rule = one ? 'Elige una opción o «Nada elegido»' : (g.max_per_person ? `Máximo ${g.max_per_person} en total por persona (entre todas las opciones)` : '');
+      /* 25-nov-2026: en las de elegir una, «Nada elegido» permite quitar la opción (antes, una vez marcada, siempre quedaba alguna). */
+      const none = one ? `<div class="gw-card-row gw-ai__item gw-ai__item--none"><div><strong class="gw-card-row__title">Nada elegido</strong> <span class="gw-ai__avail">no se entrega nada de ${esc(g.name)}</span></div><div><label class="gw-check"><input type="radio" name="grp${g.id}" class="qty-none" checked> Elegir</label></div></div>` : '';
+      return `<fieldset class="gw-ai__group" data-group="${g.id}" data-max="${g.max_per_person || ''}"><legend><strong>${esc(g.name)}</strong>${rule ? ` · <span class="gw-ai__avail">${esc(rule)}</span>` : ''}</legend>${kids.map(k => row(Object.assign({}, k, { multi: multiOk(k, g), group_max: g.max_per_person || 0 }), k.name, one ? 'grp' + g.id : '')).join('')}${none}</fieldset>`;
     }).join('');
     const loose = items.filter(i => !i.is_group && !grouped.has(i.id)).map(i => (i.parent_id && byId[i.parent_id] ? Object.assign({}, i, { name: byId[i.parent_id].name + ' › ' + i.name }) : i));
     html += loose.map(i => row(Object.assign({}, i, { multi: multiOk(i, i.parent_id ? byId[i.parent_id] : null) }), i.name, '')).join('');
     box.innerHTML = html || `<div class="gw-state gw-empty--hero"><span class="gw-state__icon">${icon('inbox')}</span><p class="gw-state__title">No hay ítems en el inventario. Un coordinador los crea en Parámetros del evento.</p></div>`;
     restore(keep);
+    paintHero();
     if (!ASSIGNED) {
       paintLock();
       LOCK.banner($('lockBar'), 'inventory', () => { const sel = selection(); const names = items.filter(i => sel[i.id]).map(i => `${sel[i.id]} × ${i.name}`); return names.length ? 'se entrega ' + names.join(', ') : 'no hay nada marcado'; });
     }
   }
-  document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('#itemsList')) saveSel(); });
+  document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('#itemsList')) { saveSel(); paintHero(); } });
+  document.addEventListener('input', (e) => { if (e.target.classList && e.target.classList.contains('qty')) paintHero(); });
+  /* 25-nov-2026 (Juan David): arriba, en grande, lo que se está entregando (lo marcado), una fila por cada cosa con sus cifras: «Lechona · 916 disponibles de 917 · 1 entregada». */
+  function paintHero() {
+    const hero = $('invHero'); if (!hero) return;
+    const sel = selection(), byIdx = {}; items.forEach(i => { byIdx[i.id] = i; });
+    const chosen = Object.keys(sel).map(id => byIdx[id]).filter(Boolean);
+    hero.classList.toggle('gw-hero--empty', !chosen.length);
+    const label = (i) => (i.parent_id && byIdx[i.parent_id] ? byIdx[i.parent_id].name + ' › ' : '') + i.name;
+    const delivered = (i) => (i.delivered != null ? i.delivered : Math.max(0, (i.initial_qty || 0) - (i.available || 0)));
+    hero.innerHTML = '<p class="gw-hero__kicker">Estás entregando</p>' + (chosen.length
+      ? chosen.map(i => { const d = delivered(i); return `<div class="gw-hero__row"><span class="gw-hero__title">${esc(label(i))}${sel[i.id] > 1 ? ` <span class="gw-hint">(${sel[i.id]} por persona)</span>` : ''}</span><span class="gw-hero__stats"><b>${i.available}</b> disponibles de <b>${i.initial_qty}</b> · <b>${d}</b> ${d === 1 ? 'entregada' : 'entregadas'}${i.available <= 0 ? ' · <span class="gw-badge gw-badge--err">Agotado</span>' : ''}</span></div>`; }).join('')
+      : '<div class="gw-hero__row"><span class="gw-hero__title">Todavía no has elegido qué entregar (márcalo abajo en «2. ¿Qué se le entrega?»)</span></div>');
+  }
   LOCK.onChange((scope) => { if (scope === 'inventory') paintLock(); });
   /* Tope por persona de un grupo (Máx. > 1): al pasarse, se deshace lo último marcado y se avisa. Con el máximo en 1 son botones de opción y no hace falta. */
   document.addEventListener('change', (e) => {
@@ -145,7 +162,11 @@
     if (!u) return;
     person = u;
     const b = $('personBanner');
-    b.innerHTML = `<div class="gw-person__photo" aria-hidden="true">${esc((String(u.first_name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div><div class="gw-person__status"><span class="gw-badge gw-badge--ok">${icon('check')} Entregando a esta persona</span></div>`;
+    // 25-nov-2026: la tarjeta muestra lo marcado «Mostrar en el registro» y si está o no registrada (en rojo si no); el botón «Entregar» va aquí mismo, junto a la persona.
+    const full = users.find(x => x.id === u.id) || u;
+    const card = window.GWPersonCard ? GWPersonCard.render(full, { action: ASSIGNED ? '' : `<button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="deliverHereBtn">${icon('check-lg')} Entregar</button>` }) : null;
+    if (card) { b.className = card.cls + ' gw-ai__person'; b.innerHTML = card.html; }
+    else b.innerHTML = `<div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div>`;
     b.hidden = false;
     $('suggest').innerHTML = ''; $('suggest').hidden = true;
     if (ASSIGNED && window.GWInvAssigned) window.GWInvAssigned.show(u, { auto: AUTOSCAN && !!u.__auto });
@@ -153,7 +174,8 @@
   function byId(id, auto) {
     // Primero identificación y, si el evento usa código, el código (0140)
     const low = String(id || '').trim().toLowerCase();
-    const u = users.find(x => x.id === id) || (low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null);
+    const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
+    const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === id)) : (users.find(x => x.id === id) || byCode));          // 0166/0168
     if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
     setPerson(Object.assign({}, u, { __auto: !!auto }));
     if (auto && AUTOSCAN && !ASSIGNED) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
@@ -225,6 +247,7 @@
     if (data.batch_id && !lastBatches.has(data.batch_id)) verdict('err', 'Revisa esta entrega', `No aparece en el registro del evento. Recarga la página y comprueba antes de volver a entregar: <strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>.`);
   }
   $('deliverBtn').addEventListener('click', (e) => busy(e.currentTarget, deliver));
+  $('personBanner').addEventListener('click', (e) => { const btn = e.target.closest('#deliverHereBtn'); if (btn) busy(btn, deliver); });
   window.GWInv = { verdict, esc, icon, busy, reload: async () => { await loadItems(); await loadDeliveries(); }, pickById: (id) => byId(id, false), lastBatches: () => lastBatches };
 
   init();

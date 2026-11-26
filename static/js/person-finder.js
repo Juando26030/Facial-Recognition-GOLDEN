@@ -57,7 +57,8 @@
     function find(text) {
       const q = SC.classifyQuery(text);
       if (q.kind === 'vacio') return { q, list: [] };
-      const list = SC.search(users(), q);
+      const opts = { codeFirst: root.EVENT_CODE_FIRST === true, codeOnly: root.EVENT_CODE_ONLY === true };          // 0166/0168 (Parámetros › Campos)
+      const list = SC.search(users(), q, opts);
       const typed = String(text || '').trim().toLowerCase();
       if (typed) {                                                 // el código de la persona en el evento (serial del QR) también es una forma de encontrarla
         const byCode = users().filter((u) => u.code && String(u.code).toLowerCase() === typed && !list.some((r) => r.persona === u));

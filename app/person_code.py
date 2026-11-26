@@ -85,6 +85,10 @@ def find_user(db: Session, event: Event, value) -> Tuple[Optional[User], str]:
     value = normalize(value)
     if not value:
         return None, ""
+    if event.code_enabled and getattr(event, "code_search_only", False):          # 0168: solo por código: la cédula no cuenta
+        row = _holder(db, event, value)
+        user = db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first() if row else None
+        return (user, "code") if user else (None, "")
     if event.code_enabled and getattr(event, "code_search_first", False):          # 0166: prioridad al código (Parámetros › Campos)
         row = _holder(db, event, value)
         if row:

@@ -1240,7 +1240,7 @@
         lastFiltered = orderByRecency(base);
         setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.' : '');
       } else {
-        const sopts = { codeFirst: window.EVENT_CODE_FIRST === true };          // 0166: prioridad al código (Parámetros › Campos)
+        const sopts = { codeFirst: window.EVENT_CODE_FIRST === true, codeOnly: window.EVENT_CODE_ONLY === true };          // 0166/0168: prioridad al código o solo código (Parámetros › Campos)
         if (localMode && q.cedula && q.completa) {                    // lista local: la cédula se compara por huella (exacta); nunca se guarda en claro
           const h = localHashes.get(q.cedula);
           if (h !== undefined) sopts.hash = h;
@@ -1805,8 +1805,8 @@
             const q = SC.classifyQuery(leido);
             const typedCode = SC.codeKey ? SC.codeKey(raw) : '';
             const isCode = !!typedCode && allUsers.some((u) => u.code && SC.codeKey(u.code) === typedCode);          // 0166: código exacto de una persona (lector 2D o digitado): se acredita como la cédula, aunque sea corto o tenga letras
-            const doc = isCode || (q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
-              || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
+            const doc = isCode || (window.EVENT_CODE_ONLY !== true && ((q.kind === 'cedula' && !q.corta) || q.kind === 'lector' || q.kind === 'qr'
+              || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw))));          // 0168: solo código: un número que no es código no se busca como cédula
             if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
           }
           const parsed = parseOldCedulaBarcode(raw);

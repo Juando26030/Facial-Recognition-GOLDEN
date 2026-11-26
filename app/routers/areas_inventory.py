@@ -71,14 +71,21 @@ def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         event.code_required = bool(data["code_required"])
     if "code_search_first" in data:          # 0166: prioridad del código al buscar persona
         event.code_search_first = bool(data["code_search_first"])
+        if event.code_search_first:
+            event.code_search_only = False
+    if "code_search_only" in data:          # 0168: solo buscar por código (excluyente con la prioridad)
+        event.code_search_only = bool(data["code_search_only"])
+        if event.code_search_only:
+            event.code_search_first = False
     if not event.code_enabled:
         event.code_search_first = False
+        event.code_search_only = False
     if event.code_required and not event.code_enabled:
         raise HTTPException(status_code=400, detail="Para hacer el código obligatorio primero activa «Usar código»")
     _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
     event_history.kick_after(_hr)
-    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled, "code_enabled": event.code_enabled, "code_required": event.code_required, "code_search_first": event.code_search_first}
+    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled, "code_enabled": event.code_enabled, "code_required": event.code_required, "code_search_first": event.code_search_first, "code_search_only": event.code_search_only}
 
 
 def _person_data(user: User) -> dict:

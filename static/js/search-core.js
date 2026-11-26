@@ -224,7 +224,7 @@
     const typed = codeKey(q.raw);
     if (!typed) return NO;
     const code = codeKey(persona.code);
-    const r = (opts && opts.codeFirst) ? CODE_RANK.first : CODE_RANK.last;
+    const r = (opts && (opts.codeFirst || opts.codeOnly)) ? CODE_RANK.first : CODE_RANK.last;
     if (code === typed) return hit(MOTIVOS.codigo, r[0]);
     if (q.kind === 'lector' || q.kind === 'qr') return NO;                 // lo leído por lector es completo: solo cuenta el código exacto
     if (code.startsWith(typed)) return hit(MOTIVOS.codigoPrefijo(typed), r[1]);
@@ -236,6 +236,8 @@
     const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
     if (q.kind === 'vacio') return NO;
     const byCode = matchCode(persona, q, opts);
+    /* 0168: «Solo buscar por código»: lo escrito o leído en NÚMEROS solo se compara con el código (nunca con la cédula); los nombres se siguen buscando. */
+    if (opts && opts.codeOnly && (q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr')) return byCode;
     const other = matchPersonBase(persona, q, opts);
     if (!byCode.coincide) return other;
     return (!other.coincide || byCode.orden < other.orden) ? byCode : other;
