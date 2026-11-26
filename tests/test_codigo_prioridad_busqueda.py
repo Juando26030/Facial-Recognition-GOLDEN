@@ -91,3 +91,15 @@ def test_inventory_and_areas_pages_wiring():
     assert "showPerson(result.data" in (ROOT / "static/js/areas.js").read_text(encoding="utf-8")
     par = (ROOT / "templates/kiosk_parametros.html").read_text(encoding="utf-8")
     assert 'id="codeSearchOnly"' in par and "code_search_only: en.checked && so.checked" in par
+
+
+def test_inventory_delivery_lives_inside_the_person_card():
+    """26-nov-2026: debajo de «Registrado», grande: una celda por regalo (la base lo define) o lo marcado con un solo «Entregar» (inventario elegido)."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    inv = (root / "static/js/inventario.js").read_text(encoding="utf-8")
+    asg = (root / "static/js/inventario-asignado.js").read_text(encoding="utf-8")
+    css = (root / "static/css/gw-areas-inv.css").read_text(encoding="utf-8")
+    assert 'id="pcardAssign"' in inv and 'id="pcardSel"' in inv and "function paintCardSel" in inv
+    assert "function renderCells" in asg and "gw-pcard__go\" data-assign-key" in asg and "data-assign-all" in asg
+    assert ".gw-pcard__go" in css and ".gw-pcard__cell" in css

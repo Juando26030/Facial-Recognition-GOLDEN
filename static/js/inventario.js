@@ -104,7 +104,19 @@
   document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('#itemsList')) { saveSel(); paintHero(); } });
   document.addEventListener('input', (e) => { if (e.target.classList && e.target.classList.contains('qty')) paintHero(); });
   /* 25-nov-2026 (Juan David): arriba, en grande, lo que se está entregando (lo marcado), una fila por cada cosa con sus cifras: «Lechona · 916 disponibles de 917 · 1 entregada». */
+  /* Lo marcado, en celdas grandes dentro de la tarjeta de la persona (inventario elegido). */
+  function paintCardSel() {
+    const box = $('pcardSel'); if (!box) return;
+    const sel = selection(), byIdx = {}; items.forEach(i => { byIdx[i.id] = i; });
+    const chosen = Object.keys(sel).map(id => byIdx[id]).filter(Boolean);
+    const label = (i) => (i.parent_id && byIdx[i.parent_id] ? byIdx[i.parent_id].name + ' › ' : '') + i.name;
+    box.innerHTML = chosen.length
+      ? '<p class="gw-pcard__deliver-title">Se le entrega:</p>' + chosen.map(i => `<div class="gw-pcard__cell"><span class="gw-pcard__cell-name">${esc(label(i))}</span><span class="gw-pcard__cell-qty">${sel[i.id]} unidad${sel[i.id] === 1 ? '' : 'es'}</span></div>`).join('')
+      : '<p class="gw-alert gw-alert--warn">Todavía no has elegido qué entregar: márcalo en «2. ¿Qué se le entrega?».</p>';
+    const go = $('deliverHereBtn'); if (go) go.disabled = !chosen.length;
+  }
   function paintHero() {
+    paintCardSel();
     const hero = $('invHero'); if (!hero) return;
     const sel = selection(), byIdx = {}; items.forEach(i => { byIdx[i.id] = i; });
     const chosen = Object.keys(sel).map(id => byIdx[id]).filter(Boolean);
@@ -164,10 +176,15 @@
     const b = $('personBanner');
     // 25-nov-2026: la tarjeta muestra lo marcado «Mostrar en el registro» y si está o no registrada (en rojo si no); el botón «Entregar» va aquí mismo, junto a la persona.
     const full = users.find(x => x.id === u.id) || u;
-    const card = window.GWPersonCard ? GWPersonCard.render(full, { action: ASSIGNED ? '' : `<button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="deliverHereBtn">${icon('check-lg')} Entregar</button>` }) : null;
+    /* 26-nov-2026 (Juan David): lo que se entrega va DENTRO de la tarjeta, debajo de «Registrado», grande. «La base lo define»: una celda por regalo con su propio «Entregar»
+       (la llena static/js/inventario-asignado.js); inventario elegido: lo marcado en celdas y un solo «Entregar» grande. */
+    const action = ASSIGNED ? '<div class="gw-pcard__deliver" id="pcardAssign" aria-live="polite"><p class="gw-hint">Buscando lo que le corresponde…</p></div>'
+      : `<div class="gw-pcard__deliver" id="pcardSel"></div><button type="button" class="gw-btn gw-btn--primary gw-btn--xl gw-pcard__go" id="deliverHereBtn">${icon('check-lg')} Entregar</button>`;
+    const card = window.GWPersonCard ? GWPersonCard.render(full, { action }) : null;
     if (card) { b.className = card.cls + ' gw-ai__person'; b.innerHTML = card.html; }
     else b.innerHTML = `<div class="gw-person__body"><h3 class="gw-person__name">${esc(u.first_name)} ${esc(u.last_name)}</h3><p class="gw-person__meta">${esc(u.id)}</p></div>`;
     b.hidden = false;
+    paintCardSel();
     $('suggest').innerHTML = ''; $('suggest').hidden = true;
     if (ASSIGNED && window.GWInvAssigned) window.GWInvAssigned.show(u, { auto: AUTOSCAN && !!u.__auto });
   }

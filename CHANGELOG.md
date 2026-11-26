@@ -8,6 +8,11 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-26 — Inventario: la entrega dentro de la tarjeta de la persona · **Rama**
+
+- Debajo de «Registrado», en la tarjeta de la persona, grande y para cualquier pantalla: con «La base lo define», una celda por cada regalo asignado (titular y
+  dependientes) con su propio «Entregar» y «Entregar todo» si hay más de uno; con inventario elegido (p. ej. Lechona), lo marcado en celdas y un solo «Entregar» grande.
+
 ## 2026-11-26 — Rediseño del panel de Estadísticas (rama `hotfix/codigo-obligatorio-2026-11-25`; sin migración) · **Rama**
 
 - Nuevo orden (vista del cliente, enlace público y vista del personal): **1)** Registro del evento: Base, Registrados y Pendientes (el personal ve además, desde el inicio,

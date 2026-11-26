@@ -90,6 +90,20 @@
 .gw-pcard__f dt { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-pcard__f dd { margin: 0; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
 .gw-pcard__side { flex-direction: column; align-items: stretch; min-width: 12rem; }
+/* 26-nov-2026: con entregas en la tarjeta, la columna de la derecha es más ancha: debajo de «Registrado» van las celdas (una por regalo) y el botón grande. */
+.gw-pcard:has(.gw-pcard__deliver) .gw-pcard__side { width: clamp(16rem, 34vw, 28rem); }
+.gw-pcard__deliver { display: grid; gap: var(--gw-sp-2); }
+.gw-pcard__deliver:empty { display: none; }
+.gw-pcard__deliver .gw-alert { margin: 0; }
+.gw-pcard__deliver-title { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.gw-pcard__cell { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-1) var(--gw-sp-3); padding: var(--gw-sp-3); background: var(--gw-surface-2); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); }
+.gw-pcard__cell--stack { flex-direction: column; align-items: stretch; }
+.gw-pcard__cell--done { background: var(--gw-ok-bg); border-color: var(--gw-ok-line); }
+.gw-pcard__cell--problem { background: var(--gw-warn-bg); border-color: var(--gw-warn-line); }
+.gw-pcard__cell-name { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); overflow-wrap: anywhere; }
+.gw-pcard__cell-qty { font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
+.gw-pcard__cell-who { font-size: var(--gw-fs-md); color: var(--gw-text-muted); }
+.gw-pcard__go { width: 100%; justify-content: center; min-height: calc(var(--gw-tap-lg) + var(--gw-sp-3)); font-size: var(--gw-fs-xl); }
 .gw-pcard__side .gw-btn { min-height: var(--gw-tap-lg); }
 .gw-pcard__state { justify-content: center; font-size: var(--gw-fs-md); }
 .gw-pcard--unreg { background: var(--gw-err-bg); border-color: var(--gw-err-line); }
@@ -97,6 +111,7 @@
 @media (max-width: 768px) {
   .gw-pcard { grid-template-columns: auto minmax(0, 1fr); }
   .gw-pcard__side { grid-column: 1 / -1; min-width: 0; }
+  .gw-pcard:has(.gw-pcard__deliver) .gw-pcard__side { width: auto; }
 }
 .gw-hero { display: flex; flex-direction: column; gap: var(--gw-sp-2); padding: var(--gw-sp-4) var(--gw-sp-5); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-left: 8px solid var(--gw-gold-1); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); }
 .gw-hero__kicker { font-size: var(--gw-fs-md); color: var(--gw-text-muted); font-weight: var(--gw-fw-bold); text-transform: uppercase; letter-spacing: .04em; }

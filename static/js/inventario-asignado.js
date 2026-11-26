@@ -15,7 +15,7 @@
   async function localView(u) { const pack = await OFF.get(packUrl()); if (!pack || !pack.assigned) return null; return OFF.assignedView(pack, u, (await OFF.get(doneKey())) || {}); }
   async function showOffline(u, opts) {
     const view = await localView(u);
-    if (!view) { $('assignedBox').innerHTML = stateHtml('Sin conexión y sin la copia de lo asignado en este dispositivo. Abre esta pantalla una vez con conexión.', 'error'); return; }
+    if (!view) { const msg = 'Sin conexión y sin la copia de lo asignado en este dispositivo. Abre esta pantalla una vez con conexión.'; $('assignedBox').innerHTML = stateHtml(msg, 'error'); if ($('pcardAssign')) $('pcardAssign').innerHTML = `<p class="gw-alert gw-alert--err" role="alert">${esc(msg)}</p>`; return; }
     render(view);
     if (opts && opts.auto && view.registered && view.pending > 0) deliver({ all: true });
   }
@@ -38,7 +38,10 @@
     return `<div class="gw-state gw-empty--hero${kind === 'error' ? ' gw-state--error' : ''}" role="${kind === 'error' ? 'alert' : 'status'}"><p class="gw-state__title">${esc(text)}</p></div>`;
   }
 
+  /* 26-nov-2026: las celdas van en la tarjeta de la persona (#pcardAssign, debajo de «Registrado»), una por regalo, cada una con su «Entregar» grande; abajo queda solo un aviso. */
   function render(data) {
+    const inCard = $('pcardAssign');
+    if (inCard) { renderCells(data, inCard); $('assignedBox').innerHTML = stateHtml('Lo que le corresponde está arriba, en la tarjeta de la persona: entrega cada regalo con su botón.'); return; }
     const box = $('assignedBox');
     const lines = data.lines || [];
     const p = data.person || {};
@@ -66,17 +69,37 @@
     box.innerHTML = html;
   }
 
+  function renderCells(data, host) {
+    const lines = data.lines || [];
+    if (!lines.length) { host.innerHTML = '<p class="gw-alert gw-alert--info">La base no le asigna nada a esta persona. Si trae a alguien más, búscalo abajo por su nombre o documento.</p>'; return; }
+    const pending = lines.filter(l => l.pending > 0 && !l.problem);
+    let html = '<p class="gw-pcard__deliver-title">Le corresponde:</p>';
+    html += lines.map(l => {
+      const who = l.dependent ? `Para: ${esc(l.who || 'dependiente')}` : 'Para el titular';
+      const cls = l.problem ? ' gw-pcard__cell--problem' : (l.done ? ' gw-pcard__cell--done' : '');
+      const status = l.problem ? `<span class="gw-badge gw-badge--warn">${esc(l.problem)}</span>`
+        : (l.done ? '<span class="gw-badge gw-badge--ok">Entregado</span>'
+          : `<span class="gw-badge gw-badge--info">Pendiente: ${l.pending}${l.delivered ? ` (ya recibió ${l.delivered})` : ''}</span>${l.available < l.pending ? ` <span class="gw-badge gw-badge--err">Quedan ${Math.max(l.available, 0)} en stock</span>` : ''}`);
+      const btn = (!l.problem && l.pending > 0 && data.registered)
+        ? `<button type="button" class="gw-btn gw-btn--primary gw-btn--xl gw-pcard__go" data-assign-key="${esc(l.key)}">Entregar${l.pending > 1 ? ` (${l.pending})` : ''}</button>` : '';
+      return `<div class="gw-pcard__cell gw-pcard__cell--stack${cls}"><span class="gw-pcard__cell-name">${esc(l.item_name || l.product)} · ${l.qty} unidad${l.qty === 1 ? '' : 'es'}</span><span class="gw-pcard__cell-who">${who}</span><span>${status}</span>${btn}</div>`;
+    }).join('');
+    if (pending.length > 1 && data.registered) html += `<button type="button" class="gw-btn gw-btn--secondary gw-btn--xl gw-pcard__go" data-assign-all="1">Entregar todo (${pending.length})</button>`;
+    host.innerHTML = html;
+  }
+
   async function show(u, opts) {
     current = u;
     const box = $('assignedBox');
     box.innerHTML = stateHtml('Buscando lo que le corresponde…');
+    const fail = (msg) => { box.innerHTML = stateHtml(msg, 'error'); if ($('pcardAssign')) $('pcardAssign').innerHTML = `<p class="gw-alert gw-alert--err" role="alert">${esc(msg)}</p>`; };
     if (OFF && OFF.off()) return showOffline(u, opts);
     let res, data;
     try {
       res = await fetch(`/api/events/${window.EVENT_ID}/inventory/assigned?cedula=${encodeURIComponent(u.id)}`);
       data = await res.json().catch(() => ({}));
-    } catch (e) { if (OFF) return showOffline(u, opts); box.innerHTML = stateHtml('Sin conexión con el servidor. Inténtalo de nuevo.', 'error'); return; }
-    if (!res.ok) { box.innerHTML = stateHtml(data.detail || 'No se pudo consultar a esta persona', 'error'); return; }
+    } catch (e) { if (OFF) return showOffline(u, opts); fail('Sin conexión con el servidor. Inténtalo de nuevo.'); return; }
+    if (!res.ok) { fail(data.detail || 'No se pudo consultar a esta persona'); return; }
     render(data);
     if (opts && opts.auto && data.registered && (data.pending || 0) > 0) deliver({ all: true });          // «escanear = entregar» (Parámetros): entrega todo lo pendiente
   }
