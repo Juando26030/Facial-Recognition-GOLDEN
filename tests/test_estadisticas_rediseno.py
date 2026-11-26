@@ -187,3 +187,49 @@ def test_inventory_screen_pieces():
     assert "Estás entregando:" in js and "Se le entrega:" not in js
     assert "function delTable" in js and "<th scope=\"col\">Fecha y hora</th>" in js
     assert "onTyping:" in js and "function clearPerson" in js
+
+
+# ------------------------------------------------------------------------------------------ 26-nov-2026 (tarde): zonas igual que inventario, «sin coincidencias» en Registro
+
+def test_zone_person_history_is_only_for_coordinators_and_returns_every_zone(client, factory):
+    ev = _setup(client, factory)
+    vip = _area(client, ev, "VIP")
+    banos = _area(client, ev, "Baños")
+    for aid, d in ((vip["id"], "in"), (vip["id"], "out"), (banos["id"], "in")):
+        client.post(f"/api/events/{ev.id}/areas/{aid}/movement", json={"cedula": "1001", "direction": d, "confirm": True})
+    client.post(f"/api/events/{ev.id}/areas/{vip['id']}/movement", json={"cedula": "1002", "direction": "in", "confirm": True})
+    r = client.get(f"/api/events/{ev.id}/areas/movements/person", params={"cedula": "1001"})
+    assert r.status_code == 200 and r.json()["person"]["id"] == "1001"
+    mv = r.json()["movements"]
+    assert len(mv) == 3 and {m["area"] for m in mv} == {"VIP", "Baños"} and {m["direction"] for m in mv} == {"in", "out"}
+    assert all(set(m) == {"time", "area", "direction", "by"} for m in mv)          # quién registró va por nombre de cuenta, nunca la cédula
+    assert client.get(f"/api/events/{ev.id}/areas/movements/person", params={"cedula": "999999"}).status_code == 404
+    dig = factory.staff("digitador", "9990002")
+    factory.authorize(ev, dig)
+    client.post("/logout")
+    login(client, "9990002")
+    assert client.get(f"/api/events/{ev.id}/areas/movements/person", params={"cedula": "1001"}).status_code == 403
+
+
+def test_zones_screen_matches_inventory_flow():
+    tpl = (ROOT / "templates" / "kiosk_areas.html").read_text(encoding="utf-8")
+    js = (ROOT / "static" / "js" / "areas.js").read_text(encoding="utf-8")
+    assert tpl.index('id="personBanner"') < tpl.index('id="banner"') < tpl.index('id="registerBtn"')          # el resultado, justo debajo de la persona
+    assert '{% if staff_role not in ["digitador", "cliente"] %}' in tpl and 'id="histInput"' in tpl and 'id="histScanBtn"' in tpl
+    assert "function movTable" in js and "<th scope=\"col\">Fecha y hora</th>" in js and "gw-person__photo" not in js          # tabla alineada, ya no tarjetas
+    assert "/areas/movements/person" in js and "finder.showNoMatch" in js and "No encontrado', 'Esa persona no está en la copia" not in js
+
+
+def test_registro_uses_the_same_red_no_match():
+    buscador = (ROOT / "templates" / "_gw_buscador.html").read_text(encoding="utf-8")
+    dirjs = (ROOT / "static" / "js" / "directory.js").read_text(encoding="utf-8")
+    pf = (ROOT / "static" / "js" / "person-finder.js").read_text(encoding="utf-8")
+    assert 'id="gwNoMatch"' in buscador
+    assert "SC.noMatchHtml(" in dirjs and "SC.noMatchHtml(" in pf          # un solo aviso (search-core.js) para Registro, Inventario y Zonas
+    assert ".gw-search__nomatch" in (ROOT / "static" / "css" / "registro.css").read_text(encoding="utf-8")
+
+
+def test_stats_categories_are_boxed():
+    css = (ROOT / "static" / "css" / "gw-estadisticas.css").read_text(encoding="utf-8")
+    assert ".gw-sc-group__head" in css and "border: 2px solid var(--gw-border-strong)" in css
+    assert 'class="gw-sc-group__head"' in CTRL

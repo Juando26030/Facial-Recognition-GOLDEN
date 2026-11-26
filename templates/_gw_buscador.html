@@ -22,4 +22,6 @@
     <button type="button" class="gw-btn gw-btn--secondary gw-search__clear gw-search__clear--proxy" id="searchClearBtn" aria-label="Vaciar búsqueda" title="Vaciar búsqueda" hidden><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-trash"></use></svg></button>
   </div>
   <p class="gw-hint" id="gwSearchHint" aria-live="polite"></p>
+  {# 26-nov-2026 (Juan David): «Sin coincidencias» grande y en rojo, el MISMO de Inventario y Zonas (lo llena static/js/directory.js con SearchCore.noMatchHtml). #}
+  <div id="gwNoMatch" class="gw-search__nomatch" aria-live="assertive" hidden></div>
 </div>

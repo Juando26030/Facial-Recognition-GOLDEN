@@ -199,7 +199,7 @@
     const hist = PersonFinder.attach({
       input: $('histInput'), box: $('histSuggest'), users: () => users, purpose: 'inventory',
       onPick: (u) => showHistory(u),
-      onRaw: (ced) => { const u = users.find(x => x.id === ced); if (u) showHistory(u); else showToast('Esa persona no está en la base de este evento', 'error'); },
+      onRaw: (ced) => { const u = users.find(x => x.id === ced); if (u) showHistory(u); else hist.showNoMatch(ced); },
     });
     $('histResult').addEventListener('click', (e) => { if (e.target.closest('#histClose')) { $('histResult').hidden = true; $('histResult').innerHTML = ''; } });
     if ($('histScanBtn')) $('histScanBtn').addEventListener('click', () => { const sc = QrScanner.open({
@@ -236,17 +236,17 @@
     const low = String(id || '').trim().toLowerCase();
     const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
     const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === id)) : (users.find(x => x.id === id) || byCode));          // 0166/0168
-    if (!u) { showToast('Esa persona no está en la base de este evento', 'error'); return false; }
+    if (!u) { clearPerson(); if (finder) finder.showNoMatch(id); else showToast('Esa persona no está en la base de este evento', 'error'); return false; }          // 26-nov-2026: el mismo aviso rojo de la búsqueda
     setPerson(Object.assign({}, u, { __auto: !!auto }));
     if (auto && AUTOSCAN && !ASSIGNED) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
     return true;
   }
 
   // Buscador único (static/js/person-finder.js): cédula, nombre, empresa o código con coincidencias en vivo; QR propio, vCard (de Golden o ajena), dinámico y lector de mano.
-  PersonFinder.attach({
+  const finder = PersonFinder.attach({
     input: $('scanInput'), box: $('suggest'), users: () => users, purpose: 'inventory',
     onPick: (u) => { setPerson(Object.assign({}, u, { __auto: true })); if (AUTOSCAN && !ASSIGNED) deliver(); },          // entrega automática: leer (o elegir) a la persona entrega lo marcado
-    onRaw: () => showToast('Esa persona no está en la base de este evento', 'error'),
+    onRaw: (ced) => { clearPerson(); finder.showNoMatch(ced); },          // 26-nov-2026: lo leído no está en la base → el mismo aviso rojo «Sin coincidencias»
     onTyping: (t) => { if (String(t || '').trim() && person) clearPerson(); },          // 26-nov-2026: al escribir otra búsqueda se quita la tarjeta anterior (no queda «elegida»)
   });
   function clearPerson() {

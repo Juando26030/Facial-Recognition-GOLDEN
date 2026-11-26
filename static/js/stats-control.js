@@ -38,15 +38,16 @@
       + stat('chart', n(inv.remaining), 'Quedan en el inventario', 'unidades disponibles', inv.initial && inv.remaining <= 0 ? 'err' : '')
       + '</div>';
     (inv.groups || []).forEach(function (g) {
-      h += '<div class="gw-sc-group"><h3 class="gw-sc-group__title">' + esc(g.name) + '</h3>'
+      h += '<section class="gw-sc-group"><header class="gw-sc-group__head"><h3 class="gw-sc-group__title">' + esc(g.name) + '</h3>'
+        + (g.pct != null ? '<span class="gw-sc-group__pct">' + esc(pctText(g.pct)) + '</span>' : '')
         + '<p class="gw-sc-group__sum"><b>' + n(g.units) + '</b> unidad(es) entregada(s) · <b>' + n(g.people) + '</b> persona(s) atendida(s)'
-        + (g.initial ? ' · quedan <b>' + n(g.remaining) + '</b> de ' + n(g.initial) + (g.pct != null ? ' (' + pctText(g.pct) + ' entregado)' : '') : '') + '</p>'
+        + (g.initial ? ' · quedan <b>' + n(g.remaining) + '</b> de ' + n(g.initial) + (g.pct != null ? ' (' + pctText(g.pct) + ' entregado)' : '') : '') + '</p></header>'
         + (g.items && g.items.length ? '<ul class="gw-sc-list">' + g.items.map(function (r) { return bar(r.name, r.pct, itemMeta(r)); }).join('') + '</ul>' : '')
-        + '</div>';
+        + '</section>';
     });
     if (inv.items && inv.items.length) {
-      h += '<div class="gw-sc-group">' + (inv.groups && inv.groups.length ? '<h3 class="gw-sc-group__title">Otros productos</h3>' : '')
-        + '<ul class="gw-sc-list">' + inv.items.map(function (r) { return bar(r.name, r.pct, itemMeta(r)); }).join('') + '</ul></div>';
+      h += '<section class="gw-sc-group">' + (inv.groups && inv.groups.length ? '<header class="gw-sc-group__head"><h3 class="gw-sc-group__title">Otros productos</h3><p class="gw-sc-group__sum">Productos sueltos, sin categoría</p></header>' : '')
+        + '<ul class="gw-sc-list">' + inv.items.map(function (r) { return bar(r.name, r.pct, itemMeta(r)); }).join('') + '</ul></section>';
     }
     return h;
   }
@@ -59,12 +60,21 @@
       + stat('arrow-in', n(zs.people), 'Personas que entraron', zs.registered ? pctText(zs.pct) + ' de los registrados' : 'aún no hay registrados', 'ok')
       + stat('users', n(zs.inside), 'Adentro ahora', 'su última marca es una entrada')
       + stat('arrow-out', n(zs.entries), 'Entradas', n(zs.exits) + ' salida(s)')
-      + '</div><ul class="gw-sc-list">';
+      + '</div>';
+    /* 26-nov-2026 (Juan David): una zona con subzonas va en su propio recuadro (igual que las categorías del inventario); las sueltas, juntas en otro. */
+    var loose = [];
     (zs.zones || []).forEach(function (z) {
-      h += bar(z.name, z.pct, zoneMeta(z, zs.registered));
-      (z.children || []).forEach(function (c) { h += bar(c.name, c.pct, zoneMeta(c, zs.registered), true); });
+      if (!(z.children && z.children.length)) { loose.push(z); return; }
+      h += '<section class="gw-sc-group"><header class="gw-sc-group__head"><h3 class="gw-sc-group__title">' + esc(z.name) + '</h3>'
+        + (z.pct != null ? '<span class="gw-sc-group__pct">' + esc(pctText(z.pct)) + '</span>' : '')
+        + '<p class="gw-sc-group__sum">' + zoneMeta(z, zs.registered) + '</p></header>'
+        + '<ul class="gw-sc-list">' + z.children.map(function (c) { return bar(c.name, c.pct, zoneMeta(c, zs.registered)); }).join('') + '</ul></section>';
     });
-    return h + '</ul>';
+    if (loose.length) {
+      h += '<section class="gw-sc-group">' + (loose.length < (zs.zones || []).length ? '<header class="gw-sc-group__head"><h3 class="gw-sc-group__title">Otras zonas</h3><p class="gw-sc-group__sum">Zonas sin subzonas</p></header>' : '')
+        + '<ul class="gw-sc-list">' + loose.map(function (z) { return bar(z.name, z.pct, zoneMeta(z, zs.registered)); }).join('') + '</ul></section>';
+    }
+    return h;
   }
 
   function fill(section, html) {

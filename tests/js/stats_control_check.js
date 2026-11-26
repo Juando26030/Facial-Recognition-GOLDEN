@@ -14,6 +14,14 @@ assert(h.includes('Unidades entregadas') && h.includes('Personas atendidas') && 
 assert(h.includes('Mazorcada Corferias') && h.includes('<b>1</b> de 250 entregada(s) · quedan <b>249</b>'), h);
 assert(h.includes('0,4%') && h.includes('Otros productos') && h.includes('3.556'));
 const z = C._zonesHtml({ people: 2, inside: 1, entries: 2, exits: 1, pct: 50, registered: 4, zones: [{ name: 'VIP', people: 2, inside: 1, entries: 2, exits: 1, pct: 50, children: [{ name: 'Puerta', people: 1, inside: 0, entries: 1, exits: 0, pct: 25 }] }] });
-assert(z.includes('Personas que entraron') && z.includes('de 4 registrada(s)') && z.includes('gw-sc-row--sub') && z.includes('50%'));
+assert(z.includes('Personas que entraron') && z.includes('de 4 registrada(s)') && z.includes('50%'));
+// 26-nov-2026: cada categoría grande (y cada zona con subzonas) en su propio recuadro con encabezado; lo suelto en «Otros productos» / «Otras zonas»
+assert.strictEqual((h.match(/class="gw-sc-group"/g) || []).length, 2, h);
+assert(h.includes('<header class="gw-sc-group__head"><h3 class="gw-sc-group__title">Alimentación</h3><span class="gw-sc-group__pct">0,4%</span>'), h);
+assert(z.includes('<h3 class="gw-sc-group__title">VIP</h3>') && z.includes('Puerta') && !z.includes('Otras zonas'), z);
+const z2 = C._zonesHtml({ people: 0, inside: 0, entries: 0, exits: 0, pct: 0, registered: 4, zones: [{ name: 'VIP', pct: 0, children: [{ name: 'Puerta', pct: 0 }] }, { name: 'Baños', pct: 0 }] });
+assert(z2.includes('Otras zonas') && z2.includes('Baños'), z2);
+const solo = C._inventoryHtml({ units: 0, people: 0, initial: 0, remaining: 0, groups: [], items: [{ name: 'Gorra', delivered: 0, initial: 5, remaining: 5, pct: 0 }] });
+assert(!solo.includes('Otros productos'), solo);          // sin categorías no hace falta el título «Otros productos»
 assert(!C._inventoryHtml({ units: 0, people: 0, initial: 0, remaining: 0, groups: [], items: [{ name: 'X<script>', delivered: 0, initial: 0, remaining: 0, pct: null }] }).includes('<script>'));
 console.log('stats_control_check OK');

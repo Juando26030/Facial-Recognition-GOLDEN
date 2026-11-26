@@ -1227,6 +1227,21 @@
     }
 
     function setHint(text) { if (hintEl) hintEl.textContent = text; }
+    /* 26-nov-2026 (Juan David): «Sin coincidencias» grande y en rojo, el MISMO aviso de Inventario y Zonas (SearchCore.noMatchHtml), al escribir y al leer/escanear. */
+    const noMatchEl = unified ? document.getElementById('gwNoMatch') : null;
+    let noMatchSticky = false;          // el aviso de una lectura (Enter, lector, cámara) se queda aunque la caja se vacíe, hasta que se vuelva a escribir
+    if (noMatchEl) cedulaInput.addEventListener('input', () => { noMatchSticky = false; });
+    function showNoMatch(text, name, sticky) {
+      if (!noMatchEl || !SC || !SC.noMatchHtml) return false;
+      noMatchSticky = !!sticky;
+      const q = SC.classifyQuery(String(text || ''));
+      if (q.kind === 'vacio') { hideNoMatch(); return true; }
+      const u = document.querySelector('.gw-icon use'), sprite = u ? (u.getAttribute('href') || '').split('#')[0] : '';
+      noMatchEl.innerHTML = SC.noMatchHtml(q, { hasCodes: allUsers.some((x) => x.code), codeOnly: window.EVENT_CODE_ONLY === true, sprite, name: name || '', extra: 'Si es una persona nueva, usa «Registrar nuevo».' });
+      noMatchEl.hidden = false; setHint('');
+      return true;
+    }
+    function hideNoMatch() { if (noMatchEl) { noMatchEl.hidden = true; noMatchEl.innerHTML = ''; } }
     function applyUnified() {
       syncClearBtn();
       const q = SC.classifyQuery(cedulaInput.value || '');
@@ -1237,6 +1252,7 @@
       });
       activeQuery = q.kind !== 'vacio';
       if (!activeQuery) {
+        if (!noMatchSticky) hideNoMatch();
         lastFiltered = orderByRecency(base);
         setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.' : '');
       } else {
@@ -1248,7 +1264,8 @@
         }
         const res = SC.search(base, q, sopts);
         lastFiltered = res.map((r) => { reasons.set(r.persona, r.motivo); return r.persona; });
-        setHint(res.length ? `${res.length} ${res.length === 1 ? 'coincidencia' : 'coincidencias'}` : 'Sin coincidencias. Revisa la cédula o prueba con el nombre.');
+        if (res.length) { noMatchSticky = false; hideNoMatch(); setHint(`${res.length} ${res.length === 1 ? 'coincidencia' : 'coincidencias'}`); }
+        else if (!showNoMatch(cedulaInput.value)) setHint('Sin coincidencias. Revisa la cédula o prueba con el nombre.');
       }
       updateCounterLabel();
       drawRows();
@@ -1760,10 +1777,9 @@
             found ? 'success' : 'error'
           );
           if (found) verdict('info', 'Cédula no encontrada', `Mostrando coincidencias por nombre para «${fullName}»`);
-          else { verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`); if (bigNotFound) showNotFoundAlert(cedula, fullName); }
+          else { if (!showNoMatch(cedula, fullName, true)) verdict('err', 'No está en la lista', `Sin coincidencias para «${fullName}». Puedes usar «Registrar nuevo».`); if (bigNotFound) showNotFoundAlert(cedula, fullName); }
         } else {
-          showToast(data.details || 'Cédula no encontrada', 'error');
-          verdict('err', 'No está en la lista', 'Cédula no encontrada. Si es una persona nueva, usa «Registrar nuevo».');
+          if (!showNoMatch(cedula, '', true)) { showToast(data.details || 'Cédula no encontrada', 'error'); verdict('err', 'No está en la lista', 'Cédula no encontrada. Si es una persona nueva, usa «Registrar nuevo».'); }          // 26-nov-2026: el mismo aviso rojo de Inventario y Zonas
           if (bigNotFound) showNotFoundAlert(cedula, '');
         }
       } catch (e) {

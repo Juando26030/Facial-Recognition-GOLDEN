@@ -70,16 +70,11 @@
 
     /* 26-nov-2026 (Juan David): «sin coincidencias» grande y en rojo, como el aviso de la entrega, y diciendo QUÉ se buscó (código, cédula o nombre). */
     function noMatchHtml(q) {
-      const t = String((q && q.raw) || input.value || '').trim().slice(0, 60);
-      const hasCodes = users().some((u) => u.code);
-      const what = q.kind === 'texto' ? `el nombre «${esc(t)}»`
-        : (root.EVENT_CODE_ONLY === true ? `el código «${esc(t)}»` : (hasCodes ? `la cédula o el código «${esc(t)}»` : `la cédula «${esc(t)}»`));
-      const tip = q.kind === 'texto' ? 'Revisa cómo está escrito o búscala por cédula' + (hasCodes ? ' o código' : '') + '.'
-        : 'Revisa el número o búscala por el nombre.';
       const u = typeof document !== 'undefined' ? document.querySelector('.gw-icon use') : null, sprite = u ? (u.getAttribute('href') || '').split('#')[0] : '';
-      return `<div class="gw-verdict gw-verdict--err gw-pf__none" role="alert"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="${esc(sprite)}#i-error"/></svg>`
-        + `<div class="gw-verdict__body"><p class="gw-verdict__title">Sin coincidencias</p><p class="gw-verdict__text">No hay nadie en la base de este evento con ${what}. ${tip}</p></div></div>`;
+      return SC.noMatchHtml(q && q.raw ? q : SC.classifyQuery(input.value || ''), { hasCodes: users().some((x) => x.code), codeOnly: root.EVENT_CODE_ONLY === true, sprite });
     }
+    /* Para la página: el mismo aviso cuando lo leído (Enter, lector o cámara) no está en la base y la lista ya no se ve. */
+    function showNoMatch(text) { const q = SC.classifyQuery(String(text || '')); if (q.kind === 'vacio') return; box.innerHTML = noMatchHtml(q); box.hidden = false; }
 
     function draw(list, q) {
       results = list.slice(0, MAX_ROWS);
@@ -139,7 +134,7 @@
 
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
     box.hidden = true;
-    return { submit, clear };
+    return { submit, clear, showNoMatch };
   }
 
   const api = { attach, queryText, nameFromForeignCard };

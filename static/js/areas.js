@@ -48,7 +48,7 @@
     const low = String(cedula || '').trim().toLowerCase();
     const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
     const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === cedula)) : (users.find(x => x.id === cedula) || byCode));          // 0166/0168
-    if (!u) { show('err', 'No encontrado', 'Esa persona no está en la copia de este dispositivo'); return false; }
+    if (!u) { noMatch(cedula); return false; }          // 26-nov-2026: el mismo aviso rojo «Sin coincidencias» (con o sin red)
     const byId = {}; allAreas.forEach(a => { byId[a.id] = a; });
     const area = byId[areaId()];
     if (!area) { show('warn', 'No se pudo registrar', 'La zona no está en la copia de este dispositivo'); return false; }
@@ -139,8 +139,17 @@
     setCounts(rows);
     if (!rows.length) { showState('Sin movimientos todavía. Escanea la primera cédula o QR para empezar.', false); $('presBody').innerHTML = ''; return; }
     $('presWrap').hidden = false;
-    $('presBody').innerHTML = rows.map(r => `<article class="gw-person ${r.direction === 'in' ? 'gw-person--ok' : 'gw-person--info'} ${esc(r.direction)}"><div class="gw-person__photo" aria-hidden="true">${esc((String(r.name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(r.name)}</h3><p class="gw-person__meta">${esc(r.id)} · ${new Date(r.time + 'Z').toLocaleTimeString()}</p></div><div class="gw-person__status">${r.direction === 'in'
-      ? `<span class="gw-badge gw-badge--ok">${icon('check')} Entró</span>` : '<span class="gw-badge">Salió</span>'}</div></article>`).join('');
+    $('presBody').innerHTML = movTable(rows, false);
+  }
+
+  /* 26-nov-2026 (Juan David, igual que «Últimas entregas»): tabla con columnas alineadas. En la zona: hora, persona, cédula y movimiento;
+     en el historial de una persona: fecha y hora, zona, movimiento y quién lo registró. */
+  const when = (t) => { const d = new Date(String(t).replace(/Z?$/, 'Z')); return isNaN(d) ? '' : d.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  const dirBadge = (d) => d === 'in' ? `<span class="gw-badge gw-badge--ok">${icon('arrow-in')} Entró</span>` : `<span class="gw-badge">${icon('arrow-out')} Salió</span>`;
+  function movTable(rows, history) {
+    return `<div class="gw-table-wrap"><table class="gw-table gw-inv-del"><thead><tr><th scope="col">Fecha y hora</th>${history ? '<th scope="col">Zona</th>' : '<th scope="col">Persona</th><th scope="col">Cédula</th>'}<th scope="col">Movimiento</th>${history ? '<th scope="col">Registró</th>' : ''}</tr></thead><tbody>`
+      + rows.map(r => `<tr><td class="gw-inv-del__time">${esc(when(r.time))}</td>${history ? `<td>${esc(r.area)}</td>` : `<td>${esc(r.name)}</td><td class="gw-inv-del__num">${esc(r.id)}</td>`}<td>${dirBadge(r.direction)}</td>${history ? `<td>${esc(r.by || '—')}</td>` : ''}</tr>`).join('')
+      + '</tbody></table></div>';
   }
 
   let counts = null;
@@ -196,12 +205,17 @@
       show('err', 'Llegó al máximo', esc(result.details));
     } else if (result.result === 'NOT_INSIDE') {
       show('warn', 'No está adentro', esc(result.details));
+    } else if (result.result === 'NO' && lastQuery) {          // 26-nov-2026: no está en la base → el mismo aviso rojo «Sin coincidencias» del buscador
+      noMatch(lastQuery);
     } else {
       show('err', 'No encontrado', esc(result.details || 'No se encontró a la persona'));
     }
   }
 
+  let lastQuery = '';
+  function noMatch(text) { showPerson(null); $('banner').hidden = true; finder.showNoMatch(text); }
   async function register(cedula, confirm, forcedDirection, method) {
+    lastQuery = String(cedula || '');
     if (!areaId()) { showToast('Primero elige una zona', 'error'); return false; }
     method = method || 'cedula';
     if (OFF && OFF.off()) return registerOffline(cedula, confirm, forcedDirection, method);
@@ -211,6 +225,7 @@
         body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 404 && /no está en la base/i.test(String(data.detail || ''))) { noMatch(cedula); return false; }          // 26-nov-2026: el mismo aviso rojo de la búsqueda
       if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return false; }
       await handle(data, (c, d) => register(cedula, c, d, method));
       return FOUND.includes(data.result);          // true = la persona se encontró (la cámara se cierra sola); false = el aviso queda y la cámara sigue abierta
@@ -249,8 +264,36 @@
     onPick: (u, via) => register(u.id, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
     onRaw: (cedula, via) => register(cedula, false, undefined, via === 'qr' ? 'qr' : 'cedula'),
     onMessage: (text) => show('warn', 'Búsqueda', esc(text)),
-    onTyping: (t) => { const b = $('personBanner'); if (String(t || '').trim() && b && !b.hidden) { b.hidden = true; b.innerHTML = ''; } },          // 26-nov-2026: al escribir otra búsqueda se quita la tarjeta anterior
+    onTyping: (t) => { if (!String(t || '').trim()) return; const b = $('personBanner'); if (b && !b.hidden) { b.hidden = true; b.innerHTML = ''; } const v = $('banner'); if (v) v.hidden = true; },          // 26-nov-2026: al escribir otra búsqueda se quitan la tarjeta y el aviso anteriores (igual que Inventario)
   });
+
+  /* 26-nov-2026 (Juan David): buscador del historial (solo coordinador en adelante), el MISMO de arriba (cédula, nombre, código, lector o cámara); no registra nada. */
+  async function showHistory(u) {
+    const box = $('histResult'); if (!box) return;
+    box.hidden = false; box.innerHTML = `<p class="gw-hint">Buscando el historial de ${esc(u.first_name || '')} ${esc(u.last_name || '')}…</p>`;
+    let data;
+    try {
+      const r = await fetch(`/api/events/${window.EVENT_ID}/areas/movements/person?cedula=${encodeURIComponent(u.id)}`);
+      data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || 'No se pudo consultar el historial');
+    } catch (e) { box.innerHTML = `<p class="gw-alert gw-alert--err" role="alert">${esc(e.message && e.message !== 'Failed to fetch' ? e.message : 'Sin conexión: el historial de una persona necesita internet.')}</p>`; return; }
+    const p = data.person || u, rows = data.movements || [];
+    const head = `<div class="gw-inv-hist__head"><div><p class="gw-inv-hist__name">${esc(p.first_name || '')} ${esc(p.last_name || '')}</p><p class="gw-hint">Cédula: ${esc(p.id)}${p.code ? ' · Código: ' + esc(p.code) : ''} · ${rows.length} movimiento${rows.length === 1 ? '' : 's'}</p></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="histClose">Cerrar historial</button></div>`;
+    box.innerHTML = head + (rows.length ? movTable(rows, true) : '<p class="gw-alert gw-alert--info">Esta persona todavía no tiene entradas ni salidas en las zonas.</p>');
+  }
+  if ($('histInput')) {
+    const hist = PersonFinder.attach({
+      input: $('histInput'), box: $('histSuggest'), users: () => users, purpose: 'area',
+      onPick: (u) => showHistory(u),
+      onRaw: (ced) => { const u = users.find(x => x.id === ced); if (u) showHistory(u); else hist.showNoMatch(ced); },
+    });
+    $('histResult').addEventListener('click', (e) => { if (e.target.closest('#histClose')) { $('histResult').hidden = true; $('histResult').innerHTML = ''; } });
+    if ($('histScanBtn')) $('histScanBtn').addEventListener('click', () => { const sc = QrScanner.open({
+      title: 'Escanear cédula o QR — Historial de zonas', formats: ['qr_code', 'pdf417'], modes: ['old', 'new', 'qr'],
+      onCedula: (d) => { $('histInput').value = d.cedula; hist.submit(); sc.close(); },
+      onCode: (text) => { $('histInput').value = text; hist.submit(); sc.close(); },
+    }); });
+  }
 
   // Cámara del dispositivo: el MISMO escáner del Registro (selector «Cédula vieja · Cédula nueva · QR» en la misma ventana) y escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
   // Si la cámara lee el código y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.

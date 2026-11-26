@@ -277,3 +277,8 @@ html body .gw-bell, html body .gw-registro__retry, html body .golden-env-badge {
 /* En pantallas pequeñas el aviso de la bandeja es compacto, y mientras está visible sobra el botón flotante (el aviso ya abre la bandeja). */
 .gw-outbox__banner:not([style*="display: none"]) ~ .gw-outbox__btn { display: none !important; }
 @media (max-width: 900px), (max-height: 560px) { .gw-outbox__banner { padding: var(--gw-sp-1) var(--gw-sp-3); font-size: var(--gw-fs-sm); line-height: 1.25; } }
+
+/* 26-nov-2026 (Juan David): «Sin coincidencias» en rojo debajo del buscador, el mismo aviso de Inventario y Zonas (SearchCore.noMatchHtml). */
+.gw-search__nomatch { margin-top: var(--gw-sp-2); }
+.gw-search__nomatch[hidden] { display: none; }
+.gw-search__nomatch .gw-verdict { margin: 0; }

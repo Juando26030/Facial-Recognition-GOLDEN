@@ -94,9 +94,20 @@
 
 /* Rediseño 26-nov-2026: lo principal de Control de inventario y Control de zonas (static/js/stats-control.js) y el plegable «Información detallada». */
 .gw-sc .gw-stats-row { margin-top: var(--gw-sp-4); }
-.gw-sc-group { margin-top: var(--gw-sp-5); padding-top: var(--gw-sp-4); border-top: 1px solid var(--gw-border); }
-.gw-sc-group__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
-.gw-sc-group__sum { margin-top: var(--gw-sp-1); font-size: var(--gw-fs-md); color: var(--gw-text); }
+/* 26-nov-2026 (Juan David): cada categoría grande (p. ej. «Alimentación» y «Otros productos») en su PROPIO recuadro, con encabezado marcado: título grande,
+   franja dorada a la izquierda y fondo distinto. La letra de la marca solo tiene peso normal, así que la diferencia la dan el tamaño, el color y el recuadro. */
+.gw-sc-group { margin-top: var(--gw-sp-5); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); overflow: hidden; }
+.gw-sc-group__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--gw-sp-1) var(--gw-sp-3);
+  padding: var(--gw-sp-4) var(--gw-sp-5); background: var(--gw-surface-2); border-bottom: 1px solid var(--gw-border); border-left: 8px solid var(--gw-gold-1); }
+.gw-sc-group__title { margin: 0; font-size: var(--gw-fs-2xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); color: var(--gw-text); text-transform: uppercase; letter-spacing: .02em; overflow-wrap: anywhere; }
+.gw-sc-group__pct { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); color: var(--gw-gold-text); font-variant-numeric: tabular-nums; }
+.gw-sc-group__sum { grid-column: 1 / -1; margin: 0; font-size: var(--gw-fs-md); color: var(--gw-text); }
+.gw-sc-group > .gw-sc-list { margin: 0; padding: var(--gw-sp-4) var(--gw-sp-5) var(--gw-sp-5); }
+@media (max-width: 600px) {
+  .gw-sc-group__head { padding: var(--gw-sp-3) var(--gw-sp-4); border-left-width: 6px; }
+  .gw-sc-group__title, .gw-sc-group__pct { font-size: var(--gw-fs-xl); }
+  .gw-sc-group > .gw-sc-list { padding: var(--gw-sp-3) var(--gw-sp-4) var(--gw-sp-4); }
+}
 .gw-sc-list { list-style: none; margin: var(--gw-sp-3) 0 0; padding: 0; display: grid; gap: var(--gw-sp-4); }
 .gw-sc-row { min-width: 0; }
 .gw-sc-row--sub { padding-left: var(--gw-sp-5); }

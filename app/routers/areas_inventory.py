@@ -359,6 +359,23 @@ def area_presence(event_id: int, area_id: int, db: Session = Depends(get_db), st
     return rows
 
 
+@router.get("/events/{event_id}/areas/movements/person")
+def person_movements(event_id: int, cedula: str, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+    """26-nov-2026 (Juan David): historial COMPLETO de entradas y salidas de UNA persona en todas las zonas (buscador de «Personas en la zona»;
+    solo coordinador en adelante, igual que el historial de Inventario). Quién registró va por su nombre de cuenta, nunca su usuario (es su cédula)."""
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    user = _find_person(db, event, cedula)
+    area_rows = {a.id: a for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
+    rows = (db.query(AreaMovement).filter(AreaMovement.event_id == event.id, AreaMovement.user_id == user.id)
+            .order_by(AreaMovement.timestamp.desc(), AreaMovement.id.desc()).all())
+    sids = {r.registered_by_staff_id for r in rows if r.registered_by_staff_id}
+    names = {sid: ((n or "").strip() or "Personal del evento") for sid, n in db.query(StaffUser.id, StaffUser.full_name).filter(StaffUser.id.in_(sids))} if sids else {}
+    return {"person": {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "code": person_code.code_of(db, event, user.id) or ""},
+            "movements": [{"time": r.timestamp.isoformat(), "area": subcat.label_of(area_rows, area_rows[r.area_id]) if r.area_id in area_rows else "",
+                           "direction": r.direction, "by": names.get(r.registered_by_staff_id, "")} for r in rows]}
+
+
 def _xlsx_response(sheets: dict, filename: str, widths: dict = None) -> StreamingResponse:
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:

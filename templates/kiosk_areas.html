@@ -125,12 +125,12 @@
         </div>
         <div class="gw-ai__suggest" id="suggest" role="listbox" aria-label="Coincidencias" hidden></div>
         <article class="gw-person gw-person--big gw-ai__person" id="personBanner" role="status" aria-live="polite" hidden></article>
+        {# 26-nov-2026 (Juan David, igual que Inventario): el resultado (o el motivo por el que no se pudo) sale justo debajo de la persona. #}
+        <div id="banner" class="gw-verdict" role="status" aria-live="polite" hidden></div>
         <div class="gw-ai__actions">
           <button type="button" id="registerBtn" class="gw-btn gw-btn--primary gw-btn--xl">{{ ic('check-lg') }} <span id="registerLabel">Registrar</span></button>
           <button type="button" id="faceBtn" class="gw-btn gw-btn--secondary gw-btn--xl" hidden>{{ ic('face') }} Facial</button>
         </div>
-
-        <div id="banner" class="gw-verdict" role="status" aria-live="polite" hidden></div>
 
         <p class="gw-hint">Registro automático: <strong id="autoregLabel"></strong>. Si dice «OFF», después de encontrar a la persona el sistema te muestra su nombre y debes pulsar «Acreditar» para confirmar la entrada o la salida; si dice «ON», se registra de una vez.{% if event.areas_autoscan %} <strong>Escaneo automático activo</strong>: escanear o dar Enter registra la entrada o salida sin pulsar «Acreditar».{% endif %}</p>
       </section>
@@ -146,10 +146,27 @@
           <h2 class="gw-card__title" id="presTitle">Personas en la zona</h2>
           <a id="reportBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/areas-report" hidden>{{ ic('download', 'gw-icon--sm') }} Reporte de movimientos (Excel)</a>
         </div>
+        {# 26-nov-2026 (Juan David, igual que Inventario): historial de UNA persona en todas las zonas. Solo coordinador en adelante (el servidor también lo exige). #}
+        {% if staff_role not in ["digitador", "cliente"] %}
+        <div class="gw-inv-hist" id="histBox">
+          <div class="gw-search">
+            <label class="gw-label" for="histInput">Buscar el historial de una persona</label>
+            <div class="gw-search__row">
+              <div class="gw-search__field">
+                {{ ic('search', 'gw-search__icon') }}
+                <input type="text" id="histInput" data-gw-clearable class="gw-input" autocomplete="off" placeholder="Cédula, nombre o código (o escanea) y presiona Enter">
+              </div>
+              <button type="button" id="histScanBtn" class="gw-btn gw-btn--secondary gw-search__scan" aria-label="Escanear cédula o QR para ver su historial" title="Escanear cédula o QR para ver su historial">{{ ic('scan') }}</button>
+            </div>
+          </div>
+          <div class="gw-ai__suggest" id="histSuggest" role="listbox" aria-label="Coincidencias del historial" hidden></div>
+          <div id="histResult" class="gw-inv-hist__result" role="status" aria-live="polite" hidden></div>
+        </div>
+        {% endif %}
         <div id="presLoading" hidden>{{ skeleton('list', rows=4, label='Cargando quién está en la zona…') }}</div>
         <div id="presState" class="gw-state gw-empty--hero" role="status" hidden></div>
         <div id="presWrap">
-          <div class="gw-cards" id="presBody"></div>
+          <div id="presBody"></div>
         </div>
       </section>
 

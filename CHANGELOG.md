@@ -8,6 +8,11 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-26 (madrugada) — Estadísticas por recuadros, «Sin coincidencias» igual en todo, Zonas como Inventario
+- **Estadísticas:** cada categoría grande del inventario (p. ej. «Alimentación») y «Otros productos» van en su propio recuadro con encabezado grande en mayúsculas, franja dorada y su porcentaje; en Zonas, cada zona con subzonas en su recuadro y las sueltas en «Otras zonas» (`static/js/stats-control.js`, `gw-estadisticas.css`).
+- **«Sin coincidencias» en rojo, el MISMO en Registro, Inventario y Zonas:** un solo aviso en `SearchCore.noMatchHtml` (search-core.js). Sale al escribir, con Enter, con el lector y con la cámara, y dice qué se buscó (cédula, código o nombre). En Registro queda debajo del buscador (`#gwNoMatch` en `_gw_buscador.html`) y agrega «Si es una persona nueva, usa «Registrar nuevo»»; la ventana roja grande de la cédula por cámara sigue igual.
+- **Zonas igual que Inventario:** el resultado sale justo debajo de la tarjeta de la persona; escribir quita tarjeta y aviso; «Personas en la zona» es una tabla alineada (fecha y hora, persona, cédula, movimiento); buscador del historial de UNA persona en todas las zonas, solo coordinador en adelante (`GET /api/events/{id}/areas/movements/person`, quién registró por nombre de cuenta). Sin migraciones.
+
 ## 2026-11-26 (madrugada, 2) — Inventario: historial por persona, tabla alineada y búsqueda más clara · **Rama**
 
 - «Últimas entregas»: buscador del historial de UNA persona (cédula, nombre, código, lector o cámara), aparte del de arriba; solo coordinador en adelante

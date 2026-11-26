@@ -284,5 +284,26 @@
     return out.map(({ persona, motivo, orden }) => ({ persona, motivo, orden }));
   }
 
-  return { classifyQuery, matchPerson, search, cedulaKey, codeKey, normalize, wordsOf, prepare, MOTIVOS, MIN_CEDULA_DIGITS, MIN_PREFIX_DIGITS };
+  /* 26-nov-2026 (Juan David): el MISMO aviso rojo «Sin coincidencias» en Registro, Inventario y Zonas (al escribir, con Enter o al escanear), diciendo QUÉ se buscó.
+     opts: { hasCodes, codeOnly, sprite (ruta de icons.svg), name (nombre leído de la cédula, si lo hubo), extra (frase al final, p. ej. «Registrar nuevo») }. Devuelve HTML. */
+  function noMatchText(consulta, opts) {
+    opts = opts || {};
+    const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
+    const e = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const t = String(q.raw || '').trim().slice(0, 60);
+    let what = q.kind === 'texto' ? 'el nombre «' + e(t) + '»'
+      : (opts.codeOnly ? 'el código «' + e(t) + '»' : (opts.hasCodes ? 'la cédula o el código «' + e(t) + '»' : 'la cédula «' + e(t) + '»'));
+    if (opts.name && q.kind !== 'texto') what += ' ni con el nombre «' + e(String(opts.name).slice(0, 80)) + '»';
+    const tip = q.kind === 'texto' ? 'Revisa cómo está escrito o búscala por cédula' + (opts.hasCodes ? ' o código' : '') + '.'
+      : (opts.name ? 'Revisa el documento.' : 'Revisa el número o búscala por el nombre.');
+    return 'No hay nadie en la base de este evento con ' + what + '. ' + tip + (opts.extra ? ' ' + e(opts.extra) : '');
+  }
+  function noMatchHtml(consulta, opts) {
+    opts = opts || {};
+    const s = String(opts.sprite || '').replace(/["<>]/g, '');
+    return '<div class="gw-verdict gw-verdict--err gw-pf__none" role="alert"><svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="' + s + '#i-error"/></svg>'
+      + '<div class="gw-verdict__body"><p class="gw-verdict__title">Sin coincidencias</p><p class="gw-verdict__text">' + noMatchText(consulta, opts) + '</p></div></div>';
+  }
+
+  return { classifyQuery, matchPerson, search, cedulaKey, codeKey, normalize, wordsOf, prepare, noMatchText, noMatchHtml, MOTIVOS, MIN_CEDULA_DIGITS, MIN_PREFIX_DIGITS };
 }));
