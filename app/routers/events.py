@@ -686,6 +686,34 @@ def list_event_staff(
     return [_serialize_staff(s) for s in staff_list]
 
 
+def _client_and_coordinator(event: Event) -> tuple:
+    """Textos del encabezado de los Excel de usuarios: cliente (y su contacto) y coordinador del evento."""
+    client = event.tenant.name if event.tenant is not None else ""
+    coord = event.coordinator
+    return client, ((coord.full_name or coord.username) if coord is not None else "")
+
+
+@router.get("/events/{event_id}/staff-users/export.xlsx")
+def export_event_staff(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """«Descargar lista de usuarios en Excel» (27-nov-2026): las MISMAS cuentas de la lista de la pantalla, con el formato del listado de Golden (app/staff_xlsx.py). Primero los
+    digitadores, luego las demás cuentas (con su rol al lado del nombre). Solo nombre y usuario/cédula; nada sensible. Queda en audit_actions (cantidad, sin datos)."""
+    from app import heavy, staff_xlsx
+    event = get_event_for_staff(event_id, db, staff)
+    rows = (db.query(StaffUser).join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
+            .filter(EventStaffAuthorization.event_id == event_id, or_(StaffUser.role.in_(("digitador", "cliente")), StaffUser.event_only.is_(True)))
+            .order_by(EventStaffAuthorization.id).all())
+    label = {"cliente": "cliente"}
+    people = [((s.full_name or s.username), s.username) for s in rows if s.role == "digitador" and not s.event_only]
+    people += [(f"{s.full_name or s.username} ({'coordinador temporal' if s.event_only else label.get(s.role, s.role)})", s.username)
+               for s in rows if s.event_only or s.role != "digitador"]
+    client, coordinator = _client_and_coordinator(event)
+    data = staff_xlsx.list_workbook(event, client, coordinator, people)
+    audit_actions.record(db, staff, "export", "event_staff_list", event.id, event.name, f"{len(people)} cuentas")
+    db.commit()
+    from fastapi.responses import Response
+    return Response(data, media_type=heavy.XLSX, headers={"Content-Disposition": heavy.content_disposition(heavy.event_report_filename(event, "Listado de usuarios")), "Cache-Control": "no-store"})
+
+
 @router.get("/events/next-code")
 def next_event_code(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Código que se propone (en gris) al crear un evento: el siguiente al más alto solo numérico."""

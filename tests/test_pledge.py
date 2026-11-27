@@ -559,3 +559,43 @@ def test_which_field_appears_and_is_required_only_when_the_answer_is_yes(client,
     r = _send(client, path, _values(p_q_med="Sí", p_q_med_c="", p_q_drug="No", p_q_support="No"))
     assert r.status_code == 422 and "p_q_med_c" in r.json()["errors"]                          # Sí sin escribir cuál: se pide
     assert _send(client, path, _values(p_q_med="No", p_q_med_c="", p_q_drug="No", p_q_support="No")).status_code == 200      # No: no se pide
+
+
+def test_excel_exports_answers_and_staff_list(client, factory, db):
+    """27-nov-2026: «Respuestas del compromiso» (con lo sensible, solo coordinador/admin, auditado sin datos) y «Lista de usuarios» con el formato de Golden."""
+    from openpyxl import load_workbook
+
+    from app.models import AuditAction
+
+    ev, path, coord = _setup(client, factory)
+    assert _send(client, path, _values(p_q_contract="No")).status_code == 200
+    factory.staff("digitador", "7654321")
+    factory.authorize(ev, _staff(db, "7654321"))                                    # asignado sin firmar
+    comm = factory.staff("comercial", "com2")
+    ev.commercial_staff_id = comm.id
+    db.commit()
+    url = f"/api/events/{ev.id}/pledge/export.xlsx"
+    login(client, "com2")
+    assert client.get(url).status_code == 403                                     # la comercial pura nunca ve lo sensible
+    client.post("/logout")
+    login(client, "coord1")
+    r = client.get(url)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store" and "Respuestas del compromiso" in r.headers["content-disposition"].replace("%20", " ")
+    ws = load_workbook(io.BytesIO(r.content)).active
+    head = [ws.cell(5, i).value for i in range(1, ws.max_column + 1)]
+    rows = [[ws.cell(r_, i).value for i in range(1, ws.max_column + 1)] for r_ in range(6, ws.max_row + 1)]
+    byname = {row[2]: dict(zip(head, row)) for row in rows}
+    j = byname["Juan Pérez"]
+    assert j["Cédula"] == int(CED) and j["Nombre del familiar"] == "María Pérez" and j["Teléfono del familiar"] == "3009876543"
+    assert j["¿Cuál? (condición médica)"] == "Asma" and "condición médica" in j["Alertas"] and "contrato" in j["Alertas"] and j["Estado"] == "Firmado"
+    pending = [row for row in rows if row[1] == 7654321]
+    assert pending and dict(zip(head, pending[0]))["Estado"] == "Sin firmar"
+    db.expire_all()
+    a = db.query(AuditAction).filter(AuditAction.action == "pledge_export").one()
+    assert a.actor_id == coord.id and "María" not in (a.detail or "") and "Asma" not in (a.detail or "")
+    r = client.get(f"/api/events/{ev.id}/staff-users/export.xlsx")
+    assert r.status_code == 200
+    ws = load_workbook(io.BytesIO(r.content)).active
+    ids = [ws.cell(i, 3).value for i in range(4, ws.max_row + 1)]
+    assert int(CED) in ids and 7654321 in ids and ws["B2"].value and ws["A3"].value.startswith(f"[{ev.event_code}]")
+    assert "María" not in str([c.value for row in ws.iter_rows() for c in row])          # el listado no lleva nada sensible

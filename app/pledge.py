@@ -588,3 +588,83 @@ def throttle(form: WebForm, ip: Optional[str]) -> bool:
     if ip is not None and not _limiter.hit(("pledge_ip", form.id, ip), IP_MAX_PER_10MIN, 600.0):
         return False
     return True
+
+
+# ---------------------------------------------------------------------------------------------------- Excel «Respuestas del compromiso» (27-nov-2026, decisión de Juan David; app/staff_xlsx.py)
+EXPORT_QUESTIONS = ((FID_MED, T.Q_MEDICAL, FID_MED_C, "¿Cuál? (condición médica)"), (FID_DRUG, T.Q_MEDICATION, FID_DRUG_C, "¿Cuál? (medicamento)"),
+                    (FID_SUPPORT, T.Q_SUPPORT, FID_SUPPORT_C, "¿Cuál? (apoyo)"))
+EXPORT_ALERTS = {FID_MED: "Sí: condición médica especial", FID_DRUG: "Sí: toma medicamento", FID_SUPPORT: "Sí: requiere apoyo"}
+
+
+def _sort_key(text) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode().casefold()
+
+
+def _yes_no(v) -> str:
+    if v is True:
+        return T.YES
+    if v is False:
+        return T.NO
+    if v is None:
+        return ""
+    return str(v)
+
+
+def export_rows(db: Session, event: Event) -> tuple:
+    """(columnas, filas) para el Excel: una fila por compromiso VIGENTE del evento (incluidas cuentas ya eliminadas) y una «Sin firmar» por cada digitador asignado que no ha firmado.
+    Incluye lo sensible descifrado mientras no se haya borrado por retención. No escribe nada (la auditoría la hace el router)."""
+    from app.staff_xlsx import _id_value
+    columns = ["#", "Cédula", "Nombre", "Celular", "Nombre del familiar", "Teléfono del familiar"]
+    for _fid, question, _fid_c, cual in EXPORT_QUESTIONS:
+        columns += [question, cual]
+    columns += [T.Q_CONTRACT, T.Q_ATTENDANCE, "Autorizó datos sensibles", "Firmado", "Estado", "Alertas"]
+    pledges = (db.query(EventStaffPledge).filter(EventStaffPledge.event_id == event.id, EventStaffPledge.superseded_at.is_(None)).all())
+    signed_ids = {p.staff_id for p in pledges if p.staff_id is not None}
+    items = []
+    for p in pledges:
+        sub = db.get(FormSubmission, p.submission_id)
+        try:
+            data = json.loads(sub.data_json or "{}") if sub is not None else {}
+        except (ValueError, TypeError):
+            data = {}
+        secret = {}
+        if sub is not None and p.health_purged_at is None:
+            try:
+                secret = json.loads(sub.sensitive_json) if sub.sensitive_json else {}
+            except (ValueError, TypeError):
+                secret = {}
+        acc = db.get(StaffUser, p.staff_id) if p.staff_id else None
+        ced = normalize_cedula(data.get(FID_ID)) or (acc.username if acc else "")
+        name = str(data.get(FID_NAME) or (acc.full_name if acc else "") or "").strip()
+        values = [ced, name, data.get(FID_PHONE) or "", secret.get(FID_EM_NAME, ""), secret.get(FID_EM_PHONE, "")]
+        alerts = []
+        for fid, _q, fid_c, _c in EXPORT_QUESTIONS:
+            values += [secret.get(fid, ""), secret.get(fid_c, "") if secret.get(fid) == T.YES else ""]
+            if secret.get(fid) == T.YES:
+                alerts.append(EXPORT_ALERTS[fid])
+        contract, attend = data.get(FID_CONTRACT, ""), data.get(FID_ATTEND, "")
+        if contract == T.NO:
+            alerts.append("No tiene claras las condiciones del contrato")
+        if attend == T.NO:
+            alerts.append("No confirma su asistencia")
+        status = "Firmado"
+        if p.health_purged_at is not None:
+            status = "Firmado (datos sensibles borrados por retención)"
+        if p.staff_id is None:
+            status += " · cuenta eliminada"
+        values += [contract, attend, _yes_no(data.get(FID_AUTH)) if FID_AUTH in data else "", to_local(p.signed_at).strftime("%d/%m/%Y %H:%M"), status, " · ".join(alerts)]
+        values[0] = _id_value(values[0])
+        items.append({"values": values, "alert": bool(alerts), "sort": _sort_key(name)})
+    pending = (db.query(StaffUser).join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
+               .filter(EventStaffAuthorization.event_id == event.id, StaffUser.role == "digitador").all())
+    blank = [""] * (len(columns) - 6)
+    for acc in pending:
+        if acc.id in signed_ids:
+            continue
+        values = [_id_value(acc.username), acc.full_name or "", acc.phone or ""] + ["", ""] + blank
+        values[-2] = "Sin firmar"
+        items.append({"values": values, "alert": False, "sort": _sort_key(acc.full_name or acc.username)})
+    items.sort(key=lambda x: x["sort"])
+    rows = [{"values": [n] + it["values"], "alert": it["alert"]} for n, it in enumerate(items, start=1)]
+    return columns, rows

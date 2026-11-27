@@ -8,6 +8,11 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-27 — Usuarios del evento: dos Excel
+- **«Descargar lista de usuarios en Excel»**, al lado de «Cuentas asignadas a este evento»: todas las cuentas del evento (digitadores primero; las demás con su rol al lado del nombre) con el formato del listado de Golden (línea amarilla con la fecha y el horario, recuadro azul con los datos del evento, «#, NOMBRE, CÉDULA»). `GET /api/events/{id}/staff-users/export.xlsx`, `app/staff_xlsx.py`.
+- **«Respuestas del compromiso en Excel»**: todo lo que llenó cada digitador (celular, familiar y su teléfono, cada pregunta de salud con su «¿Cuál?», contrato, asistencia, autorización, fecha), en amarillo quien tiene alertas y «Sin firmar» para quien falta. Lleva datos sensibles por decisión de Juan David: solo coordinador y admin+, auditado sin datos, con aviso en el archivo (ver `docs/FASE_4_COMPROMISO.md`). `GET /api/events/{id}/pledge/export.xlsx`.
+- Sin migración. Pruebas: `tests/test_staff_xlsx.py`, `tests/test_pledge.py::test_excel_exports_answers_and_staff_list`.
+
 ## 2026-11-26 (noche, 3) — Parámetros: «Configurar evento por cuestionario» · **Rama**
 - **Pedido de Juan David:** una primera pestaña en Parámetros del evento (arriba de «Registro y pantalla») con preguntas de sí/no y de opción cerrada, en lenguaje natural, que dejen configurado todo el evento sin entrar sección por sección.
 - **Cómo funciona** (`app/setup_quiz.py`, `static/js/event-quiz.js`): 8 bloques y ~40 preguntas (personas y registro, rostro, invitaciones al celular, escarapelas/roles/certificados, zonas, entregas, turnos, datos y código); algunas aparecen según lo respondido. Cada respuesta cambia los MISMOS interruptores y opciones de las demás pestañas (quedan «Sin guardar») y todo se guarda con el «Guardar cambios» de siempre: mismas validaciones, permisos e historial. Las preguntas sin responder muestran «Así está hoy» cuando se reconoce la configuración actual; si una respuesta guardada ya no coincide con la sección, se avisa y se ofrece «Aplicar esta respuesta».

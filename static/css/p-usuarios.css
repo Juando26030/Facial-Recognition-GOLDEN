@@ -72,6 +72,8 @@
 /* Usuarios del evento (6-nov-2026): título de la lista con el botón rojo grande «Eliminar los usuarios temporales»; resultado de la carga por Excel con saltos de línea. */
 .gw-usr__listhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); }
 .gw-usr__listhead .gw-sub { margin: 0; }
+.gw-usr__titlerow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-3); }
+.gw-usr__downloads { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
 .gw-usr__listhead .gw-btn[hidden] { display: none; }
 @media (max-width: 40rem) { .gw-usr__listhead .gw-btn { width: 100%; white-space: normal; } }
 .gw-msg--lines { white-space: pre-line; }

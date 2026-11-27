@@ -210,7 +210,14 @@
 
     <section class="gw-stack" aria-labelledby="tituloCuentas" data-gw-tour-step="2" data-gw-tour-title="2. Cuentas y roles" data-gw-tour-text="Aquí ves cada cuenta con su rol y su estado. Las acciones de cada una están en su misma tarjeta.">
       <div class="gw-usr__listhead">
-        <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
+        <div class="gw-usr__titlerow">
+          <h2 class="gw-sub" id="tituloCuentas">Cuentas asignadas a este evento</h2>
+          {# 27-nov-2026: los dos Excel de la lista (app/staff_xlsx.py). El de respuestas lleva datos sensibles: solo coordinador y admin+ (el servidor lo vuelve a revisar) #}
+          <div class="gw-usr__downloads">
+            <a class="gw-btn gw-btn--secondary gw-btn--sm" id="staffListXlsx" href="/api/events/{{ event.id }}/staff-users/export.xlsx" download title="Excel con número, nombre y cédula de todas las cuentas de este evento, con el formato del listado de Golden">{{ ic('download', 'gw-icon--sm') }} Descargar lista de usuarios en Excel</a>
+            {% if staff_role != "comercial" %}<a class="gw-btn gw-btn--secondary gw-btn--sm" id="pledgeAnswersXlsx" href="/api/events/{{ event.id }}/pledge/export.xlsx" download title="Todo lo que llenó cada digitador en el compromiso: celular, familiar, salud y el «¿Cuál?». Contiene datos sensibles">{{ ic('download', 'gw-icon--sm') }} Respuestas del compromiso en Excel</a>{% endif %}
+          </div>
+        </div>
         {% if staff_role != "comercial" %}<button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="approveAllBtn" hidden aria-describedby="approveAllHint">{{ ic('check', 'gw-icon--sm') }} <span id="approveAllLabel">Autorizar a todos los pendientes</span></button>
         <span class="gw-sr-only" id="approveAllHint">Autoriza el ingreso de todos los digitadores de este evento que están esperando en la fila.</span>{% endif %}
       </div>

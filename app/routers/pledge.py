@@ -8,7 +8,8 @@
   GET    /api/events/{id}/pledge/{pid}/document   el compromiso firmado (HTML imprimible, sin datos sensibles)
   GET    /api/events/{id}/pledge/{pid}/health     el detalle sensible (descifrado): queda en audit_actions quién y cuándo, sin datos
   POST   /api/events/{id}/pledge/{pid}/allow-resign   permite que esa persona firme de nuevo (la firma anterior queda como historial)
-Permisos: coordinador del evento (y de su cliente) y admin+. NUNCA la comercial pura. Nada de esto sale en listados masivos, exportaciones ni reportes."""
+  GET    /api/events/{id}/pledge/export.xlsx      «Respuestas del compromiso» en Excel, CON lo sensible (27-nov-2026, decisión de Juan David; ver app/staff_xlsx.py): auditado, sin datos en la auditoría
+Permisos: coordinador del evento (y de su cliente) y admin+. NUNCA la comercial pura. Lo sensible no sale en listados, reportes ni otras exportaciones; la ÚNICA exportación es la de arriba."""
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -86,6 +87,23 @@ def pledge_state(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
                          "understands_terms": p.understands_terms if p else None, "has_health_info": bool(p and p.has_health_info and p.health_purged_at is None),
                          "health_purged": bool(p and p.health_purged_at), "health_flags": [x for x in (p.health_flags or "").split(",") if x] if p and p.health_purged_at is None else [], "resign_allowed": bool(p and p.resign_allowed_at)})
     return JSONResponse({"required": required, "accounts": accounts}, headers=NO_STORE)
+
+
+@router.get("/events/{event_id}/pledge/export.xlsx")
+def pledge_export(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(MANAGER)):
+    """Todo lo que llenó cada digitador en el compromiso (incluidos familiar, salud y el «¿Cuál?»), una fila por persona; en amarillo las que tienen alertas. Queda en audit_actions quién y cuándo."""
+    from fastapi.responses import Response
+
+    from app import heavy, staff_xlsx
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    columns, rows = pledge.export_rows(db, event)
+    client = event.tenant.name if event.tenant is not None else ""
+    coord = event.coordinator
+    data = staff_xlsx.pledge_workbook(event, client, (coord.full_name or coord.username) if coord is not None else "", columns, rows)
+    audit_actions.record(db, staff, "pledge_export", "event", event.id, event.name, f"{len(rows)} filas")
+    db.commit()
+    return Response(data, media_type=heavy.XLSX, headers={"Content-Disposition": heavy.content_disposition(heavy.event_report_filename(event, "Respuestas del compromiso")), "Cache-Control": "no-store"})
 
 
 def _pledge(db: Session, event: Event, pledge_id: int) -> EventStaffPledge:
