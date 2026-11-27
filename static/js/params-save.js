@@ -154,7 +154,10 @@
             });
         }
 
-        const ctl = createController({ onChange: (s) => { render(s); syncVisibility(); }, reload: () => win.location.reload() });
+        const ctl = createController({ onChange: (s) => {
+            render(s); syncVisibility();
+            try { doc.dispatchEvent(new win.CustomEvent('gw:paramsstate', { detail: s })); } catch (e) { /* sin eventos: nadie escucha */ }          // el cuestionario vuelve a mirar lo que falta al guardar
+        }, reload: () => win.location.reload() });
         btn.addEventListener('click', async () => {
             const r = await ctl.saveAll();
             if (typeof win.showToast !== 'function') return;

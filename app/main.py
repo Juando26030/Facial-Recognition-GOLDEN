@@ -49,7 +49,7 @@ from app.routers import stats_links as stats_links_router      # enlaces de solo
 from app.routers import print_settings
 from app.routers import crm as crm_router
 from app.routers import crm_pipeline as crm_pipeline_router, crm_import as crm_import_router, crm_quotes as crm_quotes_router, crm_tools as crm_tools_router, crm_today as crm_today_router
-from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, preprint as preprint_router, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, almacen_novedades as almacen_novedades_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
+from app.routers import api, areas_dwell as areas_dwell_router, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, downloads, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, preprint as preprint_router, event_docs, coord_assign as coord_assign_router, legalizations as legalizations_router, event_acts as event_acts_router, event_report, event_states, event_types as event_types_router, events, final_database, legal_public, parametros, setup_quiz as setup_quiz_router, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router, inventory as inventory_router, almacen as almacen_router, almacen_novedades as almacen_novedades_router, notifications as notifications_router, qr_resolve as qr_resolve_router, queue as queue_router, system_alerts as system_alerts_router
 from app import download_perms
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, is_inventory_only, split_roles
 from app import brandcolor, config_lock, inv_assign, lastname, personform, registro_gear
@@ -452,6 +452,7 @@ _include(badges.router, prefix="/api")
 _include(cedula.router, prefix="/api")
 _include(stats.router, prefix="/api")
 _include(parametros.router, prefix="/api")
+_include(setup_quiz_router.router, prefix="/api")          # 26-nov-2026: «Configurar el evento por cuestionario» (app/setup_quiz.py)
 _include(person_form_router.router, prefix="/api")
 _include(privacy_router.router, prefix="/api")
 _include(consents_router.router, prefix="/api")

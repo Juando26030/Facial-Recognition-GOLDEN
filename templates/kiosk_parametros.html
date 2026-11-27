@@ -29,6 +29,7 @@
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='js/queue-params.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/dwell-params.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/event-quiz.js') }}" defer></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
   <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" sizes="any">
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon-32.png') }}">
@@ -84,21 +85,56 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 
     <div class="gw-tabs" id="paramsRoot">
       <div class="gw-tablist" role="tablist" aria-label="Secciones de parámetros" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la sección" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves cómo está esa sección.">
-        <button type="button" class="gw-tab" role="tab" id="tab_registro" data-tab="registro" aria-controls="grp_registro" aria-selected="true">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Registro y pantalla</span><span class="gw-tab__sum">{{ event.directory_page_size or 50 }} filas · sesión {{ event.idle_minutes or idle_general_minutes }} min</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if local_server %}No disponible en el servidor local{% elif event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_invitaciones" data-tab="invitaciones" aria-controls="grp_invitaciones" aria-selected="false" tabindex="-1">{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">{% if event.aceptar_enabled %}Aceptación desde el celular activa{% else %}Aceptación desde el celular apagada{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_impresion" data-tab="impresion" aria-controls="grp_impresion" aria-selected="false" tabindex="-1">{{ ic('printer', 'gw-tab__icon') }}<span class="gw-tab__name">Impresión y reimpresión</span><span class="gw-tab__sum">Reimpresión {% if event.reprint_disabled %}deshabilitada{% else %}habilitada{% endif %}{% if event.shared_print_enabled %} · compartida{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_escarapelas" data-tab="escarapelas" aria-controls="grp_escarapelas" aria-selected="false" tabindex="-1">{{ ic('badge', 'gw-tab__icon') }}<span class="gw-tab__name">Escarapelas y certificados</span><span class="gw-tab__sum">Digital {% if event.digital_badge_enabled %}activa{% else %}apagada{% endif %} · certificados {% if event.certificates_enabled %}activos{% else %}apagados{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_zonas" data-tab="zonas" aria-controls="grp_zonas" aria-selected="false" tabindex="-1">{{ ic('inbox', 'gw-tab__icon') }}<span class="gw-tab__name">Zonas e inventario</span><span class="gw-tab__sum">Zonas {% if event.areas_enabled %}activas{% else %}apagadas{% endif %} · inventario {% if event.inventory_enabled %}activo{% else %}apagado{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_campos" data-tab="campos" aria-controls="grp_campos" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Campos</span><span class="gw-tab__sum">{{ n_categories }} categoría{{ '' if n_categories == 1 else 's' }} · campos de la persona</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
-        <button type="button" class="gw-tab" role="tab" id="tab_privacidad" data-tab="privacidad" aria-controls="grp_privacidad" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Privacidad</span><span class="gw-tab__sum">Borrado de rostros y solicitudes</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab gw-tab--quiz" role="tab" id="tab_cuestionario" data-tab="cuestionario" aria-controls="grp_cuestionario" aria-selected="true">{{ ic('check', 'gw-tab__icon') }}<span class="gw-tab__name">Configurar evento por cuestionario</span><span class="gw-tab__sum">Sin responder</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_registro" data-tab="registro" aria-controls="grp_registro" aria-selected="false" tabindex="-1">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Registro y pantalla</span><span class="gw-tab__sum">{{ event.directory_page_size or 50 }} filas · sesión {{ event.idle_minutes or idle_general_minutes }} min</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if local_server %}No disponible en el servidor local{% elif event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_invitaciones" data-tab="invitaciones" aria-controls="grp_invitaciones" aria-selected="false" tabindex="-1">{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">{% if event.aceptar_enabled %}Aceptación desde el celular activa{% else %}Aceptación desde el celular apagada{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_impresion" data-tab="impresion" aria-controls="grp_impresion" aria-selected="false" tabindex="-1">{{ ic('printer', 'gw-tab__icon') }}<span class="gw-tab__name">Impresión y reimpresión</span><span class="gw-tab__sum">Reimpresión {% if event.reprint_disabled %}deshabilitada{% else %}habilitada{% endif %}{% if event.shared_print_enabled %} · compartida{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_escarapelas" data-tab="escarapelas" aria-controls="grp_escarapelas" aria-selected="false" tabindex="-1">{{ ic('badge', 'gw-tab__icon') }}<span class="gw-tab__name">Escarapelas y certificados</span><span class="gw-tab__sum">Digital {% if event.digital_badge_enabled %}activa{% else %}apagada{% endif %} · certificados {% if event.certificates_enabled %}activos{% else %}apagados{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_zonas" data-tab="zonas" aria-controls="grp_zonas" aria-selected="false" tabindex="-1">{{ ic('inbox', 'gw-tab__icon') }}<span class="gw-tab__name">Zonas e inventario</span><span class="gw-tab__sum">Zonas {% if event.areas_enabled %}activas{% else %}apagadas{% endif %} · inventario {% if event.inventory_enabled %}activo{% else %}apagado{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_campos" data-tab="campos" aria-controls="grp_campos" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Campos</span><span class="gw-tab__sum">{{ n_categories }} categoría{{ '' if n_categories == 1 else 's' }} · campos de la persona</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_privacidad" data-tab="privacidad" aria-controls="grp_privacidad" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Privacidad</span><span class="gw-tab__sum">Borrado de rostros y solicitudes</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span><span class="gw-badge gw-badge--warn gw-tab__flag gw-tab__flag--action" data-group-action hidden>{{ ic('alert') }}<span data-action-count>Requiere acción</span></span></button>
       </div>
 
       <div class="gw-tabpanels" data-gw-tour-step="2" data-gw-tour-title="2. Cambia lo que necesites" data-gw-tour-text="Lo que cambies queda pendiente y la pestaña dice «Sin guardar». Lo marcado «Al instante» actúa en el momento.">
 
+        {# ====================================================================================== CUESTIONARIO (26-nov-2026, app/setup_quiz.py + static/js/event-quiz.js) #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_cuestionario" data-group="cuestionario" aria-labelledby="tab_cuestionario">
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Configurar el evento por cuestionario</h2><p class="gw-tabpanel__lead">Responde cómo va a ser el evento y el sistema deja listos los interruptores de todas las pestañas.</p></div>
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Cómo funciona</h4>{% call ayuda('ay_quiz', 'Configurar por cuestionario') %}<b>Qué hace:</b> cada respuesta cambia los mismos interruptores y opciones que verías en las demás pestañas; esas pestañas quedan «Sin guardar» y todo se guarda con «Guardar cambios». <b>Lo que no se puede dejar listo solo</b> (crear los ítems, las zonas, las categorías, diseñar la escarapela, subir el anexo…) queda marcado en amarillo con «Requiere acción» en la pestaña y en la sección, hasta que lo hagas. <b>«Así está hoy»:</b> la respuesta que ya corresponde a cómo está configurado el evento. <b>Qué NO hace:</b> no crea ítems, zonas, campos ni diseños, y no cambia nada que tú no respondas.{% endcall %}</div>
+            <ol class="gw-quiz__how">
+              <li>Responde las preguntas (sí o no, o una opción). Algunas aparecen según lo que respondas.</li>
+              <li>Pulsa <b>«Guardar cambios»</b> abajo: se guardan las respuestas y la configuración de todas las pestañas.</li>
+              <li>Haz lo que quede en <b>«Lo que falta hacer»</b>. Cada pestaña con algo pendiente dice «Requiere acción».</li>
+            </ol>
+            <p class="gw-hint" id="quizProgress" aria-live="polite"></p>
+            <p class="gw-quiz__status" id="quizStatus" role="status" aria-live="polite"></p>
+            <div data-pnodirty><button type="button" id="quizReapply" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Aplicar otra vez las respuestas que no coinciden</button></div>
+          </div>
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Lo que falta hacer</h4></div>
+            <div id="quizActions" aria-live="polite"></div>
+          </div>
+          <div class="gw-group__item">
+            <div id="quizRoot" class="gw-stack gw-quiz" data-psave="quiz">{{ skeleton('text', rows=6, label='Cargando el cuestionario…') }}</div>
+            <div class="gw-actions" data-pnodirty><button type="button" id="quizClear" class="gw-btn gw-btn--ghost gw-btn--sm">{{ ic('undo', 'gw-icon--sm') }} Borrar las respuestas</button></div>
+          </div>
+        </section>
+
         {# ====================================================================================== REGISTRO Y PANTALLA #}
-        <section class="gw-tabpanel" role="tabpanel" id="grp_registro" data-group="registro" aria-labelledby="tab_registro">
+        <section class="gw-tabpanel" role="tabpanel" id="grp_registro" data-group="registro" aria-labelledby="tab_registro" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Registro y pantalla</h2><p class="gw-tabpanel__lead">Cómo se ve y se comporta el registro en la puerta.</p></div>
+
+          <!-- 26-nov-2026: la lista de personas y los formularios de inscripción (aquí solo el estado y el enlace; el cuestionario marca si falta). -->
+          <div class="gw-group__item" id="qzRosterItem">
+            <div class="gw-item-head"><h4>Lista de personas</h4></div>
+            <p class="gw-hint">{% if event.roster_uploaded %}Ya hay una lista cargada en este evento.{% else %}Todavía no se ha cargado la lista de personas.{% endif %} <a href="/kiosk/{{ event.id }}/roster">Ir a Adjuntar base de datos</a></p>
+          </div>
+          <div class="gw-group__item" id="qzFormsItem">
+            <div class="gw-item-head"><h4>Formularios de inscripción</h4></div>
+            <p class="gw-hint">Los formularios web para que las personas se inscriban antes del evento. <a href="/kiosk/{{ event.id }}/formularios">Ir a Formularios</a></p>
+          </div>
 
           <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
           <div class="gw-group__item" data-psave="reggear">
@@ -139,7 +175,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </div>
 
           <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE evento. Se aplica con el «Guardar» de abajo (subir una imagen es inmediato). -->
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzLogoItem">
             <div class="gw-item-head"><h4>Logo del evento</h4>{% call ayuda('ay_logo', 'Logo del evento') %}Al subir una imagen se activa «Usar logo propio» (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia las pantallas de este evento; los demás siguen con el logo de Golden.{% endcall %}</div>
             <fieldset class="gw-fieldset" id="logoOptions" data-psave="logo">
               <legend class="gw-label">Qué logo se muestra</legend>
@@ -176,7 +212,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           {% if local_server %}<div class="gw-alert gw-alert--warn" role="note">{{ ic('lock') }}<div class="gw-alert__body"><b>El reconocimiento facial no está disponible en el servidor local.</b> Aquí se registra por cédula, QR o búsqueda; el rostro solo se usa en internet. Esta sección queda bloqueada.</div></div>{% endif %}
 
           <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzFacialItem">
             <div class="gw-item-head"><h4>Reconocimiento facial: paso guiado</h4>{% call ayuda('ay_facial', 'Cómo funciona') %}Responde las preguntas de abajo y, al final, verás en palabras simples qué pasará en la puerta y qué falta por hacer.{% endcall %}</div>
             <div data-psave="cc" class="gw-stack">
               <fieldset class="gw-fieldset">
@@ -355,6 +391,16 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         <section class="gw-tabpanel" role="tabpanel" id="grp_escarapelas" data-group="escarapelas" aria-labelledby="tab_escarapelas" hidden>
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Escarapelas y certificados</h2><p class="gw-tabpanel__lead">La escarapela digital que llega por correo y los certificados al terminar el evento.</p></div>
 
+          <!-- 26-nov-2026: diseño de la escarapela y «una por categoría» (el mismo interruptor del diseñador: PUT /badge-mode). -->
+          <div class="gw-group__item" id="qzBadgeItem">
+            <div class="gw-item-head"><h4>Diseño de la escarapela</h4>{% call ayuda('ay_badgecat', 'Una escarapela por categoría') %}Con la casilla apagada todas las personas usan la misma escarapela. Encendida, cada categoría (rol) puede tener su propio diseño en el diseñador; las que no tengan uno propio usan el general. Necesita al menos una categoría (pestaña Campos).{% endcall %}</div>
+            <div data-psave="badgecat">
+              <label class="gw-check"><input type="checkbox" id="badgePerCategory" {% if event.badge_per_category %}checked{% endif %}> Una escarapela distinta por categoría (rol)</label>
+              <p class="gw-hint">{% if n_categories %}Este evento tiene {{ n_categories }} categoría{{ '' if n_categories == 1 else 's' }}.{% else %}Primero escribe las categorías en la pestaña Campos.{% endif %}</p>
+            </div>
+            <a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/escarapela">{{ ic('badge', 'gw-icon--sm') }} Abrir el diseñador de escarapelas</a>
+          </div>
+
           <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
           <div class="gw-group__item">
             <div class="gw-item-head"><h4>Escarapela digital</h4>{% call ayuda('ay_digital', 'Escarapela digital') %}Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el mensaje de texto salen solo si el envío está configurado; si no, el aviso no le llega a nadie (pregunta al equipo de soporte si tienes dudas).{% endcall %}</div>
@@ -404,7 +450,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </div>
 
           <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzCertItem">
             <div class="gw-item-head"><h4>Certificados</h4>{% call ayuda('ay_certificados', 'Certificados') %}Al activarlo aparece el campo «Certificado» (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección «Certificados» para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% endcall %}</div>
             <div data-psave="cert">
               <label class="gw-check"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %}> Activar los certificados en este evento</label>
@@ -433,7 +479,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </details>
 
           <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzAreasItem">
             <div class="gw-item-head"><h4>Control de áreas</h4>{% call ayuda('ay_areas', 'Control de áreas') %}Con «permitir reingresos» apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula, QR o rostro) usa el «Modo autoregistro» del evento.{% endcall %}</div>
             <div data-psave="mod_areas">
               <label class="gw-check"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %}> Activar el control de entrada y salida por zonas</label>
@@ -455,7 +501,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
           </div>
 
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzInventoryItem">
             <div class="gw-item-head"><h4>Control de inventario</h4>{% call ayuda('ay_inventario', 'Control de inventario') %}Al entregar un ítem, el disponible se descuenta solo. «Varias unidades a la vez» permite entregar más de una por persona en cada entrega.{% endcall %}</div>
             <div data-psave="mod_inventory">
               <label class="gw-check"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %}> Activar el control de inventario (repartir insumos)</label>
@@ -600,14 +646,14 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <p class="gw-hint">Cómo se busca a la persona en cada pantalla (lo que se escribe, se lee con el lector o se escanea con la cámara). Los nombres siempre se pueden buscar.</p>
                 <div class="gw-code-opts__grid">
                   {% for col, label in [("code_search_registro", "Registro"), ("code_search_inventario", "Control de inventario"), ("code_search_zonas", "Control de zonas")] %}
-                  <div class="gw-field">
-                    <label class="gw-label" for="{{ col }}">{{ label }}</label>
+                  <label class="gw-field">
+                    <span class="gw-label">{{ label }}</span>
                     <select class="gw-select" id="{{ col }}" data-code-search="{{ col }}">
                       {% for val, txt in [("id_first", "Primero la cédula y luego el código"), ("code_first", "Primero el código y luego la cédula"), ("code_only", "Solo por código"), ("id_only", "Solo por cédula")] %}
                       <option value="{{ val }}" {% if (event[col] or "id_first") == val %}selected{% endif %}>{{ txt }}</option>
                       {% endfor %}
                     </select>
-                  </div>
+                  </label>
                   {% endfor %}
                 </div>
               </div>
@@ -615,7 +661,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           </div>
 
           <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar y las plantillas de escarapela por categoría (editor de escarapelas). -->
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzCategoriesItem">
             <div class="gw-item-head"><h4>Categorías del evento</h4>{% call ayuda('ay_categorias', 'Categorías del evento') %}Al haber categorías aparece el campo «Categoría» (casillas; se puede marcar más de una) en Registrar y Editar, una columna en el reporte y la columna «categoria» en la carga de base. En el editor de escarapelas podrás usar una plantilla distinta por categoría.{% endcall %}</div>
             <div class="gw-field">
               <label class="gw-label" for="categoriesBox">Una categoría por línea</label>
@@ -624,7 +670,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             <div hidden><button type="button" id="saveCategoriesBtn" class="gw-btn gw-btn--secondary">Guardar categorías</button></div>
           </div>
 
-          <div class="gw-group__item">
+          <div class="gw-group__item" id="qzFieldsItem">
             <div class="gw-item-head"><h4>Campos de la persona</h4>{% call ayuda('ay_campos', 'Campos de la persona') %}Para cada campo de este evento defines cómo se llama (solo aquí; no cambia el nombre en otros eventos), en qué orden aparece en «Registrar nuevo» y «Editar persona» (arrastra las filas con el ícono de la izquierda), si es obligatorio, qué tipo de campo es y si debe generar su gráfico al entrar a Estadísticas. La identidad (nombres, apellidos y cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.{% endcall %}</div>
             <p class="gw-hint">Arrastra las filas para cambiar el orden.</p>
             <div class="gw-table-wrap">

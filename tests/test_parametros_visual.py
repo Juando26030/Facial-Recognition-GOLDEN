@@ -13,7 +13,7 @@ DS_CSS = pathlib.Path("static/css/design-system.css").read_text(encoding="utf-8"
 SPRITE = pathlib.Path("static/img/icons.svg").read_text(encoding="utf-8")
 GUIDE = pathlib.Path("docs/ux/guia_visual.html").read_text(encoding="utf-8")
 EMOJI = re.compile("[←-⇿⌀-⏿☀-➿⬀-⯿\U0001f000-\U0001faff️]")
-TABS = ["registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]
+TABS = ["cuestionario", "registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]          # 26-nov-2026: el cuestionario va primero
 
 
 def _visible_text(src: str) -> str:
@@ -110,7 +110,7 @@ def test_every_control_has_a_name_and_the_tabs_are_wired_to_their_panels():
     assert [t[1] for t in tabs] == TABS
     for tab_id, name, panel in tabs:
         assert f'id="{panel}" data-group="{name}" aria-labelledby="{tab_id}"' in TEMPLATE
-    assert 'role="tablist"' in TEMPLATE and TEMPLATE.count('role="tab"') == 8 and TEMPLATE.count("gw-tab__sum") == 8, "cada pestaña dice en una línea cómo está"
+    assert 'role="tablist"' in TEMPLATE and TEMPLATE.count('role="tab"') == 9 and TEMPLATE.count("gw-tab__sum") == 9, "cada pestaña dice en una línea cómo está"
     for fixed in ("Registro y pantalla", "Reconocimiento facial", "Invitaciones", "Impresión y reimpresión", "Escarapelas y certificados", "Campos", "Privacidad"):
         assert f'<span class="gw-tab__name">{fixed}</span>' in TEMPLATE, fixed
 
@@ -156,7 +156,7 @@ def test_the_page_renders_for_a_coordinator_with_every_section(client, factory):
     ev = factory.event("en_proceso", facial_enabled=True)
     login(client, "coord")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
-    assert '<body class="gw-page gw-parametros' in page and page.count('role="tab"') == 8 and page.count('role="tabpanel"') == 8
+    assert '<body class="gw-page gw-parametros' in page and page.count('role="tab"') == 9 and page.count('role="tabpanel"') == 9
     assert 'data-gw-tour="parametros"' in page and 'id="paramsSaveBtn"' in page and "Guardar cambios" in page
     main = page[page.index("<main"):page.index("</main>")]
     assert "style=" not in main, "el cuerpo de la pantalla no trae estilos en línea"

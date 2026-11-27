@@ -11,7 +11,7 @@ from tests.conftest import login
 TEMPLATE = pathlib.Path("templates/kiosk_parametros.html").read_text(encoding="utf-8")
 SAVE_JS = pathlib.Path("static/js/params-save.js").read_text(encoding="utf-8")
 
-GROUPS = ["registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]
+GROUPS = ["cuestionario", "registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]          # 26-nov-2026: el cuestionario va primero
 # clave del guardado global -> (id del botón por bloque que sigue en el DOM, oculto, o None si el bloque no tenía botón propio)
 BLOCKS = {"idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
           "mail": "mailSave", "mod_areas": None, "mod_inventory": None, "logo": None, "categories": "saveCategoriesBtn", "fields": "saveParamsBtn", "stations": None}
@@ -26,10 +26,10 @@ def company_env(monkeypatch):
 def test_the_template_has_eight_tab_sections_and_only_the_first_is_visible_by_default():
     found = re.findall(r'<section class="gw-tabpanel" role="tabpanel" id="grp_\w+" data-group="(\w+)"', TEMPLATE)
     assert found == GROUPS
-    tabs = re.findall(r'<button type="button" class="gw-tab" role="tab" id="tab_\w+" data-tab="(\w+)"', TEMPLATE)
-    assert tabs == GROUPS and TEMPLATE.count("data-group-pending") == 8
+    tabs = re.findall(r'<button type="button" class="gw-tab[^"]*" role="tab" id="tab_\w+" data-tab="(\w+)"', TEMPLATE)
+    assert tabs == GROUPS and TEMPLATE.count("data-group-pending") == 9
     panels = re.findall(r'<section class="gw-tabpanel"[^>]*>', TEMPLATE)
-    assert [("hidden" in t) for t in panels] == [False] + [True] * 7, "una sola sección visible a la vez; la última vista la decide params-save.js"
+    assert [("hidden" in t) for t in panels] == [False] + [True] * 8, "una sola sección visible a la vez; la última vista la decide params-save.js"
     assert "background: white; padding: 1.4rem 2rem" not in TEMPLATE, "las tarjetas viejas con colores sueltos ya no están"
 
 
@@ -96,7 +96,7 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     ev = factory.event("en_proceso", facial_enabled=True)
     login(client, "root")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
-    assert page.count('role="tabpanel"') == 8 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
+    assert page.count('role="tabpanel"') == 9 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
     for ident in ("idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
                   "printSettingsCard", "psSave", "psReset", "digitalEnabled", "privacyCard", "prTabla", "areasEnabled", "inventoryEnabled", "logoFile", "categoriesBox",
                   "saveCategoriesBtn", "paramsTableBody", "saveParamsBtn", "addOptionalFieldBtn"):
@@ -106,7 +106,7 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     factory.staff("coordinador", "coord")
     login(client, "coord")
     coord = client.get(f"/kiosk/{ev.id}/parametros").text
-    assert coord.count('role="tabpanel"') == 8 and 'id="prTabla"' not in coord and 'id="pcSave"' not in coord and 'id="saveParamsBtn"' in coord
+    assert coord.count('role="tabpanel"') == 9 and 'id="prTabla"' not in coord and 'id="pcSave"' not in coord and 'id="saveParamsBtn"' in coord
 
 
 def test_the_person_form_card_lives_in_the_campos_group_and_registers_in_the_global_save():
