@@ -47,7 +47,7 @@
   async function registerOffline(cedula, confirm, forcedDirection, method) {
     const low = String(cedula || '').trim().toLowerCase();
     const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
-    const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === cedula)) : (users.find(x => x.id === cedula) || byCode));          // 0166/0168
+    const u = window.EVENT_ID_ONLY === true ? users.find(x => x.id === cedula) : window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === cedula)) : (users.find(x => x.id === cedula) || byCode));          // 0166/0168
     if (!u) { noMatch(cedula); return false; }          // 26-nov-2026: el mismo aviso rojo «Sin coincidencias» (con o sin red)
     const byId = {}; allAreas.forEach(a => { byId[a.id] = a; });
     const area = byId[areaId()];

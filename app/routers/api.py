@@ -908,7 +908,7 @@ def checkin_cedula(
         if replay:
             return replay
 
-    user, _via = person_code.find_user(db, event, cedula)          # 0140: identificación y, si el evento usa código, código
+    user, _via = person_code.find_user(db, event, cedula, "registro")          # 0140/0169: según el modo de búsqueda de Registro
     if not user:
         full_name = f"{first_name} {last_name}".strip()[:200]
         # 19-nov-2026: índice por cliente (app/name_index.py) con la MISMA regla de `_identity_name_matches`; antes se cargaban todas las personas del cliente en cada escaneo fallido.

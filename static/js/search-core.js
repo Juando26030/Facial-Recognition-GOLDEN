@@ -235,6 +235,7 @@
     if (!persona) return NO;
     const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
     if (q.kind === 'vacio') return NO;
+    if (opts && opts.idOnly) return matchPersonBase(persona, q, opts);          // 0169: «Solo por cédula» en esta pantalla: el código no se mira
     const byCode = matchCode(persona, q, opts);
     /* 0168: «Solo buscar por código»: lo escrito o leído en NÚMEROS solo se compara con el código (nunca con la cédula); los nombres se siguen buscando. */
     if (opts && opts.codeOnly && (q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr')) return byCode;
@@ -292,9 +293,9 @@
     const e = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const t = String(q.raw || '').trim().slice(0, 60);
     let what = q.kind === 'texto' ? 'el nombre «' + e(t) + '»'
-      : (opts.codeOnly ? 'el código «' + e(t) + '»' : (opts.hasCodes ? 'la cédula o el código «' + e(t) + '»' : 'la cédula «' + e(t) + '»'));
+      : (opts.codeOnly ? 'el código «' + e(t) + '»' : (opts.hasCodes && !opts.idOnly ? 'la cédula o el código «' + e(t) + '»' : 'la cédula «' + e(t) + '»'));
     if (opts.name && q.kind !== 'texto') what += ' ni con el nombre «' + e(String(opts.name).slice(0, 80)) + '»';
-    const tip = q.kind === 'texto' ? 'Revisa cómo está escrito o búscala por cédula' + (opts.hasCodes ? ' o código' : '') + '.'
+    const tip = q.kind === 'texto' ? 'Revisa cómo está escrito o búscala por ' + (opts.codeOnly ? 'código' : 'cédula' + (opts.hasCodes && !opts.idOnly ? ' o código' : '')) + '.'
       : (opts.name ? 'Revisa el documento.' : 'Revisa el número o búscala por el nombre.');
     return 'No hay nadie en la base de este evento con ' + what + '. ' + tip + (opts.extra ? ' ' + e(opts.extra) : '');
   }

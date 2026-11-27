@@ -154,3 +154,8 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 
 /* 18-nov-2026 · Zonas e inventarios: el campo del nombre se encogía a cero (la celda tiene min-width:0 y la tabla ajusta sola). Ancho mínimo para que el nombre siempre se lea y se edite. */
 .gw-parametros .gw-table input.area-name, .gw-parametros .gw-table input.item-name { min-width: 12rem; width: 100%; box-sizing: border-box; }
+
+/* 26-nov-2026 (Juan David, 0169): opciones del código de la persona, desplegadas al activar «Usar código»: obligatorio y un modo de búsqueda por pantalla. */
+.gw-code-opts { margin-top: var(--gw-sp-3); padding: var(--gw-sp-4); border-left: 4px solid var(--gw-gold-1); background: var(--gw-surface-2); border-radius: var(--gw-radius-md); }
+.gw-code-opts[hidden] { display: none; }
+.gw-code-opts__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--gw-sp-3); }

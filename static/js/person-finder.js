@@ -58,10 +58,10 @@
     function find(text) {
       const q = SC.classifyQuery(text);
       if (q.kind === 'vacio') return { q, list: [] };
-      const opts = { codeFirst: root.EVENT_CODE_FIRST === true, codeOnly: root.EVENT_CODE_ONLY === true };          // 0166/0168 (Parámetros › Campos)
+      const opts = { codeFirst: root.EVENT_CODE_FIRST === true, codeOnly: root.EVENT_CODE_ONLY === true, idOnly: root.EVENT_ID_ONLY === true };          // 0166/0168/0169: el modo de ESTA pantalla (Parámetros › Campos)
       const list = SC.search(users(), q, opts);
       const typed = String(text || '').trim().toLowerCase();
-      if (typed) {                                                 // el código de la persona en el evento (serial del QR) también es una forma de encontrarla
+      if (typed && !opts.idOnly) {                                 // el código de la persona en el evento (serial del QR) también es una forma de encontrarla
         const byCode = users().filter((u) => u.code && String(u.code).toLowerCase() === typed && !list.some((r) => r.persona === u));
         byCode.forEach((u) => list.unshift({ persona: u, motivo: 'Código exacto', orden: 0 }));
       }
@@ -71,7 +71,7 @@
     /* 26-nov-2026 (Juan David): «sin coincidencias» grande y en rojo, como el aviso de la entrega, y diciendo QUÉ se buscó (código, cédula o nombre). */
     function noMatchHtml(q) {
       const u = typeof document !== 'undefined' ? document.querySelector('.gw-icon use') : null, sprite = u ? (u.getAttribute('href') || '').split('#')[0] : '';
-      return SC.noMatchHtml(q && q.raw ? q : SC.classifyQuery(input.value || ''), { hasCodes: users().some((x) => x.code), codeOnly: root.EVENT_CODE_ONLY === true, sprite });
+      return SC.noMatchHtml(q && q.raw ? q : SC.classifyQuery(input.value || ''), { hasCodes: users().some((x) => x.code), codeOnly: root.EVENT_CODE_ONLY === true, idOnly: root.EVENT_ID_ONLY === true, sprite });
     }
     /* Para la página: el mismo aviso cuando lo leído (Enter, lector o cámara) no está en la base y la lista ya no se ve. */
     function showNoMatch(text) { const q = SC.classifyQuery(String(text || '')); if (q.kind === 'vacio') return; box.innerHTML = noMatchHtml(q); box.hidden = false; }

@@ -186,7 +186,7 @@
     const modesHtml = modes.length > 1 ? `<div class="gw-segment gw-cam__modes" role="group" aria-label="¿Qué vas a escanear?">${modes.map((m) => `<button type="button" class="gw-segment__opt" data-mode="${m}" aria-pressed="false">${MODE_LABEL[m]}</button>`).join('')}</div><canvas hidden></canvas>` : (modes.length ? '<canvas hidden></canvas>' : '');
     const videoHtml = modes.length ? '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas class="gw-cam__overlay" aria-hidden="true"></canvas>'
         + (modes.some((m) => m !== 'qr') ? '<button type="button" class="gw-btn gw-btn--primary gw-btn--block gw-cam__shoot" hidden>Tomar foto</button>' : '') + '</div>'
-      : '<video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video><canvas hidden></canvas>';
+      : '<div class="gw-cam__stage"><video class="gw-cam__video" autoplay playsinline muted aria-label="Vista de la cámara"></video></div><canvas hidden></canvas>';
     box.innerHTML = `
       <div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>
       <div class="gw-modal__body">
@@ -208,10 +208,14 @@
     const overlayCv = box.querySelector('.gw-cam__overlay');
     const shootBtn = box.querySelector('.gw-cam__shoot');
     let stream = null, stopped = false, last = { text: '', at: 0 }, loopId = 0, epoch = 0, reader = null, mode = null;
-    const qrMsg = () => (opts.formats && opts.formats.includes('pdf417') ? 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.' : 'Apunta la cámara al código QR.');
+    const qrMsg = () => (opts.formats && opts.formats.includes('pdf417') ? 'Apunta la cámara al código QR o al código de barras del reverso de la cédula.' : 'Apunta la cámara al código QR.') + ' Si el QR es pequeño, ponlo dentro del recuadro, a unos 15 cm.';
     status.textContent = qrMsg();
 
-    function stopQr() { loopId++; if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
+    function stopQr() {
+      loopId++; if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+      const a = box.querySelector('.gw-cam__aim'); if (a) a.hidden = true;
+      if (zoomUi) { zoomUi.remove(); zoomUi = null; }
+    }
     function stopReader() {
       if (reader) { try { reader.stop(); } catch (e) { /* ya detenido */ } reader = null; }
       if (shootBtn) shootBtn.hidden = true;
@@ -232,19 +236,56 @@
       status.textContent = 'Código leído.';                      // sin eco del contenido: puede traer una cédula
       onCode(unwrap(text), format);                              // una vCard de Golden entrega el código de adentro; todo lo demás, igual
     }
+    /* 26-nov-2026 (Juan David): el QR oficial mide 1 × 1 cm y la cámara no lo leía (el lector 2D sí). Causas: la cámara abría en su resolución por defecto
+       (casi siempre 640×480: un QR de 1 cm quedaba de pocos píxeles), sin enfoque continuo ni zoom (de cerca muchas cámaras no enfocan) y siempre se analizaba
+       el cuadro completo. Ahora: cámara en alta resolución, enfoque continuo, zoom (automático 2× donde la cámara lo permite, con «Acercar» para ajustarlo) y,
+       cuadro de por medio, además del cuadro completo se analiza el CENTRO ampliado (el recuadro guía), que es donde se pone el QR pequeño. */
+    const AIM = 0.5;                                              // lado del recuadro central (fracción del lado corto del video)
+    let zoomUi = null;
+    function aimEl() {
+      let el = box.querySelector('.gw-cam__aim');
+      if (!el && video.parentElement) {
+        el = document.createElement('div'); el.className = 'gw-cam__aim'; el.setAttribute('aria-hidden', 'true');
+        video.insertAdjacentElement('afterend', el);
+      }
+      return el;
+    }
+    async function tuneCamera(track) {
+      if (!track || !track.getCapabilities) return;
+      let caps = {};
+      try { caps = track.getCapabilities() || {}; } catch (e) { return; }
+      const adv = {};
+      if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+      const z = caps.zoom && caps.zoom.max > (caps.zoom.min || 1) ? caps.zoom : null;
+      if (z) adv.zoom = Math.min(z.max, Math.max(z.min || 1, 2));
+      if (Object.keys(adv).length) { try { await track.applyConstraints({ advanced: [adv] }); } catch (e) { /* la cámara no lo acepta: sigue igual */ } }
+      if (z && !zoomUi && video.parentElement) {          // «Acercar»: para el QR pequeño, más zoom y la cámara un poco más lejos (así sí enfoca)
+        zoomUi = document.createElement('label'); zoomUi.className = 'gw-cam__zoom';
+        zoomUi.innerHTML = '<span>Acercar</span><input type="range" aria-label="Acercar la cámara">';
+        const r = zoomUi.querySelector('input');
+        r.min = String(z.min || 1); r.max = String(Math.min(z.max, 8)); r.step = String(z.step || 0.1); r.value = String(adv.zoom || z.min || 1);
+        r.addEventListener('input', () => { const t = stream && stream.getVideoTracks()[0]; if (t) t.applyConstraints({ advanced: [{ zoom: Number(r.value) }] }).catch(() => {}); });
+        video.parentElement.appendChild(zoomUi);
+      }
+    }
     async function start() {
       const id = ++loopId;
       let s;
       try {
-        s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });          // alta resolución: el QR de 1 cm necesita píxeles
       } catch (e) {
-        status.classList.add('gw-cam__status--err');
-        status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
-        return;
+        try { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); } catch (e2) { s = null; }
+        if (!s) {
+          status.classList.add('gw-cam__status--err');
+          status.textContent = 'No se pudo acceder a la cámara — revisa los permisos del navegador (la cámara solo funciona en una página segura, https).';
+          return;
+        }
       }
       if (stopped || id !== loopId) { s.getTracks().forEach((t) => t.stop()); return; }       // se cerró o se cambió de modo mientras se pedía el permiso
       stream = s;
       video.srcObject = stream;
+      tuneCamera(stream.getVideoTracks()[0]);
+      const aim = aimEl(); if (aim) aim.hidden = false;
       let detector = null;
       if ('BarcodeDetector' in window) {
         try {
@@ -257,24 +298,44 @@
       if (stopped || id !== loopId) return;
       if (!detector && !jsQR) { status.classList.add('gw-cam__status--err'); status.textContent = 'No se pudo cargar el lector de QR (sin internet). Usa el lector de mano o escribe la cédula.'; return; }
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const crop = document.createElement('canvas'), cctx = crop.getContext('2d', { willReadFrequently: true });
+      let pass = 0;
+      /* El centro del video (el recuadro guía), ampliado: un QR de 1 cm ocupa ahí mucho más de la imagen que se analiza. */
+      function center() {
+        const vw = video.videoWidth, vh = video.videoHeight, side = Math.round(Math.min(vw, vh) * AIM);
+        const out = Math.min(1000, Math.max(side, Math.round(side * 1.6)));
+        crop.width = out; crop.height = out;
+        cctx.imageSmoothingEnabled = false;
+        cctx.drawImage(video, Math.round((vw - side) / 2), Math.round((vh - side) / 2), side, side, 0, 0, out, out);
+        return crop;
+      }
+      function readJs(cv, c2) {
+        const img = c2.getImageData(0, 0, cv.width, cv.height);
+        return jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      }
 
       async function tick() {
         if (stopped || id !== loopId) return;
         if (video.videoWidth) {
+          pass++;
           try {
             if (detector) {
-              const codes = await detector.detect(video);
+              let codes = await detector.detect(video);
+              if (!codes.length && pass % 2 === 0) codes = await detector.detect(center());
               if (codes.length) emit(codes[0].rawValue, codes[0].format);
+            } else if (pass % 2 === 0) {
+              const code = readJs(center(), cctx);
+              if (code && code.data) emit(code.data, 'qr_code');
             } else {
-              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+              const k = Math.min(1, 1280 / video.videoWidth);          // el cuadro completo, a lo sumo 1280 de ancho (jsQR en un iPhone)
+              canvas.width = Math.round(video.videoWidth * k); canvas.height = Math.round(video.videoHeight * k);
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+              const code = readJs(canvas, ctx);
               if (code && code.data) emit(code.data, 'qr_code');
             }
           } catch (e) { /* un cuadro que no se pudo leer: sigue con el siguiente */ }
         }
-        setTimeout(tick, 200);
+        setTimeout(tick, 150);
       }
       tick();
     }

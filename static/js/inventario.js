@@ -235,7 +235,7 @@
     // Primero identificación y, si el evento usa código, el código (0140)
     const low = String(id || '').trim().toLowerCase();
     const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
-    const u = window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === id)) : (users.find(x => x.id === id) || byCode));          // 0166/0168
+    const u = window.EVENT_ID_ONLY === true ? users.find(x => x.id === id) : window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === id)) : (users.find(x => x.id === id) || byCode));          // 0166/0168
     if (!u) { clearPerson(); if (finder) finder.showNoMatch(id); else showToast('Esa persona no está en la base de este evento', 'error'); return false; }          // 26-nov-2026: el mismo aviso rojo de la búsqueda
     setPerson(Object.assign({}, u, { __auto: !!auto }));
     if (auto && AUTOSCAN && !ASSIGNED) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado

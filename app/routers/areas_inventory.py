@@ -69,32 +69,39 @@ def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         event.code_enabled = bool(data["code_enabled"])
     if "code_required" in data:
         event.code_required = bool(data["code_required"])
-    if "code_search_first" in data:          # 0166: prioridad del código al buscar persona
-        event.code_search_first = bool(data["code_search_first"])
-        if event.code_search_first:
-            event.code_search_only = False
-    if "code_search_only" in data:          # 0168: solo buscar por código (excluyente con la prioridad)
-        event.code_search_only = bool(data["code_search_only"])
-        if event.code_search_only:
-            event.code_search_first = False
+    # 0169 (26-nov-2026): cómo se busca a la persona en CADA pantalla. Las claves viejas (0166/0168) aplican a las tres, por compatibilidad.
+    legacy = None
+    if data.get("code_search_only"):
+        legacy = "code_only"
+    elif data.get("code_search_first"):
+        legacy = "code_first"
+    elif "code_search_first" in data or "code_search_only" in data:
+        legacy = "id_first"
+    for module, column in person_code.MODULES.items():
+        mode = data.get(column, legacy)
+        if mode is None:
+            continue
+        if mode not in person_code.SEARCH_MODES:
+            raise HTTPException(status_code=400, detail="Modo de búsqueda no válido")
+        setattr(event, column, mode)
     if not event.code_enabled:
-        event.code_search_first = False
-        event.code_search_only = False
+        for column in person_code.MODULES.values():
+            setattr(event, column, "id_first")
     if event.code_required and not event.code_enabled:
         raise HTTPException(status_code=400, detail="Para hacer el código obligatorio primero activa «Usar código»")
     _hr = event_history.record(db, event, _hb, staff, "switch")
     db.commit()
     event_history.kick_after(_hr)
-    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled, "code_enabled": event.code_enabled, "code_required": event.code_required, "code_search_first": event.code_search_first, "code_search_only": event.code_search_only}
+    return {"areas_enabled": event.areas_enabled, "inventory_enabled": event.inventory_enabled, "code_enabled": event.code_enabled, "code_required": event.code_required, **{column: getattr(event, column) for column in person_code.MODULES.values()}}
 
 
 def _person_data(user: User) -> dict:
     return {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "entity": user.entity, "opt_1": user.opt_1}
 
 
-def _find_person(db: Session, event, cedula: str) -> User:
-    """La persona debe estar en la base de ESTE evento (no cualquier persona del cliente)."""
-    user, _via = person_code.find_user(db, event, cedula)          # 0140: primero identificación y, si el evento usa código, el código
+def _find_person(db: Session, event, cedula: str, module: str) -> User:
+    """La persona debe estar en la base de ESTE evento (no cualquier persona del cliente). `module` = 'inventario' | 'zonas' (0169: cada pantalla con su modo de búsqueda)."""
+    user, _via = person_code.find_user(db, event, cedula, module)
     in_event = user and db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     if not in_event:
         raise HTTPException(status_code=404, detail="Esa persona no está en la base de este evento")
@@ -313,7 +320,7 @@ def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends
     event_archive.require_data_open(event, staff)
     require_event_in_progress(event)
     area = _get_area(db, event, area_id, active_only=True)
-    user = _find_person(db, event, str(data.get("cedula") or ""))
+    user = _find_person(db, event, str(data.get("cedula") or ""), "zonas")
     return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), "qr" if data.get("method") == "qr" else "cedula", staff,
                            when=_client_time(data.get("client_time")) if data.get("client_time") else None)
 
@@ -365,7 +372,7 @@ def person_movements(event_id: int, cedula: str, db: Session = Depends(get_db), 
     solo coordinador en adelante, igual que el historial de Inventario). Quién registró va por su nombre de cuenta, nunca su usuario (es su cédula)."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    user = _find_person(db, event, cedula)
+    user = _find_person(db, event, cedula, "zonas")
     area_rows = {a.id: a for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
     rows = (db.query(AreaMovement).filter(AreaMovement.event_id == event.id, AreaMovement.user_id == user.id)
             .order_by(AreaMovement.timestamp.desc(), AreaMovement.id.desc()).all())
@@ -624,7 +631,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
     from app import inv_assign, node_precheck
     if inv_assign.is_assigned(event):          # 0161: con «La base lo define» no se elige: se entrega lo asignado (/inventory/deliver-assigned)
         raise HTTPException(status_code=400, detail=inv_assign.MODE_BLOCKS_CHOOSE)
-    user = _find_person(db, event, str(data.get("cedula") or ""))
+    user = _find_person(db, event, str(data.get("cedula") or ""), "inventario")
     lines = data.get("items") or []
     if not lines:
         raise HTTPException(status_code=400, detail="Elige al menos un ítem para entregar")
@@ -725,7 +732,7 @@ def person_deliveries(event_id: int, cedula: str, db: Session = Depends(get_db),
     `cedula` = la identificación de la persona que eligió la pantalla (o su código). Quién entregó va por su nombre de cuenta, nunca su usuario (es su cédula)."""
     event = get_event_for_staff(event_id, db, staff)
     event_archive.require_data_open(event, staff)
-    user = _find_person(db, event, cedula)
+    user = _find_person(db, event, cedula, "inventario")
     item_rows = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
     rows = (db.query(InventoryDelivery).filter(InventoryDelivery.event_id == event.id, InventoryDelivery.user_id == user.id)
             .order_by(InventoryDelivery.delivered_at.desc(), InventoryDelivery.id.desc()).all())

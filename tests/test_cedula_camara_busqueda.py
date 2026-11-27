@@ -34,7 +34,7 @@ def test_cedula_is_read_from_a_guided_high_resolution_photo_and_the_qr_stays_liv
     assert "F.attach(" in cedula and "startCamera" not in cedula and "resume()" not in cedula        # nada de lectura en vivo para la cédula
     assert "FOTO_URL = '/static/js/cedula-foto.js?v=9'" in qr and "gw-cam__shoot" in qr and ">Tomar foto</button>" in qr
     live_qr = qr[qr.index("async function start() {"):qr.index("/* ---- Cédula vieja / nueva")]
-    assert "await detector.detect(video)" in live_qr and "jsQR(img.data" in live_qr and "setTimeout(tick, 200)" in live_qr   # el QR, intacto y en vivo
+    assert "await detector.detect(video)" in live_qr and "jsQR(img.data" in live_qr and "setTimeout(tick, 150)" in live_qr   # el QR sigue en vivo
     foto = (ROOT / "static/js/cedula-foto.js").read_text(encoding="utf-8")
     assert "takePhoto(" in foto and "cedula-mrz-scan" in foto and "Procesando la foto…" in foto
     assert "No se pudo leer la cédula: acérquela, evite reflejos y tome otra foto." in foto
@@ -43,3 +43,13 @@ def test_cedula_is_read_from_a_guided_high_resolution_photo_and_the_qr_stays_liv
     assert "QrScanner.FOTO_URL" in (ROOT / "templates/kiosk_registro.html").read_text(encoding="utf-8")   # el service worker del quiosco lo guarda para sin conexión
     css = (ROOT / "static/css/gw-captura.css").read_text(encoding="utf-8")
     assert ".gw-cam__shoot[hidden] { display: none; }" in css
+
+
+def test_small_qr_camera_reads_a_1cm_code():
+    """26-nov-2026 (Juan David): el QR oficial mide 1 × 1 cm y la cámara no lo leía (el lector 2D sí). Alta resolución, enfoque continuo, zoom y el centro ampliado."""
+    qr = (ROOT / "static/js/qr.js").read_text(encoding="utf-8")
+    assert "width: { ideal: 1920 }, height: { ideal: 1080 }" in qr                                  # antes: resolución por defecto (640×480)
+    assert "focusMode = 'continuous'" in qr and "adv.zoom" in qr and "gw-cam__zoom" in qr            # enfoque continuo y «Acercar»
+    assert "function center()" in qr and "detector.detect(center())" in qr and "readJs(center(), cctx)" in qr          # el recuadro guía, ampliado
+    assert "gw-cam__aim" in qr and ".gw-cam__aim" in (ROOT / "static/css/gw-captura.css").read_text(encoding="utf-8")
+    assert "facingMode: 'environment' } });" in qr                                                   # si la cámara no acepta alta resolución, se abre igual

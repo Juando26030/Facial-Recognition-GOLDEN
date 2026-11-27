@@ -202,3 +202,15 @@ console.log('search_core_check (con código 0166): OK');
   assert.deepStrictEqual(SC.search([a, b], '1000007963', {}).map((r) => r.persona.id), ['1000007963']); // sin la opción: como siempre
 }
 console.log('search_core_check (solo código 0168): OK');
+
+// ---- 0169 (26-nov-2026): «Solo por cédula» en una pantalla: el código no se mira (el código de uno puede ser la cédula de otro)
+{
+  const a = { id: '4001', first_name: 'Ana', last_name: 'Uno', code: '4002' };
+  const b = { id: '4002', first_name: 'Beto', last_name: 'Dos', code: 'Z-1' };
+  assert.deepStrictEqual(SC.search([a, b], '4002', { idOnly: true }).map((r) => r.persona.id), ['4002']);
+  assert.deepStrictEqual(SC.search([a, b], 'Z-1', { idOnly: true }).map((r) => r.persona.id), []);
+  assert.deepStrictEqual(SC.search([a, b], '4002', { codeOnly: true }).map((r) => r.persona.id), ['4001']);
+  assert(SC.noMatchText('777', { hasCodes: true, idOnly: true }).includes('la cédula «777»'));
+  assert(SC.noMatchText('777', { hasCodes: true, codeOnly: true }).includes('el código «777»'));
+}
+console.log('search_core_check (modo por pantalla 0169): OK');

@@ -591,12 +591,26 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">El código de la persona, las categorías y cómo se llama, se ordena y se pide cada dato.</p></div>
 
           <div class="gw-group__item">
-            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al activarlo aparece el campo «Código de la persona (QR)» en «Campos de la persona», en Registrar y Editar, en el formulario de persona y en el diseñador de escarapelas (para poner el QR o el código de barras con este código). Al escanear (registro, zonas, inventario o cualquier control) el sistema busca primero por identificación y luego por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
+            <div class="gw-item-head"><h4>Código de la persona (QR)</h4>{% call ayuda('ay_codigo', 'Código de la persona') %}Un serial distinto de la cédula que puede traer el QR de la escarapela. Al activarlo aparece el campo «Código de la persona (QR)» en «Campos de la persona», en Registrar y Editar, en el formulario de persona y en el diseñador de escarapelas (para poner el QR o el código de barras con este código). En cada pantalla (Registro, Control de inventario y Control de zonas) eliges cómo se busca a la persona: primero la cédula, primero el código, solo por código o solo por cédula. Por ejemplo: Registro por cédula (ahí se le asigna el código) e Inventario y Zonas solo por código. El código no se puede repetir en el evento y nunca puede ser igual a una identificación. En la carga masiva, la columna «código» se detecta sola.{% endcall %}</div>
             <div data-psave="mod_code">
               <label class="gw-check"><input type="checkbox" id="codeEnabled" {% if event.code_enabled %}checked{% endif %}> Usar un «código» además de la identificación en este evento</label>
-              <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
-              <label class="gw-check"><input type="checkbox" id="codeSearchFirst" {% if event.code_search_first %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Dar prioridad al código al buscar persona: en el buscador del registro (y con el lector) salen primero las coincidencias por código y después por cédula. Desactivado: primero la cédula, pero también se busca por código</label>
-              <label class="gw-check"><input type="checkbox" id="codeSearchOnly" {% if event.code_search_only %}checked{% endif %} {% if not event.code_enabled %}disabled{% endif %}> Solo buscar por código: lo que se busque o escanee en números solo se compara con el código, nunca con la cédula (los nombres se siguen buscando). No se puede tener junto con «Dar prioridad al código»</label>
+              {# 26-nov-2026 (Juan David): al activar «Usar código» se despliegan «Obligatorio» y cómo se busca a la persona EN CADA PANTALLA (0169). #}
+              <div id="codeOptions" class="gw-stack gw-code-opts" {% if not event.code_enabled %}hidden{% endif %}>
+                <label class="gw-check"><input type="checkbox" id="codeRequired" {% if event.code_required %}checked{% endif %}> Obligatorio: toda persona debe tener código al registrarla (escrito a mano o cargado de antemano)</label>
+                <p class="gw-hint">Cómo se busca a la persona en cada pantalla (lo que se escribe, se lee con el lector o se escanea con la cámara). Los nombres siempre se pueden buscar.</p>
+                <div class="gw-code-opts__grid">
+                  {% for col, label in [("code_search_registro", "Registro"), ("code_search_inventario", "Control de inventario"), ("code_search_zonas", "Control de zonas")] %}
+                  <div class="gw-field">
+                    <label class="gw-label" for="{{ col }}">{{ label }}</label>
+                    <select class="gw-select" id="{{ col }}" data-code-search="{{ col }}">
+                      {% for val, txt in [("id_first", "Primero la cédula y luego el código"), ("code_first", "Primero el código y luego la cédula"), ("code_only", "Solo por código"), ("id_only", "Solo por cédula")] %}
+                      <option value="{{ val }}" {% if (event[col] or "id_first") == val %}selected{% endif %}>{{ txt }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -804,12 +818,13 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     });
 
     (function () {          // 0140: código de la persona (QR)
-        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired'), sf = document.getElementById('codeSearchFirst'), so = document.getElementById('codeSearchOnly');
-        en.addEventListener('change', () => { rq.disabled = !en.checked; sf.disabled = !en.checked; so.disabled = !en.checked; if (!en.checked) { rq.checked = false; sf.checked = false; so.checked = false; } });
-        sf.addEventListener('change', () => { if (sf.checked) so.checked = false; });          // 0168: o prioridad o solo código, nunca los dos
-        so.addEventListener('change', () => { if (so.checked) sf.checked = false; });
+        const en = document.getElementById('codeEnabled'), rq = document.getElementById('codeRequired'), box = document.getElementById('codeOptions');
+        const modes = Array.from(document.querySelectorAll('[data-code-search]'));          // 0169: un modo de búsqueda por pantalla (Registro, Inventario, Zonas)
+        en.addEventListener('change', () => { box.hidden = !en.checked; if (!en.checked) { rq.checked = false; modes.forEach((m) => { m.value = 'id_first'; }); } });
         GWParams.register({ key: 'mod_code', label: 'Código de la persona', order: 67, reload: true, save: async () => {
-            await must(await jsonPut(`${base}/modules`, { code_enabled: en.checked, code_required: en.checked && rq.checked, code_search_first: en.checked && sf.checked && !so.checked, code_search_only: en.checked && so.checked }), 'No se pudo guardar el código del evento');
+            const body = { code_enabled: en.checked, code_required: en.checked && rq.checked };
+            modes.forEach((m) => { body[m.dataset.codeSearch] = en.checked ? m.value : 'id_first'; });
+            await must(await jsonPut(`${base}/modules`, body), 'No se pudo guardar el código del evento');
         } });
     })();
 

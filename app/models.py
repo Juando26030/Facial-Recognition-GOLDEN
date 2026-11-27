@@ -306,6 +306,11 @@ class Event(Base):
     code_required = Column(Boolean, default=False, server_default='false', nullable=False)
     code_search_first = Column(Boolean, default=False, server_default='false', nullable=False)
     code_search_only = Column(Boolean, default=False, server_default='false', nullable=False)  # 0168: lo buscado en números solo se compara con el código (nunca con la cédula); excluyente con code_search_first  # 0166: con el código activo, el buscador del registro y el escaneo dan prioridad al código sobre la cédula  # 0140: con el código activo, ¿es obligatorio al registrar?
+    # 0169 (26-nov-2026): cómo se busca a la persona EN CADA PANTALLA: 'id_first' | 'code_first' | 'code_only' | 'id_only' (app/person_code.search_mode).
+    # Reemplaza a code_search_first / code_search_only (se quedan en la tabla, ya no se leen).
+    code_search_registro = Column(String(12), default='id_first', server_default='id_first', nullable=False)
+    code_search_inventario = Column(String(12), default='id_first', server_default='id_first', nullable=False)
+    code_search_zonas = Column(String(12), default='id_first', server_default='id_first', nullable=False)
     inventory_autoscan = Column(Boolean, default=False, server_default='false', nullable=False)  # 0122: escanear / Enter entrega lo marcado sin pulsar «Entregar»
     inventory_mode = Column(String(10), nullable=True)  # 0161: NULL/'choose' = la persona elige (lo de siempre) | 'assigned' = la base lo define (app/inv_assign.py)
     inventory_assign_json = Column(Text, nullable=True)  # 0161: columnas que mandan en el modo 'assigned' {holder_product, holder_qty, dep_product, dep_qty}

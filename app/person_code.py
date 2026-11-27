@@ -79,37 +79,62 @@ def set_code(db: Session, event: Event, user_id: str, code, *, required: Optiona
     return row.code
 
 
-def find_user(db: Session, event: Event, value) -> Tuple[Optional[User], str]:
-    """Busca a la persona por lo que trae el escaneo o lo digitado. Devuelve (User | None, vía) con vía = 'id' | 'code' | ''.
-    Primero identificación (cualquier persona del cliente); si no está y el evento usa código, el código dentro del evento."""
+# 0169 (26-nov-2026, Juan David): cómo se busca a la persona, POR PANTALLA (Parámetros › Campos › Código de la persona).
+SEARCH_MODES = {
+    "id_first": "Primero la cédula y luego el código",
+    "code_first": "Primero el código y luego la cédula",
+    "code_only": "Solo por código",
+    "id_only": "Solo por cédula",
+}
+MODULES = {"registro": "code_search_registro", "inventario": "code_search_inventario", "zonas": "code_search_zonas"}
+
+
+def search_mode(event: Event, module: str) -> str:
+    """Modo de búsqueda de una pantalla. Sin «Usar código» siempre es por cédula ('id_first': el código no existe)."""
+    if not getattr(event, "code_enabled", False):
+        return "id_first"
+    mode = getattr(event, MODULES.get(module, "code_search_registro"), None) or "id_first"
+    return mode if mode in SEARCH_MODES else "id_first"
+
+
+def find_user(db: Session, event: Event, value, module: str = "registro") -> Tuple[Optional[User], str]:
+    """Busca a la persona por lo que trae el escaneo o lo digitado, según el modo de ESA pantalla (`module`: registro | inventario | zonas).
+    Devuelve (User | None, vía) con vía = 'id' | 'code' | ''. La identificación puede ser de cualquier persona del cliente; el código, solo de este evento."""
     value = normalize(value)
     if not value:
         return None, ""
-    if event.code_enabled and getattr(event, "code_search_only", False):          # 0168: solo por código (lo que se ESCANEA o se escribe en el buscador)
+    mode = search_mode(event, module)
+
+    def by_code():
         row = _holder(db, event, value)
-        user = db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first() if row else None
+        return db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first() if row else None
+
+    def by_id():
+        return db.query(User).filter(User.id == value, User.tenant_id == event.tenant_id).first()
+
+    if mode == "code_only":          # 0168: solo por código (lo que se ESCANEA o se escribe en el buscador)
+        user = by_code()
         if user:
             return user, "code"
         # Hotfix 26-nov-2026: la pantalla ya encontró a la persona por su código y al ENTREGAR / ACREDITAR / REGISTRAR manda su identificación; sin esto respondía
         # «no está en la base» en vez del motivo real (p. ej. el límite por persona). Solo cuenta si la persona está inscrita en ESTE evento.
         inscribed = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id == value).first()
-        user = db.query(User).filter(User.id == value, User.tenant_id == event.tenant_id).first() if inscribed else None
+        user = by_id() if inscribed else None
         return (user, "id") if user else (None, "")
-    if event.code_enabled and getattr(event, "code_search_first", False):          # 0166: prioridad al código (Parámetros › Campos)
-        row = _holder(db, event, value)
-        if row:
-            user = db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first()
-            if user:
-                return user, "code"
-    user = db.query(User).filter(User.id == value, User.tenant_id == event.tenant_id).first()
+    if mode == "id_only":          # 0169: solo por cédula; el código no se mira
+        user = by_id()
+        return (user, "id") if user else (None, "")
+    if mode == "code_first":          # 0166: prioridad al código
+        user = by_code()
+        if user:
+            return user, "code"
+    user = by_id()
     if user:
         return user, "id"
-    if event.code_enabled:
-        row = _holder(db, event, value)
-        if row:
-            user = db.query(User).filter(User.id == row.user_id, User.tenant_id == event.tenant_id).first()
-            if user:
-                return user, "code"
+    if mode == "id_first":
+        user = by_code()
+        if user:
+            return user, "code"
     return None, ""
 
 
