@@ -4,13 +4,14 @@ import re
 
 R = pathlib.Path(__file__).resolve().parent.parent
 JS = (R / "static/js/crm_plantilla.js").read_text(encoding="utf-8")
+HOJA = (R / "static/js/crm_plantilla_hoja.js").read_text(encoding="utf-8")
 CSS = (R / "static/css/p-crm-c5.css").read_text(encoding="utf-8")
 PROD = (R / "static/js/crm_productos.js").read_text(encoding="utf-8")
 HTML = (R / "templates/crm_plantilla.html").read_text(encoding="utf-8")
 
 
 def test_sin_apis_prohibidas():
-    for src in (JS, PROD):
+    for src in (JS, PROD, HOJA):
         assert not re.search(r"\b(alert|confirm|prompt)\(", src.replace("showConfirm(", ""))
         assert "innerHTML" not in src and "setTimeout" not in src and "setInterval" not in src and "onclick" not in src
 

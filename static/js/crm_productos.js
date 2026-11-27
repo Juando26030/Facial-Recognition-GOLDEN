@@ -120,18 +120,25 @@
   /* ---------------------------------------------------------------- plantillas */
   const KIND = { quote: "Cotización", proforma: "Proforma" };
   function templateDialog(t) {
+    /* 26-nov-2026 (Juan David): una plantilla NUEVA solo pide para qué es y su nombre, y abre el diseñador (hoja libre, como escarapelas y certificados). Encabezado, saludo y pie
+       quedan para las plantillas sencillas que ya existían (las que todavía no tienen diseño). */
     const kind = select([{ value: "quote", label: "Cotización" }, { value: "proforma", label: "Proforma" }]), name = input("text", 120), head = area(2000, 3), greet = area(2000, 3), foot = area(2000, 3);
     if (t) { kind.value = t.kind; kind.disabled = true; name.value = t.name; head.value = t.header_text || ""; greet.value = t.greeting_text || ""; foot.value = t.footer_text || ""; }
-    editor(t ? "Editar plantilla" : "Nueva plantilla", [["tpKind", "Para", kind], ["tpName", "Nombre", name], ["tpHead", "Encabezado", head], ["tpGreet", "Saludo", greet], ["tpFoot", "Pie de página", foot]], async () => {
-      const data = { kind: kind.value, name: name.value.trim(), header_text: head.value, greeting_text: greet.value, footer_text: foot.value };
-      if (t) await api("PUT", "/api/crm/doc-templates/" + t.id, data); else await api("POST", "/api/crm/doc-templates", data);
-      showToast("Plantilla guardada.", "success"); loadTemplates();
+    const simple = t && !t.has_layout;
+    const rows = [["tpKind", "Para", kind], ["tpName", "Nombre", name]].concat(simple ? [["tpHead", "Encabezado", head], ["tpGreet", "Saludo", greet], ["tpFoot", "Pie de página", foot]] : []);
+    editor(t ? "Editar plantilla" : "Nueva plantilla", rows, async () => {
+      const data = { kind: kind.value, name: name.value.trim() };
+      if (simple) Object.assign(data, { header_text: head.value, greeting_text: greet.value, footer_text: foot.value });
+      if (t) { await api("PUT", "/api/crm/doc-templates/" + t.id, data); showToast("Plantilla guardada.", "success"); loadTemplates(); return; }
+      const made = await api("POST", "/api/crm/doc-templates", data);
+      showToast("Plantilla creada: ahora arma su diseño.", "success");
+      window.location.href = "/crm/plantillas/" + made.id + "/disenar";
     });
   }
   async function loadTemplates() {
     const ul = $("tplList");
     try { templates = (await api("GET", "/api/crm/doc-templates")).items; ul.replaceChildren(); if (!templates.length) ul.appendChild(el("li", "gw-hint", "Todavía no hay plantillas: el PDF sale con el formato básico."));
-      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false, t.kind === "quote" ? "/crm/plantillas/" + t.id + "/disenar" : null, "tplDup"))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
+      templates.forEach((t) => ul.appendChild(simpleItem(t.name, KIND[t.kind] + (t.is_default ? " · predeterminada" : ""), "tpl", t.id, false, "/crm/plantillas/" + t.id + "/disenar", "tplDup"))); } catch (e) { ul.replaceChildren(el("li", "gw-hint", "No se pudieron cargar las plantillas.")); }
   }
   $("tplList").addEventListener("click", async (e) => {
     const ed = e.target.closest("[data-tpl]"), ar = e.target.closest("[data-tpl-archive]"), dp = e.target.closest("[data-tpl-dup]");

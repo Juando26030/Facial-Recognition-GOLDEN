@@ -26,3 +26,51 @@
 .pl-empty { padding: var(--gw-sp-3); }
 .pl-photo { display: grid; gap: var(--gw-sp-2); }
 @media (max-width: 1100px) { .pl-grid { grid-template-columns: minmax(0, 1fr); } .pl-palette__list { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); } }
+
+/* 26-nov-2026 (Juan David): hoja LIBRE del diseñador del PDF (static/js/crm_plantilla_hoja.js), como escarapelas y certificados. Solo tokens --gw-*.
+   Los colores y medidas de cada elemento los pone el JS desde el diseño (son DATOS del PDF, no del sistema visual). */
+.pl-wide { max-width: calc(var(--gw-content-w) * 1.5); }
+.pl-grid--two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.pl-addblocks { margin-top: 0; padding: var(--gw-sp-2) var(--gw-sp-3); }
+.pl-addblocks .pl-palette__list { margin-top: var(--gw-sp-2); grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+.pdx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.pdx-toolbar__label { font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); color: var(--gw-text); }
+.pdx-toolbar__select { width: auto; min-width: 8rem; }
+.pdx-toolbar__sep { width: 1px; align-self: stretch; background: var(--gw-border-strong); }
+.pdx-toolbar__zoom { min-width: 3.5rem; text-align: center; font-variant-numeric: tabular-nums; font-size: var(--gw-fs-sm); }
+.pdx-filebtn { position: relative; overflow: hidden; cursor: pointer; }
+.pdx-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pdx-work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: var(--gw-sp-4); align-items: start; }
+.pdx-scroll { overflow: auto; max-height: 85vh; padding: var(--gw-sp-3); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.pdx-page { position: relative; margin: 0 auto; background: var(--gw-surface); box-shadow: var(--gw-shadow-lg); outline: none; touch-action: none; user-select: none; overflow: hidden; }
+.pdx-page:focus-visible { box-shadow: var(--gw-ring); }
+.pdx-el { position: absolute; cursor: move; box-sizing: border-box; }
+.pdx-el:hover { outline: 1px dashed var(--gw-border-strong); }
+.pdx-el.is-selected, .pdx-flow.is-selected { outline: 2px solid var(--gw-focus); outline-offset: 1px; z-index: 2; }
+/* El texto se ve con la misma familia del PDF (Helvetica, app/crm/quote_free.py) para que lo que se arma aquí mida lo mismo que lo impreso. */
+.pdx-text { font-family: Helvetica, Arial, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdx-text.is-empty { color: var(--gw-text-muted); font-style: italic; }
+.pdx-img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.pdx-missing { display: grid; place-items: center; height: 100%; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); border: 1px dashed var(--gw-border-strong); }
+.pdx-el--rect.is-ghost { outline: 1px dashed var(--gw-border-strong); }
+.pdx-badge { position: absolute; top: 0; right: 0; transform: translateY(-100%); padding: 0 var(--gw-sp-1); font-size: var(--gw-fs-sm); line-height: 1.4; color: var(--gw-text); background: var(--gw-gold-1); border-radius: var(--gw-radius-sm); pointer-events: none; white-space: nowrap; }
+.pdx-handle { position: absolute; right: calc(var(--gw-sp-2) * -1); bottom: calc(var(--gw-sp-2) * -1); width: var(--gw-sp-4); height: var(--gw-sp-4); background: var(--gw-surface); border: 2px solid var(--gw-focus); border-radius: 50%; cursor: nwse-resize; }
+.pdx-flow { position: absolute; cursor: move; box-sizing: border-box; display: flex; flex-direction: column; gap: var(--gw-sp-1); padding: var(--gw-sp-2); overflow: hidden;
+  border: 2px dashed var(--gw-navy); border-radius: var(--gw-radius-sm); background: color-mix(in srgb, var(--gw-surface-2) 80%, transparent); }
+.pdx-flow__title { font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-sm); color: var(--gw-navy); }
+.pdx-flow__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-1); }
+.pdx-flow__item { padding: var(--gw-sp-1) var(--gw-sp-2); font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdx-flow__item--table { padding-block: var(--gw-sp-3); font-weight: var(--gw-fw-bold); }
+.pdx-flow__hint { margin-top: auto; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.pdx-props { position: sticky; top: var(--gw-sp-4); max-height: 85vh; overflow: auto; padding: var(--gw-sp-3); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.pdx-props__title { margin: 0; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.pdx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--gw-sp-3); }
+.pdx-checks { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); }
+.pdx-color { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-1); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
+.pdx-tools { flex-wrap: wrap; }
+.pdx-layers { padding-top: var(--gw-sp-3); border-top: 1px solid var(--gw-border); }
+.pdx-layers__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gw-sp-1); }
+.pdx-layer { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-2); text-align: left; font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdx-layer:hover { border-color: var(--gw-text); }
+.pdx-layer.is-selected { border-color: var(--gw-focus); box-shadow: var(--gw-ring); }
+@media (max-width: 1100px) { .pdx-work, .pl-grid--two { grid-template-columns: minmax(0, 1fr); } .pdx-props { position: static; max-height: none; } }

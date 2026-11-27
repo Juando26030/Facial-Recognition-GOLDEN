@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Response, Upl
 from sqlalchemy.orm import Session
 
 from app import audit_actions
-from app.crm import doc_assets, quote_layout, quote_pdf, quotes as svc
+from app.crm import doc_assets, quote_free, quote_layout, quote_pdf, quotes as svc
 from app.database import get_db
 from app.models import CrmAccount, CrmProforma, StaffUser
 from app.routers import crm as crm_router
@@ -142,10 +142,52 @@ def _read_upload(file: UploadFile) -> bytes:
 
 
 @router.get("/doc-layout/starter")
-def layout_starter(name: str = "classic", staff: StaffUser = Depends(admin_staff)):
-    """Diseño inicial («classic» = el PDF de siempre en bloques, «blank» = solo un título) y el catálogo de bloques, datos, columnas y variables para el diseñador."""
-    return {"layout": quote_layout.starter("blank" if name == "blank" else "classic"), "blocks": quote_layout.BLOCK_TYPES, "fields": quote_layout.FIELD_KEYS, "columns": quote_layout.TABLE_COLUMNS,
-            "variables": list(quote_layout.VARIABLES), "limits": {"blocks": quote_layout.MAX_BLOCKS, "image_mb": 3, "pdf_mb": 10, "pdf_pages": quote_layout.MAX_PDF_PAGES}}
+def layout_starter(name: str = "classic", kind: str = "quote", staff: StaffUser = Depends(admin_staff)):
+    """Diseño inicial y catálogo para el diseñador. 26-nov-2026: el diseño es LIBRE sobre la hoja (app/crm/quote_free.py): «classic» = encabezado y contenido de siempre, «blank» = hoja vacía.
+    Trae los datos de ejemplo ya calculados (`sample`) para que la hoja se vea con valores reales mientras se diseña."""
+    kind = "proforma" if kind == "proforma" else "quote"
+    today = utcnow().date().isoformat()
+    sample = (quote_layout.proforma_context(quote_layout.SAMPLE_PROFORMA, quote_layout.SAMPLE_QUOTE, today) if kind == "proforma" else quote_layout.context(quote_layout.SAMPLE_QUOTE, today))
+    keys = ("cliente", "numero", "fecha", "evento", "ciudad", "emision", "vence", "estado") if kind == "proforma" else ("cliente", "contacto", "titulo", "numero", "fecha_evento", "valida_hasta", "fecha")
+    fields = {k: quote_layout.FIELD_KEYS[k] for k in keys}
+    return {"layout": quote_free.starter("blank" if name == "blank" else "classic", kind), "blocks": quote_layout.BLOCK_TYPES, "fields": fields, "columns": quote_layout.TABLE_COLUMNS,
+            "variables": list(quote_layout.PROFORMA_VARIABLES if kind == "proforma" else quote_layout.VARIABLES) + ["pagina"], "sample": {**sample, "pagina": "1"},
+            "pages": quote_free.PAGE_LABELS, "page_sizes": quote_free.PAGES, "page_rules": quote_free.PAGE_RULES, "elements": quote_free.ELEMENT_TYPES,
+            "limits": {"blocks": quote_layout.MAX_BLOCKS, "elements": quote_free.MAX_ELEMENTS, "image_mb": 3, "pdf_mb": 10, "pdf_pages": quote_layout.MAX_PDF_PAGES}}
+
+
+@router.post("/doc-layout/from-blocks")
+def layout_from_blocks(data: dict = Body(...), staff: StaffUser = Depends(admin_staff)):
+    """Un diseño por bloques (el de antes) pasado al diseño libre, sin perder nada. No guarda."""
+    return {"layout": quote_free.from_blocks(data.get("layout") if isinstance(data.get("layout"), dict) else {})}
+
+
+@router.post("/doc-templates/{template_id}/export")
+def export_template(template_id: int, data: dict = Body(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    """La plantilla (el diseño que se ve, aunque no esté guardado) en un archivo con sus imágenes y PDF, para importarla en otra plantilla o en otro entorno."""
+    import json
+
+    def work():
+        tpl = svc._get(db, svc.CrmDocTemplate, template_id, "Plantilla")
+        layout = quote_layout.clean_layout(data.get("layout"), template_id)
+        return doc_assets.export_package(tpl, layout)
+    try:
+        pkg = work()
+    except svc.CrmError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    body = json.dumps(pkg, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return Response(content=body, media_type="application/json", headers={"Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="plantilla-pdf.golden.json"'})
+
+
+@router.post("/doc-templates/{template_id}/import")
+def import_template(template_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(admin_staff)):
+    """Lee un archivo exportado: guarda sus imágenes y PDF en esta plantilla y devuelve el diseño para revisarlo (no se guarda hasta pulsar «Guardar cambios»)."""
+    raw = file.file.read(doc_assets.MAX_EXPORT_BYTES * 4 // 3 + 1_000_000)
+    if not raw:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    if len(raw) > doc_assets.MAX_EXPORT_BYTES * 4 // 3 + 900_000:
+        raise HTTPException(status_code=413, detail="El archivo es demasiado grande (máximo 30 MB de imágenes y PDF).")
+    return _run(db, lambda: doc_assets.import_package(svc._get(db, svc.CrmDocTemplate, template_id, "Plantilla"), raw))
 
 
 @router.post("/doc-templates/{template_id}/assets")
@@ -179,7 +221,10 @@ def preview_template(template_id: int, data: dict = Body(...), db: Session = Dep
         else:
             q = quote_layout.SAMPLE_QUOTE
         images = doc_assets.product_images(db, [ln.get("product_id") for ln in q.get("lines", [])])
-        pdf = quote_pdf.render_quote(q, {**tpl, "layout": layout}, get_storage().get, images)
+        if tpl["kind"] == "proforma":          # 26-nov-2026: la proforma de ejemplo con los productos de la cotización elegida (o la de ejemplo)
+            pdf = quote_pdf.render_proforma(quote_layout.SAMPLE_PROFORMA, q, {**tpl, "layout": layout}, get_storage().get, images)
+        else:
+            pdf = quote_pdf.render_quote(q, {**tpl, "layout": layout}, get_storage().get, images)
     except svc.CrmError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     except (TypeError, ValueError) as exc:
@@ -334,13 +379,16 @@ def proforma_pdf_download(proforma_id: int, db: Session = Depends(get_db), staff
     if p is None:
         raise HTTPException(status_code=404, detail="Proforma no encontrada.")
     st = get_storage()
-    if not p.pdf_key or p.pdf_key != quote_pdf.proforma_key(p) or not st.exists(p.pdf_key):
+    default = svc.default_template(db, "proforma")          # 26-nov-2026: la predeterminada (antes, la primera de la lista)
+    tpl = svc.serialize_template(default) if default else next(iter(svc.list_templates(db, "proforma")), None)
+    quote = svc.quote_detail(db, svc.get_quote(db, p.quote_id)) if p.quote_id else None
+    pids = [ln.get("product_id") for ln in (quote or {}).get("lines", [])]
+    key = quote_pdf.proforma_key(p, quote_pdf.template_sig(tpl, doc_assets.images_signature(db, pids)) if tpl and tpl.get("layout") else "")
+    if not p.pdf_key or p.pdf_key != key or not st.exists(p.pdf_key):
         old = p.pdf_key
         acc = db.get(CrmAccount, p.account_id)
-        quote = svc.quote_detail(db, svc.get_quote(db, p.quote_id)) if p.quote_id else None
-        tpl = next(iter(svc.list_templates(db, "proforma")), None)
-        p.pdf_key = quote_pdf.proforma_key(p)
-        st.put(p.pdf_key, quote_pdf.render_proforma(svc.serialize_proforma(p, acc.name if acc else None), quote, tpl))
+        p.pdf_key = key
+        st.put(p.pdf_key, quote_pdf.render_proforma(svc.serialize_proforma(p, acc.name if acc else None), quote, tpl, st.get, doc_assets.product_images(db, pids)))
         db.commit()
         _drop_old(st, old, p.pdf_key)
     return st.response(p.pdf_key, filename=f"proforma-{p.number}.pdf", media_type="application/pdf")

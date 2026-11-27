@@ -94,7 +94,12 @@ def render_quote(q: dict, tpl: Optional[dict] = None, fetch=None, images: Option
     return doc.render()
 
 
-def render_proforma(p: dict, q: Optional[dict] = None, tpl: Optional[dict] = None) -> bytes:
+def render_proforma(p: dict, q: Optional[dict] = None, tpl: Optional[dict] = None, fetch=None, images: Optional[dict] = None) -> bytes:
+    """Con una plantilla de proforma que trae diseño (26-nov-2026: el diseñador también sirve para proformas) el PDF lo arma el diseño; sin diseño, el PDF sencillo de siempre."""
+    if tpl and tpl.get("layout") and fetch is not None:
+        from app.crm import quote_layout
+        today = utcnow().date().isoformat()
+        return quote_layout.render(tpl["layout"], quote_layout.proforma_doc(p, q), fetch, images, today, quote_layout.proforma_context(p, q, today))
     doc = Doc(f"Proforma {p['number']}")
     _head(doc, "PROFORMA", f"N.º {p['number']}", tpl)
     _pair(doc, "Cliente", p.get("account_name"))
@@ -141,8 +146,8 @@ def quote_key(q, sig: str = "") -> str:
     return f"crm/quotes/{q.id}/cotizacion-{q.number}-v{q.version}-d{LAYOUT}{('-' + sig) if sig else ''}.pdf"
 
 
-def proforma_key(p) -> str:
-    return f"crm/proformas/{p.id}/proforma-{p.number}-d{LAYOUT}.pdf"
+def proforma_key(p, sig: str = "") -> str:
+    return f"crm/proformas/{p.id}/proforma-{p.number}-d{LAYOUT}{('-' + sig) if sig else ''}.pdf"          # 26-nov-2026: con la huella del diseño, como la cotización
 
 
 def stamp() -> object:

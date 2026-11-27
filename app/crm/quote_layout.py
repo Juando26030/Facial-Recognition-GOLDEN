@@ -35,9 +35,12 @@ BLOCK_TYPES = {
     "pagebreak": "Salto de página",
     "pdf": "Insertar un PDF",
 }
-FIELD_KEYS = {"cliente": "Cliente", "contacto": "Atención", "titulo": "Asunto", "numero": "Número", "fecha_evento": "Fecha del evento", "valida_hasta": "Válida hasta", "fecha": "Fecha"}
+FIELD_KEYS = {"cliente": "Cliente", "contacto": "Atención", "titulo": "Asunto", "numero": "Número", "fecha_evento": "Fecha del evento", "valida_hasta": "Válida hasta", "fecha": "Fecha",
+              # 26-nov-2026: datos de la PROFORMA (en una cotización salen vacíos y el renglón no se dibuja)
+              "evento": "Evento", "ciudad": "Ciudad", "emision": "Fecha de emisión", "vence": "Vence", "estado": "Estado"}
 TABLE_COLUMNS = {"pos": "#", "foto": "Foto", "nombre": "Descripción", "cantidad": "Cant.", "precio": "Precio", "descuento": "Desc. %", "total": "Total"}
 VARIABLES = ("numero", "cliente", "contacto", "titulo", "fecha_evento", "valida_hasta", "subtotal", "impuestos", "total", "moneda", "hoy")
+PROFORMA_VARIABLES = ("numero", "cliente", "evento", "ciudad", "emision", "vence", "estado", "subtotal", "impuestos", "total", "moneda", "hoy")          # 26-nov-2026
 ALIGNS = ("left", "center", "right")
 _VAR = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -96,6 +99,9 @@ def _asset(value, template_id: Optional[int], what: str) -> str:
 
 def clean_layout(data, template_id: Optional[int] = None) -> dict:
     """Valida y normaliza un diseño recibido del navegador. Lanza CrmError con un mensaje claro; nunca confía en tipos ni tamaños."""
+    if isinstance(data, dict) and data.get("v") == 2:          # 26-nov-2026: diseño libre sobre la hoja (app/crm/quote_free.py)
+        from app.crm import quote_free
+        return quote_free.clean(data, template_id)
     if not isinstance(data, dict) or not isinstance(data.get("blocks"), list):
         raise CrmError("El diseño no tiene el formato correcto.")
     if len(data["blocks"]) > MAX_BLOCKS:
@@ -139,7 +145,8 @@ def clean_layout(data, template_id: Optional[int] = None) -> dict:
 
 
 def used_assets(layout: Optional[dict]) -> List[str]:
-    return [b["asset"] for b in (layout or {}).get("blocks", []) if b.get("asset")]
+    from app.crm import quote_free
+    return quote_free.used_assets(layout)
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------ archivos subidos
@@ -241,11 +248,11 @@ def _esc(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
 
 
-def _image(raw: bytes, width: float, max_h: float = 700):
+def _image(raw: bytes, width: float, max_h: float = 700, max_w: float = 515):
     from reportlab.lib.utils import ImageReader
     from reportlab.platypus import Image
     iw, ih = ImageReader(io.BytesIO(raw)).getSize()
-    w = min(width, 515)
+    w = min(width, max_w)
     h = w * ih / iw if iw else w
     if h > max_h:
         w, h = w * max_h / h, max_h
@@ -265,7 +272,16 @@ def _spacer(h: float):
     return Spacer(1, h)
 
 
-def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optional[Dict[int, bytes]] = None, today_iso: str = "") -> bytes:
+def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optional[Dict[int, bytes]] = None, today_iso: str = "", ctx: Optional[Dict[str, str]] = None) -> bytes:
+    """Diseño por bloques (v1) o diseño libre sobre la hoja (v2, app/crm/quote_free.py)."""
+    if (layout or {}).get("v") == 2:
+        from app.crm import quote_free
+        return quote_free.render(layout, q, fetch, images, today_iso, ctx)
+    return render_blocks(layout.get("blocks", []), q, fetch, images, today_iso, ctx)
+
+
+def render_blocks(blocks: list, q: dict, fetch: Callable[[str], bytes], images: Optional[Dict[int, bytes]] = None, today_iso: str = "", ctx: Optional[Dict[str, str]] = None,
+                  width: float = 515, make_segment: Optional[Callable] = None, max_height: float = 700) -> bytes:
     """Arma el PDF. `q`: detalle de la cotización (quotes.quote_detail). `fetch(clave)`: bytes de un archivo guardado. `images`: {id de producto: bytes de su foto}. Los fallos de UN archivo
     (borrado, dañado) no tumban el PDF: ese bloque se omite."""
     from reportlab.lib import colors
@@ -274,8 +290,15 @@ def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optiona
     from reportlab.platypus import HRFlowable, PageBreak, Paragraph, Table, TableStyle
     import logging
     log = logging.getLogger("golden.crm_layout")
-    ctx = context(q, today_iso)
+    ctx = ctx if ctx is not None else context(q, today_iso)
     images = images or {}
+    title = f"Cotización {q.get('number', '')}"
+    first = [True]
+
+    def flush(story_part: list) -> bytes:          # cada tramo de bloques entre PDF insertados es un PDF; v2 dibuja la hoja diseñada solo en el primero
+        out = make_segment(story_part, first[0]) if make_segment else _segment(story_part, title)
+        first[0] = False
+        return out
     al = {"left": TA_LEFT, "center": TA_CENTER, "right": TA_RIGHT}
     base = {}
 
@@ -287,7 +310,7 @@ def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optiona
 
     segments: List[bytes] = []
     story: list = []
-    for b in layout.get("blocks", []):
+    for b in blocks:
         t = b["type"]
         try:
             if t in ("heading", "text"):
@@ -296,7 +319,7 @@ def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optiona
                     story.append(Paragraph(_esc(txt), style(b.get("size", 10), b.get("bold", False), b.get("align", "left"), b.get("gray", 0))))
                     story.append(_spacer(4))
             elif t in ("logo", "image"):
-                img = _image(fetch(b["asset"]), b.get("width", 200))
+                img = _image(fetch(b["asset"]), b.get("width", 200), min(700, max_height - 12), max_w=width)
                 img.hAlign = b.get("align", "left").upper()
                 story.append(img)
                 story.append(_spacer(6))
@@ -307,18 +330,18 @@ def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optiona
                     if v:
                         rows.append([Paragraph(_esc(FIELD_KEYS[k]), style(9, True, gray=30)), Paragraph(_esc(v), style(10))])
                 if rows:
-                    tb = Table(rows, colWidths=[110, 405])
+                    tb = Table(rows, colWidths=[110, max(60, width - 110)])
                     tb.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 2), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
                     story.append(tb)
                     story.append(_spacer(6))
             elif t == "table":
-                story.append(_lines_table(b, q, images, style, colors, Paragraph, Table, TableStyle))
+                story.append(_lines_table(b, q, images, style, colors, Paragraph, Table, TableStyle, width))
                 story.append(_spacer(8))
             elif t == "totals":
                 cur = q.get("currency") or "COP"
                 rows = [[Paragraph(_esc(lbl), style(10, bold, "right")), Paragraph(_esc(money(q.get(key, 0), cur)), style(10, bold, "right"))]
                         for lbl, key, bold in (("Subtotal con descuento", "subtotal", False), ("Impuestos", "tax_total", False), ("TOTAL", "total", True))]
-                tb = Table(rows, colWidths=[345, 170])
+                tb = Table(rows, colWidths=[max(60, width - 170), 170])
                 tb.setStyle(TableStyle([("LINEABOVE", (0, 2), (-1, 2), 0.6, colors.grey), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
                 story.append(tb)
                 story.append(_spacer(8))
@@ -334,13 +357,13 @@ def render(layout: dict, q: dict, fetch: Callable[[str], bytes], images: Optiona
             elif t == "pagebreak":
                 story.append(PageBreak())
             elif t == "pdf":
-                segments.append(_segment(story, f"Cotización {q.get('number', '')}"))
+                segments.append(flush(story))
                 story = []
                 segments.append(("pdf", fetch(b["asset"]), b.get("pages", "")))
         except Exception:          # noqa: BLE001 - un archivo roto no tumba el PDF
             log.error("bloque %s (%s) omitido en el PDF de la cotización", b.get("id"), t, exc_info=True)
     if story or not segments:
-        segments.append(_segment(story, f"Cotización {q.get('number', '')}"))
+        segments.append(flush(story))
     if len(segments) == 1 and isinstance(segments[0], bytes):
         return segments[0]
     return _merge(segments, log)
@@ -366,12 +389,12 @@ def _merge(segments: list, log) -> bytes:
     return out.getvalue()
 
 
-def _lines_table(b: dict, q: dict, images: Dict[int, bytes], style, colors, Paragraph, Table, TableStyle):
+def _lines_table(b: dict, q: dict, images: Dict[int, bytes], style, colors, Paragraph, Table, TableStyle, width: float = 515):
     cols = b.get("columns") or ["pos", "nombre", "cantidad", "precio", "descuento", "total"]
     ps = float(b.get("photo_size", 56))
     weights = {"pos": 22, "foto": ps + 8, "nombre": 0, "cantidad": 40, "precio": 70, "descuento": 42, "total": 78}
     fixed = sum(weights[c] for c in cols if c != "nombre")
-    weights["nombre"] = max(120, 515 - fixed)
+    weights["nombre"] = max(80, width - fixed)
     widths = [weights[c] for c in cols]
     right = {"cantidad", "precio", "descuento", "total"}
 
@@ -406,3 +429,26 @@ SAMPLE_QUOTE = {
         {"position": 2, "product_id": None, "name": "Personal de apoyo", "description": "Atención y registro de asistentes", "qty": "6", "unit_price": "300000.00", "discount_percent": "0", "line_total": "1800000.00"},
     ],
 }
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ proforma (26-nov-2026)
+PROFORMA_STATUS = {"no_pagado": "No pagado", "pagado": "Pagado", "anulado": "Anulado"}
+
+
+def proforma_doc(p: dict, q: Optional[dict] = None) -> dict:
+    """La proforma con la forma de una cotización (así sirven los mismos bloques: datos, tabla de productos, totales). Los productos vienen de su cotización, si tiene."""
+    q = q or {}
+    return {"number": p.get("number", ""), "version": 1, "title": p.get("event_name") or "", "account_name": p.get("account_name") or "", "currency": p.get("currency") or "COP",
+            "subtotal": q.get("subtotal", p.get("total", 0)), "tax_total": q.get("tax_total", 0), "total": p.get("total", 0), "terms_text": "", "lines": q.get("lines", [])}
+
+
+def proforma_context(p: dict, q: Optional[dict], today_iso: str) -> Dict[str, str]:
+    doc = proforma_doc(p, q)
+    ctx = context(doc, today_iso)
+    ctx.update({"evento": p.get("event_name") or "", "ciudad": p.get("city") or "", "emision": day(p.get("issued_at")), "vence": day(p.get("due_at")),
+                "estado": PROFORMA_STATUS.get(p.get("status"), p.get("status") or ""), "titulo": "", "contacto": "", "fecha_evento": "", "valida_hasta": ""})
+    return ctx
+
+
+SAMPLE_PROFORMA = {"number": 567, "account_name": "Cliente de ejemplo S.A.S.", "event_name": "Congreso empresarial 2027", "city": "Bogotá", "issued_at": "2027-01-10", "due_at": "2027-02-10",
+                   "status": "no_pagado", "currency": "COP", "total": "6426000.00"}

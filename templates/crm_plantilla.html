@@ -1,14 +1,16 @@
-{# CRM - Diseñador del PDF de cotización (solo admin). Bloques que se arrastran y ordenan, con vista previa del PDF real. Solo tokens --gw-* y clases .gw-*. JS: static/js/crm_plantilla.js; API: /api/crm/doc-templates, /doc-layout/starter. #}
+{# CRM - Diseñador del PDF de cotización y de proforma (solo admin). 26-nov-2026: hoja LIBRE (textos, datos, imágenes, rectángulos y líneas que se arrastran, como en escarapelas y
+   certificados) + el recuadro «Contenido» (tabla de productos, totales…) que se arma con bloques. Vista previa del PDF real. Solo tokens --gw-* y clases .gw-*.
+   JS: static/js/crm_plantilla_hoja.js (la hoja) y static/js/crm_plantilla.js (contenido, guardar, exportar/importar). API: /api/crm/doc-templates, /doc-layout/*. #}
 {% from "_crm_macros.html" import ic, ayuda with context %}
-{% set page_title = "CRM - Diseñar plantilla del PDF" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css", "css/p-crm-c5.css"] %}{% set page_js = ["js/params-save.js", "js/crm_plantilla.js"] %}{% set crm_section = 'cotizaciones' %}
+{% set page_title = "CRM - Diseñar plantilla del PDF" %}{% set page_css = ["css/p-crm-c2.css", "css/p-crm-c3.css", "css/p-crm-c5.css"] %}{% set page_js = ["js/params-save.js", "js/crm_plantilla_hoja.js", "js/crm_plantilla.js"] %}{% set crm_section = 'cotizaciones' %}
 {% include "_crm_shell_top.html" %}
-  <div class="gw-container gw-stack-lg" id="plRoot" data-template-id="{{ template_id }}"><div id="paramsRoot" class="gw-stack-lg">
+  <div class="gw-container pl-wide gw-stack-lg" id="plRoot" data-template-id="{{ template_id }}"><div id="paramsRoot" class="gw-stack-lg">
     <a class="crm-back" href="/crm/productos">{{ ic('chevron', 'crm-back__icon gw-icon--sm') }} Volver a productos y plantillas</a>
     <div class="gw-page-head">
       <div class="gw-page-head__text">
         <p class="gw-eyebrow">CRM · Administración</p>
         <h1 class="gw-page-head__title" id="plTitle">Diseñar la plantilla del PDF</h1>
-        <p class="gw-page-head__sub">Arma la cotización con bloques: agrega, arrastra para ordenar y mira cómo queda el PDF a la derecha. Nada cambia en las cotizaciones hasta que pulses «Guardar cambios» abajo.</p>
+        <p class="gw-page-head__sub">Arma la hoja como una escarapela o un certificado: textos, datos del cliente, imágenes, rectángulos y líneas donde quieras. La tabla de productos y los totales van en el recuadro «Contenido». Nada cambia en los documentos hasta que pulses «Guardar cambios» abajo.</p>
       </div>
     </div>
 
@@ -16,38 +18,64 @@
 
     <section class="gw-card gw-stack" id="plStart" hidden aria-labelledby="plStartTitle">
       <h2 class="gw-card__title" id="plStartTitle">¿Con qué quieres empezar?</h2>
-      <p class="gw-hint">Esta plantilla todavía usa el formato sencillo (encabezado, saludo y pie). Elige un punto de partida: después puedes cambiarlo todo.</p>
+      <p class="gw-hint" id="plStartHint">Elige un punto de partida: después puedes cambiarlo todo.</p>
       <div class="crm-card-actions">
         <button type="button" class="gw-btn gw-btn--primary" data-start="classic">Diseño clásico (recomendado)</button>
-        <button type="button" class="gw-btn gw-btn--secondary" data-start="blank">En blanco</button>
+        <button type="button" class="gw-btn gw-btn--secondary" data-start="blank">Hoja en blanco</button>
+        <label class="gw-btn gw-btn--secondary pdx-filebtn">{{ ic('upload', 'gw-icon--sm') }} Importar una plantilla<input type="file" id="plImportStart" accept=".json,application/json" class="pdx-file"></label>
       </div>
       <div class="gw-field" id="plCopyWrap" hidden>
-        <label class="gw-label" for="plCopyFrom">O empezar desde el diseño de otra plantilla</label>
+        <label class="gw-label" for="plCopyFrom">O usar el diseño de otra plantilla</label>
         <div class="crm-card-actions"><select class="gw-select" id="plCopyFrom"></select><button type="button" class="gw-btn gw-btn--secondary" id="plCopy">Usar ese diseño</button></div>
         <p class="gw-hint">Se copia con sus imágenes y PDF; la otra plantilla no cambia.</p>
       </div>
     </section>
 
-    <div class="pl-grid" id="plEditor" hidden>
-      <section class="gw-card gw-stack pl-palette" aria-labelledby="plPalTitle">
-        <h2 class="gw-card__title" id="plPalTitle">1. Agrega bloques</h2>
-        <p class="gw-hint">Toca un bloque para agregarlo, o arrástralo hasta donde lo quieras.</p>
-        <ul class="pl-palette__list" id="plPalette"></ul>
+    <div class="gw-stack-lg" id="plEditor" hidden>
+      <section class="gw-card gw-stack" aria-labelledby="pdxTitle">
+        <div class="crm-card-head"><h2 class="gw-card__title" id="pdxTitle">1. Arma la hoja</h2>
+          <div class="crm-card-actions">
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plExport">{{ ic('download', 'gw-icon--sm') }} Exportar plantilla</button>
+            <label class="gw-btn gw-btn--secondary gw-btn--sm pdx-filebtn">{{ ic('upload', 'gw-icon--sm') }} Importar<input type="file" id="plImport" accept=".json,application/json" class="pdx-file"></label>
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plClassic">Volver a empezar…</button>
+          </div></div>
+        <div class="pdx-toolbar" role="toolbar" aria-label="Agregar a la hoja">
+          <span class="pdx-toolbar__label">Agregar:</span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxAddText">{{ ic('edit', 'gw-icon--sm') }} Texto</button>
+          <select class="gw-select pdx-toolbar__select" id="pdxAddVar" aria-label="Agregar un dato del cliente o del documento"><option value="">Dato…</option></select>
+          <label class="gw-btn gw-btn--secondary gw-btn--sm pdx-filebtn">{{ ic('image', 'gw-icon--sm') }} Imagen<input type="file" id="pdxAddImage" accept="image/png,image/jpeg,.png,.jpg,.jpeg" class="pdx-file"></label>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxAddRect">Rectángulo</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxAddLine">Línea</button>
+          <span class="pdx-toolbar__sep" aria-hidden="true"></span>
+          <label class="pdx-toolbar__label" for="pdxPageSize">Hoja:</label>
+          <select class="gw-select pdx-toolbar__select" id="pdxPageSize"></select>
+          <span class="pdx-toolbar__sep" aria-hidden="true"></span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxZoomOut" aria-label="Alejar">−</button>
+          <span class="pdx-toolbar__zoom" id="pdxZoom" aria-live="polite">100 %</span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxZoomIn" aria-label="Acercar">+</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pdxZoomFit">Ajustar</button>
+        </div>
+        <div class="pdx-work">
+          <div class="pdx-scroll" id="pdxScroll"><div class="pdx-page" id="pdxPage" tabindex="0" aria-label="Hoja del PDF: toca un elemento para elegirlo; flechas para moverlo"></div></div>
+          <aside class="gw-stack pdx-props" id="pdxProps" aria-label="Propiedades del elemento elegido"></aside>
+        </div>
       </section>
 
-      <section class="gw-card gw-stack pl-doc" aria-labelledby="plDocTitle">
-        <div class="crm-card-head"><h2 class="gw-card__title" id="plDocTitle">2. Ordena y ajusta</h2>
-          <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plClassic">Volver a empezar…</button></div></div>
-        <p class="gw-hint">Toca un bloque para cambiarlo. Con las flechas o arrastrando lo mueves de lugar.</p>
-        <ol class="pl-blocks" id="plBlocks"></ol>
-      </section>
+      <div class="pl-grid pl-grid--two">
+        <section class="gw-card gw-stack pl-doc" aria-labelledby="plDocTitle">
+          <div class="crm-card-head"><h2 class="gw-card__title" id="plDocTitle">2. Contenido</h2></div>
+          <p class="gw-hint" id="plDocHint">Lo que va dentro del recuadro «Contenido», en este orden. Toca un bloque para cambiarlo; con las flechas o arrastrando lo mueves.</p>
+          <details class="gw-advanced pl-addblocks"><summary>Agregar un bloque al contenido</summary><ul class="pl-palette__list" id="plPalette"></ul></details>
+          <ol class="pl-blocks" id="plBlocks"></ol>
+        </section>
 
-      <section class="gw-card gw-stack pl-preview" aria-labelledby="plPrevTitle">
-        <div class="crm-card-head"><h2 class="gw-card__title" id="plPrevTitle">3. Así se ve el PDF</h2></div>
-        <div class="gw-field"><label class="gw-label" for="plQuote">Ver con esta cotización</label><select class="gw-select" id="plQuote"><option value="">Cotización de ejemplo</option></select></div>
-        <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plRefresh">Actualizar vista previa</button><span class="gw-hint" id="plPrevState" role="status"></span></div>
-        <iframe class="pl-preview__frame" id="plFrame" title="Vista previa del PDF de la cotización"></iframe>
-      </section>
+        <section class="gw-card gw-stack pl-preview" aria-labelledby="plPrevTitle">
+          <div class="crm-card-head"><h2 class="gw-card__title" id="plPrevTitle">3. Así se ve el PDF</h2></div>
+          <div class="gw-field"><label class="gw-label" for="plQuote" id="plQuoteLabel">Ver con esta cotización</label><select class="gw-select" id="plQuote"><option value="">Datos de ejemplo</option></select></div>
+          <div class="crm-card-actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="plRefresh">Actualizar vista previa</button><span class="gw-hint" id="plPrevState" role="status"></span></div>
+          <iframe class="pl-preview__frame" id="plFrame" title="Vista previa del PDF"></iframe>
+        </section>
+      </div>
     </div>
     </div>
     {# Barra única de guardado (diseño del PDF). #}
