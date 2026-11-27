@@ -599,3 +599,34 @@ def test_excel_exports_answers_and_staff_list(client, factory, db):
     ids = [ws.cell(i, 3).value for i in range(4, ws.max_row + 1)]
     assert int(CED) in ids and 7654321 in ids and ws["B2"].value and ws["A3"].value.startswith(f"[{ev.event_code}]")
     assert "María" not in str([c.value for row in ws.iter_rows() for c in row])          # el listado no lleva nada sensible
+
+
+def test_public_link_prefills_masked_by_cedula_and_restores_real_values(client, factory, db):
+    """27-nov-2026: quien ya firmó en otro evento escribe solo su cédula; el navegador recibe datos ocultos en parte y, si los deja así, el servidor guarda los reales."""
+    from app import pledge
+
+    ev1, path1, _ = _setup(client, factory)
+    assert _send(client, path1, _values()).status_code == 200                           # primera firma: Juan Pérez / María Pérez
+    coord2 = factory.staff("coordinador", "coord2")
+    ev2 = factory.event("en_proceso", coordinator=coord2)
+    login(client, "coord2")
+    path2 = urlsplit(client.post(f"/api/events/{ev2.id}/pledge/link").json()["link"]).path
+    client.post("/logout")
+    tok = client.get(f"{path2}/state").json()["token"]
+    assert client.get(f"{path2}/state").json()["pledge_prefill"] is True
+    r = client.post(f"{path2}/pledge-prefill", json={"id": "999999999", "t": tok})
+    assert r.status_code == 200 and r.json()["found"] is False and r.json()["values"] == {}          # cédula desconocida
+    r = client.post(f"{path2}/pledge-prefill", json={"id": CED, "t": tok})
+    body = r.json()
+    assert r.status_code == 200 and body["found"] is True
+    shown = body["values"]
+    assert "*" in shown["p_name"] and "Juan" not in r.text and "María" not in r.text       # nada real sale al navegador
+    assert shown["p_em_name"] != "María Pérez" and body["token"] != tok
+    values = _values(p_name=shown["p_name"], p_phone=shown["p_phone"], p_em_name=shown["p_em_name"], p_em_phone=shown["p_em_phone"], p_q_med="No")
+    # con un token SIN la cédula atada, lo enmascarado no se acepta
+    assert _send(client, path2, values, token=tok, sid="s2").status_code == 422
+    assert _send(client, path2, values, token=body["token"], sid="s3").status_code == 200
+    db.expire_all()
+    real = pledge.previous_by_cedula(db, CED)
+    assert real["p_name"] == "Juan Pérez" and real["p_em_name"] == "María Pérez" and "*" not in real["p_phone"]      # se guardaron los reales
+    assert pledge.previous_by_cedula(db, "123") == {}

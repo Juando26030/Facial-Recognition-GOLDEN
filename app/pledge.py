@@ -295,6 +295,8 @@ def extra_errors(form: WebForm, clean: dict, claims: dict) -> dict:
                 check_text(clean[fid], "El nombre")
             except ValueError as exc:
                 errors[fid] = str(exc)
+            if "*" in str(clean[fid]):          # versión ENMASCARADA del prellenado (forms_public.pledge_prefill) que no se pudo restaurar (cambió la cédula): nunca se guarda
+                errors[fid] = "Escríbelo completo, sin asteriscos"
     if clean.get(FID_NAME) and len(str(clean[FID_NAME]).strip()) < 3:
         errors[FID_NAME] = "«Nombre completo»: escríbelo completo"
     for fid in (FID_PHONE, FID_EM_PHONE):
@@ -348,32 +350,43 @@ def content_hash(design: dict, answers: dict, event_id: int, cedula: str, signat
 PREFILL_FROM_BEFORE = (FID_NAME, FID_PHONE, FID_EM_NAME, FID_EM_PHONE)      # nada de casillas de preguntas (salud, contrato, asistencia, declaración, autorización) ni la firma
 
 
-def previous_answers(db: Session, staff: StaffUser) -> dict:
-    """Respuestas de contacto del compromiso MÁS RECIENTE firmado con esta cédula. REGLA DE COINCIDENCIA (decisión de Juan David, 10-nov-2026): la misma cédula en TODOS los clientes y eventos
-    (la cuenta de un digitador es por cliente, pero la persona es la misma); solo aplica a quien es digitador. Se toma el dato más reciente. Solo nombre, celular, familiar y teléfono del familiar;
-    nunca las casillas. Lo sensible (familiar) solo si sigue guardado (no se purgó por retención) y el módulo de datos sensibles está activo. Solo se llama con la persona identificada por su sesión
-    (nunca con una cédula escrita en el enlace público: eso mostraría datos ajenos). Nada de esto se escribe en logs."""
-    if staff.role != "digitador":
+def previous_by_cedula(db: Session, cedula: str) -> dict:
+    """Datos de contacto de la persona con esta cédula, de su compromiso MÁS RECIENTE (misma cédula en TODOS los clientes y eventos: decisión de Juan David, 10-nov-2026) o, si nunca firmó,
+    de su cuenta de digitador (nombre y celular). Solo nombre, celular, familiar y teléfono del familiar; nunca las casillas. Lo sensible (familiar) solo si sigue guardado (no se purgó por
+    retención) y el módulo de datos sensibles está activo. Devuelve los valores REALES: quien los muestre a alguien identificado solo por haber escrito la cédula (enlace público) DEBE
+    enmascararlos (`forms_public.pledge_prefill`). Nada de esto se escribe en logs."""
+    cedula = normalize_cedula(cedula)
+    if not cedula:
         return {}
-    row = (db.query(EventStaffPledge).join(StaffUser, StaffUser.id == EventStaffPledge.staff_id)
-           .filter(StaffUser.username == staff.username, StaffUser.role == "digitador")
-           .order_by(EventStaffPledge.signed_at.desc(), EventStaffPledge.id.desc()).first())
-    if row is None:
-        return {}
-    sub = db.get(FormSubmission, row.submission_id)
-    if sub is None or sub.is_test:
-        return {}
-    try:
-        data = json.loads(sub.data_json or "{}")
-        secret = json.loads(sub.sensitive_json) if (row.health_purged_at is None and sensitive_enabled() and sub.sensitive_json) else {}
-    except (ValueError, TypeError):
+    acc = db.query(StaffUser).filter(StaffUser.username == cedula, StaffUser.role == "digitador").first()
+    if acc is None:
         return {}
     out = {}
-    for fid in PREFILL_FROM_BEFORE:
-        val = data.get(fid) if fid in data else secret.get(fid)
-        if isinstance(val, str) and val.strip():
-            out[fid] = val.strip()
+    row = (db.query(EventStaffPledge).filter(EventStaffPledge.staff_id == acc.id)
+           .order_by(EventStaffPledge.signed_at.desc(), EventStaffPledge.id.desc()).first())
+    sub = db.get(FormSubmission, row.submission_id) if row is not None else None
+    if sub is not None and not sub.is_test:
+        try:
+            data = json.loads(sub.data_json or "{}")
+            secret = json.loads(sub.sensitive_json) if (row.health_purged_at is None and sensitive_enabled() and sub.sensitive_json) else {}
+        except (ValueError, TypeError):
+            data, secret = {}, {}
+        for fid in PREFILL_FROM_BEFORE:
+            val = data.get(fid) if fid in data else secret.get(fid)
+            if isinstance(val, str) and val.strip():
+                out[fid] = val.strip()
+    if not out.get(FID_NAME) and (acc.full_name or "").strip():
+        out[FID_NAME] = acc.full_name.strip()
+    if not out.get(FID_PHONE) and (getattr(acc, "phone", None) or "").strip():
+        out[FID_PHONE] = acc.phone.strip()
     return out
+
+
+def previous_answers(db: Session, staff: StaffUser) -> dict:
+    """Lo mismo para quien ya está identificado por su SESIÓN (Camino B/C): ahí sí se muestran los datos tal cual. Solo aplica a quien es digitador."""
+    if staff.role != "digitador":
+        return {}
+    return previous_by_cedula(db, staff.username)
 
 
 def prefill_for(db: Session, form: WebForm, who: StaffUser) -> dict:

@@ -239,6 +239,34 @@ function showForm(st) {
       });
     }
   }
+  // Compromiso del digitador (27-nov-2026): al escribir la cédula, si ya es de un digitador, se traen su nombre, celular y familiar (ocultos en parte: quien escribe una cédula ajena no lee datos
+  // ajenos). Si los deja así, el servidor pone los reales al enviar; si escribe encima, vale lo que escribió. Solo llena campos vacíos.
+  if (st.pledge_prefill) {
+    const idIn = fr.form.querySelector('[name="p_id"]');
+    let lastId = "", note = null;
+    const setNote = (text) => { if (!note) { note = document.createElement("p"); note.setAttribute("role", "status"); note.style.cssText = "font-size:.86rem; opacity:.85; margin:6px 0 0;"; idIn.parentElement.appendChild(note); } note.textContent = text || ""; note.hidden = !text; };
+    if (idIn) idIn.addEventListener("change", async () => {
+      const v = idIn.value.trim().replace(/[\s.,]/g, "");
+      if (!v || v === lastId) return;
+      lastId = v;
+      fr.form.querySelectorAll("[data-masked]").forEach((el) => { if (el.value === el.dataset.masked) { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); } delete el.dataset.masked; });          // datos ocultos de OTRA cédula: se quitan
+      setNote("");
+      try {
+        const { res, data } = await api("/pledge-prefill", { id: v });
+        if (!res.ok || idIn.value.trim().replace(/[\s.,]/g, "") !== v) return;
+        if (!data.found) { setNote(""); return; }
+        token = data.token;
+        for (const [fid, val] of Object.entries(data.values || {})) {
+          const el = fr.form.querySelector(`[name="${fid}"]`);
+          if (!el || el.value.trim()) continue;
+          el.value = val; el.dataset.masked = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.addEventListener("focus", () => { if (el.value === el.dataset.masked) el.select(); });
+        }
+        setNote("Encontramos tus datos de un compromiso anterior y los dejamos listos (se ven ocultos en parte por tu seguridad). Si están bien, déjalos así; si algo cambió, escribe encima. Solo responde las preguntas.");
+      } catch (err) { /* sin red: se llena a mano */ }
+    });
+  }
   const msg = document.createElement("div"); msg.style.cssText = "text-align:center; font-size:.88rem; margin-top:10px;"; msg.setAttribute("aria-live", "polite"); fr.form.appendChild(msg);   // aria-live: los lectores de pantalla leen los avisos de espera
   const reset = (text, isErr) => { fr.button.disabled = false; msg.style.color = isErr ? "#c0392b" : "inherit"; msg.textContent = text || ""; quote(); if (!fr.hasPayment) fr.button.textContent = label; };
 

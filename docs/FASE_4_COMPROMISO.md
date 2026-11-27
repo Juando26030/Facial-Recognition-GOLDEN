@@ -42,3 +42,10 @@ Enlace de 144 bits comparado con `safe_eq`; límite por enlace y por IP (`PLEDGE
 - «Persona» = cuenta de digitador (`StaffUser`).
 - Las vistas de admin+ se auditan pero no piden confirmación extra.
 - Pruebas: `tests/test_pledge.py` (necesita Postgres, corre en CI).
+
+
+## Precargado por cédula en el enlace público (27-nov-2026, pedido de Juan David)
+Al escribir la cédula en el enlace del compromiso, si ya es de un digitador (de cualquier cliente o evento), el formulario trae su nombre, celular, nombre y teléfono del familiar, y la persona solo responde las preguntas (salud, medicamento, apoyo, contrato, asistencia), marca las dos casillas y firma.
+- **Seguridad:** la cédula no es secreta, así que el navegador recibe esos datos **ocultos en parte** («L*** S****», «30------67», la misma máscara X4 de los formularios). El valor real se pone en el servidor al enviar SOLO si la persona los dejó como estaban y el token está atado a esa cédula (`pp`); si escribe encima, vale lo escrito; si cambia la cédula, se limpian. Un valor con asteriscos nunca se guarda.
+- **Código:** `POST /f/{event}/{slug}/pledge-prefill` (`forms_public.pledge_prefill`), `_restore_pledge_values`, `pledge.previous_by_cedula`; aviso y relleno en `templates/form_public.html` (`st.pledge_prefill`). Mismo límite por IP que `lookup`. Sin escribir nada ni datos en logs.
+- **Lo que revela:** que esa cédula ya firmó como digitador (con iniciales y dos dígitos del celular). Es el costo de no tener que escribir de nuevo; antes el enlace respondía igual para todas las cédulas.

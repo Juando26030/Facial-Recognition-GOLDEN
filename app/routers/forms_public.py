@@ -206,7 +206,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] 
             readonly = [pledge.FID_ID] + ([pledge.FID_NAME] if prefill.get(pledge.FID_NAME) else [])          # 25-nov-2026: digitador ya conocido: cédula y nombre fijos; solo responde salud, contrato y asistencia (celular y familiar se pueden corregir)
     quota = formlib.freeze_conditions(formsvc.quota_public(db, form), hidden_real)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
-    return {"design": formlib.freeze_conditions(formlib.public_design(design), hidden_real), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
+    return {"design": formlib.freeze_conditions(formlib.public_design(design), hidden_real), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "pledge_prefill": form.kind == formsvc.PLEDGE_KIND and not claims.get("pc"), "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -406,6 +406,40 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     if person:
         new_claims["p"] = pid
     return {"token": _issue(form, **new_claims), "found": bool(person)}
+
+
+@router.post("/f/{event_id}/{slug}/pledge-prefill")
+def pledge_prefill(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+    """Compromiso del digitador por el enlace público (27-nov-2026, pedido de Juan David): al escribir la cédula, si ya es de un digitador, se traen su nombre, celular, familiar y teléfono del
+    familiar para que solo responda las preguntas. Quien escribe una cédula NO está identificado (la cédula no es secreta), así que el navegador recibe los datos ENMASCARADOS (como X4,
+    `mask_prefill_value`) y el valor real se pone en el servidor al enviar (`_restore_pledge_values`) SOLO si la persona los dejó como estaban. El token queda atado a esa cédula (`pp`).
+    Mismo límite por IP que `lookup`; no escribe nada ni deja datos en logs."""
+    form = _load(db, event_id, slug)
+    _access(db, form, data.get("k"))
+    _limit(db, request, "form_lookup", form, 60)
+    if form.kind != formsvc.PLEDGE_KIND:
+        raise HTTPException(status_code=404, detail="Formulario no disponible")
+    claims = _read(data.get("t"), form)
+    ced = pledge.normalize_cedula(data.get("id"))
+    real = pledge.previous_by_cedula(db, ced) if ced.isdigit() else {}
+    db.rollback()
+    fields = formsvc.get_design(form)["fields"]
+    shown = {fid: mask_prefill_value(fields[fid], val) for fid, val in real.items() if fid in fields}
+    return {"found": bool(shown), "values": shown, "token": _issue(form, **{**claims, "pp": ced}) if shown else data.get("t")}
+
+
+def _restore_pledge_values(db: Session, form: WebForm, design: dict, values: dict, claims: dict) -> None:
+    """Contraparte de `pledge_prefill`: un campo que llega igual a su versión enmascarada se reemplaza por el dato real; si la persona lo cambió, se respeta lo que escribió. Solo con el token
+    de ESA cédula (`pp`) y si la cédula enviada es la misma."""
+    ced = claims.get("pp")
+    if form.kind != formsvc.PLEDGE_KIND or not ced or pledge.normalize_cedula(values.get(pledge.FID_ID)) != ced:
+        return
+    real = pledge.previous_by_cedula(db, ced)
+    db.rollback()
+    for fid, val in real.items():
+        f = design["fields"].get(fid)
+        if f and str(values.get(fid) or "").strip() == str(mask_prefill_value(f, val)).strip():
+            values[fid] = val
 
 
 @router.post("/f/{event_id}/{slug}/check")
@@ -660,6 +694,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
 
     values = dict(payload.get("values") or {})
     fields = design["fields"]
+    _restore_pledge_values(db, form, design, values, claims)
     # Campos «solo lectura cuando ya se conocen»: el valor sale de la base, nunca de lo que mande el navegador.
     person = formsvc.find_person(db, form, claims["p"]) if claims.get("p") else None
     if claims.get("p"):
