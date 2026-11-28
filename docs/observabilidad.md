@@ -12,7 +12,7 @@ Todo lo que permite saber **si la app está bien, qué está pasando y qué hace
 
 **En Cloud Run usar SIEMPRE `/health` y `/ready`.** Google reserva en Cloud Run las rutas que terminan en «z»: `/healthz` responde un 404
 del propio Google sin llegar a la app (docs.cloud.google.com/run/docs/known-issues). `/healthz` y `/readyz` siguen existiendo para la VM
-y por compatibilidad. **El día del cambio:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot deben apuntar a
+y por compatibilidad. **El día del cambio:** el chequeo de Google «Orum readyz» y el monitor de UptimeRobot deben apuntar a
 `https://app.golden-eventos.com/health` (no toca la base: Neon puede apagarse; `/ready` solo como sonda de arranque).
 | `GET /api/ops/status` y la pantalla **`/sistema`** («Estado del sistema», menú lateral, solo administradores) | personas | El semáforo completo, en español, con motivo y qué hacer. Se refresca solo cada 15 s. |
 | `GET /api/ops/deploy-allowed` | el despliegue y los administradores | **¿Se puede desplegar ahora?** `allowed: false` si hay un evento en curso o una apertura (evento o formulario) en las próximas N horas (`DEPLOY_FREEZE_HOURS`, 3 por defecto). Se puede llamar con sesión de administrador o con la cabecera `X-Ops-Token` (variable `OPS_TOKEN`). |

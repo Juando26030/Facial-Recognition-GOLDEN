@@ -1,7 +1,7 @@
 # El servidor local, explicado sencillo (para Juan David)
 
 ## Qué es
-Es una **copia de GoldenWeb que vive en un computador del evento**. Tu equipo (digitadores, coordinadores, el quiosco) se conecta a ese computador con el wifi del lugar y trabaja igual que siempre: registrar, escanear, imprimir escarapelas. Como todo está en ese computador, **si se cae el internet, el evento sigue funcionando**.
+Es una **copia de Orum que vive en un computador del evento**. Tu equipo (digitadores, coordinadores, el quiosco) se conecta a ese computador con el wifi del lugar y trabaja igual que siempre: registrar, escanear, imprimir escarapelas. Como todo está en ese computador, **si se cae el internet, el evento sigue funcionando**.
 
 Piénsalo como llevar la lista del evento en una carpeta física: aunque la oficina se quede sin luz, la carpeta está contigo. Solo que esta carpeta se actualiza sola cuando vuelve el internet.
 
@@ -13,7 +13,7 @@ Piénsalo como llevar la lista del evento en una carpeta física: aunque la ofic
 - **Sin reconocimiento facial.** En el servidor local se entra por cédula, código QR o búsqueda.
 
 ## Paso a paso
-1. En GoldenWeb, entra a **Configuración → Servidor local** y pulsa **Descargar instalador para Windows**. (Si dice «Aún no disponible», el instalador todavía no se ha publicado; ver «Lo que falta» más abajo.)
+1. En Orum, entra a **Configuración → Servidor local** y pulsa **Descargar instalador para Windows**. (Si dice «Aún no disponible», el instalador todavía no se ha publicado; ver «Lo que falta» más abajo.)
 2. En el computador del evento, con internet, abre el archivo con doble clic. Di «Sí» a los permisos y espera unos minutos. No hay que escribir comandos.
 3. Entra con **tu mismo usuario y contraseña** de siempre. Las cuentas se copian de internet; la contraseña solo se puede cambiar en internet.
 4. En la lista de eventos, elige el tuyo y pulsa **«Descargar a local»**. El evento baja completo (sin fotos de rostros).
@@ -33,7 +33,7 @@ Para que nunca existan dos versiones distintas del mismo evento, **un evento sol
 Cuando internet cambie de versión, el servidor local avisa con una franja visible. Hay un botón **«Actualizar ahora»**: guarda una copia, actualiza y arranca de nuevo; si algo sale mal, vuelve solo a como estaba. Nunca lo hagas en medio de un turno.
 
 ## Cómo publicar el instalador (lo hace un administrador)
-El botón de descarga aparece solo cuando el archivo del instalador está guardado en el almacenamiento de GoldenWeb. Hay que **construirlo** y **subirlo**; se repite cada vez que cambie la versión de producción. La misma guía, paso a paso, está en **Configuración → Servidor local → «Cómo publicar el instalador»** (solo la ven administradores).
+El botón de descarga aparece solo cuando el archivo del instalador está guardado en el almacenamiento de Orum. Hay que **construirlo** y **subirlo**; se repite cada vez que cambie la versión de producción. La misma guía, paso a paso, está en **Configuración → Servidor local → «Cómo publicar el instalador»** (solo la ven administradores).
 
 **Qué se necesita:** acceso al repositorio de GitHub (camino A) o un computador con Windows con internet (camino B); la herramienta de Google Cloud (`gcloud`) con tu cuenta de Golden; y el nombre del almacenamiento de la app (en `deploy/gcp/config.sh`: `APP_BUCKET` y `APP_PREFIX`; abajo `BUCKET` y `PREFIJO`).
 

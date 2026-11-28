@@ -1,4 +1,4 @@
-"""CRM de GoldenWeb (módulo dentro de este servicio; docs/crm/README.md). Pieza C1a: solo tablas, códigos consecutivos y registro de cambios; sin pantallas ni rutas todavía.
+"""CRM de Orum (módulo dentro de este servicio; docs/crm/README.md). Pieza C1a: solo tablas, códigos consecutivos y registro de cambios; sin pantallas ni rutas todavía.
 
 `CRM_ENABLED` (por defecto 0): con 0 no hay rutas del CRM y `create_tenant` sigue entregando el código hexadecimal de siempre (así queda el servidor local, que NO corre el CRM).
 Con 1 (solo en la nube, y solo DESPUÉS de fijar el contador con scripts/crm_set_counter.py): `create_tenant` entrega el siguiente número consecutivo.

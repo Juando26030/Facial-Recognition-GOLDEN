@@ -1,4 +1,4 @@
-# CRM de GoldenWeb — reglas del módulo
+# CRM de Orum — reglas del módulo
 
 El CRM es un **módulo de `golden-web`** (mismo repositorio, misma imagen, mismas migraciones de Alembic, mismo diseño). Decisiones: `docs/crm/` (este directorio) y, en el proyecto de Claude, los documentos 48 al 53.
 Estado: **C1a** (tablas, códigos consecutivos, registro de cambios). Sin pantallas ni rutas: eso es C1b. Importador de SuiteCRM: C1c.

@@ -1,4 +1,4 @@
-# Product Backlog — GoldenWeb 2.0
+# Product Backlog — Orum
 
 > Backlog en formato Scrum, construido sobre la clasificación FURPS+
 > (`02_CLASIFICACION_FURPS.md`) y el roadmap de fases (`REQUERIMIENTOS_ROADMAP.md`).
@@ -31,7 +31,7 @@
 
 ## Épico 1 — Núcleo de registro por cédula (Fase A · Must)
 
-**Objetivo:** GoldenWeb 2.0 puede operar el flujo de registro que hoy hace el
+**Objetivo:** Orum puede operar el flujo de registro que hoy hace el
 sistema viejo: cargar la base del evento y acreditar gente por cédula.
 
 ### Historia 1.1 — Cargar la base de datos del evento
@@ -188,6 +188,6 @@ de aclarar qué es), ruleta.
 2. **Sprint 2:** Historia 1.3 + 1.4 (búsqueda y duplicados) + arranque del
    Épico 2 (diseñador de escarapelas).
 3. **Sprint 3:** Cierre del Épico 2 + Épico 3 (modo touch) + Épico 4 (informe
-   final) → con esto GoldenWeb 2.0 ya reemplaza al sistema viejo en un
+   final) → con esto Orum ya reemplaza al sistema viejo en un
    evento real.
 4. A partir de ahí, Épicos 5-9 según lo que decidas de prioridad de negocio.

@@ -36,7 +36,7 @@ Cada requerimiento se clasifica con estas columnas:
 | **Origen** | Quién lo pidió, o "Legado" si es paridad del sistema viejo |
 
 **Prioridad MoSCoW** se define en el contexto de negocio, no en abstracto:
-*Must* = sin esto GoldenWeb 2.0 no reemplaza al sistema actual en un evento
+*Must* = sin esto Orum no reemplaza al sistema actual en un evento
 real; *Should* = mejora clara pedida por el equipo, no bloquea ir a producción;
 *Could* = valor agregado, entra si sobra capacidad; *Won't (por ahora)* =
 fuera del alcance hasta resolver una duda (legal, técnica, de negocio) o

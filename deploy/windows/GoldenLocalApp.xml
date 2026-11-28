@@ -1,7 +1,7 @@
 <service>
   <id>GoldenLocalApp</id>
   <name>Golden Local - Aplicación</name>
-  <description>Servidor local de GoldenWeb (registro y acceso sin internet).</description>
+  <description>Servidor local de Orum (registro y acceso sin internet).</description>
   <executable>powershell.exe</executable>
   <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\GoldenLocal\scripts\run-app.ps1"</arguments>
   <workingdirectory>C:\GoldenLocal\app</workingdirectory>

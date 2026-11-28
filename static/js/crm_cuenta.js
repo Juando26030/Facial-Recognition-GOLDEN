@@ -42,7 +42,7 @@
     fieldInputs().forEach((i) => { const v = a[i.name]; i.value = v == null ? "" : String(v); });
     $("crmTitle").textContent = a.name;
     $("crmEyebrow").textContent = "CRM · Cuenta " + a.code;
-    document.title = a.name + " | CRM | GoldenWeb 2.0";
+    document.title = a.name + " | CRM | Orum";
     const badges = $("crmBadges"); badges.replaceChildren();
     badges.appendChild(el("span", "gw-badge " + (a.status === "activo" ? "gw-badge--ok" : a.status === "masivo" ? "gw-badge--info" : "gw-badge--warn"), a.status));
     if (a.is_client) badges.appendChild(el("span", "gw-badge gw-badge--info", "Cliente de la plataforma"));

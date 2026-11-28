@@ -93,7 +93,7 @@ if [ -z "${FIREBASE_SITE_SITIO:-}" ]; then
 fi
 PUB="$WORK/publicar"; rm -rf "$PUB"; mkdir -p "$PUB"
 cp "$ROOT/deploy/sitio/firebase.json" "$PUB/firebase.json"; cp -r "$DIST" "$PUB/dist"
-# Formulario de cotización (22-nov-2026): /api/public/** del sitio llega al servicio público de GoldenWeb de ESTE proyecto (producción: golden-publico; staging: golden-publico-staging).
+# Formulario de cotización (22-nov-2026): /api/public/** del sitio llega al servicio público de Orum de ESTE proyecto (producción: golden-publico; staging: golden-publico-staging).
 SERVICIO_PUBLICO="${SERVICIO_PUBLICO:-golden-publico$([[ "$PROJECT_ID" == *staging* ]] && echo -staging || true)}"
 python3 - "$PUB/firebase.json" "$SERVICIO_PUBLICO" "${REGION:-us-east4}" <<'PY'
 import json, sys

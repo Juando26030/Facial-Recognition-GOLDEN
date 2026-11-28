@@ -1,4 +1,4 @@
-# Cómo contribuir a GoldenWeb 2.0
+# Cómo contribuir a Orum
 
 Guía corta para cualquier persona (o agente) que toque este repositorio. Las reglas técnicas del código viven en
 [`CLAUDE.md`](CLAUDE.md); las decisiones del dueño, en [`docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md`](docs/REGLAS_INAMOVIBLES_Y_DECISIONES.md).

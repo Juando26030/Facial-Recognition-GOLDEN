@@ -9,7 +9,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impresora USB | GoldenWeb 2.0</title>
+    <title>Impresora USB | Orum</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {# NO se usa la cabeza común de la base (la del tema oscuro) a propósito: el tema oscuro nunca llega a lo que se imprime (tests/test_design_system.py: test_the_dark_theme_never_reaches_what_is_printed).
        Se cargan las mismas piezas de la base SIN el script del tema oscuro: esta pantalla es siempre clara y no lleva interruptor de tema. #}
@@ -130,7 +130,7 @@
     ctx.font = "bold 64px sans-serif"; ctx.textBaseline = "top";
     ctx.fillText("PRUEBA QL-800", 70, 24);
     ctx.font = "44px sans-serif";
-    ctx.fillText("GoldenWeb 2.0", 70, 110);
+    ctx.fillText("Orum", 70, 110);
     ctx.fillText(new Date().toLocaleString("es-CO"), 70, 170);
     ctx.font = "bold 90px sans-serif";
     ctx.fillText("→  62 mm", 70, 240);

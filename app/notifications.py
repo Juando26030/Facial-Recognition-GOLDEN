@@ -46,9 +46,9 @@ def internal_url(url: Optional[str]) -> Optional[str]:
 
 
 def render_mail(title: str, body: str, url: str = "") -> dict:
-    link = f"\n\nAbrir en GoldenWeb: {url}" if url else ""
+    link = f"\n\nAbrir en Orum: {url}" if url else ""
     e = html.escape
-    page = f"<p><a href=\"{e(url)}\">Abrir en GoldenWeb</a></p>" if url else ""
+    page = f"<p><a href=\"{e(url)}\">Abrir en Orum</a></p>" if url else ""
     return {"subject": clean_subject(title), "text": f"{title}\n\n{body or ''}{link}".strip(),
             "html": f"<div style=\"font-family:Agrandir,Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#222;line-height:1.5\"><p><b>{e(title)}</b></p><p>{e(body or '')}</p>{page}</div>"}
 

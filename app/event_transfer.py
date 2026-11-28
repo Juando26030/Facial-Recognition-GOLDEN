@@ -377,7 +377,7 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
         if include_biometrics:
             _export_biometrics(db, event, ctx["people"], zf, manifest, passphrase)
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
-        zf.writestr("LEEME.txt", "Paquete de evento de GoldenWeb (docs/18_EXPORTAR_EVENTOS.md).\nContiene DATOS PERSONALES: guárdalo y envíalo con cuidado, bórralo al terminar.\n"
+        zf.writestr("LEEME.txt", "Paquete de evento de Orum (docs/18_EXPORTAR_EVENTOS.md).\nContiene DATOS PERSONALES: guárdalo y envíalo con cuidado, bórralo al terminar.\n"
                                  "Se importa desde «Importar evento» (solo super_admin); siempre crea un evento NUEVO.\n")
     data = buf.getvalue()
     counts = {k: v["count"] for k, v in manifest["tables"].items()}
@@ -429,7 +429,7 @@ def read_package(data: bytes) -> tuple:
     except (ValueError, UnicodeDecodeError):
         raise TransferError("El manifest.json del paquete está dañado.")
     if manifest.get("format") != FORMAT:
-        raise TransferError("El archivo no es un paquete de evento de GoldenWeb.")
+        raise TransferError("El archivo no es un paquete de evento de Orum.")
     if int(manifest.get("format_version", 0)) > FORMAT_VERSION:
         raise TransferError(f"El paquete usa una versión de formato más nueva ({manifest.get('format_version')}) que la de este sistema ({FORMAT_VERSION}): actualiza el destino y vuelve a intentar.")
     known = _known_revisions()

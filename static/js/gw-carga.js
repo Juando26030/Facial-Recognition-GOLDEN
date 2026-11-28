@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 — Carga visible en TODA la plataforma (9-nov-2026, orden de Juan David: «en ningún botón o acción se pueda pensar que no funcionó»). Guía: docs/ux/CARGAS_Y_ESQUELETOS.md.
+/* Orum — Carga visible en TODA la plataforma (9-nov-2026, orden de Juan David: «en ningún botón o acción se pueda pensar que no funcionó»). Guía: docs/ux/CARGAS_Y_ESQUELETOS.md.
    Se carga SIN defer y de primero en _gw_head.html (así envuelve fetch antes de que la pantalla pida sus datos). Sin dependencias. Tres piezas:
    1) Botón ocupado automático: toda petición (fetch o XMLHttpRequest) que arranca hasta 1 s después de pulsar un botón (`button`, `.gw-btn`, `[role=button]`, `input[type=submit|button]`,
       `a[data-gw-action]`) o de enviar un formulario marca ESE botón con aria-busy="true" (la rueda sale de design-system.css) hasta que terminan TODAS sus peticiones (contador por botón),

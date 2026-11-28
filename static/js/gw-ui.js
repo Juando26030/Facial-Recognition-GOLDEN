@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 — comportamiento de la base visual (static/css/design-system.css). Sin dependencias, sin red: sirve igual en el quiosco sin conexión.
+/* Orum — comportamiento de la base visual (static/css/design-system.css). Sin dependencias, sin red: sirve igual en el quiosco sin conexión.
    Todo por DELEGACIÓN de eventos sobre `document` (sirve para HTML generado después) y por atributos `data-gw-*`; no muta el subárbol del elemento que recibe el evento.
    - Tema:       [data-gw-theme-toggle]  claro <-> oscuro POR DISPOSITIVO (localStorage 'gw_theme', con try/catch). La clase del <html> la pone antes de pintar templates/_gw_head.html.
    - Menú:       [data-gw-nav-toggle] dentro de .gw-nav (celular).

@@ -1,4 +1,4 @@
-# Estándares visuales de GoldenWeb 2.0 (la regla única)
+# Estándares visuales de Orum (la regla única)
 
 **Cuándo manda:** toda pantalla, componente, correo o texto visible que se cree o se toque. Si algo visual no está aquí, se decide una vez, se agrega aquí y recién después se usa.
 **Fuentes de verdad (no se duplican):**

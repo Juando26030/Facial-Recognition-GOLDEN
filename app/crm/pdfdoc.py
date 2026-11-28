@@ -113,7 +113,7 @@ class Doc:
             objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
         objs[1] = b"<< /Type /Pages /Kids [" + b" ".join(kids) + b"] /Count %d >>" % n
         info_id = len(objs) + 1
-        objs.append(b"<< /Title (" + _esc(self.title) + b") /Producer (GoldenWeb) >>")
+        objs.append(b"<< /Title (" + _esc(self.title) + b") /Producer (Orum) >>")
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
         for i, body in enumerate(objs, start=1):

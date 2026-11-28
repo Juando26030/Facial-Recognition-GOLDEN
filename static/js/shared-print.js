@@ -735,7 +735,7 @@
     try { const r = await BadgeRender.fetchTemplate(EID); if (r.ok) previewTemplate = await r.json(); } catch (e) { /* sin red: la última que se tuvo */ }
     return previewTemplate;
   }
-  const SAMPLE = { id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0', role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', extra_fields: {}, has_photo: false };
+  const SAMPLE = { id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'Orum', role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', extra_fields: {}, has_photo: false };
 
   function showPrefs() {
     const old = document.getElementById('spPrefsPanel');

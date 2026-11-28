@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 · Fase 1.5 · Eventos, Calendario y la ventana «Editar evento».
+/* Orum · Fase 1.5 · Eventos, Calendario y la ventana «Editar evento».
    Solo tokens --gw-* (sin colores sueltos). Lo reusa la ventana compartida (templates/_event_edit_modal.html), que también se incluye en /clientes, una pantalla que todavía
    no usa gw-page: por eso todo lo de la ventana cuelga de .ee-modal y fija su propio box-sizing y márgenes. */
 

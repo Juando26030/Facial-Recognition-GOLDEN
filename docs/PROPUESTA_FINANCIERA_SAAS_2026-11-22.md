@@ -1,4 +1,4 @@
-# Propuesta financiera del SaaS de GoldenWeb 2.0 (borrador para revisión de Juan David · 22-nov-2026)
+# Propuesta financiera del SaaS de Orum (borrador para revisión de Juan David · 22-nov-2026)
 
 **Estado: PROPUESTA, no decisión.** Es la propuesta del reporte 07 de la revisión integral (`docs/revision_2026-11-22/07_saas_prospectos_finanzas_planes.md`), reunida en un solo documento para que Juan David la revise, cambie lo que quiera y diga qué queda. Nada de esto está cargado en la aplicación: los planes y límites se configuran en «Empresas (SaaS)» (`/plataforma`) cuando se decidan.
 

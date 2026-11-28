@@ -1,6 +1,6 @@
 # `docs/` — índice de entrada (22-nov-2026)
 
-Documentación técnica de GoldenWeb 2.0. Este archivo es **la puerta**: dice qué leer según lo que necesites y propone el orden en que `docs/` debería
+Documentación técnica de Orum. Este archivo es **la puerta**: dice qué leer según lo que necesites y propone el orden en que `docs/` debería
 quedar organizado. El índice exhaustivo por documento (con la explicación de los números repetidos) sigue en [`INDEX.md`](INDEX.md) hasta que se funda aquí.
 Si un documento no coincide con el código, manda el código y `CLAUDE.md`.
 

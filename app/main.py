@@ -132,7 +132,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="GoldenWeb 2.0",
+    title="Orum",
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",

@@ -145,9 +145,9 @@ def import_package(template: CrmDocTemplate, raw: bytes) -> dict:
     try:
         pkg = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        raise CrmError("El archivo no es una plantilla exportada desde GoldenWeb.")
+        raise CrmError("El archivo no es una plantilla exportada desde Orum.")
     if not isinstance(pkg, dict) or pkg.get("formato") != "golden-plantilla-pdf" or not isinstance(pkg.get("layout"), dict):
-        raise CrmError("El archivo no es una plantilla exportada desde GoldenWeb.")
+        raise CrmError("El archivo no es una plantilla exportada desde Orum.")
     files = pkg.get("archivos") if isinstance(pkg.get("archivos"), dict) else {}
     layout = pkg["layout"]
     done: Dict[str, str] = {}

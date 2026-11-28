@@ -1,6 +1,6 @@
 # Reglas inamovibles, decisiones tomadas y forma de trabajar (consolidado al 22-nov-2026)
 
-Este documento junta en UN solo lugar todo lo que Juan David ha decidido sobre la plataforma GoldenWeb 2.0, el sitio web
+Este documento junta en UN solo lugar todo lo que Juan David ha decidido sobre la plataforma Orum, el sitio web
 corporativo y la manera en que se trabaja con Claude. **Manda sobre cualquier hábito, plantilla o costumbre.** Si un
 documento más viejo dice otra cosa, vale este. Si este no cubre un caso, se decide, se documenta el porqué y se sigue
 (salvo que Juan David haya pedido que se le pregunte).

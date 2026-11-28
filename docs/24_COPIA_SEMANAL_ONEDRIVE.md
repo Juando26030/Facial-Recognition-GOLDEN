@@ -14,7 +14,7 @@
 ## Paso 1 — Registrar la aplicación en Microsoft Entra
 1. Entra a https://entra.microsoft.com con tu cuenta de administrador.
 2. **Identidad → Aplicaciones → Registros de aplicaciones → Nuevo registro.**
-3. Nombre: `GoldenWeb copia semanal`. Tipos de cuenta: **solo este directorio**. URI de redirección: déjalo vacío. **Registrar.**
+3. Nombre: `Orum copia semanal`. Tipos de cuenta: **solo este directorio**. URI de redirección: déjalo vacío. **Registrar.**
 4. En la pantalla que aparece copia dos datos (no son secretos, pero guárdalos): **Id. de aplicación (cliente)** y **Id. de directorio (inquilino)**. Son `ONEDRIVE_CLIENT_ID` y `ONEDRIVE_TENANT_ID`.
 
 ## Paso 2 — Permisos mínimos (importante)

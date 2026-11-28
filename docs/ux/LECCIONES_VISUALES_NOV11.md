@@ -1,4 +1,4 @@
-# Lecciones visuales (11-nov-2026) — cómo se hace lo visual en GoldenWeb 2.0
+# Lecciones visuales (11-nov-2026) — cómo se hace lo visual en Orum
 
 Complementa `ESTANDARES_VISUALES.md` (las 12 reglas de oro y los tokens, que siguen mandando). Esto es lo aprendido al arreglar «se descuadran los botones y el texto» con la ventana un poco más chica.
 

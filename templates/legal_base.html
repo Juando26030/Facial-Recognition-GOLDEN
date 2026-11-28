@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {# SEO (22-nov-2026): las páginas legales SÍ se indexan. El título lleva el nombre en mayúsculas y minúsculas normales (solo aquí; el texto legal del cuerpo no cambia). #}
     <title>{{ page_title }} | {{ (company_name|title) if company_name == company_name|upper else company_name }}</title>
-    <meta name="description" content="{{ page_description or (page_title ~ ' de ' ~ company_name ~ ' para la plataforma GoldenWeb 2.0.') }}">
+    <meta name="description" content="{{ page_description or (page_title ~ ' de ' ~ company_name ~ ' para la plataforma Orum.') }}">
     {% set _base = public_base_url(request.base_url|string) %}{% if _base %}<link rel="canonical" href="{{ _base }}{{ canonical_path or request.url.path }}">{% endif %}
     <style>
         body { font-family: Arial, Helvetica, sans-serif; color: #1d1d1f; background: #f4f5f9; margin: 0; line-height: 1.65; }

@@ -15,7 +15,7 @@ No pegues secretos en este documento ni en el chat: los pide el script a ciegas 
 
 | # | Qué | Decisión / cómo obtenerlo | Ejemplo / valor esperado |
 |---|---|---|---|
-| 0.1 | **ID del proyecto de GCP de producción** | `deploy/gcp/config.sh` **no fija ningún ID**: lo lee de `gcloud config get-value project` (nunca se escribe a mano). Lo que sí deriva de él: los buckets `<ID>-golden-app-us-east4` y `<ID>-golden-backups-us-east4` (nombre total ≤ 63 caracteres), el número de proyecto (para las URL de Cloud Run) y el sitio de Firebase `golden-app-<número>`. Recomendado: **`goldenweb-prod`** (como `goldenweb-staging`); 6-30 caracteres, minúsculas, dígitos y guiones. Lo creas tú (paso 1b) en la cuenta de facturación **Golden Logistics – GoldenWeb**. | `goldenweb-prod` (o el que elijas: ____________) |
+| 0.1 | **ID del proyecto de GCP de producción** | `deploy/gcp/config.sh` **no fija ningún ID**: lo lee de `gcloud config get-value project` (nunca se escribe a mano). Lo que sí deriva de él: los buckets `<ID>-golden-app-us-east4` y `<ID>-golden-backups-us-east4` (nombre total ≤ 63 caracteres), el número de proyecto (para las URL de Cloud Run) y el sitio de Firebase `golden-app-<número>`. Recomendado: **`goldenweb-prod`** (como `goldenweb-staging`); 6-30 caracteres, minúsculas, dígitos y guiones. Lo creas tú (paso 1b) en la cuenta de facturación **Golden Logistics – Orum**. | `goldenweb-prod` (o el que elijas: ____________) |
 | 0.2 | **Región** | Decidida: **us-east4** (junto a Neon en AWS us-east-1). | `us-east4` |
 | 0.3 | **Dominio** | `app.golden-eventos.com`, DNS en Cloudflare (**solo DNS, nube gris**). El sitio de Firebase se llama `golden-app-<número del proyecto>` (lo calcula `config.sh`). | |
 | 0.4 | **Base de datos Neon** | Cuenta de Neon **a nombre de la empresa**, plan **Launch**, **AWS us-east-1**, historial de restauración de **1 día**. Recomendado: un **proyecto NUEVO y vacío** `golden-production` (una *rama* de staging heredaría sus datos de prueba y los de la carga). Necesitas la cadena **directa** (host **sin** `-pooler`) del rol dueño. | `postgresql://…@ep-…us-east-1.aws.neon.tech/…` (la pegas a ciegas en el paso 3) |
@@ -48,8 +48,8 @@ No pegues secretos en este documento ni en el chat: los pide el script a ciegas 
 
 *Dónde:* Cloud Shell (o la consola: IAM y administración → Crear proyecto).
 ```bash
-gcloud projects create goldenweb-prod --name="GoldenWeb"          # el ID (goldenweb-prod) es el que usarás en todo; el nombre puede ser el que quieras
-gcloud billing accounts list                                       # copia el ID de «Golden Logistics – GoldenWeb» (formato XXXXXX-XXXXXX-XXXXXX)
+gcloud projects create goldenweb-prod --name="Orum"          # el ID (goldenweb-prod) es el que usarás en todo; el nombre puede ser el que quieras
+gcloud billing accounts list                                       # copia el ID de «Golden Logistics – Orum» (formato XXXXXX-XXXXXX-XXXXXX)
 gcloud billing projects link goldenweb-prod --billing-account <ID de la cuenta de facturación>
 gcloud config set project goldenweb-prod && gcloud config set run/region us-east4
 gcloud projects describe goldenweb-prod --format='value(projectNumber,lifecycleState)'

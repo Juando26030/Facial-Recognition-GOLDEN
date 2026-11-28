@@ -13,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuración | GoldenWeb 2.0</title>
+    <title>Configuración | Orum</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
@@ -169,7 +169,7 @@
             <details class="gw-form-group">
               <summary class="gw-form-group__summary">Avanzado (solo técnicos): pasos y comandos para publicar el instalador</summary>
               <div class="gw-form-group__body">
-                <p>El botón de descarga aparece cuando el archivo del instalador está guardado en el almacenamiento de GoldenWeb. Hay que <strong>construirlo una vez</strong> y <strong>subirlo</strong>. Se repite cada vez que cambie la versión de producción.</p>
+                <p>El botón de descarga aparece cuando el archivo del instalador está guardado en el almacenamiento de Orum. Hay que <strong>construirlo una vez</strong> y <strong>subirlo</strong>. Se repite cada vez que cambie la versión de producción.</p>
                 <h5 class="gw-label">Qué se necesita</h5>
                 <ul class="gw-list">
                   <li>Acceso al repositorio de GitHub (para el camino A) o un computador con Windows 10/11 con internet (camino B).</li>
@@ -207,7 +207,7 @@ gsutil cp GoldenLocal-Setup-2026.11.10.exe gs://BUCKET/PREFIJO/system/local-inst
           <div class="gw-group__item" data-pnodirty>
             <div class="gw-item-head"><h4>Cómo funciona, en pocas palabras</h4></div>
             <div class="gw-stack">
-              <div class="gw-field"><h5 class="gw-label">¿Qué es?</h5><div>Una copia de GoldenWeb que vive en un computador del evento. El personal se conecta a ese computador con el wifi del lugar y trabaja como siempre, sin necesitar internet.</div></div>
+              <div class="gw-field"><h5 class="gw-label">¿Qué es?</h5><div>Una copia de Orum que vive en un computador del evento. El personal se conecta a ese computador con el wifi del lugar y trabaja como siempre, sin necesitar internet.</div></div>
               <div class="gw-field"><h5 class="gw-label">¿Qué necesito?</h5><div>Un computador con Windows 10 u 11, 8 GB de memoria, un router o wifi propio para que los demás equipos se conecten, y internet <em>solo al principio</em> (para instalar y bajar el evento).</div></div>
               <div class="gw-field"><h5 class="gw-label">¿Cómo se usa?</h5><div>
                 <ol class="gw-list">

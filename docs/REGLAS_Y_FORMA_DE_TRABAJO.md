@@ -1,6 +1,6 @@
 # Reglas de Juan David y forma de trabajar con él
 
-Juan David es el dueño de GoldenWeb 2.0 / Golden Eventos y Logística S.A.S. No es técnico. Vive en Bogotá (UTC-5), habla español. Estas reglas las puso él (muchas, después de un tropiezo real) y mandan sobre cualquier hábito.
+Juan David es el dueño de Orum / Golden Eventos y Logística S.A.S. No es técnico. Vive en Bogotá (UTC-5), habla español. Estas reglas las puso él (muchas, después de un tropiezo real) y mandan sobre cualquier hábito.
 
 ## 1. Formato de cada respuesta («LLM Council»)
 En todas las conversaciones, proyectos y sesiones de código, responder así (preferencia guardada en su perfil):

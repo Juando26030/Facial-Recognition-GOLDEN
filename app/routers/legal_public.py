@@ -17,9 +17,9 @@ CORPORATE_SITEMAP = "https://golden-eventos.com/sitemap.xml"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n" + "".join(f"Allow: {p}$\n" for p in INDEXABLE_PATHS) + f"\nSitemap: {CORPORATE_SITEMAP}\n"
 # Descripción breve de cada página para los buscadores (no es texto legal: resume de qué trata la página).
 DESCRIPTIONS = {
-    "privacidad": "Cómo Golden Eventos y Logística S.A.S. trata los datos personales en GoldenWeb 2.0: qué datos se recogen, para qué, por cuánto tiempo y cómo ejercer sus derechos (Ley 1581 de 2012).",
-    "terminos": "Términos y condiciones de uso de GoldenWeb 2.0, la plataforma de inscripciones y control de acceso a eventos de Golden Eventos y Logística S.A.S.",
-    "reembolsos": "Política de reembolsos y devoluciones de los pagos de inscripciones a eventos hechos en GoldenWeb 2.0, de Golden Eventos y Logística S.A.S.",
+    "privacidad": "Cómo Golden Eventos y Logística S.A.S. trata los datos personales en Orum: qué datos se recogen, para qué, por cuánto tiempo y cómo ejercer sus derechos (Ley 1581 de 2012).",
+    "terminos": "Términos y condiciones de uso de Orum, la plataforma de inscripciones y control de acceso a eventos de Golden Eventos y Logística S.A.S.",
+    "reembolsos": "Política de reembolsos y devoluciones de los pagos de inscripciones a eventos hechos en Orum, de Golden Eventos y Logística S.A.S.",
 }
 
 

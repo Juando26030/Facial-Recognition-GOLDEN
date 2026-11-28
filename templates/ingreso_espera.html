@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex,nofollow">
-    <title>Esperando autorización | GoldenWeb 2.0</title>
+    <title>Esperando autorización | Orum</title>
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/p-acceso.css') }}">
     <script src="{{ url_for('static', path='js/ingreso-espera.js') }}" defer></script>
@@ -21,8 +21,10 @@
     <main class="login__main">
         <div class="gw-card gw-card--raised login__card gw-stack" id="ingresoEspera" data-poll-seconds="{{ poll_seconds }}" data-ttl-seconds="{{ ttl_seconds }}">
             <div class="login__brand">
-                <img class="login__logo" src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Eventos y Logística" width="96" height="96">
-                <h1 class="gw-title">GoldenWeb <span>2.0</span></h1>
+                <div class="gw-orum">
+                <h1 class="gw-orum__title"><img class="gw-orum__logo gw-orum__logo--oscuro" src="{{ url_for('static', path='img/orum-logo.svg') }}" alt="Orum" width="168" height="60"><img class="gw-orum__logo gw-orum__logo--claro" src="{{ url_for('static', path='img/orum-logo-claro.svg') }}" alt="" width="168" height="60"></h1>
+                <p class="gw-orum__by">by Golden Eventos y Logística</p>
+            </div>
             </div>
             <h2 class="gw-subtitle">Ingreso en espera</h2>
             <div class="gw-alert gw-alert--warn" id="ingresoAviso" role="status" aria-live="polite">

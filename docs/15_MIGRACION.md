@@ -194,7 +194,7 @@ falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HAN
   responde» y crea los nuevos). A mano, en Cloud Shell:
   `gcloud monitoring uptime list-configs --filter='displayName="golden-healthz-staging"' --format='value(name)'` →
   `gcloud monitoring uptime delete <ID del final>`, y `gcloud monitoring policies list --filter='displayName="Golden staging: /healthz no responde"' --format='value(name)'`
-  → `gcloud monitoring policies delete <nombre>`; después correr el bootstrap para crear los nuevos. El día del cambio: «GoldenWeb readyz»
+  → `gcloud monitoring policies delete <nombre>`; después correr el bootstrap para crear los nuevos. El día del cambio: «Orum readyz»
   y UptimeRobot a `https://app.golden-eventos.com/health`
 
 - [x] S2. **Página sin estilos en `*.web.app`.** El HTML pedía el CSS como `http://golden-web-staging-…a.run.app/static/css/style.css?v=…`:
@@ -608,7 +608,7 @@ ACTUALES de la VM en Secret Manager), autorización explícita de Juan David par
    `x_forwarded_for` = `[tu IP real, una IP de Google]` (`hops: 2`, `google_infra: [false, true]`), `chosen_ip` = tu IP real, y la falsa DESCARTADA. **Si aparece cualquier otra entrada** (una tercera, una IP de Cloudflare 104.x/172.64.x/
    162.158.x, etc.) NO sigas: significa que el proxy de Cloudflare quedó encendido o hay un salto que no se esperaba; corrige el DNS (nube gris) y repite.
 6. **Encender lo programado:** reanudar `golden-ops-hourly` (`gcloud scheduler jobs resume golden-ops-hourly --location "$REGION"`) y correr UNA vez `backup-daily` (comando de D.1) y `check-backups`.
-7. **Monitores → `/health`:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot pasan a `https://app.golden-eventos.com/health` (NO `/healthz`: en Cloud Run da 404 de Google; y no `/ready`:
+7. **Monitores → `/health`:** el chequeo de Google «Orum readyz» y el monitor de UptimeRobot pasan a `https://app.golden-eventos.com/health` (NO `/healthz`: en Cloud Run da 404 de Google; y no `/ready`:
    toca la base y Neon no se apagaría). `bootstrap.sh production` ya crea `golden-health-production`; borrar el chequeo viejo.
 8. **Verificación:** iniciar sesión; kiosco por cédula y por rostro (con el flujo de verificación); un formulario público de prueba y su correo; `__session` con `Secure`; pago de prueba de Wompi (mismo
    webhook: la URL no cambia); `/sistema` en verde (respaldo «hace 0 h»); `gcloud run jobs execute golden-ops --region "$REGION" --wait` sin errores.
@@ -689,7 +689,7 @@ Neon suspende la base a los 5 min sin consultas y las pantallas dejan de consult
 | `check-backups` (no es un monitor: es un paso del Job `golden-ops`) | dentro del Job horario | respaldos horarios < 2 h, diarios < 26 h, tamaño no sospechoso | cada hora al minuto 05 (Bogotá), lo dispara `golden-ops-hourly` | respaldos al día | correo a `ALERT_EMAIL` (máx. 1 cada 6 h por problema) |
 
 *Qué dispara los Jobs:* una sola tarea de Cloud Scheduler, `golden-ops-hourly` (`5 * * * *`, `America/Bogota`), que ejecuta `golden-ops` → `app.ops_runner hourly` (respaldo horario; a las 3 el diario; a las 4 la purga biométrica; revisión de respaldos; cola pendiente; precalentamiento). Los Jobs de migraciones y carga masiva los lanzan el despliegue y la app, no el Scheduler.
-*El monitor HTTP debe apuntar a `/health`, NO a `/ready`.* **Confirmado que `/health` no toca la base:** es `async def healthz()` que devuelve `{"status":"ok"}`, no abre sesión ni conexión, y el middleware de logs la salta; `tests/test_health_no_db.py` cuenta las sentencias SQL y las conexiones del pool durante `GET /health` y `/healthz` (cero) y comprueba que `/ready` sí consulta (a propósito: es la sonda de arranque, y mantendría despierto el cómputo de Neon). Los monitores viejos «GoldenWeb readyz» (Google) o de UptimeRobot hacia `/ready` o `/readyz` deben borrarse o moverse a `/health`.
+*El monitor HTTP debe apuntar a `/health`, NO a `/ready`.* **Confirmado que `/health` no toca la base:** es `async def healthz()` que devuelve `{"status":"ok"}`, no abre sesión ni conexión, y el middleware de logs la salta; `tests/test_health_no_db.py` cuenta las sentencias SQL y las conexiones del pool durante `GET /health` y `/healthz` (cero) y comprueba que `/ready` sí consulta (a propósito: es la sonda de arranque, y mantendría despierto el cómputo de Neon). Los monitores viejos «Orum readyz» (Google) o de UptimeRobot hacia `/ready` o `/readyz` deben borrarse o moverse a `/health`.
 
 **D2.5h · Recarga sin red: diagnóstico y arreglo (2026-10-05).** *Medido por J en staging sin red:* con 4 personas la lista local tarda ~1 min; con 5, pantalla en blanco ~13 s y luego «Cargando base de datos…» hasta ~34 s. Los tiempos varían de una corrida a otra (~1 min, ~34 s): es lo que tarda el navegador en rendirse con una petición colgada, no un plazo del sistema.
 *Instrumentación* (`static/js/boot-trace.js`, marcas en contingencia y directorio, registro del service worker; `?trace=1` imprime en consola; informe: `copy(JSON.stringify(await GoldenTrace.report(), null, 1))`; `tests/js/boot_trace_check.js`).

@@ -1,4 +1,4 @@
-# Registro de cambios — GoldenWeb 2.0
+# Registro de cambios — Orum (antes GoldenWeb 2.0)
 
 Qué cambió, cuándo y para quién, en orden del más reciente al más viejo. Formato libre inspirado en «Keep a Changelog»: una sección por
 despliegue o por bloque entregado, con la migración de Alembic que trae y el documento donde está el detalle. **Este archivo se escribe al
@@ -7,6 +7,11 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 `docs/ESTADO_2026-11-11.md`, `docs/FASE_10_AJUSTES_NOV10.md`, `docs/25_INVENTARIO_POR_BASE.md`, `docs/23_EVENTO_COMPARTIDO_NUBE.md` y el historial de git.
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
+
+## 2026-11-28 — La plataforma pasa a llamarse **Orum** (by Golden Eventos y Logística)
+- Nuevo nombre de producto: **Orum** (Or de Oro + um de Forum), pensado para venderse como SaaS. Reemplaza «GoldenWeb 2.0» en títulos de pantalla, correos, alertas, PDF, textos de ayuda, README y guías. Lo HISTÓRICO (este registro, `docs/historial.md`, notas de versiones pasadas, textos de la auditora) conserva el nombre de su época.
+- Logo propio (aro azul marino con punto dorado + «rum», generado con Higgsfield): `static/img/orum-logo.svg`/`-claro.svg`/`orum-mark.svg` (+ PNG); favicon y ícono de celular nuevos. Login, cambio de contraseña e ingreso en espera muestran el logo y «by Golden Eventos y Logística» (`.gw-orum` en `design-system.css`, con versión para tema oscuro). El logo de Golden sigue en el encabezado de las pantallas internas, en escarapelas, certificados y documentos (es el de la empresa/evento).
+- NO cambia (a propósito): dominios, nombres de proyectos y servicios en la nube (`goldenweb-prod`, `golden-web`…), la carpeta de respaldos «Respaldos GoldenWeb» en SharePoint, el repo. Identidad completa: `docs/ux/MARCA_ORUM.md`.
 
 ## 2026-11-27 (noche, 2) — Digitadores: una cuenta por cédula, en cualquier cliente y evento
 - **Regla (Juan David):** un digitador temporal puede estar en cualquier evento de cualquier cliente. Si la cédula ya tiene cuenta de digitador, se carga su información y simplemente se **asigna** al evento; nunca se duplica ni se le cambia el cliente. Vale por las cuatro vías: enlace del compromiso, «Crear y asignar» a mano (antes daba «Ya existe una cuenta»), «Asignar cuentas ya existentes» y el Excel (antes solo un admin podía asignar cuentas de otro cliente). Un digitador desactivado solo lo reactiva un admin; otro tipo de cuenta (admin, coordinador…) o archivada no se asigna.

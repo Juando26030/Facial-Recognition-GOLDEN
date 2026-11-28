@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 — «Trabajando…» en cualquier botón que dispara una petición (Fase 1.5, regla R2).
+/* Orum — «Trabajando…» en cualquier botón que dispara una petición (Fase 1.5, regla R2).
    GW.busy(boton, trabajo[, { slowMs, slowText }]) → promesa con lo que devuelva `trabajo` (una función que devuelve promesa, o una promesa).
    - Mientras trabaja: aria-busy="true" (la rueda girando sale de design-system.css: `.gw-btn[aria-busy="true"]::before`) y el botón no admite un segundo clic (devuelve la misma promesa).
    - Si pasa de `slowMs` (8 s): el texto del botón (si es solo texto) pasa a «Sigue trabajando…» y vuelve al terminar.

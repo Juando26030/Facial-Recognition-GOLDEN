@@ -16,7 +16,7 @@ Archivo recibido: `goldenlo_crmgolden.csv`, 390 MB. **No es una exportación por
 | aos_products | 668 (366) | `crm_products` |
 | calls / meetings / tasks | 16.891 / 3.019 / 2.975 | `crm_activities` |
 | *_audit (historial) | 278.886 | `crm_change_log` (solo cuentas y contactos) |
-| users | 59 | se emparejan con el personal de GoldenWeb |
+| users | 59 | se emparejan con el personal de Orum |
 
 No vienen: **notas** (no hay tabla), **archivos** adjuntos (524 documentos: solo el nombre; los archivos no están en el volcado).
 

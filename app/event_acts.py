@@ -147,7 +147,7 @@ def render_pdf(event, act, coordinator_png: Optional[bytes], client_png: Optiona
     small = ParagraphStyle("small", parent=body, fontSize=9, leading=12, textColor=colors.HexColor("#555555"))
     title = ParagraphStyle("title", parent=base["Title"], fontName="Helvetica-Bold", fontSize=18, alignment=TA_LEFT)
     out = io.BytesIO()
-    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title=act.title, author=company or "GoldenWeb")
+    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title=act.title, author=company or "Orum")
     flow = [Paragraph(esc(act.title), title), Paragraph("Acta de novedades" + (" - " + esc(company) if company else ""), small), Spacer(1, 4 * mm),
             Paragraph(f"<b>Evento:</b> {esc(event.name)} &nbsp; <b>Código:</b> {esc(str(event.event_code or ''))}<br/><b>Fecha del acta:</b> {esc(_fmt(act.created_at))} &nbsp; <b>Estado:</b> {esc(STATUS_LABEL[status_of(act)])}", body),
             Spacer(1, 6 * mm)]

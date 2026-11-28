@@ -1,4 +1,4 @@
-# 26 · Análisis de flujo y UX — GoldenWeb 2.0 (16 oct 2026)
+# 26 · Análisis de flujo y UX — Orum (16 oct 2026)
 
 > Revisión visual entregada por Juan David el 17 de octubre de 2026 (copia literal). El contraste con el código y lo que se hizo están en `docs/ux/ANALISIS_FLUJO_Y_UX.md`; el plan, en `docs/ux/PLAN_FASE1_UX.md`.
 

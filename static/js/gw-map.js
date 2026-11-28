@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 — Dirección con mapa (OpenStreetMap). Widget del tipo de campo `address_map` de la plantilla de evento.
+/* Orum — Dirección con mapa (OpenStreetMap). Widget del tipo de campo `address_map` de la plantilla de evento.
    Valor: {text, lat, lng} (igual que lo valida app/event_template.py; al leer se acepta también `texto`). Se engancha al contenedor
    `[data-evf-enhance="map"]` de static/js/event-field-render.js, que ya trae el campo de texto (data-evf-part="text") y los ocultos lat/lng.
    API:  GWMap.enhance(el, opts)  ·  GWMap.parse(value)  ·  GWMap.serialize(state)  ·  GWMap.displayText(value)

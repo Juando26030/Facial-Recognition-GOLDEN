@@ -2069,7 +2069,7 @@ class MassDeleteLog(Base):
     event_id = Column(Integer, nullable=True)
 
 
-# ------------------------------------------------------------------------------------------------ CRM (módulo de GoldenWeb; docs/crm/, migración 0130)
+# ------------------------------------------------------------------------------------------------ CRM (módulo de Orum; docs/crm/, migración 0130)
 class CrmCounter(Base):
     """Contadores de los códigos consecutivos del CRM (`name`: account | event). `value` es el último número entregado; `ready` es falso hasta que alguien fije el número inicial
     (scripts/crm_set_counter.py) y mientras tanto app/crm/codes.next_code se niega a entregar números."""

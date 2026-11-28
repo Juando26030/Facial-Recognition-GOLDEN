@@ -68,7 +68,7 @@ bash deploy/sitio/deploy_sitio.sh goldenweb-prod
 ### Paso 4 · Conectar golden-eventos.com y www (en el navegador)
 **Antes de tocar nada**, en Cloudflare → `golden-eventos.com` → DNS → Records: tome una captura de pantalla de TODOS los registros actuales (es su «deshacer»). **No toque** el registro `app`, ni los `MX`, ni los `TXT` de correo (`v=spf1…`, `_dmarc`, DKIM).
 
-1. **Firebase:** console.firebase.google.com → proyecto GoldenWeb → Hosting → sitio `golden-sitio-…` → **Agregar dominio personalizado** → escriba `golden-eventos.com` → (sin marcar redirección) → Continuar. Firebase muestra los registros exactos. Normalmente son:
+1. **Firebase:** console.firebase.google.com → proyecto Orum → Hosting → sitio `golden-sitio-…` → **Agregar dominio personalizado** → escriba `golden-eventos.com` → (sin marcar redirección) → Continuar. Firebase muestra los registros exactos. Normalmente son:
 
    | Tipo | Nombre | Valor (use SIEMPRE el que muestre Firebase) |
    |---|---|---|

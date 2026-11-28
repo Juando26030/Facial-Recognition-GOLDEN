@@ -1,4 +1,4 @@
-/* GoldenWeb 2.0 — Lista desplegable con buscador (.gw-combobox). Reutilizable: cliente, país, ciudad, etc.
+/* Orum — Lista desplegable con buscador (.gw-combobox). Reutilizable: cliente, país, ciudad, etc.
    Dos partes: (1) lógica PURA (normalizar, filtrar, mover la selección, resolver el texto) que se prueba con node
    (tests/js/gw_combobox_check.js) y (2) la parte de pantalla (teclado, aria, celular), que solo corre en el navegador.
 

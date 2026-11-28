@@ -218,7 +218,7 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
         token = security.create_reset_token(db, staff.id)
         base = publicurl.base(str(request.base_url))
         send_mail(
-            staff.email, "Restablecer tu contraseña — GoldenWeb 2.0",
+            staff.email, "Restablecer tu contraseña — Orum",
             f"Hola {staff.full_name or staff.username}, recibimos una solicitud para elegir una contraseña nueva.\n\n"
             f"Abre este enlace (vale 60 minutos y solo se puede usar una vez):\n{base}/restablecer/{token}\n\n"
             "Si no fuiste tú, ignora este correo: tu contraseña actual sigue igual.",

@@ -1,5 +1,5 @@
 """Pasa a un usuario (p. ej. la comercial) todo lo que vino de SuiteCRM: `python -m app.crm.reassign <usuario>`.
-Solo toca filas con legacy_sugar_id (lo importado); lo creado a mano en GoldenWeb no se mueve. Imprime solo conteos."""
+Solo toca filas con legacy_sugar_id (lo importado); lo creado a mano en Orum no se mueve. Imprime solo conteos."""
 import sys
 
 from sqlalchemy import update

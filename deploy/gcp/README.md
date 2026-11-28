@@ -1,4 +1,4 @@
-# Cómo se despliega GoldenWeb (léelo ANTES de dar un comando de despliegue)
+# Cómo se despliega Orum (léelo ANTES de dar un comando de despliegue)
 
 Lo ejecuta **Juan David en Cloud Shell**; ningún agente corre comandos de nube. Aquí está lo que ya salió mal alguna vez. Detalle y porqués: `docs/19_GUIA_PRODUCCION.md`, `docs/historial.md`.
 

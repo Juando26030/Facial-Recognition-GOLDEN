@@ -13,7 +13,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ event.name }} — {{ kind_name }} | GoldenWeb 2.0</title>
+    <title>{{ event.name }} — {{ kind_name }} | Orum</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {# NO se usa la cabeza común de la base (la del tema oscuro) a propósito: el tema oscuro nunca llega a lo que se imprime (tests/test_design_system.py: test_the_dark_theme_never_reaches_what_is_printed).
        Se cargan las mismas piezas de la base SIN el script del tema oscuro: esta pantalla es siempre clara y no lleva interruptor de tema. #}
@@ -306,7 +306,7 @@ window.EVENT_CODE_ENABLED = {{ "true" if event.code_enabled else "false" }};    
     const extras = {};
     (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
     return {
-      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0',
+      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'Orum',
       role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', code: 'A-0001', categories: 'Invitado, Prensa',
       card_url: location.origin + '/tarjeta/AbCdEfGhIjKlMnOpQrStUvWx',
       extra_fields: extras, has_photo: false,

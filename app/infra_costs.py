@@ -582,7 +582,7 @@ def neon_usage(month: str, fetch=None) -> dict:
     url = f"https://console.neon.tech/api/v2/consumption_history/v2/projects?{q}"
 
     def default_fetch(u):
-        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json", "User-Agent": "GoldenWeb/2.0 (+gastos)"})
+        req = urllib.request.Request(u, headers={"Authorization": "Bearer " + os.environ["NEON_API_KEY"].strip(), "Accept": "application/json", "User-Agent": "Orum/2.0 (+gastos)"})
         with urllib.request.urlopen(req, timeout=15) as resp:             # noqa: S310 — URL fija de Neon
             return json.loads(resp.read().decode("utf-8"))
 

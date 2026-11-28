@@ -9,7 +9,7 @@
 
 Vas a trabajar el **Épico 1 del backlog: núcleo de registro por cédula**
 (Historias 1.1 y 1.2 de `03_PRODUCT_BACKLOG.md`). Es el hueco más crítico
-del sistema hoy: GoldenWeb 2.0 tiene auth, roles, tenants y eventos, pero
+del sistema hoy: Orum tiene auth, roles, tenants y eventos, pero
 todavía no puede hacer lo que hacía el sistema viejo — cargar la base de un
 evento y acreditar gente por cédula. Sin esto no reemplaza al sistema actual
 en ningún evento real.

@@ -1,4 +1,4 @@
-# Arquitectura — GoldenWeb 2.0
+# Arquitectura — Orum
 
 > Documento de arquitectura a nivel de producto/decisión. El detalle vivo de
 > implementación (estructura real de archivos, convenciones de código) vive
@@ -14,7 +14,7 @@
                 │ crea/gestiona eventos       │ ve estadísticas de su evento
                 ▼                              ▼
         ┌─────────────────────────────────────────────┐
-        │                GoldenWeb 2.0                  │
+        │                Orum                  │
         │   (FastAPI + PostgreSQL, multi-tenant)         │
         └───────┬───────────────────┬───────────────────┘
                 │                    │

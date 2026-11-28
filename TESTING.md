@@ -1,4 +1,4 @@
-# Casos de Prueba — GoldenWeb 2.0
+# Casos de Prueba — Orum
 
 Checklist manual de validación funcional. No hay suite automatizada (`pytest`) todavía — ver
 backlog en `CLAUDE.md` — así que esto se ejecuta a mano contra una instancia local

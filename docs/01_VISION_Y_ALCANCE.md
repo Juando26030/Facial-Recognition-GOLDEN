@@ -1,4 +1,4 @@
-# Visión y Alcance — GoldenWeb 2.0
+# Visión y Alcance — Orum
 
 ## 1. Visión
 
@@ -72,7 +72,7 @@ sin rediseñar el sistema cada vez.
 
 ## 6. Criterios de éxito
 
-- GoldenWeb 2.0 puede operar un evento real de principio a fin (carga de
+- Orum puede operar un evento real de principio a fin (carga de
   base, registro por cédula o facial, escarapela, informe final) sin
   depender del sistema viejo.
 - El tiempo de registro por persona no empeora frente al sistema actual.

@@ -1,4 +1,4 @@
-# GoldenWeb 2.0 — Requerimientos y Roadmap de Producto
+# Orum — Requerimientos y Roadmap de Producto
 
 > Documento de trabajo para decidir, sesión a sesión, qué construye a continuación
 > el agente de desarrollo (Claude Code) sobre `Facial-Recognition-GOLDEN`. Se
@@ -40,7 +40,7 @@ que igualar o superar esa velocidad; es el estándar contra el que se mide todo.
    de datos del evento en el formato que Golden necesita (en vez de recibir un
    Excel en formato libre que hay que adaptar).
 
-## 3. Estado actual del nuevo sistema (GoldenWeb 2.0)
+## 3. Estado actual del nuevo sistema (Orum)
 
 Según la última sesión de desarrollo (rama `feature/auth-roles-events`, aún sin
 mergear a `main`):
@@ -155,7 +155,7 @@ sistema viejo a no repetir, o si necesita una decisión primero.
 
 | ID | Requerimiento | Origen | Nota |
 |---|---|---|---|
-| M8-1 | Cuentas de cliente en GoldenWeb | JD | El rol `cliente` ya existe en v2 — falta construir las vistas/funciones propias |
+| M8-1 | Cuentas de cliente en Orum | JD | El rol `cliente` ya existe en v2 — falta construir las vistas/funciones propias |
 | M8-2 | Encuesta de satisfacción post-evento | JD | Ligada al portal cliente |
 | M8-3 | Usuario de cliente funcional (en el sistema viejo no servía) | Juan Manuel | Mismo punto que M8-1, confirmar que la nueva arquitectura ya lo resuelve |
 
@@ -193,7 +193,7 @@ sistema viejo a no repetir, o si necesita una decisión primero.
 ## 6. Roadmap propuesto (a confirmar)
 
 La lógica: primero recuperar la paridad con el sistema viejo en lo que es
-*el negocio central* (sin esto, GoldenWeb 2.0 no puede reemplazar al sistema
+*el negocio central* (sin esto, Orum no puede reemplazar al sistema
 actual en ningún evento real); después, capas de valor agregado.
 
 **Fase A — Paridad del núcleo de registro**

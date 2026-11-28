@@ -4,7 +4,7 @@ Asunto: Aviso previo — tratamiento de datos de contactos de clientes en el nue
 
 Cordial saludo.
 
-Golden Eventos y Logística S.A.S. va a trasladar su CRM actual (SuiteCRM, alojado en Colombia Hosting) a un módulo propio dentro de GoldenWeb. Con ese traslado se cargarán datos de contacto de las personas de nuestras empresas clientes (nombre, cargo, correo electrónico y teléfono) y el historial de comunicaciones comerciales asociado.
+Golden Eventos y Logística S.A.S. va a trasladar su CRM actual (SuiteCRM, alojado en Colombia Hosting) a un módulo propio dentro de Orum. Con ese traslado se cargarán datos de contacto de las personas de nuestras empresas clientes (nombre, cargo, correo electrónico y teléfono) y el historial de comunicaciones comerciales asociado.
 
 Para que lo evalúe a la luz de la Ley 1581 de 2012 y su decreto reglamentario, le informamos:
 

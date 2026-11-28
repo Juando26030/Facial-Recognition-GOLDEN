@@ -64,7 +64,7 @@
   /* ---------------------------------------------------------------- datos */
   function fill() {
     inputs().forEach((i) => { const v = i.name === "probability" ? opp.own_probability : opp[i.name]; i.value = v == null ? "" : String(v); });
-    $("opTitle").textContent = opp.name; document.title = opp.name + " | CRM | GoldenWeb 2.0";
+    $("opTitle").textContent = opp.name; document.title = opp.name + " | CRM | Orum";
     $("opEyebrow").textContent = "CRM · Oportunidad " + opp.code;
     $("opSub").textContent = (opp.account_name || "") + " · " + fmtMoney(opp.amount, opp.currency) + " · " + opp.probability + " %";
     const badges = $("opBadges"); badges.replaceChildren();

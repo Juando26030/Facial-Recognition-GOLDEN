@@ -44,8 +44,8 @@ ROLE_INSTRUCTIONS = {
     "cliente": "Con tu cuenta consultas la información que se te haya compartido.",
 }
 MODES = ("created", "reset", "resend", "assigned")
-SUBJECTS = {"created": "Tu cuenta de GoldenWeb 2.0", "assigned": "Fuiste asignado a un evento en GoldenWeb 2.0",
-            "reset": "Restablecimos tu acceso a GoldenWeb 2.0", "resend": "Tus datos de ingreso a GoldenWeb 2.0"}
+SUBJECTS = {"created": "Tu cuenta de Orum", "assigned": "Fuiste asignado a un evento en Orum",
+            "reset": "Restablecimos tu acceso a Orum", "resend": "Tus datos de ingreso a Orum"}
 
 
 def valid_email(value) -> str:
@@ -89,15 +89,15 @@ def render(mode: str, *, name: str, username: str, role: str, pw: str, must_chan
     nombre = (name or "").strip()
     saludo = f"Hola {nombre}:" if nombre else "Hola:"
     rol = ROLE_LABELS.get(role, role)
-    intro = {"created": f"Se creó tu cuenta de {rol} en GoldenWeb 2.0, la plataforma de acreditación de Golden Eventos y Logística.",
-             "assigned": "Te asignaron a un evento en GoldenWeb 2.0, la plataforma de acreditación de Golden Eventos y Logística.",
-             "reset": f"Restablecimos el acceso de tu cuenta de {rol} en GoldenWeb 2.0.",
-             "resend": f"Te reenviamos los datos para ingresar a tu cuenta de {rol} en GoldenWeb 2.0."}[mode]
+    intro = {"created": f"Se creó tu cuenta de {rol} en Orum, la plataforma de acreditación de Golden Eventos y Logística.",
+             "assigned": "Te asignaron a un evento en Orum, la plataforma de acreditación de Golden Eventos y Logística.",
+             "reset": f"Restablecimos el acceso de tu cuenta de {rol} en Orum.",
+             "resend": f"Te reenviamos los datos para ingresar a tu cuenta de {rol} en Orum."}[mode]
     lines = [("Usuario", username)]
     if event:
         lines = [("Evento", event.get("name") or ""), ("Fecha", event.get("date") or ""), ("Lugar", event.get("place") or ""), ("Coordinador", event.get("coordinator") or "")] + lines
     lines = [(k, v) for k, v in lines if v]
-    dest = url or "la dirección web de GoldenWeb que te indique tu coordinador"
+    dest = url or "la dirección web de Orum que te indique tu coordinador"
     steps = [f"Entra a {dest}.", f"Escribe tu usuario: {username}.",
              _password_line(role, pw, must_change)]
     if role == "digitador":

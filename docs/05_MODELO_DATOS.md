@@ -1,4 +1,4 @@
-# Modelo de Datos — GoldenWeb 2.0
+# Modelo de Datos — Orum
 
 > Estado real tomado de `app/models.py` en la rama `feature/auth-roles-events`
 > (no mergeada a `main` todavía). Esta es la fuente de verdad técnica — si

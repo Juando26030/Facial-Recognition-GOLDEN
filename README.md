@@ -1,4 +1,4 @@
-# GoldenWeb 2.0
+# Orum
 
 Plataforma de **gestión de identidades y control de acceso para eventos** de Golden Eventos y Logística S.A.S.: inscripción por formulario web
 (con pagos por Wompi), carga de bases, acreditación en la puerta por cédula, QR o **reconocimiento facial voluntario**, escarapelas impresas y digitales,

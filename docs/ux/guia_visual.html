@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Guía visual | GoldenWeb 2.0</title>
+<title>Guía visual | Orum</title>
 <!-- Guía viva de la base visual (Fase 1A, pieza 0). Estática y autocontenida: se abre con doble clic, sin servidor.
      Carga la base REAL por ruta relativa (static/css/design-system.css y static/js/gw-ui.js); el sprite de íconos va copiado abajo (un <use> externo no funciona con file://).
      Si cambias un componente en static/, esta guía lo muestra sola; si agregas uno, documéntalo aquí. -->
@@ -100,7 +100,7 @@
 
 <header class="gw-nav g-bar" id="barraDemo">
   <div class="gw-nav__inner">
-    <a class="gw-nav__brand" href="#"><img src="../../static/img/logo-golden.png" alt="" width="40" height="40"><span>GoldenWeb 2.0 · Guía visual</span></a>
+    <a class="gw-nav__brand" href="#"><img src="../../static/img/logo-golden.png" alt="" width="40" height="40"><span>Orum · Guía visual</span></a>
     <button type="button" class="gw-nav__toggle" data-gw-nav-toggle aria-expanded="false" aria-controls="enlacesDemo"><svg class="gw-icon" aria-hidden="true"><use href="#i-menu"/></svg> Menú</button>
     <ul class="gw-nav__links" id="enlacesDemo">
       <li><a class="gw-nav__link" href="#colores" aria-current="page">Colores</a></li>
@@ -121,7 +121,7 @@
 
 <section class="g-sec">
   <p class="gw-eyebrow">Base visual común · Fase 1A</p>
-  <h1 class="gw-display">Guía visual de GoldenWeb 2.0</h1>
+  <h1 class="gw-display">Guía visual de Orum</h1>
   <hr class="gw-gold-rule">
   <p class="gw-lead">Una sola base de colores, letras y componentes para toda la plataforma. Tema claro por defecto; el oscuro se elige por dispositivo con el interruptor de arriba. Cada color de texto está comprobado por una prueba (texto 4,5:1 o más; íconos y texto grande 3:1 o más).</p>
   <div class="gw-alert"><svg class="gw-icon" aria-hidden="true"><use href="#i-info"/></svg><div><div class="gw-alert__title">Cómo usar esta guía</div><div class="gw-alert__body">Cada componente trae su explicación y el HTML para copiar. Todo vive bajo clases <code class="g-code">gw-*</code>; las pantallas viejas no cambian hasta que se rediseñen. Para adoptar la base en una página nueva: <code class="g-code">{% include "_gw_head.html" %}</code> en el <code class="g-code">&lt;head&gt;</code> y <code class="g-code">class="gw-page"</code> en el <code class="g-code">&lt;body&gt;</code>.</div></div></div>

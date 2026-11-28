@@ -144,7 +144,7 @@ def delete_recipient(rid: int, db: Session = Depends(get_db), staff: StaffUser =
 @router.post("/system-alerts/test")
 def send_test(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     now = utcnow()
-    alert = SystemAlert(kind="test", title="Prueba: alerta del sistema de GoldenWeb",
+    alert = SystemAlert(kind="test", title="Prueba: alerta del sistema de Orum",
                         body=f"Este es un mensaje de prueba enviado por {staff.username}. Si lo recibe, las alertas de borrado masivo le van a llegar a este correo.",
                         actor_id=staff.id, actor_label=staff.username, dedupe_key=f"test:{staff.id}:{uuid.uuid4().hex}", created_at=now)
     db.add(alert)

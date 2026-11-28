@@ -104,7 +104,7 @@ def decrypt_stream(src, key: str) -> Iterator[bytes]:
     from cryptography.fernet import Fernet, InvalidToken
     f = Fernet(key.encode() if isinstance(key, str) else key)
     if _read_full(src, len(MAGIC)) != MAGIC:
-        raise ValueError("No es un archivo de copia de GoldenWeb (cabecera distinta).")
+        raise ValueError("No es un archivo de copia de Orum (cabecera distinta).")
     expect = 0
     while True:
         head = _read_full(src, 4)

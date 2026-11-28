@@ -153,7 +153,7 @@ def build_export(db: Session, event: Event, form: WebForm, request: Request) -> 
 
 def _leeme(package: dict, images: dict) -> str:
     lines = [
-        "FORMULARIO WEB EXPORTADO (GoldenWeb 2.0)",
+        "FORMULARIO WEB EXPORTADO (Orum)",
         f"Formato: {FORMAT}, versión {VERSION}",
         f"Formulario: {package['nombre']}",
         f"Elementos: {len(package['diseno']['fields'])} · Imágenes: {len(images)} · Campos opcionales del evento: {len(package['campos_opcionales'])}",
@@ -236,7 +236,7 @@ def read_package(raw: bytes) -> tuple:
     except (ValueError, UnicodeDecodeError):
         _bad("formulario.json está roto (no es un JSON válido).")
     if not isinstance(package, dict) or package.get("formato") != FORMAT or package.get("version") != VERSION:
-        _bad("no es un formulario exportado de GoldenWeb (o es de otra versión).")
+        _bad("no es un formulario exportado de Orum (o es de otra versión).")
     for key, kind in (("diseno", dict), ("ajustes", dict), ("campos_opcionales", list), ("nombre", str)):
         if not isinstance(package.get(key), kind):
             _bad(f"formulario.json no tiene «{key}».")

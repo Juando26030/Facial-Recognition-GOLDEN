@@ -1,4 +1,4 @@
-# GoldenWeb 2.0 (repositorio Facial-Recognition GOLDEN)
+# Orum by Golden Eventos y Logística (antes «GoldenWeb 2.0»; repositorio Facial-Recognition GOLDEN)
 
 Plataforma de gestión de identidades y acceso para eventos de Golden Eventos y Logística S.A.S.: registro por cédula, QR o reconocimiento facial **voluntario**, escarapelas, formularios web públicos
 con pagos (Wompi), ruleta, estadísticas y reportes. FastAPI + SQLAlchemy (síncrono) + PostgreSQL (Neon) en Cloud Run + Alembic; frontend Jinja2 + JS plano; motor facial `face_recognition`/dlib; modo de

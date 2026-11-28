@@ -1,4 +1,4 @@
-# 29 · Plan maestro de la etapa «Después del piloto» — GoldenWeb 2.0
+# 29 · Plan maestro de la etapa «Después del piloto» — Orum
 
 Aprobado por Juan David el 29-oct-2026. **Este documento es la guía de trabajo hasta cerrar la etapa.** Reemplaza, para esta etapa, el orden de prioridades anterior. Lo que no está aquí no se trabaja sin que Juan David lo apruebe y se agregue.
 
@@ -309,11 +309,11 @@ Respaldos (copias a las 3 am activas, alerta de borrado masivo, copia semanal fu
 **Alcance**
 1. Evaluación en staging de Twenty y Atomic CRM (1 semana): facilidad de uso para la comercial, importación, API.
 2. **Importación desde SugarCRM:** Sugar permite exportar listas y reportes a CSV/Excel por módulo (Cuentas, Contactos, Oportunidades, Cotizaciones, Notas…); como es una versión vieja, también puede hacerse con un volcado de su base de datos. Se importa por orden (cuentas → contactos → oportunidades → cotizaciones) guardando la equivalencia de identificadores para no perder las relaciones; las notas y los adjuntos van aparte. Se prueba primero con una muestra y se reporta lo que no entra limpio.
-3. Integración en ambos sentidos con GoldenWeb: la comercial gestiona clientes, eventos y cotizaciones en el CRM y se reflejan en la app, y viceversa. Para cada dato se define **una sola fuente de verdad** para evitar pisadas.
+3. Integración en ambos sentidos con Orum: la comercial gestiona clientes, eventos y cotizaciones en el CRM y se reflejan en la app, y viceversa. Para cada dato se define **una sola fuente de verdad** para evitar pisadas.
 4. Objetivo a largo plazo: un CRM propio o adaptado bajo los mismos principios de simplicidad, integrado directamente con la app.
 5. Legal: pasar por la auditora el tratamiento de datos de clientes en el sistema adicional.
 
-**Listo cuando:** la comercial gestiona un evento y un cliente en el CRM y se ve en GoldenWeb en segundos, y al revés; una muestra real de SugarCRM importa sin perder relaciones.
+**Listo cuando:** la comercial gestiona un evento y un cliente en el CRM y se ve en Orum en segundos, y al revés; una muestra real de SugarCRM importa sin perder relaciones.
 
 **Preguntas al iniciar:** **una exportación de muestra de SugarCRM por módulo (con datos ficticios o recortados) y la versión exacta de Sugar**; qué módulos se usan de verdad; quién gestiona el CRM hoy; dónde está alojado.
 
