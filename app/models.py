@@ -527,6 +527,20 @@ class EventStaffAuthorization(Base):
     authorized_by = relationship("StaffUser", foreign_keys=[authorized_by_id])
 
 
+class EventStaffAttendance(Base):
+    """Llamado de asistencia del PERSONAL temporal de un evento (28-nov-2026, Juan David): una marca por cuenta y evento — «a tiempo», «tarde» o «no llegó»; sin fila = sin marcar.
+    La pone el coordinador en «Usuarios del evento › Llamado de asistencia» (app/routers/staff_attendance.py). Se borra sola si se borra la cuenta o el evento."""
+    __tablename__ = 'event_staff_attendance'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    status = Column(String(10), nullable=False)      # on_time | late | absent
+    marked_by_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    marked_at = Column(DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_event_staff_attendance'),)
+
+
 class BadgeTemplate(Base):
     """La plantilla de escarapela ACTIVA de un evento — siempre por evento, uno a uno (Sprint 2,
     Épico 2, decisión de Juan David que reemplaza el borrador de docs/05_MODELO_DATOS.md §3.2:

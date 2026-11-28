@@ -58,6 +58,7 @@ from app.routers import form_transfer      # exportar / importar un formulario e
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
 from app.routers import pledge as pledge_router      # Fase 4: compromiso digital del digitador
 from app.routers import login_approval as login_approval_router      # S1: ingreso de digitadores autorizado por el coordinador
+from app.routers import staff_attendance as staff_attendance_router      # 28-nov-2026: llamado de asistencia del personal temporal del evento
 from app.routers import delivery as delivery_router      # Fase 5: entrega al cliente (enlace /entrega/<token>, encuesta de satisfacción, descarga de la base final)
 from app.routers import gastos as gastos_router      # Fase 9C: panel de gastos, pestaña «Infraestructura» (solo admin)
 from app.routers import gastos_eventos as gastos_eventos_router      # Fase 9 D: panel de gastos, pestaña «Eventos» (solo admin)
@@ -444,6 +445,7 @@ def _include(router, prefix: str = "") -> None:
 _include(auth_router.router)
 _include(quote_request_router.router)      # sitio web corporativo: «Pide tu cotización» (pública, sin sesión; servicio golden-publico)
 _include(pledge_router.router, prefix="/api")      # Fase 4: compromiso digital del digitador (lado del coordinador; el público es el motor de formularios)
+_include(staff_attendance_router.router, prefix="/api")      # 28-nov-2026: «Usuarios del evento › Llamado de asistencia» (tabla event_staff_attendance)
 _include(login_approval_router.router)      # S1: ingreso de digitadores autorizado por el coordinador y desbloqueo de cuentas (app/login_control.py)
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")

@@ -1,0 +1,39 @@
+/* Usuarios del evento: pestañas arriba (no a la izquierda) y «Llamado de asistencia» (28-nov-2026): lista compacta tipo hoja de cálculo con tres casillas por persona. Solo tokens --gw-*. */
+.gw-tabs--top { flex-direction: column; align-items: stretch; }
+.gw-tabs--top > .gw-tablist { flex: 0 0 auto; flex-direction: row; overflow-x: auto; position: static; }
+.gw-tabs--top > .gw-tablist .gw-tab { min-width: 220px; }
+.gw-tabs--top > .gw-tabpanels { min-width: 0; }
+
+.gw-att { display: grid; gap: var(--gw-sp-3); padding-top: var(--gw-sp-3); }
+.gw-att__bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: flex-end; }
+.gw-att__search { flex: 1 1 220px; }
+.gw-att__filter { flex: 0 1 200px; }
+.gw-att__counts { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); margin: 0; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+.gw-att__counts .gw-badge { white-space: nowrap; }
+.gw-att__wrap { max-height: 70vh; overflow: auto; border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+.gw-att__table { width: 100%; border-collapse: collapse; font-size: var(--gw-fs-sm); }
+.gw-att__table thead th { position: sticky; top: 0; z-index: 1; background: var(--gw-surface-2); text-align: left; padding: var(--gw-sp-2); border-bottom: 2px solid var(--gw-border); white-space: nowrap; }
+.gw-att__table td { padding: 0 var(--gw-sp-2); border-bottom: 1px solid var(--gw-border); height: 38px; vertical-align: middle; }
+.gw-att__table tbody tr:nth-child(even) { background: var(--gw-surface-2); }
+.gw-att__table tbody tr[data-status="on_time"] { background: var(--gw-ok-bg); }
+.gw-att__table tbody tr[data-status="late"] { background: var(--gw-warn-bg); }
+.gw-att__table tbody tr[data-status="absent"] { background: var(--gw-err-bg); }
+.gw-att__n { width: 2.5rem; color: var(--gw-text-muted); text-align: right; }
+.gw-att__name { font-weight: var(--gw-fw-bold); }
+.gw-att__sub { display: none; font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
+.gw-att__table th.gw-att__opt, .gw-att__table td.gw-att__opt { text-align: center; width: 7.5rem; }
+.gw-att__short { display: none; }
+.gw-att__pick { display: flex; align-items: center; justify-content: center; min-height: 36px; cursor: pointer; }
+.gw-att__pick input { width: 1.3rem; height: 1.3rem; cursor: pointer; accent-color: var(--gw-text); }
+.gw-att__pick input:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-att__empty { padding: var(--gw-sp-4); color: var(--gw-text-muted); }
+@media (max-width: 640px) {
+  .gw-att__ced, .gw-att__org, .gw-att__n { display: none; }
+  .gw-att__sub { display: block; }
+  .gw-att__full { display: none; }
+  .gw-att__short { display: inline; }
+  .gw-att__table th.gw-att__opt, .gw-att__table td.gw-att__opt { width: 3.9rem; padding: 0 var(--gw-sp-1); }
+  .gw-att__table td { height: 48px; }
+  .gw-att__pick { min-height: 48px; }
+  .gw-tabs--top > .gw-tablist .gw-tab { min-width: 180px; }
+}
