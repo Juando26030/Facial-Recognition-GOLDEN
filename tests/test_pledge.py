@@ -126,6 +126,40 @@ def test_conflict_repeat_and_success_look_identical(client, factory, db):
     assert db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=adm.id).first() is None
 
 
+def test_flow_a_reuses_digitador_account_of_another_client(client, factory, db):
+    """27-nov-2026 (dos casos reales del evento 25): un digitador que ya trabajó para OTRO cliente firma el enlace de este y queda inscrito con su misma cuenta."""
+    from app.models import EventStaffAuthorization, StaffUser
+
+    ev, path, _ = _setup(client, factory)
+    factory.tenant("otro_cliente")
+    other = factory.staff("digitador", CED, password=CED, tenant_id="otro_cliente")
+    assert _send(client, path, _values()).status_code == 200
+    db.expire_all()
+    assert db.query(StaffUser).filter(StaffUser.username == CED).count() == 1                       # sigue siendo UNA cuenta por cédula
+    assert db.get(StaffUser, other.id).tenant_id == "otro_cliente"                                  # no se le cambia de cliente
+    assert db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=other.id).count() == 1
+    assert len(_pledges(db, ev.id)) == 1
+
+
+def test_disabled_or_archived_digitador_is_told_instead_of_a_false_ok(client, factory, db):
+    """Un digitador desactivado o archivado no puede quedar con «¡Listo!» sin haber quedado registrado: se le dice qué hacer; el conflicto queda en la auditoría sin la cédula."""
+    from app.models import AuditAction
+
+    ev, path, _ = _setup(client, factory)
+    off = factory.staff("digitador", CED, password=CED, tenant_id=ev.tenant_id)
+    off.is_active = False
+    db.commit()
+    r = _send(client, path, _values(), sid="x")
+    assert r.status_code == 400 and "coordinador" in r.json()["detail"]
+    assert _pledges(db, ev.id) == []
+    db.expire_all()
+    a = db.query(AuditAction).filter(AuditAction.action == "pledge_conflict").one()
+    assert CED not in (a.detail or "") and str(off.id) in (a.detail or "")
+    # otro tipo de cuenta (admin): sigue igual que un éxito, no se revela
+    factory.staff("admin", "9998887", password=PASSWORD)
+    assert _send(client, path, _values(ced="9998887"), sid="y").status_code == 200
+
+
 def test_signature_must_be_a_real_drawn_png(client, factory, db):
     ev, path, _ = _setup(client, factory)
     assert _send(client, path, _values(), sig=_png(blank=True)).status_code == 422

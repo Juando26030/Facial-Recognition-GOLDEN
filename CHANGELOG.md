@@ -8,6 +8,12 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-27 (noche) — Compromiso: digitadores de otro cliente ya no quedan en el limbo
+- **Qué pasaba:** un digitador que ya había trabajado para OTRO cliente (cuenta de ese cliente) llenaba el enlace del compromiso de este, veía «¡Listo!» pero el envío se descartaba entero (no creaba cuenta ni compromiso y no dejaba rastro). Caso real: dos digitadores del evento 25 que venían del evento 22 (otro cliente); lo llenaron dos veces.
+- **Arreglo:** `pledge.resolve_account` reutiliza y asigna al evento cualquier digitador activo, sea de este cliente o de otro (una cuenta por cédula; no se le cambia de cliente). Si es un digitador desactivado o archivado, ahora se le dice «avísale al coordinador» en vez de un «¡Listo!» falso, y queda `pledge_conflict` en la auditoría con el id de la cuenta (nunca la cédula). Las cuentas que no son de digitador siguen respondiendo igual que un éxito (no se revela qué cédulas existen).
+- **Datos:** esas dos personas se asignaron a mano al evento 25 (quedan sin firmar y firman al ingresar con su cédula, o por el enlace una vez desplegado esto). No se pueden saber otros casos: el envío descartado no dejaba rastro.
+- Pruebas: `tests/test_pledge.py::test_flow_a_reuses_digitador_account_of_another_client` y `::test_disabled_or_archived_digitador_is_told_instead_of_a_false_ok`.
+
 ## 2026-11-27 (tarde) — Compromiso: precargado por cédula
 - Al escribir la cédula en el enlace del compromiso, si ya es de un digitador de cualquier evento o cliente, se precargan nombre, celular, familiar y su teléfono (ocultos en parte en el navegador; el servidor guarda los reales si no los toca). Solo queda responder las 5 preguntas, marcar las casillas y firmar. Sin migración. Detalle y límites: `docs/FASE_4_COMPROMISO.md`. Pruebas: `tests/test_pledge_prefill.py`, `tests/test_pledge.py::test_public_link_prefills_masked_by_cedula_and_restores_real_values`.
 

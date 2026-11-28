@@ -893,14 +893,17 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
         enqueued = formsvc.confirm_submission(db, form, sub, record_event=False)
         submit_event = (form.id, sub.sid or os.urandom(4).hex(), sub.source, sub.is_test)      # se leen ANTES del commit (después los objetos quedan expirados)
         db.commit()
-    except pledge.Skip:
+    except pledge.Skip as skip:
         db.rollback()          # nada que guardar: a quien envía se le responde igual que a un envío exitoso (no se revela si la cédula existe ni si ya firmó)
+        ev = db.get(Event, form.event_id)
         for fid in pending:
             stored = (clean.get(fid) or {}).get("stored") if isinstance(clean.get(fid), dict) else None
-            ev = db.get(Event, form.event_id)
             if stored and ev is not None:
                 get_storage().delete(form_file_key(ev.tenant_id, form.id, stored))
         uploads.discard(*staged)
+        if skip.reason == "account" and ev is not None and pledge.record_conflict(db, ev, pledge.normalize_cedula(clean.get(pledge.FID_ID))):
+            # 27-nov-2026: un digitador desactivado/archivado NO puede quedar con un «¡Listo!» falso (nada se guardó): se le dice qué hacer
+            raise HTTPException(status_code=400, detail="No pudimos registrar tu compromiso con ese documento. Avísale al coordinador del evento para que revise tu cuenta y vuelve a intentarlo.")
         return _respond({"ok": True, "thanks": settings["thanks"], "is_test": is_test}, [])
     except OperationalError as exc:
         db.rollback()

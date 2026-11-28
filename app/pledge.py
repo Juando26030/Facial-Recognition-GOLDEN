@@ -405,8 +405,10 @@ def _hash_password(ident: str) -> str:
 
 
 def resolve_account(db: Session, event: Event, cedula: str, full_name: str) -> Optional[StaffUser]:
-    """Camino A: la cuenta temporal (usuario = cédula) se crea si no existe y se asigna al evento; si ya existe como digitador del mismo cliente, se reutiliza y solo se asigna. Una cuenta que no
-    es de digitador (u otro cliente, desactivada o archivada) no se toca: devuelve None. El costo de bcrypt se paga SIEMPRE (no se distingue por tiempo si la cédula existía)."""
+    """Camino A: la cuenta temporal (usuario = cédula) se crea si no existe y se asigna al evento; si ya existe como digitador ACTIVO, se reutiliza y solo se asigna, sea de este cliente o de OTRO
+    (27-nov-2026: los digitadores trabajan para varios clientes y la cuenta es una sola por cédula; antes se descartaba el compromiso de quien ya había trabajado para otro cliente y veía «¡Listo!»
+    sin quedar inscrito; el coordinador igual autoriza el ingreso, y un admin ya asigna estas cuentas a mano entre clientes). Una cuenta que no es de digitador, desactivada o archivada no se toca:
+    devuelve None. El costo de bcrypt se paga SIEMPRE (no se distingue por tiempo si la cédula existía)."""
     pw_hash = _hash_password(cedula)
     target = db.query(StaffUser).filter(StaffUser.username == cedula).first()
     if target is None:
@@ -419,12 +421,24 @@ def resolve_account(db: Session, event: Event, cedula: str, full_name: str) -> O
             target = db.query(StaffUser).filter(StaffUser.username == cedula).first()
             if target is None:
                 return None
-    if target.role != "digitador" or target.tenant_id != event.tenant_id or not target.is_active or target.archived_at is not None:
+    if target.role != "digitador" or target.event_only or not target.is_active or target.archived_at is not None:
         return None
     if not db.query(EventStaffAuthorization.id).filter_by(event_id=event.id, staff_user_id=target.id).first():
         db.add(EventStaffAuthorization(event_id=event.id, staff_user_id=target.id, authorized_by_id=event.coordinator_staff_id))
         db.flush()
     return target
+
+
+def record_conflict(db: Session, event: Event, cedula: str) -> bool:
+    """El envío no pudo crear/asignar la cuenta (`Skip("account")`; la transacción ya se deshizo). Lo deja en la auditoría (solo el id de la cuenta, nunca la cédula) y dice si
+    hay que AVISARLE a la persona: sí cuando es un digitador desactivado o archivado (alguien real que debe pedir al coordinador que lo revise; antes veía «¡Listo!» y quedaba en el limbo);
+    no cuando es otro tipo de cuenta (admin, coordinador…): ahí se sigue respondiendo igual que a un éxito para no revelar qué cédulas existen."""
+    acc = db.query(StaffUser).filter(StaffUser.username == cedula).first()
+    tell = acc is not None and acc.role == "digitador" and not acc.event_only and (not acc.is_active or acc.archived_at is not None)
+    kind = "digitador desactivado o archivado" if tell else "cuenta que no es de digitador"
+    audit_actions.record(db, None, "pledge_conflict", "event", event.id, event.name, f"cuenta {acc.id if acc is not None else '-'}: {kind}")
+    db.commit()
+    return tell
 
 
 # ---------------------------------------------------------------------------------------------------- gancho de envío (forms_public._reserve_and_store)
