@@ -27,11 +27,8 @@
 .gw-cam__choices-head { margin: 0; font-weight: var(--gw-fw-bold); }
 .gw-cam__choice { justify-content: flex-start; text-align: left; }
 
-/* 26-nov-2026 (Juan David): QR pequeño (1 × 1 cm). Recuadro guía en el centro (es la zona que se analiza ampliada, static/js/qr.js) y «Acercar» (zoom de la cámara). */
+/* 26-nov-2026 (Juan David): QR pequeño (1 × 1 cm). «Acercar» (zoom de la cámara). 28-nov-2026: se quitó el recuadro guía del centro: el QR se lee en cualquier parte del cuadro y el recuadro confundía. */
 .gw-cam__stage { overflow: hidden; border-radius: var(--gw-radius-md); }
-.gw-cam__aim { position: absolute; top: 50%; left: 50%; height: 50%; aspect-ratio: 1; transform: translate(-50%, -50%); pointer-events: none;
-  border: 3px solid var(--gw-gold-1); border-radius: var(--gw-radius-md); box-shadow: 0 0 0 100vmax rgb(0 0 0 / .3); }
-.gw-cam__aim[hidden] { display: none; }
 .gw-cam__zoom { position: absolute; left: var(--gw-sp-3); right: var(--gw-sp-3); bottom: var(--gw-sp-3); display: flex; align-items: center; gap: var(--gw-sp-2);
   padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .gw-cam__zoom input { flex: 1; min-height: var(--gw-tap); accent-color: var(--gw-navy); }

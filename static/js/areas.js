@@ -208,14 +208,14 @@
     } else if (result.result === 'NO' && lastQuery) {          // 26-nov-2026: no está en la base → el mismo aviso rojo «Sin coincidencias» del buscador
       noMatch(lastQuery);
     } else {
-      show('err', 'No encontrado', esc(result.details || 'No se encontró a la persona'));
+      notFound = true; show('err', 'No encontrado', esc(result.details || 'No se encontró a la persona'));
     }
   }
 
-  let lastQuery = '';
-  function noMatch(text) { showPerson(null); $('banner').hidden = true; finder.showNoMatch(text); }
+  let lastQuery = '', notFound = false;          // notFound: la última lectura no está en la base (aviso rojo): la cámara también se cierra (28-nov-2026)
+  function noMatch(text) { notFound = true; showPerson(null); $('banner').hidden = true; finder.showNoMatch(text); }
   async function register(cedula, confirm, forcedDirection, method) {
-    lastQuery = String(cedula || '');
+    lastQuery = String(cedula || ''); notFound = false;
     if (!areaId()) { showToast('Primero elige una zona', 'error'); return false; }
     method = method || 'cedula';
     if (OFF && OFF.off()) return registerOffline(cedula, confirm, forcedDirection, method);
@@ -296,17 +296,17 @@
   }
 
   // Cámara del dispositivo: el MISMO escáner del Registro (selector «Cédula vieja · Cédula nueva · QR» en la misma ventana) y escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
-  // Si la cámara lee el código y encuentra a la persona (con o sin autoescaneo) se cierra sola; si no la encuentra o falla, queda abierta y el aviso sale en la pantalla.
+  // Si la cámara lee el código se cierra sola: cuando encuentra a la persona y también cuando NO está en la base (28-nov-2026: el aviso rojo quedaba escondido detrás de la cámara). Si el código no se reconoce o falla, queda abierta con el aviso.
   if (window.QrScanner && QrScanner.warm && $('scanQrBtn')) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara no traba)
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear cédula o QR — Control de Áreas',
     formats: ['qr_code', 'pdf417'],
     modes: ['old', 'new', 'qr'],                       // cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
-    onCedula: (d) => { register(d.cedula, false, undefined, 'cedula').then((found) => { if (found && scanner) scanner.close(); }); },
-    onCode: (text, format) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => {
+    onCedula: (d) => { register(d.cedula, false, undefined, 'cedula').then((found) => { if ((found || notFound) && scanner) scanner.close(); }); },
+    onCode: (text, format) => { notFound = false; QrCode.resolveDynamic(text, window.EVENT_ID, 'area').then((raw) => {
         const r = QrCode.classify(raw, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
         return r ? register(r.cedula, false, undefined, r.kind === 'qr' ? 'qr' : 'cedula') : (show('warn', 'No se reconoció el código', 'Acerca la cámara al QR o al reverso de la cédula'), false); })
-      .then((found) => { if (found && scanner) scanner.close(); })
+      .then((found) => { if ((found || notFound) && scanner) scanner.close(); })
       .catch((err) => show('warn', 'Código no válido', esc(err.message || 'No se pudo validar el código'))); },
   }); });
 

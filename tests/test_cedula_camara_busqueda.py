@@ -51,5 +51,5 @@ def test_small_qr_camera_reads_a_1cm_code():
     assert "width: { ideal: 1920 }, height: { ideal: 1080 }" in qr                                  # antes: resolución por defecto (640×480)
     assert "focusMode = 'continuous'" in qr and "adv.zoom" in qr and "gw-cam__zoom" in qr            # enfoque continuo y «Acercar»
     assert "function center()" in qr and "detector.detect(center())" in qr and "readJs(center(), cctx)" in qr          # el recuadro guía, ampliado
-    assert "gw-cam__aim" in qr and ".gw-cam__aim" in (ROOT / "static/css/gw-captura.css").read_text(encoding="utf-8")
+    assert "gw-cam__aim" not in qr and ".gw-cam__aim" not in (ROOT / "static/css/gw-captura.css").read_text(encoding="utf-8")          # 28-nov-2026: sin recuadro guía visible (el QR se lee en cualquier parte)
     assert "facingMode: 'environment' } });" in qr                                                   # si la cámara no acepta alta resolución, se abre igual

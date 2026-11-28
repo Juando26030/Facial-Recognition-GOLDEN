@@ -213,7 +213,6 @@
 
     function stopQr() {
       loopId++; if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-      const a = box.querySelector('.gw-cam__aim'); if (a) a.hidden = true;
       if (zoomUi) { zoomUi.remove(); zoomUi = null; }
     }
     function stopReader() {
@@ -242,14 +241,6 @@
        cuadro de por medio, además del cuadro completo se analiza el CENTRO ampliado (el recuadro guía), que es donde se pone el QR pequeño. */
     const AIM = 0.5;                                              // lado del recuadro central (fracción del lado corto del video)
     let zoomUi = null;
-    function aimEl() {
-      let el = box.querySelector('.gw-cam__aim');
-      if (!el && video.parentElement) {
-        el = document.createElement('div'); el.className = 'gw-cam__aim'; el.setAttribute('aria-hidden', 'true');
-        video.insertAdjacentElement('afterend', el);
-      }
-      return el;
-    }
     async function tuneCamera(track) {
       if (!track || !track.getCapabilities) return;
       let caps = {};
@@ -285,7 +276,6 @@
       stream = s;
       video.srcObject = stream;
       tuneCamera(stream.getVideoTracks()[0]);
-      const aim = aimEl(); if (aim) aim.hidden = false;
       let detector = null;
       if ('BarcodeDetector' in window) {
         try {

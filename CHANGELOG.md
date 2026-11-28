@@ -8,6 +8,13 @@ de fase (`docs/CIERRE_*.md`); este archivo arranca en noviembre de 2026 y se arm
 
 Estados: **Producción** = corre en `app.golden-eventos.com` · **Staging** = probado en staging, pendiente de autorización · **Rama** = construido, sin probar con base.
 
+## 2026-11-28 (hotfix, tarde) — Escáner y entregas de inventario
+- **La cámara se cierra también cuando la persona NO está en la base** (Control de Inventario y Control de Zonas): el aviso rojo «Sin coincidencias» quedaba escondido detrás de la cámara. Si el código no se reconoce (no es una cédula ni un QR válido) la cámara sigue abierta con su aviso, como antes.
+- **Sin recuadro guía en el modo QR** (confundía: el QR se lee en cualquier parte del cuadro). Se conserva el zoom «Acercar» y la lectura de cédula vieja/nueva con su zoom.
+- **Devolver entregas por elemento** (Historial de entregas de una persona; solo coordinador en adelante, igual que el historial): botón «Devolver» en cada línea → `DELETE /api/events/{id}/inventory/deliveries/{delivery_id}`. Borra esa línea (queda como si nunca se hubiera entregado), su cantidad vuelve al inventario, la persona puede recibirlo otra vez y queda auditado (`revert`, sin cédulas). De una entrega con varios ítems se devuelve solo uno. Con el evento en servidores locales NO se permite (no se sincroniza y podría reaparecer). Sin migración.
+- **Historial de entregas en celular:** hasta 640 px la tabla pasa a una tarjeta por entrega con sus rótulos (antes: una letra por fila), en el historial y en «Últimas entregas».
+- Pruebas: `tests/test_estadisticas_rediseno.py` (devolución y piezas), `tests/test_cedula_camara_busqueda.py`.
+
 ## 2026-11-28 — La plataforma pasa a llamarse **Orum** (by Golden Eventos y Logística)
 - Nuevo nombre de producto: **Orum** (Or de Oro + um de Forum), pensado para venderse como SaaS. Reemplaza «GoldenWeb 2.0» en títulos de pantalla, correos, alertas, PDF, textos de ayuda, README y guías. Lo HISTÓRICO (este registro, `docs/historial.md`, notas de versiones pasadas, textos de la auditora) conserva el nombre de su época.
 - Logo propio (aro azul marino con punto dorado + «rum», generado con Higgsfield): `static/img/orum-logo.svg`/`-oscuro.svg`/`orum-mark.svg` (+ PNG); favicon y ícono de celular nuevos. Login, cambio de contraseña e ingreso en espera muestran el logo y «by Golden Eventos y Logística» (`.gw-orum` en `design-system.css`); hay una versión para fondos oscuros (también de Higgsfield) y `static/js/gw-orum.js` la activa sola cuando detecta un fondo oscuro. El logo de Golden sigue en el encabezado de las pantallas internas, en escarapelas, certificados y documentos (es el de la empresa/evento).

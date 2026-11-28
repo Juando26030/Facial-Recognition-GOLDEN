@@ -177,13 +177,21 @@
   /* 26-nov-2026: tabla con columnas alineadas (fecha y hora, persona, cédula, qué se entregó y, en el historial, quién entregó). */
   const when = (t) => { const d = new Date(String(t).replace(/Z?$/, 'Z')); return isNaN(d) ? '' : d.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
   function delTable(rows, withBy) {
-    return `<div class="gw-table-wrap"><table class="gw-table gw-inv-del"><thead><tr><th scope="col">Fecha y hora</th>${withBy ? '' : '<th scope="col">Persona</th><th scope="col">Cédula</th>'}<th scope="col">Se entregó</th>${withBy ? '<th scope="col">Entregó</th>' : ''}</tr></thead><tbody>`
-      + rows.map(r => `<tr><td class="gw-inv-del__time">${esc(when(r.time))}</td>${withBy ? '' : `<td>${esc(r.name)}</td><td class="gw-inv-del__num">${esc(r.user_id)}</td>`}<td><span class="gw-badge gw-badge--ok">${esc(r.qty)} × ${esc(r.item)}</span></td>${withBy ? `<td>${esc(r.by || '—')}</td>` : ''}</tr>`).join('')
+    // 28-nov-2026: cada celda lleva su rótulo (data-label): en celular la tabla se vuelve una tarjeta por entrega (antes quedaba apretada, una letra por fila). En el historial de la persona
+    // (solo coordinador en adelante) cada línea trae «Devolver»: se devuelve UN ítem aunque se haya entregado junto con otros.
+    const th = (t) => `<th scope="col">${t}</th>`;
+    return `<div class="gw-table-wrap gw-inv-del-wrap"><table class="gw-table gw-inv-del"><thead><tr>${th('Fecha y hora')}${withBy ? '' : th('Persona') + th('Cédula')}${th('Se entregó')}${withBy ? th('Entregó') + th('Devolver') : ''}</tr></thead><tbody>`
+      + rows.map(r => `<tr><td class="gw-inv-del__time" data-label="Fecha y hora">${esc(when(r.time))}</td>${withBy ? '' : `<td data-label="Persona">${esc(r.name)}</td><td class="gw-inv-del__num" data-label="Cédula">${esc(r.user_id)}</td>`}`
+        + `<td data-label="Se entregó"><span class="gw-badge gw-badge--ok">${esc(r.qty)} × ${esc(r.item)}</span></td>`
+        + (withBy ? `<td data-label="Entregó">${esc(r.by || '—')}</td><td class="gw-inv-del__act" data-label="Devolver">${r.id ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gw-inv-revert" data-revert="${esc(r.id)}" data-item="${esc(r.item)}" data-qty="${esc(r.qty)}">Devolver</button>` : ''}</td>` : '')
+        + '</tr>').join('')
       + '</tbody></table></div>';
   }
   /* Buscador del historial (solo coordinador en adelante): el MISMO buscador de arriba (cédula, nombre, código, lector o cámara), pero no toca a quién se le entrega. */
+  let histPerson = null;          // la persona cuyo historial se ve (para volver a cargarlo después de devolver una entrega)
   async function showHistory(u) {
     const box = $('histResult'); if (!box) return;
+    histPerson = u;
     box.hidden = false; box.innerHTML = `<p class="gw-hint">Buscando el historial de ${esc(u.first_name || '')} ${esc(u.last_name || '')}…</p>`;
     let data;
     try {
@@ -201,7 +209,22 @@
       onPick: (u) => showHistory(u),
       onRaw: (ced) => { const u = users.find(x => x.id === ced); if (u) showHistory(u); else hist.showNoMatch(ced); },
     });
-    $('histResult').addEventListener('click', (e) => { if (e.target.closest('#histClose')) { $('histResult').hidden = true; $('histResult').innerHTML = ''; } });
+    $('histResult').addEventListener('click', async (e) => {
+      if (e.target.closest('#histClose')) { $('histResult').hidden = true; $('histResult').innerHTML = ''; return; }
+      const b = e.target.closest('button[data-revert]'); if (!b || b.disabled) return;
+      /* 28-nov-2026: devolver UNA entrega (solo coordinador en adelante; el servidor también lo exige). Queda como si nunca se hubiera entregado y su cantidad vuelve al inventario. Solo con red. */
+      if (OFF && OFF.off()) { showToast('Devolver una entrega necesita internet', 'error'); return; }
+      if (!(await showConfirm(`¿Devolver ${b.dataset.qty} × «${b.dataset.item}»? Quedará como si nunca se hubiera entregado y volverá al inventario.`, { confirmLabel: 'Devolver' }))) return;
+      b.disabled = true;
+      try {
+        const r = await fetch(`/api/events/${window.EVENT_ID}/inventory/deliveries/${encodeURIComponent(b.dataset.revert)}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || 'No se pudo devolver la entrega');
+        showToast(d.message || 'Entrega devuelta', 'success');
+        await loadItems(); await loadDeliveries();
+      } catch (err) { showToast(err.message && err.message !== 'Failed to fetch' ? err.message : 'Sin conexión: devolver una entrega necesita internet.', 'error'); b.disabled = false; return; }
+      if (histPerson) showHistory(histPerson);
+    });
     if ($('histScanBtn')) $('histScanBtn').addEventListener('click', () => { const sc = QrScanner.open({
       title: 'Escanear cédula o QR — Historial de entregas', formats: ['qr_code', 'pdf417'], modes: ['old', 'new', 'qr'],
       onCedula: (d) => { $('histInput').value = d.cedula; hist.submit(); sc.close(); },
@@ -231,12 +254,14 @@
     $('suggest').innerHTML = ''; $('suggest').hidden = true;
     if (ASSIGNED && window.GWInvAssigned) window.GWInvAssigned.show(u, { auto: AUTOSCAN && !!u.__auto });
   }
+  let notFound = false;          // la última lectura no está en la base (aviso rojo): la cámara también se cierra (28-nov-2026)
   function byId(id, auto) {
+    notFound = false;
     // Primero identificación y, si el evento usa código, el código (0140)
     const low = String(id || '').trim().toLowerCase();
     const byCode = low ? users.find(x => x.code && String(x.code).toLowerCase() === low) : null;
     const u = window.EVENT_ID_ONLY === true ? users.find(x => x.id === id) : window.EVENT_CODE_ONLY === true ? byCode : (window.EVENT_CODE_FIRST === true ? (byCode || users.find(x => x.id === id)) : (users.find(x => x.id === id) || byCode));          // 0166/0168
-    if (!u) { clearPerson(); if (finder) finder.showNoMatch(id); else showToast('Esa persona no está en la base de este evento', 'error'); return false; }          // 26-nov-2026: el mismo aviso rojo de la búsqueda
+    if (!u) { notFound = true; clearPerson(); if (finder) finder.showNoMatch(id); else showToast('Esa persona no está en la base de este evento', 'error'); return false; }          // 26-nov-2026: el mismo aviso rojo de la búsqueda
     setPerson(Object.assign({}, u, { __auto: !!auto }));
     if (auto && AUTOSCAN && !ASSIGNED) deliver();          // entrega automática: la lectura (o el Enter) de la persona entrega lo marcado
     return true;
@@ -256,19 +281,19 @@
     if (ASSIGNED && $('assignedBox')) $('assignedBox').innerHTML = '<div class="gw-state gw-empty--hero"><p class="gw-state__title">Escanea o busca a la persona para ver lo que le corresponde.</p></div>';
   }
   // Cámara del dispositivo: el MISMO escáner del Registro y de Control de áreas (selector «Cédula vieja · Cédula nueva · QR»); cada lectura elige a la persona a la que se le entrega.
-  // Si la cámara lee el código y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); si no la encuentra o falla, queda abierta con el aviso.
+  // Si la cámara lee el código y encuentra a la persona, se cierra sola (con entrega automática, después de lanzarla); cuando NO está en la base también se cierra (28-nov-2026: el aviso rojo quedaba escondido detrás de la cámara); si el código no se reconoce o falla, queda abierta con el aviso.
   let scanner = null;
   if (window.QrScanner && QrScanner.warm && $('scanQrBtn')) QrScanner.warm();          // deja listo el lector de cédula en reposo (abrir la cámara no traba)
   if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => { scanner = QrScanner.open({
     title: 'Escanear cédula o QR — Control de Inventario',
     formats: ['qr_code', 'pdf417'],
     modes: ['old', 'new', 'qr'],                       // cédula vieja (código de barras) · cédula nueva (3 líneas) · QR
-    onCedula: (d) => { if (byId(d.cedula, true) && scanner) scanner.close(); },
-    onCode: (text, format) => { QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => {
+    onCedula: (d) => { const found = byId(d.cedula, true); if ((found || notFound) && scanner) scanner.close(); },
+    onCode: (text, format) => { notFound = false; QrCode.resolveDynamic(text, window.EVENT_ID, 'inventory').then((raw) => {
         const r = QrCode.classify(raw, format, window.GoldenDirectory && GoldenDirectory.parseOldCedulaBarcode);
         if (!r) { showToast('No se reconoció el código: acerca la cámara al QR o al reverso de la cédula', 'error'); return false; }
         return byId(r.cedula, true); })
-      .then((found) => { if (found && scanner) scanner.close(); })
+      .then((found) => { if ((found || notFound) && scanner) scanner.close(); })
       .catch((err) => { if (typeof showToast === 'function') showToast(err.message || 'No se pudo validar el código', 'error'); }); },
   }); });
   async function deliver() {

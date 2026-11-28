@@ -137,3 +137,19 @@
 .gw-inv-hist__result { display: grid; gap: var(--gw-sp-2); }
 .gw-inv-hist__result[hidden] { display: none; }
 .gw-pf__none { margin: 0; }
+
+/* 28-nov-2026 (Juan David): el historial de entregas en CELULAR se veía apretado, una letra por fila. Hasta 640 px la tabla pasa a una tarjeta por entrega: cada dato con su rótulo, en una columna. */
+.gw-inv-del__act .gw-btn { white-space: nowrap; }
+@media (max-width: 640px) {
+  .gw-inv-del-wrap { border: 0; background: transparent; overflow: visible; }
+  .gw-inv-del, .gw-inv-del tbody { display: block; width: 100%; }
+  .gw-inv-del thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .gw-inv-del tr { display: grid; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
+  .gw-inv-del tbody tr:hover { background: var(--gw-surface); }
+  .gw-inv-del td { display: grid; grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr); align-items: center; gap: var(--gw-sp-2); padding: 0; border: 0; overflow-wrap: break-word; word-break: normal; white-space: normal; }
+  .gw-inv-del td::before { content: attr(data-label); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+  .gw-inv-del .gw-inv-del__time, .gw-inv-del .gw-inv-del__num { white-space: normal; }
+  .gw-inv-del__act .gw-btn { width: 100%; justify-content: center; min-height: 44px; }
+  .gw-inv-hist { padding: var(--gw-sp-3); }
+  .gw-inv-hist__head .gw-btn { width: 100%; }
+}

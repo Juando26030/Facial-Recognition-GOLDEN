@@ -233,3 +233,45 @@ def test_stats_categories_are_boxed():
     css = (ROOT / "static" / "css" / "gw-estadisticas.css").read_text(encoding="utf-8")
     assert ".gw-sc-group__head" in css and "border: 2px solid var(--gw-border-strong)" in css
     assert 'class="gw-sc-group__head"' in CTRL
+
+
+# ------------------------------------------------------------------------------------------ 28-nov-2026 (hotfix): devolver entregas por elemento, solo coordinador
+
+def test_revert_one_item_of_a_delivery_returns_stock_and_is_coordinator_only(client, factory, db):
+    from app.models import AuditAction, InventoryDelivery
+    ev = _setup(client, factory)
+    muffin = _item(client, ev, "Muffin", qty=10, max_per_person=1)
+    agua = _item(client, ev, "Agua", qty=10)
+    assert _deliver(client, ev, "1001", (muffin["id"], 1), (agua["id"], 2)).status_code == 200
+    hist = client.get(f"/api/events/{ev.id}/inventory/deliveries/person", params={"cedula": "1001"}).json()["deliveries"]
+    by_item = {d["item"]: d for d in hist}
+    assert by_item["Muffin"]["id"] and by_item["Agua"]["id"] and by_item["Muffin"]["batch_id"] == by_item["Agua"]["batch_id"]       # un mismo combo, dos líneas
+    dig = factory.staff("digitador", "9990002")                                                  # un digitador NO puede devolver
+    factory.authorize(ev, dig)
+    client.post("/logout")
+    login(client, "9990002")
+    assert client.delete(f"/api/events/{ev.id}/inventory/deliveries/{by_item['Agua']['id']}").status_code == 403
+    client.post("/logout")
+    login(client, "root")                                                                        # admin (≥ coordinador, el mismo permiso del historial de la persona)
+    r = client.delete(f"/api/events/{ev.id}/inventory/deliveries/{by_item['Agua']['id']}")       # devuelve SOLO el agua
+    assert r.status_code == 200 and r.json()["reverted"] == {"id": by_item["Agua"]["id"], "item": "Agua", "qty": 2}
+    assert r.json()["stock"][0]["available"] == 10                                              # las 2 unidades volvieron al inventario
+    left = client.get(f"/api/events/{ev.id}/inventory/deliveries/person", params={"cedula": "1001"}).json()["deliveries"]
+    assert [d["item"] for d in left] == ["Muffin"]                                              # el muffin sigue entregado
+    assert db.query(InventoryDelivery).filter_by(event_id=ev.id, user_id="1001").count() == 1
+    assert client.delete(f"/api/events/{ev.id}/inventory/deliveries/{by_item['Agua']['id']}").status_code == 404          # repetirlo no devuelve dos veces
+    assert _deliver(client, ev, "1001", (agua["id"], 1)).status_code == 200                      # y la persona puede recibirlo de nuevo
+    audit = db.query(AuditAction).filter_by(action="revert", entity="inventory_delivery").one()
+    assert audit.entity_name == "Agua" and "1001" not in (audit.detail or "")                    # constancia sin cédulas
+
+
+def test_revert_pieces_and_mobile_history():
+    js = (ROOT / "static" / "js" / "inventario.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "css" / "gw-areas-inv.css").read_text(encoding="utf-8")
+    assert "data-revert" in js and "method: 'DELETE'" in js and "showConfirm(" in js and "inventory/deliveries/${encodeURIComponent" in js
+    assert 'data-label="Fecha y hora"' in js and "@media (max-width: 640px)" in css and "attr(data-label)" in css          # celular: una tarjeta por entrega
+    qr = (ROOT / "static" / "js" / "qr.js").read_text(encoding="utf-8")
+    assert "gw-cam__aim" not in qr and "gw-cam__zoom" in qr                                       # sin recuadro guía, con zoom
+    for name in ("inventario", "areas"):
+        src = (ROOT / "static" / "js" / f"{name}.js").read_text(encoding="utf-8")
+        assert "(found || notFound) && scanner" in src                                            # la cámara también se cierra cuando la persona no está en la base

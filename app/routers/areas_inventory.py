@@ -739,8 +739,31 @@ def person_deliveries(event_id: int, cedula: str, db: Session = Depends(get_db),
     sids = {r.delivered_by_staff_id for r in rows if r.delivered_by_staff_id}
     names = {sid: ((n or "").strip() or "Personal del evento") for sid, n in db.query(StaffUser.id, StaffUser.full_name).filter(StaffUser.id.in_(sids))} if sids else {}
     return {"person": {"id": user.id, "first_name": user.first_name, "last_name": user.last_name, "code": person_code.code_of(db, event, user.id) or ""},
-            "deliveries": [{"time": r.delivered_at.isoformat(), "user_id": r.user_id, "batch_id": r.batch_id, "item": subcat.label_of(item_rows, item_rows[r.item_id]) if r.item_id in item_rows else "",
+            "deliveries": [{"id": r.id, "time": r.delivered_at.isoformat(), "user_id": r.user_id, "batch_id": r.batch_id, "item": subcat.label_of(item_rows, item_rows[r.item_id]) if r.item_id in item_rows else "",
                             "qty": r.qty, "by": names.get(r.delivered_by_staff_id, "")} for r in rows]}
+
+
+@router.delete("/events/{event_id}/inventory/deliveries/{delivery_id}")
+def revert_delivery(event_id: int, delivery_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+    """28-nov-2026 (Juan David, hotfix): DEVOLVER una entrega, por elemento. Solo coordinador en adelante (como el historial de la persona). La fila de la entrega se borra: queda como si nunca se hubiera entregado
+    (el disponible es inicial − entregado, así que su cantidad vuelve sola al inventario y la persona puede recibirlo otra vez) y queda constancia en la auditoría (qué ítem, cuánto, quién; sin cédulas).
+    Una línea = un ítem: de una entrega con varios ítems se puede devolver solo uno. Con el evento en servidores locales no se permite: la devolución no se sincroniza y podría reaparecer."""
+    from app import node_sync
+    event = get_event_for_staff(event_id, db, staff)
+    event_archive.require_data_open(event, staff)
+    if node_sync.is_local_server() or event.local_shared or event.local_mode in ("peer", "hub"):
+        raise HTTPException(status_code=409, detail="Este evento también se trabaja en un servidor local: la devolución todavía no se sincroniza y podría reaparecer. Pídele a soporte que la haga.")
+    row = db.query(InventoryDelivery).filter(InventoryDelivery.id == delivery_id, InventoryDelivery.event_id == event.id).with_for_update().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Esa entrega ya no existe (quizá ya se devolvió). Vuelve a buscar el historial.")
+    item = db.query(InventoryItem).filter(InventoryItem.id == row.item_id).with_for_update().first()          # mismo orden de bloqueo que `deliver`: ítem y luego lo que dependa de él
+    name, qty = (item.name if item else ""), row.qty
+    audit_actions.record(db, staff, "revert", "inventory_delivery", row.id, name, f"evento {event.id} · cantidad {qty} · lote {str(row.batch_id)[:8]}")
+    db.delete(row)
+    db.commit()
+    delivered = _delivered_by_item(db, event.id)
+    return {"result": "OK", "message": f"Devolviste {qty} × {name}: volvió al inventario", "reverted": {"id": delivery_id, "item": name, "qty": qty},
+            "stock": [_item_json(item, delivered.get(item.id, 0))] if item else []}
 
 
 @router.get("/events/{event_id}/inventory-report")
