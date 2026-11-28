@@ -27,13 +27,13 @@
         items.push({
           key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets.some((s) => s.id === row.sheet) ? row.sheet : sheets[0].id, joined: i > 0,
           required: ALWAYS_REQUIRED.includes(key) ? true : (NEVER_REQUIRED.includes(key) ? false : !!(f.required != null ? f.required : cfg.required)),
-          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(cfg), text_case: f.text_case || '', hidden: !!f.hidden, canHide: !NEVER_HIDDEN.includes(key),
+          canRequire: !ALWAYS_REQUIRED.includes(key) && !NEVER_REQUIRED.includes(key) && !EVENT_DECIDES.includes(key), canCase: canCase(cfg), text_case: (f.text_case && f.text_case !== (def.text_case || '')) ? f.text_case : '', hidden: !!f.hidden, canHide: !NEVER_HIDDEN.includes(key),
           showField: simpleCond(cond) ? cond.field : '', showValue: simpleCond(cond) ? String(cond.value == null ? '' : cond.value) : '', rawShowIf: cond && !simpleCond(cond) ? cond : null,
         });
       });
     });
     cfgs.forEach((cfg) => { if (!seen.has(cfg.key)) items.push({ key: cfg.key, label: cfg.label, type: cfg.field_type || 'text_short', sheet: sheets[sheets.length - 1].id, joined: false, required: !!cfg.required, hidden: false, canHide: !NEVER_HIDDEN.includes(cfg.key), canRequire: !ALWAYS_REQUIRED.includes(cfg.key) && !NEVER_REQUIRED.includes(cfg.key) && !EVENT_DECIDES.includes(cfg.key), canCase: canCase(cfg), text_case: '', showField: '', showValue: '', rawShowIf: null }); });
-    return { enabled: !!view.enabled, version: def.form_version || 1, sheets, items: sortBySheet(items, sheets), flow: Object.assign({}, def.flow || {}) };
+    return { enabled: !!view.enabled, textCase: def.text_case || '', version: def.form_version || 1, sheets, items: sortBySheet(items, sheets), flow: Object.assign({}, def.flow || {}) };
   }
 
   function sortBySheet(items, sheets) {
@@ -58,6 +58,7 @@
       fields[it.key] = f;
     });
     const out = { enabled: !!model.enabled, sheets: model.sheets.map((s) => ({ id: s.id, title: s.title, open: !!s.open })), rows, fields };
+    if (!variant) out.text_case = model.textCase || '';          // «Texto al escribir» general: vale para el formulario predeterminado y el a la medida
     if (variant && model.flow) { const flow = {}; ['facial_off', 'digital_off', 'autoprint_off'].forEach((k) => { if (model.flow[k]) flow[k] = true; }); if (Object.keys(flow).length) out.flow = flow; }          // flujos que esta categoría APAGA
     return out;
   }
@@ -216,7 +217,7 @@
       const tags = el('div', 'gw-pf-card__tags');
       if (it.hidden) tags.appendChild(el('span', null, 'oculto en esta categoría'));
       else if (it.required) tags.appendChild(el('span', null, 'obligatorio'));
-      if (it.text_case) tags.appendChild(el('span', null, it.text_case === 'upper' ? 'MAYÚSCULAS' : 'minúsculas'));
+      if (it.text_case) tags.appendChild(el('span', null, it.text_case === 'upper' ? 'MAYÚSCULAS' : (it.text_case === 'title' ? 'Primera Mayúscula' : 'minúsculas')));
       if (it.showField || it.rawShowIf) tags.appendChild(el('span', null, 'condicional'));
       if (tags.childNodes.length) c.appendChild(tags);
       c.addEventListener('click', () => select({ kind: 'field', key: it.key }));
@@ -331,7 +332,7 @@
       const fc = el('div', 'gw-field'); fc.appendChild(el('label', 'gw-label', 'Texto al escribir', { for: 'pfCase' }));
       if (it.canCase) {
         const cs = el('select', 'gw-select', null, { id: 'pfCase', 'aria-label': `Texto al escribir de ${it.label}` });
-        [['', 'Como lo escriban'], ['upper', 'MAYÚSCULAS'], ['lower', 'minúsculas']].forEach(([v, t]) => { const o = el('option', null, t, { value: v }); if (v === it.text_case) o.selected = true; cs.appendChild(o); });
+        [['', 'Como el general del formulario'], ['upper', 'MAYÚSCULAS'], ['lower', 'minúsculas'], ['title', 'Primera Mayúscula']].forEach(([v, t]) => { const o = el('option', null, t, { value: v }); if (v === it.text_case) o.selected = true; cs.appendChild(o); });
         cs.addEventListener('change', () => { it.text_case = cs.value; changed(); });
         fc.appendChild(cs);
         // 21-nov-2026: aplicar el mismo «Texto al escribir» a TODOS los campos de texto del formulario de una vez (antes había que hacerlo uno por uno)
@@ -408,6 +409,13 @@
 
     function render() {
       const m = state.model, g = state.general; container.textContent = ''; state.container = container;
+      const gcase = el('div', 'gw-field');          // «Texto al escribir» GENERAL: una sola opción para el formulario predeterminado y el a la medida (en este, cada campo puede tener la suya)
+      gcase.appendChild(el('label', 'gw-label', 'Texto al escribir (todos los campos de texto)', { for: 'pfCaseGeneral' }));
+      const gsel = el('select', 'gw-select', null, { id: 'pfCaseGeneral', 'aria-label': 'Texto al escribir de todos los campos de texto' });
+      [['', 'Como lo escriban'], ['upper', 'MAYÚSCULAS'], ['lower', 'minúsculas'], ['title', 'Primera Mayúscula']].forEach(([v, t]) => { const o = el('option', null, t, { value: v }); if (v === (g.textCase || '')) o.selected = true; gsel.appendChild(o); });
+      gsel.addEventListener('change', () => { g.textCase = gsel.value; dirty(); });
+      gcase.append(gsel, el('p', 'gw-hint', 'Vale para nombres, apellidos, cargo, entidad y los campos de texto, en «Registrar nuevo» y «Editar», tanto con el formulario de siempre como con uno a la medida. Cédula, correo, teléfono, listas y fechas no cambian.'));
+      container.appendChild(gcase);
       const status = el('p', 'gw-hint', `Versión del diseño: ${g.version}. Cada cambio sube la versión; los quioscos sin red usan la última que conocieron.`, { role: 'status' });
       const enabled = el('input', null, null, { type: 'checkbox', id: 'pfEnabled' }); enabled.checked = g.enabled;
       enabled.addEventListener('change', () => { g.enabled = enabled.checked; dirty(); render(); });          // al prender/apagar se muestra/oculta el diseñador
@@ -543,7 +551,7 @@
       const items = [];
       top.forEach((k, i) => items.push(mk(k, 'datos', k === 'last_name' && top[i - 1] === 'first_name')));
       rest.forEach((k, i) => items.push(mk(k, 'mas', i % 2 === 1)));
-      return { enabled: prev ? prev.enabled : false, version: prev ? prev.version : 1, sheets, items };
+      return { enabled: prev ? prev.enabled : false, textCase: prev ? prev.textCase : '', version: prev ? prev.version : 1, sheets, items };
     }
     load(false);
     return { state, render, load, preview };

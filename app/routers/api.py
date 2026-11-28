@@ -1149,16 +1149,16 @@ OUTBOX_MAX_OPS = 50
 OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
 
 
-def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None, pf: Optional[dict] = None, stale: bool = False) -> dict:
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None, pf: Optional[dict] = None, stale: bool = False, case_def: Optional[dict] = None) -> dict:
     """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
     Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
     (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
     warnings = []          # solo con el formulario de persona activo: avisos de una operación hecha con una copia anterior del formulario (nunca se pierde un dato por eso)
-    if pf:
+    if pf or case_def:
         f = dict(f)
         if isinstance(f.get("extra_fields"), dict):
             f["extra_fields"] = dict(f["extra_fields"])
-        personform.apply_case(f, pf)          # «Texto al escribir» también aquí: el dispositivo pudo estar con una copia anterior de la regla
+        personform.apply_case(f, pf or case_def)          # «Texto al escribir» también aquí (con el formulario a la medida o con el predeterminado): el dispositivo pudo estar con una copia anterior de la regla
     person_id = str(f.get("id") or "").strip()
     first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
     if not person_id or not first:          # los apellidos no se exigen (pueden ir junto con los nombres)
@@ -1234,7 +1234,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
 OUTBOX_EDIT_KEYS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
 
 
-def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, pf: Optional[dict] = None, stale: bool = False) -> dict:
+def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, pf: Optional[dict] = None, stale: bool = False, case_def: Optional[dict] = None) -> dict:
     """Una operación `edit_person` de la bandeja de salida: la EDICIÓN de una persona hecha sin red (formulario de persona, Fase 1A pieza 5). `fields` trae la cédula (`id`) o la huella (`h`, la del
     roster local) y SOLO lo que el digitador escribió: lo que va en blanco queda como estaba (sin red no se ven los datos guardados, así que un vacío no borra nada). No cambia la cédula, la
     fecha de nacimiento ni firmas (eso pide conexión). Mismas reglas que `PATCH /users/{id}`: texto al escribir, correo válido y obligatorios (con una copia anterior del formulario el obligatorio
@@ -1253,8 +1253,8 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     f = dict(f)
     if isinstance(f.get("extra_fields"), dict):
         f["extra_fields"] = dict(f["extra_fields"])
-    if pf:
-        personform.apply_case(f, pf)
+    if pf or case_def:
+        personform.apply_case(f, pf or case_def)
     warnings = []
     changes = {k: str(f[k]).strip()[:500] for k in OUTBOX_EDIT_KEYS if f.get(k) is not None and str(f[k]).strip()}
     known_keys = {c["key"] for c in field_configs}
@@ -1324,6 +1324,7 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
     now = utcnow()
     field_configs = parametros.field_configs_for_event(db, event)
     pf = personform.active(db, event, field_configs)          # formulario de persona diseñado (None = apagado: todo como siempre)
+    case_def = None if pf else personform.case_definition(db, event, field_configs)          # formulario predeterminado: solo el «Texto al escribir» general
     known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
     results = []
     reverted_at = event.sync_revert[0] if event.sync_revert else None
@@ -1342,9 +1343,9 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
             continue
         stale = bool(pf) and personform.is_stale(pf, op.get("form_version"), op.get("form_sig"))          # hecha con una copia ANTERIOR del formulario
         if op["type"] == "edit_person":
-            res = _outbox_edit_person(db, event, staff, op_id, op["fields"], when, field_configs, pf=pf, stale=stale)
+            res = _outbox_edit_person(db, event, staff, op_id, op["fields"], when, field_configs, pf=pf, stale=stale, case_def=case_def)
         else:
-            res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None, pf=pf, stale=stale)
+            res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None, pf=pf, stale=stale, case_def=case_def)
         if res["result"] in ("ok", "existente", "replayed"):
             known.add(op_id)
         results.append(res)
@@ -1480,7 +1481,7 @@ def update_user(
     event_archive.require_data_open(event, staff)
     user = _person_of_event(db, event, user_id)
     if user:
-        personform.apply_case(data, personform.active(db, event))          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» y correo en minúsculas
+        personform.apply_case(data, personform.case_definition(db, event))          # «Texto al escribir» general o del formulario a la medida, y correo en minúsculas (nada si no hay ninguno)
         # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
         birth_change = False
         if "birth_date" in data and not event.facial_enabled:
@@ -1886,7 +1887,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     code_clean = _validated_code(db, event, id, code, enforce_required=(method != "autoregistro"))          # 0140: código opcional del evento (vacío si el evento no lo usa)
 
     extras = _parse_extra_fields(extra_fields)
-    pf = personform.active(db, event)          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» también se aplica aquí, no solo en pantalla
+    pf = personform.case_definition(db, event)          # «Texto al escribir» (general o del formulario a la medida): también se aplica aquí, no solo en pantalla
     if pf:
         typed = {"first_name": first_name, "last_name": last_name, "role": role, "entity": entity, "opt_1": opt_1, "email": email, "extra_fields": extras}
         personform.apply_case(typed, pf)

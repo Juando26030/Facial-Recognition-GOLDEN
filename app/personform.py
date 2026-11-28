@@ -8,7 +8,8 @@ Diseño guardado (JSON en `app_settings`, clave `person_form:<evento>`, SIN colu
   {"enabled": bool, "form_version": int,
    "sheets": [{"id", "title", "open"}],                       # grupos; uno que lleva un obligatorio queda SIEMPRE abierto (a la vista)
    "rows":   [{"sheet": id, "items": [clave, ...hasta 4]}],    # una fila = campos uno al lado del otro (columnas)
-   "fields": {clave: {"required": bool, "text_case": ""|"upper"|"lower", "show_if": {...}?}}}
+   "text_case": ""|"upper"|"lower"|"title",                    # «Texto al escribir» GENERAL del evento: vale para el formulario predeterminado y el a la medida (lo de cada campo manda sobre esto)
+   "fields": {clave: {"required": bool, "text_case": ""|"upper"|"lower"|"title", "show_if": {...}?}}}
 Lo OBLIGATORIO no se guarda dos veces: al guardar el diseño se escribe en `event_field_configs.required` (la única fuente que ya validan manual_register, update_user, la bandeja y la
 acreditación). «Texto al escribir» (`text_case`) solo vale para texto: nombres, apellidos, cargo, entidad y opcionales de texto; NUNCA cédula, teléfono ni fecha; el correo SIEMPRE va en minúsculas.
 
@@ -31,7 +32,7 @@ ALWAYS_REQUIRED = ("id", "first_name")           # cédula y nombres: siempre ob
 NEVER_REQUIRED = ("categories", "birth_date")
 NEVER_HIDDEN = ("id", "first_name", "categories")          # en un formulario por categoría estos campos siempre se ven (la cédula y el nombre identifican; la categoría elige el formulario)
 EVENT_DECIDES = ("last_name", "code")      # el apellido es obligatorio según la base cargada o lo elegido en Parámetros (app/lastname.py) y el código de la persona según su interruptor (Parámetros › Campos); llega ya resuelto en `cfg["required"]`, el diseño no lo cambia
-CASE_MODES = ("", roster_text.UPPER, roster_text.LOWER)
+CASE_MODES = ("", roster_text.UPPER, roster_text.LOWER, roster_text.TITLE)
 DEFAULT_OPEN_SHEET, DEFAULT_MORE_SHEET, DEFAULT_OTHER_SHEET = "datos", "mas", "otros"
 MORE_COUNT = 7        # cuántos campos van en «Más datos»; el resto, en «Otros datos»
 
@@ -112,6 +113,9 @@ def sanitize(raw: dict, configs: list, allow_hidden: bool = False) -> dict:
     by_key = {c["key"]: c for c in configs}
     if len(by_key) > MAX_FIELDS:
         raise ValueError("Demasiados campos")
+    general_case = roster_text.parse_mode(raw.get("text_case"))
+    if general_case is None:
+        raise ValueError("«Texto al escribir» no es válido")
     sheets_in = raw.get("sheets") if isinstance(raw.get("sheets"), list) else []
     sheets, seen = [], set()
     for s in sheets_in[:MAX_SHEETS]:
@@ -167,7 +171,7 @@ def sanitize(raw: dict, configs: list, allow_hidden: bool = False) -> dict:
     for sheet in sheets:                                                   # un grupo con un obligatorio queda abierto: lo obligatorio siempre está a la vista
         if any(_required_now(k, by_key[k], fields.get(k, {})) for r in rows if r["sheet"] == sheet["id"] for k in r["items"]):
             sheet["open"] = True
-    return {"enabled": bool(raw.get("enabled")), "sheets": sheets, "rows": rows, "fields": fields}
+    return {"enabled": bool(raw.get("enabled")), "text_case": general_case, "sheets": sheets, "rows": rows, "fields": fields}
 
 
 FLOW_KEYS = ("facial_off", "digital_off", "autoprint_off")          # flujos que una categoría puede APAGAR (solo restringen: nunca encienden algo que el evento no tiene)
@@ -211,7 +215,7 @@ def load_raw(db, event) -> Optional[dict]:
 
 
 def _core(d: dict) -> str:
-    return json.dumps({k: d.get(k) for k in ("enabled", "sheets", "rows", "fields", "variants")}, ensure_ascii=False, sort_keys=True)
+    return json.dumps({k: d.get(k) for k in ("enabled", "text_case", "sheets", "rows", "fields", "variants")}, ensure_ascii=False, sort_keys=True)
 
 
 def save(db, event, raw: dict, configs: list) -> dict:
@@ -259,18 +263,18 @@ def effective(stored: Optional[dict], configs: list) -> dict:
     try:
         clean = sanitize(base, configs)
     except ValueError:                      # un diseño viejo que ya no cuadra (p. ej. cambió el tipo de un campo): vuelve al de por defecto, sin romper el quiosco
-        clean = sanitize({**default_design(configs), "enabled": base.get("enabled")}, configs)
+        clean = sanitize({**default_design(configs), "enabled": base.get("enabled"), "text_case": base.get("text_case")}, configs)
     by_key = by_cfg
     fields = {}
     for key, cfg in by_key.items():
         f = dict(clean["fields"].get(key, {}))
-        fields[key] = {"required": bool(cfg.get("required")) or key in ALWAYS_REQUIRED, "text_case": f.get("text_case", "") if case_capable(cfg) else ""}
+        fields[key] = {"required": bool(cfg.get("required")) or key in ALWAYS_REQUIRED, "text_case": (f.get("text_case") or clean.get("text_case") or "") if case_capable(cfg) else ""}          # lo del campo manda; si no, el general del evento
         if f.get("show_if"):
             fields[key]["show_if"] = f["show_if"]
     for sheet in clean["sheets"]:
         if any(fields[k]["required"] for r in clean["rows"] if r["sheet"] == sheet["id"] for k in r["items"]):
             sheet["open"] = True
-    out = {"enabled": clean["enabled"], "form_version": int((stored or {}).get("form_version") or 1), "form_sig": _signature(configs), "sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
+    out = {"enabled": clean["enabled"], "form_version": int((stored or {}).get("form_version") or 1), "form_sig": _signature(configs), "text_case": clean.get("text_case", ""), "sheets": clean["sheets"], "rows": clean["rows"], "fields": fields}
     variants = {}
     for cat, v in ((stored or {}).get("variants") or {}).items():
         ev = effective_variant(v, configs)
@@ -364,6 +368,25 @@ def active(db, event, configs: Optional[list] = None) -> Optional[dict]:
         from app.routers import parametros
         configs = parametros.field_configs_for_event(db, event)
     return effective(stored, configs)
+
+
+def case_definition(db, event, configs: Optional[list] = None) -> Optional[dict]:
+    """La definición con la que se aplica «Texto al escribir» al guardar: el diseño a la medida si está activo (con el general ya mezclado) o, con el formulario PREDETERMINADO, una definición mínima con el
+    «Texto al escribir» general del evento para cada campo de texto. None si no hay nada que aplicar (entonces no se toca nada, ni siquiera el correo)."""
+    if not env_enabled():
+        return None
+    stored = load_raw(db, event)
+    if not stored:
+        return None
+    if configs is None:
+        from app.routers import parametros
+        configs = parametros.field_configs_for_event(db, event)
+    if stored.get("enabled"):
+        return effective(stored, configs)
+    mode = roster_text.parse_mode(stored.get("text_case"))
+    if not mode:
+        return None
+    return {"text_case": mode, "fields": {c["key"]: {"text_case": mode} for c in configs if case_capable(c)}}
 
 
 def view(db, event, configs: list) -> dict:

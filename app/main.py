@@ -1127,7 +1127,9 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     dependents_cfg = next((c for c in field_configs_all if c.get("virtual")), None)
     field_configs_json = json.dumps(field_configs_all if template_name == "kiosk_parametros.html" else field_configs).replace("</", "<\\/")
     person_form = personform.active(db, event, field_configs)          # None con PERSON_FORM_ENABLED apagado o el evento sin él: todo se ve y funciona como siempre
+    default_case = {} if person_form else personform.case_rules(personform.case_definition(db, event, field_configs))          # formulario predeterminado con «Texto al escribir» general: reglas por campo para la pantalla
     context = {
+        "text_case_json": json.dumps(default_case).replace("</", "<\\/") if default_case else "null",
         "person_form_json": json.dumps(person_form).replace("</", "<\\/") if person_form else "null",
         "person_form_env": personform.env_enabled(),
         "autoprint_rules": bool(person_form and any((v.get("flow") or {}).get("autoprint_off") for v in (person_form.get("variants") or {}).values())),          # alguna categoría tiene apagada la impresión automática: el quiosco consulta antes de imprimir sola

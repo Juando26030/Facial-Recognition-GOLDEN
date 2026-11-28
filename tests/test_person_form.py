@@ -167,6 +167,56 @@ def test_text_case_is_applied_on_register_and_on_edit(client, factory, db, pf_on
     assert (u.first_name, u.entity) == ("LUIS", "otra") and u.get_extras()["opcional_1"] == "CALI"
 
 
+def test_general_text_case_applies_to_every_text_field_and_each_field_can_override_it():
+    d = personform.sanitize({"text_case": "title", "fields": {"entity": {"text_case": "upper"}}}, CFG)
+    assert d["text_case"] == "title"
+    eff = personform.effective({**d, "form_version": 1}, CFG)
+    assert eff["text_case"] == "title"
+    assert eff["fields"]["first_name"]["text_case"] == "title" and eff["fields"]["opcional_3"]["text_case"] == "title", "el general llega a todo campo de texto"
+    assert eff["fields"]["entity"]["text_case"] == "upper", "lo propio de un campo manda sobre el general"
+    with pytest.raises(ValueError):
+        personform.sanitize({"text_case": "gritando"}, CFG)
+
+
+def test_title_mode_capitalizes_each_word_like_the_browser_does():
+    from app import roster_text
+    assert roster_text.convert("juan DAVID o'neil-pérez ñandú", "title") == "Juan David O'Neil-Pérez Ñandú"
+    assert roster_text.parse_mode("primera_mayuscula") == "title"
+
+
+def test_general_text_case_works_with_the_default_form_and_with_a_custom_one(client, factory, db, pf_on):
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    # formulario PREDETERMINADO (a la medida apagado) con el «Texto al escribir» general en MAYÚSCULAS
+    r = _design(ev, client, enabled=False, text_case="upper")
+    assert r.status_code == 200, r.text
+    r = client.post("/api/register", data={"event_id": ev.id, "id": "5300", "first_name": "ana maría", "last_name": "pérez", "role": "Gerente", "entity": "acme", "phone": "300 abc", "email": "Ana@Mail.CO"})
+    assert r.status_code == 200, r.text
+    u = db.query(User).filter_by(id="5300").one()
+    assert (u.first_name, u.last_name, u.entity, u.phone, u.email) == ("ANA MARÍA", "PÉREZ", "ACME", "300 abc", "ana@mail.co")
+    r = client.patch(f"/api/users/5300?event_id={ev.id}", json={"first_name": "luis"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.query(User).filter_by(id="5300").one().first_name == "LUIS"
+    # la misma opción con el formulario a la medida encendido, y un campo con la suya propia
+    r = _design(ev, client, enabled=True, text_case="title", fields={"entity": {"text_case": "lower"}})
+    assert r.status_code == 200, r.text
+    r = client.post("/api/register", data={"event_id": ev.id, "id": "5301", "first_name": "ana MARÍA", "last_name": "pérez", "role": "Gerente", "entity": "ACME SAS"})
+    assert r.status_code == 200, r.text
+    u = db.query(User).filter_by(id="5301").one()
+    assert (u.first_name, u.last_name, u.entity) == ("Ana María", "Pérez", "acme sas")
+
+
+def test_general_text_case_is_also_applied_to_offline_ops_with_the_default_form(client, factory, db, pf_on):
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    assert _design(ev, client, enabled=False, text_case="lower").status_code == 200
+    r = _sync(client, ev, _op("c1", id="5400", first_name="LUIS Pérez", last_name="GÓMEZ", role="Gerente"))
+    assert r.status_code == 200, r.text
+    u = db.query(User).filter_by(id="5400").one()
+    assert (u.first_name, u.last_name) == ("luis pérez", "gómez")
+
+
 # ------------------------------------------------------------------------------------------------------------------ bandeja: versión, copia vieja, edición
 def _op(op_id, kind="create_person", version=None, sig=None, **fields):
     op = {"op_id": op_id, "type": kind, "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "fields": fields}

@@ -7,7 +7,7 @@
    - VERSIONADA: la definición trae `form_version` y `form_sig`; `pick` elige la más nueva entre la que vino con la página y la guardada en IndexedDB (contingency.js), para que alta y edición sin red usen
      la última que el dispositivo conoció. La bandeja (outbox.js) manda esa versión con cada alta o edición. Sin definición, este archivo no hace nada. */
 (function (root) {
-  const CASE = { upper: (s) => s.toUpperCase(), lower: (s) => s.toLowerCase() };
+  const CASE = { upper: (s) => s.toUpperCase(), lower: (s) => s.toLowerCase(), title: (s) => s.replace(/[\p{L}\p{N}_]+/gu, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) };          // «title» = Primera Mayúscula (igual que app/roster_text.py)
   const TEXT_INPUT_TYPES = ['text', 'search', ''];
   const ALWAYS_REQUIRED = ['id', 'first_name'], NEVER_REQUIRED = [];          // el apellido ya no es siempre opcional: lo decide el evento (app/lastname.py) y llega en def.fields.last_name.required
 
