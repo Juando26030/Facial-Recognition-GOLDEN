@@ -52,3 +52,6 @@ Al escribir la cédula en el enlace del compromiso, si ya es de un digitador (de
 
 ## Digitadores de otro cliente (27-nov-2026)
 `resolve_account` ya no exige que la cuenta sea del cliente del evento: un digitador activo se reutiliza y se asigna (la cuenta es única por cédula y no cambia de cliente). Antes el envío se descartaba en silencio con un «¡Listo!» (evento 25, dos digitadores que venían de otro cliente). Digitador desactivado/archivado → mensaje al usuario + `pledge_conflict` en auditoría (solo id de cuenta); cualquier otro tipo de cuenta → respuesta idéntica a un éxito, como antes.
+
+## Cambio de regla (27-nov-2026, noche): precargado sin enmascarar
+El precargado por cédula del enlace público entrega los datos COMPLETOS y editables (nombre, celular, familiar y su teléfono), sin asteriscos, por decisión expresa de Juan David (el teléfono del familiar puede cambiar). Reemplaza lo de «ocultos en parte» de la sección anterior. Riesgo aceptado y advertido: cualquiera que conozca una cédula de digitador puede leer esos datos (incluido el contacto de emergencia, que el texto de la auditora dice que solo ve el coordinador). Freno que se conserva: mismo límite por IP que `lookup`.

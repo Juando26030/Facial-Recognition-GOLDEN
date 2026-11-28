@@ -869,8 +869,24 @@ def create_event_staff(
         return {**_serialize_staff(new_user), "credentials": {"username": username, "password": password}, "credentials_mail": "disabled"}
     if not data.username:
         raise HTTPException(status_code=400, detail="Escribe el usuario (la cédula)")
-    if db.query(StaffUser).filter(StaffUser.username == data.username).first():
-        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
+    existing = db.query(StaffUser).filter(StaffUser.username == data.username).first()
+    if existing is not None:
+        # 27-nov-2026 (Juan David): un digitador es UNA cuenta por cédula y puede estar en cualquier evento de cualquier cliente. Si ya existe, se asigna a este evento (no se duplica, no se le cambia
+        # el cliente ni la contraseña). Una cédula que es otra cosa (admin, coordinador…) o un digitador archivado sigue sin poder asignarse aquí.
+        if existing.role != "digitador" or existing.event_only or existing.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario que no se puede asignar aquí")
+        if not existing.is_active and not (effective_roles(staff) & {"admin", "super_admin"}):
+            raise HTTPException(status_code=400, detail="Esa cuenta está desactivada: solo un administrador puede reactivarla")
+        existing.is_active = True
+        already = db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=existing.id).first() is not None
+        mail_queued = False
+        if not already:
+            db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=existing.id, authorized_by_id=staff.id))
+            mail_queued = staff_credentials.enqueue_for_event(db, existing, "assigned", event)
+        db.commit()
+        if mail_queued:
+            jobs.kick()
+        return {**_serialize_staff(existing), "existing": True, "already": already, "credentials_mail": "queued" if mail_queued else ("disabled" if not event.staff_mail_enabled else "no_email")}
     password = (data.password or "").strip() or data.username        # decisión de Juan David (6-nov-2026): la cuenta temporal de digitador usa su cédula como contraseña; no aplica la política de contraseña segura
     if password != data.username:
         problem = security.password_problem(password, data.username, strict=True)         # 0C (C11): una contraseña DISTINTA de la cédula, puesta por un administrador, sí cumple la política estricta
@@ -1001,7 +1017,7 @@ def staff_users_template(event_id: int, db: Session = Depends(get_db), staff: St
 @router.post("/events/{event_id}/staff-users/import")
 def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Asigna digitadores a este evento desde un Excel (Identificación, Nombres, Apellidos). Cédula nueva → crea la cuenta (usuario y contraseña = cédula) y la asigna; cédula que ya tenía
-    cuenta de digitador del mismo cliente → solo la asigna. Una cédula que ya es otra cosa (otro rol u otro cliente) no se toca y se informa. Devuelve cantidades y los motivos por fila (sin contraseñas)."""
+    cuenta de digitador (de cualquier cliente) → solo la asigna. Una cédula que ya es otra cosa (otro rol) no se toca y se informa. Devuelve cantidades y los motivos por fila (sin contraseñas)."""
     from app import localmode
     if localmode.is_local_server():          # F5-9 A-12 (regla de Juan David, 9-nov-2026): el servidor local NUNCA crea cuentas; se crean en la nube antes de llevar el evento
         raise HTTPException(status_code=403, detail=localmode.ACCOUNTS_ONLY_CLOUD)
@@ -1075,7 +1091,7 @@ def import_event_staff(event_id: int, file: UploadFile = File(...), db: Session 
             target = StaffUser(username=ident, password_hash=_temp_password_hash(ident), full_name=full_name, role="digitador", tenant_id=event.tenant_id, created_by_id=staff.id, email=mail_ok or None)
             db.add(target)
             db.flush()          # autoflush=False: hace falta el id antes de la autorización
-        elif target.role != "digitador" or (target.tenant_id != event.tenant_id and not (effective_roles(staff) & {"admin", "super_admin"})):
+        elif target.role != "digitador" or target.event_only or target.archived_at is not None:          # 27-nov-2026: la cuenta de un digitador sirve en cualquier cliente (una por cédula)
             problems.append({"row": n, "detail": "Esa identificación ya es una cuenta que no se puede asignar aquí"})
             continue
         elif db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first():

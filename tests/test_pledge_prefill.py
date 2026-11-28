@@ -21,18 +21,16 @@ def test_match_is_by_cedula_across_clients_and_only_for_digitadores():
     assert 'staff.role != "digitador"' in SRC[SRC.index("def previous_answers"):SRC.index("def prefill_for")]          # la sesión: solo digitadores
 
 
-def test_public_link_prefill_is_masked_and_restored_only_for_the_same_cedula():
-    """27-nov-2026: al escribir la cédula en el enlace público se precargan nombre, celular y familiar, pero el navegador solo recibe versiones ocultas; el real se pone en el servidor."""
+def test_public_link_prefill_is_complete_and_editable():
+    """27-nov-2026 (Juan David): al escribir la cédula se precargan nombre, celular y familiar COMPLETOS y editables (sin asteriscos); solo falta responder las preguntas."""
     pub = ROUTER[ROUTER.index("def pledge_prefill"):ROUTER.index("def check_registered")]
-    assert "mask_prefill_value(fields[fid], val)" in pub and "_limit(db, request, \"form_lookup\", form, 60)" in pub and 'formsvc.PLEDGE_KIND' in pub
-    assert '"pp": ced' in pub                                                  # el token queda atado a ESA cédula
-    restore = pub[pub.index("def _restore_pledge_values"):]
-    assert 'claims.get("pp")' in restore and "!= ced" in restore and "mask_prefill_value(f, val)" in restore      # solo si es la misma cédula y el valor sigue enmascarado
-    assert "_restore_pledge_values(db, form, design, values, claims)" in ROUTER.split("def _submit", 1)[1] or "_restore_pledge_values(db, form, design, values, claims)" in ROUTER
-    assert "logger" not in pub
+    assert "mask_prefill_value" not in pub and "_restore_pledge_values" not in ROUTER and '"pp"' not in ROUTER          # nada enmascarado ni restaurado en el servidor
+    assert '_limit(db, request, "form_lookup", form, 60)' in pub and "formsvc.PLEDGE_KIND" in pub and "logger" not in pub
     page = (Path(__file__).resolve().parent.parent / "templates" / "form_public.html").read_text(encoding="utf-8")
-    assert "/pledge-prefill" in page and "st.pledge_prefill" in page and "dataset.masked" in page
-    assert "pledge_prefill" in ROUTER and '"*" in str(clean[fid])' in SRC          # un valor enmascarado nunca se guarda
+    hook = page[page.index("if (st.pledge_prefill)"):]
+    assert "/pledge-prefill" in hook and "dataset.prefilled" in hook and "dataset.masked" not in page
+    assert "readOnly" not in hook and "readonly" not in hook                    # editable
+    assert "pledge_prefill" in ROUTER and '"*" in str(clean[fid])' not in SRC
 
 
 def test_only_the_cedula_is_locked_and_prefill_comes_from_the_session():

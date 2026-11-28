@@ -310,7 +310,11 @@
                 if (d.credentials) showCredentials(d.credentials.username, d.credentials.password, false);
                 showToast(isCoord ? 'Coordinador temporal creado y asignado al evento' : 'Cliente creado y asignado al evento', 'success');
             }
-            else if (res.ok) { form.reset(); loadTempUsers(); showToast('Cuenta creada y asignada al evento', 'success'); }
+            else if (res.ok) {
+                const d = await res.json().catch(() => ({}));
+                form.reset(); loadTempUsers();
+                showToast(d.existing ? (d.already ? 'Esa persona ya estaba en este evento' : 'Esa cédula ya tenía cuenta: la asignamos a este evento') : 'Cuenta creada y asignada al evento', 'success');
+            }
             else showToast(await errDetail(res, 'Revisa los datos: falta algún campo o no es válido'), 'error');
         }).catch(() => showToast('No se pudo crear la cuenta. Revisa la conexión.', 'error'));
     });

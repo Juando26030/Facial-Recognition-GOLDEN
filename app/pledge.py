@@ -295,8 +295,6 @@ def extra_errors(form: WebForm, clean: dict, claims: dict) -> dict:
                 check_text(clean[fid], "El nombre")
             except ValueError as exc:
                 errors[fid] = str(exc)
-            if "*" in str(clean[fid]):          # versión ENMASCARADA del prellenado (forms_public.pledge_prefill) que no se pudo restaurar (cambió la cédula): nunca se guarda
-                errors[fid] = "Escríbelo completo, sin asteriscos"
     if clean.get(FID_NAME) and len(str(clean[FID_NAME]).strip()) < 3:
         errors[FID_NAME] = "«Nombre completo»: escríbelo completo"
     for fid in (FID_PHONE, FID_EM_PHONE):
@@ -353,8 +351,8 @@ PREFILL_FROM_BEFORE = (FID_NAME, FID_PHONE, FID_EM_NAME, FID_EM_PHONE)      # na
 def previous_by_cedula(db: Session, cedula: str) -> dict:
     """Datos de contacto de la persona con esta cédula, de su compromiso MÁS RECIENTE (misma cédula en TODOS los clientes y eventos: decisión de Juan David, 10-nov-2026) o, si nunca firmó,
     de su cuenta de digitador (nombre y celular). Solo nombre, celular, familiar y teléfono del familiar; nunca las casillas. Lo sensible (familiar) solo si sigue guardado (no se purgó por
-    retención) y el módulo de datos sensibles está activo. Devuelve los valores REALES: quien los muestre a alguien identificado solo por haber escrito la cédula (enlace público) DEBE
-    enmascararlos (`forms_public.pledge_prefill`). Nada de esto se escribe en logs."""
+    retención) y el módulo de datos sensibles está activo. Devuelve los valores completos (el enlace público los muestra SIN ocultar y editables por decisión de Juan David, 27-nov-2026:
+    `forms_public.pledge_prefill`). Nada de esto se escribe en logs."""
     cedula = normalize_cedula(cedula)
     if not cedula:
         return {}

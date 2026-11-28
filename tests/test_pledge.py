@@ -635,10 +635,8 @@ def test_excel_exports_answers_and_staff_list(client, factory, db):
     assert "María" not in str([c.value for row in ws.iter_rows() for c in row])          # el listado no lleva nada sensible
 
 
-def test_public_link_prefills_masked_by_cedula_and_restores_real_values(client, factory, db):
-    """27-nov-2026: quien ya firmó en otro evento escribe solo su cédula; el navegador recibe datos ocultos en parte y, si los deja así, el servidor guarda los reales."""
-    from app import pledge
-
+def test_public_link_prefills_complete_and_editable_by_cedula(client, factory, db):
+    """27-nov-2026: quien ya firmó en otro evento escribe solo su cédula y le llegan sus datos completos (editables) para responder solo las preguntas."""
     ev1, path1, _ = _setup(client, factory)
     assert _send(client, path1, _values()).status_code == 200                           # primera firma: Juan Pérez / María Pérez
     coord2 = factory.staff("coordinador", "coord2")
@@ -649,18 +647,49 @@ def test_public_link_prefills_masked_by_cedula_and_restores_real_values(client, 
     tok = client.get(f"{path2}/state").json()["token"]
     assert client.get(f"{path2}/state").json()["pledge_prefill"] is True
     r = client.post(f"{path2}/pledge-prefill", json={"id": "999999999", "t": tok})
-    assert r.status_code == 200 and r.json()["found"] is False and r.json()["values"] == {}          # cédula desconocida
+    assert r.status_code == 200 and r.json() == {"found": False, "values": {}}          # cédula desconocida
     r = client.post(f"{path2}/pledge-prefill", json={"id": CED, "t": tok})
-    body = r.json()
-    assert r.status_code == 200 and body["found"] is True
-    shown = body["values"]
-    assert "*" in shown["p_name"] and "Juan" not in r.text and "María" not in r.text       # nada real sale al navegador
-    assert shown["p_em_name"] != "María Pérez" and body["token"] != tok
-    values = _values(p_name=shown["p_name"], p_phone=shown["p_phone"], p_em_name=shown["p_em_name"], p_em_phone=shown["p_em_phone"], p_q_med="No")
-    # con un token SIN la cédula atada, lo enmascarado no se acepta
-    assert _send(client, path2, values, token=tok, sid="s2").status_code == 422
-    assert _send(client, path2, values, token=body["token"], sid="s3").status_code == 200
+    v = r.json()["values"]
+    assert r.status_code == 200 and r.json()["found"] is True
+    assert v["p_name"] == "Juan Pérez" and v["p_em_name"] == "María Pérez" and "*" not in str(v) and v["p_phone"] and v["p_em_phone"]
+    # corrige el teléfono del familiar y firma: vale lo que escribió
+    values = _values(p_name=v["p_name"], p_phone=v["p_phone"], p_em_name=v["p_em_name"], p_em_phone="3201112233", p_q_med="No")
+    assert _send(client, path2, values, token=tok, sid="s2").status_code == 200
+    from app import pledge
     db.expire_all()
-    real = pledge.previous_by_cedula(db, CED)
-    assert real["p_name"] == "Juan Pérez" and real["p_em_name"] == "María Pérez" and "*" not in real["p_phone"]      # se guardaron los reales
+    assert pledge.previous_by_cedula(db, CED)["p_em_phone"] == "3201112233"
     assert pledge.previous_by_cedula(db, "123") == {}
+
+
+def test_create_by_hand_and_excel_reuse_digitador_of_another_client(client, factory, db):
+    """27-nov-2026: un digitador es una cuenta por cédula y vale en cualquier cliente/evento: crear a mano con una cédula que ya existe, o subirla en el Excel, la asigna sin duplicar."""
+    from app.models import EventStaffAuthorization, StaffUser
+
+    ev, _path, coord = _setup(client, factory)
+    factory.tenant("otro_cliente")
+    other = factory.staff("digitador", "5551234", password="5551234", tenant_id="otro_cliente")
+    login(client, "coord1")
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"username": "5551234", "full_name": "Otra Persona", "role": "digitador"})
+    assert r.status_code == 200 and r.json()["existing"] is True and r.json()["already"] is False
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"username": "5551234", "full_name": "Otra Persona", "role": "digitador"})
+    assert r.status_code == 200 and r.json()["already"] is True                           # repetirlo no duplica nada
+    db.expire_all()
+    assert db.query(StaffUser).filter(StaffUser.username == "5551234").count() == 1 and db.get(StaffUser, other.id).tenant_id == "otro_cliente"
+    assert db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=other.id).count() == 1
+    factory.staff("admin", "8887776", password=PASSWORD)
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"username": "8887776", "full_name": "Admin", "role": "digitador"})
+    assert r.status_code == 400                                                           # otro tipo de cuenta: no se asigna
+    # Excel: un coordinador (no admin) también asigna una cuenta de otro cliente
+    import io as _io
+
+    from openpyxl import Workbook
+    third = factory.staff("digitador", "5559999", password="5559999", tenant_id="otro_cliente")
+    wb = Workbook()
+    wb.active.append(["Identificación", "Nombres", "Apellidos"])
+    wb.active.append(["5559999", "Tercera", "Persona"])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    r = client.post(f"/api/events/{ev.id}/staff-users/import", files={"file": ("u.xlsx", buf.getvalue(), "application/octet-stream")})
+    assert r.status_code == 200 and r.json()["assigned_existing"] == 1 and r.json()["problems_total"] == 0
+    db.expire_all()
+    assert db.query(EventStaffAuthorization).filter_by(event_id=ev.id, staff_user_id=third.id).count() == 1

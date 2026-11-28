@@ -239,8 +239,8 @@ function showForm(st) {
       });
     }
   }
-  // Compromiso del digitador (27-nov-2026): al escribir la cédula, si ya es de un digitador, se traen su nombre, celular y familiar (ocultos en parte: quien escribe una cédula ajena no lee datos
-  // ajenos). Si los deja así, el servidor pone los reales al enviar; si escribe encima, vale lo que escribió. Solo llena campos vacíos.
+  // Compromiso del digitador (27-nov-2026): al escribir la cédula, si ya es de un digitador, se traen su nombre, celular y familiar COMPLETOS y editables (el teléfono del familiar puede haber cambiado).
+  // Solo llena campos vacíos; si cambia la cédula, se quitan los que puso para la anterior y no se tocaron.
   if (st.pledge_prefill) {
     const idIn = fr.form.querySelector('[name="p_id"]');
     let lastId = "", note = null;
@@ -249,21 +249,18 @@ function showForm(st) {
       const v = idIn.value.trim().replace(/[\s.,]/g, "");
       if (!v || v === lastId) return;
       lastId = v;
-      fr.form.querySelectorAll("[data-masked]").forEach((el) => { if (el.value === el.dataset.masked) { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); } delete el.dataset.masked; });          // datos ocultos de OTRA cédula: se quitan
+      fr.form.querySelectorAll("[data-prefilled]").forEach((el) => { if (el.value === el.dataset.prefilled) { el.value = ""; el.dispatchEvent(new Event("input", { bubbles: true })); } delete el.dataset.prefilled; });
       setNote("");
       try {
         const { res, data } = await api("/pledge-prefill", { id: v });
-        if (!res.ok || idIn.value.trim().replace(/[\s.,]/g, "") !== v) return;
-        if (!data.found) { setNote(""); return; }
-        token = data.token;
+        if (!res.ok || idIn.value.trim().replace(/[\s.,]/g, "") !== v || !data.found) return;
         for (const [fid, val] of Object.entries(data.values || {})) {
           const el = fr.form.querySelector(`[name="${fid}"]`);
           if (!el || el.value.trim()) continue;
-          el.value = val; el.dataset.masked = val;
+          el.value = val; el.dataset.prefilled = val;
           el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.addEventListener("focus", () => { if (el.value === el.dataset.masked) el.select(); });
         }
-        setNote("Encontramos tus datos de un compromiso anterior y los dejamos listos (se ven ocultos en parte por tu seguridad). Si están bien, déjalos así; si algo cambió, escribe encima. Solo responde las preguntas.");
+        setNote("Encontramos tus datos de un compromiso anterior y los dejamos listos. Revísalos: si algo cambió (por ejemplo el teléfono de tu familiar), corrígelo. Solo responde las preguntas.");
       } catch (err) { /* sin red: se llena a mano */ }
     });
   }
