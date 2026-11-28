@@ -312,7 +312,21 @@ async def no_cache_html(request, call_next):
     response = await call_next(request)
     if response.headers.get("content-type", "").startswith("text/html") and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-store"     # salvo que la ruta lo haya decidido (el cascarón del formulario público se guarda unos segundos)
-    return response
+    return await _with_credits(response)
+
+
+async def _with_credits(response):
+    """Pie de créditos de autoría en toda página HTML completa (app/credits.py). Solo respuestas 200 con HTML y sin codificación propia; el cuerpo se lee una vez y se vuelve a armar."""
+    from starlette.responses import Response as _Resp
+
+    if response.status_code != 200 or not response.headers.get("content-type", "").startswith("text/html") or response.headers.get("content-encoding"):
+        return response
+    chunks = [c async for c in response.body_iterator] if hasattr(response, "body_iterator") else [response.body]
+    body = b"".join(c if isinstance(c, bytes) else c.encode() for c in chunks)
+    new = credits.inject(body)
+    out = _Resp(content=new, status_code=response.status_code)
+    out.raw_headers = [(k, v) for k, v in response.raw_headers if k.lower() != b"content-length"] + [(b"content-length", str(len(new)).encode())]     # crudo: conserva TODAS las cookies (Set-Cookie repetido) y el tipo de contenido
+    return out
 
 
 # La sesión se registra DESPUÉS de los middlewares de arriba a propósito: en Starlette el último registrado es el
@@ -337,7 +351,7 @@ app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-from app import staticver  # noqa: E402
+from app import credits, staticver  # noqa: E402
 
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads

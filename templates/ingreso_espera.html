@@ -22,9 +22,10 @@
         <div class="gw-card gw-card--raised login__card gw-stack" id="ingresoEspera" data-poll-seconds="{{ poll_seconds }}" data-ttl-seconds="{{ ttl_seconds }}">
             <div class="login__brand">
                 <div class="gw-orum">
-                <h1 class="gw-orum__title"><img class="gw-orum__logo gw-orum__logo--oscuro" src="{{ url_for('static', path='img/orum-logo.svg') }}" alt="Orum" width="168" height="60"><img class="gw-orum__logo gw-orum__logo--claro" src="{{ url_for('static', path='img/orum-logo-claro.svg') }}" alt="" width="168" height="60"></h1>
+                <h1 class="gw-orum__title"><img class="gw-orum__logo" data-gw-orum src="{{ url_for('static', path='img/orum-logo.svg') }}" data-src-claro="{{ url_for('static', path='img/orum-logo.svg') }}" data-src-oscuro="{{ url_for('static', path='img/orum-logo-oscuro.svg') }}" alt="Orum" width="168" height="60"></h1>
                 <p class="gw-orum__by">by Golden Eventos y Logística</p>
             </div>
+            <script src="{{ url_for('static', path='js/gw-orum.js') }}"></script>
             </div>
             <h2 class="gw-subtitle">Ingreso en espera</h2>
             <div class="gw-alert gw-alert--warn" id="ingresoAviso" role="status" aria-live="polite">
